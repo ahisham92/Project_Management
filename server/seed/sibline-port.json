@@ -1,0 +1,1008 @@
+{
+  "project": {
+    "code": "SIBLINE-PORT",
+    "name": "Sibline Port – Detailed Design & Reconstruction",
+    "client": "Sibline Port Authority",
+    "description": "Detailed design and reconstruction of the marine and structural works at Sibline Port, covering marine design, structural design, geotechnical design and ancillary / utilities design.",
+    "ntp_date": "2026-08-31",
+    "duration_months": 4,
+    "days_per_month": 30.4375,
+    "hours_per_month": 176,
+    "elapsed_day_offset": 1,
+    "status": "active"
+  },
+  "trades": [
+    {
+      "key": "marine",
+      "name": "Marine",
+      "color": "#2a78d6",
+      "sort_order": 1,
+      "budget_hours": 1056.0
+    },
+    {
+      "key": "geotechnical",
+      "name": "Geotechnical",
+      "color": "#eb6834",
+      "sort_order": 2,
+      "budget_hours": 440.0
+    },
+    {
+      "key": "marine_structures",
+      "name": "Marine Structures",
+      "color": "#1baf7a",
+      "sort_order": 3,
+      "budget_hours": 1056.0
+    },
+    {
+      "key": "utilities",
+      "name": "Utilities",
+      "color": "#eda100",
+      "sort_order": 4,
+      "budget_hours": 88.0
+    }
+  ],
+  "sections": [
+    {
+      "code": "1.0",
+      "name": "Sec. 3.0 Overall Detailed Design Scope",
+      "sort_order": 1
+    },
+    {
+      "code": "2.0",
+      "name": "Sec. 3.1 Marine Design",
+      "sort_order": 2
+    },
+    {
+      "code": "3.0",
+      "name": "Sec. 3.2 Structural Design",
+      "sort_order": 3
+    },
+    {
+      "code": "4.0",
+      "name": "Sec. 3.3 Geotechnical Design",
+      "sort_order": 4
+    },
+    {
+      "code": "5.0",
+      "name": "Sec. 3.4 Ancillary, Pavement and Utilities Design",
+      "sort_order": 5
+    }
+  ],
+  "tasks": [
+    {
+      "wbs": "1.1",
+      "section_code": "1.0",
+      "name": "Review & consolidate available assessment reports, surveys, as-built drawings, bathymetry, underwater inspection records, testing results & phasing information",
+      "weight_points": 2.3,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.35,
+        "geotechnical": 0.2,
+        "marine_structures": 0.35,
+        "utilities": 0.1
+      },
+      "sort_order": 1
+    },
+    {
+      "wbs": "1.2",
+      "section_code": "1.0",
+      "name": "Confirm design basis, operational criteria, design loads, vessel requirements, durability requirements, construction constraints & design codes with Client",
+      "weight_points": 1.4,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "Client to provide target vessel particulars",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.15,
+        "marine_structures": 0.45,
+        "utilities": 0.1
+      },
+      "sort_order": 2
+    },
+    {
+      "wbs": "1.3",
+      "section_code": "1.0",
+      "name": "Define scope of work, technical specifications & tender documents for the required marine, geotechnical and condition surveys",
+      "weight_points": 1.8,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "Survey cost borne directly by Client",
+      "allocations": {
+        "marine": 0.6,
+        "geotechnical": 0.4,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 3
+    },
+    {
+      "wbs": "1.4",
+      "section_code": "1.0",
+      "name": "Multidisciplinary coordination & draft design package submission",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.35,
+        "geotechnical": 0.2,
+        "marine_structures": 0.35,
+        "utilities": 0.1
+      },
+      "sort_order": 4
+    },
+    {
+      "wbs": "1.5",
+      "section_code": "1.0",
+      "name": "Client review – incorporation of consolidated comments & final issue",
+      "weight_points": 1.8,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "Final 2 weeks per Section 4 programme",
+      "allocations": {
+        "marine": 0.35,
+        "geotechnical": 0.2,
+        "marine_structures": 0.35,
+        "utilities": 0.1
+      },
+      "sort_order": 5
+    },
+    {
+      "wbs": "1.6",
+      "section_code": "1.0",
+      "name": "Project kick-off meeting with Client – NTP, mobilisation, communication protocol, reporting format & minutes (milestone)",
+      "weight_points": 1.0,
+      "start_month": 0.0,
+      "finish_month": 0.0,
+      "actual_pct": 0.5,
+      "remarks": "Due at NTP; 8 bi-weekly meetings follow at 0.5-month intervals over the 4-month design period",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 6
+    },
+    {
+      "wbs": "1.7",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 1 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 0.0,
+      "finish_month": 0.5,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 7
+    },
+    {
+      "wbs": "1.8",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 2 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 0.5,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 8
+    },
+    {
+      "wbs": "1.9",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 3 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 1.0,
+      "finish_month": 1.5,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 9
+    },
+    {
+      "wbs": "1.10",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 4 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 1.5,
+      "finish_month": 2.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 10
+    },
+    {
+      "wbs": "1.11",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 5 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 2.0,
+      "finish_month": 2.5,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 11
+    },
+    {
+      "wbs": "1.12",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 6 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 2.5,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 12
+    },
+    {
+      "wbs": "1.13",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 7 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 3.0,
+      "finish_month": 3.5,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 13
+    },
+    {
+      "wbs": "1.14",
+      "section_code": "1.0",
+      "name": "Bi-weekly progress meeting No. 8 – agenda, progress presentation, minutes & action log (milestone)",
+      "weight_points": 1.0,
+      "start_month": 3.5,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.3,
+        "marine_structures": 0.3,
+        "utilities": 0.1
+      },
+      "sort_order": 14
+    },
+    {
+      "wbs": "2.1",
+      "section_code": "2.0",
+      "name": "Define scope & technical specifications for marine surveys (bathymetric survey, tide gauge measurements)",
+      "weight_points": 0.9,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.9,
+        "geotechnical": 0.1,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 15
+    },
+    {
+      "wbs": "2.2",
+      "section_code": "2.0",
+      "name": "Interpretation of marine survey & bathymetric results",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 2.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.9,
+        "geotechnical": 0.1,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 16
+    },
+    {
+      "wbs": "2.3",
+      "section_code": "2.0",
+      "name": "Coastal numerical modelling – wave propagation studies & marine design parameters",
+      "weight_points": 4.6,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 17
+    },
+    {
+      "wbs": "2.4",
+      "section_code": "2.0",
+      "name": "Determination of design water level & reassessment of quay wall crest level",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 2.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.8,
+        "geotechnical": 0.0,
+        "marine_structures": 0.2,
+        "utilities": 0.0
+      },
+      "sort_order": 18
+    },
+    {
+      "wbs": "2.5",
+      "section_code": "2.0",
+      "name": "Zone X – seabed cleaning limits & levels (restore documented design levels, 100 x 100 m)",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "No deepening below documented levels",
+      "allocations": {
+        "marine": 0.9,
+        "geotechnical": 0.1,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 19
+    },
+    {
+      "wbs": "2.6",
+      "section_code": "2.0",
+      "name": "Zone Y – dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
+      "weight_points": 2.7,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.85,
+        "geotechnical": 0.15,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 20
+    },
+    {
+      "wbs": "2.7",
+      "section_code": "2.0",
+      "name": "Zone Z – dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
+      "weight_points": 2.3,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.85,
+        "geotechnical": 0.15,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 21
+    },
+    {
+      "wbs": "2.8",
+      "section_code": "2.0",
+      "name": "Revetment redesign beneath deck-on-piles (armour & filter layers, toe protection, slope geometry, alignment) incl. propeller-induced scour",
+      "weight_points": 4.6,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.7,
+        "geotechnical": 0.3,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 22
+    },
+    {
+      "wbs": "2.9",
+      "section_code": "2.0",
+      "name": "Breakwater head hydraulic assessment & armour reinstatement design (base scope, geometry kept as-built)",
+      "weight_points": 2.7,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "Seaside breakwater excluded",
+      "allocations": {
+        "marine": 0.8,
+        "geotechnical": 0.2,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 23
+    },
+    {
+      "wbs": "2.10",
+      "section_code": "2.0",
+      "name": "Marine drawings – dredging layout for each phase (Zones X, Y, Z)",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 24
+    },
+    {
+      "wbs": "2.11",
+      "section_code": "2.0",
+      "name": "Marine drawings – marine works layout (revetment, breakwater head)",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 25
+    },
+    {
+      "wbs": "2.12",
+      "section_code": "2.0",
+      "name": "Marine drawings – cross sections for revetment & breakwater head",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 26
+    },
+    {
+      "wbs": "2.13",
+      "section_code": "2.0",
+      "name": "Design basis & detailed marine design report",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 27
+    },
+    {
+      "wbs": "2.14",
+      "section_code": "2.0",
+      "name": "Marine technical specifications, bill of quantities & cost estimate (dredging, revetment, breakwater protection)",
+      "weight_points": 1.8,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 28
+    },
+    {
+      "wbs": "2.15",
+      "section_code": "2.0",
+      "name": "OPTIONAL – Breakwater extension / coastal mitigation reassessment & design",
+      "weight_points": 0.0,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "Optional scope – enter pts to activate; all weights rebase automatically",
+      "allocations": {
+        "marine": 1.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 29
+    },
+    {
+      "wbs": "3.1",
+      "section_code": "3.0",
+      "name": "Design Basis Report (codes, design criteria, loading, durability provisions, design life, geotechnical parameters)",
+      "weight_points": 1.8,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.1,
+        "marine_structures": 0.9,
+        "utilities": 0.0
+      },
+      "sort_order": 30
+    },
+    {
+      "wbs": "3.2",
+      "section_code": "3.0",
+      "name": "Structural design calculations & structural design report",
+      "weight_points": 5.4,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 31
+    },
+    {
+      "wbs": "3.3",
+      "section_code": "3.0",
+      "name": "Conceptual demolition drawings, controlled removal requirements & sequencing (deck, beams, capping beams)",
+      "weight_points": 2.3,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 32
+    },
+    {
+      "wbs": "3.4",
+      "section_code": "3.0",
+      "name": "New / strengthened pile support system design incl. pile additions, pile testing requirements, pile caps & connections",
+      "weight_points": 4.5,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "Existing piles retained per assessment",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.3,
+        "marine_structures": 0.7,
+        "utilities": 0.0
+      },
+      "sort_order": 33
+    },
+    {
+      "wbs": "3.5",
+      "section_code": "3.0",
+      "name": "Deck reconstruction detailed design (slabs, beams, capping beams, toppings, joints, reinforcement, embedded items, interfaces)",
+      "weight_points": 5.5,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 34
+    },
+    {
+      "wbs": "3.6",
+      "section_code": "3.0",
+      "name": "Mooring system design – bollard capacity & spacing for design vessel range",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.1,
+        "geotechnical": 0.0,
+        "marine_structures": 0.9,
+        "utilities": 0.0
+      },
+      "sort_order": 35
+    },
+    {
+      "wbs": "3.7",
+      "section_code": "3.0",
+      "name": "Fender system design – size, spacing & berthing energy absorption check",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.1,
+        "geotechnical": 0.0,
+        "marine_structures": 0.9,
+        "utilities": 0.0
+      },
+      "sort_order": 36
+    },
+    {
+      "wbs": "3.8",
+      "section_code": "3.0",
+      "name": "Durability, protective coating, corrosion protection & repair specifications (retained and new structures)",
+      "weight_points": 1.8,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 37
+    },
+    {
+      "wbs": "3.9",
+      "section_code": "3.0",
+      "name": "Structural tender drawings & construction drawings",
+      "weight_points": 3.1,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 38
+    },
+    {
+      "wbs": "3.10",
+      "section_code": "3.0",
+      "name": "Structural technical specifications",
+      "weight_points": 1.4,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 39
+    },
+    {
+      "wbs": "3.11",
+      "section_code": "3.0",
+      "name": "Structural bill of quantities & Engineer's cost estimate",
+      "weight_points": 1.4,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 40
+    },
+    {
+      "wbs": "4.1",
+      "section_code": "4.0",
+      "name": "Review of available geotechnical investigation data, historical design assumptions & site information",
+      "weight_points": 1.4,
+      "start_month": 0.0,
+      "finish_month": 1.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 1.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 41
+    },
+    {
+      "wbs": "4.2",
+      "section_code": "4.0",
+      "name": "Sufficiency assessment of available data & definition of additional investigation requirements",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 2.0,
+      "actual_pct": 0.0,
+      "remarks": "Additional investigation by specialised firm",
+      "allocations": {
+        "marine": 0.1,
+        "geotechnical": 0.9,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 42
+    },
+    {
+      "wbs": "4.3",
+      "section_code": "4.0",
+      "name": "Interpretation & summary of engineering properties of strata; geotechnical design parameters per component",
+      "weight_points": 2.2,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 1.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 43
+    },
+    {
+      "wbs": "4.4",
+      "section_code": "4.0",
+      "name": "Existing pile foundations – axial & lateral capacity assessment under additional / upgraded loads",
+      "weight_points": 1.8,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.95,
+        "marine_structures": 0.05,
+        "utilities": 0.0
+      },
+      "sort_order": 44
+    },
+    {
+      "wbs": "4.5",
+      "section_code": "4.0",
+      "name": "New piles – axial & lateral capacity calculations",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.95,
+        "marine_structures": 0.05,
+        "utilities": 0.0
+      },
+      "sort_order": 45
+    },
+    {
+      "wbs": "4.6",
+      "section_code": "4.0",
+      "name": "Geotechnical assessment of dredging & cleaning impacts adjacent to existing / reconstructed quay & revetment",
+      "weight_points": 1.8,
+      "start_month": 1.0,
+      "finish_month": 3.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.2,
+        "geotechnical": 0.8,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 46
+    },
+    {
+      "wbs": "4.7",
+      "section_code": "4.0",
+      "name": "Stability analysis of revetment & breakwater",
+      "weight_points": 1.4,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.3,
+        "geotechnical": 0.7,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 47
+    },
+    {
+      "wbs": "4.8",
+      "section_code": "4.0",
+      "name": "Geotechnical interpretative report, recommendations, specifications & tender documents",
+      "weight_points": 0.4,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 1.0,
+        "marine_structures": 0.0,
+        "utilities": 0.0
+      },
+      "sort_order": 48
+    },
+    {
+      "wbs": "5.1",
+      "section_code": "5.0",
+      "name": "Pavement & deck surfacing reinstatement design (topping, drainage falls, joints, interfaces with structure)",
+      "weight_points": 2.2,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.5,
+        "marine_structures": 0.0,
+        "utilities": 0.5
+      },
+      "sort_order": 49
+    },
+    {
+      "wbs": "5.2",
+      "section_code": "5.0",
+      "name": "Drainage design for the reconstructed areas",
+      "weight_points": 1.4,
+      "start_month": 1.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 1.0
+      },
+      "sort_order": 50
+    },
+    {
+      "wbs": "5.3",
+      "section_code": "5.0",
+      "name": "Minor electrical & plumbing provisions (subject to confirmation of Client operational requirements)",
+      "weight_points": 1.4,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "Existing utility as-builts to be provided by Client",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.0,
+        "utilities": 1.0
+      },
+      "sort_order": 51
+    },
+    {
+      "wbs": "5.4",
+      "section_code": "5.0",
+      "name": "Marine accessories & ancillary items – fenders, bollards, ladders, mooring rings: layout & installation details",
+      "weight_points": 1.4,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 0.6,
+        "utilities": 0.4
+      },
+      "sort_order": 52
+    },
+    {
+      "wbs": "5.5",
+      "section_code": "5.0",
+      "name": "Coordination of ancillary elements with marine & structural layouts (clash avoidance)",
+      "weight_points": 0.9,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 53
+    },
+    {
+      "wbs": "5.6",
+      "section_code": "5.0",
+      "name": "Ancillary drawings",
+      "weight_points": 1.4,
+      "start_month": 2.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 54
+    },
+    {
+      "wbs": "5.7",
+      "section_code": "5.0",
+      "name": "Ancillary specifications, bill of quantities & cost estimate",
+      "weight_points": 0.4,
+      "start_month": 3.0,
+      "finish_month": 4.0,
+      "actual_pct": 0.0,
+      "remarks": "",
+      "allocations": {
+        "marine": 0.0,
+        "geotechnical": 0.0,
+        "marine_structures": 1.0,
+        "utilities": 0.0
+      },
+      "sort_order": 55
+    }
+  ]
+}

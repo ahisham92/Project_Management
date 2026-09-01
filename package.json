@@ -1,0 +1,16 @@
+{
+  "name": "project-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Project management platform: weighted deliverables, progress, schedule and hours against budget",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "seed": "npm --prefix server run seed",
+    "test": "npm --prefix server test",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev"
+  },
+  "engines": { "node": ">=20" }
+}

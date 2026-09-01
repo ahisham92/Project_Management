@@ -1,7 +1,10 @@
-node_modules
-**/node_modules
-client/dist
-server/data
+__pycache__
+**/__pycache__
+.venv
+venv
+data
 .git
+.pytest_cache
+e2e/screenshots
 *.log
 .env

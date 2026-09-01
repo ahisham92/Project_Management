@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Project Control{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><text x='16' y='22' font-family='system-ui' font-size='14' font-weight='700' fill='white' text-anchor='middle'>PC</text></svg>">
+  <script>
+    // Applied before first paint so the page never flashes the wrong theme.
+    try {
+      var t = localStorage.getItem('pm-theme');
+      if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+{% block chrome %}
+  <header class="topbar">
+    <div class="wrap">
+      <div class="topbar-inner">
+        <a class="brand" href="{{ url_for('portfolio.index') }}">
+          <span class="brand-mark" aria-hidden="true">PC</span>
+          <span>Project Control</span>
+        </a>
+        <a href="{{ url_for('portfolio.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Portfolio</a>
+        <div class="spacer"></div>
+        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
+        {% if current_user %}
+          <div class="whoami small">
+            <div><a href="{{ url_for('auth.account') }}" style="color:var(--ink);text-decoration:none">{{ current_user['name'] }}</a></div>
+            <div class="muted">{{ current_user['email'] }}</div>
+          </div>
+          <form method="post" action="{{ url_for('auth.logout') }}">
+            <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+          </form>
+        {% endif %}
+      </div>
+      {% block tabs %}{% endblock %}
+    </div>
+  </header>
+{% endblock %}
+
+  <main>
+    <div class="wrap">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flashes">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

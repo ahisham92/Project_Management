@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — Project Control{% endblock %}
+{% block content %}
+  <div class="card" style="max-width:520px;margin:48px auto">
+    <div class="card-body" style="text-align:center">
+      <p class="tile-value">{{ code }}</p>
+      <p class="ink2" style="margin-top:8px">{{ message }}</p>
+      <p style="margin-top:16px"><a class="btn btn-ghost" href="{{ url_for('portfolio.index') }}">Back to the portfolio</a></p>
+    </div>
+  </div>
+{% endblock %}

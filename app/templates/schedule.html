@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, progress, task_color, empty %}
+{% block title %}Schedule — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% macro task_table(title, subtitle, rows, kind, empty_title, empty_body) %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>{{ title }}</h2>
+        <p class="small muted" style="margin-top:2px">{{ rows | length }} · {{ subtitle }}</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not rows %}
+        {{ empty(empty_title, empty_body) }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>WBS</th><th>Deliverable</th><th>Section</th><th class="right">Weight</th>
+                <th class="right">Planned start</th><th class="right">Due</th>
+                <th style="min-width:150px">Progress</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for task in rows %}
+                <tr>
+                  <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
+                  <td>{{ task['name'] }}</td>
+                  <td class="small muted">{{ task['section_name'] or '—' }}</td>
+                  <td class="right tabular ink2">{{ pct(task['weight_pct'], 2) }}</td>
+                  <td class="right small ink2 nowrap">{{ short_date(task['planned_start']) }}</td>
+                  <td class="right small ink2 nowrap">{{ short_date(task['due_date']) }}</td>
+                  <td>
+                    <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+                      <span class="tabular" style="font-weight:500">{{ pct(task['actual_pct'], 0) }}</span>
+                      <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
+                    </div>
+                    {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+                  </td>
+                  <td class="right nowrap">
+                    {% if kind == 'late' %}{{ badge('critical', task['days_late'] ~ (' day late' if task['days_late'] == 1 else ' days late')) }}
+                    {% elif kind == 'upcoming' %}{{ badge('serious' if task['days_to_due'] <= 7 else 'neutral', 'in ' ~ task['days_to_due'] ~ ' days') }}
+                    {% else %}{{ badge('warning', signed_pct(task['variance'], 2)) }}{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{% set t = snapshot['totals'] %}
+
+<div class="page-head">
+  <div>
+    <h1>Schedule</h1>
+    <p class="small muted" style="margin-top:2px">What is overdue, what is slipping, and what is coming up</p>
+  </div>
+  <form method="get" class="inline-form">
+    <label class="field w-md">
+      <span class="field-label">Data date</span>
+      <input type="date" name="data_date" value="{{ data_date }}">
+    </label>
+    <label class="field w-md">
+      <span class="field-label">Look ahead</span>
+      <select name="horizon">
+        {% for h in horizons %}<option value="{{ h }}" {{ 'selected' if h == horizon }}>{{ h }} days</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-ghost">Apply</button>
+  </form>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Late', t['late_count'], 'past due, not complete',
+          'critical' if t['late_count'] else 'good',
+          (pct(t['weight_at_risk']) ~ ' of weight') if t['late_count'] else 'None') }}
+  {{ tile('Due soon', t['upcoming_count'], 'within ' ~ horizon ~ ' days',
+          'serious' if t['upcoming_count'] else 'good', 'Upcoming') }}
+  {{ tile('Behind plan', t['behind_count'], 'actual below planned',
+          'warning' if t['behind_count'] else 'good',
+          'Slipping' if t['behind_count'] else 'On plan') }}
+  {{ tile('Complete', t['complete_count'], 'of ' ~ t['task_count'] ~ ' deliverables',
+          'good', pct(t['complete_count'] / (t['task_count'] or 1), 0)) }}
+</div>
+
+{{ task_table('Late deliverables', 'Past their submission date and not complete', late, 'late',
+              'Nothing overdue', 'Every deliverable past its submission date is complete.') }}
+{{ task_table('Due in the next ' ~ horizon ~ ' days', 'Upcoming submissions, soonest first', upcoming, 'upcoming',
+              'Nothing due in this window', 'Widen the look-ahead to see submissions further out.') }}
+{{ task_table('Behind plan', 'Not yet late, but reporting less progress than the schedule expects', behind, 'behind',
+              'Nothing behind plan', 'Reported progress is at or above the planned curve on every deliverable.') }}
+{% endblock %}

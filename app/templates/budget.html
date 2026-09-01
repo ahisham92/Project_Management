@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, progress %}
+{% block title %}Budget — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% set STATUS_STATE = {
+  'Under / on budget': 'good',
+  'Slightly over-burning': 'warning',
+  'Over-burning': 'critical',
+  'Over budget': 'critical',
+  'No spend booked': 'neutral',
+} %}
+
+{% block content %}
+{% set b = snapshot['budget'] %}
+{% set per_month = b['hours_per_month'] or 176 %}
+
+<div class="page-head">
+  <div>
+    <h1>Budget control</h1>
+    <p class="small muted" style="margin-top:2px">Hours booked against budget, and against the progress those hours earned</p>
+  </div>
+  <form method="get" class="inline-form">
+    <label class="field w-md">
+      <span class="field-label">Data date</span>
+      <input type="date" name="data_date" value="{{ data_date }}">
+    </label>
+    <button type="submit" class="btn btn-ghost">Apply</button>
+  </form>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Hours booked', hours(b['spent_hours']), 'of ' ~ hours(b['budget_hours']) ~ ' budget',
+          usage_state(b['hours_used_pct']), pct(b['hours_used_pct'], 0) ~ ' used') }}
+  {{ tile('Hours earned by progress', hours(b['earned_hours']), 'budget × progress achieved',
+          'good' if b['hours_over_under'] <= 0 else 'warning',
+          (hours(b['hours_over_under']) ~ ' ahead of earned') if b['hours_over_under'] > 0
+          else (hours(-b['hours_over_under']) ~ ' under earned')) }}
+  {{ tile('Cost performance', index(b['cpi']),
+          'no hours booked yet' if b['cpi'] is none else 'earned ÷ booked',
+          STATUS_STATE.get(b['budget_status'], 'neutral'), b['budget_status']) }}
+  {{ tile('Forecast at completion', hours(b['eac_hours']),
+          num(b['eac_hours'] / per_month, 1) ~ ' man-months',
+          'good' if b['vac_hours'] >= 0 else 'critical',
+          (hours(b['vac_hours']) ~ ' under budget') if b['vac_hours'] >= 0
+          else (hours(-b['vac_hours']) ~ ' over budget')) }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Hours against budget by trade</h2>
+      <p class="small muted" style="margin-top:2px">Booked hours, remaining budget, and any overrun</p>
+    </div>
+  </div>
+  <div class="card-body">{{ budget_chart }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Trade budget control</h2>
+      <p class="small muted" style="margin-top:2px">Man-month equivalents use {{ num(per_month, 0) }} hours per month</p>
+    </div>
+  </div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Trade</th><th class="right">Budget</th><th class="right">Man-months</th><th class="right">Booked</th>
+          <th style="min-width:120px">Used</th><th class="right">Earned</th><th class="right">Over / (under)</th>
+          <th class="right">CPI</th><th class="right">Forecast</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tr in snapshot['trades'] %}
+          <tr>
+            <td class="nowrap"><span class="swatch" style="background:{{ tr['color'] }}"></span><strong>{{ tr['name'] }}</strong></td>
+            <td class="right tabular ink2">{{ hours(tr['budget_hours']) }}</td>
+            <td class="right tabular muted">{{ num(tr['budget_months'], 1) }}</td>
+            <td class="right tabular ink2">{{ hours(tr['spent_hours']) }}</td>
+            <td>
+              <div class="right small tabular muted" style="margin-bottom:4px">{{ pct(tr['hours_used_pct'], 0) }}</div>
+              {{ progress(tr['hours_used_pct'],
+                          none,
+                          'var(--critical)' if tr['hours_used_pct'] > 1 else tr['color'],
+                          slim=True) }}
+            </td>
+            <td class="right tabular ink2">{{ hours(tr['earned_hours'], 1) }}</td>
+            <td class="right tabular {{ 'bad-text' if tr['hours_over_under'] > 0 else 'good-text' }}">
+              {% if tr['hours_over_under'] > 0 %}{{ hours(tr['hours_over_under'], 1) }}
+              {% else %}({{ hours(-tr['hours_over_under'], 1) }}){% endif %}
+            </td>
+            <td class="right tabular ink2">{{ index(tr['cpi']) }}</td>
+            <td class="right tabular ink2">{{ hours(tr['eac_hours']) }}</td>
+            <td>{{ badge(STATUS_STATE.get(tr['budget_status'], 'neutral'), tr['budget_status']) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="right tabular">{{ hours(b['budget_hours']) }}</td>
+          <td class="right tabular ink2">{{ num(b['budget_hours'] / per_month, 1) }}</td>
+          <td class="right tabular">{{ hours(b['spent_hours']) }}</td>
+          <td class="right tabular ink2">{{ pct(b['hours_used_pct'], 0) }}</td>
+          <td class="right tabular">{{ hours(b['earned_hours'], 1) }}</td>
+          <td class="right tabular {{ 'bad-text' if b['hours_over_under'] > 0 else 'good-text' }}">
+            {% if b['hours_over_under'] > 0 %}{{ hours(b['hours_over_under'], 1) }}
+            {% else %}({{ hours(-b['hours_over_under'], 1) }}){% endif %}
+          </td>
+          <td class="right tabular">{{ index(b['cpi']) }}</td>
+          <td class="right tabular">{{ hours(b['eac_hours']) }}</td>
+          <td>{{ badge(STATUS_STATE.get(b['budget_status'], 'neutral'), b['budget_status']) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% if b['unallocated_hours'] > 0 %}
+    <div class="card-foot small muted">
+      {{ hours(b['unallocated_hours']) }} booked without a trade are included in the project total but not in any trade row.
+    </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>How these figures are built</h2></div>
+  <div class="card-body">
+    <ul class="small ink2" style="margin:0;padding-left:18px;line-height:1.9">
+      <li><strong>Earned hours</strong> = a trade&rsquo;s budget × the progress achieved on its share of the scope.</li>
+      <li><strong>CPI</strong> = earned ÷ booked. Above 1.00 means progress is outrunning the hours spent.</li>
+      <li><strong>Forecast (EAC)</strong> = budget ÷ CPI — what the trade lands at if it keeps burning at the current rate.</li>
+      <li><strong>Over / (under)</strong> = booked − earned. A positive number is hours spent ahead of progress delivered.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

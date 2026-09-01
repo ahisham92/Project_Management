@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Period report — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Period report</h1>
+    <p class="small muted" style="margin-top:2px">What moved between two dates, and which trades earned it</p>
+  </div>
+  <form method="get" class="inline-form">
+    <label class="field w-md">
+      <span class="field-label">From</span>
+      <input type="date" name="from" value="{{ report['from'] }}">
+    </label>
+    <label class="field w-md">
+      <span class="field-label">To</span>
+      <input type="date" name="to" value="{{ report['to'] }}">
+    </label>
+    <button type="submit" class="btn btn-ghost">Apply</button>
+  </form>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Earned in period', signed_pct(report['earned_in_period'], 2),
+          report['days_in_period'] ~ ' days',
+          'good' if report['earned_in_period'] > 0 else 'neutral',
+          'Progress gained' if report['earned_in_period'] > 0 else 'No movement') }}
+  {{ tile('Earned at start', pct(report['earned_at_start'], 2), short_date(report['from'])) }}
+  {{ tile('Earned at end', pct(report['earned_at_end'], 2), short_date(report['to'])) }}
+  {{ tile('Planned at end', pct(report['planned_at_end'], 2), 'where the schedule expected to be',
+          variance_state(report['earned_at_end'] - report['planned_at_end']),
+          signed_pct(report['earned_at_end'] - report['planned_at_end'], 2) ~ ' variance') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Earned in period by trade</h2>
+      <p class="small muted" style="margin-top:2px">Each trade&rsquo;s share of the progress gained</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    <table>
+      <tbody>
+        {% for tr in report['trade_earned_in_period'] %}
+          <tr>
+            <td><span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}</td>
+            <td class="right tabular ink2">{{ signed_pct(tr['earned_in_period'], 3) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td>Total</td><td class="right tabular">{{ signed_pct(report['earned_in_period'], 3) }}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Deliverables that moved</h2>
+      <p class="small muted" style="margin-top:2px">{{ moved | length }} of {{ report['tasks'] | length }} lines changed in this period</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not moved %}
+      {{ empty('Nothing moved in this period', 'No progress was reported against these dates.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>WBS</th><th>Deliverable</th><th class="right">Weight</th>
+              <th class="right">At start</th><th class="right">At end</th>
+              <th class="right">Earned in period</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in moved %}
+              <tr>
+                <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
+                <td>{{ task['name'] }}</td>
+                <td class="right tabular ink2">{{ pct(task['weight_pct'], 2) }}</td>
+                <td class="right tabular ink2">{{ pct(task['actual_start'], 0) }}</td>
+                <td class="right tabular"><strong>{{ pct(task['actual_end'], 0) }}</strong></td>
+                <td class="right tabular good-text">{{ signed_pct(task['earned_in_period'], 3) }}</td>
+                <td class="small muted">{{ task['period_status'] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

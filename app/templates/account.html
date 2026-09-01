@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Account — Project Control{% endblock %}
+{% block content %}
+<div style="max-width:480px">
+  <h1>Your account</h1>
+  <p class="small muted" style="margin-top:4px">{{ current_user['name'] }} · {{ current_user['email'] }}</p>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Change password</h2></div>
+    <div class="card-body">
+      <form method="post" class="stack">
+        <label class="field">
+          <span class="field-label">Current password</span>
+          <input type="password" name="current" autocomplete="current-password" required>
+        </label>
+        <label class="field">
+          <span class="field-label">New password</span>
+          <input type="password" name="new" minlength="8" autocomplete="new-password" required>
+          <span class="field-hint">At least 8 characters</span>
+        </label>
+        <div><button type="submit" class="btn btn-primary">Change password</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

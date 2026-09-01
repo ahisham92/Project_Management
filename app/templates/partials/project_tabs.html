@@ -1,0 +1,16 @@
+{# Navigation across one project's screens. #}
+<nav class="tabs">
+  {% set tabs = [
+    ('projects.dashboard', 'Dashboard'),
+    ('projects.tasks', 'Progress'),
+    ('projects.schedule', 'Schedule'),
+    ('projects.budget', 'Budget'),
+    ('projects.period', 'Period'),
+    ('projects.timesheet', 'Timesheet'),
+    ('projects.setup', 'Setup'),
+  ] %}
+  {% for endpoint, label in tabs %}
+    <a href="{{ url_for(endpoint, project_id=project['id']) }}"
+       class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+  {% endfor %}
+</nav>

@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}Setup — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{% set pid = project['id'] %}
+
+<div class="page-head">
+  <div>
+    <h1>Project setup</h1>
+    <p class="small muted" style="margin-top:2px">
+      Deliverables, weights, schedule and trade split — the basis of every figure in this project
+    </p>
+  </div>
+</div>
+
+{% if not can_edit %}
+  <p class="small ink2 card" style="padding:8px 12px;margin-bottom:16px">
+    You need manager access to change the project setup.
+  </p>
+{% endif %}
+
+<div class="stack">
+
+  {# --- project details --- #}
+  <div class="card">
+    <div class="card-head"><h2>Project details</h2></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('projects.save_settings', project_id=pid) }}" class="grid grid-2">
+        <label class="field" style="grid-column:1/-1">
+          <span class="field-label">Project name</span>
+          <input name="name" value="{{ project['name'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Code</span>
+          <input name="code" value="{{ project['code'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Client</span>
+          <input name="client" value="{{ project['client'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Notice to proceed</span>
+          <input type="date" name="ntp_date" value="{{ project['ntp_date'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Duration (months)</span>
+          <input type="number" name="duration_months" min="0.5" step="0.5" value="{{ project['duration_months'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Days per month</span>
+          <input type="number" name="days_per_month" min="1" step="0.0001" value="{{ project['days_per_month'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Hours per man-month</span>
+          <input type="number" name="hours_per_month" min="1" step="1" value="{{ project['hours_per_month'] }}" {{ 'disabled' if not can_edit }}>
+        </label>
+        <label class="field">
+          <span class="field-label">Status</span>
+          <select name="status" {{ 'disabled' if not can_edit }}>
+            {% for value, label in [('active','Active'), ('on_hold','On hold'), ('complete','Complete'), ('archived','Archived')] %}
+              <option value="{{ value }}" {{ 'selected' if project['status'] == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Elapsed time convention</span>
+          <select name="elapsed_day_offset" {{ 'disabled' if not can_edit }}>
+            <option value="0" {{ 'selected' if project['elapsed_day_offset'] == 0 }}>Month 0 = NTP (no elapsed time on day one)</option>
+            <option value="1" {{ 'selected' if project['elapsed_day_offset'] == 1 }}>Count the NTP day as one day worked</option>
+          </select>
+          <span class="field-hint">Affects planned progress only, not earned progress.</span>
+        </label>
+        <label class="field" style="grid-column:1/-1">
+          <span class="field-label">Description</span>
+          <textarea name="description" rows="2" {{ 'disabled' if not can_edit }}>{{ project['description'] }}</textarea>
+        </label>
+        {% if can_edit %}
+          <div style="grid-column:1/-1;display:flex;justify-content:flex-end">
+            <button type="submit" class="btn btn-primary">Save project</button>
+          </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  {# --- trades --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Trades</h2>
+        <p class="small muted" style="margin-top:2px">Disciplines that carry the hour budget</p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <table>
+        <thead>
+          <tr><th>Colour</th><th>Trade</th><th class="right">Budget (hours)</th>
+              <th class="right">Scope weight</th><th class="right">Booked</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for tr in trades %}
+            {% set computed = (snapshot['trades'] | selectattr('id', 'equalto', tr['id']) | list | first) %}
+            <tr>
+              <td colspan="3">
+                <form method="post" action="{{ url_for('projects.save_trade', project_id=pid, trade_id=tr['id']) }}"
+                      class="inline-form">
+                  <label class="field w-md">
+                    <select name="color" {{ 'disabled' if not can_edit }}>
+                      {% for name, hex in series %}
+                        <option value="{{ hex }}" {{ 'selected' if tr['color'] == hex }}>{{ name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label class="field flex1"><input name="name" value="{{ tr['name'] }}" {{ 'disabled' if not can_edit }}></label>
+                  <label class="field w-md">
+                    <input type="number" name="budget_hours" min="0" step="1" value="{{ tr['budget_hours'] }}"
+                           class="right" {{ 'disabled' if not can_edit }}>
+                  </label>
+                  {% if can_edit %}<button type="submit" class="btn btn-ghost btn-sm">Save</button>{% endif %}
+                </form>
+              </td>
+              <td class="right tabular ink2">{{ pct(computed['scope_weight_pct']) if computed else '—' }}</td>
+              <td class="right tabular ink2">{{ hours(computed['spent_hours']) if computed else '—' }}</td>
+              <td class="right">
+                {% if can_edit %}
+                  <form method="post" action="{{ url_for('projects.save_trade', project_id=pid, trade_id=tr['id']) }}"
+                        data-confirm="Remove the &quot;{{ tr['name'] }}&quot; trade? Its share of each deliverable is removed too.">
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if can_edit %}
+      <div class="card-foot">
+        <form method="post" action="{{ url_for('projects.add_trade', project_id=pid) }}" class="inline-form">
+          <label class="field flex1">
+            <span class="field-label">New trade</span>
+            <input name="name" required>
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Budget (hours)</span>
+            <input type="number" name="budget_hours" min="0" step="1" value="0" class="right">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Colour</span>
+            <select name="color">
+              {% for name, hex in series %}<option value="{{ hex }}">{{ name }}</option>{% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary">Add trade</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {# --- sections --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Sections</h2>
+        <p class="small muted" style="margin-top:2px">Groups of deliverables, mirroring your scope document</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not sections %}
+        {{ empty('No sections yet', 'Sections group the deliverable list; add one below.') }}
+      {% else %}
+        <ul class="list">
+          {% for s in sections %}
+            <li>
+              <div class="inline-form">
+                <form method="post" action="{{ url_for('projects.save_section', project_id=pid, section_id=s['id']) }}"
+                      class="inline-form flex1">
+                  <input name="code" value="{{ s['code'] }}" placeholder="code" class="w-sm" {{ 'disabled' if not can_edit }}>
+                  <input name="name" value="{{ s['name'] }}" class="flex1" {{ 'disabled' if not can_edit }}>
+                  {% if can_edit %}<button type="submit" class="btn btn-ghost btn-sm">Save</button>{% endif %}
+                </form>
+                {% if can_edit %}
+                  <form method="post" action="{{ url_for('projects.save_section', project_id=pid, section_id=s['id']) }}"
+                        data-confirm="Remove section &quot;{{ s['name'] }}&quot;? Its deliverables stay but become unassigned.">
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                  </form>
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% if can_edit %}
+      <div class="card-foot">
+        <form method="post" action="{{ url_for('projects.add_section', project_id=pid) }}" class="inline-form">
+          <label class="field w-sm"><span class="field-label">Code</span><input name="code" placeholder="1.0"></label>
+          <label class="field flex1"><span class="field-label">New section</span><input name="name" required></label>
+          <button type="submit" class="btn btn-primary">Add section</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {# --- deliverables --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Deliverables</h2>
+        <p class="small muted" style="margin-top:2px">
+          {{ snapshot['tasks'] | length }} lines · {{ num(snapshot['total_weight_points'], 1) }} weight points ·
+          weights are relative, so they always total 100%
+        </p>
+      </div>
+    </div>
+
+    {% if can_edit %}
+      <div class="card-body" style="border-bottom:1px solid var(--border)">
+        <form method="post" action="{{ url_for('projects.add_task', project_id=pid) }}" class="inline-form">
+          <label class="field w-sm"><span class="field-label">WBS</span><input name="wbs" placeholder="1.1"></label>
+          <label class="field flex1"><span class="field-label">Deliverable</span><input name="name" required></label>
+          <label class="field w-md">
+            <span class="field-label">Section</span>
+            <select name="section_id">
+              <option value="">— unassigned —</option>
+              {% for s in sections %}<option value="{{ s['id'] }}">{{ s['name'] }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field w-sm"><span class="field-label">Points</span>
+            <input type="number" name="weight_points" min="0" step="0.1" value="1" class="right" required></label>
+          <label class="field w-sm"><span class="field-label">Start mo.</span>
+            <input type="number" name="start_month" min="0" step="0.5" value="0" class="right"></label>
+          <label class="field w-sm"><span class="field-label">Finish mo.</span>
+            <input type="number" name="finish_month" min="0" step="0.5" value="1" class="right"></label>
+          <button type="submit" class="btn btn-primary">Add deliverable</button>
+          <p class="small muted" style="width:100%">
+            Finish at or before start makes the line a milestone: it steps from 0% to 100% on its date.
+            The trade split starts even and can be set per line below.
+          </p>
+        </form>
+      </div>
+    {% endif %}
+
+    <div class="card-body flush">
+      {% if not snapshot['tasks'] %}
+        {{ empty('No deliverables yet',
+                 'Add the measurable lines of your scope, each with a weight and a start/finish month.') }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>WBS</th><th>Deliverable</th><th class="right">Points</th><th class="right">Weight</th>
+                <th class="right">Start</th><th class="right">Finish</th><th>Trade split</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for task in snapshot['tasks'] %}
+                <tr>
+                  <td colspan="6">
+                    <form method="post" action="{{ url_for('projects.save_task', project_id=pid, task_id=task['id']) }}"
+                          class="inline-form">
+                      <label class="field w-sm"><input name="wbs" value="{{ task['wbs'] }}" {{ 'disabled' if not can_edit }}></label>
+                      <label class="field flex1" style="min-width:240px">
+                        <input name="name" value="{{ task['name'] }}" {{ 'disabled' if not can_edit }}>
+                      </label>
+                      <label class="field w-md">
+                        <select name="section_id" {{ 'disabled' if not can_edit }}>
+                          <option value="">— unassigned —</option>
+                          {% for s in sections %}
+                            <option value="{{ s['id'] }}" {{ 'selected' if task['section_id'] == s['id'] }}>{{ s['name'] }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <label class="field w-sm">
+                        <input type="number" name="weight_points" min="0" step="0.1" value="{{ task['weight_points'] }}"
+                               class="right" {{ 'disabled' if not can_edit }}>
+                      </label>
+                      <label class="field w-sm">
+                        <input type="number" name="start_month" min="0" step="0.5" value="{{ task['start_month'] }}"
+                               class="right" {{ 'disabled' if not can_edit }}>
+                      </label>
+                      <label class="field w-sm">
+                        <input type="number" name="finish_month" min="0" step="0.5" value="{{ task['finish_month'] }}"
+                               class="right" {{ 'disabled' if not can_edit }}>
+                      </label>
+                      <span class="small muted tabular">{{ pct(task['weight_pct'], 2) }}</span>
+                      {% if can_edit %}<button type="submit" class="btn btn-ghost btn-sm">Save</button>{% endif %}
+                    </form>
+                  </td>
+                  <td>
+                    <a class="small" href="{{ url_for('projects.setup', project_id=pid, split=task['id']) }}#split-{{ task['id'] }}">
+                      {% for tr in trades %}
+                        {% set share = task['allocations'].get(tr['id'], 0) %}
+                        {% if share %}
+                          <span class="badge" style="margin-right:2px">
+                            <span class="swatch" style="background:{{ tr['color'] }};margin:0"></span>{{ (share * 100) | round | int }}%
+                          </span>
+                        {% endif %}
+                      {% endfor %}
+                      <span style="white-space:nowrap">{{ 'close' if editing == task['id'] else 'edit' }}</span>
+                    </a>
+                  </td>
+                  <td class="right">
+                    {% if can_edit %}
+                      <form method="post" action="{{ url_for('projects.save_task', project_id=pid, task_id=task['id']) }}"
+                            data-confirm="Delete &quot;{{ task['name'][:60] }}&quot;?">
+                        <input type="hidden" name="action" value="delete">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% if editing == task['id'] %}
+                  <tr id="split-{{ task['id'] }}">
+                    <td colspan="8" style="background:var(--raised)">
+                      <p class="small muted" style="margin-bottom:8px">
+                        How this deliverable&rsquo;s weight is shared between trades. Must total 100%.
+                      </p>
+                      <form method="post" action="{{ url_for('projects.save_task', project_id=pid, task_id=task['id']) }}"
+                            class="inline-form">
+                        <input type="hidden" name="action" value="split">
+                        {% for tr in trades %}
+                          <label class="field w-md">
+                            <span class="field-label">{{ tr['name'] }}</span>
+                            <input type="number" name="alloc_{{ tr['id'] }}" min="0" max="100" step="1" class="right"
+                                   value="{{ (task['allocations'].get(tr['id'], 0) * 100) | round | int }}"
+                                   {{ 'disabled' if not can_edit }}>
+                          </label>
+                        {% endfor %}
+                        {% if can_edit %}<button type="submit" class="btn btn-primary">Save split</button>{% endif %}
+                        <a class="btn btn-ghost" href="{{ url_for('projects.setup', project_id=pid) }}">Close</a>
+                      </form>
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# --- team --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Team</h2>
+        <p class="small muted" style="margin-top:2px">Who can see and update this project</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      <ul class="list">
+        <li style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <p>{{ owner['name'] }}</p>
+            <p class="small muted">{{ owner['email'] }}</p>
+          </div>
+          {{ badge('good', 'Owner') }}
+        </li>
+        {% for m in members %}
+          <li style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+              <p>{{ m['name'] }}</p>
+              <p class="small muted">{{ m['email'] }}</p>
+            </div>
+            <div class="inline-form">
+              {{ badge('neutral', m['role']) }}
+              {% if can_edit %}
+                <form method="post" action="{{ url_for('projects.remove_member', project_id=pid, user_id=m['id']) }}">
+                  <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                </form>
+              {% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% if can_edit %}
+      <div class="card-foot">
+        <form method="post" action="{{ url_for('projects.add_member', project_id=pid) }}" class="inline-form">
+          <label class="field flex1">
+            <span class="field-label">Add by email</span>
+            <input type="email" name="email" required>
+            <span class="field-hint">They need an account on this platform first</span>
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Access</span>
+            <select name="role">
+              <option value="viewer">Viewer</option>
+              <option value="member" selected>Member</option>
+              <option value="manager">Manager</option>
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if role == 'owner' %}
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Delete project</h2>
+          <p class="small muted" style="margin-top:2px">
+            Removes the project and every deliverable, progress record and timesheet entry
+          </p>
+        </div>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('projects.delete_project', project_id=pid) }}" class="inline-form"
+              data-confirm="Delete this project and all of its data? This cannot be undone.">
+          <label class="field w-lg">
+            <span class="field-label">Type <strong>{{ project['code'] }}</strong> to confirm</span>
+            <input name="confirm" placeholder="{{ project['code'] }}" required>
+          </label>
+          <button type="submit" class="btn btn-danger">Delete this project</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

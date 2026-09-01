@@ -1,0 +1,19 @@
+{# A single headline figure. `state` drives an icon and a word, so meaning
+   never rests on colour alone. #}
+{% macro tile(label, value, hint='', state='neutral', state_label='') %}
+  {% set icons = {'good': '●', 'warning': '▲', 'serious': '▲', 'critical': '■', 'neutral': ''} %}
+  <div class="tile">
+    <p class="tile-label">{{ label }}</p>
+    <p class="tile-value">{{ value }}</p>
+    {% if hint or state_label %}
+      <p class="tile-foot">
+        {% if state_label %}
+          <span class="state-{{ state }}" style="font-weight:500">
+            <span aria-hidden="true">{{ icons[state] }}</span> {{ state_label }}
+          </span>
+        {% endif %}
+        {% if hint %}<span class="muted">{{ hint }}</span>{% endif %}
+      </p>
+    {% endif %}
+  </div>
+{% endmacro %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}New project — Project Control{% endblock %}
+
+{% block content %}
+<div style="max-width:820px;margin:0 auto">
+  <a class="small muted" href="{{ url_for('portfolio.index') }}" style="text-decoration:none">← Portfolio</a>
+  <h1 style="margin-top:6px">New project</h1>
+  <p class="small muted" style="margin-top:2px">
+    Set the contract dates and the trades that carry the budget. Deliverables come next.
+  </p>
+
+  <form method="post" class="stack" style="margin-top:16px">
+    <div class="card">
+      <div class="card-head"><h2>Project</h2></div>
+      <div class="card-body grid grid-2">
+        <label class="field">
+          <span class="field-label">Project code</span>
+          <input name="code" value="{{ form['code'] }}" required>
+          <span class="field-hint">Short unique reference, e.g. SIBLINE-PORT</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Client</span>
+          <input name="client" value="{{ form['client'] }}">
+        </label>
+        <label class="field" style="grid-column:1/-1">
+          <span class="field-label">Project name</span>
+          <input name="name" value="{{ form['name'] }}" required>
+        </label>
+        <label class="field" style="grid-column:1/-1">
+          <span class="field-label">Description</span>
+          <textarea name="description" rows="2">{{ form['description'] }}</textarea>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Programme</h2>
+          <p class="small muted" style="margin-top:2px">Every planned date is measured from the notice to proceed</p>
+        </div>
+      </div>
+      <div class="card-body grid grid-2">
+        <label class="field">
+          <span class="field-label">Notice to proceed (NTP)</span>
+          <input type="date" name="ntp_date" value="{{ form['ntp_date'] }}" required>
+        </label>
+        <label class="field">
+          <span class="field-label">Duration (months)</span>
+          <input type="number" name="duration_months" min="0.5" step="0.5" value="{{ form['duration_months'] }}" required>
+        </label>
+        <label class="field">
+          <span class="field-label">Days per month</span>
+          <input type="number" name="days_per_month" min="1" step="0.0001" value="{{ form['days_per_month'] }}">
+          <span class="field-hint">Programme basis for turning elapsed months into dates</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Hours per man-month</span>
+          <input type="number" name="hours_per_month" min="1" step="1" value="{{ form['hours_per_month'] }}">
+          <span class="field-hint">Used to show hour budgets as man-months</span>
+        </label>
+        <label class="field" style="grid-column:1/-1">
+          <span class="field-label">Elapsed time convention</span>
+          <select name="elapsed_day_offset">
+            <option value="0" {{ 'selected' if form['elapsed_day_offset'] == '0' }}>No elapsed time on the NTP date (month 0 = NTP)</option>
+            <option value="1" {{ 'selected' if form['elapsed_day_offset'] == '1' }}>Count the NTP day as one day worked</option>
+          </select>
+          <span class="field-hint">
+            Affects planned progress only. Use the second option to match a spreadsheet that
+            measures elapsed time as data date − NTP + 1.
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Trades</h2>
+          <p class="small muted" style="margin-top:2px">Disciplines that carry the hour budget; each deliverable is split between them</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <table>
+          <thead><tr><th>Trade</th><th class="right" style="width:180px">Budget (hours)</th></tr></thead>
+          <tbody>
+            {% for trade in trades %}
+              <tr>
+                <td><input name="trade_name" value="{{ trade['name'] }}" placeholder="Trade name"></td>
+                <td><input type="number" name="trade_hours" min="0" step="1" value="{{ trade['budget_hours'] }}" placeholder="0" class="right"></td>
+              </tr>
+            {% endfor %}
+            {% for _ in range(3) %}
+              <tr>
+                <td><input name="trade_name" placeholder="Add another trade"></td>
+                <td><input type="number" name="trade_hours" min="0" step="1" placeholder="0" class="right"></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="small muted" style="margin-top:8px">Leave a row blank to skip it. You can add or remove trades later.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <a class="btn btn-ghost" href="{{ url_for('portfolio.index') }}">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create project</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, progress %}
+{% block title %}{{ project['name'] }} — Project Control{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{% set t = snapshot['totals'] %}
+{% set b = snapshot['budget'] %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ project['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['client'] or 'No client set' }} · NTP {{ short_date(project['ntp_date']) }} ·
+      {{ num(snapshot['elapsed_months']) }} months elapsed of {{ num(project['duration_months'], 0) }}
+    </p>
+  </div>
+  <form method="get" class="inline-form">
+    <label class="field w-md">
+      <span class="field-label">Data date</span>
+      <input type="date" name="data_date" value="{{ data_date }}">
+    </label>
+    <button type="submit" class="btn btn-ghost">Apply</button>
+  </form>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Earned progress', pct(t['earned_progress'], 2),
+          'vs ' ~ pct(t['planned_progress'], 2) ~ ' planned',
+          variance_state(t['variance']), signed_pct(t['variance'], 2) ~ ' variance') }}
+  {{ tile('Schedule performance', index(t['spi']),
+          'no planned work yet' if t['spi'] is none else ('ahead of plan' if t['spi'] >= 1 else 'behind plan'),
+          'neutral' if t['spi'] is none else ('good' if t['spi'] >= 1 else ('warning' if t['spi'] >= 0.9 else 'critical')),
+          'SPI') }}
+  {{ tile('Hours booked', hours(b['spent_hours']),
+          'of ' ~ hours(b['budget_hours']) ~ ' · ' ~ num(b['budget_hours'] / b['hours_per_month'], 1) ~ ' man-months',
+          usage_state(b['hours_used_pct']), pct(b['hours_used_pct'], 0) ~ ' used') }}
+  {{ tile('Late deliverables', t['late_count'],
+          t['upcoming_count'] ~ ' due within ' ~ snapshot['horizon_days'] ~ ' days',
+          'critical' if t['late_count'] else 'good',
+          (pct(t['weight_at_risk']) ~ ' of weight at risk') if t['late_count'] else 'Nothing overdue') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Progress S-curve</h2>
+      <p class="small muted" style="margin-top:2px">Planned progress from the schedule; earned progress reconstructed from what was reported</p>
+    </div>
+  </div>
+  <div class="card-body">{{ s_curve }}</div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Progress by trade</h2>
+        <p class="small muted" style="margin-top:2px">Each trade measured against its own share of the scope</p>
+      </div>
+    </div>
+    <div class="card-body">{{ trade_progress }}</div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Scope weight by trade</h2>
+        <p class="small muted" style="margin-top:2px">Share of total project weight carried by each trade</p>
+      </div>
+    </div>
+    <div class="card-body">{{ trade_weight }}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Trade summary</h2>
+      <p class="small muted" style="margin-top:2px">The same figures as a table</p>
+    </div>
+  </div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Trade</th><th class="right">Scope weight</th><th class="right">Planned</th>
+          <th class="right">Earned</th><th class="right">Variance</th><th class="right">Budget</th>
+          <th class="right">Booked</th><th class="right">CPI</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tr in snapshot['trades'] %}
+          <tr>
+            <td><span class="swatch" style="background:{{ tr['color'] }}"></span><strong>{{ tr['name'] }}</strong></td>
+            <td class="right tabular ink2">{{ pct(tr['scope_weight_pct']) }}</td>
+            <td class="right tabular ink2">{{ pct(tr['planned_pct_of_trade'], 2) }}</td>
+            <td class="right tabular"><strong>{{ pct(tr['earned_pct_of_trade'], 2) }}</strong></td>
+            <td class="right tabular {{ 'good-text' if tr['schedule_variance_pct'] >= 0 else 'bad-text' }}">
+              {{ signed_pct(tr['schedule_variance_pct'], 2) }}
+            </td>
+            <td class="right tabular ink2">{{ hours(tr['budget_hours']) }}</td>
+            <td class="right tabular ink2">{{ hours(tr['spent_hours']) }}</td>
+            <td class="right tabular ink2">{{ index(tr['cpi']) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="right tabular">{{ pct(snapshot['trades'] | sum(attribute='scope_weight_pct')) }}</td>
+          <td class="right tabular">{{ pct(t['planned_progress'], 2) }}</td>
+          <td class="right tabular">{{ pct(t['earned_progress'], 2) }}</td>
+          <td class="right tabular {{ 'good-text' if t['variance'] >= 0 else 'bad-text' }}">{{ signed_pct(t['variance'], 2) }}</td>
+          <td class="right tabular">{{ hours(b['budget_hours']) }}</td>
+          <td class="right tabular">{{ hours(b['spent_hours']) }}</td>
+          <td class="right tabular">{{ index(b['cpi']) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Needs attention</h2>
+        <p class="small muted" style="margin-top:2px">{{ t['late_count'] }} late · {{ t['behind_count'] }} behind plan</p>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.schedule', project_id=project['id']) }}">Open schedule</a>
+    </div>
+    <div class="card-body flush">
+      {% if not attention %}
+        <p class="small muted" style="padding:32px 16px;text-align:center">Nothing late or behind plan.</p>
+      {% else %}
+        <ul class="list">
+          {% for task in attention %}
+            <li>
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+                <div class="min0" style="flex:1">
+                  <p class="truncate" title="{{ task['name'] }}">
+                    <span class="tabular muted small" style="margin-right:6px">{{ task['wbs'] }}</span>{{ task['name'] }}
+                  </p>
+                  <p class="small muted" style="margin-top:2px">
+                    Due {{ short_date(task['due_date']) }} · {{ pct(task['actual_pct'], 0) }} done of {{ pct(task['planned_pct'], 0) }} planned
+                  </p>
+                </div>
+                {% if task['is_late'] %}{{ badge('critical', task['days_late'] ~ 'd late') }}
+                {% else %}{{ badge('warning', 'Behind') }}{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+          <li><a class="small" href="{{ url_for('projects.tasks', project_id=project['id']) }}">Update progress →</a></li>
+        </ul>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Status of deliverables</h2>
+        <p class="small muted" style="margin-top:2px">{{ t['task_count'] }} deliverables · {{ t['weighted_count'] }} carry weight</p>
+      </div>
+    </div>
+    <div class="card-body">
+      {% set n = t['task_count'] or 1 %}
+      {% for label, count, color in [
+        ('Complete', t['complete_count'], 'var(--good)'),
+        ('In progress', t['in_progress_count'], 'var(--series-1)'),
+        ('Not started', t['not_started_count'], 'var(--grid)'),
+      ] %}
+        <div style="margin-bottom:12px">
+          <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span class="ink2">{{ label }}</span>
+            <span class="tabular muted">{{ count }} · {{ pct(count / n, 0) }}</span>
+          </div>
+          {{ progress(count / n, none, color, slim=True) }}
+        </div>
+      {% endfor %}
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        {% for label, count, color in [
+          ('Late', t['late_count'], 'var(--critical)'),
+          ('Behind plan', t['behind_count'], 'var(--warning)'),
+        ] %}
+          <div style="margin-bottom:12px">
+            <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span class="ink2">{{ label }}</span>
+              <span class="tabular muted">{{ count }} · {{ pct(count / n, 0) }}</span>
+            </div>
+            {{ progress(count / n, none, color, slim=True) }}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

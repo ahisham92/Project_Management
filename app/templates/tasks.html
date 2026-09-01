@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import progress, task_status, task_color, empty %}
+{% block title %}Progress — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{% set t = snapshot['totals'] %}
+
+<div class="page-head">
+  <div>
+    <h1>Progress update</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['name'] }} · {{ pct(t['earned_progress'], 2) }} earned of
+      {{ pct(t['planned_progress'], 2) }} planned ({{ signed_pct(t['variance'], 2) }})
+    </p>
+  </div>
+  <form method="get" class="inline-form">
+    <input type="hidden" name="filter" value="{{ active_filter }}">
+    <input type="hidden" name="q" value="{{ search }}">
+    <label class="field w-md">
+      <span class="field-label">Report progress as at</span>
+      <input type="date" name="data_date" value="{{ data_date }}">
+    </label>
+    <button type="submit" class="btn btn-ghost">Apply</button>
+  </form>
+</div>
+
+<div class="inline-form" style="margin-bottom:12px">
+  <div class="chips">
+    {% for key, label in filters %}
+      <a href="{{ url_for('projects.tasks', project_id=project['id'], filter=key, q=search or none, data_date=data_date) }}"
+         class="{{ 'active' if active_filter == key }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" class="inline-form">
+    <input type="hidden" name="filter" value="{{ active_filter }}">
+    <input type="hidden" name="data_date" value="{{ data_date }}">
+    <input name="q" value="{{ search }}" placeholder="Search deliverables…" class="w-lg">
+    <button type="submit" class="btn btn-ghost">Search</button>
+    {% if search %}
+      <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, data_date=data_date) }}">Clear</a>
+    {% endif %}
+  </form>
+  <span class="small muted">{{ shown }} shown</span>
+</div>
+
+{% if not can_report %}
+  <p class="small ink2 card" style="padding:8px 12px;margin-bottom:12px">
+    You have view-only access to this project, so progress cannot be changed here.
+  </p>
+{% endif %}
+
+{% if not groups %}
+  <div class="card">{{ empty('Nothing matches this filter', 'Try a different filter or clear the search.') }}</div>
+{% endif %}
+
+{% for group in groups %}
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <div>
+        <h2>{{ group['name'] }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          {{ group['tasks'] | length }} deliverable{{ '' if group['tasks'] | length == 1 else 's' }} ·
+          {{ pct(group['weight']) }} of project weight
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>WBS</th><th>Deliverable</th><th class="right">Weight</th><th class="right">Due</th>
+            <th class="right">Planned</th><th style="min-width:170px">Actual</th>
+            <th class="right">Variance</th><th>Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in group['tasks'] %}
+            <tr>
+              <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
+              <td>
+                {{ task['name'] }}
+                {% if task['remarks'] %}<p class="small muted" style="margin-top:2px">{{ task['remarks'] }}</p>{% endif %}
+                {% if editing == task['id'] and can_report %}
+                  <input form="progress-{{ task['id'] }}" name="note" placeholder="Note for this update (optional)" style="margin-top:8px">
+                {% endif %}
+              </td>
+              <td class="right tabular ink2">
+                {{ pct(task['weight_pct'], 2) }}
+                <span class="small muted" style="display:block">{{ num(task['weight_points'], 1) }} pts</span>
+              </td>
+              <td class="right small ink2 nowrap">
+                {{ short_date(task['due_date']) }}
+                <span class="muted" style="display:block">
+                  {% if task['is_milestone'] %}milestone{% else %}mo {{ num(task['start_month'], 1) }}–{{ num(task['finish_month'], 1) }}{% endif %}
+                </span>
+              </td>
+              <td class="right tabular ink2">{{ pct(task['planned_pct'], 0) }}</td>
+              <td>
+                {% if editing == task['id'] and can_report %}
+                  <div class="inline-form" style="gap:4px">
+                    <input form="progress-{{ task['id'] }}" type="number" name="actual_pct" min="0" max="100" step="1"
+                           value="{{ (task['actual_pct'] * 100) | round(0, 'common') | int }}" class="w-sm right" autofocus required>
+                    <span class="small muted">%</span>
+                  </div>
+                {% else %}
+                  <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+                    <span class="tabular" style="font-weight:500">{{ pct(task['actual_pct'], 0) }}</span>
+                    <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
+                  </div>
+                  {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+                {% endif %}
+              </td>
+              <td class="right tabular {{ 'good-text' if task['variance'] >= 0 else 'bad-text' }}">
+                {{ signed_pct(task['variance'], 2) }}
+              </td>
+              <td>{{ task_status(task) }}</td>
+              <td class="right nowrap">
+                {% if can_report %}
+                  {% if editing == task['id'] %}
+                    <form method="post" id="progress-{{ task['id'] }}"
+                          action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}"
+                          style="display:inline-flex;gap:4px">
+                      <input type="hidden" name="data_date" value="{{ data_date }}">
+                      <input type="hidden" name="filter" value="{{ active_filter }}">
+                      <input type="hidden" name="q" value="{{ search }}">
+                      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                    </form>
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=data_date) }}">Cancel</a>
+                  {% else %}
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=data_date, edit=task['id']) }}#task-{{ task['id'] }}">Update</a>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}

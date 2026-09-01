@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Project Control{% endblock %}
+{% block chrome %}{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div style="text-align:center;margin-bottom:24px">
+      <div class="brand-mark" style="width:44px;height:44px;font-size:16px;margin:0 auto 12px" aria-hidden="true">PC</div>
+      <h1>Project Control</h1>
+      <p class="small muted" style="margin-top:4px">Progress, schedule and budget across your portfolio</p>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="chips" style="margin-bottom:16px">
+          <a href="{{ url_for('auth.login') }}" class="{{ 'active' if mode == 'login' }}" style="flex:1;text-align:center">Sign in</a>
+          {% if signup_open %}
+            <a href="{{ url_for('auth.register') }}" class="{{ 'active' if mode == 'register' }}" style="flex:1;text-align:center">Create account</a>
+          {% endif %}
+        </div>
+
+        <form method="post" class="stack">
+          {% if mode == 'register' %}
+            <label class="field">
+              <span class="field-label">Full name</span>
+              <input name="name" autocomplete="name" required>
+            </label>
+          {% endif %}
+          <label class="field">
+            <span class="field-label">Email</span>
+            <input type="email" name="email" autocomplete="username" required autofocus>
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input type="password" name="password" minlength="8" required
+                   autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}">
+            {% if mode == 'register' %}<span class="field-hint">At least 8 characters</span>{% endif %}
+          </label>
+          <button type="submit" class="btn btn-primary" style="width:100%">
+            {{ 'Create account' if mode == 'register' else 'Sign in' }}
+          </button>
+        </form>
+
+        {% if not signup_open and mode == 'login' %}
+          <p class="small muted" style="text-align:center;margin-top:12px">
+            New accounts are created by an administrator.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

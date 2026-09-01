@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Timesheet — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{% set b = snapshot['budget'] %}
+
+<div class="page-head">
+  <div>
+    <h1>Timesheet</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ hours(total_hours) }} booked across {{ entries | length }}
+      entr{{ 'y' if entries | length == 1 else 'ies' }} · feeds straight into budget control
+    </p>
+  </div>
+</div>
+
+<div class="timesheet-grid {{ '' if can_report else 'single' }}">
+  {% if can_report %}
+    <div class="card" style="align-self:start">
+      <div class="card-head"><h2>Book hours</h2></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('projects.add_time', project_id=project['id']) }}" class="stack">
+          <label class="field">
+            <span class="field-label">Date</span>
+            <input type="date" name="entry_date" value="{{ today }}" required>
+          </label>
+          <label class="field">
+            <span class="field-label">Trade</span>
+            <select name="trade_id">
+              <option value="">— none —</option>
+              {% for tr in snapshot['trades'] %}<option value="{{ tr['id'] }}">{{ tr['name'] }}</option>{% endfor %}
+            </select>
+            <span class="field-hint">Hours booked without a trade count to the project total only</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Deliverable (optional)</span>
+            <select name="task_id">
+              <option value="">— none —</option>
+              {% for task in snapshot['tasks'] %}
+                <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:60] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Hours</span>
+            <input type="number" name="hours" min="0.25" step="0.25" placeholder="7.5" required>
+          </label>
+          <label class="field">
+            <span class="field-label">Note (optional)</span>
+            <input name="description" placeholder="What the time went on">
+          </label>
+          <div><button type="submit" class="btn btn-primary" style="width:100%">Book hours</button></div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Booked by trade</h2></div>
+      <div class="card-body flush">
+        <table>
+          <tbody>
+            {% for tr in snapshot['trades'] %}
+              <tr>
+                <td><span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}</td>
+                <td class="right tabular ink2">{{ hours(booked.get(tr['id'], 0)) }}</td>
+                <td class="right small muted">of {{ hours(tr['budget_hours']) }}</td>
+              </tr>
+            {% endfor %}
+            {% if booked.get('none') %}
+              <tr>
+                <td class="muted">No trade</td>
+                <td class="right tabular ink2">{{ hours(booked['none']) }}</td>
+                <td></td>
+              </tr>
+            {% endif %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td class="right tabular">{{ hours(total_hours) }}</td>
+              <td class="right small muted">{{ num(total_hours / (b['hours_per_month'] or 176)) }} man-months</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Recent entries</h2></div>
+      <div class="card-body flush">
+        {% if not entries %}
+          {{ empty('No hours booked yet', 'Book time against a trade to see it in budget control.') }}
+        {% else %}
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Trade</th><th>Deliverable</th><th>Who</th><th class="right">Hours</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for e in entries %}
+                  <tr>
+                    <td class="small ink2 nowrap">{{ short_date(e['entry_date']) }}</td>
+                    <td class="small">
+                      {% if e['trade_name'] %}
+                        <span class="swatch" style="background:{{ e['trade_color'] }}"></span>{{ e['trade_name'] }}
+                      {% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                    <td class="small ink2">
+                      {% if e['task_wbs'] %}<span title="{{ e['task_name'] }}">{{ e['task_wbs'] }}</span>
+                      {% else %}<span class="muted">—</span>{% endif %}
+                      {% if e['description'] %}<span class="muted" style="display:block">{{ e['description'] }}</span>{% endif %}
+                    </td>
+                    <td class="small muted">{{ e['user_name'] or '—' }}</td>
+                    <td class="right tabular" style="font-weight:500">{{ num(e['hours']) }}</td>
+                    <td class="right">
+                      {% if can_report %}
+                        <form method="post" data-confirm="Delete this time entry?"
+                              action="{{ url_for('projects.delete_time', project_id=project['id'], entry_id=e['id']) }}">
+                          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

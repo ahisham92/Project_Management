@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, progress, empty %}
+{% block title %}Portfolio — Project Control{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Portfolio</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ totals['project_count'] }} project{{ '' if totals['project_count'] == 1 else 's' }} ·
+      {{ totals['active_count'] }} active · progress at {{ short_date(data_date) }}
+    </p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('portfolio.new_project') }}">New project</a>
+</div>
+
+{% if not projects %}
+  <div class="card">
+    {{ empty('No projects yet',
+             'Create your first project, then add its deliverables with weights and a schedule.
+              Progress, lateness and hours spent are all measured from there.') }}
+  </div>
+{% else %}
+  <div class="grid grid-4">
+    {{ tile('Portfolio earned', pct(totals['earned_progress']),
+            'vs ' ~ pct(totals['planned_progress']) ~ ' planned',
+            variance_state(totals['variance']), signed_pct(totals['variance']) ~ ' variance') }}
+    {{ tile('Late deliverables', totals['late_count'], 'past due, not complete',
+            'critical' if totals['late_count'] else 'good',
+            'Needs attention' if totals['late_count'] else 'None late') }}
+    {{ tile('Behind plan', totals['behind_count'],
+            totals['upcoming_count'] ~ ' due in 30 days',
+            'warning' if totals['behind_count'] else 'good',
+            'Slipping' if totals['behind_count'] else 'On plan') }}
+    {{ tile('Hours booked', hours(totals['spent_hours']),
+            'of ' ~ hours(totals['budget_hours']) ~ ' budget',
+            usage_state(totals['hours_used_pct']), pct(totals['hours_used_pct'], 0) ~ ' used') }}
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>Projects</h2>
+        <p class="small muted" style="margin-top:2px">Earned progress against plan, with hours booked against budget</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% for p in projects %}
+        <a class="row-link" href="{{ url_for('projects.dashboard', project_id=p['id']) }}">
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start">
+            <div class="min0" style="flex:1;min-width:240px">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+                <h3 style="font-size:0.875rem">{{ p['name'] }}</h3>
+                <span class="small muted" style="background:var(--plane);border-radius:4px;padding:2px 6px">{{ p['code'] }}</span>
+                {% if p['status'] != 'active' %}{{ badge('neutral', p['status'].replace('_', ' ')) }}{% endif %}
+              </div>
+              <p class="small muted" style="margin-top:2px">
+                {{ p['client'] or 'No client set' }} · NTP {{ short_date(p['ntp_date']) }} ·
+                {{ p['task_count'] }} deliverables
+              </p>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              {% if p['late_count'] %}{{ badge('critical', p['late_count'] ~ ' late') }}{% endif %}
+              {% if p['behind_count'] %}{{ badge('warning', p['behind_count'] ~ ' behind plan') }}{% endif %}
+              {% if p['upcoming_count'] %}{{ badge('neutral', p['upcoming_count'] ~ ' due soon') }}{% endif %}
+              {% if not p['late_count'] and not p['behind_count'] %}{{ badge('good', 'On plan') }}{% endif %}
+            </div>
+          </div>
+
+          <div class="grid grid-4" style="margin-top:12px">
+            <div style="grid-column:span 2">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px" class="small">
+                <span class="muted">Progress</span>
+                <span class="tabular ink2">
+                  <strong style="color:var(--ink)">{{ pct(p['earned_progress']) }}</strong> earned ·
+                  {{ pct(p['planned_progress']) }} planned
+                </span>
+              </div>
+              {{ progress(p['earned_progress'], p['planned_progress']) }}
+              <p class="small state-{{ variance_state(p['variance']) }}" style="margin-top:4px">
+                {{ signed_pct(p['variance']) }} against plan
+              </p>
+            </div>
+            <div>
+              <p class="small muted">Hours booked</p>
+              <p class="tabular" style="margin-top:2px;font-weight:500">{{ hours(p['spent_hours']) }}</p>
+              <p class="small muted">of {{ hours(p['budget_hours']) }}</p>
+            </div>
+            <div>
+              <p class="small muted">Cost performance</p>
+              <p class="tabular" style="margin-top:2px;font-weight:500">{{ index(p['cpi']) }}</p>
+              <p class="small muted">
+                {% if p['cpi'] is none %}no hours booked yet
+                {% elif p['cpi'] >= 1 %}earning more than spending
+                {% else %}spending faster than earning{% endif %}
+              </p>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

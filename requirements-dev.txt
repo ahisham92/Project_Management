@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Test tools. Playwright is only needed for the browser smoke test in e2e/.
+pytest>=8.0
+playwright>=1.40

@@ -133,15 +133,20 @@ export function TradeProgressChart({ trades, height = 260 }) {
   );
 }
 
-/** Hours booked against the budget for each trade. */
+/**
+ * Hours booked against the budget for each trade.
+ *
+ * Trades are identified by the axis, so colour here carries the booked /
+ * remaining / over distinction instead — encoding both at once would leave the
+ * legend unable to name a single colour for "booked".
+ */
 export function BudgetChart({ trades, height = 260 }) {
-  const dark = useThemeTick();
+  useThemeTick();
   const data = trades.map((t) => ({
     name: t.name,
     spent: t.spent_hours,
     remaining: Math.max(0, t.budget_hours - t.spent_hours),
     over: Math.max(0, t.spent_hours - t.budget_hours),
-    color: tradeColor(t.color, dark),
     budget: t.budget_hours,
   }));
 
@@ -161,7 +166,7 @@ export function BudgetChart({ trades, height = 260 }) {
                 title={d.name}
                 rows={[
                   { label: 'Budget', color: 'var(--muted)', value: hours(d.budget) },
-                  { label: 'Booked', color: d.color, value: hours(d.spent) },
+                  { label: 'Booked', color: 'var(--series-1)', value: hours(d.spent) },
                   d.over > 0
                     ? { label: 'Over budget', color: 'var(--critical)', value: hours(d.over) }
                     : { label: 'Remaining', color: 'var(--grid)', value: hours(d.remaining) },
@@ -172,9 +177,8 @@ export function BudgetChart({ trades, height = 260 }) {
         />
         <Legend verticalAlign="top" align="right" height={28} wrapperStyle={{ fontSize: 12, color: 'var(--ink-2)' }} />
         {/* A 2px surface gap keeps the booked and remaining segments from touching. */}
-        <Bar dataKey="spent" name="Booked" stackId="h" maxBarSize={22} stroke="var(--surface)" strokeWidth={2}>
-          {data.map((d) => <Cell key={d.name} fill={d.color} />)}
-        </Bar>
+        <Bar dataKey="spent" name="Booked" stackId="h" fill="var(--series-1)"
+             maxBarSize={22} stroke="var(--surface)" strokeWidth={2} />
         <Bar dataKey="remaining" name="Remaining budget" stackId="h" fill="var(--grid)"
              radius={[0, 4, 4, 0]} maxBarSize={22} stroke="var(--surface)" strokeWidth={2} />
         <Bar dataKey="over" name="Over budget" stackId="h" fill="var(--critical)"

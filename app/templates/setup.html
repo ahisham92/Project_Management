@@ -403,9 +403,7 @@
               <tr>
                 <th>WBS</th><th>Deliverable</th><th>Section</th><th class="right">Points</th>
                 <th class="right">Weight</th><th class="right">Start</th><th class="right">Submission</th>
-                <th>Tracked as</th>
-                {% for tr in trades %}<th class="right" style="min-width:70px">{{ tr['name'] }} %</th>{% endfor %}
-                <th class="right">Split</th><th></th>
+                <th>Tracked as</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -449,22 +447,38 @@
                       <option value="simple" {{ 'selected' if task['tracking'] == 'simple' }}>Simple %</option>
                     </select>
                   </td>
-                  {% for tr in trades %}
-                    <td class="right">
-                      <input form="{{ F }}" type="number" name="task_{{ task['id'] }}_alloc_{{ tr['id'] }}"
-                             min="0" max="100" step="1" class="right w-sm"
-                             value="{{ (task['allocations'].get(tr['id'], 0) * 100) | round | int }}"
-                             {{ 'disabled' if not can_edit }}>
-                    </td>
-                  {% endfor %}
-                  <td class="right tabular small {{ 'bad-text' if (split_total | round(0)) != 100 else 'muted' }}">
-                    {{ split_total | round | int }}%
-                  </td>
                   <td class="right">
                     {% if can_edit %}
                       <button form="setup-remove" type="submit" name="target" value="task:{{ task['id'] }}"
                               class="btn btn-danger btn-sm">Delete</button>
                     {% endif %}
+                  </td>
+                </tr>
+                {# The split gets its own row so every trade is visible with its
+                   name beside it, however many trades the project has. #}
+                <tr class="split-row">
+                  <td></td>
+                  <td colspan="8">
+                    <div class="split-fields">
+                      <span class="small muted">Trade split</span>
+                      {% for tr in trades %}
+                        <label class="split-field">
+                          <span class="swatch" style="background:{{ tr['color'] }}"></span>
+                          <span class="small ink2">{{ tr['name'] }}</span>
+                          <input form="{{ F }}" type="number" name="task_{{ task['id'] }}_alloc_{{ tr['id'] }}"
+                                 min="0" max="100" step="1" class="right"
+                                 value="{{ (task['allocations'].get(tr['id'], 0) * 100) | round | int }}"
+                                 {{ 'disabled' if not can_edit }}>
+                          <span class="small muted">%</span>
+                        </label>
+                      {% endfor %}
+                      <span class="split-total tabular small {{ 'bad-text' if (split_total | round(0)) != 100 else 'good-text' }}">
+                        {{ split_total | round | int }}%
+                      </span>
+                      {% if not trades %}
+                        <span class="small muted">Add trades above to split this deliverable.</span>
+                      {% endif %}
+                    </div>
                   </td>
                 </tr>
               {% endfor %}

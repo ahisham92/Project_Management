@@ -313,6 +313,17 @@ ul.list > li:first-child { border-top: none; }
 .timesheet-grid.single { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 900px) { .timesheet-grid { grid-template-columns: minmax(0, 1fr); } }
 
+/* --- the setup sheet's trade split ---------------------------------------
+ * Each deliverable's split sits on its own row, so every trade stays visible
+ * with its name beside it no matter how many trades a project has.
+ */
+
+.split-row > td { border-top: none; padding-top: 0; padding-bottom: 12px; }
+.split-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.split-field { display: inline-flex; align-items: center; gap: 5px; }
+.split-field input { width: 62px; }
+.split-total { margin-left: auto; font-weight: 600; white-space: nowrap; }
+
 /* --- the setup sheet's save bar ------------------------------------------- */
 
 .save-bar {

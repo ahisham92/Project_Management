@@ -245,6 +245,50 @@ def test_removing_something_that_is_not_ours_does_nothing(signed_in):
     )
 
 
+def test_every_trade_is_editable_on_each_deliverable(signed_in, database):
+    """The split used to sit in extra columns that scrolled off the right, so
+    only the first trade was reachable. It now has its own row per deliverable."""
+    unlock(signed_in)
+    body = text(signed_in.get("/projects/1/setup"))
+
+    conn = connect(database)
+    try:
+        trades = conn.execute("SELECT id, name FROM trades WHERE project_id = 1 ORDER BY sort_order").fetchall()
+        task_id = conn.execute("SELECT id FROM tasks WHERE wbs = '1.1'").fetchone()["id"]
+    finally:
+        conn.close()
+    assert len(trades) == 4
+
+    for trade in trades:
+        assert f'name="task_{task_id}_alloc_{trade["id"]}"' in body, f"{trade['name']} has no input"
+
+    # Each box is labelled with its trade, so they cannot be confused. Take the
+    # markup from this deliverable's first field to its last split input.
+    start = body.index(f'name="task_{task_id}_wbs"')
+    end = body.index(f'name="task_{task_id}_alloc_{trades[-1]["id"]}"')
+    window = body[start:end]
+    for trade in trades:
+        assert trade["name"] in window, f"{trade['name']} is not labelled beside its input"
+
+
+def test_a_new_trade_appears_on_every_deliverable(signed_in, database):
+    unlock(signed_in)
+    signed_in.post(
+        "/projects/1/trades", data={"name": "Surveying", "budget_hours": "100"}, follow_redirects=True
+    )
+    body = text(signed_in.get("/projects/1/setup"))
+
+    conn = connect(database)
+    try:
+        new_trade = conn.execute("SELECT id FROM trades WHERE key = 'surveying'").fetchone()["id"]
+        task_ids = [r["id"] for r in conn.execute("SELECT id FROM tasks WHERE project_id = 1 LIMIT 5")]
+    finally:
+        conn.close()
+
+    for task_id in task_ids:
+        assert f'name="task_{task_id}_alloc_{new_trade}"' in body
+
+
 # --- print / PDF ------------------------------------------------------------
 
 def test_the_report_tabs_offer_a_print_button(signed_in):

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from flask import Flask
+
+from .dates import DISPLAY, to_display
 
 
 def pct(value: Any, digits: int = 1) -> str:
@@ -39,12 +40,15 @@ def index(value: Any) -> str:
 
 
 def short_date(value: Any) -> str:
+    """Every date on screen reads dd/mm/yyyy, whatever the viewer's locale."""
     if not value:
         return "—"
-    try:
-        return datetime.strptime(str(value)[:10], "%Y-%m-%d").strftime("%d %b %Y")
-    except ValueError:
-        return str(value)
+    return to_display(value) or "—"
+
+
+def date_input(value: Any) -> str:
+    """The dd/mm/yyyy value for a text date field; blank rather than a dash."""
+    return to_display(value)
 
 
 def variance_state(value: Any) -> str:
@@ -74,6 +78,8 @@ def bar_width(value: Any) -> str:
 
 
 def register(app: Flask) -> None:
-    for func in (pct, signed_pct, hours, num, index, short_date, variance_state, usage_state, bar_width):
+    for func in (pct, signed_pct, hours, num, index, short_date, date_input,
+                 variance_state, usage_state, bar_width):
         app.jinja_env.filters[func.__name__] = func
         app.jinja_env.globals[func.__name__] = func
+    app.jinja_env.globals["DATE_FORMAT"] = DISPLAY

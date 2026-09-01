@@ -8,8 +8,8 @@ It replaces the spreadsheet with something several people can use at once, from 
 across a whole **portfolio** of projects.
 
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
-is SQLite, which is part of Python itself. The only two packages it needs are Flask and
-Waitress.
+is SQLite, which is part of Python itself. It needs three packages: Flask, Waitress and
+openpyxl (for the Excel round trip).
 
 ---
 
@@ -71,28 +71,74 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 |---|---|
 | **Portfolio** | Across every project I manage: how far ahead or behind am I, what is late, how many hours have I burned? |
 | **Dashboard** | For one project: earned vs planned progress, the S-curve, progress and budget by trade, what needs attention. |
-| **Progress** | The full WBS. Report a new % complete on any deliverable; every update is kept as history. |
-| **Schedule** | What is **late**, what is **due soon**, and what is **behind plan** but not yet late. |
+| **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
+| **Schedule** | What is **late**, what is **due soon** (any window, or **all dates**), and what is **behind plan** but not yet late. Shows every workflow date per line: IDC, comments, submission, Code A. |
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
-| **Setup** | Deliverables, weights, schedule months, trade splits, sections, and who can see the project. |
+| **Setup** | Deliverables, weights, dates, trade splits, sections, the design workflow, revision rules, and who can see the project. **Locked** by default, and round-trips to **Excel**. |
 
 ### How progress is measured
 
-These are the workbook's own rules, implemented in `app/calc.py`:
+Every deliverable has a **start date** and a **submission date** (type either the date or a
+number of days from NTP — the form takes both). Progress is reported by moving the line
+through the **design workflow**:
+
+| Status | Worth | Planned |
+|---|---|---|
+| Design started | 10% | on the start date |
+| IDC provided | 40% | 5 days **before** submission |
+| Comments addressed | 60% | 2 days **before** submission |
+| Submitted to client | 80% | on the submission date |
+| Code A received | 100% | 14 days **after** submission |
+
+**Every number in that table is editable** on the Setup sheet — the percentages, whether a
+step hangs off the start or the submission date, and the day offset. You can add and remove
+steps too.
+
+Planned percent **interpolates between consecutive steps**, so it lands exactly on a step's
+percentage on that step's own date and ramps smoothly in between — which is what makes the
+S-curve a curve rather than a staircase.
+
+Lines that are not design submissions — meetings, milestones — are tracked as a **simple
+percentage** you type, ramping between the two dates, or stepping 0% → 100% on the date when
+both are the same. The seeded project sets the bi-weekly meetings this way automatically.
 
 ```
 weight %         = weight points / total weight points        (always totals 100%)
-elapsed months   = (data date - NTP) / days per month
-planned %        = linear ramp between a line's start and finish month
-                   (finish <= start makes it a milestone: 0% -> 100% on its date)
 earned progress  = weight % x actual % complete
 variance         = earned - planned
 ```
 
 Weights are entered as **points**, not percentages, so adding a line dilutes the others
 instead of pushing the total past 100%.
+
+### Resubmissions
+
+A deliverable that is submitted but does not come back with a Code A is not simply "late" —
+it goes round again. On the Progress tab, **Comments** on a submitted line records that:
+
+- the **revision** goes up by one (Rev 1, Rev 2, …);
+- the line drops back to the step you nominate (default **Comments addressed**, 60%), so
+  earned progress falls to reflect the rework, and the drop shows in the period report;
+- a **new submission date** is set — either the one you type, or the comments date plus the
+  project's **rework days** (default 7);
+- every downstream planned date moves with it, so the schedule and the S-curve follow;
+- the cycle is written to the deliverable's **history**, with the outcome of each revision.
+
+Once submitted, a line is judged on its **Code A date** rather than its submission date, so
+work sitting with the client is not reported as late until the approval is actually overdue.
+
+A project has a **maximum revisions** setting (default 10). A deliverable that reaches it is
+flagged for escalation on the schedule and cannot be pushed further without raising the
+limit — so a line stuck at Rev 10 is visible rather than quietly cycling.
+
+### Dates
+
+Every date reads and is typed as **dd/mm/yyyy** — 1 September is `01/09/2026`. The fields are
+plain text rather than the browser's date picker, because a native picker follows the
+machine's locale, which is why 1 September could show as `09/01`. Typing is forgiving:
+`01/09/2026`, `1/9/26`, `01-09-2026` and `2026-09-01` are all understood.
 
 Each deliverable is split across **trades** (disciplines). A trade's percent complete is
 measured against its own share of the scope, which is what drives budget control:
@@ -103,17 +149,40 @@ CPI          = earned hours / hours booked
 forecast     = budget / CPI          variance at completion = budget - forecast
 ```
 
-### One deliberate difference from the source workbook
+### The setup sheet is locked
 
-The workbook states that "month 0 = NTP", but its elapsed-time cell computes
-`data date - NTP + 1`, so it credits a day of elapsed time on the NTP date itself. The two
-conventions give different **planned** percentages (1.76% vs 1.38% at the 2026-09-01 cut-off).
+Setup holds the basis of every figure in the project, so the whole page is **read-only until
+you unlock it**. The starting password is **2026**, and it can be changed on the page itself.
 
-Rather than silently pick one, this is a per-project setting under **Setup → Elapsed time
-convention**. New projects default to "month 0 = NTP", which is consistent with the
-schedule columns and with the late/due day counts. **The seeded Sibline Port project is set
-to the workbook's convention, so its figures match your existing reports exactly.**
-Earned progress is unaffected either way.
+This is a guard against accidental edits, the way a protected spreadsheet is — not a security
+boundary. Anyone with manager access to the project can be given the password; what really
+controls who can change a project is the **role** (see Access model below).
+
+### Setup ↔ Excel
+
+**Export to Excel** writes the whole setup to one workbook: project settings, the workflow,
+trades, sections, and every deliverable with its weight, dates and trade split. Edit it in
+Excel and **Import from Excel** brings it back.
+
+- Deliverables are matched on **WBS**, so a line keeps its identity, its history and its
+  booked hours across a round trip. A row deleted from the workbook is deleted from the
+  project.
+- **Status and Revision are exported for reference but never read back.** Progress belongs to
+  the app; importing a workbook exported last week must not revert what was reported since.
+- The file is checked in full before anything is written — a trade split that does not total
+  100%, or a row with no date, is rejected and the project is left exactly as it was.
+
+### How planned progress relates to the source workbook
+
+The original control workbook derived planned progress from a linear ramp over *elapsed
+months*. This app derives it from the workflow's *step dates*, which is a different — and for
+design submissions, more truthful — model: at the 2026-09-01 cut-off the seeded project reads
+2.21% planned rather than the workbook's 1.76%. Earned progress, the weights and the per-trade
+figures are unchanged.
+
+The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradicting its own
+"month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
+per-project setting under **Setup → Elapsed time convention**.
 
 ---
 
@@ -121,10 +190,16 @@ Earned progress is unaffected either way.
 
 1. **New project** on the portfolio page — set the code, client, NTP date and duration.
 2. Add the **trades** that carry the budget, in hours. (15 man-months at 176 h/month = 2,640 h.)
-3. In **Setup**, add **sections** (your scope headings), then the **deliverables** under
-   each one with their weight points and start/finish months.
-4. Set each deliverable's **trade split** — it must total 100%.
-5. Report progress on the **Progress** tab and book hours on the **Timesheet** tab.
+3. **Unlock** the Setup sheet with the setup password (**2026** to begin with).
+4. Add **sections** (your scope headings), then the **deliverables** under each one with
+   their weight points and their start and submission dates.
+5. Check the **design workflow** — the five steps and their offsets — and adjust it to how
+   your submissions actually run.
+6. Set each deliverable's **trade split** — it must total 100%.
+7. Report progress on the **Progress** tab and book hours on the **Timesheet** tab.
+
+For a large scope, step 4 is far quicker in Excel: **Export to Excel**, fill in the
+Deliverables sheet, and **Import from Excel**.
 
 The Sibline Port project is loaded from `seed/sibline-port.json`, which was converted from
 the control workbook — use it as a worked example of the shape of the data.
@@ -179,6 +254,9 @@ All optional — see `.env.example`.
 | `ALLOW_SIGNUP` | `false` blocks self-registration. The first account is always allowed. |
 | `SEED_EMAIL` / `SEED_PASSWORD` / `SEED_NAME` | Used by `python run.py seed`. |
 
+The **setup password** is not an environment variable — it is stored per project and changed
+on the Setup sheet itself.
+
 ---
 
 ## Access model
@@ -200,9 +278,11 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-41 tests: the calculation engine against the workbook's published figures, and the web
-layer (sign-in, every page, reporting progress, booking hours, trade splits, and the
-permission rules).
+82 tests: the calculation engine (the workflow step dates, planned interpolation,
+resubmissions and the revision cap, and the workbook's own weights, earned progress and
+per-trade man-months), the web layer (sign-in, every page, reporting progress by status,
+raising revisions, booking hours, the dd/mm/yyyy dates, the setup lock and the permission
+rules), and the Excel round trip.
 
 There is also a browser smoke test that drives the real app:
 
@@ -230,6 +310,9 @@ app/
   service.py            loading and roll-up helpers
   charts.py             charts drawn as inline SVG on the server
   filters.py            template formatting helpers
+  workflow.py           the design workflow: steps, their dates, and revision rules
+  excel.py              writing and reading the setup workbook
+  dates.py              dd/mm/yyyy in, ISO stored
   seed.py               loads the demo project
   views/                the pages
   templates/            Jinja2 templates

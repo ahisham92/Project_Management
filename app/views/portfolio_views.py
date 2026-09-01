@@ -7,7 +7,8 @@ from flask import Blueprint, flash, g, redirect, render_template, request, url_f
 from ..auth import login_required
 from ..charts import SERIES_SLOTS
 from ..db import insert, query_one
-from ..service import portfolio, today
+from ..dates import from_input_or
+from ..service import install_default_steps, portfolio, today
 
 bp = Blueprint("portfolio", __name__)
 
@@ -15,7 +16,7 @@ bp = Blueprint("portfolio", __name__)
 @bp.get("/")
 @login_required
 def index():
-    data_date = request.args.get("data_date") or today()
+    data_date = from_input_or(request.args.get("data_date"), today())
     data = portfolio(g.user, data_date)
     return render_template("portfolio.html", data_date=data_date, **data)
 
@@ -49,12 +50,14 @@ def new_project():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    form["code"], form["name"], form["client"], form["description"], form["ntp_date"],
+                    form["code"], form["name"], form["client"], form["description"],
+                    from_input_or(form["ntp_date"], today()),
                     float(form["duration_months"]), float(form["days_per_month"] or 30.4375),
                     float(form["hours_per_month"] or 176), float(form["elapsed_day_offset"] or 0),
                     g.user["id"],
                 ),
             )
+            install_default_steps(project_id)
             for index, trade in enumerate(t for t in trades if t["name"]):
                 key = _slug(trade["name"]) or f"trade_{index + 1}"
                 insert(

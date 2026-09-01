@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 from .calc import days_between
+from .dates import to_display
 
 from markupsafe import Markup, escape
 
@@ -53,18 +54,16 @@ def _fmt_hours(value: float, digits: int = 0) -> str:
 
 
 def _short_date(iso: str) -> str:
-    try:
-        return datetime.strptime(str(iso)[:10], "%Y-%m-%d").strftime("%d %b %Y")
-    except ValueError:
-        return str(iso)
+    return to_display(iso) or str(iso)
 
 
 def _axis_label(iso: str, with_day: bool) -> str:
+    """Axis ticks follow the same dd/mm reading order as the rest of the app."""
     try:
         parsed = datetime.strptime(str(iso)[:10], "%Y-%m-%d")
     except ValueError:
         return str(iso)
-    return parsed.strftime("%d %b") if with_day else parsed.strftime("%b %Y")
+    return parsed.strftime("%d/%m") if with_day else parsed.strftime("%m/%Y")
 
 
 def _tip(title: str, rows: Sequence[Mapping[str, Any]]) -> str:

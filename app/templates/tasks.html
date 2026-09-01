@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "partials/bits.html" import progress, task_status, task_color, empty %}
+{% from "partials/bits.html" import progress, task_status, task_color, revision_badge, badge, date_field, empty %}
 {% block title %}Progress — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
 {% block content %}
 {% set t = snapshot['totals'] %}
+{% set limit = snapshot['max_revisions'] %}
 
 <div class="page-head">
   <div>
@@ -12,15 +13,13 @@
     <p class="small muted" style="margin-top:2px">
       {{ project['name'] }} · {{ pct(t['earned_progress'], 2) }} earned of
       {{ pct(t['planned_progress'], 2) }} planned ({{ signed_pct(t['variance'], 2) }})
+      {% if t['rework_count'] %} · {{ t['rework_count'] }} in rework{% endif %}
     </p>
   </div>
   <form method="get" class="inline-form">
     <input type="hidden" name="filter" value="{{ active_filter }}">
     <input type="hidden" name="q" value="{{ search }}">
-    <label class="field w-md">
-      <span class="field-label">Report progress as at</span>
-      <input type="date" name="data_date" value="{{ data_date }}">
-    </label>
+    {{ date_field('data_date', data_date, 'Report progress as at', 'w-md') }}
     <button type="submit" class="btn btn-ghost">Apply</button>
   </form>
 </div>
@@ -28,17 +27,17 @@
 <div class="inline-form" style="margin-bottom:12px">
   <div class="chips">
     {% for key, label in filters %}
-      <a href="{{ url_for('projects.tasks', project_id=project['id'], filter=key, q=search or none, data_date=data_date) }}"
+      <a href="{{ url_for('projects.tasks', project_id=project['id'], filter=key, q=search or none, data_date=date_input(data_date)) }}"
          class="{{ 'active' if active_filter == key }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" class="inline-form">
     <input type="hidden" name="filter" value="{{ active_filter }}">
-    <input type="hidden" name="data_date" value="{{ data_date }}">
+    <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
     <input name="q" value="{{ search }}" placeholder="Search deliverables…" class="w-lg">
     <button type="submit" class="btn btn-ghost">Search</button>
     {% if search %}
-      <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, data_date=data_date) }}">Clear</a>
+      <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, data_date=date_input(data_date)) }}">Clear</a>
     {% endif %}
   </form>
   <span class="small muted">{{ shown }} shown</span>
@@ -69,46 +68,97 @@
       <table>
         <thead>
           <tr>
-            <th>WBS</th><th>Deliverable</th><th class="right">Weight</th><th class="right">Due</th>
-            <th class="right">Planned</th><th style="min-width:170px">Actual</th>
-            <th class="right">Variance</th><th>Status</th><th></th>
+            <th>WBS</th><th>Deliverable</th><th class="right">Weight</th>
+            <th class="right">Submission</th><th class="right">Planned</th>
+            <th style="min-width:190px">Status &amp; progress</th>
+            <th class="right">Variance</th><th></th><th></th>
           </tr>
         </thead>
         <tbody>
           {% for task in group['tasks'] %}
-            <tr>
+            <tr id="task-{{ task['id'] }}">
               <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
               <td>
                 {{ task['name'] }}
                 {% if task['remarks'] %}<p class="small muted" style="margin-top:2px">{{ task['remarks'] }}</p>{% endif %}
-                {% if editing == task['id'] and can_report %}
-                  <input form="progress-{{ task['id'] }}" name="note" placeholder="Note for this update (optional)" style="margin-top:8px">
-                {% endif %}
+                <p class="small" style="margin-top:4px">{{ revision_badge(task, limit) }}</p>
               </td>
               <td class="right tabular ink2">
                 {{ pct(task['weight_pct'], 2) }}
                 <span class="small muted" style="display:block">{{ num(task['weight_points'], 1) }} pts</span>
               </td>
               <td class="right small ink2 nowrap">
-                {{ short_date(task['due_date']) }}
-                <span class="muted" style="display:block">
-                  {% if task['is_milestone'] %}milestone{% else %}mo {{ num(task['start_month'], 1) }}–{{ num(task['finish_month'], 1) }}{% endif %}
-                </span>
+                {{ short_date(task['submission_date']) }}
+                {% if task['uses_workflow'] %}
+                  <span class="muted" style="display:block">Code A {{ short_date(task['approval_due_date']) }}</span>
+                {% endif %}
               </td>
               <td class="right tabular ink2">{{ pct(task['planned_pct'], 0) }}</td>
               <td>
+                <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+                  <span class="tabular" style="font-weight:500">
+                    {{ pct(task['actual_pct'], 0) }}
+                    {% if task['status_name'] %}<span class="muted"> · {{ task['status_name'] }}</span>{% endif %}
+                  </span>
+                  <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
+                </div>
+                {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+
                 {% if editing == task['id'] and can_report %}
-                  <div class="inline-form" style="gap:4px">
-                    <input form="progress-{{ task['id'] }}" type="number" name="actual_pct" min="0" max="100" step="1"
-                           value="{{ (task['actual_pct'] * 100) | round(0, 'common') | int }}" class="w-sm right" autofocus required>
-                    <span class="small muted">%</span>
-                  </div>
-                {% else %}
-                  <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
-                    <span class="tabular" style="font-weight:500">{{ pct(task['actual_pct'], 0) }}</span>
-                    <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
-                  </div>
-                  {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+                  <form method="post" class="inline-form" style="margin-top:8px;gap:6px"
+                        action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}">
+                    <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
+                    <input type="hidden" name="filter" value="{{ active_filter }}">
+                    <input type="hidden" name="q" value="{{ search }}">
+                    {% if task['uses_workflow'] %}
+                      <label class="field flex1">
+                        <span class="field-label">Status reached</span>
+                        <select name="status_key">
+                          <option value="" {{ 'selected' if not task['status_key'] }}>Not started — 0%</option>
+                          {% for step in steps %}
+                            <option value="{{ step['key'] }}" {{ 'selected' if task['status_key'] == step['key'] }}>
+                              {{ step['name'] }} — {{ pct(step['percent'], 0) }}
+                            </option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    {% else %}
+                      <label class="field w-sm">
+                        <span class="field-label">Percent</span>
+                        <input type="number" name="actual_pct" min="0" max="100" step="1" class="right"
+                               value="{{ (task['actual_pct'] * 100) | round | int }}" required>
+                      </label>
+                    {% endif %}
+                    <label class="field flex1">
+                      <span class="field-label">Note (optional)</span>
+                      <input name="note" placeholder="What changed">
+                    </label>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <a class="btn btn-ghost"
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date)) }}#task-{{ task['id'] }}">Cancel</a>
+                  </form>
+                {% endif %}
+
+                {% if commenting == task['id'] and can_report %}
+                  <form method="post" class="inline-form" style="margin-top:8px;gap:6px"
+                        action="{{ url_for('projects.record_task_comments', project_id=project['id'], task_id=task['id']) }}">
+                    <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
+                    <input type="hidden" name="filter" value="{{ active_filter }}">
+                    <input type="hidden" name="q" value="{{ search }}">
+                    {{ date_field('comments_date', data_date, 'Comments received', 'w-md', required=True) }}
+                    {{ date_field('new_submission_date', '', 'Resubmission date', 'w-md') }}
+                    <label class="field flex1">
+                      <span class="field-label">Note (optional)</span>
+                      <input name="note" placeholder="Comment reference">
+                    </label>
+                    <button type="submit" class="btn btn-primary">Raise revision</button>
+                    <a class="btn btn-ghost"
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date)) }}#task-{{ task['id'] }}">Cancel</a>
+                    <p class="small muted" style="width:100%">
+                      Leave the resubmission date blank to plan it {{ num(project['rework_days'], 0) }} days
+                      after the comments, as set on the Setup sheet.
+                    </p>
+                  </form>
                 {% endif %}
               </td>
               <td class="right tabular {{ 'good-text' if task['variance'] >= 0 else 'bad-text' }}">
@@ -116,23 +166,17 @@
               </td>
               <td>{{ task_status(task) }}</td>
               <td class="right nowrap">
-                {% if can_report %}
-                  {% if editing == task['id'] %}
-                    <form method="post" id="progress-{{ task['id'] }}"
-                          action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}"
-                          style="display:inline-flex;gap:4px">
-                      <input type="hidden" name="data_date" value="{{ data_date }}">
-                      <input type="hidden" name="filter" value="{{ active_filter }}">
-                      <input type="hidden" name="q" value="{{ search }}">
-                      <button type="submit" class="btn btn-primary btn-sm">Save</button>
-                    </form>
+                {% if can_report and editing != task['id'] and commenting != task['id'] %}
+                  <a class="btn btn-ghost btn-sm"
+                     href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), edit=task['id']) }}#task-{{ task['id'] }}">Update</a>
+                  {% if task['is_submitted'] and not task['is_approved'] %}
                     <a class="btn btn-ghost btn-sm"
-                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=data_date) }}">Cancel</a>
-                  {% else %}
-                    <a class="btn btn-ghost btn-sm"
-                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=data_date, edit=task['id']) }}#task-{{ task['id'] }}">Update</a>
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), comments=task['id']) }}#task-{{ task['id'] }}"
+                       title="The client returned comments instead of a Code A">Comments</a>
                   {% endif %}
                 {% endif %}
+                <a class="btn btn-ghost btn-sm"
+                   href="{{ url_for('projects.task_history', project_id=project['id'], task_id=task['id']) }}">History</a>
               </td>
             </tr>
           {% endfor %}

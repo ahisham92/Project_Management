@@ -127,6 +127,41 @@ def require_edit(role: str, message: str = "You do not have permission to change
     return True
 
 
+# --- setup sheet lock ------------------------------------------------------
+#
+# This guards the Setup sheet from accidental edits, the way a protected
+# spreadsheet does. It is a workflow guard, not a security boundary: anyone with
+# manager access to the project can be given the password. Real access control
+# is the project role.
+
+DEFAULT_SETUP_PASSWORD = "2026"
+
+
+def setup_password_hash(project: Any) -> str:
+    stored = (project["setup_password_hash"] or "").strip()
+    return stored or generate_password_hash(DEFAULT_SETUP_PASSWORD)
+
+
+def check_setup_password(project: Any, attempt: str) -> bool:
+    return check_password_hash(setup_password_hash(project), attempt or "")
+
+
+def unlock_setup(project_id: int) -> None:
+    unlocked = set(session.get("setup_unlocked") or [])
+    unlocked.add(int(project_id))
+    session["setup_unlocked"] = sorted(unlocked)
+
+
+def lock_setup(project_id: int) -> None:
+    unlocked = set(session.get("setup_unlocked") or [])
+    unlocked.discard(int(project_id))
+    session["setup_unlocked"] = sorted(unlocked)
+
+
+def setup_unlocked(project_id: int) -> bool:
+    return int(project_id) in set(session.get("setup_unlocked") or [])
+
+
 def visible_project_ids(user: Any) -> list[int]:
     """Every project id the user may see."""
     if user["role"] == "admin":

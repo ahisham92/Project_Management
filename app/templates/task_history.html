@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, progress, task_status, revision_badge, empty %}
+{% block title %}{{ task['wbs'] }} — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="small muted" style="text-decoration:none"
+       href="{{ url_for('projects.tasks', project_id=project['id']) }}">← Progress</a>
+    <h1 style="margin-top:6px">{{ task['wbs'] }} {{ task['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      Start {{ short_date(task['start_date']) }} · Submission {{ short_date(task['submission_date']) }} ·
+      {{ 'Design workflow' if task['tracking'] == 'workflow' else 'Simple percentage' }}
+    </p>
+  </div>
+  <div class="inline-form">
+    {% if computed %}{{ task_status(computed) }}{% endif %}
+    {{ revision_badge(task, project['max_revisions']) }}
+  </div>
+</div>
+
+{% if computed and computed['step_plan'] %}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Workflow for revision {{ task['revision'] }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          Each step's planned date, and whether it has been reached
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      <table>
+        <thead>
+          <tr><th>Step</th><th class="right">Worth</th><th class="right">Planned</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          {% for step in computed['step_plan'] %}
+            <tr>
+              <td>{{ step['name'] }}</td>
+              <td class="right tabular ink2">{{ pct(step['percent'], 0) }}</td>
+              <td class="right small ink2 nowrap">{{ short_date(step['date']) }}</td>
+              <td>
+                {% if computed['actual_pct'] >= step['percent'] %}{{ badge('good', 'Reached') }}
+                {% elif step['date'] < data_date %}{{ badge('critical', 'Overdue') }}
+                {% else %}{{ badge('neutral', 'Ahead') }}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Submission history</h2>
+      <p class="small muted" style="margin-top:2px">Every submission cycle and how the client responded</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not revisions %}
+      {{ empty('No submissions recorded yet',
+               'A cycle is recorded when the deliverable reaches Code A, or when comments come back.') }}
+    {% else %}
+      <table>
+        <thead>
+          <tr><th>Revision</th><th class="right">Submission planned</th><th>Outcome</th>
+              <th class="right">On</th><th>Note</th><th>By</th></tr>
+        </thead>
+        <tbody>
+          {% for r in revisions %}
+            <tr>
+              <td>Rev {{ r['revision'] }}</td>
+              <td class="right small ink2 nowrap">{{ short_date(r['submission_date']) }}</td>
+              <td>
+                {% if r['outcome'] == 'code_a' %}{{ badge('good', 'Code A received') }}
+                {% elif r['outcome'] == 'comments' %}{{ badge('warning', 'Comments returned') }}
+                {% else %}{{ badge('neutral', 'Open') }}{% endif %}
+              </td>
+              <td class="right small ink2 nowrap">{{ short_date(r['outcome_date']) if r['outcome_date'] else '—' }}</td>
+              <td class="small ink2">{{ r['note'] or '—' }}</td>
+              <td class="small muted">{{ r['user_name'] or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Progress reported</h2>
+      <p class="small muted" style="margin-top:2px">{{ updates | length }} update{{ '' if updates | length == 1 else 's' }}</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not updates %}
+      {{ empty('No progress reported yet') }}
+    {% else %}
+      <table>
+        <thead>
+          <tr><th>Data date</th><th class="right">From</th><th class="right">To</th>
+              <th>Note</th><th>By</th><th class="right">Recorded</th></tr>
+        </thead>
+        <tbody>
+          {% for u in updates %}
+            <tr>
+              <td class="small ink2 nowrap">{{ short_date(u['data_date']) }}</td>
+              <td class="right tabular muted">{{ pct(u['previous_pct'], 0) }}</td>
+              <td class="right tabular {{ 'bad-text' if u['actual_pct'] < u['previous_pct'] else '' }}"
+                  style="font-weight:500">{{ pct(u['actual_pct'], 0) }}</td>
+              <td class="small ink2">{{ u['note'] or '—' }}</td>
+              <td class="small muted">{{ u['user_name'] or '—' }}</td>
+              <td class="right small muted nowrap">{{ u['created_at'][:16] }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

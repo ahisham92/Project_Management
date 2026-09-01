@@ -31,7 +31,7 @@ def main() -> int:
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**launch)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(viewport={"width": 1440, "height": 1000}, accept_downloads=True)
         page.on("console", lambda m: failures.append(f"console: {m.text}") if m.type == "error" else None)
         page.on("pageerror", lambda e: failures.append(f"pageerror: {e}"))
 
@@ -78,13 +78,17 @@ def main() -> int:
         ))
         step("chart tooltip appears on hover", _hover_tooltip)
         step("progress page lists deliverables", _progress_page)
-        step("records a progress update", _record_progress)
+        step("records a progress update by status", _record_progress)
+        step("raises a revision when comments come back", _raise_revision)
         step("filters to late deliverables", _filter_late)
         step("schedule page splits late / due soon / behind", _schedule)
+        step("schedule shows all dates and every workflow column", _all_dates)
+        step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
         step("period report shows what moved", _period)
-        step("setup page loads the editable deliverable list", _setup)
+        step("setup starts locked and opens with the password", _setup_lock)
+        step("setup exports to Excel", _excel_export)
         step("dark mode renders", _dark)
         step("mobile layout does not overflow horizontally", _mobile)
 
@@ -130,15 +134,77 @@ def _progress_page(page) -> None:
 
 
 def _record_progress(page) -> None:
+    """Progress is reported by moving a deliverable to a workflow step."""
     row = page.locator("tr", has_text="Coastal numerical modelling").first
     row.locator("a:has-text('Update')").click()
-    page.wait_for_selector("input[name=actual_pct]", timeout=8000)
-    page.fill("input[name=actual_pct]", "35")
+    page.wait_for_selector("select[name=status_key]", timeout=8000)
+    page.select_option("select[name=status_key]", label="Submitted to client — 80%")
     page.click("button:has-text('Save')")
-    page.wait_for_selector("text=updated to 35%", timeout=8000)
+    page.wait_for_selector("text=updated to 80%", timeout=8000)
     text = page.locator("tr", has_text="Coastal numerical modelling").first.text_content()
-    if "35%" not in text:
-        raise AssertionError(f"progress did not persist: {text[:120]}")
+    if "80%" not in text or "Submitted to client" not in text:
+        raise AssertionError(f"status did not persist: {text[:160]}")
+
+
+def _raise_revision(page) -> None:
+    """The client returns comments instead of a Code A."""
+    row = page.locator("tr", has_text="Coastal numerical modelling").first
+    row.locator("a:has-text('Comments')").click()
+    page.wait_for_selector("input[name=comments_date]", timeout=8000)
+    page.fill("input[name=comments_date]", "05/09/2026")
+    page.fill("input[name=note]", "Code B returned")
+    page.click("button:has-text('Raise revision')")
+    page.wait_for_selector("text=moved to revision 1", timeout=8000)
+    text = page.locator("tr", has_text="Coastal numerical modelling").first.text_content()
+    if "Rev 1" not in text:
+        raise AssertionError(f"revision not shown: {text[:160]}")
+    page.screenshot(path=str(SHOTS / "05-revision.png"), full_page=True)
+
+
+def _all_dates(page) -> None:
+    page.click("a:has-text('Schedule')")
+    page.wait_for_selector("text=Late deliverables", timeout=8000)
+    page.select_option("select[name=horizon]", "all")
+    page.click("button:has-text('Apply')")
+    page.wait_for_selector("text=Due in everything ahead", timeout=8000)
+    body = page.text_content("body")
+    for column in ("IDC", "Comments", "Submission", "Code A"):
+        if column not in body:
+            raise AssertionError(f"the schedule is missing the {column} column")
+    page.screenshot(path=str(SHOTS / "06-schedule-all.png"), full_page=True)
+
+
+def _dates_read_dd_mm(page) -> None:
+    body = page.text_content("body")
+    if "31/08/2026" not in body:
+        raise AssertionError("dates should read dd/mm/yyyy")
+    if page.locator("input[type=date]").count():
+        raise AssertionError("a native date picker would follow the machine's locale")
+
+
+def _setup_lock(page) -> None:
+    page.click("a:has-text('Setup')")
+    page.wait_for_selector("text=Project setup", timeout=8000)
+    if "Locked" not in page.text_content("body"):
+        raise AssertionError("the setup sheet should start locked")
+
+    page.fill("input[name=password]", "2026")
+    page.click("button:has-text('Unlock')")
+    page.wait_for_selector("text=Setup sheet unlocked", timeout=8000)
+    body = page.text_content("body")
+    for expected in ("Design workflow", "IDC provided", "Maximum revisions",
+                     "Rework days", "Export to Excel", "Import from Excel"):
+        if expected not in body:
+            raise AssertionError(f"setup is missing {expected!r}")
+    page.screenshot(path=str(SHOTS / "10-setup.png"), full_page=True)
+
+
+def _excel_export(page) -> None:
+    with page.expect_download(timeout=10000) as download:
+        page.click("a:has-text('Export to Excel')")
+    name = download.value.suggested_filename
+    if not name.endswith(".xlsx"):
+        raise AssertionError(f"unexpected download: {name}")
 
 
 def _filter_late(page) -> None:
@@ -187,13 +253,6 @@ def _period(page) -> None:
     page.wait_for_selector("text=Period report", timeout=8000)
     page.wait_for_selector("text=Earned in period by trade")
     page.screenshot(path=str(SHOTS / "08-period.png"), full_page=True)
-
-
-def _setup(page) -> None:
-    page.click("a:has-text('Setup')")
-    page.wait_for_selector("text=Project setup", timeout=8000)
-    page.wait_for_selector("text=Deliverables")
-    page.screenshot(path=str(SHOTS / "09-setup.png"), full_page=True)
 
 
 def _dark(page) -> None:

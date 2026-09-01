@@ -63,10 +63,78 @@ def init_db(path: Path | str | None = None) -> None:
     conn = connect(path)
     try:
         conn.executescript((HERE / "schema.sql").read_text(encoding="utf-8"))
-        _ensure_column(conn, "projects", "elapsed_day_offset", "REAL NOT NULL DEFAULT 0")
+
+        for table, column, definition in (
+            ("projects", "elapsed_day_offset", "REAL NOT NULL DEFAULT 0"),
+            ("projects", "max_revisions", "INTEGER NOT NULL DEFAULT 10"),
+            ("projects", "rework_days", "REAL NOT NULL DEFAULT 7"),
+            ("projects", "revision_reset_step", "TEXT NOT NULL DEFAULT 'comments_addressed'"),
+            ("projects", "setup_password_hash", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "start_date", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "submission_date", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "tracking", "TEXT NOT NULL DEFAULT 'workflow'"),
+            ("tasks", "status_key", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "revision", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            _ensure_column(conn, table, column, definition)
+
+        _migrate_months_to_dates(conn)
+        _ensure_workflow_steps(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:
+    """Fills in start and submission dates for deliverables created when the
+    schedule was held as elapsed months since NTP."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "start_month" not in columns:
+        return
+
+    from datetime import datetime, timedelta
+
+    rows = conn.execute(
+        """
+        SELECT t.id, t.start_month, t.finish_month, p.ntp_date, p.days_per_month
+        FROM tasks t JOIN projects p ON p.id = t.project_id
+        WHERE t.start_date = '' OR t.submission_date = ''
+        """
+    ).fetchall()
+    for row in rows:
+        try:
+            ntp = datetime.strptime(str(row["ntp_date"])[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        per_month = float(row["days_per_month"] or 30.4375)
+        start = ntp + timedelta(days=float(row["start_month"] or 0) * per_month)
+        finish = ntp + timedelta(days=float(row["finish_month"] or 0) * per_month)
+        conn.execute(
+            "UPDATE tasks SET start_date = ?, submission_date = ? WHERE id = ?",
+            (start.isoformat(), finish.isoformat(), row["id"]),
+        )
+
+
+def _ensure_workflow_steps(conn: sqlite3.Connection) -> None:
+    """Gives every project the default design workflow if it has none."""
+    from .workflow import default_steps
+
+    projects = conn.execute(
+        """
+        SELECT id FROM projects
+        WHERE id NOT IN (SELECT DISTINCT project_id FROM workflow_steps)
+        """
+    ).fetchall()
+    for project in projects:
+        for step in default_steps():
+            conn.execute(
+                """
+                INSERT INTO workflow_steps (project_id, key, name, percent, anchor, offset_days, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (project["id"], step["key"], step["name"], step["percent"],
+                 step["anchor"], step["offset_days"], step["sort_order"]),
+            )
 
 
 # --- small query helpers ---------------------------------------------------

@@ -1,19 +1,26 @@
 """Progress, schedule and earned-value calculations.
 
-These mirror the measurement rules used in the source control workbook:
+Deliverables are scheduled by real dates: a start date and a submission date.
+How much progress is *planned* on any given day comes from the design workflow —
+the steps a deliverable passes through, each worth a percentage and each planned
+relative to the start or the submission date (see ``workflow.py``). Planned
+percent interpolates between consecutive steps, so it lands exactly on a step's
+percentage on that step's own date and ramps smoothly in between.
+
+Lines that do not follow the design workflow (meetings, milestones) are tracked
+as ``simple``: a percentage you type, ramping linearly between the two dates, or
+stepping 0% -> 100% on the date when the two dates are the same.
+
+The money side is unchanged:
 
     weight %        = weight points / total weight points
-    elapsed months  = (data date - NTP) / days per month
-    planned %       = linear ramp between a line's start and finish month; a line
-                      whose finish <= start is a milestone and steps 0% -> 100%
-                      on its date
     earned progress = weight % x actual % complete
     variance        = earned - planned
 
 All percentages are held as fractions (0..1).
 
 This module is pure computation with no database or web dependencies, so it can
-be tested directly against the figures the workbook publishes.
+be tested directly against the figures a control workbook publishes.
 """
 
 from __future__ import annotations
@@ -24,6 +31,8 @@ from typing import Any, Iterable, Mapping, Sequence
 DEFAULT_DAYS_PER_MONTH = 30.4375
 DEFAULT_HOURS_PER_MONTH = 176.0
 
+
+# --- dates -----------------------------------------------------------------
 
 def parse_date(value: Any) -> date:
     """Accept a date, a datetime, or a YYYY-MM-DD string."""
@@ -52,13 +61,12 @@ def days_between(start: Any, end: Any) -> int:
 
 
 def elapsed_months(ntp: Any, data_date: Any, days_per_month: float, day_offset: float = 0.0) -> float:
-    """Elapsed months since NTP.
+    """Elapsed months since NTP, used for the headline "months elapsed" figure.
 
     ``day_offset`` decides how the NTP day itself is counted. With 0 (the
-    default) elapsed time is zero on the NTP date, which is the convention the
-    schedule columns assume ("month 0 = NTP") and the one the late/due day
-    counts use. With 1 the NTP day counts as a day worked, reproducing
-    spreadsheets that measure elapsed time as ``data date - NTP + 1``.
+    default) elapsed time is zero on the NTP date. With 1 the NTP day counts as
+    a day worked, reproducing spreadsheets that measure it as
+    ``data date - NTP + 1``.
     """
     return (days_between(ntp, data_date) + day_offset) / days_per_month
 
@@ -76,13 +84,49 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def planned_pct(task: Mapping[str, Any], elapsed: float) -> float:
-    """Planned % complete for one deliverable at a given elapsed-month position."""
-    start = _num(task.get("start_month"))
-    finish = _num(task.get("finish_month"))
-    if finish <= start:                      # milestone
-        return 1.0 if elapsed >= finish else 0.0
-    return _clamp01((elapsed - start) / (finish - start))
+# --- the plan for one deliverable ------------------------------------------
+
+def task_dates(task: Mapping[str, Any]) -> tuple[str, str]:
+    """A deliverable's start and submission dates, tolerating a missing one."""
+    start = str(task.get("start_date") or "")
+    submission = str(task.get("submission_date") or "")
+    if not start and not submission:
+        return "", ""
+    return (start or submission), (submission or start)
+
+
+def uses_workflow(task: Mapping[str, Any]) -> bool:
+    return str(task.get("tracking") or "workflow") == "workflow"
+
+
+def task_schedule(task: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The workflow steps for a deliverable, each with the date it is planned."""
+    from .workflow import schedule_for
+
+    start, submission = task_dates(task)
+    if not submission or not uses_workflow(task) or not steps:
+        return []
+    return schedule_for(steps, start, submission)
+
+
+def planned_pct_on(
+    task: Mapping[str, Any], on_date: Any, steps: Sequence[Mapping[str, Any]] = (), plan: Sequence[Mapping[str, Any]] | None = None
+) -> float:
+    """Planned percent complete for one deliverable on a given date."""
+    start, submission = task_dates(task)
+    if not submission:
+        return 0.0
+
+    if uses_workflow(task) and steps:
+        from .workflow import planned_pct_from_schedule
+
+        plan = task_schedule(task, steps) if plan is None else plan
+        return _clamp01(planned_pct_from_schedule(plan, to_iso(on_date)))
+
+    day, start_day, end_day = parse_date(on_date), parse_date(start), parse_date(submission)
+    if end_day <= start_day:                        # a milestone: it happens on its date
+        return 1.0 if day >= end_day else 0.0
+    return _clamp01((day - start_day).days / (end_day - start_day).days)
 
 
 def status_of(actual_pct: float) -> str:
@@ -107,28 +151,35 @@ def budget_status(spent_hours: float, budget_hours: float, cpi: float | None) ->
     return "Over-burning"
 
 
+# --- the whole project -----------------------------------------------------
+
 def compute_project(
     project: Mapping[str, Any],
     tasks: Sequence[Mapping[str, Any]],
     trades: Sequence[Mapping[str, Any]] = (),
     data_date: Any = None,
-    horizon_days: int = 30,
+    horizon_days: int | None = 30,
     spent_by_trade: Mapping[Any, float] | None = None,
+    steps: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Every derived figure for one project at a data date.
 
-    ``tasks`` may each carry an ``allocations`` mapping of trade id -> share
-    (0..1) describing how that deliverable's weight is split between trades.
+    ``horizon_days`` of None means "everything ahead", for the schedule's
+    all-dates view.
     """
+    from .workflow import CODE_A, is_approved, is_submitted, step_by_key
+
     spent_by_trade = spent_by_trade or {}
     days_per_month = _num(project.get("days_per_month"), DEFAULT_DAYS_PER_MONTH) or DEFAULT_DAYS_PER_MONTH
     hours_per_month = _num(project.get("hours_per_month"), DEFAULT_HOURS_PER_MONTH) or DEFAULT_HOURS_PER_MONTH
     day_offset = _num(project.get("elapsed_day_offset"))
     duration = _num(project.get("duration_months"))
+    max_revisions = int(_num(project.get("max_revisions"), 10))
 
     cutoff = parse_date(data_date)
+    cutoff_iso = cutoff.isoformat()
     elapsed = elapsed_months(project["ntp_date"], cutoff, days_per_month, day_offset)
-    horizon_end = cutoff + timedelta(days=horizon_days)
+    horizon_end = None if horizon_days is None else cutoff + timedelta(days=horizon_days)
 
     total_points = sum(_num(t.get("weight_points")) for t in tasks)
 
@@ -137,17 +188,33 @@ def compute_project(
         points = _num(task.get("weight_points"))
         weight_pct = points / total_points if total_points > 0 else 0.0
         actual = _clamp01(_num(task.get("actual_pct")))
-        planned = planned_pct(task, elapsed)
+        start, submission = task_dates(task)
+        plan = task_schedule(task, steps)
+        planned = planned_pct_on(task, cutoff, steps, plan)
+
         earned = weight_pct * actual
         planned_progress = weight_pct * planned
 
-        start_month = _num(task.get("start_month"))
-        finish_month = _num(task.get("finish_month"))
-        planned_start = add_months(project["ntp_date"], start_month, days_per_month)
-        due_date = add_months(project["ntp_date"], finish_month, days_per_month)
-        days_to_due = (due_date - cutoff).days
+        status_key = str(task.get("status_key") or "")
+        revision = int(_num(task.get("revision")))
+        workflow = uses_workflow(task) and bool(plan)
+        submitted = is_submitted(steps, status_key) if workflow else actual >= 1
+        approved = is_approved(steps, status_key) if workflow else actual >= 1
         is_complete = actual >= 1
-        is_late = (not is_complete) and due_date < cutoff
+
+        # The submission date is the deadline that matters; once a deliverable is
+        # with the client, the approval date takes over.
+        approval_due = next((s["date"] for s in plan if s["key"] == CODE_A), submission)
+        if workflow and submitted and not approved:
+            deadline, late_reason = approval_due, "approval"
+        else:
+            deadline, late_reason = submission, "submission"
+
+        is_late = bool(deadline) and (not is_complete) and deadline < cutoff_iso
+        days_to_due = days_between(cutoff_iso, deadline) if deadline else 0
+
+        current = step_by_key(steps, status_key) if workflow else None
+        next_due = next((s for s in plan if s["percent"] > (current["percent"] if current else -1)), None)
 
         row = dict(task)
         row.update(
@@ -158,22 +225,102 @@ def compute_project(
             planned_progress=planned_progress,
             variance=earned - planned_progress,
             status=status_of(actual),
-            planned_start=planned_start.isoformat(),
-            due_date=due_date.isoformat(),
+            status_name=(current or {}).get("name", "" if status_key else "Not started"),
+            status_key=status_key,
+            revision=revision,
+            uses_workflow=workflow,
+            step_plan=plan,
+            start_date=start,
+            submission_date=submission,
+            approval_due_date=approval_due,
+            planned_start=start,
+            due_date=deadline,
+            due_reason=late_reason,
+            next_step=next_due,
+            next_step_due=(next_due or {}).get("date", ""),
             days_to_due=days_to_due,
             is_complete=is_complete,
+            is_submitted=submitted,
+            is_approved=approved,
             is_late=is_late,
             days_late=-days_to_due if is_late else 0,
-            is_upcoming=(not is_complete) and (not is_late) and due_date <= horizon_end,
+            is_upcoming=(not is_complete) and (not is_late) and bool(deadline)
+            and (horizon_end is None or deadline <= horizon_end.isoformat()),
             is_behind=(not is_complete) and actual < planned - 1e-9,
-            is_milestone=finish_month <= start_month,
+            is_milestone=bool(submission) and submission == start,
+            in_rework=revision > 0 and not is_complete,
+            at_revision_limit=revision >= max_revisions,
         )
         rows.append(row)
 
     earned_total = sum(r["earned_progress"] for r in rows)
     planned_total = sum(r["planned_progress"] for r in rows)
 
-    trade_rows: list[dict[str, Any]] = []
+    trade_rows = _trade_rows(rows, trades, spent_by_trade, hours_per_month)
+
+    budget_hours = sum(t["budget_hours"] for t in trade_rows)
+    spent_hours = sum(t["spent_hours"] for t in trade_rows)
+    earned_hours = sum(t["earned_hours"] for t in trade_rows)
+    project_cpi = earned_hours / spent_hours if spent_hours > 0 else None
+    eac_hours = budget_hours / project_cpi if project_cpi else budget_hours
+
+    late = [r for r in rows if r["is_late"]]
+    upcoming = [r for r in rows if r["is_upcoming"]]
+    behind = [r for r in rows if r["is_behind"]]
+    rework = [r for r in rows if r["in_rework"]]
+
+    return {
+        "data_date": cutoff_iso,
+        "ntp_date": to_iso(project["ntp_date"]),
+        "elapsed_months": elapsed,
+        "duration_months": duration,
+        "time_elapsed_pct": _clamp01(elapsed / duration) if duration > 0 else 0.0,
+        "total_weight_points": total_points,
+        "horizon_days": horizon_days,
+        "max_revisions": max_revisions,
+        "totals": {
+            "planned_progress": planned_total,
+            "earned_progress": earned_total,
+            "variance": earned_total - planned_total,
+            "spi": earned_total / planned_total if planned_total > 0 else None,
+            "task_count": len(rows),
+            "weighted_count": sum(1 for r in rows if _num(r.get("weight_points")) > 0),
+            "complete_count": sum(1 for r in rows if r["is_complete"]),
+            "in_progress_count": sum(1 for r in rows if not r["is_complete"] and r["actual_pct"] > 0),
+            "not_started_count": sum(1 for r in rows if r["actual_pct"] <= 0),
+            "late_count": len(late),
+            "upcoming_count": len(upcoming),
+            "behind_count": len(behind),
+            "rework_count": len(rework),
+            "at_limit_count": sum(1 for r in rework if r["at_revision_limit"]),
+            "weight_at_risk": sum(r["weight_pct"] for r in late),
+        },
+        "budget": {
+            "hours_per_month": hours_per_month,
+            "budget_hours": budget_hours,
+            "spent_hours": spent_hours,
+            "earned_hours": earned_hours,
+            "remaining_hours": budget_hours - spent_hours,
+            "hours_used_pct": spent_hours / budget_hours if budget_hours > 0 else 0.0,
+            "hours_over_under": spent_hours - earned_hours,
+            "cpi": project_cpi,
+            "eac_hours": eac_hours,
+            "vac_hours": budget_hours - eac_hours,
+            "budget_status": budget_status(spent_hours, budget_hours, project_cpi),
+            "unallocated_hours": 0.0,
+        },
+        "tasks": rows,
+        "trades": trade_rows,
+    }
+
+
+def _trade_rows(
+    rows: Sequence[Mapping[str, Any]],
+    trades: Sequence[Mapping[str, Any]],
+    spent_by_trade: Mapping[Any, float],
+    hours_per_month: float,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for trade in trades:
         trade_id = trade["id"]
         scope_weight = earned_contrib = planned_contrib = 0.0
@@ -185,8 +332,8 @@ def compute_project(
             earned_contrib += row["earned_progress"] * share
             planned_contrib += row["planned_progress"] * share
 
-        # Percent complete *of that trade's own scope*, as in the workbook's
-        # budget control tab.
+        # Percent complete *of that trade's own scope*, which is what drives the
+        # budget figures.
         earned_of_trade = earned_contrib / scope_weight if scope_weight > 0 else 0.0
         planned_of_trade = planned_contrib / scope_weight if scope_weight > 0 else 0.0
 
@@ -196,7 +343,7 @@ def compute_project(
         cpi = earned_hours / spent_hours if spent_hours > 0 else None
         eac = budget_hours / cpi if cpi else budget_hours
 
-        trade_rows.append(
+        out.append(
             {
                 "id": trade_id,
                 "key": trade.get("key"),
@@ -223,57 +370,31 @@ def compute_project(
                 "budget_status": budget_status(spent_hours, budget_hours, cpi),
             }
         )
+    return out
 
-    budget_hours = sum(t["budget_hours"] for t in trade_rows)
-    spent_hours = sum(t["spent_hours"] for t in trade_rows)
-    earned_hours = sum(t["earned_hours"] for t in trade_rows)
-    project_cpi = earned_hours / spent_hours if spent_hours > 0 else None
-    eac_hours = budget_hours / project_cpi if project_cpi else budget_hours
 
-    late = [r for r in rows if r["is_late"]]
-    upcoming = [r for r in rows if r["is_upcoming"]]
-    behind = [r for r in rows if r["is_behind"]]
+# --- curves and period reports ---------------------------------------------
 
-    return {
-        "data_date": cutoff.isoformat(),
-        "ntp_date": to_iso(project["ntp_date"]),
-        "elapsed_months": elapsed,
-        "duration_months": duration,
-        "time_elapsed_pct": _clamp01(elapsed / duration) if duration > 0 else 0.0,
-        "total_weight_points": total_points,
-        "horizon_days": horizon_days,
-        "totals": {
-            "planned_progress": planned_total,
-            "earned_progress": earned_total,
-            "variance": earned_total - planned_total,
-            "spi": earned_total / planned_total if planned_total > 0 else None,
-            "task_count": len(rows),
-            "weighted_count": sum(1 for r in rows if _num(r.get("weight_points")) > 0),
-            "complete_count": sum(1 for r in rows if r["is_complete"]),
-            "in_progress_count": sum(1 for r in rows if not r["is_complete"] and r["actual_pct"] > 0),
-            "not_started_count": sum(1 for r in rows if r["actual_pct"] <= 0),
-            "late_count": len(late),
-            "upcoming_count": len(upcoming),
-            "behind_count": len(behind),
-            "weight_at_risk": sum(r["weight_pct"] for r in late),
-        },
-        "budget": {
-            "hours_per_month": hours_per_month,
-            "budget_hours": budget_hours,
-            "spent_hours": spent_hours,
-            "earned_hours": earned_hours,
-            "remaining_hours": budget_hours - spent_hours,
-            "hours_used_pct": spent_hours / budget_hours if budget_hours > 0 else 0.0,
-            "hours_over_under": spent_hours - earned_hours,
-            "cpi": project_cpi,
-            "eac_hours": eac_hours,
-            "vac_hours": budget_hours - eac_hours,
-            "budget_status": budget_status(spent_hours, budget_hours, project_cpi),
-            "unallocated_hours": 0.0,
-        },
-        "tasks": rows,
-        "trades": trade_rows,
-    }
+def project_span(project: Mapping[str, Any], tasks: Sequence[Mapping[str, Any]],
+                 steps: Sequence[Mapping[str, Any]], data_date: Any) -> tuple[str, str]:
+    """The first and last dates worth plotting."""
+    days_per_month = _num(project.get("days_per_month"), DEFAULT_DAYS_PER_MONTH) or DEFAULT_DAYS_PER_MONTH
+    duration = _num(project.get("duration_months"), 12.0) or 12.0
+
+    starts = [t["start_date"] for t in ((dict(x) for x in tasks)) if t.get("start_date")]
+    ends: list[str] = []
+    for task in tasks:
+        plan = task_schedule(task, steps)
+        _, submission = task_dates(task)
+        if plan:
+            ends.append(plan[-1]["date"])
+        elif submission:
+            ends.append(submission)
+
+    first = min(starts + [to_iso(project["ntp_date"])])
+    default_end = to_iso(add_months(project["ntp_date"], duration, days_per_month))
+    last = max(ends + [default_end, to_iso(data_date)])
+    return first, last
 
 
 def build_s_curve(
@@ -281,47 +402,39 @@ def build_s_curve(
     tasks: Sequence[Mapping[str, Any]],
     progress_history: Iterable[Mapping[str, Any]],
     data_date: Any,
-    steps: int = 40,
+    steps: Sequence[Mapping[str, Any]] = (),
+    samples: int = 40,
 ) -> list[dict[str, Any]]:
     """Planned and earned cumulative curves over the life of the project.
 
     Planned comes from the schedule; earned is reconstructed from the progress
-    history so the curve shows what was actually reported at each point in time.
+    history, so the curve shows what was actually reported at each point in time
+    rather than only the latest value.
     """
-    days_per_month = _num(project.get("days_per_month"), DEFAULT_DAYS_PER_MONTH) or DEFAULT_DAYS_PER_MONTH
-    day_offset = _num(project.get("elapsed_day_offset"))
-    duration = _num(project.get("duration_months"), 12.0) or 12.0
     total_points = sum(_num(t.get("weight_points")) for t in tasks)
 
     def weight_of(task: Mapping[str, Any]) -> float:
         return _num(task.get("weight_points")) / total_points if total_points > 0 else 0.0
 
-    ntp = parse_date(project["ntp_date"])
-    cutoff = parse_date(data_date)
-    cutoff_iso = cutoff.isoformat()
-    end_months = max(duration, elapsed_months(ntp, cutoff, days_per_month, day_offset))
+    first_iso, last_iso = project_span(project, tasks, steps, data_date)
+    first, last = parse_date(first_iso), parse_date(last_iso)
+    span = max(1, (last - first).days)
+    cutoff_iso = to_iso(data_date)
 
     history = sorted(progress_history, key=lambda h: str(h["data_date"]))
+    plans = {t["id"]: task_schedule(t, steps) for t in tasks if "id" in t}
 
-    # Sample evenly across the programme, but always include the data date
-    # itself so the earned curve ends exactly on the reported progress. Month
-    # positions map to dates the same way deliverable due dates do (month 0 = NTP).
-    samples: list[tuple[float, str]] = []
-    for i in range(steps + 1):
-        month = end_months * i / steps
-        samples.append((month, (ntp + timedelta(days=month * days_per_month)).isoformat()))
-    cutoff_month = elapsed_months(ntp, cutoff, days_per_month, day_offset)
-    if 0 <= cutoff_month <= end_months:
-        samples.append((cutoff_month, cutoff_iso))
-    samples.sort(key=lambda s: (s[0], s[1]))
+    # Sample evenly, but always include the data date so the earned curve ends
+    # exactly on the reported progress.
+    days = {round(span * i / samples) for i in range(samples + 1)}
+    cutoff_offset = (parse_date(cutoff_iso) - first).days
+    if 0 <= cutoff_offset <= span:
+        days.add(cutoff_offset)
 
     points: list[dict[str, Any]] = []
-    previous: float | None = None
-    for month, iso in samples:
-        if previous is not None and abs(month - previous) < 1e-9:
-            continue
-        previous = month
-        planned = sum(weight_of(t) * planned_pct(t, month) for t in tasks)
+    for offset in sorted(days):
+        iso = (first + timedelta(days=offset)).isoformat()
+        planned = sum(weight_of(t) * planned_pct_on(t, iso, steps, plans.get(t.get("id"))) for t in tasks)
 
         earned = None
         if iso <= cutoff_iso:
@@ -332,7 +445,7 @@ def build_s_curve(
                 state[entry["task_id"]] = _clamp01(_num(entry["actual_pct"]))
             earned = sum(weight_of(t) * state.get(t["id"], 0.0) for t in tasks)
 
-        points.append({"month": round(month, 3), "date": iso, "planned": planned, "earned": earned})
+        points.append({"date": iso, "planned": planned, "earned": earned})
     return points
 
 
@@ -343,10 +456,10 @@ def build_period_report(
     progress_history: Iterable[Mapping[str, Any]],
     start: Any,
     end: Any,
+    steps: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Progress gained between two dates, per deliverable, trade and in total."""
-    from_iso = to_iso(start)
-    to_iso_ = to_iso(end)
+    from_iso, to_iso_ = to_iso(start), to_iso(end)
     total_points = sum(_num(t.get("weight_points")) for t in tasks)
     history = sorted(progress_history, key=lambda h: str(h["data_date"]))
 
@@ -368,8 +481,7 @@ def build_period_report(
         elif task["id"] in at_start:
             end_pct = start_pct
         else:
-            # No history at all: fall back to the live value.
-            end_pct = _clamp01(_num(task.get("actual_pct")))
+            end_pct = _clamp01(_num(task.get("actual_pct")))   # no history: use the live value
         delta = end_pct - start_pct
 
         trade_earned = {}
@@ -380,6 +492,8 @@ def build_period_report(
 
         if delta > 1e-9:
             period_status = "Completed in period" if end_pct >= 1 else "Advanced in period"
+        elif delta < -1e-9:
+            period_status = "Went back — rework"
         elif end_pct >= 1:
             period_status = "Already complete"
         elif start_pct > 0:
@@ -393,6 +507,7 @@ def build_period_report(
                 "wbs": task.get("wbs"),
                 "name": task.get("name"),
                 "section_id": task.get("section_id"),
+                "revision": int(_num(task.get("revision"))),
                 "weight_pct": weight_pct,
                 "actual_start": start_pct,
                 "actual_end": end_pct,
@@ -405,12 +520,8 @@ def build_period_report(
             }
         )
 
-    days_per_month = _num(project.get("days_per_month"), DEFAULT_DAYS_PER_MONTH) or DEFAULT_DAYS_PER_MONTH
-    elapsed_at_end = elapsed_months(
-        project["ntp_date"], to_iso_, days_per_month, _num(project.get("elapsed_day_offset"))
-    )
     planned_at_end = sum(
-        (_num(t.get("weight_points")) / total_points if total_points > 0 else 0.0) * planned_pct(t, elapsed_at_end)
+        (_num(t.get("weight_points")) / total_points if total_points > 0 else 0.0) * planned_pct_on(t, to_iso_, steps)
         for t in tasks
     )
 

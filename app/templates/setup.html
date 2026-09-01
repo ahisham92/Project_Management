@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/bits.html" import badge, empty %}
+{% from "partials/bits.html" import badge, empty, date_field %}
 {% block title %}Setup — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -15,10 +15,53 @@
   </div>
 </div>
 
-{% if not can_edit %}
+{% if not is_manager %}
   <p class="small ink2 card" style="padding:8px 12px;margin-bottom:16px">
     You need manager access to change the project setup.
   </p>
+{% else %}
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-body inline-form" style="justify-content:space-between">
+      <div class="inline-form">
+        {% if unlocked %}
+          {{ badge('good', 'Unlocked') }}
+          <span class="small muted">Changes on this page will be saved.</span>
+          <form method="post" action="{{ url_for('projects.unlock', project_id=pid) }}">
+            <input type="hidden" name="action" value="lock">
+            <button type="submit" class="btn btn-ghost btn-sm">Lock again</button>
+          </form>
+        {% else %}
+          {{ badge('warning', 'Locked') }}
+          <form method="post" action="{{ url_for('projects.unlock', project_id=pid) }}" class="inline-form">
+            <label class="field w-md">
+              <input type="password" name="password" placeholder="Setup password" autocomplete="off" required>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">Unlock</button>
+          </form>
+          <span class="small muted">The sheet is read-only until it is unlocked.</span>
+        {% endif %}
+      </div>
+      <div class="inline-form">
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.export_setup', project_id=pid) }}">
+          Export to Excel
+        </a>
+        {% if unlocked %}
+          <form method="post" enctype="multipart/form-data" class="inline-form"
+                action="{{ url_for('projects.import_setup', project_id=pid) }}"
+                data-confirm="Import this workbook? It replaces the deliverables, trades, sections and workflow on this project.">
+            <input type="file" name="workbook" accept=".xlsx,.xlsm" required class="w-lg">
+            <button type="submit" class="btn btn-ghost btn-sm">Import from Excel</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card-foot small muted">
+      Export writes the whole setup — deliverables, weights, dates, trade splits and the workflow —
+      to one workbook. Edit it in Excel and import it back. Deliverables are matched on WBS, so
+      progress already reported is kept. The lock guards against accidental edits; it is not a
+      security boundary, and project access is what really controls who can change things.
+    </div>
+  </div>
 {% endif %}
 
 <div class="stack">
@@ -42,7 +85,9 @@
         </label>
         <label class="field">
           <span class="field-label">Notice to proceed</span>
-          <input type="date" name="ntp_date" value="{{ project['ntp_date'] }}" {{ 'disabled' if not can_edit }}>
+          <input type="text" name="ntp_date" value="{{ date_input(project['ntp_date']) }}"
+                 placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off"
+                 {{ 'disabled' if not can_edit }}>
         </label>
         <label class="field">
           <span class="field-label">Duration (months)</span>
@@ -65,6 +110,30 @@
           </select>
         </label>
         <label class="field">
+          <span class="field-label">Maximum revisions</span>
+          <input type="number" name="max_revisions" min="0" max="50" step="1"
+                 value="{{ project['max_revisions'] }}" {{ 'disabled' if not can_edit }}>
+          <span class="field-hint">A deliverable at this many resubmissions is flagged for escalation.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Rework days</span>
+          <input type="number" name="rework_days" min="0" max="365" step="0.5"
+                 value="{{ project['rework_days'] }}" {{ 'disabled' if not can_edit }}>
+          <span class="field-hint">Comments received to the next submission, when no date is given.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">A revision returns to</span>
+          <select name="revision_reset_step" {{ 'disabled' if not can_edit }}>
+            <option value="" {{ 'selected' if not project['revision_reset_step'] }}>Not started — 0%</option>
+            {% for step in steps %}
+              <option value="{{ step['key'] }}" {{ 'selected' if project['revision_reset_step'] == step['key'] }}>
+                {{ step['name'] }} — {{ pct(step['percent'], 0) }}
+              </option>
+            {% endfor %}
+          </select>
+          <span class="field-hint">Where a deliverable restarts when the client returns comments.</span>
+        </label>
+        <label class="field">
           <span class="field-label">Elapsed time convention</span>
           <select name="elapsed_day_offset" {{ 'disabled' if not can_edit }}>
             <option value="0" {{ 'selected' if project['elapsed_day_offset'] == 0 }}>Month 0 = NTP (no elapsed time on day one)</option>
@@ -82,6 +151,101 @@
           </div>
         {% endif %}
       </form>
+    </div>
+  </div>
+
+  {# --- workflow --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Design workflow</h2>
+        <p class="small muted" style="margin-top:2px">
+          The steps a deliverable passes through. Each one is worth a percentage and is planned
+          relative to the start date or the submission date — a negative offset is before it.
+        </p>
+      </div>
+      {% if can_edit %}
+        <form method="post" action="{{ url_for('projects.save_steps', project_id=pid) }}"
+              data-confirm="Reset the workflow to the default design steps?">
+          <input type="hidden" name="action" value="reset">
+          <button type="submit" class="btn btn-ghost btn-sm">Reset to default</button>
+        </form>
+      {% endif %}
+    </div>
+    <div class="card-body flush">
+      <form method="post" action="{{ url_for('projects.save_steps', project_id=pid) }}">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Step</th><th class="right">Percent complete</th><th>Planned from</th>
+                <th class="right">Offset (days)</th><th>Example</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for step in steps %}
+                <tr>
+                  <td><input name="name_{{ step['id'] }}" value="{{ step['name'] }}" {{ 'disabled' if not can_edit }}></td>
+                  <td class="right">
+                    <input type="number" name="percent_{{ step['id'] }}" min="0" max="100" step="1" class="right w-sm"
+                           value="{{ (step['percent'] * 100) | round | int }}" {{ 'disabled' if not can_edit }}>
+                  </td>
+                  <td>
+                    <select name="anchor_{{ step['id'] }}" class="w-md" {{ 'disabled' if not can_edit }}>
+                      <option value="start" {{ 'selected' if step['anchor'] == 'start' }}>Start date</option>
+                      <option value="submission" {{ 'selected' if step['anchor'] == 'submission' }}>Submission date</option>
+                    </select>
+                  </td>
+                  <td class="right">
+                    <input type="number" name="offset_{{ step['id'] }}" step="1" class="right w-sm"
+                           value="{{ step['offset_days'] | round | int }}" {{ 'disabled' if not can_edit }}>
+                  </td>
+                  <td class="small muted">
+                    {% if step['offset_days'] == 0 %}on the {{ 'start' if step['anchor'] == 'start' else 'submission' }} date
+                    {% elif step['offset_days'] < 0 %}{{ (-step['offset_days']) | round | int }} days before
+                      {{ 'the start' if step['anchor'] == 'start' else 'submission' }}
+                    {% else %}{{ step['offset_days'] | round | int }} days after
+                      {{ 'the start' if step['anchor'] == 'start' else 'submission' }}{% endif %}
+                  </td>
+                  <td class="right">
+                    {% if can_edit %}
+                      <button type="submit" name="action" value="delete:{{ step['id'] }}"
+                              class="btn btn-danger btn-sm">Remove</button>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if can_edit %}
+          <div class="card-foot" style="display:flex;justify-content:flex-end">
+            <button type="submit" class="btn btn-primary">Save workflow</button>
+          </div>
+        {% endif %}
+      </form>
+      {% if can_edit %}
+        <form method="post" action="{{ url_for('projects.save_steps', project_id=pid) }}" class="inline-form card-foot">
+          <input type="hidden" name="action" value="add">
+          <label class="field flex1"><span class="field-label">New step</span><input name="name" required></label>
+          <label class="field w-sm">
+            <span class="field-label">Percent</span>
+            <input type="number" name="percent" min="0" max="100" step="1" value="50" class="right">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Planned from</span>
+            <select name="anchor">
+              <option value="submission">Submission date</option>
+              <option value="start">Start date</option>
+            </select>
+          </label>
+          <label class="field w-sm">
+            <span class="field-label">Offset (days)</span>
+            <input type="number" name="offset_days" step="1" value="0" class="right">
+          </label>
+          <button type="submit" class="btn btn-primary">Add step</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 
@@ -232,14 +396,24 @@
           </label>
           <label class="field w-sm"><span class="field-label">Points</span>
             <input type="number" name="weight_points" min="0" step="0.1" value="1" class="right" required></label>
-          <label class="field w-sm"><span class="field-label">Start mo.</span>
-            <input type="number" name="start_month" min="0" step="0.5" value="0" class="right"></label>
-          <label class="field w-sm"><span class="field-label">Finish mo.</span>
-            <input type="number" name="finish_month" min="0" step="0.5" value="1" class="right"></label>
+          {{ date_field('start_date', '', 'Start date', 'w-md') }}
+          <label class="field w-sm"><span class="field-label">or days</span>
+            <input type="number" name="start_days" step="1" placeholder="from NTP" class="right"></label>
+          {{ date_field('submission_date', '', 'Submission date', 'w-md') }}
+          <label class="field w-sm"><span class="field-label">or days</span>
+            <input type="number" name="submission_days" step="1" placeholder="from NTP" class="right"></label>
+          <label class="field w-md">
+            <span class="field-label">Tracked as</span>
+            <select name="tracking">
+              <option value="workflow">Design workflow</option>
+              <option value="simple">Simple percentage</option>
+            </select>
+          </label>
           <button type="submit" class="btn btn-primary">Add deliverable</button>
           <p class="small muted" style="width:100%">
-            Finish at or before start makes the line a milestone: it steps from 0% to 100% on its date.
-            The trade split starts even and can be set per line below.
+            Give a date, or a number of days from NTP — whichever is easier. A line on the design
+            workflow gets its planned dates from the steps above; a simple line ramps between its two
+            dates, or steps 0% to 100% when both are the same. The trade split starts even.
           </p>
         </form>
       </div>
@@ -255,7 +429,7 @@
             <thead>
               <tr>
                 <th>WBS</th><th>Deliverable</th><th class="right">Points</th><th class="right">Weight</th>
-                <th class="right">Start</th><th class="right">Finish</th><th>Trade split</th><th></th>
+                <th class="right">Start</th><th class="right">Submission</th><th>Trade split</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -280,13 +454,21 @@
                         <input type="number" name="weight_points" min="0" step="0.1" value="{{ task['weight_points'] }}"
                                class="right" {{ 'disabled' if not can_edit }}>
                       </label>
-                      <label class="field w-sm">
-                        <input type="number" name="start_month" min="0" step="0.5" value="{{ task['start_month'] }}"
-                               class="right" {{ 'disabled' if not can_edit }}>
+                      <label class="field w-md">
+                        <input type="text" name="start_date" value="{{ date_input(task['start_date']) }}"
+                               placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off"
+                               {{ 'disabled' if not can_edit }}>
                       </label>
-                      <label class="field w-sm">
-                        <input type="number" name="finish_month" min="0" step="0.5" value="{{ task['finish_month'] }}"
-                               class="right" {{ 'disabled' if not can_edit }}>
+                      <label class="field w-md">
+                        <input type="text" name="submission_date" value="{{ date_input(task['submission_date']) }}"
+                               placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off"
+                               {{ 'disabled' if not can_edit }}>
+                      </label>
+                      <label class="field w-md">
+                        <select name="tracking" {{ 'disabled' if not can_edit }}>
+                          <option value="workflow" {{ 'selected' if task['tracking'] == 'workflow' }}>Workflow</option>
+                          <option value="simple" {{ 'selected' if task['tracking'] == 'simple' }}>Simple %</option>
+                        </select>
                       </label>
                       <span class="small muted tabular">{{ pct(task['weight_pct'], 2) }}</span>
                       {% if can_edit %}<button type="submit" class="btn btn-ghost btn-sm">Save</button>{% endif %}

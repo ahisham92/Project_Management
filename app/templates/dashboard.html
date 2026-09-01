@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import badge, progress %}
+{% from "partials/bits.html" import badge, progress, date_field %}
 {% block title %}{{ project['name'] }} — Project Control{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -17,10 +17,7 @@
     </p>
   </div>
   <form method="get" class="inline-form">
-    <label class="field w-md">
-      <span class="field-label">Data date</span>
-      <input type="date" name="data_date" value="{{ data_date }}">
-    </label>
+    {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
     <button type="submit" class="btn btn-ghost">Apply</button>
   </form>
 </div>

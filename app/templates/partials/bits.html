@@ -18,12 +18,37 @@
 {% macro task_color(task) %}{% if task['is_late'] %}var(--critical){% elif task['is_behind'] %}var(--warning){% else %}var(--series-1){% endif %}{% endmacro %}
 
 {% macro task_status(task) %}
-  {% if task['is_late'] %}{{ badge('critical', task['days_late'] ~ 'd late', 'Due ' ~ task['due_date']) }}
+  {% if task['is_late'] %}
+    {{ badge('critical', task['days_late'] ~ 'd late',
+             ('Approval due ' if task['due_reason'] == 'approval' else 'Submission due ') ~ short_date(task['due_date'])) }}
   {% elif task['is_complete'] %}{{ badge('good', 'Complete') }}
   {% elif task['is_behind'] %}{{ badge('warning', 'Behind plan') }}
   {% elif task['is_upcoming'] %}{{ badge('serious', 'Due in ' ~ task['days_to_due'] ~ 'd') }}
   {% elif task['actual_pct'] > 0 %}{{ badge('good', 'On plan') }}
   {% else %}{{ badge('neutral', 'Not started') }}{% endif %}
+{% endmacro %}
+
+{# The revision a deliverable is on. Rev 0 is the first issue and needs no badge. #}
+{% macro revision_badge(task, max_revisions=10) %}
+  {% if task['revision'] and task['revision'] >= max_revisions %}
+    {{ badge('critical', 'Rev ' ~ task['revision'] ~ ' — at limit',
+             'This deliverable has reached the revision limit') }}
+  {% elif task['revision'] %}
+    {{ badge('warning', 'Rev ' ~ task['revision'], 'Resubmission ' ~ task['revision']) }}
+  {% endif %}
+{% endmacro %}
+
+{# A date field. Text rather than a native picker so every machine reads
+   dd/mm/yyyy the same way. #}
+{% macro date_field(name, value='', label='', klass='', required=False) %}
+  <label class="field {{ klass }}">
+    {% if label %}<span class="field-label">{{ label }}</span>{% endif %}
+    <input type="text" name="{{ name }}" value="{{ date_input(value) }}"
+           placeholder="{{ DATE_FORMAT }}" inputmode="numeric"
+           pattern="\s*\d{1,2}\D\d{1,2}\D\d{2,4}\s*"
+           title="Type the date as {{ DATE_FORMAT }}"
+           autocomplete="off" {{ 'required' if required }}>
+  </label>
 {% endmacro %}
 
 {% macro empty(title, body='') %}

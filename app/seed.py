@@ -8,8 +8,11 @@ import json
 import os
 from pathlib import Path
 
+from datetime import datetime, timedelta
+
 from .auth import hash_password
 from .db import connect, database_path, init_db
+from .workflow import default_steps
 
 SEED_FILE = Path(__file__).resolve().parent.parent / "seed" / "sibline-port.json"
 
@@ -62,6 +65,16 @@ def seed(database: str | None = None, seed_file: Path | None = None, quiet: bool
                 ),
             ).lastrowid
 
+            for step in default_steps():
+                conn.execute(
+                    """
+                    INSERT INTO workflow_steps (project_id, key, name, percent, anchor, offset_days, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (project_id, step["key"], step["name"], step["percent"],
+                     step["anchor"], step["offset_days"], step["sort_order"]),
+                )
+
             trade_ids = {}
             for trade in data["trades"]:
                 trade_ids[trade["key"]] = conn.execute(
@@ -76,16 +89,30 @@ def seed(database: str | None = None, seed_file: Path | None = None, quiet: bool
                     (project_id, section["code"], section["name"], section["sort_order"]),
                 ).lastrowid
 
+            # The workbook holds the schedule as elapsed months since NTP; the app
+            # works in real dates, so convert on the way in.
+            ntp = datetime.strptime(project["ntp_date"][:10], "%Y-%m-%d").date()
+            per_month = float(project["days_per_month"])
+
+            def as_date(months: float) -> str:
+                return (ntp + timedelta(days=float(months) * per_month)).isoformat()
+
             for task in data["tasks"]:
+                start_date = as_date(task["start_month"])
+                submission_date = as_date(task["finish_month"])
+                # Lines that happen on a single date are meetings and milestones,
+                # not design submissions, so they do not follow the workflow.
+                tracking = "simple" if task["finish_month"] <= task["start_month"] else "workflow"
+
                 task_id = conn.execute(
                     """
                     INSERT INTO tasks (project_id, section_id, wbs, name, weight_points,
-                                       start_month, finish_month, actual_pct, remarks, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       start_date, submission_date, tracking, actual_pct, remarks, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id, section_ids.get(task["section_code"]), task["wbs"], task["name"],
-                        task["weight_points"], task["start_month"], task["finish_month"],
+                        task["weight_points"], start_date, submission_date, tracking,
                         task["actual_pct"], task["remarks"], task["sort_order"],
                     ),
                 ).lastrowid

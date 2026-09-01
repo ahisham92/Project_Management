@@ -2,3 +2,6 @@
 # and the database (SQLite) is part of Python itself.
 Flask>=3.0,<4.0
 waitress>=3.0,<4.0
+
+# Reading and writing the setup workbook (Setup -> Export / Import to Excel).
+openpyxl>=3.1,<4.0

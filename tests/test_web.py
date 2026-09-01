@@ -62,14 +62,29 @@ def test_every_project_page_renders(signed_in):
         assert response.status_code == 200, f"/projects/1/{path} returned {response.status_code}"
 
 
-def test_the_dashboard_shows_the_workbook_figures(signed_in):
-    body = text(signed_in.get("/projects/1/?data_date=2026-09-01"))
+def test_the_dashboard_shows_the_expected_figures(signed_in):
+    body = text(signed_in.get("/projects/1/?data_date=01/09/2026"))
     assert "0.50%" in body, "earned progress"
-    assert "1.76%" in body, "planned progress"
-    assert "-1.26%" in body, "variance"
+    assert "2.21%" in body, "planned progress from the workflow step dates"
+    assert "-1.71%" in body, "variance"
     assert "2,640 h" in body, "hour budget"
     for trade in ("Marine", "Geotechnical", "Marine Structures", "Utilities"):
         assert trade in body
+
+
+def test_dates_read_as_day_month_year(signed_in):
+    body = text(signed_in.get("/projects/1/?data_date=01/09/2026"))
+    assert "01/09/2026" in body, "the data date reads dd/mm/yyyy"
+    assert "2026-09-01" not in body, "no ISO dates leak into the page"
+    schedule = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
+    assert "31/08/2026" in schedule, "the kick-off submission date"
+    assert 'type="date"' not in schedule, "native pickers would follow the machine locale"
+
+
+def test_a_date_can_also_be_typed_with_dashes_or_a_short_year(signed_in):
+    for typed in ("01-09-2026", "1/9/26", "2026-09-01"):
+        body = text(signed_in.get(f"/projects/1/?data_date={typed}"))
+        assert "0.50%" in body, f"{typed} should be understood"
 
 
 def test_the_dashboard_draws_both_curve_series(signed_in):
@@ -79,13 +94,33 @@ def test_the_dashboard_draws_both_curve_series(signed_in):
 
 
 def test_the_schedule_lists_the_late_milestone(signed_in):
-    body = text(signed_in.get("/projects/1/schedule?data_date=2026-09-01"))
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
     assert "Project kick-off meeting" in body
     assert "1 day late" in body
 
 
+def test_the_schedule_look_ahead_can_be_a_window_or_everything(signed_in):
+    window = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=30"))
+    assert "Due in 30 days" in window
+
+    everything = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=all"))
+    assert "Due in everything ahead" in everything
+    # The all-dates view reaches submissions the 30-day window cannot.
+    assert "Structural tender drawings" in everything
+    assert "Structural tender drawings" not in window
+
+    custom = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=45"))
+    assert "Due in 45 days" in custom
+
+
+def test_the_schedule_shows_each_workflow_date(signed_in):
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=all"))
+    for heading in (">IDC<", ">Comments<", ">Submission<", ">Code A<"):
+        assert heading in body, f"missing column {heading}"
+
+
 def test_the_progress_filter_narrows_the_list(signed_in):
-    body = text(signed_in.get("/projects/1/tasks?filter=late&data_date=2026-09-01"))
+    body = text(signed_in.get("/projects/1/tasks?filter=late&data_date=01/09/2026"))
     assert "Project kick-off meeting" in body
     assert "Coastal numerical modelling" not in body, "a non-late line should be filtered out"
 
@@ -106,37 +141,166 @@ def _task_id(database: str, wbs: str) -> int:
         conn.close()
 
 
-def test_recording_progress_updates_the_figures_and_keeps_history(signed_in, database):
+def test_setting_a_status_sets_the_percentage_and_keeps_history(signed_in, database):
     task_id = _task_id(database, "2.3")  # Coastal numerical modelling, 4.6 points
     response = signed_in.post(
         f"/projects/1/tasks/{task_id}/progress",
-        data={"actual_pct": "50", "note": "Model calibrated", "data_date": "2026-09-01"},
+        data={"status_key": "comments_addressed", "note": "IDC comments closed", "data_date": "01/09/2026"},
         follow_redirects=True,
     )
-    assert "updated to 50%" in text(response)
+    assert "updated to 60%" in text(response)
 
     conn = connect(database)
     try:
-        assert conn.execute("SELECT actual_pct FROM tasks WHERE id = ?", (task_id,)).fetchone()["actual_pct"] == 0.5
+        row = conn.execute("SELECT actual_pct, status_key FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row["actual_pct"] == 0.6
+        assert row["status_key"] == "comments_addressed"
         history = conn.execute(
             "SELECT * FROM progress_updates WHERE task_id = ? ORDER BY id DESC", (task_id,)
         ).fetchone()
         assert history["previous_pct"] == 0
-        assert history["note"] == "Model calibrated"
+        assert history["note"] == "IDC comments closed"
     finally:
         conn.close()
 
-    # 4.6 of 100 weight points at 50% adds 2.30 points of earned progress.
-    body = text(signed_in.get("/projects/1/?data_date=2026-09-01"))
-    assert "2.80%" in body, "earned progress should rise from 0.50% to 2.80%"
+    # 4.6 of 100 weight points at 60% adds 2.76 points of earned progress.
+    body = text(signed_in.get("/projects/1/?data_date=01/09/2026"))
+    assert "3.26%" in body, "earned progress should rise from 0.50% to 3.26%"
+
+
+def test_an_unknown_status_is_rejected(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    response = signed_in.post(
+        f"/projects/1/tasks/{task_id}/progress", data={"status_key": "made_up"}, follow_redirects=True
+    )
+    assert "does not exist on this project" in text(response)
+
+
+def test_a_simple_line_still_takes_a_typed_percentage(signed_in, database):
+    task_id = _task_id(database, "1.6")  # the kick-off meeting
+    response = signed_in.post(
+        f"/projects/1/tasks/{task_id}/progress",
+        data={"actual_pct": "100", "data_date": "01/09/2026"},
+        follow_redirects=True,
+    )
+    assert "updated to 100%" in text(response)
 
 
 def test_progress_outside_0_to_100_is_rejected(signed_in, database):
-    task_id = _task_id(database, "2.3")
+    task_id = _task_id(database, "1.6")
     response = signed_in.post(
         f"/projects/1/tasks/{task_id}/progress", data={"actual_pct": "140"}, follow_redirects=True
     )
     assert "between 0% and 100%" in text(response)
+
+
+# --- revisions -------------------------------------------------------------
+
+def _submit(client, task_id: int, date: str = "01/09/2026"):
+    return client.post(
+        f"/projects/1/tasks/{task_id}/progress",
+        data={"status_key": "submitted", "data_date": date}, follow_redirects=True,
+    )
+
+
+def test_comments_raise_a_revision_and_reschedule(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    _submit(signed_in, task_id)
+
+    response = signed_in.post(
+        f"/projects/1/tasks/{task_id}/comments",
+        data={"comments_date": "05/09/2026", "note": "Code B"}, follow_redirects=True,
+    )
+    body = text(response)
+    assert "moved to revision 1" in body
+    assert "12/09/2026" in body, "resubmission planned 7 rework days after the comments"
+
+    conn = connect(database)
+    try:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row["revision"] == 1
+        assert row["status_key"] == "comments_addressed", "back to the step the project nominates"
+        assert row["actual_pct"] == 0.6, "progress drops to reflect the rework"
+        assert row["submission_date"] == "2026-09-12"
+
+        cycles = conn.execute(
+            "SELECT * FROM task_revisions WHERE task_id = ? ORDER BY revision", (task_id,)
+        ).fetchall()
+        assert [(c["revision"], c["outcome"]) for c in cycles] == [(0, "comments"), (1, "open")]
+    finally:
+        conn.close()
+
+
+def test_a_resubmission_date_can_be_given_directly(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    _submit(signed_in, task_id)
+    signed_in.post(
+        f"/projects/1/tasks/{task_id}/comments",
+        data={"comments_date": "05/09/2026", "new_submission_date": "30/09/2026"}, follow_redirects=True,
+    )
+    conn = connect(database)
+    try:
+        assert conn.execute(
+            "SELECT submission_date FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()["submission_date"] == "2026-09-30"
+    finally:
+        conn.close()
+
+
+def test_comments_need_a_submitted_deliverable(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    response = signed_in.post(
+        f"/projects/1/tasks/{task_id}/comments", data={"comments_date": "05/09/2026"}, follow_redirects=True
+    )
+    assert "has been submitted can receive comments" in text(response)
+
+
+def test_the_revision_limit_is_enforced(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    conn = connect(database)
+    try:
+        with conn:
+            conn.execute("UPDATE projects SET max_revisions = 2 WHERE id = 1")
+            conn.execute("UPDATE tasks SET revision = 2 WHERE id = ?", (task_id,))
+    finally:
+        conn.close()
+
+    _submit(signed_in, task_id)
+    response = signed_in.post(
+        f"/projects/1/tasks/{task_id}/comments", data={"comments_date": "05/09/2026"}, follow_redirects=True
+    )
+    assert "limit of 2 revisions" in text(response)
+
+
+def test_reaching_code_a_closes_the_cycle(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    _submit(signed_in, task_id)
+    signed_in.post(
+        f"/projects/1/tasks/{task_id}/progress",
+        data={"status_key": "code_a", "data_date": "20/09/2026"}, follow_redirects=True,
+    )
+    conn = connect(database)
+    try:
+        assert conn.execute("SELECT actual_pct FROM tasks WHERE id = ?", (task_id,)).fetchone()["actual_pct"] == 1.0
+        cycle = conn.execute("SELECT * FROM task_revisions WHERE task_id = ?", (task_id,)).fetchone()
+        assert cycle["outcome"] == "code_a"
+        assert cycle["outcome_date"] == "2026-09-20"
+    finally:
+        conn.close()
+
+
+def test_the_history_page_shows_the_workflow_and_the_trail(signed_in, database):
+    task_id = _task_id(database, "2.3")
+    _submit(signed_in, task_id)
+    signed_in.post(
+        f"/projects/1/tasks/{task_id}/comments",
+        data={"comments_date": "05/09/2026", "note": "Code B returned"}, follow_redirects=True,
+    )
+    body = text(signed_in.get(f"/projects/1/tasks/{task_id}/history"))
+    assert "Comments returned" in body
+    assert "Code B returned" in body
+    assert "IDC provided" in body, "the workflow for the current revision"
+    assert "Rev 1" in body
 
 
 # --- hours -----------------------------------------------------------------
@@ -161,9 +325,69 @@ def test_zero_hours_are_rejected(signed_in):
     assert "Enter the number of hours worked" in text(response)
 
 
+# --- the setup lock ---------------------------------------------------------
+
+def unlock(client, password: str = "2026"):
+    """The Setup sheet is locked by default; every change needs it opened."""
+    return client.post("/projects/1/setup/unlock", data={"password": password}, follow_redirects=True)
+
+
+def test_the_setup_sheet_starts_locked(signed_in):
+    body = text(signed_in.get("/projects/1/setup"))
+    assert "Locked" in body
+    assert "Unlock" in body
+
+
+def test_the_lock_refuses_a_wrong_password(signed_in):
+    assert "Incorrect setup password" in text(unlock(signed_in, "0000"))
+    assert "Locked" in text(signed_in.get("/projects/1/setup"))
+
+
+def test_the_lock_opens_with_2026(signed_in):
+    assert "Setup sheet unlocked" in text(unlock(signed_in))
+    assert "Unlocked" in text(signed_in.get("/projects/1/setup"))
+
+
+def test_changes_are_refused_while_locked(signed_in, database):
+    response = signed_in.post(
+        "/projects/1/settings",
+        data={"name": "Renamed while locked", "code": "SIBLINE-PORT"},
+        follow_redirects=True,
+    )
+    assert "setup sheet is locked" in text(response)
+
+    conn = connect(database)
+    try:
+        assert conn.execute("SELECT name FROM projects WHERE id = 1").fetchone()["name"] != "Renamed while locked"
+    finally:
+        conn.close()
+
+
+def test_the_sheet_can_be_locked_again(signed_in):
+    unlock(signed_in)
+    response = signed_in.post("/projects/1/setup/unlock", data={"action": "lock"}, follow_redirects=True)
+    assert "Setup sheet locked" in text(response)
+    assert "setup sheet is locked" in text(
+        signed_in.post("/projects/1/settings", data={"name": "X", "code": "SIBLINE-PORT"}, follow_redirects=True)
+    )
+
+
+def test_the_setup_password_can_be_changed(signed_in):
+    unlock(signed_in)
+    response = signed_in.post(
+        "/projects/1/setup/password", data={"current": "2026", "new": "port2027"}, follow_redirects=True
+    )
+    assert "Setup password changed" in text(response)
+
+    signed_in.post("/projects/1/setup/unlock", data={"action": "lock"})
+    assert "Incorrect setup password" in text(unlock(signed_in, "2026"))
+    assert "Setup sheet unlocked" in text(unlock(signed_in, "port2027"))
+
+
 # --- setup -----------------------------------------------------------------
 
 def test_a_trade_split_must_total_100_percent(signed_in, database):
+    unlock(signed_in)
     task_id = _task_id(database, "1.1")
     response = signed_in.post(
         f"/projects/1/tasks/{task_id}/edit",
@@ -174,6 +398,7 @@ def test_a_trade_split_must_total_100_percent(signed_in, database):
 
 
 def test_a_valid_trade_split_is_saved(signed_in, database):
+    unlock(signed_in)
     task_id = _task_id(database, "1.1")
     response = signed_in.post(
         f"/projects/1/tasks/{task_id}/edit",
@@ -191,13 +416,14 @@ def test_a_valid_trade_split_is_saved(signed_in, database):
 
 
 def test_adding_a_deliverable_dilutes_the_other_weights(signed_in):
+    unlock(signed_in)
     before = text(signed_in.get("/projects/1/setup"))
     assert "100.0 weight points" in before
 
     signed_in.post(
         "/projects/1/tasks",
         data={"wbs": "9.9", "name": "Extra deliverable", "weight_points": "25",
-              "start_month": "0", "finish_month": "2", "section_id": ""},
+              "start_date": "01/09/2026", "submission_date": "01/12/2026", "section_id": ""},
         follow_redirects=True,
     )
     after = text(signed_in.get("/projects/1/setup"))
@@ -228,31 +454,36 @@ def test_another_user_cannot_see_the_project(app):
 def test_a_viewer_can_read_but_not_report_progress(app, signed_in, database):
     viewer = app.test_client()
     _register(viewer, "viewer@example.com")
+    unlock(signed_in)
     signed_in.post("/projects/1/members", data={"email": "viewer@example.com", "role": "viewer"})
 
     assert viewer.get("/projects/1/").status_code == 200
     assert "view-only access" in text(viewer.get("/projects/1/tasks"))
 
     task_id = _task_id(database, "2.3")
-    assert viewer.post(f"/projects/1/tasks/{task_id}/progress", data={"actual_pct": "50"}).status_code == 403
+    assert viewer.post(
+        f"/projects/1/tasks/{task_id}/progress", data={"status_key": "idc"}
+    ).status_code == 403
     assert viewer.post("/projects/1/settings", data={"name": "Hijacked", "code": "X"}).status_code == 403
 
 
 def test_a_member_can_report_progress_but_not_change_setup(app, signed_in, database):
     member = app.test_client()
     _register(member, "member@example.com")
+    unlock(signed_in)
     signed_in.post("/projects/1/members", data={"email": "member@example.com", "role": "member"})
 
     task_id = _task_id(database, "2.3")
     response = member.post(
-        f"/projects/1/tasks/{task_id}/progress", data={"actual_pct": "25"}, follow_redirects=True
+        f"/projects/1/tasks/{task_id}/progress", data={"status_key": "idc"}, follow_redirects=True
     )
-    assert "updated to 25%" in text(response)
+    assert "updated to 40%" in text(response)
     assert member.post("/projects/1/settings", data={"name": "Hijacked", "code": "X"}).status_code == 403
     assert member.post("/projects/1/delete", data={"confirm": "SIBLINE-PORT"}).status_code == 403
 
 
 def test_adding_an_unknown_email_to_a_project_is_reported(signed_in):
+    unlock(signed_in)
     response = signed_in.post(
         "/projects/1/members", data={"email": "nobody@example.com", "role": "member"}, follow_redirects=True
     )

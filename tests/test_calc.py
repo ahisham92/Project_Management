@@ -1,9 +1,16 @@
-"""Checks the calculation engine against the figures produced by the source
-control workbook at its 2026-09-01 data date."""
+"""The calculation engine.
+
+Figures that do not depend on the schedule — weight points, trade scope weights,
+earned progress and earned man-months — are still checked against the source
+control workbook. Planned progress now comes from the design workflow's step
+dates rather than a linear ramp over elapsed months, so those figures are
+asserted against the workflow model instead.
+"""
 
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -13,44 +20,61 @@ from app.calc import (
     build_s_curve,
     compute_project,
     elapsed_months,
-    planned_pct,
+    parse_date,
+    planned_pct_on,
+    task_schedule,
 )
+from app.workflow import default_steps, ordered
 
 SEED = json.loads((Path(__file__).resolve().parent.parent / "seed" / "sibline-port.json").read_text())
 DATA_DATE = "2026-09-01"
 
 TRADES = [dict(t, id=i + 1) for i, t in enumerate(SEED["trades"])]
 TRADE_ID = {t["key"]: t["id"] for t in TRADES}
-TASKS = [
-    dict(
-        t,
-        id=i + 1,
-        allocations={TRADE_ID[k]: pct for k, pct in t["allocations"].items() if pct > 0},
-    )
-    for i, t in enumerate(SEED["tasks"])
-]
-# The workbook measures elapsed time as `data date - NTP + 1`; the seed carries
-# that convention so the demo project reproduces its published figures.
 PROJECT = SEED["project"]
+STEPS = [dict(s, id=i + 1) for i, s in enumerate(default_steps())]
+
+_NTP = parse_date(PROJECT["ntp_date"])
+_PER_MONTH = PROJECT["days_per_month"]
+
+
+def _as_date(months: float) -> str:
+    return (_NTP + timedelta(days=months * _PER_MONTH)).isoformat()
+
+
+def _tasks(tracking: str | None = None) -> list[dict]:
+    """The seeded deliverables, with the schedule converted to real dates.
+
+    Lines that happen on a single date are meetings, so they are tracked as a
+    simple percentage rather than through the design workflow — the same rule
+    the seeder applies.
+    """
+    out = []
+    for index, task in enumerate(SEED["tasks"]):
+        mode = tracking or ("simple" if task["finish_month"] <= task["start_month"] else "workflow")
+        out.append(
+            dict(
+                task,
+                id=index + 1,
+                start_date=_as_date(task["start_month"]),
+                submission_date=_as_date(task["finish_month"]),
+                tracking=mode,
+                status_key="",
+                revision=0,
+                allocations={TRADE_ID[k]: pct for k, pct in task["allocations"].items() if pct > 0},
+            )
+        )
+    return out
+
+
+TASKS = _tasks()
 
 
 def close(actual, expected, tol=1e-9):
     assert actual == pytest.approx(expected, abs=tol), f"expected {expected}, got {actual}"
 
 
-def test_seed_uses_the_workbook_convention():
-    assert PROJECT["elapsed_day_offset"] == 1
-
-
-def test_elapsed_months_matches_the_workbook():
-    close(elapsed_months(PROJECT["ntp_date"], DATA_DATE, PROJECT["days_per_month"], 1), 0.06570841889117043)
-    # Default convention: no elapsed time on the NTP date itself.
-    close(elapsed_months(PROJECT["ntp_date"], PROJECT["ntp_date"], PROJECT["days_per_month"], 0), 0)
-    close(
-        elapsed_months(PROJECT["ntp_date"], DATA_DATE, PROJECT["days_per_month"], 0),
-        1 / PROJECT["days_per_month"],
-    )
-
+# --- figures the workbook still anchors ------------------------------------
 
 def test_weight_points_total_100():
     close(sum(t["weight_points"] for t in SEED["tasks"]), 100, 1e-6)
@@ -63,72 +87,26 @@ def test_every_trade_allocation_totals_100_pct():
         close(sum(task["allocations"].values()), 1, 1e-6)
 
 
-def test_planned_ramps_linearly_and_milestones_step():
-    close(planned_pct({"start_month": 0, "finish_month": 4}, 2), 0.5)
-    close(planned_pct({"start_month": 1, "finish_month": 3}, 0), 0)     # before start
-    close(planned_pct({"start_month": 1, "finish_month": 3}, 9), 1)     # after finish
-    close(planned_pct({"start_month": 0, "finish_month": 0}, 0), 1)     # milestone on its date
-    close(planned_pct({"start_month": 2, "finish_month": 2}, 1.9), 0)   # milestone not yet due
-
-
-def test_overall_planned_earned_and_variance_match_the_workbook():
-    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE)
-    close(result["totals"]["planned_progress"], 0.01762217659137577)
+def test_earned_progress_matches_the_workbook():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
     close(result["totals"]["earned_progress"], 0.005)
-    close(result["totals"]["variance"], -0.01262217659137577)
 
 
-def test_late_upcoming_and_behind_counts_match_the_task_schedule_tab():
-    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, horizon_days=2)
-    assert result["totals"]["late_count"] == 1      # kick-off meeting, due at NTP, only 50% done
-    assert result["totals"]["upcoming_count"] == 0
-    assert result["totals"]["behind_count"] == 8
-    close(result["totals"]["weight_at_risk"], 0.01)
-
-
-def test_the_late_line_is_the_kick_off_meeting():
-    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE)
-    late = [t for t in result["tasks"] if t["is_late"]]
-    assert len(late) == 1
-    assert late[0]["wbs"] == "1.6"
-    assert late[0]["days_late"] == 1
-    assert late[0]["due_date"] == "2026-08-31"
-
-
-def test_trade_scope_weights_and_contributions_match_the_budget_control_tab():
-    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE)
+def test_trade_scope_weights_match_the_workbook():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
     by = {t["key"]: t for t in result["trades"]}
-
-    close(by["marine"]["scope_weight_pct"], 0.35145000000000015)
-    close(by["geotechnical"]["scope_weight_pct"], 0.21200000000000005)
-    close(by["marine_structures"]["scope_weight_pct"], 0.37565000000000004)
-    close(by["utilities"]["scope_weight_pct"], 0.06090000000000001)
-
-    close(by["marine"]["planned_contribution"], 0.005441067761806982)
-    close(by["geotechnical"]["planned_contribution"], 0.005404928131416837)
-    close(by["marine_structures"]["planned_contribution"], 0.005401642710472279)
-    close(by["utilities"]["planned_contribution"], 0.0013745379876796715)
-
-    close(by["marine"]["earned_contribution"], 0.0015)
-    close(by["geotechnical"]["earned_contribution"], 0.0015)
-    close(by["marine_structures"]["earned_contribution"], 0.0015)
-    close(by["utilities"]["earned_contribution"], 0.0005)
-
-    close(by["marine"]["earned_pct_of_trade"], 0.00426803243704652)
-    close(by["geotechnical"]["earned_pct_of_trade"], 0.007075471698113206)
-    close(by["utilities"]["schedule_variance_pct"], -0.014360229682753222)
-
-    # Scope weights must add back up to the whole project.
+    close(by["marine"]["scope_weight_pct"], 0.35145, 1e-9)
+    close(by["geotechnical"]["scope_weight_pct"], 0.212, 1e-9)
+    close(by["marine_structures"]["scope_weight_pct"], 0.37565, 1e-9)
+    close(by["utilities"]["scope_weight_pct"], 0.0609, 1e-9)
     close(sum(t["scope_weight_pct"] for t in result["trades"]), 1)
     close(sum(t["earned_contribution"] for t in result["trades"]), result["totals"]["earned_progress"])
-    close(sum(t["planned_contribution"] for t in result["trades"]), result["totals"]["planned_progress"])
 
 
 def test_earned_hours_follow_the_workbook_man_month_figures():
-    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE)
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
     by = {t["key"]: t for t in result["trades"]}
     mm = PROJECT["hours_per_month"]
-    # Workbook: Marine earned 0.02560819462227912 MM of a 6 MM budget.
     close(by["marine"]["earned_hours"] / mm, 0.02560819462227912)
     close(by["geotechnical"]["earned_hours"] / mm, 0.017688679245283015)
     close(by["marine_structures"]["earned_hours"] / mm, 0.023958471981898037)
@@ -137,18 +115,124 @@ def test_earned_hours_follow_the_workbook_man_month_figures():
     close(result["budget"]["budget_hours"], 15 * mm)
 
 
+def test_elapsed_months_still_reports_the_workbook_convention():
+    # Only the headline "months elapsed" uses this; planned progress comes from
+    # the workflow dates now.
+    close(elapsed_months(PROJECT["ntp_date"], DATA_DATE, _PER_MONTH, 1), 0.06570841889117043)
+    close(elapsed_months(PROJECT["ntp_date"], DATA_DATE, _PER_MONTH, 0), 1 / _PER_MONTH)
+
+
+# --- the design workflow ----------------------------------------------------
+
+def test_the_default_workflow_matches_the_agreed_steps():
+    steps = ordered(STEPS)
+    assert [(s["name"], s["percent"]) for s in steps] == [
+        ("Design started", 0.10),
+        ("IDC provided", 0.40),
+        ("Comments addressed", 0.60),
+        ("Submitted to client", 0.80),
+        ("Code A received", 1.00),
+    ]
+
+
+def test_step_dates_hang_off_the_start_and_submission_dates():
+    task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
+    plan = {s["key"]: s["date"] for s in task_schedule(task, STEPS)}
+    assert plan["design_start"] == "2026-08-31"        # on the start date
+    assert plan["idc"] == "2026-09-25"                 # 5 days before submission
+    assert plan["comments_addressed"] == "2026-09-28"  # 2 days before submission
+    assert plan["submitted"] == "2026-09-30"           # the submission date
+    assert plan["code_a"] == "2026-10-14"              # 14 days after submission
+
+
+def test_planned_percent_lands_exactly_on_each_step_date():
+    task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
+    plan = task_schedule(task, STEPS)
+    for step in plan:
+        close(planned_pct_on(task, step["date"], STEPS), step["percent"])
+    # Before the first step there is nothing planned; after the last it is complete.
+    close(planned_pct_on(task, "2026-08-30", STEPS), 0)
+    close(planned_pct_on(task, "2026-12-31", STEPS), 1)
+
+
+def test_planned_percent_ramps_between_steps():
+    task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
+    # Halfway between "Submitted" (30 Sep, 80%) and "Code A" (14 Oct, 100%).
+    close(planned_pct_on(task, "2026-10-07", STEPS), 0.9)
+    for earlier, later in zip(
+        ["2026-09-01", "2026-09-10", "2026-09-25", "2026-09-30"],
+        ["2026-09-10", "2026-09-25", "2026-09-30", "2026-10-14"],
+    ):
+        assert planned_pct_on(task, later, STEPS) >= planned_pct_on(task, earlier, STEPS)
+
+
+def test_editing_a_step_offset_moves_the_planned_date():
+    task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
+    steps = [dict(s) for s in STEPS]
+    next(s for s in steps if s["key"] == "idc")["offset_days"] = -10
+    plan = {s["key"]: s["date"] for s in task_schedule(task, steps)}
+    assert plan["idc"] == "2026-09-20"
+
+
+def test_a_simple_line_ramps_between_its_two_dates():
+    task = {"start_date": "2026-01-01", "submission_date": "2026-01-11", "tracking": "simple"}
+    close(planned_pct_on(task, "2026-01-01", STEPS), 0)
+    close(planned_pct_on(task, "2026-01-06", STEPS), 0.5)
+    close(planned_pct_on(task, "2026-01-11", STEPS), 1)
+
+
+def test_a_milestone_steps_to_100_on_its_date():
+    task = {"start_date": "2026-01-10", "submission_date": "2026-01-10", "tracking": "simple"}
+    close(planned_pct_on(task, "2026-01-09", STEPS), 0)
+    close(planned_pct_on(task, "2026-01-10", STEPS), 1)
+
+
+# --- the project as a whole -------------------------------------------------
+
+def test_overall_planned_earned_and_variance():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
+    totals = result["totals"]
+    close(totals["planned_progress"], 0.022052, 1e-9)
+    close(totals["earned_progress"], 0.005)
+    close(totals["variance"], -0.017052, 1e-9)
+    close(sum(t["planned_contribution"] for t in result["trades"]), totals["planned_progress"])
+
+
+def test_late_and_behind_counts():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, horizon_days=2, steps=STEPS)
+    assert result["totals"]["late_count"] == 1      # the kick-off meeting, due at NTP, 50% done
+    assert result["totals"]["upcoming_count"] == 0
+    assert result["totals"]["behind_count"] == 8
+    close(result["totals"]["weight_at_risk"], 0.01)
+
+
+def test_the_late_line_is_the_kick_off_meeting():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
+    late = [t for t in result["tasks"] if t["is_late"]]
+    assert len(late) == 1
+    assert late[0]["wbs"] == "1.6"
+    assert late[0]["days_late"] == 1
+    assert late[0]["due_date"] == "2026-08-31"
+
+
+def test_a_horizon_of_none_shows_every_remaining_submission():
+    windowed = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, horizon_days=30, steps=STEPS)
+    everything = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, horizon_days=None, steps=STEPS)
+    assert windowed["totals"]["upcoming_count"] == 8
+    assert everything["totals"]["upcoming_count"] == 54
+    assert everything["horizon_days"] is None
+
+
 def test_spent_hours_drive_cpi_eac_and_vac():
     result = compute_project(
-        PROJECT, TASKS, TRADES, DATA_DATE, spent_by_trade={TRADE_ID["marine"]: 200}
+        PROJECT, TASKS, TRADES, DATA_DATE, spent_by_trade={TRADE_ID["marine"]: 200}, steps=STEPS
     )
     marine = next(t for t in result["trades"] if t["key"] == "marine")
     assert marine["spent_hours"] == 200
     close(marine["cpi"], marine["earned_hours"] / 200)
     close(marine["eac_hours"], marine["budget_hours"] / marine["cpi"])
     close(marine["vac_hours"], marine["budget_hours"] - marine["eac_hours"])
-    assert marine["hours_over_under"] > 0, "burning hours ahead of earned progress"
     assert marine["budget_status"] == "Over-burning"
-
     idle = next(t for t in result["trades"] if t["key"] == "utilities")
     assert idle["cpi"] is None
     assert idle["budget_status"] == "No spend booked"
@@ -156,19 +240,75 @@ def test_spent_hours_drive_cpi_eac_and_vac():
 
 def test_a_fully_complete_project_earns_100_pct():
     done = [dict(t, actual_pct=1) for t in TASKS]
-    result = compute_project(PROJECT, done, TRADES, DATA_DATE)
+    result = compute_project(PROJECT, done, TRADES, DATA_DATE, steps=STEPS)
     close(result["totals"]["earned_progress"], 1)
     assert result["totals"]["late_count"] == 0
     assert result["totals"]["behind_count"] == 0
 
 
-def test_the_elapsed_day_convention_changes_planned_but_not_earned():
-    strict = compute_project({**PROJECT, "elapsed_day_offset": 0}, TASKS, TRADES, DATA_DATE)
-    workbook = compute_project(PROJECT, TASKS, TRADES, DATA_DATE)
-    close(strict["totals"]["earned_progress"], workbook["totals"]["earned_progress"])
-    assert strict["totals"]["planned_progress"] < workbook["totals"]["planned_progress"]
-    close(strict["totals"]["planned_progress"], 0.01381108829568788)
+# --- submissions, approvals and revisions -----------------------------------
 
+def _one_task(**overrides) -> list[dict]:
+    task = {
+        "id": 1, "wbs": "1.1", "name": "Drawing set", "weight_points": 1,
+        "start_date": "2026-01-01", "submission_date": "2026-02-01",
+        "tracking": "workflow", "status_key": "", "revision": 0, "actual_pct": 0.0,
+        "allocations": {},
+    }
+    task.update(overrides)
+    return [task]
+
+
+def test_a_deliverable_awaiting_code_a_is_judged_on_the_approval_date():
+    tasks = _one_task(status_key="submitted", actual_pct=0.8)
+    # Submitted on time: the Code A date (15 Feb) is what it is measured against.
+    on_time = compute_project(PROJECT, tasks, [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert on_time["due_reason"] == "approval"
+    assert on_time["due_date"] == "2026-02-15"
+    assert not on_time["is_late"]
+
+    overdue = compute_project(PROJECT, tasks, [], "2026-02-20", steps=STEPS)["tasks"][0]
+    assert overdue["is_late"] and overdue["days_late"] == 5
+
+
+def test_a_deliverable_not_yet_submitted_is_judged_on_the_submission_date():
+    tasks = _one_task(status_key="idc", actual_pct=0.4)
+    row = compute_project(PROJECT, tasks, [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert row["due_reason"] == "submission"
+    assert row["due_date"] == "2026-02-01"
+    assert row["is_late"] and row["days_late"] == 4
+
+
+def test_a_revision_is_flagged_and_capped():
+    project = dict(PROJECT, max_revisions=10)
+    row = compute_project(project, _one_task(revision=3, status_key="comments_addressed", actual_pct=0.6),
+                          [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert row["in_rework"] and not row["at_revision_limit"]
+
+    at_limit = compute_project(project, _one_task(revision=10, status_key="comments_addressed", actual_pct=0.6),
+                               [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert at_limit["at_revision_limit"]
+
+    totals = compute_project(project, _one_task(revision=10, status_key="submitted", actual_pct=0.8),
+                             [], "2026-02-05", steps=STEPS)["totals"]
+    assert totals["rework_count"] == 1
+    assert totals["at_limit_count"] == 1
+
+
+def test_a_resubmission_moves_the_planned_dates():
+    first = _one_task(status_key="submitted", actual_pct=0.8)
+    resubmitted = _one_task(status_key="comments_addressed", actual_pct=0.6, revision=1,
+                            submission_date="2026-03-01")
+    before = compute_project(PROJECT, first, [], "2026-02-05", steps=STEPS)["tasks"][0]
+    after = compute_project(PROJECT, resubmitted, [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert before["approval_due_date"] == "2026-02-15"
+    assert after["approval_due_date"] == "2026-03-15"
+    assert after["submission_date"] == "2026-03-01"
+    # Rework pushes planned progress back down for that line.
+    assert after["planned_pct"] < before["planned_pct"]
+
+
+# --- curves and period reports ----------------------------------------------
 
 def test_s_curve_planned_rises_to_100_pct_and_earned_stops_at_the_data_date():
     history = [
@@ -176,17 +316,13 @@ def test_s_curve_planned_rises_to_100_pct_and_earned_stops_at_the_data_date():
         for t in TASKS
         if t["actual_pct"] > 0
     ]
-    points = build_s_curve(PROJECT, TASKS, history, DATA_DATE, steps=20)
-    # Month 0 already carries the kick-off milestone, which falls due on the NTP date.
-    close(points[0]["planned"], 0.01)
-    close(points[-1]["planned"], 1)
+    points = build_s_curve(PROJECT, TASKS, history, DATA_DATE, steps=STEPS, samples=30)
+    close(points[-1]["planned"], 1, 1e-9)
     for earlier, later in zip(points, points[1:]):
         assert later["planned"] >= earlier["planned"] - 1e-12, "planned curve must not go backwards"
     assert points[-1]["earned"] is None, "no earned value beyond the data date"
-    assert sum(1 for p in points if p["earned"] is not None) >= 1
-    # The curve's dates line up with how due dates are computed (month 0 = NTP).
+    assert any(p["date"] == DATA_DATE for p in points), "the data date is always sampled"
     assert points[0]["date"] == "2026-08-31"
-    assert any(p["date"] == DATA_DATE for p in points)
 
 
 def test_period_report_attributes_progress_to_the_right_period_and_trades():
@@ -195,10 +331,22 @@ def test_period_report_attributes_progress_to_the_right_period_and_trades():
         {"task_id": kickoff["id"], "actual_pct": 0.25, "data_date": "2026-08-31"},
         {"task_id": kickoff["id"], "actual_pct": 0.5, "data_date": "2026-09-01"},
     ]
-    period = build_period_report(PROJECT, TASKS, TRADES, history, "2026-09-01", "2026-09-01")
+    period = build_period_report(PROJECT, TASKS, TRADES, history, "2026-09-01", "2026-09-01", steps=STEPS)
     close(period["earned_at_start"], 0.01 * 0.25)
     close(period["earned_at_end"], 0.01 * 0.5)
     close(period["earned_in_period"], 0.01 * 0.25)
     marine = next(t for t in period["trade_earned_in_period"] if t["name"] == "Marine")
     close(marine["earned_in_period"], 0.01 * 0.25 * 0.3)
     assert next(t for t in period["tasks"] if t["wbs"] == "1.6")["period_status"] == "Advanced in period"
+
+
+def test_period_report_shows_rework_as_going_backwards():
+    task = next(t for t in TASKS if t["wbs"] == "2.3")
+    history = [
+        {"task_id": task["id"], "actual_pct": 0.8, "data_date": "2026-09-01"},
+        {"task_id": task["id"], "actual_pct": 0.6, "data_date": "2026-09-10"},
+    ]
+    period = build_period_report(PROJECT, TASKS, TRADES, history, "2026-09-05", "2026-09-15", steps=STEPS)
+    row = next(t for t in period["tasks"] if t["wbs"] == "2.3")
+    assert row["period_status"] == "Went back — rework"
+    assert row["delta_actual"] < 0

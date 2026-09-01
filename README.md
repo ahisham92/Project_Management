@@ -96,13 +96,16 @@ through the **design workflow**:
 step hangs off the start or the submission date, and the day offset. You can add and remove
 steps too.
 
-Planned percent **interpolates between consecutive steps**, so it lands exactly on a step's
-percentage on that step's own date and ramps smoothly in between — which is what makes the
-S-curve a curve rather than a staircase.
+A submission cycle moves in **steps**, not smoothly, and the planned figure follows: it reads
+the percentage of the **last step whose date has passed**. So a workflow line's planned
+progress only ever shows 0, 10, 40, 60, 80 or 100 — never a value in between. It sits at 40%
+from the IDC date until the comments date, then jumps to 60%.
 
 Lines that are not design submissions — meetings, milestones — are tracked as a **simple
-percentage** you type, ramping between the two dates, or stepping 0% → 100% on the date when
-both are the same. The seeded project sets the bi-weekly meetings this way automatically.
+percentage** you type, **pro rata by time** between the two dates, or stepping 0% → 100% on
+the date when both are the same. The seeded project sets the meetings this way automatically,
+from the "(milestone)" marker the workbook already carries. You can switch any line between
+the two on the Setup sheet.
 
 ```
 weight %         = weight points / total weight points        (always totals 100%)
@@ -133,6 +136,16 @@ A project has a **maximum revisions** setting (default 10). A deliverable that r
 flagged for escalation on the schedule and cannot be pushed further without raising the
 limit — so a line stuck at Rev 10 is visible rather than quietly cycling.
 
+### Sorting
+
+The progress and schedule tables sort on any column — WBS, deliverable, section, weight,
+dates, planned, actual, variance, status, revision. Click a heading to sort, click it again
+to reverse. WBS sorts naturally, so 1.9 comes before 1.10.
+
+On the progress tab, sorting by anything other than WBS folds the sections away into one
+ranked list — which is what you want when the question is "what is furthest behind?" Sorting
+by WBS brings the sections back.
+
 ### Dates
 
 Every date reads and is typed as **dd/mm/yyyy** — 1 September is `01/09/2026`. The fields are
@@ -158,6 +171,13 @@ This is a guard against accidental edits, the way a protected spreadsheet is —
 boundary. Anyone with manager access to the project can be given the password; what really
 controls who can change a project is the **role** (see Access model below).
 
+### Saving the setup
+
+The whole Setup sheet is one form: project settings, the workflow, trades, sections and every
+deliverable, including each line's trade split. **Save all changes** in the bar at the foot of
+the page writes the lot in a single transaction. If any trade split does not total 100%, the
+save is rejected and nothing at all is written, so the sheet can never end up half saved.
+
 ### Setup ↔ Excel
 
 **Export to Excel** writes the whole setup to one workbook: project settings, the workflow,
@@ -177,12 +197,23 @@ Excel and **Import from Excel** brings it back.
 The original control workbook derived planned progress from a linear ramp over *elapsed
 months*. This app derives it from the workflow's *step dates*, which is a different — and for
 design submissions, more truthful — model: at the 2026-09-01 cut-off the seeded project reads
-2.21% planned rather than the workbook's 1.76%. Earned progress, the weights and the per-trade
+2.03% planned rather than the workbook's 1.76%. Earned progress, the weights and the per-trade
 figures are unchanged.
 
 The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradicting its own
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
+
+### Printing and PDF for management
+
+**Progress**, **Schedule**, **Budget** and **Period** each carry a **Print / PDF** button. It
+opens your browser's print dialog, where "Save as PDF" is a destination on every current
+browser — so there is no PDF library to install and nothing to keep up to date.
+
+The printed page is not a screenshot of the screen: navigation, filters, buttons and the sort
+arrows are dropped; the dark theme reverts to ink on white; a report header carries the project,
+its code, the client, the report name and the data date; long tables break across pages without
+splitting a row and repeat their headings on each page. A4 landscape is the default.
 
 ---
 
@@ -278,11 +309,11 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-82 tests: the calculation engine (the workflow step dates, planned interpolation,
+102 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the web layer (sign-in, every page, reporting progress by status,
 raising revisions, booking hours, the dd/mm/yyyy dates, the setup lock and the permission
-rules), and the Excel round trip.
+rules), sorting, Save all, the print output, and the Excel round trip.
 
 There is also a browser smoke test that drives the real app:
 
@@ -313,6 +344,7 @@ app/
   workflow.py           the design workflow: steps, their dates, and revision rules
   excel.py              writing and reading the setup workbook
   dates.py              dd/mm/yyyy in, ISO stored
+  sorting.py            column ordering for the progress and schedule tables
   seed.py               loads the demo project
   views/                the pages
   templates/            Jinja2 templates

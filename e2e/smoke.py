@@ -87,8 +87,12 @@ def main() -> int:
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
         step("period report shows what moved", _period)
+        step("progress sorts by a column", _sorting)
+        step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
+        step("setup saves everything with one button", _save_all)
         step("setup exports to Excel", _excel_export)
+        step("report tabs print to PDF", _print_to_pdf)
         step("dark mode renders", _dark)
         step("mobile layout does not overflow horizontally", _mobile)
 
@@ -180,6 +184,62 @@ def _dates_read_dd_mm(page) -> None:
         raise AssertionError("dates should read dd/mm/yyyy")
     if page.locator("input[type=date]").count():
         raise AssertionError("a native date picker would follow the machine's locale")
+
+
+def _sorting(page) -> None:
+    page.click("a:has-text('Progress')")
+    page.wait_for_selector("text=Progress update", timeout=8000)
+    page.click("th a:has-text('Variance')")
+    page.wait_for_selector("text=All deliverables", timeout=8000)
+    first = page.locator("tbody tr").first.text_content()
+    if "1.6" not in first:
+        raise AssertionError(f"worst variance should sort first, got {first[:80]}")
+    page.click("th a:has-text('WBS')")
+    page.wait_for_selector("text=Sec. 3.1 Marine Design", timeout=8000)
+    page.screenshot(path=str(SHOTS / "12-sorted.png"), full_page=True)
+
+
+def _stepped_planned(page) -> None:
+    """Planned should read one of the step values, never something between."""
+    values = page.eval_on_selector_all(
+        "table tbody tr td:nth-child(5)", "els => els.map(e => e.textContent.trim())"
+    )
+    seen = {v for v in values if v.endswith("%")}
+    allowed = {"0%", "10%", "40%", "60%", "80%", "100%", "7%"}
+    stray = seen - allowed
+    if stray:
+        raise AssertionError(f"planned showed values between steps: {sorted(stray)}")
+
+
+def _save_all(page) -> None:
+    page.fill("input[name='max_revisions']", "8")
+    page.click("button:has-text('Save all changes')")
+    page.wait_for_selector("text=Saved — project settings", timeout=8000)
+    if page.input_value("input[name='max_revisions']") != "8":
+        raise AssertionError("the saved value did not come back")
+
+
+def _print_to_pdf(page) -> None:
+    """Each report tab offers a print button and carries a print-only header."""
+    for tab, heading in [("Progress", "Progress update"), ("Schedule", "Schedule"),
+                         ("Budget", "Budget control"), ("Period", "Period report")]:
+        page.click(f"a.tabs >> nth=0" if False else f"nav.tabs a:has-text('{tab}')")
+        page.wait_for_selector(f"text={heading}", timeout=8000)
+        if page.locator("[data-print]").count() == 0:
+            raise AssertionError(f"{tab} has no print button")
+        if page.locator(".print-header").count() == 0:
+            raise AssertionError(f"{tab} has no print header")
+
+    # Render the page as the printer sees it, which is how a PDF comes out.
+    page.emulate_media(media="print")
+    page.wait_for_timeout(400)
+    hidden = page.evaluate(
+        "getComputedStyle(document.querySelector('.topbar')).display === 'none'"
+    )
+    if not hidden:
+        raise AssertionError("the navigation is still on the page when printing")
+    page.screenshot(path=str(SHOTS / "13-print.png"), full_page=True)
+    page.emulate_media(media="screen")
 
 
 def _setup_lock(page) -> None:

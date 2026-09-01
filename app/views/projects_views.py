@@ -11,6 +11,9 @@ from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..charts import SERIES_SLOTS
 from ..dates import from_input, from_input_or
 from ..db import execute, insert, query, query_one
+from ..sorting import COLUMNS as SORT_COLUMNS
+from ..sorting import normalise as normalise_sort
+from ..sorting import sort_tasks
 from ..service import (
     AllocationError, WorkflowError, install_default_steps, load_revisions, load_sections,
     load_steps, load_trades, next_sort_order, project_period, project_s_curve,
@@ -132,24 +135,36 @@ def tasks(project_id: int):
             return task["in_rework"]
         return True
 
-    groups: dict[object, dict] = {}
-    for task in snapshot["tasks"]:
-        if not keep(task):
-            continue
-        key = task["section_id"] if task["section_id"] is not None else "none"
-        group = groups.setdefault(
-            key, {"name": task["section_name"] or "Unassigned", "tasks": [], "weight": 0.0}
-        )
-        group["tasks"].append(task)
-        group["weight"] += task["weight_pct"]
+    kept = [t for t in snapshot["tasks"] if keep(t)]
+    sort, direction = normalise_sort(request.args.get("sort"), request.args.get("dir"))
+    kept = sort_tasks(kept, sort, direction)
+
+    # Sections are the natural reading order. Asking for any other order means
+    # you want one ranked list, so the sections fold away.
+    if sort == "wbs":
+        groups: dict[object, dict] = {}
+        for task in kept:
+            key = task["section_id"] if task["section_id"] is not None else "none"
+            group = groups.setdefault(
+                key, {"name": task["section_name"] or "Unassigned", "tasks": [], "weight": 0.0}
+            )
+            group["tasks"].append(task)
+            group["weight"] += task["weight_pct"]
+        grouped = list(groups.values())
+    else:
+        grouped = [{
+            "name": "All deliverables",
+            "tasks": kept,
+            "weight": sum(t["weight_pct"] for t in kept),
+        }] if kept else []
 
     return render_template(
         "tasks.html",
         project=project, role=role, snapshot=snapshot, data_date=data_date,
-        groups=list(groups.values()), filters=FILTERS, active_filter=active, search=search,
-        shown=sum(len(gr["tasks"]) for gr in groups.values()),
-        can_report=_can_report(role),
+        groups=grouped, filters=FILTERS, active_filter=active, search=search,
+        shown=len(kept), can_report=_can_report(role),
         steps=ordered_steps(load_steps(project_id)),
+        sort=sort, direction=direction, sort_columns=SORT_COLUMNS,
         editing=_to_int(request.args.get("edit")),
         commenting=_to_int(request.args.get("comments")),
     )
@@ -268,13 +283,23 @@ def schedule(project_id: int):
     snapshot = project_snapshot(project, data_date, horizon)
     rows = snapshot["tasks"]
 
+    requested = request.args.get("sort")
+    sort, direction = normalise_sort(requested, request.args.get("dir"))
+
+    def arrange(subset, fallback):
+        """Each table has a sensible default order until a column is chosen."""
+        if requested in SORT_COLUMNS:
+            return sort_tasks(subset, sort, direction)
+        return sorted(subset, key=fallback)
+
     return render_template(
         "schedule.html",
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         horizon=horizon, horizons=HORIZONS, steps=ordered_steps(load_steps(project_id)),
-        late=sorted((t for t in rows if t["is_late"]), key=lambda t: -t["days_late"]),
-        upcoming=sorted((t for t in rows if t["is_upcoming"]), key=lambda t: t["days_to_due"]),
-        behind=sorted((t for t in rows if t["is_behind"] and not t["is_late"]), key=lambda t: t["variance"]),
+        sort=sort, direction=direction, sort_columns=SORT_COLUMNS, sorted_by=requested in SORT_COLUMNS,
+        late=arrange([t for t in rows if t["is_late"]], lambda t: -t["days_late"]),
+        upcoming=arrange([t for t in rows if t["is_upcoming"]], lambda t: t["days_to_due"]),
+        behind=arrange([t for t in rows if t["is_behind"] and not t["is_late"]], lambda t: t["variance"]),
     )
 
 
@@ -793,6 +818,223 @@ def save_task(project_id: int, task_id: int):
             ),
         )
         flash("Deliverable saved", "success")
+    return _back("projects.setup", project_id)
+
+
+@bp.post("/setup/save-all")
+@login_required
+def save_all(project_id: int):
+    """Saves every change on the Setup sheet in one go.
+
+    The whole page belongs to one form, so project settings, the workflow,
+    trades, sections and every deliverable are written together — and in one
+    transaction, so a rejected value does not leave the sheet half saved.
+    """
+    project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    form = request.form
+    code = (form.get("code") or "").strip()
+    name = (form.get("name") or "").strip()
+    if not code or not name:
+        flash("Project name and code are required", "error")
+        return _back("projects.setup", project_id)
+    if query_one("SELECT 1 FROM projects WHERE code = ? AND id != ?", (code, project_id)):
+        flash("A project with that code already exists", "error")
+        return _back("projects.setup", project_id)
+
+    steps = load_steps(project_id)
+    trades = load_trades(project_id)
+    sections = load_sections(project_id)
+    tasks = query("SELECT * FROM tasks WHERE project_id = ?", (project_id,))
+
+    # Trade splits are checked before anything is written, so an invalid one
+    # cannot leave the rest of the sheet saved and that line untouched.
+    splits: dict[int, dict[int, float]] = {}
+    for task in tasks:
+        supplied = {
+            trade["id"]: _to_float(form.get(f"task_{task['id']}_alloc_{trade['id']}"))
+            for trade in trades
+            if f"task_{task['id']}_alloc_{trade['id']}" in form
+        }
+        if not supplied:
+            continue
+        total = sum(supplied.values())
+        if abs(total - 100) > 0.5:
+            flash(
+                f"{task['wbs'] or task['name'][:40]}: the trade split totals {total:.0f}%, not 100%. "
+                "Nothing was saved.",
+                "error",
+            )
+            return _back("projects.setup", project_id)
+        splits[task["id"]] = {tid: pct / 100 for tid, pct in supplied.items()}
+
+    from ..db import get_db
+
+    conn = get_db()
+    changed = {"steps": 0, "trades": 0, "sections": 0, "tasks": 0}
+    with conn:
+        conn.execute(
+            """
+            UPDATE projects SET code = ?, name = ?, client = ?, description = ?, ntp_date = ?,
+                   duration_months = ?, days_per_month = ?, hours_per_month = ?,
+                   elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
+                   revision_reset_step = ?, status = ?, updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (
+                code, name, (form.get("client") or "").strip(), (form.get("description") or "").strip(),
+                from_input_or(form.get("ntp_date"), project["ntp_date"]),
+                _to_float(form.get("duration_months"), project["duration_months"]),
+                _to_float(form.get("days_per_month"), 30.4375),
+                _to_float(form.get("hours_per_month"), 176),
+                _to_float(form.get("elapsed_day_offset"), 0),
+                max(0, int(_to_float(form.get("max_revisions"), project["max_revisions"]))),
+                max(0.0, _to_float(form.get("rework_days"), project["rework_days"])),
+                form.get("revision_reset_step") or project["revision_reset_step"],
+                form.get("status") or "active", project_id,
+            ),
+        )
+
+        for step in steps:
+            field = f"step_{step['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                """
+                UPDATE workflow_steps SET name = ?, percent = ?, anchor = ?, offset_days = ?
+                WHERE id = ? AND project_id = ?
+                """,
+                (
+                    (form.get(field) or step["name"]).strip(),
+                    max(0.0, min(1.0, _to_float(form.get(f"step_{step['id']}_percent"), step["percent"] * 100) / 100)),
+                    form.get(f"step_{step['id']}_anchor") or step["anchor"],
+                    _to_float(form.get(f"step_{step['id']}_offset"), step["offset_days"]),
+                    step["id"], project_id,
+                ),
+            )
+            changed["steps"] += 1
+
+        for trade in trades:
+            field = f"trade_{trade['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                "UPDATE trades SET name = ?, budget_hours = ?, color = ? WHERE id = ? AND project_id = ?",
+                (
+                    (form.get(field) or trade["name"]).strip(),
+                    _to_float(form.get(f"trade_{trade['id']}_budget"), trade["budget_hours"]),
+                    form.get(f"trade_{trade['id']}_color") or trade["color"],
+                    trade["id"], project_id,
+                ),
+            )
+            changed["trades"] += 1
+
+        for section in sections:
+            field = f"section_{section['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                "UPDATE sections SET code = ?, name = ? WHERE id = ? AND project_id = ?",
+                (
+                    (form.get(f"section_{section['id']}_code") or "").strip(),
+                    (form.get(field) or section["name"]).strip(),
+                    section["id"], project_id,
+                ),
+            )
+            changed["sections"] += 1
+
+        for task in tasks:
+            field = f"task_{task['id']}_name"
+            if field not in form:
+                continue
+            start, submission = _task_dates(
+                project,
+                {
+                    "start_date": form.get(f"task_{task['id']}_start_date"),
+                    "submission_date": form.get(f"task_{task['id']}_submission_date"),
+                    "start_days": "", "submission_days": "",
+                },
+            )
+            section_id = _to_int(form.get(f"task_{task['id']}_section"))
+            conn.execute(
+                """
+                UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
+                       start_date = ?, submission_date = ?, tracking = ?, remarks = ?,
+                       updated_at = datetime('now')
+                WHERE id = ? AND project_id = ?
+                """,
+                (
+                    (form.get(f"task_{task['id']}_wbs") or "").strip(),
+                    (form.get(field) or task["name"]).strip(),
+                    section_id,
+                    _to_float(form.get(f"task_{task['id']}_points"), task["weight_points"]),
+                    start or task["start_date"], submission or task["submission_date"],
+                    form.get(f"task_{task['id']}_tracking") or task["tracking"],
+                    (form.get(f"task_{task['id']}_remarks") or "").strip(),
+                    task["id"], project_id,
+                ),
+            )
+            changed["tasks"] += 1
+
+            if task["id"] in splits:
+                conn.execute("DELETE FROM task_allocations WHERE task_id = ?", (task["id"],))
+                conn.executemany(
+                    "INSERT INTO task_allocations (task_id, trade_id, pct) VALUES (?, ?, ?)",
+                    [(task["id"], tid, pct) for tid, pct in splits[task["id"]].items() if pct > 0],
+                )
+
+        # A step percentage may have moved, so re-derive each workflow line.
+        percentages = {r["key"]: r["percent"] for r in
+                       conn.execute("SELECT key, percent FROM workflow_steps WHERE project_id = ?", (project_id,))}
+        for row in conn.execute(
+            "SELECT id, tracking, status_key FROM tasks WHERE project_id = ? AND tracking = 'workflow'",
+            (project_id,),
+        ).fetchall():
+            conn.execute("UPDATE tasks SET actual_pct = ? WHERE id = ?",
+                         (percentages.get(row["status_key"], 0.0), row["id"]))
+
+    flash(
+        f"Saved — project settings, {changed['steps']} workflow steps, {changed['trades']} trades, "
+        f"{changed['sections']} sections and {changed['tasks']} deliverables",
+        "success",
+    )
+    return _back("projects.setup", project_id)
+
+
+@bp.post("/setup/remove")
+@login_required
+def remove_item(project_id: int):
+    """Deletes one thing from the Setup sheet.
+
+    Every row's delete button posts here, so the rest of the page can live in a
+    single Save all form without nesting forms inside it.
+    """
+    _, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    target = (request.form.get("target") or "").split(":", 1)
+    if len(target) != 2:
+        flash("Nothing to remove", "error")
+        return _back("projects.setup", project_id)
+
+    kind, raw_id = target
+    item_id = _to_int(raw_id)
+    tables = {
+        "step": ("workflow_steps", "Step removed"),
+        "trade": ("trades", "Trade removed, along with its share of each deliverable"),
+        "section": ("sections", "Section removed. Its deliverables are now unassigned."),
+        "task": ("tasks", "Deliverable deleted"),
+    }
+    if kind not in tables or item_id is None:
+        flash("Nothing to remove", "error")
+        return _back("projects.setup", project_id)
+
+    table, message = tables[kind]
+    execute(f"DELETE FROM {table} WHERE id = ? AND project_id = ?", (item_id, project_id))
+    flash(message, "success")
     return _back("projects.setup", project_id)
 
 

@@ -101,6 +101,14 @@
     });
   });
 
+  // --- print ---------------------------------------------------------------
+  // The browser's own print dialog is the PDF writer; "Save as PDF" is offered
+  // as a destination in every current browser.
+
+  document.addEventListener('click', function (event) {
+    if (event.target.closest('[data-print]')) window.print();
+  });
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

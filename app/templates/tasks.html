@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/bits.html" import progress, task_status, task_color, revision_badge, badge, date_field, empty %}
+{% from "partials/bits.html" import progress, task_status, task_color, revision_badge, badge, date_field, empty, sort_th, print_header, print_button %}
 {% block title %}Progress — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -16,28 +16,39 @@
       {% if t['rework_count'] %} · {{ t['rework_count'] }} in rework{% endif %}
     </p>
   </div>
-  <form method="get" class="inline-form">
-    <input type="hidden" name="filter" value="{{ active_filter }}">
-    <input type="hidden" name="q" value="{{ search }}">
-    {{ date_field('data_date', data_date, 'Report progress as at', 'w-md') }}
-    <button type="submit" class="btn btn-ghost">Apply</button>
-  </form>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      <input type="hidden" name="filter" value="{{ active_filter }}">
+      <input type="hidden" name="q" value="{{ search }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
+      {{ date_field('data_date', data_date, 'Report progress as at', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
 </div>
+
+{{ print_header(project, 'Progress', data_date,
+                pct(snapshot['totals']['earned_progress'], 2) ~ ' earned of '
+                ~ pct(snapshot['totals']['planned_progress'], 2) ~ ' planned') }}
 
 <div class="inline-form" style="margin-bottom:12px">
   <div class="chips">
     {% for key, label in filters %}
-      <a href="{{ url_for('projects.tasks', project_id=project['id'], filter=key, q=search or none, data_date=date_input(data_date)) }}"
+      <a href="{{ url_for('projects.tasks', project_id=project['id'], filter=key, q=search or none, data_date=date_input(data_date), sort=sort, dir=direction) }}"
          class="{{ 'active' if active_filter == key }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" class="inline-form">
     <input type="hidden" name="filter" value="{{ active_filter }}">
     <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="dir" value="{{ direction }}">
     <input name="q" value="{{ search }}" placeholder="Search deliverables…" class="w-lg">
     <button type="submit" class="btn btn-ghost">Search</button>
     {% if search %}
-      <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, data_date=date_input(data_date)) }}">Clear</a>
+      <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, data_date=date_input(data_date), sort=sort, dir=direction) }}">Clear</a>
     {% endif %}
   </form>
   <span class="small muted">{{ shown }} shown</span>
@@ -66,12 +77,19 @@
     </div>
     <div class="card-body flush table-scroll">
       <table>
+        {% set params = {'project_id': project['id'], 'filter': active_filter, 'q': search or none,
+                         'data_date': date_input(data_date)} %}
         <thead>
           <tr>
-            <th>WBS</th><th>Deliverable</th><th class="right">Weight</th>
-            <th class="right">Submission</th><th class="right">Planned</th>
-            <th style="min-width:190px">Status &amp; progress</th>
-            <th class="right">Variance</th><th></th><th></th>
+            {{ sort_th('wbs', 'WBS', sort, direction, params) }}
+            {{ sort_th('name', 'Deliverable', sort, direction, params) }}
+            {{ sort_th('weight', 'Weight', sort, direction, params, 'right') }}
+            {{ sort_th('submission', 'Submission', sort, direction, params, 'right') }}
+            {{ sort_th('planned', 'Planned', sort, direction, params, 'right') }}
+            {{ sort_th('actual', 'Status &amp; progress', sort, direction, params) }}
+            {{ sort_th('variance', 'Variance', sort, direction, params, 'right') }}
+            {{ sort_th('revision', 'Rev', sort, direction, params, 'right') }}
+            <th class="no-print"></th>
           </tr>
         </thead>
         <tbody>
@@ -81,7 +99,6 @@
               <td>
                 {{ task['name'] }}
                 {% if task['remarks'] %}<p class="small muted" style="margin-top:2px">{{ task['remarks'] }}</p>{% endif %}
-                <p class="small" style="margin-top:4px">{{ revision_badge(task, limit) }}</p>
               </td>
               <td class="right tabular ink2">
                 {{ pct(task['weight_pct'], 2) }}
@@ -164,8 +181,11 @@
               <td class="right tabular {{ 'good-text' if task['variance'] >= 0 else 'bad-text' }}">
                 {{ signed_pct(task['variance'], 2) }}
               </td>
-              <td>{{ task_status(task) }}</td>
               <td class="right nowrap">
+                {{ task_status(task) }}
+                {% if task['revision'] %}<span style="display:block;margin-top:2px">{{ revision_badge(task, limit) }}</span>{% endif %}
+              </td>
+              <td class="right nowrap no-print">
                 {% if can_report and editing != task['id'] and commenting != task['id'] %}
                   <a class="btn btn-ghost btn-sm"
                      href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), edit=task['id']) }}#task-{{ task['id'] }}">Update</a>

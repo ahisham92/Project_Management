@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import badge, progress, task_color, revision_badge, date_field, empty %}
+{% from "partials/bits.html" import badge, progress, task_color, revision_badge, date_field, empty, sort_th, print_header, print_button %}
 {% block title %}Schedule — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
-{% macro task_table(title, subtitle, rows, kind, empty_title, empty_body, limit) %}
+{% macro task_table(title, subtitle, rows, kind, empty_title, empty_body, limit, sort, direction, params) %}
   <div class="card" style="margin-top:16px">
     <div class="card-head">
       <div>
@@ -20,10 +20,16 @@
           <table>
             <thead>
               <tr>
-                <th>WBS</th><th>Deliverable</th><th>Section</th><th class="right">Weight</th>
-                <th class="right">Start</th><th class="right">IDC</th><th class="right">Comments</th>
-                <th class="right">Submission</th><th class="right">Code A</th>
-                <th style="min-width:150px">Progress</th><th></th>
+                {{ sort_th('wbs', 'WBS', sort, direction, params) }}
+                {{ sort_th('name', 'Deliverable', sort, direction, params) }}
+                {{ sort_th('section', 'Section', sort, direction, params) }}
+                {{ sort_th('weight', 'Weight', sort, direction, params, 'right') }}
+                {{ sort_th('start', 'Start', sort, direction, params, 'right') }}
+                <th class="right">IDC</th><th class="right">Comments</th>
+                {{ sort_th('submission', 'Submission', sort, direction, params, 'right') }}
+                <th class="right">Code A</th>
+                {{ sort_th('actual', 'Progress', sort, direction, params) }}
+                {{ sort_th('days', 'Status', sort, direction, params, 'right') }}
               </tr>
             </thead>
             <tbody>
@@ -85,6 +91,8 @@
   </div>
   <div class="inline-form">
     <form method="get" class="inline-form">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
       {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
       <label class="field w-md">
         <span class="field-label">Look ahead</span>
@@ -101,6 +109,8 @@
     {# Any other window: its own form, so the two never submit together. #}
     <form method="get" class="inline-form">
       <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
       <label class="field w-sm">
         <span class="field-label">Any window</span>
         <input type="number" name="horizon" min="1" max="3650" class="right"
@@ -108,7 +118,10 @@
       </label>
       <button type="submit" class="btn btn-ghost">Go</button>
     </form>
+    {{ print_button() }}
   </div>
+
+{{ print_header(project, 'Schedule', data_date, 'look-ahead: ' ~ window) }}
 
 <div class="grid grid-4">
   {{ tile('Late', t['late_count'], 'past due, not complete',
@@ -125,12 +138,17 @@
           'Rev 1+' if t['rework_count'] else 'First issue') }}
 </div>
 
+{% set params = {'project_id': project['id'], 'data_date': date_input(data_date),
+                 'horizon': 'all' if horizon is none else horizon} %}
+
 {{ task_table('Late deliverables',
               'Past the submission date and not submitted, or past the Code A date and not approved',
               late, 'late', 'Nothing overdue',
-              'Every deliverable past its date has been submitted or approved.', limit) }}
-{{ task_table('Due in ' ~ window, 'Upcoming submissions, soonest first', upcoming, 'upcoming',
-              'Nothing due in this window', 'Widen the look-ahead, or choose All dates.', limit) }}
+              'Every deliverable past its date has been submitted or approved.', limit, sort, direction, params) }}
+{{ task_table('Due in ' ~ window,
+              'Upcoming submissions' ~ ('' if sorted_by else ', soonest first'), upcoming, 'upcoming',
+              'Nothing due in this window', 'Widen the look-ahead, or choose All dates.', limit, sort, direction, params) }}
 {{ task_table('Behind plan', 'Not yet late, but reporting less progress than the schedule expects', behind, 'behind',
-              'Nothing behind plan', 'Reported progress is at or above the planned curve on every deliverable.', limit) }}
+              'Nothing behind plan', 'Reported progress is at or above the planned curve on every deliverable.',
+              limit, sort, direction, params) }}
 {% endblock %}

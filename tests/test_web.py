@@ -65,8 +65,8 @@ def test_every_project_page_renders(signed_in):
 def test_the_dashboard_shows_the_expected_figures(signed_in):
     body = text(signed_in.get("/projects/1/?data_date=01/09/2026"))
     assert "0.50%" in body, "earned progress"
-    assert "2.21%" in body, "planned progress from the workflow step dates"
-    assert "-1.71%" in body, "variance"
+    assert "2.03%" in body, "planned progress from the workflow step dates"
+    assert "-1.53%" in body, "variance"
     assert "2,640 h" in body, "hour budget"
     for trade in ("Marine", "Geotechnical", "Marine Structures", "Utilities"):
         assert trade in body
@@ -115,8 +115,10 @@ def test_the_schedule_look_ahead_can_be_a_window_or_everything(signed_in):
 
 def test_the_schedule_shows_each_workflow_date(signed_in):
     body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=all"))
-    for heading in (">IDC<", ">Comments<", ">Submission<", ">Code A<"):
+    for heading in (">IDC<", ">Comments<", ">Code A<"):
         assert heading in body, f"missing column {heading}"
+    # Submission is a sortable heading, so its text sits inside the sort link.
+    assert re.search(r'sort=submission[^>]*>\s*Submission', body), "missing the Submission column"
 
 
 def test_the_progress_filter_narrows_the_list(signed_in):
@@ -506,9 +508,10 @@ def test_creating_a_project_with_trades(signed_in):
     body = text(response)
     assert "Project created" in body
     # The setup page lands with both trades and their hour budgets ready to edit.
-    assert 'name="name" value="Civil"' in body
-    assert 'name="name" value="Mechanical"' in body
-    assert re.findall(r'name="budget_hours"[^>]*value="([\d.]+)"', body)[:2] == ["800.0", "400.0"]
+    assert 'value="Civil"' in body
+    assert 'value="Mechanical"' in body
+    budgets = re.findall(r'name="trade_\d+_budget"[^>]*value="([\d.]+)"', body)
+    assert budgets[:2] == ["800.0", "400.0"]
 
 
 def test_a_duplicate_project_code_is_rejected(signed_in):

@@ -86,30 +86,23 @@ def schedule_for(
 def planned_pct_from_schedule(plan: Sequence[Mapping[str, Any]], on_date: str) -> float:
     """Planned percent complete on a date.
 
-    The value interpolates between consecutive steps, so it lands exactly on each
-    step's percentage on that step's own date and ramps smoothly in between.
+    Progress through a submission cycle happens in steps, not smoothly: a
+    deliverable is planned to be at 40% once the IDC date has passed and stays
+    there until the comments date. So the planned figure is the percentage of the
+    last step whose date has arrived — it only ever reads one of the step values
+    (10, 40, 60, 80, 100 by default), never something in between.
     """
     if not plan:
         return 0.0
 
     day = parse_date(on_date)
-    first = parse_date(plan[0]["date"])
-    if day <= first:
-        # Before the first step there is no planned progress, except that the
-        # first step is itself due on its date.
-        return plan[0]["percent"] if day == first else 0.0
-
-    previous_pct, previous_day = plan[0]["percent"], first
-    for step in plan[1:]:
-        step_day = parse_date(step["date"])
-        if day <= step_day:
-            span = (step_day - previous_day).days
-            if span <= 0:
-                return step["percent"]
-            travelled = (day - previous_day).days / span
-            return previous_pct + (step["percent"] - previous_pct) * travelled
-        previous_pct, previous_day = step["percent"], step_day
-    return previous_pct
+    planned = 0.0
+    for step in plan:
+        if parse_date(step["date"]) <= day:
+            planned = step["percent"]
+        else:
+            break
+    return planned
 
 
 def next_step(steps: Sequence[Mapping[str, Any]], current_key: str) -> dict[str, Any] | None:

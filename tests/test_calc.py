@@ -45,13 +45,13 @@ def _as_date(months: float) -> str:
 def _tasks(tracking: str | None = None) -> list[dict]:
     """The seeded deliverables, with the schedule converted to real dates.
 
-    Lines that happen on a single date are meetings, so they are tracked as a
-    simple percentage rather than through the design workflow — the same rule
-    the seeder applies.
+    Meetings and milestones are tracked as a simple percentage rather than
+    through the design workflow — the same rule the seeder applies.
     """
     out = []
     for index, task in enumerate(SEED["tasks"]):
-        mode = tracking or ("simple" if task["finish_month"] <= task["start_month"] else "workflow")
+        milestone = task["finish_month"] <= task["start_month"] or "(milestone)" in task["name"].lower()
+        mode = tracking or ("simple" if milestone else "workflow")
         out.append(
             dict(
                 task,
@@ -155,15 +155,24 @@ def test_planned_percent_lands_exactly_on_each_step_date():
     close(planned_pct_on(task, "2026-12-31", STEPS), 1)
 
 
-def test_planned_percent_ramps_between_steps():
+def test_planned_percent_holds_a_step_until_the_next_one_falls_due():
+    """A submission cycle moves in steps, so the planned figure only ever reads
+    one of the step values — never something in between."""
     task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
-    # Halfway between "Submitted" (30 Sep, 80%) and "Code A" (14 Oct, 100%).
-    close(planned_pct_on(task, "2026-10-07", STEPS), 0.9)
-    for earlier, later in zip(
-        ["2026-09-01", "2026-09-10", "2026-09-25", "2026-09-30"],
-        ["2026-09-10", "2026-09-25", "2026-09-30", "2026-10-14"],
-    ):
-        assert planned_pct_on(task, later, STEPS) >= planned_pct_on(task, earlier, STEPS)
+    reading = {d: planned_pct_on(task, d, STEPS) for d in [
+        "2026-08-30", "2026-08-31", "2026-09-10", "2026-09-24", "2026-09-25",
+        "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-13", "2026-10-14",
+    ]}
+    assert list(reading.values()) == [0.0, 0.10, 0.10, 0.10, 0.40, 0.40, 0.60, 0.60, 0.80, 0.80, 1.00]
+
+
+def test_planned_percent_never_reads_a_value_between_steps():
+    task = {"start_date": "2026-08-31", "submission_date": "2026-09-30", "tracking": "workflow"}
+    allowed = {0.0} | {s["percent"] for s in STEPS}
+    day = parse_date("2026-08-25")
+    for _ in range(80):
+        assert planned_pct_on(task, day.isoformat(), STEPS) in allowed
+        day += timedelta(days=1)
 
 
 def test_editing_a_step_offset_moves_the_planned_date():
@@ -192,10 +201,21 @@ def test_a_milestone_steps_to_100_on_its_date():
 def test_overall_planned_earned_and_variance():
     result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
     totals = result["totals"]
-    close(totals["planned_progress"], 0.022052, 1e-9)
+    # Six workflow lines have reached their start date, so each is planned at
+    # 10% of its weight; the kick-off milestone is due (100% of its 1%) and the
+    # first bi-weekly meeting is one day into its fifteen.
+    close(totals["planned_progress"], 0.020266666666666655, 1e-12)
     close(totals["earned_progress"], 0.005)
-    close(totals["variance"], -0.017052, 1e-9)
+    close(totals["variance"], -0.015266666666666658, 1e-12)
     close(sum(t["planned_contribution"] for t in result["trades"]), totals["planned_progress"])
+
+
+def test_every_planned_figure_is_a_step_value():
+    result = compute_project(PROJECT, TASKS, TRADES, DATA_DATE, steps=STEPS)
+    allowed = {0.0} | {s["percent"] for s in STEPS}
+    for row in result["tasks"]:
+        if row["uses_workflow"]:
+            assert row["planned_pct"] in allowed, f"{row['wbs']} planned {row['planned_pct']}"
 
 
 def test_late_and_behind_counts():
@@ -293,6 +313,17 @@ def test_a_revision_is_flagged_and_capped():
                              [], "2026-02-05", steps=STEPS)["totals"]
     assert totals["rework_count"] == 1
     assert totals["at_limit_count"] == 1
+
+
+def test_a_simple_line_is_pro_rata_by_time_and_takes_a_typed_percentage():
+    """Meetings and milestones do not follow the submission cycle, so their plan
+    is simply time elapsed between the two dates."""
+    task = {"start_date": "2026-01-01", "submission_date": "2026-01-11",
+            "tracking": "simple", "actual_pct": 0.3, "weight_points": 1, "id": 1, "allocations": {}}
+    row = compute_project(PROJECT, [task], [], "2026-01-05", steps=STEPS)["tasks"][0]
+    close(row["planned_pct"], 0.4)          # 4 of 10 days
+    close(row["actual_pct"], 0.3)           # exactly what was typed
+    assert not row["uses_workflow"]
 
 
 def test_a_resubmission_moves_the_planned_dates():

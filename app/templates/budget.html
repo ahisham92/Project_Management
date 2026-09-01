@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import badge, progress, date_field %}
+{% from "partials/bits.html" import badge, progress, date_field, print_header, print_button %}
 {% block title %}Budget — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -21,11 +21,18 @@
     <h1>Budget control</h1>
     <p class="small muted" style="margin-top:2px">Hours booked against budget, and against the progress those hours earned</p>
   </div>
-  <form method="get" class="inline-form">
-    {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
-    <button type="submit" class="btn btn-ghost">Apply</button>
-  </form>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
 </div>
+
+{{ print_header(project, 'Budget control', data_date,
+                hours(snapshot['budget']['spent_hours']) ~ ' booked of '
+                ~ hours(snapshot['budget']['budget_hours'])) }}
 
 <div class="grid grid-4">
   {{ tile('Hours booked', hours(b['spent_hours']), 'of ' ~ hours(b['budget_hours']) ~ ' budget',

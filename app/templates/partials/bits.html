@@ -57,3 +57,37 @@
     {% if body %}<p class="small muted" style="margin-top:4px">{{ body }}</p>{% endif %}
   </div>
 {% endmacro %}
+
+{# A clickable column heading. Clicking the current column flips its direction. #}
+{% macro sort_th(key, label, sort, direction, params, klass='') %}
+  {% set active = sort == key %}
+  {% set next_dir = ('asc' if direction == 'desc' else 'desc') if active else ('desc' if key in ('weight', 'planned', 'actual', 'revision') else 'asc') %}
+  <th class="{{ klass }}">
+    <a class="sort-link {{ 'active' if active }}"
+       href="{{ url_for(request.endpoint, **dict(params, sort=key, dir=next_dir)) }}">
+      {{ label }}<span class="sort-arrow" aria-hidden="true">{{ '▲' if active and direction == 'asc' else ('▼' if active else '') }}</span>
+    </a>
+  </th>
+{% endmacro %}
+
+{# The header shown only when the page is printed or saved as PDF. #}
+{% macro print_header(project, title, data_date='', note='') %}
+  <div class="print-only print-header">
+    <div>
+      <strong>{{ project['name'] }}</strong>
+      <span class="muted"> · {{ project['code'] }}{% if project['client'] %} · {{ project['client'] }}{% endif %}</span>
+    </div>
+    <div>
+      <strong>{{ title }}</strong>
+      {% if data_date %}<span class="muted"> · data date {{ short_date(data_date) }}</span>{% endif %}
+      {% if note %}<span class="muted"> · {{ note }}</span>{% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{# Sends the page to the browser's print dialog, where "Save as PDF" produces
+   the file. No server-side PDF library, so nothing extra to install. #}
+{% macro print_button(label='Print / PDF') %}
+  <button type="button" class="btn btn-ghost no-print" data-print
+          title="Opens your browser's print dialog — choose “Save as PDF” there">{{ label }}</button>
+{% endmacro %}

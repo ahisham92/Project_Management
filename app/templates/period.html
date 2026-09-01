@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import empty, date_field %}
+{% from "partials/bits.html" import empty, date_field, print_header, print_button %}
 {% block title %}Period report — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -10,12 +10,18 @@
     <h1>Period report</h1>
     <p class="small muted" style="margin-top:2px">What moved between two dates, and which trades earned it</p>
   </div>
-  <form method="get" class="inline-form">
-    {{ date_field('from', report['from'], 'From', 'w-md') }}
-    {{ date_field('to', report['to'], 'To', 'w-md') }}
-    <button type="submit" class="btn btn-ghost">Apply</button>
-  </form>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      {{ date_field('from', report['from'], 'From', 'w-md') }}
+      {{ date_field('to', report['to'], 'To', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
 </div>
+
+{{ print_header(project, 'Period report', '',
+                short_date(report['from']) ~ ' to ' ~ short_date(report['to'])) }}
 
 <div class="grid grid-4">
   {{ tile('Earned in period', signed_pct(report['earned_in_period'], 2),

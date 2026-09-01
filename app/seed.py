@@ -100,9 +100,14 @@ def seed(database: str | None = None, seed_file: Path | None = None, quiet: bool
             for task in data["tasks"]:
                 start_date = as_date(task["start_month"])
                 submission_date = as_date(task["finish_month"])
-                # Lines that happen on a single date are meetings and milestones,
-                # not design submissions, so they do not follow the workflow.
-                tracking = "simple" if task["finish_month"] <= task["start_month"] else "workflow"
+                # Meetings and milestones are not design submissions, so they do
+                # not follow the workflow: they are tracked pro rata by time with
+                # a percentage you type. The workbook marks them itself.
+                is_milestone = (
+                    task["finish_month"] <= task["start_month"]
+                    or "(milestone)" in task["name"].lower()
+                )
+                tracking = "simple" if is_milestone else "workflow"
 
                 task_id = conn.execute(
                     """

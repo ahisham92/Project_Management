@@ -14,7 +14,7 @@
 #
 # The volume is what keeps the database between deploys. Without it the app
 # starts from an empty database every time it is redeployed or restarted.
-app = "project-control"          # must be unique across Fly; change it if taken
+app = "project-management"          # must be unique across Fly; change it if taken
 primary_region = "cdg"           # change to the region nearest your team
 
 [build]

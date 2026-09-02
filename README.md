@@ -286,7 +286,10 @@ The free "Beginner" plan runs a Flask app on a filesystem that persists, at
 for this app. PythonAnywhere serves the app itself through `wsgi.py`, so `run.py` and Waitress
 are not used there.
 
-**1. In a Bash console** (Consoles tab → Bash):
+**1. In a Bash console on PythonAnywhere** — Consoles tab → **Bash**. This runs on
+PythonAnywhere's own Linux server, in your browser. These are not commands for your own PC:
+running them there installs nothing on the server, and `.venv/bin/pip` does not exist on
+Windows anyway (it is `.venv\Scripts\pip` there).
 
 ```bash
 cd ~

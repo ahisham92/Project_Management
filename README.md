@@ -294,48 +294,53 @@ Two things the deploy page does not do for you, both needed before the app is us
 
 `flyctl` finds the app name by reading `fly.toml` in the current directory. If you deployed
 from Fly's web page you probably have no local clone, so **name the app with `-a` and the
-commands work from anywhere**. Check the name and the region it was created in first:
+commands work from anywhere**.
+
+Do not assume the name and region you asked for. Fly appends a suffix when the name is taken
+and may place the app in a different region — both end up written into `fly.toml`, which Fly
+commits back to the repository:
 
 ```bash
-flyctl apps list                       # the app name
-flyctl status -a project-management    # the region it actually runs in
+flyctl apps list                       # the real app name
+grep -E "^app|^primary_region" fly.toml
 ```
 
+Then, substituting your own app name and its region:
+
 ```bash
-# 1. The volume that holds the database. It must be in the SAME region as the app.
-flyctl volumes create project_data --size 1 --region cdg -a project-management
+# 1. The volume that holds the database. It must be in the SAME region as the app,
+#    or the machine cannot mount it.
+flyctl volumes create project_data --size 1 --region <region> -a <app-name>
 
 # 2. The key that signs sign-ins. Without it everyone is signed out on restart.
-flyctl secrets set SECRET_KEY=<a long random string> -a project-management
+flyctl secrets set SECRET_KEY=<a long random string> -a <app-name>
 ```
 
 On Windows PowerShell, generating that key without needing Python on your PATH:
 
 ```powershell
 $key = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-flyctl secrets set SECRET_KEY=$key -a project-management
+flyctl secrets set SECRET_KEY=$key -a <app-name>
 ```
 
-On macOS or Linux: `flyctl secrets set SECRET_KEY=$(openssl rand -hex 32) -a project-management`.
+On macOS or Linux: `flyctl secrets set SECRET_KEY=$(openssl rand -hex 32) -a <app-name>`.
 
 If the first deploy fails saying the volume `project_data` was not found, that is why — create
 it and deploy again. If it complains the app name is taken, change the `app = ` line at the
 top of `fly.toml`, since Fly app names are unique across all of Fly.
 
-**If Fly pushes a `flyio-new-files` branch**, check the `fly.toml` on it before deploying from
-it. Fly regenerates the file and has been seen to set `internal_port = 8080` while leaving
-`PORT = "8000"` — traffic is then routed to a port nothing is listening on and the app is
-simply unreachable, with no error to explain it. The two must be the same number. Everything
-here is set to **8080**, which is what Fly assumes, so the regenerated file lines up. The
-`test_every_config_agrees_on_the_port_the_app_listens_on` test checks this on every push.
-
-The simplest course is to take the `fly.toml` from your own branch rather than Fly's: it is
-the same configuration with the ports consistent, comments intact, and the volume mounted.
+**Fly rewrites `fly.toml` and commits it back**, usually through a `flyio-new-files` branch and
+a pull request. It has been seen to set `internal_port` to 8080 while leaving `PORT` at 8000 —
+traffic is then routed to a port nothing is listening on, and the app is unreachable with
+nothing in the logs to explain it. Everything here is therefore set to **8080**, the port Fly
+assumes, so a regenerated file agrees with itself. The
+`test_every_config_agrees_on_the_port_the_app_listens_on` test checks all three files on every
+push, so a bad rewrite fails CI rather than reaching your team.
 
 Then create the first account:
 
 ```bash
-flyctl ssh console -C "python run.py seed" -a project-management
+flyctl ssh console -C "python run.py seed" -a <app-name>
 ```
 
 Your address is `https://<app-name>.fly.dev`. Put that in the `APP_URL` line of

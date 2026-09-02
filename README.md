@@ -337,24 +337,41 @@ assumes, so a regenerated file agrees with itself. The
 `test_every_config_agrees_on_the_port_the_app_listens_on` test checks all three files on every
 push, so a bad rewrite fails CI rather than reaching your team.
 
-Then create the first account:
+Your address is `https://<app-name>.fly.dev`. Open `/register` there to create the first
+account — see *The first account, without a shell* below. Put the address in the `APP_URL`
+line of `docs/index.html` and the GitHub Pages front door links straight into it.
 
-```bash
-flyctl ssh console -C "python run.py seed" -a <app-name>
-```
+If `flyctl ssh console` fails with `can't build tunnel for personal: websocket: failed to
+WebSocket dial`, that is Fly's private-network tunnel, not the app. `flyctl wireguard reset`
+usually clears it, and a corporate network or VPN blocking the gateway is the usual cause.
+Nothing above needs SSH, so it is not worth fighting unless you want a shell for its own sake.
 
-Your address is `https://<app-name>.fly.dev`. Put that in the `APP_URL` line of
-`docs/index.html` and the GitHub Pages front door links straight into it.
+### The first account, without a shell
 
-After the first deploy, create the starting account once — on Render use its Shell, on Fly
-`fly ssh console`, on your own server just run it:
+You do not need to run anything on the server. **The first account to register becomes the
+administrator**, and registration is open while the database has no users at all — even with
+`ALLOW_SIGNUP=false`. So:
 
-```bash
-python run.py seed          # creates admin@example.com / changeme123 and the demo project
-```
+1. Open `https://<your-app>/register`.
+2. Create your own account. It is created as the administrator.
+3. Set `ALLOW_SIGNUP=false` on the host so nobody else can register.
+4. Add colleagues from **Setup → Team** (they register first, you give them a role).
 
-Sign in, change that password, then set `ALLOW_SIGNUP=false` so strangers cannot register
-and add your colleagues from **Setup → Team**.
+`python run.py seed` is the alternative, and is only worth a shell if you want the demo
+Sibline Port project on the live instance as well as an account. Use it on Render's Shell, or
+`flyctl ssh console -C "python run.py seed" -a <app-name>`.
+
+### Moving a project onto the live app
+
+If you have been using it locally, do not rebuild the scope by hand:
+
+1. On your own machine: **Setup → Export to Excel**.
+2. On the live app: **New project** with the same code and NTP date, leaving the trades blank.
+3. **Setup → Unlock**, then **Import from Excel** with that workbook.
+
+Deliverables, weights, dates, trade splits, sections and the workflow all come across. Progress
+does not — status and revision are exported for reference only — so report the current status
+on the live instance once, and it is then the single copy everyone works from.
 
 Without Docker on your own server: `pip install -r requirements.txt` then `python run.py`.
 Waitress, the bundled server, is production-grade — there is no second web server to run.

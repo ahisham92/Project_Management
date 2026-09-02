@@ -4,7 +4,10 @@
 #
 
 app = 'project-management-cv5qig'
-primary_region = 'fra'
+# The machine and its data volume live here. If this does not match the
+# region the volume is in, a deploy can create a second machine with a
+# second, empty volume — two copies of the database that silently diverge.
+primary_region = 'cdg'
 
 [build]
   dockerfile = 'Dockerfile'

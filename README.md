@@ -346,6 +346,29 @@ WebSocket dial`, that is Fly's private-network tunnel, not the app. `flyctl wire
 usually clears it, and a corporate network or VPN blocking the gateway is the usual cause.
 Nothing above needs SSH, so it is not worth fighting unless you want a shell for its own sake.
 
+#### When the site cannot be reached
+
+`flyctl status`, `flyctl logs` and `flyctl volumes list` go through Fly's API rather than the
+SSH tunnel, so they work even when `ssh console` does not. Three things account for most of it:
+
+**`Trial machine stopping. To run for longer than 5m0s, add a credit card`** in the logs, and
+the machine shows `stopped`. Fly's trial stops a machine after five minutes whatever
+`auto_stop_machines` says. A shared team app has to stay up, so this needs a card on the
+account — no amount of configuration will get around it.
+
+**`Health check 'servicecheck-00-http-8080' ... has failed`** together with a startup line
+reading `running at http://localhost:8000`. The running image predates the port alignment:
+Fly probes 8080 while the app listens on 8000, so the proxy never routes traffic and the site
+looks dead. Redeploy so the current config is used, and check the logs then say
+`running at http://localhost:8080`.
+
+**More than one volume with the same name.** `flyctl volumes list` shows the region of each
+and which machine it is attached to. Only the attached one holds your data; the others are
+empty and still cost money. Destroy them with
+`flyctl volumes destroy <id> -a <app-name>`, and make sure `primary_region` matches the region
+of the volume that is attached — otherwise a later deploy can start a second machine on an
+empty volume, and you end up with two databases that quietly disagree.
+
 ### The first account, without a shell
 
 You do not need to run anything on the server. **The first account to register becomes the

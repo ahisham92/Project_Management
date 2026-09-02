@@ -1,12 +1,20 @@
-# Fly.io configuration. First time:
+# Fly.io configuration.
+#
+# Both the working directory and the config path are the repository root, so if
+# you are deploying from Fly's web UI leave those two fields blank. Leave
+# "Managed Postgres" unchecked as well: this app keeps its data in a SQLite file
+# on the volume below, not in Postgres.
+#
+# From a terminal, first time:
 #
 #   fly launch --no-deploy --copy-config
-#   fly volumes create project_data --size 1
+#   fly volumes create project_data --size 1 --region <your region>
 #   fly secrets set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 #   fly deploy
 #
-# The volume is what keeps the database between deploys.
-app = "project-control"
+# The volume is what keeps the database between deploys. Without it the app
+# starts from an empty database every time it is redeployed or restarted.
+app = "project-control"          # must be unique across Fly; change it if taken
 primary_region = "cdg"           # change to the region nearest your team
 
 [build]
@@ -25,10 +33,12 @@ primary_region = "cdg"           # change to the region nearest your team
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "suspend"
+  # Kept running rather than suspended: the database is a file on the attached
+  # volume, and a suspended machine is a poor fit for one that holds live data.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  # One machine only: the database is a file on one volume, so a second machine
-  # would have its own copy and the two would drift apart.
+  # One machine only. The database is a file on one volume, so a second machine
+  # would get its own copy and the two would silently drift apart.
   min_machines_running = 1
 
   [[http_service.checks]]

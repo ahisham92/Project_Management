@@ -278,6 +278,41 @@ The repository ships the configuration for the common options, so there is littl
 Free tiers change often; check the current terms before relying on one. What does not change
 is the requirement for a persistent disk.
 
+#### Deploying on Fly.io, field by field
+
+If you are using Fly's **Deploy from GitHub** page, the two path boxes are asking about paths
+*inside the repository*, not on your own computer — never paste a path like
+`C:\Users\you\Project_Management`.
+
+| Field | What to put | Why |
+|---|---|---|
+| **Managed Postgres** | leave **unchecked** | The database is a SQLite file on the volume. Postgres would sit there unused and cost money. |
+| **Working directory** | leave **blank** (`./`) | `Dockerfile` and `requirements.txt` are at the repository root. |
+| **Config path** | leave **blank** (`./`) | `fly.toml` is at the repository root too. |
+
+Two things the deploy page does not do for you, both needed before the app is usable:
+
+```bash
+# 1. The volume that holds the database. Use the same region as the app.
+fly volumes create project_data --size 1 --region <region>
+
+# 2. The key that signs sign-ins. Without it everyone is signed out on restart.
+fly secrets set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+```
+
+If the first deploy fails saying the volume `project_data` was not found, that is why — create
+it and deploy again. If it complains the app name is taken, change the `app = ` line at the
+top of `fly.toml`, since Fly app names are unique across all of Fly.
+
+Then create the first account:
+
+```bash
+fly ssh console -C "python run.py seed"
+```
+
+Your address is `https://<app-name>.fly.dev`. Put that in the `APP_URL` line of
+`docs/index.html` and the GitHub Pages front door links straight into it.
+
 After the first deploy, create the starting account once — on Render use its Shell, on Fly
 `fly ssh console`, on your own server just run it:
 

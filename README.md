@@ -290,15 +290,33 @@ If you are using Fly's **Deploy from GitHub** page, the two path boxes are askin
 | **Working directory** | leave **blank** (`./`) | `Dockerfile` and `requirements.txt` are at the repository root. |
 | **Config path** | leave **blank** (`./`) | `fly.toml` is at the repository root too. |
 
-Two things the deploy page does not do for you, both needed before the app is usable:
+Two things the deploy page does not do for you, both needed before the app is usable.
+
+`flyctl` finds the app name by reading `fly.toml` in the current directory. If you deployed
+from Fly's web page you probably have no local clone, so **name the app with `-a` and the
+commands work from anywhere**. Check the name and the region it was created in first:
 
 ```bash
-# 1. The volume that holds the database. Use the same region as the app.
-fly volumes create project_data --size 1 --region <region>
+flyctl apps list                       # the app name
+flyctl status -a project-management    # the region it actually runs in
+```
+
+```bash
+# 1. The volume that holds the database. It must be in the SAME region as the app.
+flyctl volumes create project_data --size 1 --region cdg -a project-management
 
 # 2. The key that signs sign-ins. Without it everyone is signed out on restart.
-fly secrets set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+flyctl secrets set SECRET_KEY=<a long random string> -a project-management
 ```
+
+On Windows PowerShell, generating that key without needing Python on your PATH:
+
+```powershell
+$key = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+flyctl secrets set SECRET_KEY=$key -a project-management
+```
+
+On macOS or Linux: `flyctl secrets set SECRET_KEY=$(openssl rand -hex 32) -a project-management`.
 
 If the first deploy fails saying the volume `project_data` was not found, that is why — create
 it and deploy again. If it complains the app name is taken, change the `app = ` line at the
@@ -317,7 +335,7 @@ the same configuration with the ports consistent, comments intact, and the volum
 Then create the first account:
 
 ```bash
-fly ssh console -C "python run.py seed"
+flyctl ssh console -C "python run.py seed" -a project-management
 ```
 
 Your address is `https://<app-name>.fly.dev`. Put that in the `APP_URL` line of

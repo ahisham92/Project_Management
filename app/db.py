@@ -30,11 +30,22 @@ def database_path() -> Path:
     return Path(override) if override else data_dir() / "pm.sqlite"
 
 
+# How long a request waits for another one to finish writing before giving up.
+# SQLite allows one writer at a time; without this a second simultaneous write
+# fails instantly with "database is locked" instead of simply queueing, which is
+# what several people using the app at once would otherwise hit.
+BUSY_TIMEOUT_MS = int(os.environ.get("SQLITE_BUSY_TIMEOUT_MS", "10000"))
+
+
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(path or database_path()))
+    conn = sqlite3.connect(str(path or database_path()), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Write-ahead logging lets readers carry on while someone is writing, which
+    # is what makes concurrent use workable at all.
     conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 

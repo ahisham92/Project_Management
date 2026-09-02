@@ -200,15 +200,23 @@ def _sorting(page) -> None:
 
 
 def _stepped_planned(page) -> None:
-    """Planned should read one of the step values, never something between."""
+    """A workflow line's planned figure should read one of the step values and
+    never something between. Simple lines are pro rata by time, so they are
+    allowed any percentage and are excluded here."""
     values = page.eval_on_selector_all(
-        "table tbody tr td:nth-child(5)", "els => els.map(e => e.textContent.trim())"
+        "tr[data-tracking='workflow'] td:nth-child(5)",
+        "els => els.map(e => e.textContent.trim())",
     )
+    if not values:
+        raise AssertionError("no workflow rows found to check")
     seen = {v for v in values if v.endswith("%")}
-    allowed = {"0%", "10%", "40%", "60%", "80%", "100%", "7%"}
-    stray = seen - allowed
+    stray = seen - {"0%", "10%", "40%", "60%", "80%", "100%"}
     if stray:
         raise AssertionError(f"planned showed values between steps: {sorted(stray)}")
+
+    # And the simple lines really are being tracked differently.
+    if page.locator("tr[data-tracking='simple']").count() == 0:
+        raise AssertionError("expected some lines tracked as a simple percentage")
 
 
 def _save_all(page) -> None:

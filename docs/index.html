@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Control</title>
+<meta name="description" content="Weighted progress, schedule and budget control across a portfolio of design projects.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><text x='16' y='22' font-family='system-ui' font-size='14' font-weight='700' fill='white' text-anchor='middle'>PC</text></svg>">
+
+<!-- ────────────────────────────────────────────────────────────────────────
+     EDIT THIS ONE LINE once the app is running, and put its address here.
+     For example:  const APP_URL = "https://project-control.onrender.com";
+     Until it is filled in, this page shows how to get the app running.
+     ──────────────────────────────────────────────────────────────────────── -->
+<script>const APP_URL = "";</script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --border:rgba(11,11,11,.10); --accent:#2a78d6; --accent-ink:#fff;
+    --warn-bg:rgba(250,178,25,.16); --warn-ink:#8a5a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+      --border:rgba(255,255,255,.10); --accent:#3987e5;
+      --warn-bg:rgba(250,178,25,.14); --warn-ink:#fab219;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--plane); color:var(--ink);
+    font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:760px; margin:0 auto; padding:56px 20px 72px; }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:28px; }
+  .mark {
+    width:44px; height:44px; border-radius:11px; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex:none;
+  }
+  h1 { margin:0; font-size:1.6rem; }
+  h2 { margin:36px 0 10px; font-size:1.05rem; }
+  .lede { color:var(--ink-2); margin:0; }
+  p { margin:0 0 12px; }
+  a { color:var(--accent); }
+  code, kbd {
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+    background:var(--surface); border:1px solid var(--border); border-radius:5px; padding:1px 5px;
+  }
+  pre {
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:.85rem; line-height:1.55;
+  }
+  pre code { background:none; border:0; padding:0; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px 22px; }
+  .open {
+    display:inline-flex; align-items:center; gap:9px; margin:6px 0 4px;
+    background:var(--accent); color:var(--accent-ink); text-decoration:none;
+    padding:13px 24px; border-radius:10px; font-weight:600; font-size:1.02rem;
+  }
+  .open:hover { filter:brightness(1.08); }
+  .note {
+    background:var(--warn-bg); color:var(--warn-ink);
+    border-radius:10px; padding:14px 16px; font-size:.92rem;
+  }
+  ul { margin:0 0 12px; padding-left:20px; }
+  li { margin-bottom:6px; }
+  .grid { display:grid; gap:14px; grid-template-columns:repeat(2,minmax(0,1fr)); margin:0; padding:0; list-style:none; }
+  @media (max-width:600px) { .grid { grid-template-columns:minmax(0,1fr); } }
+  .grid li { margin:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:13px 15px; }
+  .grid strong { display:block; margin-bottom:2px; }
+  .grid span { color:var(--ink-2); font-size:.88rem; }
+  footer { margin-top:44px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:.86rem; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="mark" aria-hidden="true">PC</div>
+    <div>
+      <h1>Project Control</h1>
+      <p class="lede">Weighted progress, schedule and budget across a portfolio of design projects.</p>
+    </div>
+  </header>
+
+  <!-- Shown once APP_URL is filled in above. -->
+  <section id="live" class="card" hidden>
+    <h2 style="margin-top:0">Open the app</h2>
+    <p>Sign in with your own account. Everyone on the team works on the same live data.</p>
+    <a class="open" id="open-link" href="#">Open Project Control&nbsp;→</a>
+    <p style="margin:10px 0 0;color:var(--muted);font-size:.88rem">
+      Address: <code id="open-url"></code>
+    </p>
+  </section>
+
+  <!-- Shown until APP_URL is filled in. -->
+  <section id="setup" class="card">
+    <h2 style="margin-top:0">This page is a front door, not the app</h2>
+    <p class="note" style="margin-bottom:16px">
+      GitHub Pages can only serve static files. Project Control is a Python application with a
+      shared database behind it, so it has to run on a host that executes Python — otherwise
+      there is nowhere for everyone’s progress updates to be stored together.
+    </p>
+    <p>Put it online in a few minutes, then come back and add the address to this page:</p>
+    <ol>
+      <li>Deploy the repository to a host that runs Python and gives it a <strong>persistent
+        disk</strong> — the repository ships a <code>render.yaml</code>, a <code>fly.toml</code>
+        and a <code>Dockerfile</code>, so most hosts need no configuration from you.</li>
+      <li>Set <code>SECRET_KEY</code> and <code>HTTPS_ONLY=true</code> on the host.</li>
+      <li>Run <code>python run.py seed</code> once to create the first account.</li>
+      <li>Edit the single <code>APP_URL</code> line at the top of
+        <code>docs/index.html</code> and push — this page then becomes a link straight into it.</li>
+    </ol>
+    <p style="margin-bottom:0">Full instructions are in the repository’s README, under
+      <em>Sharing it with your team</em>.</p>
+  </section>
+
+  <h2>What it does</h2>
+  <ul class="grid">
+    <li><strong>Portfolio</strong><span>Every project you manage, ahead or behind, at a glance.</span></li>
+    <li><strong>Progress</strong><span>Deliverables carry weights; status steps set the percentage.</span></li>
+    <li><strong>Schedule</strong><span>What is late, due soon, or behind plan — with every workflow date.</span></li>
+    <li><strong>Budget</strong><span>Hours booked against budget and against the progress they earned.</span></li>
+    <li><strong>Revisions</strong><span>Comments raise a revision and reschedule the submission.</span></li>
+    <li><strong>Reports</strong><span>Print or save any tab as a PDF for management.</span></li>
+  </ul>
+
+  <h2>Running it on your own computer</h2>
+  <p>No hosting needed if you only want it for yourself:</p>
+<pre><code>pip install -r requirements.txt
+python run.py seed
+python run.py --open</code></pre>
+  <p>It opens at <code>http://localhost:8000</code>. Only that machine can reach it, so use a
+     host if the team needs to share it.</p>
+
+  <footer>
+    <a href="https://github.com/ahisham92/Project_Management">Source on GitHub</a>
+  </footer>
+</div>
+
+<script>
+  // Swap the two panels over once the app's address has been filled in above.
+  (function () {
+    var url = (typeof APP_URL === "string" ? APP_URL : "").trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+
+    var link = document.getElementById("open-link");
+    link.href = url;
+    document.getElementById("open-url").textContent = url;
+    document.getElementById("live").hidden = false;
+    document.getElementById("setup").hidden = true;
+  })();
+</script>
+</body>
+</html>

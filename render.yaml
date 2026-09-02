@@ -1,0 +1,30 @@
+# Render blueprint. In Render: New -> Blueprint -> point it at this repository.
+#
+# The database is a single SQLite file on the attached disk, so the disk is not
+# optional: without it every deploy and restart starts from an empty database.
+# Disks are a paid feature on Render, so if you want to stay on a free plan use
+# Fly.io (fly.toml, free volume allowance) or PythonAnywhere instead.
+services:
+  - type: web
+    name: project-control
+    runtime: python
+    plan: starter                 # a disk cannot be attached to the free plan
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /healthz
+    autoDeploy: true              # every push to the branch redeploys
+    disk:
+      name: project-control-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: HTTPS_ONLY           # Render terminates TLS, so the cookie can be Secure
+        value: "true"
+      - key: SECRET_KEY           # generated once by Render and then kept
+        generateValue: true
+      - key: ALLOW_SIGNUP         # set to false once your team has accounts
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.12"

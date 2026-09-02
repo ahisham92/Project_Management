@@ -1,0 +1,44 @@
+# Redeploys the live app when the code changes, so what your team uses always
+# matches the branch.
+#
+# Both jobs are skipped unless the matching secret exists, so this file is safe
+# to keep whichever host you end up on:
+#
+#   Render  – Settings -> Deploy Hook, then add it as the secret RENDER_DEPLOY_HOOK
+#   Fly.io  – fly tokens create deploy, then add it as the secret FLY_API_TOKEN
+name: Deploy
+
+on:
+  push:
+    branches: ["main", "master", "claude/project-management-app-dowwzs"]
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the Render deploy hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "No RENDER_DEPLOY_HOOK secret set — nothing to do."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Render deploy triggered."
+
+  fly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "No FLY_API_TOKEN secret set — nothing to do."
+            exit 0
+          fi
+          curl -L https://fly.io/install.sh | sh
+          "$HOME/.fly/bin/flyctl" deploy --remote-only

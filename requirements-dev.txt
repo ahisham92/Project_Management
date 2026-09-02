@@ -1,5 +1,7 @@
 -r requirements.txt
 
-# Test tools. Playwright is only needed for the browser smoke test in e2e/.
+# Test tools. Playwright is only needed for the browser smoke test in e2e/;
+# PyYAML only for the tests that check the deployment configuration.
 pytest>=8.0
 playwright>=1.40
+PyYAML>=6.0

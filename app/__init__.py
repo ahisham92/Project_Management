@@ -42,6 +42,15 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     def _context():
         return {"current_user": g.get("user"), "app_version": __version__}
 
+    if not os.environ.get("SECRET_KEY"):
+        # The key is generated and kept in the data directory. That is fine on a
+        # machine that keeps its files, but on a host with an ephemeral disk it
+        # is regenerated on every restart and signs everyone out.
+        app.logger.warning(
+            "SECRET_KEY is not set — a generated one is stored in the data directory. "
+            "Set SECRET_KEY when hosting this for a team, or everyone is signed out on restart."
+        )
+
     from .views.auth_views import bp as auth_bp
     from .views.portfolio_views import bp as portfolio_bp
     from .views.projects_views import bp as projects_bp
@@ -49,6 +58,17 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(projects_bp)
+
+    @app.get("/healthz")
+    def _healthz():
+        """A cheap liveness check for whatever platform the app is hosted on."""
+        try:
+            from .db import connect
+
+            connect(app.config["DATABASE"]).execute("SELECT 1").fetchone()
+        except Exception:  # noqa: BLE001 - the check itself must never raise
+            return {"status": "error"}, 503
+        return {"status": "ok", "version": __version__}
 
     @app.errorhandler(403)
     def _forbidden(_error):

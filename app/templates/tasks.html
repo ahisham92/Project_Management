@@ -94,7 +94,7 @@
         </thead>
         <tbody>
           {% for task in group['tasks'] %}
-            <tr id="task-{{ task['id'] }}">
+            <tr id="task-{{ task['id'] }}" data-tracking="{{ 'workflow' if task['uses_workflow'] else 'simple' }}">
               <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
               <td>
                 {{ task['name'] }}

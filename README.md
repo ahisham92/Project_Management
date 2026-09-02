@@ -237,39 +237,94 @@ the control workbook — use it as a worked example of the shape of the data.
 
 ---
 
-## Sharing it with your team
+## Putting it online for the team
 
-The app already handles several people; it just needs to run somewhere they can all reach.
+### Why GitHub Pages cannot host it
 
-**On your own machine, for people on the same network.** `python run.py` already listens on
-every interface, so colleagues can open `http://<your-computer's-IP>:8000`. This only works
-while your machine is on and on the same network, and the traffic is not encrypted — fine
-for a trusted office network, not for anything sensitive.
+GitHub Pages serves **static files only** — HTML, CSS and images. Project Control is a Python
+application with a shared database behind it, so there is nothing on Pages to run the code or
+to store everyone's progress updates together. A `github.io` address can only ever be a front
+door to the real thing.
 
-**On a server, reachable anywhere.** Any host that runs Python or a container works —
-a small VPS, Render, Railway, Fly.io, or an internal server. Three things matter:
+That front door is included: `docs/index.html` is published to
+**https://ahisham92.github.io/Project_Management/** by the *Landing page* workflow. Until you
+give it an address it explains how to get the app running; once you paste the address into the
+single `APP_URL` line at the top of that file, it becomes a button straight into the live app.
 
-1. **Set `SECRET_KEY`.** Without it a key is generated and stored in the data directory,
-   which is fine for one machine but not for a deployment.
+To turn Pages on: repository **Settings → Pages → Source: GitHub Actions**.
+
+### Where it does run
+
+Anything that executes Python and can keep a file between restarts. Three things matter
+wherever you choose:
+
+1. **A persistent disk.** The whole database is one SQLite file. Point `DATA_DIR` at a disk
+   that survives restarts, or every deploy starts from an empty database.
+2. **`SECRET_KEY` set on the host.** Without it a key is generated and kept in the data
+   directory; if that directory is ephemeral, everyone is signed out on every restart.
    Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
-2. **Give it a persistent disk** and point `DATA_DIR` at it, or the database is lost
-   whenever the container is replaced.
-3. **Put it behind HTTPS** (a reverse proxy such as Caddy or nginx, or the host's own TLS)
-   and set `HTTPS_ONLY=true` so the session cookie is marked `Secure`.
+3. **HTTPS, with `HTTPS_ONLY=true`.** The session cookie is then marked `Secure`. Most hosts
+   terminate TLS for you; on your own server put Caddy or nginx in front.
 
-With Docker:
+The repository ships the configuration for the common options, so there is little to write:
+
+| Host | File | Notes |
+|---|---|---|
+| **Render** | `render.yaml` | *New → Blueprint*, point it at this repo. A disk needs a paid instance. |
+| **Fly.io** | `fly.toml` | `fly launch --no-deploy --copy-config`, then `fly volumes create project_data --size 1`, then `fly deploy`. |
+| **Railway / Heroku-like** | `Procfile` | Attach a volume and set `DATA_DIR` to it. |
+| **Any server or VPS** | `Dockerfile`, `docker-compose.yml` | `SECRET_KEY=… docker compose up -d --build` |
+
+Free tiers change often; check the current terms before relying on one. What does not change
+is the requirement for a persistent disk.
+
+After the first deploy, create the starting account once — on Render use its Shell, on Fly
+`fly ssh console`, on your own server just run it:
 
 ```bash
-SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))") \
-  docker compose up -d --build
-docker compose exec app python run.py seed     # first run only
+python run.py seed          # creates admin@example.com / changeme123 and the demo project
 ```
 
-Or without Docker, on any server with Python: `pip install -r requirements.txt` then
-`python run.py` behind your proxy. Waitress (the bundled server) is production-grade, so
-no extra web server process is needed.
+Sign in, change that password, then set `ALLOW_SIGNUP=false` so strangers cannot register
+and add your colleagues from **Setup → Team**.
 
-Once your team has accounts, set `ALLOW_SIGNUP=false` so strangers cannot register.
+Without Docker on your own server: `pip install -r requirements.txt` then `python run.py`.
+Waitress, the bundled server, is production-grade — there is no second web server to run.
+
+### Keeping the live app up to date
+
+`.github/workflows/tests.yml` runs the whole test suite on every push and then checks that the
+app actually starts and answers `/healthz`.
+
+`.github/workflows/deploy.yml` redeploys the running app on every push to the branch, so what
+your team uses always matches the code. It does nothing until you add the secret for your
+host, so it is harmless to leave in place:
+
+- **Render** — *Settings → Deploy Hook*, then add it as the repository secret
+  `RENDER_DEPLOY_HOOK`. (Render's own `autoDeploy` in `render.yaml` already does this; the
+  hook is there for the case where you turn that off.)
+- **Fly.io** — `fly tokens create deploy`, then add it as the secret `FLY_API_TOKEN`.
+
+Data changes need no deployment at all: everyone is reading and writing the same database, so
+a progress update is visible to the next person who loads the page.
+
+### Several people at once
+
+SQLite allows one writer at a time. The app uses write-ahead logging so reads never block, and
+waits up to ten seconds (`SQLITE_BUSY_TIMEOUT_MS`) for a write rather than failing — without
+that wait, two people saving at the same moment get "database is locked". A test in
+`tests/test_hosting.py` drives six clients writing at once to hold this honest.
+
+That is comfortable for a team working on projects together. It is not built for hundreds of
+simultaneous writers; if you ever get there, the database layer is small and isolated in
+`app/db.py`.
+
+### On your own machine, for people on the same network
+
+`python run.py` listens on every interface, so colleagues can open
+`http://<your-computer's-IP>:8000` while your machine is on and they are on the same network.
+The traffic is not encrypted — fine for a trusted office network, not for anything sensitive,
+and not a substitute for hosting it.
 
 ### Settings
 
@@ -283,6 +338,7 @@ All optional — see `.env.example`.
 | `DATABASE_FILE` | Full path to the database file, if you'd rather set it directly. |
 | `HTTPS_ONLY` | `true` marks the session cookie `Secure`. Set once you are serving over HTTPS. |
 | `ALLOW_SIGNUP` | `false` blocks self-registration. The first account is always allowed. |
+| `SQLITE_BUSY_TIMEOUT_MS` | How long a write waits for another to finish (default `10000`). |
 | `SEED_EMAIL` / `SEED_PASSWORD` / `SEED_NAME` | Used by `python run.py seed`. |
 
 The **setup password** is not an environment variable — it is stored per project and changed
@@ -309,11 +365,12 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-102 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+110 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the web layer (sign-in, every page, reporting progress by status,
 raising revisions, booking hours, the dd/mm/yyyy dates, the setup lock and the permission
-rules), sorting, Save all, the print output, and the Excel round trip.
+rules), sorting, Save all, the print output, the Excel round trip, and what hosting needs —
+the health check and six people writing at the same time.
 
 There is also a browser smoke test that drives the real app:
 

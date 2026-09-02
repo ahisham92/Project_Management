@@ -1,51 +1,40 @@
-# Fly.io configuration.
+# fly.toml app configuration file generated for project-management-cv5qig on 2026-09-02T08:02:43Z
 #
-# Both the working directory and the config path are the repository root, so if
-# you are deploying from Fly's web UI leave those two fields blank. Leave
-# "Managed Postgres" unchecked as well: this app keeps its data in a SQLite file
-# on the volume below, not in Postgres.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# From a terminal, first time:
-#
-#   fly launch --no-deploy --copy-config
-#   fly volumes create project_data --size 1 --region <your region>
-#   fly secrets set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-#   fly deploy
-#
-# The volume is what keeps the database between deploys. Without it the app
-# starts from an empty database every time it is redeployed or restarted.
-app = "project-management"          # must be unique across Fly; change it if taken
-primary_region = "cdg"           # change to the region nearest your team
+
+app = 'project-management-cv5qig'
+primary_region = 'fra'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  DATA_DIR = "/data"
-  HTTPS_ONLY = "true"            # Fly terminates TLS in front of the app
-  ALLOW_SIGNUP = "true"          # set to false once your team has accounts
+  ALLOW_SIGNUP = 'true'
+  DATA_DIR = '/data'
+  HTTPS_ONLY = 'true'
+  PORT = '8080'
 
-[mounts]
-  source = "project_data"
-  destination = "/data"
+[[mounts]]
+  source = 'project_data'
+  destination = '/data'
 
 [http_service]
-  # Must match PORT above: Fly routes traffic here, and nothing would
-  # answer if the app were listening somewhere else.
   internal_port = 8080
   force_https = true
-  # Kept running rather than suspended: the database is a file on the attached
-  # volume, and a suspended machine is a poor fit for one that holds live data.
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  # One machine only. The database is a file on one volume, so a second machine
-  # would get its own copy and the two would silently drift apart.
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/healthz"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/healthz'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

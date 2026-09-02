@@ -21,7 +21,7 @@ primary_region = "cdg"           # change to the region nearest your team
   dockerfile = "Dockerfile"
 
 [env]
-  PORT = "8000"
+  PORT = "8080"
   DATA_DIR = "/data"
   HTTPS_ONLY = "true"            # Fly terminates TLS in front of the app
   ALLOW_SIGNUP = "true"          # set to false once your team has accounts
@@ -31,7 +31,9 @@ primary_region = "cdg"           # change to the region nearest your team
   destination = "/data"
 
 [http_service]
-  internal_port = 8000
+  # Must match PORT above: Fly routes traffic here, and nothing would
+  # answer if the app were listening somewhere else.
+  internal_port = 8080
   force_https = true
   # Kept running rather than suspended: the database is a file on the attached
   # volume, and a suspended machine is a poor fit for one that holds live data.

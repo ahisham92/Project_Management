@@ -271,7 +271,7 @@ The repository ships the configuration for the common options, so there is littl
 | Host | File | Notes |
 |---|---|---|
 | **Render** | `render.yaml` | *New → Blueprint*, point it at this repo. A disk needs a paid instance. |
-| **Fly.io** | `fly.toml` | `fly launch --no-deploy --copy-config`, then `fly volumes create project_data --size 1`, then `fly deploy`. |
+| **Fly.io** | `fly.toml` | `fly launch --no-deploy --copy-config`, then `fly volumes create project_data --size 1`, then `fly deploy`. Listens on 8080. |
 | **Railway / Heroku-like** | `Procfile` | Attach a volume and set `DATA_DIR` to it. |
 | **Any server or VPS** | `Dockerfile`, `docker-compose.yml` | `SECRET_KEY=… docker compose up -d --build` |
 
@@ -303,6 +303,16 @@ fly secrets set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(
 If the first deploy fails saying the volume `project_data` was not found, that is why — create
 it and deploy again. If it complains the app name is taken, change the `app = ` line at the
 top of `fly.toml`, since Fly app names are unique across all of Fly.
+
+**If Fly pushes a `flyio-new-files` branch**, check the `fly.toml` on it before deploying from
+it. Fly regenerates the file and has been seen to set `internal_port = 8080` while leaving
+`PORT = "8000"` — traffic is then routed to a port nothing is listening on and the app is
+simply unreachable, with no error to explain it. The two must be the same number. Everything
+here is set to **8080**, which is what Fly assumes, so the regenerated file lines up. The
+`test_every_config_agrees_on_the_port_the_app_listens_on` test checks this on every push.
+
+The simplest course is to take the `fly.toml` from your own branch rather than Fly's: it is
+the same configuration with the ports consistent, comments intact, and the volume mounted.
 
 Then create the first account:
 
@@ -400,12 +410,13 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-110 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+115 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the web layer (sign-in, every page, reporting progress by status,
 raising revisions, booking hours, the dd/mm/yyyy dates, the setup lock and the permission
 rules), sorting, Save all, the print output, the Excel round trip, and what hosting needs —
-the health check and six people writing at the same time.
+the health check, six people writing at the same time, and the deployment files agreeing
+with each other.
 
 There is also a browser smoke test that drives the real app:
 

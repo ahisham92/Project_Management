@@ -112,6 +112,7 @@ def test_the_session_key_comes_from_the_environment_when_it_is_set():
 
 # --- the files that make hosting and publishing work ------------------------
 
+import re  # noqa: E402
 import tomllib  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -132,14 +133,46 @@ def test_render_blueprint_keeps_the_database_on_a_disk():
     assert env["SECRET_KEY"]["generateValue"] is True
 
 
+def _fly() -> dict:
+    return tomllib.loads((ROOT / "fly.toml").read_text())
+
+
+def _mounts(fly: dict) -> list[dict]:
+    """Fly's own tooling writes [[mounts]] while a hand-written file often uses
+    [mounts]. Both are valid TOML for the same thing, so accept either."""
+    mounts = fly["mounts"]
+    return mounts if isinstance(mounts, list) else [mounts]
+
+
 def test_fly_configuration_mounts_a_volume_and_stays_single_machine():
-    fly = tomllib.loads((ROOT / "fly.toml").read_text())
-    assert fly["mounts"]["destination"] == fly["env"]["DATA_DIR"]
+    fly = _fly()
+    mounts = _mounts(fly)
+    assert len(mounts) == 1
+    assert mounts[0]["destination"] == fly["env"]["DATA_DIR"]
     assert fly["env"]["HTTPS_ONLY"] == "true"
     assert fly["http_service"]["force_https"] is True
     assert fly["http_service"]["checks"][0]["path"] == "/healthz"
     # The database is a file on one volume, so a second machine would drift.
     assert fly["http_service"]["min_machines_running"] == 1
+
+
+def test_every_config_agrees_on_the_port_the_app_listens_on():
+    """Fly regenerated internal_port as 8080 while PORT still said 8000, which
+    would have routed traffic to a port nothing was listening on. Each file has
+    to agree with itself, or the app is simply unreachable."""
+    fly = _fly()
+    assert fly["http_service"]["internal_port"] == int(fly["env"]["PORT"]), (
+        "fly.toml routes traffic to internal_port, so it must match the PORT the app is given"
+    )
+
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    docker_port = re.search(r"^ENV PORT=(\d+)", dockerfile, re.M).group(1)
+    assert re.search(rf"^EXPOSE {docker_port}$", dockerfile, re.M), "EXPOSE must match ENV PORT"
+    assert f"'PORT','{docker_port}'" in dockerfile, "the health check falls back to the same port"
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"]["app"]
+    assert str(compose["environment"]["PORT"]) == docker_port
+    assert f"{docker_port}:{docker_port}" in compose["ports"]
 
 
 def test_the_workflows_are_valid_and_do_what_they_say():

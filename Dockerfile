@@ -17,10 +17,11 @@ ENV DATA_DIR=/data
 RUN mkdir -p /data
 VOLUME ["/data"]
 
-ENV PORT=8000
-EXPOSE 8000
+# 8080 is the port Fly and most container platforms assume.
+ENV PORT=8080
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD python -c "import urllib.request,os,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/login').status==200 else 1)"
+  CMD python -c "import urllib.request,os,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/login').status==200 else 1)"
 
 CMD ["python", "run.py"]

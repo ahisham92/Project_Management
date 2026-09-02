@@ -289,12 +289,17 @@ are not used there.
 **1. In a Bash console** (Consoles tab → Bash):
 
 ```bash
+cd ~
 git clone https://github.com/ahisham92/Project_Management.git
 cd Project_Management
-python3 -m venv .venv
+python3.13 -m venv .venv          # match the Python version set on the Web tab
 .venv/bin/pip install -r requirements.txt
 mkdir -p ~/project-data
 ```
+
+Use the same Python version here as the one selected for the web app, or the virtualenv is
+ignored. The repository's default branch already holds the application, so a plain `git clone`
+checks out the right code.
 
 **2. Create the web app.** Click **Web** in the top menu bar, then the **Add a new web app**
 button on the left. A short wizard appears:
@@ -305,12 +310,19 @@ button on the left. A short wizard appears:
 | *Select a Python Web framework* | Choose **Manual configuration** — it is the last entry in the list, below Django, web2py, Flask and Bottle. **Do not choose Flask.** |
 | *Select a Python version* | Pick the same 3.x version your virtualenv was built with (`.venv/bin/python --version` in the console tells you). |
 
-Choosing **Flask** would generate a brand-new hello-world app in a new file and wire the site
-to that instead of to this one. **Manual configuration** creates the site without generating any
-code and leaves the WSGI file for you to point at `wsgi.py`, which is what step 4 does.
+Choosing **Flask** generates a brand-new hello-world app under `~/mysite` and wires the site to
+that instead of to this one. **Manual configuration** creates the site without generating any
+code, and leaves the WSGI file for you to point at `wsgi.py`, which is what step 4 does.
 
-**3. Set the Virtualenv.** Back on the Web tab, scroll to the **Virtualenv** section and enter
-`/home/<username>/Project_Management/.venv`.
+**If you already created the web app with the Flask option**, there is no need to delete it and
+start again: the only difference is what the WSGI file was pre-filled with, and step 4 replaces
+that file entirely. Set the virtualenv, replace the WSGI file, reload. The unused `~/mysite`
+folder can be left alone or deleted.
+
+**3. Set the Virtualenv.** Back on the Web tab, scroll to the **Virtualenv** section, click
+*Enter path to a virtualenv, if desired* and type
+`/home/<username>/Project_Management/.venv`, then press Enter. Leaving this blank is the most
+common reason the site keeps serving the old hello-world page.
 
 **4. Edit the WSGI configuration file** (the link is on the same page) and replace everything
 in it with this, substituting your username and a long random string:
@@ -339,9 +351,10 @@ first one is the administrator. There is no need to run `seed` unless you also w
 project; if you do, run `.venv/bin/python run.py seed` in the console first, with
 `DATA_DIR=/home/<username>/project-data` set.
 
-Two things to know about the free plan: the web app must be **renewed every three months** from
-the dashboard or it is disabled, and you get 512 MB of disk, which is far more than this app
-and its database need.
+Two things to know about the free plan: the web app must be **renewed every month** — log in
+and press *Run until 1 month from today* on the Web tab, or the site is disabled (they email a
+week before) — and you get 512 MB of disk, which is far more than this app and its database
+need.
 
 **Updating it** is a console command and a button — there is no automatic deploy on the free
 plan, so `.github/workflows/deploy.yml` does nothing here:

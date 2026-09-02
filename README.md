@@ -270,6 +270,7 @@ The repository ships the configuration for the common options, so there is littl
 
 | Host | File | Notes |
 |---|---|---|
+| **PythonAnywhere** | `wsgi.py` | Free tier runs Flask with a persistent filesystem. Walkthrough below. |
 | **Render** | `render.yaml` | *New → Blueprint*, point it at this repo. A disk needs a paid instance. |
 | **Fly.io** | `fly.toml` | `fly launch --no-deploy --copy-config`, then `fly volumes create project_data --size 1`, then `fly deploy`. Listens on 8080. |
 | **Railway / Heroku-like** | `Procfile` | Attach a volume and set `DATA_DIR` to it. |
@@ -277,6 +278,69 @@ The repository ships the configuration for the common options, so there is littl
 
 Free tiers change often; check the current terms before relying on one. What does not change
 is the requirement for a persistent disk.
+
+### PythonAnywhere
+
+The free "Beginner" plan runs a Flask app on a filesystem that persists, at
+`https://<username>.pythonanywhere.com` with HTTPS included — which is the whole requirement
+for this app. PythonAnywhere serves the app itself through `wsgi.py`, so `run.py` and Waitress
+are not used there.
+
+**1. In a Bash console** (Consoles tab → Bash):
+
+```bash
+git clone https://github.com/ahisham92/Project_Management.git
+cd Project_Management
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+mkdir -p ~/project-data
+```
+
+**2. Web tab → Add a new web app → Manual configuration → Python 3.x.** Not the "Flask" option:
+manual configuration is what lets the app factory be used.
+
+**3. Set the Virtualenv** to `/home/<username>/Project_Management/.venv`.
+
+**4. Edit the WSGI configuration file** (the link is on the same page) and replace everything
+in it with this, substituting your username and a long random string:
+
+```python
+import os
+import sys
+
+path = "/home/<username>/Project_Management"
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+# Kept outside the repository so a git pull cannot disturb it.
+os.environ["DATA_DIR"] = "/home/<username>/project-data"
+os.environ["SECRET_KEY"] = "<a long random string>"
+os.environ["HTTPS_ONLY"] = "true"
+os.environ["ALLOW_SIGNUP"] = "true"   # set to false once your team has accounts
+
+from wsgi import application  # noqa: E402
+```
+
+**5. Tick "Force HTTPS"**, then **Reload**.
+
+**6. Open `https://<username>.pythonanywhere.com/register`** and create your account — the
+first one is the administrator. There is no need to run `seed` unless you also want the demo
+project; if you do, run `.venv/bin/python run.py seed` in the console first, with
+`DATA_DIR=/home/<username>/project-data` set.
+
+Two things to know about the free plan: the web app must be **renewed every three months** from
+the dashboard or it is disabled, and you get 512 MB of disk, which is far more than this app
+and its database need.
+
+**Updating it** is a console command and a button — there is no automatic deploy on the free
+plan, so `.github/workflows/deploy.yml` does nothing here:
+
+```bash
+cd ~/Project_Management && git pull && .venv/bin/pip install -r requirements.txt
+```
+
+then **Reload** on the Web tab. The database is untouched by this: it lives in
+`~/project-data`, outside the repository.
 
 #### Deploying on Fly.io, field by field
 

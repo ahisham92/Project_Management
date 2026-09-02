@@ -108,11 +108,13 @@
     </p>
     <p>Put it online in a few minutes, then come back and add the address to this page:</p>
     <ol>
-      <li>Deploy the repository to a host that runs Python and gives it a <strong>persistent
-        disk</strong> — the repository ships a <code>render.yaml</code>, a <code>fly.toml</code>
-        and a <code>Dockerfile</code>, so most hosts need no configuration from you.</li>
+      <li>Deploy the repository to a host that runs Python and keeps its files —
+        <strong>PythonAnywhere</strong>&rsquo;s free plan does both, and the repository also
+        ships a <code>render.yaml</code>, a <code>fly.toml</code> and a <code>Dockerfile</code>
+        for other hosts.</li>
       <li>Set <code>SECRET_KEY</code> and <code>HTTPS_ONLY=true</code> on the host.</li>
-      <li>Run <code>python run.py seed</code> once to create the first account.</li>
+      <li>Open <code>/register</code> on the new address — the first account created is the
+        administrator.</li>
       <li>Edit the single <code>APP_URL</code> line at the top of
         <code>docs/index.html</code> and push — this page then becomes a link straight into it.</li>
     </ol>

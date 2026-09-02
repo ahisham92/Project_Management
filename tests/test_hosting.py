@@ -192,6 +192,37 @@ def test_the_workflows_are_valid_and_do_what_they_say():
     assert body.count("nothing to do") == 2
 
 
+def test_the_wsgi_entry_point_serves_the_app():
+    """PythonAnywhere, gunicorn and uWSGI import this rather than running
+    run.py, and look for a module-level `application`."""
+    import os
+    import tempfile
+
+    from werkzeug.test import Client
+
+    from app.seed import seed
+
+    previous = {k: os.environ.get(k) for k in ("DATA_DIR", "DATABASE_FILE", "SECRET_KEY")}
+    os.environ["DATA_DIR"] = tempfile.mkdtemp()
+    os.environ["DATABASE_FILE"] = str(Path(tempfile.mkdtemp()) / "wsgi.sqlite")
+    os.environ["SECRET_KEY"] = "wsgi-test"
+    try:
+        seed(os.environ["DATABASE_FILE"], quiet=True)
+        import wsgi
+
+        assert callable(wsgi.application)
+        assert wsgi.app is wsgi.application, "gunicorn looks for 'app', PythonAnywhere for 'application'"
+        client = Client(wsgi.application)
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/login").status_code == 200
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def test_the_landing_page_has_one_line_to_edit_and_explains_itself():
     page = (ROOT / "docs/index.html").read_text()
     assert 'const APP_URL = "";' in page, "the address is set in exactly one place"

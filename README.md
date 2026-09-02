@@ -296,10 +296,21 @@ python3 -m venv .venv
 mkdir -p ~/project-data
 ```
 
-**2. Web tab → Add a new web app → Manual configuration → Python 3.x.** Not the "Flask" option:
-manual configuration is what lets the app factory be used.
+**2. Create the web app.** Click **Web** in the top menu bar, then the **Add a new web app**
+button on the left. A short wizard appears:
 
-**3. Set the Virtualenv** to `/home/<username>/Project_Management/.venv`.
+| Screen | What to do |
+|---|---|
+| *Your web app's domain name* | Just click **Next**. On the free plan the only option is `<username>.pythonanywhere.com`. |
+| *Select a Python Web framework* | Choose **Manual configuration** — it is the last entry in the list, below Django, web2py, Flask and Bottle. **Do not choose Flask.** |
+| *Select a Python version* | Pick the same 3.x version your virtualenv was built with (`.venv/bin/python --version` in the console tells you). |
+
+Choosing **Flask** would generate a brand-new hello-world app in a new file and wire the site
+to that instead of to this one. **Manual configuration** creates the site without generating any
+code and leaves the WSGI file for you to point at `wsgi.py`, which is what step 4 does.
+
+**3. Set the Virtualenv.** Back on the Web tab, scroll to the **Virtualenv** section and enter
+`/home/<username>/Project_Management/.venv`.
 
 **4. Edit the WSGI configuration file** (the link is on the same page) and replace everything
 in it with this, substituting your username and a long random string:

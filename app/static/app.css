@@ -251,6 +251,38 @@ input[type="checkbox"] { width: auto; }
 .check { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer; }
 .check input { width: auto; margin: 0; }
 
+/* A field edited where it stands, in a table row. It reads as plain text
+   until you point at it, so the table still scans as a table. */
+.cell-open {
+  display: inline-block; min-width: 34px; padding: 2px 4px; margin: -2px -4px;
+  color: inherit; text-decoration: none; border: 1px dashed transparent; border-radius: 6px;
+}
+.cell-open:hover, .cell-open:focus-visible {
+  border-color: var(--border); background: var(--surface); text-decoration: none;
+}
+.cell-form { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.cell-input {
+  width: auto; min-width: 72px; padding: 3px 4px; font-size: 0.78rem;
+  background: var(--raised); border: 1px solid var(--series-1); border-radius: 6px;
+  color: var(--ink);
+}
+.cell-date { width: 96px; font-variant-numeric: tabular-nums; }
+.cell-checks { display: inline-flex; flex-direction: column; gap: 3px; }
+.cell-form.saving { opacity: 0.6; }
+
+/* A moment's outline says the change was written, without a message to read. */
+.cell-saved { box-shadow: inset 0 0 0 2px var(--good); border-radius: 6px; }
+
+.impact-time { color: var(--serious); font-weight: 500; }
+.impact-cost { color: var(--warning); font-weight: 500; }
+.impact-both { color: var(--critical); font-weight: 500; }
+
+/* The Save button beside a cell exists only for people without JavaScript —
+   with it, changing the control saves on its own. */
+.js .save-inline { display: none; }
+
+@media print { .cell-open { border: 0; padding: 0; margin: 0; } .cell-form { display: none !important; } }
+
 /* The calendar behind every date field. Drawn here rather than using the
    browser's own picker, whose order follows the machine's locale. */
 .calendar {

@@ -93,6 +93,7 @@ def main() -> int:
         step("minutes: exports a set of minutes to Word", _minutes_word)
         step("minutes: reorders items and renumbers them", _minutes_reorder)
         step("minutes: edits an item in place without reloading", _minutes_edit_in_place)
+        step("minutes: changes a field by clicking it in the row", _minutes_cells)
         step("minutes: picks a date from the calendar", _minutes_calendar)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("progress sorts by a column", _sorting)
@@ -502,6 +503,54 @@ def _minutes_edit_in_place(page) -> None:
     if "revised levels agreed today" not in page.text_content("body"):
         raise AssertionError("the edited agreement did not save")
     page.screenshot(path=str(SHOTS / "18-edit-in-place.png"), full_page=True)
+
+
+def _minutes_cells(page) -> None:
+    """Owner, trades, affects and the date are changed in the row itself."""
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    row = page.locator("tr", has_text="Quay wall levels").first
+    item_id = row.get_attribute("id").split("-")[1]
+    url_before = page.url
+
+    # Owner: click the cell, pick another party.
+    row.locator("[data-cell='owner']").click()
+    page.wait_for_selector(f"#owner-{item_id} select", timeout=4000)
+    page.select_option(f"#owner-{item_id} select", "PMC")
+    page.wait_for_selector(f"#owner-{item_id} .cell-open:has-text('PMC')", timeout=6000)
+    if page.url != url_before:
+        raise AssertionError("changing a field should not reload the page")
+
+    # Affects: the same, and the row's wording follows.
+    row.locator("[data-cell='impact']").click()
+    page.wait_for_selector(f"#impact-{item_id} select", timeout=4000)
+    page.select_option(f"#impact-{item_id} select", "both")
+    page.wait_for_selector(f"#impact-{item_id} .cell-open:has-text('Time & cost')", timeout=6000)
+
+    # Trades: tick another one; the cell lists them all.
+    row.locator("[data-cell='trades']").click()
+    page.wait_for_selector(f"#trades-{item_id} input[type=checkbox]", timeout=4000)
+    page.locator(f"#trades-{item_id} input[type=checkbox]").nth(2).check()
+    page.wait_for_timeout(900)
+    listed = page.text_content(f"#trades-{item_id}")
+    if "Marine Structures" not in listed:
+        raise AssertionError(f"the trade cell did not take the new trade: {listed!r}")
+
+    # The date, and the status badge that reads on it.
+    row.locator("[data-cell='due']").click()
+    page.wait_for_selector(f"#due-{item_id} input", timeout=4000)
+    page.fill(f"#due-{item_id} input", "01/01/2020")
+    page.locator(f"#due-{item_id} input").blur()
+    page.wait_for_selector(f"#status-{item_id}:has-text('overdue')", timeout=6000)
+
+    page.screenshot(path=str(SHOTS / "20-cells.png"), full_page=True)
+
+    # And it really was written, not just drawn.
+    page.reload(wait_until="networkidle")
+    body = page.text_content("body")
+    for expected in ("PMC", "Time & cost", "Marine Structures", "01/01/2020"):
+        if expected not in body:
+            raise AssertionError(f"{expected!r} did not survive a reload")
 
 
 def _minutes_calendar(page) -> None:

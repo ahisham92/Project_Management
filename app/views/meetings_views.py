@@ -5,7 +5,8 @@ from __future__ import annotations
 import io
 
 from flask import (
-    Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for,
+    Blueprint, abort, current_app, flash, g, redirect, render_template, request, send_file,
+    url_for,
 )
 
 from ..auth import ROLE_RANK, load_project, login_required
@@ -353,32 +354,69 @@ def delete_meeting(project_id: int, meeting_id: int):
 # --- items -----------------------------------------------------------------
 
 def _item_fields(project_id: int) -> dict[str, object]:
-    """The fields shared by adding and editing an item, validated against the
-    project so a stray id cannot attach someone else's trade or attendee."""
-    meeting_id = _to_int(request.form.get("meeting_id"))
-    if meeting_id and not query_one("SELECT 1 FROM meetings WHERE id = ? AND project_id = ?",
-                                    (meeting_id, project_id)):
-        meeting_id = None
+    """The item columns this form actually carries, validated.
 
-    status = normalise_status(request.form.get("status"))
-    closed_date = from_input(request.form.get("closed_date")) or ""
-    if status == "closed" and not closed_date:
-        closed_date = today()
-    if status == "open":
-        closed_date = ""
+    Only what was posted comes back, so one field can be saved on its own from
+    its own cell without blanking everything the form did not include.
+    """
+    form = request.form
+    fields: dict[str, object] = {}
 
-    return {
-        "meeting_id": meeting_id,
-        "subject": _clean("subject"),
-        "discussion": _clean("discussion"),
-        "agreement": _clean("agreement"),
-        "owner_code": normalise_owner(request.form.get("owner_code")),
-        "impact": normalise_impact(request.form.get("impact")),
-        "status": status,
-        "raised_date": from_input(request.form.get("raised_date")) or "",
-        "due_date": from_input(request.form.get("due_date")) or "",
-        "closed_date": closed_date,
-    }
+    if "meeting_id" in form:
+        meeting_id = _to_int(form.get("meeting_id"))
+        if meeting_id and not query_one("SELECT 1 FROM meetings WHERE id = ? AND project_id = ?",
+                                        (meeting_id, project_id)):
+            meeting_id = None
+        fields["meeting_id"] = meeting_id
+
+    for name in ("subject", "discussion", "agreement"):
+        if name in form:
+            fields[name] = _clean(name)
+    if "owner_code" in form:
+        fields["owner_code"] = normalise_owner(form.get("owner_code"))
+    if "impact" in form:
+        fields["impact"] = normalise_impact(form.get("impact"))
+    if "raised_date" in form:
+        fields["raised_date"] = from_input(form.get("raised_date")) or ""
+    if "due_date" in form:
+        fields["due_date"] = from_input(form.get("due_date")) or ""
+
+    # Closing an item stamps the date unless one was given; reopening clears it.
+    if "status" in form:
+        status = normalise_status(form.get("status"))
+        fields["status"] = status
+        closed = from_input(form.get("closed_date")) or ""
+        fields["closed_date"] = (closed or today()) if status == "closed" else ""
+    elif "closed_date" in form:
+        fields["closed_date"] = from_input(form.get("closed_date")) or ""
+
+    return fields
+
+
+def _wants_json() -> bool:
+    """A cell saving on its own asks for JSON so the page need not reload."""
+    return "application/json" in (request.headers.get("Accept") or "")
+
+
+def _saved(project_id: int, item_id: int, meeting_id: object):
+    """The answer to a save: a fresh status badge for the row, or a redirect."""
+    if not _wants_json():
+        return _after_item(project_id, meeting_id)
+
+    from flask import jsonify
+
+    item = next((i for i in load_items(project_id, today()) if i["id"] == item_id), None)
+    if item is None:
+        return jsonify({"ok": False}), 404
+
+    # The very macros the page uses, so what is swapped in is what a reload
+    # would have drawn.
+    bits = current_app.jinja_env.get_template("partials/item_bits.html").module
+    return jsonify({
+        "ok": True,
+        "status_html": str(bits.item_status(item)),
+        "trade_html": str(bits.item_trades(item)),
+    })
 
 
 def _after_item(project_id: int, meeting_id: object):
@@ -393,38 +431,35 @@ def _after_item(project_id: int, meeting_id: object):
 def add_item(project_id: int):
     _project, role = load_project(project_id, "member")
     fields = _item_fields(project_id)
-    if not fields["subject"] and not fields["agreement"]:
+    if not fields.get("subject") and not fields.get("agreement"):
         flash("An item needs a subject or an agreement", "error")
-        return _after_item(project_id, fields["meeting_id"])
+        return _after_item(project_id, fields.get("meeting_id"))
 
-    if not fields["raised_date"]:
+    if not fields.get("raised_date"):
         stamp = None
-        if fields["meeting_id"]:
+        if fields.get("meeting_id"):
             stamp = query_one("SELECT meeting_date FROM meetings WHERE id = ?", (fields["meeting_id"],))
         fields["raised_date"] = stamp["meeting_date"] if stamp else today()
 
+    # The number is set by renumbering once the item is in its meeting.
+    columns = dict(fields, project_id=project_id, ref="",
+                   sort_order=next_sort_order("meeting_items", project_id))
+    names = ", ".join(columns)
     item_id = insert(
-        """
-        INSERT INTO meeting_items (project_id, meeting_id, ref, subject, discussion, agreement,
-                                   owner_code, impact, status,
-                                   raised_date, due_date, closed_date, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (project_id, fields["meeting_id"], "", fields["subject"], fields["discussion"],
-         fields["agreement"], fields["owner_code"],
-         fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
-         fields["closed_date"], next_sort_order("meeting_items", project_id)),
+        f"INSERT INTO meeting_items ({names}) VALUES ({', '.join('?' for _ in columns)})",
+        tuple(columns.values()),
     )
-    set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
-    # The new item takes the next number in the meeting it landed in.
-    renumber_items(project_id, fields["meeting_id"])
+    if "trade_ids" in request.form or "trades_present" in request.form:
+        set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
+    renumber_items(project_id, fields.get("meeting_id"))
     flash("Item added", "success")
-    return _after_item(project_id, fields["meeting_id"])
+    return _after_item(project_id, fields.get("meeting_id"))
 
 
 @bp.post("/minutes/items/<int:item_id>")
 @login_required
 def save_item(project_id: int, item_id: int):
+    """Saves whatever the form carried — a whole item, or one cell of one."""
     _project, role = load_project(project_id, "member")
     before = query_one("SELECT meeting_id FROM meeting_items WHERE id = ? AND project_id = ?",
                        (item_id, project_id))
@@ -432,26 +467,26 @@ def save_item(project_id: int, item_id: int):
         abort(404)
 
     fields = _item_fields(project_id)
-    execute(
-        """
-        UPDATE meeting_items SET meeting_id = ?, subject = ?, discussion = ?, agreement = ?,
-               owner_code = ?, owner_name = '', impact = ?, status = ?,
-               raised_date = ?, due_date = ?, closed_date = ?, updated_at = datetime('now')
-        WHERE id = ? AND project_id = ?
-        """,
-        (fields["meeting_id"], fields["subject"], fields["discussion"],
-         fields["agreement"], fields["owner_code"],
-         fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
-         fields["closed_date"], item_id, project_id),
-    )
-    set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
+    if fields:
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        execute(
+            f"UPDATE meeting_items SET {assignments}, updated_at = datetime('now') "
+            "WHERE id = ? AND project_id = ?",
+            (*fields.values(), item_id, project_id),
+        )
+    if "trade_ids" in request.form or "trades_present" in request.form:
+        set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
+
     # Moving an item to another meeting renumbers both: the one it left closes
     # its gap, the one it joined takes it on the end.
-    if before["meeting_id"] != fields["meeting_id"]:
+    meeting_id = fields.get("meeting_id", before["meeting_id"])
+    if "meeting_id" in fields and before["meeting_id"] != meeting_id:
         renumber_items(project_id, before["meeting_id"])
-    renumber_items(project_id, fields["meeting_id"])
-    flash("Item saved", "success")
-    return _after_item(project_id, fields["meeting_id"])
+        renumber_items(project_id, meeting_id)
+
+    if not _wants_json():
+        flash("Item saved", "success")
+    return _saved(project_id, item_id, meeting_id)
 
 
 @bp.post("/minutes/items/<int:item_id>/status")
@@ -469,8 +504,9 @@ def set_item_status(project_id: int, item_id: int):
         "UPDATE meeting_items SET status = ?, closed_date = ?, updated_at = datetime('now') WHERE id = ?",
         (status, closed, item_id),
     )
-    flash("Item closed" if status == "closed" else "Item reopened", "success")
-    return _after_item(project_id, item["meeting_id"])
+    if not _wants_json():
+        flash("Item closed" if status == "closed" else "Item reopened", "success")
+    return _saved(project_id, item_id, item["meeting_id"])
 
 
 @bp.post("/minutes/items/<int:item_id>/move")

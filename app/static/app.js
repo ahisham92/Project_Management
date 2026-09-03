@@ -189,6 +189,169 @@
     }
   });
 
+  // --- editing a cell where it stands --------------------------------------
+  // The short fields — owner, trades, what an item affects, its date — are
+  // links to the item's full form. Here a click becomes the control itself,
+  // dropped into the cell and saved in the background: nothing reloads, and
+  // nothing else on the item is touched. Without this the link still works.
+  //
+  // The controls come from one template per field at the foot of the page.
+  // Rendering a copy into every row would repeat the owner list and the trade
+  // boxes hundreds of times over a long register.
+
+  var VALUE_OF = {
+    owner: function (form) { return form.elements.owner_code.value || '—'; },
+    impact: function (form) {
+      var select = form.elements.impact;
+      return select.value === 'none' ? '—' : select.options[select.selectedIndex].text;
+    },
+    due: function (form) { return form.elements.due_date.value || '—'; },
+  };
+
+  function fillCell(control, cell, kind) {
+    var value = cell.dataset.value || '';
+    if (kind === 'trades') {
+      var chosen = value ? value.split(',') : [];
+      control.querySelectorAll('input[name=trade_ids]').forEach(function (box) {
+        box.checked = chosen.indexOf(box.value) !== -1;
+      });
+      return;
+    }
+    var field = control.matches('input, select') ? control : control.querySelector('input, select');
+    if (field) field.value = value;
+  }
+
+  function closeCell(form, html, state) {
+    var cell = form.parentNode;
+    if (!cell) return;
+    cell.innerHTML = html;
+    if (state) {
+      cell.className = cell.className.replace(/\bimpact-\S*/g, '').trim() + ' ' + state;
+    }
+    cell.classList.add('cell-saved');
+    window.setTimeout(function () { cell.classList.remove('cell-saved'); }, 1400);
+  }
+
+  function openCell(link) {
+    var kind = link.dataset.cell;
+    var template = document.getElementById('cell-' + kind);
+    if (!template) return false;
+
+    var cell = link.parentNode;
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = link.dataset.action;
+    form.className = 'cell-form';
+    form.dataset.itemId = link.dataset.item;
+    form.dataset.cell = kind;
+    form.dataset.was = cell.innerHTML;
+
+    if (link.dataset.back) {
+      var back = document.createElement('input');
+      back.type = 'hidden';
+      back.name = 'return';
+      back.value = link.dataset.back;
+      form.appendChild(back);
+    }
+
+    var control = template.content.firstElementChild.cloneNode(true);
+    fillCell(control, link, kind);
+    form.appendChild(control);
+
+    var save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'btn btn-ghost btn-sm save-inline';
+    save.textContent = 'Save';
+    form.appendChild(save);
+
+    cell.innerHTML = '';
+    cell.appendChild(form);
+    var first = form.querySelector('select, input:not([type=hidden])');
+    if (first) {
+      first.focus({ preventScroll: true });
+      // A select is what the click was aiming at, so open it straight away.
+      if (first.tagName === 'SELECT' && first.showPicker) {
+        try { first.showPicker(); } catch (err) { /* not allowed here */ }
+      }
+    }
+    return true;
+  }
+
+  function saveCell(form) {
+    form.classList.add('saving');
+    fetch(form.action, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    }).then(function (response) {
+      if (!response.ok) throw new Error(response.status);
+      return response.json();
+    }).then(function (result) {
+      var kind = form.dataset.cell;
+      var id = form.dataset.itemId;
+      var state = '';
+      var html;
+
+      if (kind === 'trades') {
+        html = result.trade_html;
+      } else {
+        var reader = VALUE_OF[kind];
+        html = reader ? reader(form) : form.dataset.was;
+        if (kind === 'impact') state = 'impact-' + form.elements.impact.value;
+      }
+      closeCell(form, cellLink(form, html), state);
+
+      // The badge reads on the date and on whether the item is closed.
+      var status = document.getElementById('status-' + id);
+      if (status && result.status_html) status.innerHTML = result.status_html;
+    }).catch(function () {
+      // Something went wrong out of sight; post it properly so the change is
+      // never quietly lost.
+      form.submit();
+    });
+  }
+
+  function cellLink(form, label) {
+    // The cell goes back to being a link, carrying what it now holds.
+    var kind = form.dataset.cell;
+    var value = kind === 'trades'
+      ? Array.prototype.filter.call(form.elements.trade_ids.length ? form.elements.trade_ids : [form.elements.trade_ids],
+                                    function (box) { return box.checked; })
+          .map(function (box) { return box.value; }).join(',')
+      : (form.elements.owner_code || form.elements.impact || form.elements.due_date).value;
+    var link = document.createElement('a');
+    link.className = 'cell-open';
+    link.dataset.cell = kind;
+    link.dataset.item = form.dataset.itemId;
+    link.dataset.action = form.action;
+    link.dataset.value = value;
+    link.href = window.location.href;
+    link.title = 'Click to change';
+    link.innerHTML = label;
+    var back = form.elements['return'];
+    if (back) link.dataset.back = back.value;
+    return link.outerHTML;
+  }
+
+  document.addEventListener('click', function (event) {
+    var link = event.target.closest('.cell-open');
+    if (link && openCell(link)) event.preventDefault();
+  });
+
+  document.addEventListener('change', function (event) {
+    var form = event.target.closest('form.cell-form');
+    if (form) saveCell(form);
+  });
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target.closest('form.cell-form');
+    if (form && window.fetch) {
+      event.preventDefault();
+      saveCell(form);
+    }
+  });
+
   // --- date picker ---------------------------------------------------------
   // A calendar for the date fields. Written here rather than using the
   // browser's own <input type="date">, whose displayed order follows the

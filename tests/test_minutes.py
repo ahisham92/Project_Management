@@ -556,7 +556,9 @@ def test_the_form_is_rendered_once_rather_than_per_row(minuted):
     a long register into a megabyte of HTML."""
     body = page(minuted, "/projects/1/minutes?filter=all")
     assert body.count('<textarea name="agreement"') == 2      # add form, and the template
-    assert body.count('data-item=') == 3                      # the values to fill in
+    assert body.count("data-item='") == 3                     # the values to fill in
+    for control in ("cell-owner", "cell-impact", "cell-trades", "cell-due"):
+        assert body.count(f'id="{control}"') == 1             # one copy, not one per row
 
 
 def test_a_long_register_stays_a_reasonable_size(signed_in):
@@ -945,3 +947,130 @@ def test_the_word_documents_carry_the_party_and_every_trade():
     body = parts(register_document(PROJECT, rows))["word/document.xml"]
     assert "MR" in body and "Client" in body
     assert "Marine, Structures" in body
+
+
+# --- editing a field where it stands ----------------------------------------
+
+def field_of(client, item_id, name):
+    from app.service import load_items
+
+    with client.application.app_context():
+        row = [i for i in load_items(1) if i["id"] == item_id][0]
+    return row[name]
+
+
+def save_cell(client, item_id=1, **data):
+    """One cell posting just its own field, as the row does."""
+    response = client.post(f"/projects/1/minutes/items/{item_id}", data=data,
+                           headers={"Accept": "application/json"})
+    assert response.status_code == 200, response.status_code
+    return response.get_json()
+
+
+def test_one_field_saves_without_touching_the_rest_of_the_item(minuted):
+    before = {name: field_of(minuted, 1, name)
+              for name in ("subject", "agreement", "impact", "due_date", "trade_ids")}
+    save_cell(minuted, owner_code="Client")
+
+    assert field_of(minuted, 1, "owner_code") == "Client"
+    for name, value in before.items():
+        assert field_of(minuted, 1, name) == value, name
+
+
+def test_each_of_the_four_cells_saves_on_its_own(minuted):
+    save_cell(minuted, owner_code="PMC")
+    save_cell(minuted, impact="both")
+    save_cell(minuted, due_date="25/12/2026")
+    save_cell(minuted, trades_present="1", trade_ids=["2", "3"])
+
+    assert field_of(minuted, 1, "owner_code") == "PMC"
+    assert field_of(minuted, 1, "impact") == "both"
+    assert field_of(minuted, 1, "due_date") == "2026-12-25"
+    assert field_of(minuted, 1, "trade_ids") == [2, 3]
+
+
+def test_clearing_every_trade_leaves_an_item_with_none(minuted):
+    """An unticked box sends nothing, so the form says the trades are there to
+    be replaced — otherwise clearing them would read as "leave them alone"."""
+    save_cell(minuted, trades_present="1")
+    assert field_of(minuted, 1, "trade_ids") == []
+
+
+def test_a_cell_answers_with_the_row_as_it_now_reads(minuted):
+    """The status badge and the trade list are re-rendered by the server, so
+    what the page swaps in is exactly what a reload would have shown."""
+    result = save_cell(minuted, due_date="01/01/2020")
+    assert result["ok"] is True
+    assert "overdue" in result["status_html"]
+    result = save_cell(minuted, trades_present="1", trade_ids=["2"])
+    assert "Geotechnical" in result["trade_html"]
+
+
+def test_closing_from_the_row_answers_with_the_closed_badge(minuted):
+    result = minuted.post("/projects/1/minutes/items/1/status",
+                          data={"status": "closed"},
+                          headers={"Accept": "application/json"}).get_json()
+    assert "Closed" in result["status_html"]
+
+
+def test_the_edit_form_carries_the_writing_only(minuted):
+    """Edit is for the subject, the agreement and the discussion; the short
+    fields are edited in the row, so the form must not blank them."""
+    save_cell(minuted, owner_code="ST", impact="cost")
+    post(minuted, "/projects/1/minutes/items/1", subject="Quay wall levels revised",
+         agreement="Marine to reissue", discussion="", meeting_id="1", raised_date="03/09/2026")
+
+    assert field_of(minuted, 1, "subject") == "Quay wall levels revised"
+    assert field_of(minuted, 1, "owner_code") == "ST"
+    assert field_of(minuted, 1, "impact") == "cost"
+
+
+def test_each_row_offers_its_four_short_fields_for_editing(minuted):
+    for url in ("/projects/1/minutes?filter=all", "/projects/1/minutes/meetings/1"):
+        body = page(minuted, url)
+        for kind in ("owner", "impact", "trades", "due"):
+            assert body.count(f'data-cell="{kind}"') == 3     # one per item
+        assert body.count("cell-open") >= 12
+
+
+def test_a_cell_is_a_link_to_the_full_form_when_the_script_is_not_running(minuted):
+    """The cell is an ordinary link, so it still reaches the item's fields
+    without JavaScript — and that form then carries every field."""
+    body = page(minuted, "/projects/1/minutes?filter=all")
+    assert "edit=1" in body
+
+    opened = page(minuted, "/projects/1/minutes?filter=all&edit=1")
+    row = opened.split('id="edit-1"')[1].split("</tr>")[0]
+    for field in ('name="owner_code"', 'name="impact"', 'name="trade_ids"', 'name="due_date"'):
+        assert field in row, field
+
+
+def test_a_viewer_sees_the_values_but_no_controls(client, app):
+    """Read-only access shows the register as text, with nothing to change."""
+    client.post("/register", data={"name": "Viewer", "email": "v@example.com",
+                                   "password": "longenough1"})
+    with app.app_context():
+        from app.db import connect
+
+        conn = connect(app.config["DATABASE"])
+        with conn:
+            user = conn.execute("SELECT id FROM users WHERE email = 'v@example.com'").fetchone()
+            conn.execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'viewer')",
+                         (user["id"],))
+            conn.execute("INSERT INTO meeting_items (project_id, ref, subject, owner_code) "
+                         "VALUES (1, '1', 'Quay wall levels', 'MR')")
+        conn.close()
+
+    body = client.get("/projects/1/minutes?filter=all").get_data(as_text=True)
+    assert "Quay wall levels" in body and "MR" in body
+    assert "data-autosave" not in body
+
+
+def test_the_register_reads_as_values_not_as_controls(minuted):
+    """A cell shows its value, so the register still reads as a register — on
+    screen and on paper, where the controls are dropped."""
+    body = page(minuted, "/projects/1/minutes?filter=all")
+    rows = body.split('id="item-')
+    quay = next(part for part in rows if "Quay wall levels" in part)
+    for value in ("MR", "Time", "10/09/2026", "Marine"):
+        assert value in quay, value

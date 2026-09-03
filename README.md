@@ -103,9 +103,14 @@ The **Minutes** tab keeps the meeting record and the action register in one plac
   swap an item with its neighbour and renumber both. Deleting an item closes the gap;
   moving one to another meeting renumbers the meeting it left and the one it joined;
   renaming MOM-04 to MOM-07 renumbers its items to 7.1, 7.2, ...
-- **Editing happens in place.** Pressing Edit opens the form under the item without
-  reloading the page or losing your position in the list. With JavaScript switched off the
-  same button is an ordinary link that opens the item on the server instead.
+- **The short fields are changed by clicking them.** Owner, trades, what an item affects
+  and its action date are edited in the row: click the value, change it, and it saves on
+  the spot — no page reload, and nothing else on the item is touched. The status badge
+  follows the date it now carries.
+- **Edit is for the writing.** It opens the subject, the agreement and the discussion under
+  the item, without reloading the page or losing your position in the list.
+- With JavaScript switched off both are ordinary links that open the item's full form on
+  the server, and each control has its own Save button.
 - **Filters**: open, overdue, affects time, affects cost, closed, or everything — combined
   with a keyword search across the subject, discussion, agreement, owner and meeting, and
   with filters by **owner**, **trade**, **meeting** and a **date range**. Every column sorts.

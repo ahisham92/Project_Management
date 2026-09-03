@@ -1,0 +1,17 @@
+{# The two pieces of a row that change when a cell is saved. Macros rather than
+   includes, so the item is passed in explicitly: the same markup then serves
+   the page and the answer a cell gets back, and the two cannot drift apart. #}
+{% from "partials/bits.html" import badge %}
+
+{% macro item_status(item) -%}
+  {%- if not item['is_open'] %}{{ badge('good', 'Closed', 'Closed ' ~ short_date(item['closed_date'])) }}
+  {%- elif item['is_overdue'] %}{{ badge('critical', item['days_overdue'] ~ 'd overdue', 'Due ' ~ short_date(item['due_date'])) }}
+  {%- elif item['is_due_soon'] %}{{ badge('serious', 'due in ' ~ item['days_to_due'] ~ 'd') }}
+  {%- else %}{{ badge('warning', 'Open') }}{% endif -%}
+{%- endmacro %}
+
+{% macro item_trades(item) -%}
+  {%- for tr in item['trades'] %}
+    <span class="nowrap"><span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}</span>{{ '' if loop.last else ' ' }}
+  {%- else %}<span class="muted">— none —</span>{% endfor -%}
+{%- endmacro %}

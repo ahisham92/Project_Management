@@ -1,0 +1,83 @@
+{# The short fields of a minuted item — owner, trades, what it affects, its
+   date — edited where they stand.
+
+   A cell shows its value and is a link to the item's full form. app.js turns
+   that click into the control itself, dropped in place and saved in the
+   background; without JavaScript the link opens the form on the server. The
+   controls are written once, into templates at the foot of the page, rather
+   than once per row: repeating the owner list and the trade boxes down a long
+   register is what turns it into a megabyte of HTML. #}
+{% from "partials/item_bits.html" import item_trades %}
+
+{% macro _open(project, item, kind, label, value, back='') %}
+  {% if can_report %}
+    <a class="cell-open" data-cell="{{ kind }}" data-item="{{ item['id'] }}"
+       data-value="{{ value }}" data-back="{{ back }}"
+       data-action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id']) }}"
+       {# Where the link goes without JavaScript: this same page, with the
+          item's full form open. view_args already carries the project. #}
+       href="{{ url_for(request.endpoint,
+                        **dict(request.view_args, **dict(request.args.to_dict(), edit=item['id']))) }}#item-{{ item['id'] }}"
+       title="Click to change">{{ label }}</a>
+  {% else %}
+    {{ label }}
+  {% endif %}
+{% endmacro %}
+
+{% macro owner_cell(project, item, owners, back='') %}
+  <span class="small ink2" id="owner-{{ item['id'] }}">
+    {{ _open(project, item, 'owner', item['owner_label'] or '—', item['owner_code'], back) }}
+  </span>
+{% endmacro %}
+
+{% macro impact_cell(project, item, impacts, back='') %}
+  <span class="small impact-{{ item['impact'] }}" id="impact-{{ item['id'] }}">
+    {{ _open(project, item, 'impact', item['impact_name'] if item['impact'] != 'none' else '—',
+             item['impact'], back) }}
+  </span>
+{% endmacro %}
+
+{% macro trades_cell(project, item, trades, back='') %}
+  <span class="small" id="trades-{{ item['id'] }}">
+    {{ _open(project, item, 'trades', item_trades(item), item['trade_ids'] | join(','), back) }}
+  </span>
+{% endmacro %}
+
+{% macro due_cell(project, item, back='') %}
+  <span class="small ink2 tabular" id="due-{{ item['id'] }}">
+    {{ _open(project, item, 'due', short_date(item['due_date']), date_input(item['due_date']), back) }}
+  </span>
+{% endmacro %}
+
+{# The one copy of each control, cloned into whichever cell is clicked. #}
+{% macro cell_templates(owners, impacts, trades) %}
+  {% if can_report %}
+    <template id="cell-owner">
+      <select name="owner_code" class="cell-input" aria-label="Owner">
+        <option value="">—</option>
+        {% for code in owners %}<option value="{{ code }}">{{ code }}</option>{% endfor %}
+      </select>
+    </template>
+    <template id="cell-impact">
+      <select name="impact" class="cell-input" aria-label="What this item affects">
+        {% for key, label in impacts %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      </select>
+    </template>
+    <template id="cell-trades">
+      <span class="cell-checks">
+        <input type="hidden" name="trades_present" value="1">
+        {% for tr in trades %}
+          <label class="check">
+            <input type="checkbox" name="trade_ids" value="{{ tr['id'] }}">
+            <span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}
+          </label>
+        {% endfor %}
+      </span>
+    </template>
+    <template id="cell-due">
+      <input type="text" name="due_date" class="cell-input cell-date" data-datepicker
+             placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off"
+             aria-label="Action date">
+    </template>
+  {% endif %}
+{% endmacro %}

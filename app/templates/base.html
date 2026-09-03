@@ -8,6 +8,9 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><text x='16' y='22' font-family='system-ui' font-size='14' font-weight='700' fill='white' text-anchor='middle'>PC</text></svg>">
   <script>
     // Applied before first paint so the page never flashes the wrong theme.
+    // Marks the page as scripted, which hides the controls that only exist
+    // for people without JavaScript — the Save button beside each editable cell.
+    document.documentElement.classList.add('js');
     try {
       var t = localStorage.getItem('pm-theme');
       if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);

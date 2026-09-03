@@ -243,6 +243,40 @@ input[type="checkbox"] { width: auto; }
 /* A minuted item: what was said and what was agreed need room to write and to
    read back before saving, so they sit on their own row as text areas. */
 .item-form { display: grid; gap: 10px; }
+
+/* Trades an item bears on: several at once, so check boxes rather than a list
+   you can only pick one thing from. */
+.trade-picker { border: 0; padding: 0; margin: 0; min-width: 200px; }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 0; }
+.check { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer; }
+.check input { width: auto; margin: 0; }
+
+/* The calendar behind every date field. Drawn here rather than using the
+   browser's own picker, whose order follows the machine's locale. */
+.calendar {
+  position: absolute; z-index: 50; width: 250px; padding: 8px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.cal-month { font-size: 0.8rem; font-weight: 600; }
+.cal-nav {
+  width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--ink); cursor: pointer; line-height: 1;
+}
+.cal-nav:hover { background: var(--plane); }
+.cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-week span { text-align: center; font-size: 0.65rem; color: var(--muted); padding-bottom: 2px; }
+.cal-day {
+  padding: 5px 0; font-size: 0.75rem; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--ink); cursor: pointer;
+}
+.cal-day:hover { background: var(--surface); }
+.cal-day.outside { color: var(--muted); opacity: 0.55; }
+.cal-day.today { border-color: var(--series-1); font-weight: 600; }
+.cal-day.chosen { background: var(--series-1); color: #fff; font-weight: 600; }
+.cal-foot { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; }
+@media print { .calendar { display: none !important; } }
 .item-text { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .item-text textarea { min-height: 88px; resize: vertical; line-height: 1.45; }
 @media (max-width: 800px) { .item-text { grid-template-columns: minmax(0, 1fr); } }

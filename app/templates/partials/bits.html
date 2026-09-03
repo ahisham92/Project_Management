@@ -39,11 +39,12 @@
 {% endmacro %}
 
 {# A date field. Text rather than a native picker so every machine reads
-   dd/mm/yyyy the same way. #}
+   dd/mm/yyyy the same way; the calendar that opens on it is drawn by app.js,
+   which writes back in the same format. It can still be typed. #}
 {% macro date_field(name, value='', label='', klass='', required=False) %}
   <label class="field {{ klass }}">
     {% if label %}<span class="field-label">{{ label }}</span>{% endif %}
-    <input type="text" name="{{ name }}" value="{{ date_input(value) }}"
+    <input type="text" name="{{ name }}" value="{{ date_input(value) }}" data-datepicker
            placeholder="{{ DATE_FORMAT }}" inputmode="numeric"
            pattern="\s*\d{1,2}\D\d{1,2}\D\d{2,4}\s*"
            title="Type the date as {{ DATE_FORMAT }}"

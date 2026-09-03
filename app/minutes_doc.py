@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from .dates import to_display
-from .minutes import impact_name
+from .minutes import impact_name, owner_of, trade_names
 from .word import Document
 
 
@@ -32,7 +32,7 @@ def _status(item: Mapping[str, Any]) -> str:
 
 
 def _owner(item: Mapping[str, Any]) -> str:
-    return str(item.get("owner_label") or item.get("owner_person") or item.get("owner_name") or "—")
+    return owner_of(item) or "—"
 
 
 def _item_rows(items: Sequence[Mapping[str, Any]]) -> list[list[str]]:
@@ -47,7 +47,7 @@ def _item_rows(items: Sequence[Mapping[str, Any]]) -> list[list[str]]:
             body,
             str(item.get("agreement") or ""),
             _owner(item),
-            str(item.get("trade_name") or "—"),
+            trade_names(item) or "—",
             impact_name(item.get("impact")),
             to_display(item.get("due_date")) or "—",
             _status(item),

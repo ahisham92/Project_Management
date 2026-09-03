@@ -12,6 +12,7 @@ against the same database accumulate them and the budget check will fail.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +93,7 @@ def main() -> int:
         step("minutes: exports a set of minutes to Word", _minutes_word)
         step("minutes: reorders items and renumbers them", _minutes_reorder)
         step("minutes: edits an item in place without reloading", _minutes_edit_in_place)
+        step("minutes: picks a date from the calendar", _minutes_calendar)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
@@ -363,21 +365,25 @@ def _minutes_capture(page) -> None:
     if "Apologies" not in page.text_content("body"):
         raise AssertionError("the attendee who was unticked should show apologies")
 
-    for subject, agreement, impact, due in [
-        ("Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026"),
-        ("Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026"),
+    for subject, agreement, impact, due, owner in [
+        ("Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026", "MR"),
+        ("Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026", "Client"),
     ]:
         form = page.locator("form", has=page.locator("button:has-text('Add item')"))
         form.locator("input[name=subject]").fill(subject)
         form.locator("textarea[name=agreement]").fill(agreement)
         form.locator("select[name=impact]").select_option(label=impact)
         form.locator("input[name=due_date]").fill(due)
-        form.locator("select[name=owner_id]").select_option(label="Ahmed Mitwally")
+        form.locator("select[name=owner_code]").select_option(owner)
+        # An item can bear on more than one trade at a time.
+        form.locator("input[name=trade_ids]").first.check()
+        form.locator("input[name=trade_ids]").nth(1).check()
         form.locator("button:has-text('Add item')").click()
         page.wait_for_selector("text=Item added", timeout=8000)
 
     body = page.text_content("body")
-    for expected in ("Quay wall levels", "Marine to reissue the layout", "SIBLINE-PORT"):
+    for expected in ("Quay wall levels", "Marine to reissue the layout", "SIBLINE-PORT",
+                     "MR", "Marine", "Geotechnical"):
         if expected not in body:
             raise AssertionError(f"the minutes are missing {expected!r}")
     page.screenshot(path=str(SHOTS / "14-meeting.png"), full_page=True)
@@ -498,13 +504,43 @@ def _minutes_edit_in_place(page) -> None:
     page.screenshot(path=str(SHOTS / "18-edit-in-place.png"), full_page=True)
 
 
+def _minutes_calendar(page) -> None:
+    """Clicking a date field opens a calendar that writes back dd/mm/yyyy."""
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+
+    field = page.locator("form input[name=due_date]").first
+    field.click()
+    page.wait_for_selector(".calendar", state="visible", timeout=4000)
+
+    month = page.text_content(".cal-month")
+    page.click(".cal-nav[data-step='1']")
+    if page.text_content(".cal-month") == month:
+        raise AssertionError("the next-month arrow did not move the calendar")
+    page.click(".cal-nav[data-step='-1']")
+
+    page.locator(".cal-day:not(.outside)").nth(14).click()
+    page.wait_for_selector(".calendar", state="hidden", timeout=4000)
+    value = field.input_value()
+    if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", value):
+        raise AssertionError(f"the calendar wrote {value!r}, not dd/mm/yyyy")
+    if not value.startswith("15/"):
+        raise AssertionError(f"the fifteenth of the month should give 15/..., got {value}")
+
+    # Typing still works, and the field is not a native picker.
+    field.fill("07/10/2026")
+    if page.locator("input[type=date]").count():
+        raise AssertionError("a native date picker would follow the machine's locale")
+    page.screenshot(path=str(SHOTS / "19-calendar.png"), full_page=True)
+
+
 def _minutes_agenda(page) -> None:
     page.click("nav.tabs a:has-text('Minutes')")
     page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
     page.click("a:has-text('Next-meeting agenda')")
     page.wait_for_selector("text=Agenda", timeout=8000)
     body = page.text_content("body")
-    for expected in ("Ahmed Mitwally", "Quay wall levels", "Additional bathymetric survey"):
+    for expected in ("MR", "Client", "Quay wall levels", "Additional bathymetric survey"):
         if expected not in body:
             raise AssertionError(f"the agenda is missing {expected!r}")
     page.screenshot(path=str(SHOTS / "16-agenda.png"), full_page=True)

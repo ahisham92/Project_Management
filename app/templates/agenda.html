@@ -50,8 +50,8 @@
     <span class="field-label">Owner</span>
     <select name="owner">
       <option value="">Anyone</option>
-      {% for person in attendees %}
-        <option value="{{ person['id'] }}" {{ 'selected' if owner_id == person['id'] }}>{{ person['name'] }}</option>
+      {% for code in owners %}
+        <option value="{{ code }}" {{ 'selected' if owner == code }}>{{ code }}</option>
       {% endfor %}
     </select>
   </label>
@@ -106,9 +106,9 @@
                 {% else %}—{% endif %}
               </td>
               <td class="small">
-                {% if item['trade_name'] %}
-                  <span class="swatch" style="background:{{ item['trade_color'] }}"></span>{{ item['trade_name'] }}
-                {% else %}<span class="muted">—</span>{% endif %}
+                {% for tr in item['trades'] %}
+                  <span class="nowrap"><span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}</span>{{ '' if loop.last else ' ' }}
+                {% else %}<span class="muted">—</span>{% endfor %}
               </td>
               <td class="nowrap">{{ impact_badge(item) }}</td>
               <td class="right small ink2 nowrap">{{ short_date(item['due_date']) }}</td>

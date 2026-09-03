@@ -12,12 +12,13 @@ from ..auth import ROLE_RANK, load_project, login_required
 from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query_one
 from ..minutes import (
-    COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, STATUSES, filter_items, next_ref,
-    normalise_impact, normalise_sort, normalise_status, sort_items, summarise,
+    COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, OWNERS, STATUSES, filter_items, next_ref,
+    normalise_impact, normalise_owner, normalise_sort, normalise_status, sort_items, summarise,
 )
 from ..service import (
     load_attendees, load_items, load_meeting, load_meetings, load_trades, meeting_items,
-    meeting_sheet, move_item, next_sort_order, renumber_items, set_attendance, today,
+    meeting_sheet, move_item, next_sort_order, renumber_items, set_attendance,
+    set_item_trades, today,
 )
 
 bp = Blueprint("meetings", __name__, url_prefix="/projects/<int:project_id>")
@@ -55,7 +56,7 @@ def _filters() -> dict[str, object]:
     return {
         "filter": chip,
         "q": (request.args.get("q") or "").strip(),
-        "owner": _to_int(request.args.get("owner")),
+        "owner": normalise_owner(request.args.get("owner")),
         "trade": _to_int(request.args.get("trade")),
         "meeting": _to_int(request.args.get("meeting")),
         "impact": (request.args.get("impact") or "").strip().lower(),
@@ -71,7 +72,7 @@ def _link_args(filters: dict[str, object]) -> dict[str, object]:
     args = {
         "filter": filters["filter"],
         "q": filters["q"] or None,
-        "owner": filters["owner"],
+        "owner": filters["owner"] or None,
         "trade": filters["trade"],
         "meeting": filters["meeting"],
         "impact": filters["impact"] or None,
@@ -90,7 +91,7 @@ def _selection(project_id: int, filters: dict[str, object]) -> list[dict]:
         items,
         chip=str(filters["filter"]),
         search=str(filters["q"]),
-        owner_id=filters["owner"],
+        owner=str(filters["owner"]),
         trade_id=filters["trade"],
         meeting_id=filters["meeting"],
         impact=str(filters["impact"]),
@@ -134,7 +135,7 @@ def index(project_id: int):
         "minutes.html",
         project=project, role=role, items=rows, totals=summarise(everything),
         shown=len(rows), filters=filters, link_args=_link_args(filters),
-        chips=FILTERS, impacts=IMPACTS, statuses=STATUSES, columns=COLUMNS,
+        chips=FILTERS, impacts=IMPACTS, owners=OWNERS, statuses=STATUSES, columns=COLUMNS,
         sort=filters["sort"], direction=filters["dir"],
         attendees=load_attendees(project_id), trades=load_trades(project_id),
         meetings=load_meetings(project_id), today=today(),
@@ -165,10 +166,7 @@ def _describe(project_id: int, filters: dict[str, object]) -> list[str]:
     if filters["q"]:
         parts.append(f'matching "{filters["q"]}"')
     if filters["owner"]:
-        row = query_one("SELECT name FROM attendees WHERE id = ? AND project_id = ?",
-                        (filters["owner"], project_id))
-        if row:
-            parts.append(f"owned by {row['name']}")
+        parts.append(f"owned by {filters['owner']}")
     if filters["trade"]:
         row = query_one("SELECT name FROM trades WHERE id = ? AND project_id = ?",
                         (filters["trade"], project_id))
@@ -198,10 +196,10 @@ def agenda(project_id: int):
     project, role = load_project(project_id)
     search = (request.args.get("q") or "").strip()
     trade_id = _to_int(request.args.get("trade"))
-    owner_id = _to_int(request.args.get("owner"))
+    owner = normalise_owner(request.args.get("owner"))
 
     items = filter_items(load_items(project_id, today()), chip="open", search=search,
-                         trade_id=trade_id, owner_id=owner_id)
+                         trade_id=trade_id, owner=owner)
     items = sort_items(items, "due", "asc")
 
     by_owner: dict[str, list[dict]] = {}
@@ -214,7 +212,7 @@ def agenda(project_id: int):
     return render_template(
         "agenda.html",
         project=project, role=role, items=items, groups=groups, totals=summarise(items),
-        search=search, trade_id=trade_id, owner_id=owner_id,
+        search=search, trade_id=trade_id, owner=owner, owners=OWNERS,
         trades=load_trades(project_id), attendees=load_attendees(project_id),
         last_meeting=meetings[0] if meetings else None, today=today(),
     )
@@ -251,7 +249,7 @@ def meeting(project_id: int, meeting_id: int):
         first_id=order[0] if order else None, last_id=order[-1] if order else None,
         project=project, role=role, sheet=sheet, meeting=sheet["meeting"],
         items=sheet["items"], attendance=sheet["attendance"],
-        impacts=IMPACTS, statuses=STATUSES, editing=editing,
+        impacts=IMPACTS, owners=OWNERS, statuses=STATUSES, editing=editing,
         attendees=load_attendees(project_id), trades=load_trades(project_id),
         suggested_ref=next_ref(sheet["items"], sheet["meeting"]["ref"]),
         today=today(), can_report=_can_report(role), can_edit=_can_edit(role),
@@ -357,15 +355,7 @@ def delete_meeting(project_id: int, meeting_id: int):
 def _item_fields(project_id: int) -> dict[str, object]:
     """The fields shared by adding and editing an item, validated against the
     project so a stray id cannot attach someone else's trade or attendee."""
-    owner_id = _to_int(request.form.get("owner_id"))
-    trade_id = _to_int(request.form.get("trade_id"))
     meeting_id = _to_int(request.form.get("meeting_id"))
-    if owner_id and not query_one("SELECT 1 FROM attendees WHERE id = ? AND project_id = ?",
-                                  (owner_id, project_id)):
-        owner_id = None
-    if trade_id and not query_one("SELECT 1 FROM trades WHERE id = ? AND project_id = ?",
-                                  (trade_id, project_id)):
-        trade_id = None
     if meeting_id and not query_one("SELECT 1 FROM meetings WHERE id = ? AND project_id = ?",
                                     (meeting_id, project_id)):
         meeting_id = None
@@ -382,9 +372,7 @@ def _item_fields(project_id: int) -> dict[str, object]:
         "subject": _clean("subject"),
         "discussion": _clean("discussion"),
         "agreement": _clean("agreement"),
-        "owner_id": owner_id,
-        "owner_name": _clean("owner_name"),
-        "trade_id": trade_id,
+        "owner_code": normalise_owner(request.form.get("owner_code")),
         "impact": normalise_impact(request.form.get("impact")),
         "status": status,
         "raised_date": from_input(request.form.get("raised_date")) or "",
@@ -415,18 +403,19 @@ def add_item(project_id: int):
             stamp = query_one("SELECT meeting_date FROM meetings WHERE id = ?", (fields["meeting_id"],))
         fields["raised_date"] = stamp["meeting_date"] if stamp else today()
 
-    insert(
+    item_id = insert(
         """
         INSERT INTO meeting_items (project_id, meeting_id, ref, subject, discussion, agreement,
-                                   owner_id, owner_name, trade_id, impact, status,
+                                   owner_code, impact, status,
                                    raised_date, due_date, closed_date, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (project_id, fields["meeting_id"], "", fields["subject"], fields["discussion"],
-         fields["agreement"], fields["owner_id"], fields["owner_name"], fields["trade_id"],
+         fields["agreement"], fields["owner_code"],
          fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
          fields["closed_date"], next_sort_order("meeting_items", project_id)),
     )
+    set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
     # The new item takes the next number in the meeting it landed in.
     renumber_items(project_id, fields["meeting_id"])
     flash("Item added", "success")
@@ -446,15 +435,16 @@ def save_item(project_id: int, item_id: int):
     execute(
         """
         UPDATE meeting_items SET meeting_id = ?, subject = ?, discussion = ?, agreement = ?,
-               owner_id = ?, owner_name = ?, trade_id = ?, impact = ?, status = ?,
+               owner_code = ?, owner_name = '', impact = ?, status = ?,
                raised_date = ?, due_date = ?, closed_date = ?, updated_at = datetime('now')
         WHERE id = ? AND project_id = ?
         """,
         (fields["meeting_id"], fields["subject"], fields["discussion"],
-         fields["agreement"], fields["owner_id"], fields["owner_name"], fields["trade_id"],
+         fields["agreement"], fields["owner_code"],
          fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
          fields["closed_date"], item_id, project_id),
     )
+    set_item_trades(project_id, item_id, request.form.getlist("trade_ids"))
     # Moving an item to another meeting renumbers both: the one it left closes
     # its gap, the one it joined takes it on the end.
     if before["meeting_id"] != fields["meeting_id"]:

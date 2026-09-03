@@ -486,20 +486,55 @@ def load_items(project_id: int, on_date: str | None = None) -> list[dict[str, An
 
     rows = query(
         """
-        SELECT i.*, a.name AS owner_person, a.organisation AS owner_org,
-               tr.name AS trade_name, tr.color AS trade_color,
-               m.ref AS meeting_ref, m.title AS meeting_title, m.meeting_date AS meeting_date
+        SELECT i.*, m.ref AS meeting_ref, m.title AS meeting_title, m.meeting_date AS meeting_date
         FROM meeting_items i
-        LEFT JOIN attendees a ON a.id = i.owner_id
-        LEFT JOIN trades tr ON tr.id = i.trade_id
         LEFT JOIN meetings m ON m.id = i.meeting_id
         WHERE i.project_id = ?
         ORDER BY m.meeting_date DESC, i.sort_order, i.id
         """,
         (project_id,),
     )
+    by_item = item_trades(project_id)
     stamp = on_date or today()
-    return [decorate(dict(r), stamp) for r in rows]
+    return [
+        decorate(dict(r, trades=by_item.get(r["id"], [])), stamp)
+        for r in rows
+    ]
+
+
+def item_trades(project_id: int) -> dict[int, list[dict[str, Any]]]:
+    """item id -> the trades it sits with, in the project's trade order."""
+    rows = query(
+        """
+        SELECT it.item_id, tr.id, tr.name, tr.color
+        FROM meeting_item_trades it
+        JOIN trades tr ON tr.id = it.trade_id
+        JOIN meeting_items i ON i.id = it.item_id
+        WHERE i.project_id = ?
+        ORDER BY tr.sort_order, tr.id
+        """,
+        (project_id,),
+    )
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row["item_id"], []).append(
+            {"id": row["id"], "name": row["name"], "color": row["color"]}
+        )
+    return grouped
+
+
+def set_item_trades(project_id: int, item_id: int, trade_ids: Sequence[int]) -> None:
+    """Replaces the trades on one item, ignoring any that are not this
+    project's — an id in a posted form is not to be trusted."""
+    allowed = {int(r["id"]) for r in query("SELECT id FROM trades WHERE project_id = ?", (project_id,))}
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM meeting_item_trades WHERE item_id = ?", (item_id,))
+        for trade_id in dict.fromkeys(int(t) for t in trade_ids if int(t) in allowed):
+            conn.execute(
+                "INSERT INTO meeting_item_trades (item_id, trade_id) VALUES (?, ?)",
+                (item_id, trade_id),
+            )
 
 
 def load_attendance(meeting_id: int) -> dict[int, int]:

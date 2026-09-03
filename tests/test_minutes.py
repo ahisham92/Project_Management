@@ -9,9 +9,9 @@ from io import BytesIO
 import pytest
 
 from app.minutes import (
-    DEFAULT_FILTER, IMPACTS, decorate, filter_items, item_ref, matches_search, meeting_label,
-    meeting_stem, moved, next_ref, normalise_impact, normalise_sort, normalise_status,
-    renumber, sort_items, summarise,
+    DEFAULT_FILTER, IMPACTS, OWNERS, decorate, filter_items, item_ref, matches_search,
+    meeting_label, meeting_stem, moved, next_ref, normalise_impact, normalise_owner,
+    normalise_sort, normalise_status, renumber, sort_items, summarise, trade_names,
 )
 from app.minutes_doc import minutes_document, register_document
 from app.word import Document
@@ -24,8 +24,7 @@ def item(**fields):
     base = {
         "id": fields.pop("id", 1), "ref": "1.1", "subject": "Quay wall levels",
         "discussion": "", "agreement": "Marine to reissue the layout",
-        "owner_id": None, "owner_name": "", "owner_person": None, "trade_id": None,
-        "trade_name": "", "impact": "none", "status": "open",
+        "owner_code": "", "owner_name": "", "trades": [], "impact": "none", "status": "open",
         "raised_date": "2026-09-01", "due_date": "", "closed_date": "",
         "meeting_id": None, "meeting_ref": "", "meeting_title": "", "meeting_date": "",
     }
@@ -81,13 +80,13 @@ def test_an_unknown_impact_or_status_falls_back_rather_than_breaking_the_page():
 def register():
     return [
         item(id=1, ref="1.1", impact="time", due_date="2026-08-01", raised_date="2026-08-01",
-             owner_id=7, owner_person="Ahmed", trade_id=3, trade_name="Marine", meeting_id=1,
-             meeting_date="2026-08-01", meeting_ref="MOM-01"),
+             owner_code="MR", trades=[{"id": 3, "name": "Marine"}, {"id": 5, "name": "Structures"}],
+             meeting_id=1, meeting_date="2026-08-01", meeting_ref="MOM-01"),
         item(id=2, ref="1.2", subject="Additional survey", impact="cost",
-             due_date="2026-09-20", owner_id=8, owner_person="Client Rep", meeting_id=1,
+             due_date="2026-09-20", owner_code="Client", meeting_id=1,
              meeting_date="2026-08-01", meeting_ref="MOM-01", raised_date="2026-08-01"),
         item(id=3, ref="2.1", subject="Drawing register", status="closed",
-             closed_date="2026-09-01", trade_id=4, trade_name="Civil", meeting_id=2,
+             closed_date="2026-09-01", trades=[{"id": 4, "name": "Civil"}], meeting_id=2,
              meeting_date="2026-09-01", meeting_ref="MOM-02", raised_date="2026-09-01"),
     ]
 
@@ -116,13 +115,20 @@ def test_an_unknown_filter_falls_back_to_open_rather_than_showing_nothing():
 
 def test_filtering_by_owner_trade_and_meeting():
     rows = register()
-    assert refs(filter_items(rows, chip="all", owner_id=8)) == ["1.2"]
+    assert refs(filter_items(rows, chip="all", owner="Client")) == ["1.2"]
     assert refs(filter_items(rows, chip="all", trade_id=3)) == ["1.1"]
     assert refs(filter_items(rows, chip="all", meeting_id=2)) == ["2.1"]
 
 
+def test_an_item_answers_a_filter_on_any_of_the_trades_it_sits_with():
+    rows = register()
+    assert refs(filter_items(rows, chip="all", trade_id=3)) == ["1.1"]
+    assert refs(filter_items(rows, chip="all", trade_id=5)) == ["1.1"]   # its second trade
+    assert refs(filter_items(rows, chip="all", trade_id=99)) == []
+
+
 def test_filters_combine_rather_than_replacing_one_another():
-    rows = filter_items(register(), chip="open", trade_id=3, owner_id=7)
+    rows = filter_items(register(), chip="open", trade_id=3, owner="MR")
     assert refs(rows) == ["1.1"]
     assert refs(filter_items(register(), chip="open", trade_id=4)) == []
 
@@ -138,7 +144,8 @@ def test_search_looks_through_the_subject_agreement_and_owner():
     rows = register()
     assert refs(filter_items(rows, chip="all", search="quay")) == ["1.1"]
     assert refs(filter_items(rows, chip="all", search="reissue")) == ["1.1", "1.2", "2.1"]
-    assert refs(filter_items(rows, chip="all", search="client rep")) == ["1.2"]
+    assert refs(filter_items(rows, chip="all", search="client")) == ["1.2"]
+    assert refs(filter_items(rows, chip="all", search="structures")) == ["1.1"]
     assert refs(filter_items(rows, chip="all", search="MOM-02")) == ["2.1"]
 
 
@@ -391,12 +398,14 @@ def minuted(signed_in):
     post(signed_in, "/projects/1/minutes/meetings", ref="MOM-01",
          title="Weekly design coordination", meeting_date="03/09/2026",
          meeting_time="10:00", location="Teams", chaired_by="Ahmed Mitwally")
-    post(signed_in, "/projects/1/minutes/items", meeting_id="1", ref="1.1",
-         subject="Quay wall levels", agreement="Marine to reissue the layout",
-         owner_id="1", trade_id="1", impact="time", status="open", due_date="10/09/2026")
-    post(signed_in, "/projects/1/minutes/items", meeting_id="1", ref="1.2",
+    signed_in.post("/projects/1/minutes/items", data={
+        "meeting_id": "1", "subject": "Quay wall levels",
+        "agreement": "Marine to reissue the layout", "owner_code": "MR",
+        "trade_ids": ["1", "2"], "impact": "time", "status": "open", "due_date": "10/09/2026",
+    }, follow_redirects=True)
+    post(signed_in, "/projects/1/minutes/items", meeting_id="1",
          subject="Additional survey", agreement="Client to confirm the budget",
-         owner_id="2", impact="cost", status="open", due_date="01/08/2026")
+         owner_code="Client", impact="cost", status="open", due_date="01/08/2026")
     post(signed_in, "/projects/1/minutes/items", meeting_id="1", ref="1.3",
          subject="Drawing register format", agreement="Agreed as issued",
          impact="none", status="closed")
@@ -439,10 +448,45 @@ def test_searching_by_keyword(minuted):
 
 
 def test_filtering_by_owner_trade_and_meeting_on_the_page(minuted):
-    assert "Additional survey" in page(minuted, "/projects/1/minutes?filter=all&owner=2")
-    assert "Additional survey" not in page(minuted, "/projects/1/minutes?filter=all&owner=1")
+    assert "Additional survey" in page(minuted, "/projects/1/minutes?filter=all&owner=Client")
+    assert "Additional survey" not in page(minuted, "/projects/1/minutes?filter=all&owner=MR")
     assert "Quay wall levels" in page(minuted, "/projects/1/minutes?filter=all&trade=1")
     assert "Quay wall levels" in page(minuted, "/projects/1/minutes?filter=all&meeting=1")
+
+
+def test_an_item_can_sit_with_several_trades_at_once(minuted):
+    """It answers a filter on either of them, and shows both."""
+    for trade in ("1", "2"):
+        assert "Quay wall levels" in page(minuted, f"/projects/1/minutes?filter=all&trade={trade}")
+    from app.service import load_items
+
+    with minuted.application.app_context():
+        quay = [i for i in load_items(1) if i["subject"] == "Quay wall levels"][0]
+    assert len(quay["trades"]) == 2
+    assert trade_names(quay).count(",") == 1
+
+
+def test_the_owner_is_one_of_the_party_codes(minuted):
+    body = page(minuted, "/projects/1/minutes")
+    for code in OWNERS:
+        assert f'value="{code}"' in body
+    assert 'name="owner_code"' in body
+
+
+def test_an_owner_that_is_not_a_party_code_is_dropped(minuted):
+    post(minuted, "/projects/1/minutes/items", meeting_id="1", subject="Stray owner",
+         agreement="x", owner_code="Somebody")
+    from app.service import load_items
+
+    with minuted.application.app_context():
+        stray = [i for i in load_items(1) if i["subject"] == "Stray owner"][0]
+    assert stray["owner_code"] == ""
+
+
+def test_a_party_code_is_matched_however_it_is_typed(minuted):
+    assert normalise_owner("pm") == "PM"
+    assert normalise_owner(" client ") == "Client"
+    assert normalise_owner("pmc") == "PMC"
 
 
 def test_the_date_range_is_typed_as_dd_mm_yyyy(minuted):
@@ -595,13 +639,13 @@ def test_an_item_cannot_borrow_a_trade_or_attendee_from_another_project(minuted)
 
 def test_the_agenda_lists_every_open_item_grouped_by_owner(minuted):
     body = page(minuted, "/projects/1/minutes/agenda")
-    assert "Ahmed Mitwally" in body and "Client Rep" in body
+    assert "Quay wall levels" in body and "Additional survey" in body
     assert "Drawing register format" not in body     # closed items are not on the agenda
 
 
 def test_the_agenda_can_be_narrowed_to_one_trade_or_owner(minuted):
     assert "Additional survey" not in page(minuted, "/projects/1/minutes/agenda?trade=1")
-    assert "Quay wall levels" not in page(minuted, "/projects/1/minutes/agenda?owner=2")
+    assert "Quay wall levels" not in page(minuted, "/projects/1/minutes/agenda?owner=Client")
 
 
 def test_deleting_a_meeting_keeps_its_items_in_the_register(minuted):
@@ -611,9 +655,13 @@ def test_deleting_a_meeting_keeps_its_items_in_the_register(minuted):
     assert "No meetings yet" in body
 
 
-def test_removing_an_attendee_keeps_their_name_on_the_items_they_owned(minuted):
+def test_removing_an_attendee_leaves_the_items_alone(minuted):
+    """Items are owned by a party, not by a person, so the roster and the
+    register are independent of one another."""
     post(minuted, "/projects/1/minutes/attendees/1/delete")
-    assert "Ahmed Mitwally" in page(minuted, "/projects/1/minutes?filter=all")
+    body = page(minuted, "/projects/1/minutes?filter=all")
+    assert "Quay wall levels" in body
+    assert "MR" in body
 
 
 def test_deleting_an_item(minuted):
@@ -836,3 +884,64 @@ def test_the_move_buttons_say_to_come_back_to_the_meeting(minuted):
         assert body.count(marker) == 3
     # Each move form carries the return, next to its direction.
     assert body.count('name="return" value="meeting"') >= 6
+
+
+# --- carrying an older register onto the new model --------------------------
+
+def test_a_persons_name_survives_the_move_to_party_owners(database):
+    """Owners used to be people. Their name is kept as text until someone
+    picks a party for that item, so a register loses nothing on upgrade."""
+    from app.db import connect, init_db
+
+    conn = connect(database)
+    with conn:
+        conn.execute("INSERT INTO attendees (project_id, name) VALUES (1, 'Ahmed Mitwally')")
+        conn.execute("INSERT INTO meetings (project_id, ref, meeting_date) VALUES (1, 'MOM-01', '2026-09-03')")
+        conn.execute(
+            "INSERT INTO meeting_items (project_id, meeting_id, ref, subject, owner_id, trade_id) "
+            "VALUES (1, 1, '1.1', 'Quay wall levels', 1, 1)"
+        )
+    conn.close()
+
+    init_db(database)
+
+    conn = connect(database)
+    try:
+        item = conn.execute("SELECT owner_name, owner_code FROM meeting_items").fetchone()
+        trades = conn.execute("SELECT trade_id FROM meeting_item_trades WHERE item_id = 1").fetchall()
+    finally:
+        conn.close()
+    assert item["owner_name"] == "Ahmed Mitwally"
+    assert item["owner_code"] == ""
+    assert [r["trade_id"] for r in trades] == [1]     # its one trade becomes the first of many
+
+
+def test_an_older_item_still_reads_its_owner_and_answers_a_search(database):
+    from app.db import connect, init_db
+    from app.minutes import owner_of
+
+    conn = connect(database)
+    with conn:
+        conn.execute("INSERT INTO attendees (project_id, name) VALUES (1, 'Ahmed Mitwally')")
+        conn.execute(
+            "INSERT INTO meeting_items (project_id, ref, subject, owner_id) "
+            "VALUES (1, '1', 'Older item', 1)"
+        )
+    conn.close()
+    init_db(database)
+
+    from app import create_app
+    from app.service import load_items
+
+    with create_app(database=database, testing=True).app_context():
+        older = load_items(1)[0]
+    assert owner_of(older) == "Ahmed Mitwally"
+    assert older["owner_label"] == "Ahmed Mitwally"
+    assert matches_search(older, "ahmed")
+
+
+def test_the_word_documents_carry_the_party_and_every_trade():
+    rows = register()
+    body = parts(register_document(PROJECT, rows))["word/document.xml"]
+    assert "MR" in body and "Client" in body
+    assert "Marine, Structures" in body

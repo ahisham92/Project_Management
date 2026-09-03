@@ -23,6 +23,10 @@ IMPACTS: tuple[tuple[str, str], ...] = (
 IMPACT_KEYS = tuple(key for key, _ in IMPACTS)
 IMPACT_NAMES = dict(IMPACTS)
 
+# Who owns an item: the party responsible, not a named person. People come and
+# go from a project while the responsibility stays where it is.
+OWNERS: tuple[str, ...] = ("PM", "Client", "MR", "ST", "GE", "WE", "EL", "PMC")
+
 STATUSES: tuple[tuple[str, str], ...] = (("open", "Open"), ("closed", "Closed"))
 STATUS_KEYS = tuple(key for key, _ in STATUSES)
 STATUS_NAMES = dict(STATUSES)
@@ -71,6 +75,15 @@ def normalise_status(value: Any) -> str:
     return text if text in STATUS_KEYS else "open"
 
 
+def normalise_owner(value: Any) -> str:
+    """One of the party codes, matched however it was typed, or blank."""
+    text = str(value or "").strip()
+    for code in OWNERS:
+        if text.lower() == code.lower():
+            return code
+    return ""
+
+
 def ref_key(value: Any) -> tuple:
     """4.2 before 4.10 — the numeric runs compare as numbers, not as text."""
     parts = _NUMBER.split(str(value or ""))
@@ -78,8 +91,22 @@ def ref_key(value: Any) -> tuple:
 
 
 def owner_of(item: Mapping[str, Any]) -> str:
-    """The owner's name, whether they are on the roster or typed in free."""
-    return str(item.get("owner_person") or item.get("owner_name") or "").strip()
+    """The party that owns an item.
+
+    Falls back to the free-text name an older item carried, so nothing
+    disappears from a register written before owners became party codes.
+    """
+    return str(item.get("owner_code") or item.get("owner_name") or "").strip()
+
+
+def trades_of(item: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The trades an item sits with — an item can bear on several at once."""
+    return list(item.get("trades") or [])
+
+
+def trade_names(item: Mapping[str, Any]) -> str:
+    """The item's trades as one line, for a table cell or a document."""
+    return ", ".join(str(trade.get("name") or "") for trade in trades_of(item))
 
 
 def decorate(item: Mapping[str, Any], on_date: str) -> dict[str, Any]:
@@ -92,7 +119,9 @@ def decorate(item: Mapping[str, Any], on_date: str) -> dict[str, Any]:
     row["impact_name"] = impact_name(row["impact"])
     row["affects_time"] = row["impact"] in ("time", "both")
     row["affects_cost"] = row["impact"] in ("cost", "both")
-    row["owner_label"] = owner_of(row) or ""
+    row["owner_label"] = owner_of(row)
+    row["trade_ids"] = [int(trade["id"]) for trade in trades_of(row)]
+    row["trade_names"] = trade_names(row)
 
     due = str(row.get("due_date") or "")
     row["days_to_due"] = _days_between(on_date, due) if due else None
@@ -120,8 +149,8 @@ def matches_search(item: Mapping[str, Any], needle: str) -> bool:
     words = [w for w in needle.lower().split() if w]
     haystack = " ".join(
         str(item.get(field) or "")
-        for field in ("ref", "subject", "discussion", "agreement", "owner_name",
-                      "owner_person", "trade_name", "meeting_ref", "meeting_title")
+        for field in ("ref", "subject", "discussion", "agreement", "owner_code",
+                      "owner_name", "trade_names", "meeting_ref", "meeting_title")
     ).lower()
     return all(word in haystack for word in words)
 
@@ -131,8 +160,7 @@ def filter_items(
     *,
     chip: str = DEFAULT_FILTER,
     search: str = "",
-    owner_id: int | None = None,
-    owner_text: str = "",
+    owner: str = "",
     trade_id: int | None = None,
     meeting_id: int | None = None,
     impact: str = "",
@@ -159,11 +187,10 @@ def filter_items(
             continue
         if impact and item.get("impact") != impact:
             continue
-        if owner_id is not None and item.get("owner_id") != owner_id:
+        if owner and owner_of(item) != owner:
             continue
-        if owner_text and owner_text.lower() not in owner_of(item).lower():
-            continue
-        if trade_id is not None and item.get("trade_id") != trade_id:
+        # An item bearing on several trades answers to a filter on any of them.
+        if trade_id is not None and trade_id not in (item.get("trade_ids") or []):
             continue
         if meeting_id is not None and item.get("meeting_id") != meeting_id:
             continue
@@ -188,7 +215,7 @@ def _key_for(column: str):
         "subject": lambda i: str(i.get("subject") or "").lower(),
         "meeting": lambda i: (str(i.get("meeting_date") or ""), ref_key(i.get("ref"))),
         "owner": lambda i: owner_of(i).lower(),
-        "trade": lambda i: str(i.get("trade_name") or "").lower(),
+        "trade": lambda i: str(i.get("trade_names") or "").lower(),
         "impact": lambda i: IMPACT_KEYS.index(normalise_impact(i.get("impact"))),
         "raised": lambda i: str(i.get("raised_date") or i.get("meeting_date") or ""),
         "due": lambda i: str(i.get("due_date") or ""),

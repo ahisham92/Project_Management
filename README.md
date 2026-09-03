@@ -89,10 +89,15 @@ The **Minutes** tab keeps the meeting record and the action register in one plac
 - **A meeting** carries its reference, subject, date, time, location, who chaired it and when
   the next one is. Adding one invites everyone currently on the list.
 - **An item** carries the subject, the discussion, **what was agreed**, its **owner**, its
-  trade, whether it **affects time or cost** (or both, or neither), its action date, and
+  **trades**, whether it **affects time or cost** (or both, or neither), its action date, and
   whether it is **open or closed**. Closing one stamps the date it closed. What was agreed
   and what was discussed are full writing boxes, so a long agreement can be read back
   before it is saved.
+- **The owner is a party, not a person**: PM, Client, MR, ST, GE, WE, EL or PMC. People move
+  on and off a project while the responsibility stays where it is, and the minutes read the
+  same however the team changes.
+- **An item can sit with several trades at once** — tick as many as it bears on. It then
+  answers a filter on any one of them.
 - **Item numbers are positions, not typing.** The first item in MOM-04 is 4.1, the second
   4.2, and so on. Two items cannot share a number, and the ▲ ▼ buttons on the meeting page
   swap an item with its neighbour and renumber both. Deleting an item closes the gap;
@@ -181,9 +186,11 @@ by WBS brings the sections back.
 
 ### Dates
 
-Every date reads and is typed as **dd/mm/yyyy** — 1 September is `01/09/2026`. The fields are
-plain text rather than the browser's date picker, because a native picker follows the
-machine's locale, which is why 1 September could show as `09/01`. Typing is forgiving:
+Every date reads and is typed as **dd/mm/yyyy** — 1 September is `01/09/2026`. Clicking a
+date field opens a **calendar** to pick from; it is drawn by the app itself rather than being
+the browser's own picker, because a native one follows the machine's locale, which is why
+1 September could show as `09/01`. Whatever is picked is written back as dd/mm/yyyy on every
+machine. The field is still an ordinary text box, so typing works too, and it is forgiving:
 `01/09/2026`, `1/9/26`, `01-09-2026` and `2026-09-01` are all understood.
 
 Each deliverable is split across **trades** (disciplines). A trade's percent complete is

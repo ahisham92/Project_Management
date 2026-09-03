@@ -122,7 +122,17 @@
     Object.keys(data).forEach(function (name) {
       var field = form.elements[name];
       if (!field) return;
-      field.value = data[name] === null || data[name] === undefined ? '' : data[name];
+      var value = data[name];
+
+      // A list means a group of check boxes — the trades an item sits with.
+      if (Array.isArray(value)) {
+        var boxes = field.length === undefined ? [field] : field;
+        Array.prototype.forEach.call(boxes, function (box) {
+          box.checked = value.indexOf(Number(box.value)) !== -1;
+        });
+        return;
+      }
+      field.value = value === null || value === undefined ? '' : value;
     });
     var ref = form.querySelector('[data-item-ref]');
     if (ref) ref.textContent = data.ref || '';
@@ -178,6 +188,147 @@
       if (first) first.focus({ preventScroll: true });
     }
   });
+
+  // --- date picker ---------------------------------------------------------
+  // A calendar for the date fields. Written here rather than using the
+  // browser's own <input type="date">, whose displayed order follows the
+  // machine's locale — the reason 1 September once read 09/01. The field stays
+  // an ordinary text box, so a date can still be typed, and everything reads
+  // dd/mm/yyyy on every machine.
+
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+  var DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+  var calendar = null;
+  var target = null;
+  var view = null;                          // the month on show
+
+  function parseTyped(text) {
+    var parts = String(text || '').split(/\D+/).filter(Boolean);
+    if (parts.length !== 3) return null;
+    var year = Number(parts[2]);
+    if (year < 100) year += 2000;
+    var date = new Date(year, Number(parts[1]) - 1, Number(parts[0]));
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  function format(date) {
+    var day = String(date.getDate()).padStart(2, '0');
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    return day + '/' + month + '/' + date.getFullYear();
+  }
+
+  function sameDay(a, b) {
+    return a && b && a.getFullYear() === b.getFullYear()
+      && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function grid(month, chosen) {
+    var first = new Date(month.getFullYear(), month.getMonth(), 1);
+    var lead = (first.getDay() + 6) % 7;      // weeks start on Monday
+    var start = new Date(first);
+    start.setDate(1 - lead);
+    var today = new Date();
+
+    var cells = '';
+    for (var i = 0; i < 42; i++) {
+      var day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      var classes = ['cal-day'];
+      if (day.getMonth() !== month.getMonth()) classes.push('outside');
+      if (sameDay(day, today)) classes.push('today');
+      if (sameDay(day, chosen)) classes.push('chosen');
+      cells += '<button type="button" class="' + classes.join(' ') + '" data-date="'
+        + format(day) + '"'
+        + (sameDay(day, chosen) ? ' aria-current="date"' : '') + '>' + day.getDate() + '</button>';
+    }
+    return cells;
+  }
+
+  function draw() {
+    var chosen = parseTyped(target && target.value);
+    calendar.innerHTML =
+      '<div class="cal-head">'
+      + '<button type="button" class="cal-nav" data-step="-1" aria-label="Previous month">‹</button>'
+      + '<span class="cal-month">' + MONTHS[view.getMonth()] + ' ' + view.getFullYear() + '</span>'
+      + '<button type="button" class="cal-nav" data-step="1" aria-label="Next month">›</button>'
+      + '</div>'
+      + '<div class="cal-week">' + DAYS.map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>'
+      + '<div class="cal-grid">' + grid(view, chosen) + '</div>'
+      + '<div class="cal-foot">'
+      + '<button type="button" class="btn btn-ghost btn-sm" data-date="' + format(new Date()) + '">Today</button>'
+      + '<button type="button" class="btn btn-ghost btn-sm" data-clear>Clear</button>'
+      + '</div>';
+  }
+
+  function closeCalendar() {
+    if (calendar) calendar.hidden = true;
+    target = null;
+  }
+
+  function openCalendar(input) {
+    if (!calendar) {
+      calendar = document.createElement('div');
+      calendar.className = 'calendar';
+      calendar.hidden = true;
+      document.body.appendChild(calendar);
+    }
+    target = input;
+    view = parseTyped(input.value) || new Date();
+    view = new Date(view.getFullYear(), view.getMonth(), 1);
+    draw();
+
+    var box = input.getBoundingClientRect();
+    calendar.hidden = false;
+    // Flip above the field when there is no room below it.
+    var below = window.innerHeight - box.bottom;
+    var top = below > calendar.offsetHeight + 8 || box.top < calendar.offsetHeight
+      ? box.bottom + 4
+      : box.top - calendar.offsetHeight - 4;
+    calendar.style.top = (top + window.scrollY) + 'px';
+    calendar.style.left = Math.max(
+      8, Math.min(box.left + window.scrollX, window.scrollX + window.innerWidth - calendar.offsetWidth - 8)
+    ) + 'px';
+  }
+
+  document.addEventListener('focusin', function (event) {
+    var field = event.target.closest('[data-datepicker]');
+    if (field) openCalendar(field);
+    else if (calendar && !event.target.closest('.calendar')) closeCalendar();
+  });
+
+  document.addEventListener('click', function (event) {
+    if (event.target.closest('[data-datepicker]')) return;
+    var inside = event.target.closest('.calendar');
+    if (!inside) {
+      closeCalendar();
+      return;
+    }
+
+    var step = event.target.closest('[data-step]');
+    if (step) {
+      view = new Date(view.getFullYear(), view.getMonth() + Number(step.dataset.step), 1);
+      draw();
+      return;
+    }
+    if (event.target.closest('[data-clear]') && target) {
+      target.value = '';
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      closeCalendar();
+      return;
+    }
+    var day = event.target.closest('[data-date]');
+    if (day && target) {
+      target.value = day.dataset.date;
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      closeCalendar();
+    }
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeCalendar();
+  });
+
+  window.addEventListener('resize', closeCalendar);
 
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.

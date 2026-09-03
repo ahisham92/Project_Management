@@ -86,12 +86,16 @@ def init_db(path: Path | str | None = None) -> None:
             ("tasks", "tracking", "TEXT NOT NULL DEFAULT 'workflow'"),
             ("tasks", "status_key", "TEXT NOT NULL DEFAULT ''"),
             ("tasks", "revision", "INTEGER NOT NULL DEFAULT 0"),
+            # An item is owned by a party — PM, Client, MR — rather than by a
+            # named person, who changes while the responsibility does not.
+            ("meeting_items", "owner_code", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, table, column, definition)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
         _normalise_item_numbers(conn)
+        _migrate_item_owners_and_trades(conn)
         conn.commit()
     finally:
         conn.close()
@@ -124,6 +128,39 @@ def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE tasks SET start_date = ?, submission_date = ? WHERE id = ?",
             (start.isoformat(), finish.isoformat(), row["id"]),
+        )
+
+
+def _migrate_item_owners_and_trades(conn: sqlite3.Connection) -> None:
+    """Carries older items onto the party owner and the many-trade model.
+
+    An item used to name a person as its owner and to sit with one trade. The
+    person's name is kept as free text so nothing is lost until someone picks a
+    party for that item, and the single trade becomes the first of its trades.
+    """
+    tables = {
+        row["name"]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    if "meeting_items" not in tables:
+        return
+
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(meeting_items)")}
+    if "owner_id" in columns and "attendees" in tables:
+        conn.execute(
+            """
+            UPDATE meeting_items
+               SET owner_name = COALESCE(
+                       (SELECT name FROM attendees WHERE attendees.id = meeting_items.owner_id), '')
+             WHERE owner_id IS NOT NULL AND owner_name = ''
+            """
+        )
+    if "trade_id" in columns and "meeting_item_trades" in tables:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO meeting_item_trades (item_id, trade_id)
+            SELECT id, trade_id FROM meeting_items WHERE trade_id IS NOT NULL
+            """
         )
 
 

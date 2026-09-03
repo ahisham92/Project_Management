@@ -209,3 +209,11 @@ CREATE TABLE IF NOT EXISTS meeting_items (
 );
 CREATE INDEX IF NOT EXISTS idx_items_project ON meeting_items(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_meeting ON meeting_items(meeting_id);
+
+-- An item can sit with more than one trade at once, so the trades hang off it
+-- rather than being a single column on it.
+CREATE TABLE IF NOT EXISTS meeting_item_trades (
+  item_id  INTEGER NOT NULL REFERENCES meeting_items(id) ON DELETE CASCADE,
+  trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+  PRIMARY KEY (item_id, trade_id)
+);

@@ -76,7 +76,30 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
+| **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
 | **Setup** | Deliverables, weights, dates, trade splits, sections, the design workflow, revision rules, and who can see the project. **Locked** by default, and round-trips to **Excel**. |
+
+### Minutes of meeting
+
+The **Minutes** tab keeps the meeting record and the action register in one place.
+
+- **Attendance list** — people are added once, with their organisation, role and trade.
+  Every later meeting shows them as tick boxes: invited, and present. Whoever is not ticked
+  present appears as apologies on the minutes.
+- **A meeting** carries its reference, subject, date, time, location, who chaired it and when
+  the next one is. Adding one invites everyone currently on the list.
+- **An item** carries the subject, the discussion, **what was agreed**, its **owner**, its
+  trade, whether it **affects time or cost** (or both, or neither), its action date, and
+  whether it is **open or closed**. Closing one stamps the date it closed.
+- **Filters**: open, overdue, affects time, affects cost, closed, or everything — combined
+  with a keyword search across the subject, discussion, agreement, owner and meeting, and
+  with filters by **owner**, **trade**, **meeting** and a **date range**. Every column sorts.
+- **Next-meeting agenda** — every item still open, grouped by who owns it. That is the sheet
+  to walk into the next meeting with.
+
+Each of those three screens exports to **Word** (`.docx`) and prints to PDF, and each carries
+the project number and name at the top. The Word file is written by `app/word.py` using the
+standard library alone, so nothing extra has to be installed for it.
 
 ### How progress is measured
 
@@ -206,7 +229,8 @@ per-project setting under **Setup → Elapsed time convention**.
 
 ### Printing and PDF for management
 
-**Progress**, **Schedule**, **Budget** and **Period** each carry a **Print / PDF** button. It
+**Progress**, **Schedule**, **Budget**, **Period** and **Minutes** each carry a **Print / PDF**
+button. It
 opens your browser's print dialog, where "Save as PDF" is a destination on every current
 browser — so there is no PDF library to install and nothing to keep up to date.
 
@@ -602,6 +626,9 @@ app/
   excel.py              writing and reading the setup workbook
   dates.py              dd/mm/yyyy in, ISO stored
   sorting.py            column ordering for the progress and schedule tables
+  minutes.py            minutes of meeting: filtering, sorting, open/closed and time/cost
+  minutes_doc.py        the Word documents built from the minutes
+  word.py               writes a .docx with the standard library — no extra package
   seed.py               loads the demo project
   views/                the pages
   templates/            Jinja2 templates

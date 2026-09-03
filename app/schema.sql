@@ -143,3 +143,69 @@ CREATE TABLE IF NOT EXISTS time_entries (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_time_project_date ON time_entries(project_id, entry_date);
+
+-- --- minutes of meeting ----------------------------------------------------
+
+-- The attendance roster. People are added once, then ticked present or absent
+-- on each meeting rather than being retyped every time.
+CREATE TABLE IF NOT EXISTS attendees (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  organisation TEXT NOT NULL DEFAULT '',
+  job_title    TEXT NOT NULL DEFAULT '',
+  email        TEXT NOT NULL DEFAULT '',
+  trade_id     INTEGER REFERENCES trades(id) ON DELETE SET NULL,
+  active       INTEGER NOT NULL DEFAULT 1,     -- 0 hides someone who has left the project
+  sort_order   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_attendees_project ON attendees(project_id);
+
+CREATE TABLE IF NOT EXISTS meetings (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ref          TEXT NOT NULL DEFAULT '',       -- the minutes number, e.g. MOM-004
+  title        TEXT NOT NULL DEFAULT '',
+  meeting_date TEXT NOT NULL,                  -- YYYY-MM-DD
+  meeting_time TEXT NOT NULL DEFAULT '',
+  location     TEXT NOT NULL DEFAULT '',
+  chaired_by   TEXT NOT NULL DEFAULT '',
+  next_date    TEXT NOT NULL DEFAULT '',       -- when the next meeting is planned
+  notes        TEXT NOT NULL DEFAULT '',
+  user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_meetings_project ON meetings(project_id, meeting_date);
+
+-- Who was ticked present at a meeting. A missing row means not invited.
+CREATE TABLE IF NOT EXISTS meeting_attendance (
+  meeting_id  INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  attendee_id INTEGER NOT NULL REFERENCES attendees(id) ON DELETE CASCADE,
+  present     INTEGER NOT NULL DEFAULT 1,      -- 1 attended, 0 invited but absent
+  PRIMARY KEY (meeting_id, attendee_id)
+);
+
+-- One line of the minutes: what was agreed, who owns it, whether it bears on
+-- time or cost, and whether it is still open.
+CREATE TABLE IF NOT EXISTS meeting_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  meeting_id   INTEGER REFERENCES meetings(id) ON DELETE SET NULL,
+  ref          TEXT NOT NULL DEFAULT '',       -- item number, e.g. 4.2
+  subject      TEXT NOT NULL DEFAULT '',
+  discussion   TEXT NOT NULL DEFAULT '',
+  agreement    TEXT NOT NULL DEFAULT '',       -- what was agreed
+  owner_id     INTEGER REFERENCES attendees(id) ON DELETE SET NULL,
+  owner_name   TEXT NOT NULL DEFAULT '',       -- for an owner who is not on the roster
+  trade_id     INTEGER REFERENCES trades(id) ON DELETE SET NULL,
+  impact       TEXT NOT NULL DEFAULT 'none',   -- 'none' | 'time' | 'cost' | 'both'
+  status       TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
+  raised_date  TEXT NOT NULL DEFAULT '',
+  due_date     TEXT NOT NULL DEFAULT '',
+  closed_date  TEXT NOT NULL DEFAULT '',
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_items_project ON meeting_items(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_items_meeting ON meeting_items(meeting_id);

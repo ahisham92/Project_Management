@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty, print_header, print_button %}
+{% block title %}Agenda — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% macro impact_badge(item) %}
+  {% if item['impact'] == 'both' %}{{ badge('critical', 'Time & cost') }}
+  {% elif item['impact'] == 'time' %}{{ badge('serious', 'Time') }}
+  {% elif item['impact'] == 'cost' %}{{ badge('warning', 'Cost') }}
+  {% else %}<span class="small muted">—</span>{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Agenda — open items</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }} ·
+      everything still open as at {{ short_date(today) }}, grouped by who owns it
+      {% if last_meeting %} · last meeting {{ short_date(last_meeting['meeting_date']) }}{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id']) }}">All items</a>
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda_word', project_id=project['id']) }}">Export Word</a>
+    {{ print_button('Print / PDF') }}
+  </div>
+</div>
+
+{{ print_header(project, 'Agenda — open items', today,
+                totals['open'] ~ ' open · ' ~ totals['overdue'] ~ ' overdue') }}
+
+<div class="grid grid-4">
+  {{ tile('Open', totals['open'], 'items to walk through',
+          'warning' if totals['open'] else 'good', 'open' if totals['open'] else 'clear') }}
+  {{ tile('Overdue', totals['overdue'], 'past their action date',
+          'critical' if totals['overdue'] else 'good', 'overdue' if totals['overdue'] else 'none') }}
+  {{ tile('Due within 7 days', totals['due_soon'], 'coming up', 'serious' if totals['due_soon'] else 'neutral') }}
+  {{ tile('Time or cost', totals['time'] + totals['cost'], 'open items bearing on time or cost',
+          'serious' if (totals['time'] + totals['cost']) else 'neutral') }}
+</div>
+
+<form method="get" class="inline-form no-print" style="margin-top:16px">
+  <label class="field flex1">
+    <span class="field-label">Search</span>
+    <input name="q" value="{{ search }}" placeholder="Any word in an item…">
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Owner</span>
+    <select name="owner">
+      <option value="">Anyone</option>
+      {% for person in attendees %}
+        <option value="{{ person['id'] }}" {{ 'selected' if owner_id == person['id'] }}>{{ person['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Trade</span>
+    <select name="trade">
+      <option value="">All trades</option>
+      {% for tr in trades %}
+        <option value="{{ tr['id'] }}" {{ 'selected' if trade_id == tr['id'] }}>{{ tr['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-primary">Apply</button>
+  <a class="btn btn-ghost" href="{{ url_for('meetings.agenda', project_id=project['id']) }}">Clear</a>
+</form>
+
+{% if not groups %}
+  <div class="card" style="margin-top:16px">
+    {{ empty('Nothing open', 'Every item raised on this project has been closed.') }}
+  </div>
+{% endif %}
+
+{% for group in groups %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>{{ group['name'] }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          {{ group['items'] | length }} open item{{ '' if group['items'] | length == 1 else 's' }}
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Subject &amp; agreement</th><th>From</th><th>Trade</th>
+              <th>Affects</th><th class="right">Due</th><th class="right">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for item in group['items'] %}
+            <tr>
+              <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+              <td>
+                <span style="font-weight:500">{{ item['subject'] or '—' }}</span>
+                {% if item['agreement'] %}<p class="small ink2" style="margin-top:2px"><strong>Agreed:</strong> {{ item['agreement'] }}</p>{% endif %}
+              </td>
+              <td class="small muted nowrap">
+                {% if item['meeting_id'] %}
+                  <a href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=item['meeting_id']) }}">
+                    {{ item['meeting_ref'] or item['meeting_title'] or 'Meeting' }}</a>
+                  <span style="display:block">{{ short_date(item['meeting_date']) }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="small">
+                {% if item['trade_name'] %}
+                  <span class="swatch" style="background:{{ item['trade_color'] }}"></span>{{ item['trade_name'] }}
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="nowrap">{{ impact_badge(item) }}</td>
+              <td class="right small ink2 nowrap">{{ short_date(item['due_date']) }}</td>
+              <td class="right nowrap">
+                {% if item['is_overdue'] %}{{ badge('critical', item['days_overdue'] ~ 'd overdue') }}
+                {% elif item['is_due_soon'] %}{{ badge('serious', 'due in ' ~ item['days_to_due'] ~ 'd') }}
+                {% else %}{{ badge('warning', 'Open') }}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}

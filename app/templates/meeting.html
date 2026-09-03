@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, date_field, empty, print_header, print_button %}
+{% block title %}{{ meeting['ref'] or 'Minutes' }} — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% macro item_badge(item) %}
+  {% if not item['is_open'] %}{{ badge('good', 'Closed', 'Closed ' ~ short_date(item['closed_date'])) }}
+  {% elif item['is_overdue'] %}{{ badge('critical', item['days_overdue'] ~ 'd overdue') }}
+  {% elif item['is_due_soon'] %}{{ badge('serious', 'due in ' ~ item['days_to_due'] ~ 'd') }}
+  {% else %}{{ badge('warning', 'Open') }}{% endif %}
+{% endmacro %}
+
+{% macro impact_badge(item) %}
+  {% if item['impact'] == 'both' %}{{ badge('critical', 'Time & cost') }}
+  {% elif item['impact'] == 'time' %}{{ badge('serious', 'Time') }}
+  {% elif item['impact'] == 'cost' %}{{ badge('warning', 'Cost') }}
+  {% else %}<span class="small muted">—</span>{% endif %}
+{% endmacro %}
+
+{# The fields of one item. `item` is none on the add form. #}
+{% macro item_fields(item, suggested='') %}
+  <label class="field w-sm">
+    <span class="field-label">Item</span>
+    <input name="ref" value="{{ item['ref'] if item else suggested }}" placeholder="1.1">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Subject</span>
+    <input name="subject" value="{{ item['subject'] if item else '' }}" placeholder="What the item is about">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Agreed</span>
+    <input name="agreement" value="{{ item['agreement'] if item else '' }}" placeholder="What was agreed">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Discussion (optional)</span>
+    <input name="discussion" value="{{ item['discussion'] if item else '' }}" placeholder="Background">
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Owner</span>
+    <select name="owner_id">
+      <option value="">— unassigned —</option>
+      {% for person in attendees %}
+        <option value="{{ person['id'] }}" {{ 'selected' if item and item['owner_id'] == person['id'] }}>{{ person['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Or type an owner</span>
+    <input name="owner_name" value="{{ item['owner_name'] if item else '' }}" placeholder="Someone off the list">
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Trade</span>
+    <select name="trade_id">
+      <option value="">— none —</option>
+      {% for tr in trades %}
+        <option value="{{ tr['id'] }}" {{ 'selected' if item and item['trade_id'] == tr['id'] }}>{{ tr['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Affects</span>
+    <select name="impact">
+      {% for key, label in impacts %}
+        <option value="{{ key }}" {{ 'selected' if item and item['impact'] == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-sm">
+    <span class="field-label">Status</span>
+    <select name="status">
+      {% for key, label in statuses %}
+        <option value="{{ key }}" {{ 'selected' if item and item['status'] == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
+  {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed', 'w-sm') }}
+  <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}">
+  <input type="hidden" name="raised_date" value="{{ date_input(item['raised_date'] if item else meeting['meeting_date']) }}">
+  <input type="hidden" name="return" value="meeting">
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ meeting['title'] or 'Minutes of meeting' }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }}
+      {% if meeting['ref'] %} · {{ meeting['ref'] }}{% endif %}
+      · {{ short_date(meeting['meeting_date']) }}
+      {% if meeting['meeting_time'] %} at {{ meeting['meeting_time'] }}{% endif %}
+      {% if meeting['location'] %} · {{ meeting['location'] }}{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id']) }}">All items</a>
+    <a class="btn btn-ghost no-print"
+       href="{{ url_for('meetings.meeting_word', project_id=project['id'], meeting_id=meeting['id']) }}">Export Word</a>
+    {{ print_button('Print / PDF') }}
+  </div>
+</div>
+
+{{ print_header(project, 'Minutes of meeting',
+                meeting['meeting_date'],
+                (meeting['ref'] ~ ' · ' if meeting['ref'] else '') ~ (meeting['title'] or '')) }}
+
+<div class="print-only" style="margin-bottom:10px">
+  <p class="small">
+    <strong>Present:</strong>
+    {% for person in sheet['present'] %}{{ person['name'] }}{% if person['organisation'] %} ({{ person['organisation'] }}){% endif %}{{ '' if loop.last else '; ' }}{% else %}—{% endfor %}
+  </p>
+  {% if sheet['absent'] %}
+    <p class="small">
+      <strong>Apologies:</strong>
+      {% for person in sheet['absent'] %}{{ person['name'] }}{{ '' if loop.last else '; ' }}{% endfor %}
+    </p>
+  {% endif %}
+  {% if meeting['chaired_by'] %}<p class="small"><strong>Chaired by:</strong> {{ meeting['chaired_by'] }}</p>{% endif %}
+  {% if meeting['next_date'] %}<p class="small"><strong>Next meeting:</strong> {{ short_date(meeting['next_date']) }}</p>{% endif %}
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="card no-print">
+    <div class="card-head"><h2>Meeting details</h2></div>
+    <div class="card-body">
+      {% if can_report %}
+        <form method="post" class="stack"
+              action="{{ url_for('meetings.save_meeting', project_id=project['id'], meeting_id=meeting['id']) }}">
+          <div class="inline-form">
+            <label class="field w-sm">
+              <span class="field-label">Ref</span>
+              <input name="ref" value="{{ meeting['ref'] }}" placeholder="MOM-01">
+            </label>
+            <label class="field flex1">
+              <span class="field-label">Subject</span>
+              <input name="title" value="{{ meeting['title'] }}" placeholder="Weekly design coordination">
+            </label>
+            {{ date_field('meeting_date', meeting['meeting_date'], 'Date', 'w-sm', required=True) }}
+            <label class="field w-sm">
+              <span class="field-label">Time</span>
+              <input name="meeting_time" value="{{ meeting['meeting_time'] }}" placeholder="10:00">
+            </label>
+            <label class="field w-md">
+              <span class="field-label">Location</span>
+              <input name="location" value="{{ meeting['location'] }}" placeholder="Site office / Teams">
+            </label>
+            <label class="field w-md">
+              <span class="field-label">Chaired by</span>
+              <input name="chaired_by" value="{{ meeting['chaired_by'] }}">
+            </label>
+            {{ date_field('next_date', meeting['next_date'], 'Next meeting', 'w-sm') }}
+          </div>
+          <label class="field">
+            <span class="field-label">Notes (optional)</span>
+            <textarea name="notes" rows="2">{{ meeting['notes'] }}</textarea>
+          </label>
+
+          <div>
+            <p class="field-label" style="margin-bottom:6px">Attendance</p>
+            {% if not attendance %}
+              <p class="small muted">
+                Nobody is on the attendance list yet — add people on the
+                <a href="{{ url_for('meetings.index', project_id=project['id']) }}">Minutes tab</a>.
+              </p>
+            {% else %}
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr><th>Name</th><th>Organisation</th><th class="right">Invited</th><th class="right">Present</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for person in attendance %}
+                      <tr>
+                        <td class="small">{{ person['name'] }}</td>
+                        <td class="small muted">{{ person['organisation'] or '—' }}</td>
+                        <td class="right">
+                          <input type="checkbox" name="invited" value="{{ person['id'] }}"
+                                 {{ 'checked' if person['invited'] }}
+                                 aria-label="{{ person['name'] }} invited">
+                        </td>
+                        <td class="right">
+                          <input type="checkbox" name="present" value="{{ person['id'] }}"
+                                 {{ 'checked' if person['present'] }}
+                                 aria-label="{{ person['name'] }} attended">
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="inline-form">
+            <button type="submit" class="btn btn-primary">Save meeting</button>
+            {% if can_edit %}
+              <span class="spacer"></span>
+            {% endif %}
+          </div>
+        </form>
+        {% if can_edit %}
+          <form method="post" style="margin-top:8px"
+                data-confirm="Delete this meeting? Its items stay in the register."
+                action="{{ url_for('meetings.delete_meeting', project_id=project['id'], meeting_id=meeting['id']) }}">
+            <button type="submit" class="btn btn-danger btn-sm">Delete meeting</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <p class="small ink2">You have view-only access, so these minutes cannot be changed.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Attendance</h2>
+        <p class="small muted" style="margin-top:2px">
+          {{ sheet['present'] | length }} present · {{ sheet['absent'] | length }} apolog{{ 'y' if sheet['absent'] | length == 1 else 'ies' }}
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not attendance %}
+        {{ empty('No attendance list yet', 'Add people on the Minutes tab, then tick who attended.') }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th></th><th>Name</th><th>Organisation</th><th>Role</th><th>Trade</th></tr></thead>
+            <tbody>
+              {% for person in attendance %}
+                <tr>
+                  <td class="nowrap">
+                    {% if person['present'] %}{{ badge('good', 'Present') }}
+                    {% elif person['invited'] %}{{ badge('neutral', 'Apologies') }}
+                    {% else %}<span class="small muted">—</span>{% endif %}
+                  </td>
+                  <td class="small">{{ person['name'] }}</td>
+                  <td class="small muted">{{ person['organisation'] or '—' }}</td>
+                  <td class="small muted">{{ person['job_title'] or '—' }}</td>
+                  <td class="small">
+                    {% if person['trade_name'] %}
+                      <span class="swatch" style="background:{{ person['trade_color'] }}"></span>{{ person['trade_name'] }}
+                    {% else %}<span class="muted">—</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Items and agreements</h2>
+      <p class="small muted" style="margin-top:2px">
+        {{ items | length }} item{{ '' if items | length == 1 else 's' }} ·
+        {{ items | selectattr('is_open') | list | length }} still open
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not items %}
+      {{ empty('No items minuted yet', 'Add the first item below.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Subject &amp; agreement</th><th>Owner</th><th>Trade</th>
+                <th>Affects</th><th class="right">Due</th><th class="right">Status</th><th class="no-print"></th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr id="item-{{ item['id'] }}">
+                <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+                <td>
+                  <span style="font-weight:500">{{ item['subject'] or '—' }}</span>
+                  {% if item['discussion'] %}<p class="small muted" style="margin-top:2px">{{ item['discussion'] }}</p>{% endif %}
+                  {% if item['agreement'] %}<p class="small ink2" style="margin-top:2px"><strong>Agreed:</strong> {{ item['agreement'] }}</p>{% endif %}
+                </td>
+                <td class="small ink2">{{ item['owner_label'] or '—' }}</td>
+                <td class="small">
+                  {% if item['trade_name'] %}
+                    <span class="swatch" style="background:{{ item['trade_color'] }}"></span>{{ item['trade_name'] }}
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="nowrap">{{ impact_badge(item) }}</td>
+                <td class="right small ink2 nowrap">{{ short_date(item['due_date']) }}</td>
+                <td class="right nowrap">{{ item_badge(item) }}</td>
+                <td class="right nowrap no-print">
+                  {% if can_report %}
+                    <form method="post" style="display:inline"
+                          action="{{ url_for('meetings.set_item_status', project_id=project['id'], item_id=item['id']) }}">
+                      <input type="hidden" name="status" value="{{ 'open' if not item['is_open'] else 'closed' }}">
+                      <input type="hidden" name="return" value="meeting">
+                      <button type="submit" class="btn btn-ghost btn-sm">{{ 'Reopen' if not item['is_open'] else 'Close' }}</button>
+                    </form>
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id'], edit=item['id']) }}#item-{{ item['id'] }}">Edit</a>
+                  {% endif %}
+                </td>
+              </tr>
+
+              {% if editing == item['id'] and can_report %}
+                <tr class="no-print">
+                  <td colspan="8" style="background:var(--surface)">
+                    <form method="post" class="inline-form"
+                          action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id']) }}">
+                      {{ item_fields(item) }}
+                      <button type="submit" class="btn btn-primary">Save item</button>
+                      <a class="btn btn-ghost"
+                         href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id']) }}#item-{{ item['id'] }}">Cancel</a>
+                    </form>
+                    <form method="post" style="margin-top:8px" data-confirm="Delete this item?"
+                          action="{{ url_for('meetings.delete_item', project_id=project['id'], item_id=item['id']) }}">
+                      <input type="hidden" name="return" value="meeting">
+                      <button type="submit" class="btn btn-danger btn-sm">Delete item</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if can_report %}
+    <div class="card-body no-print" style="border-top:1px solid var(--line)">
+      <p class="field-label" style="margin-bottom:6px">Add an item to these minutes</p>
+      <form method="post" class="inline-form"
+            action="{{ url_for('meetings.add_item', project_id=project['id']) }}">
+        {{ item_fields(none, suggested_ref) }}
+        <button type="submit" class="btn btn-primary">Add item</button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+
+{% if meeting['notes'] %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Notes</h2></div>
+    <div class="card-body"><p class="small ink2" style="white-space:pre-wrap">{{ meeting['notes'] }}</p></div>
+  </div>
+{% endif %}
+{% endblock %}

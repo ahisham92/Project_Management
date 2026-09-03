@@ -87,6 +87,10 @@ def main() -> int:
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
         step("period report shows what moved", _period)
+        step("minutes: adds attendees, a meeting and its items", _minutes_capture)
+        step("minutes: filters, searches and sorts the register", _minutes_filters)
+        step("minutes: exports a set of minutes to Word", _minutes_word)
+        step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -321,6 +325,121 @@ def _period(page) -> None:
     page.wait_for_selector("text=Period report", timeout=8000)
     page.wait_for_selector("text=Earned in period by trade")
     page.screenshot(path=str(SHOTS / "08-period.png"), full_page=True)
+
+
+def _minutes_capture(page) -> None:
+    """The roster is typed once, then ticked; items carry an owner and an impact."""
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("text=Attendance list", timeout=8000)
+
+    for name, org, role in [("Ahmed Mitwally", "Dar", "Project manager"),
+                            ("Client Rep", "Sibline Port Authority", "Design manager")]:
+        roster = page.locator("form", has=page.locator("button:has-text('Add attendee')"))
+        roster.locator("input[name=name]").fill(name)
+        roster.locator("input[name=organisation]").fill(org)
+        roster.locator("input[name=job_title]").fill(role)
+        roster.locator("button:has-text('Add attendee')").click()
+        page.wait_for_selector(f"text={name} added to the attendance list", timeout=8000)
+
+    meeting_form = page.locator("form", has=page.locator("button:has-text('Add meeting')"))
+    meeting_form.locator("input[name=ref]").fill("MOM-01")
+    meeting_form.locator("input[name=title]").fill("Weekly design coordination")
+    meeting_form.locator("input[name=meeting_date]").fill("03/09/2026")
+    meeting_form.locator("input[name=location]").fill("Site office")
+    meeting_form.locator("button:has-text('Add meeting')").click()
+    page.wait_for_selector("text=tick who attended", timeout=8000)
+
+    # Everyone is invited by default; untick one to show apologies.
+    boxes = page.locator("input[name=present]")
+    if boxes.count() != 2:
+        raise AssertionError(f"expected a tick box per attendee, found {boxes.count()}")
+    boxes.nth(1).uncheck()
+    page.fill("input[name=chaired_by]", "Ahmed Mitwally")
+    page.fill("input[name=next_date]", "10/09/2026")
+    page.click("button:has-text('Save meeting')")
+    page.wait_for_selector("text=Meeting saved", timeout=8000)
+    if "Apologies" not in page.text_content("body"):
+        raise AssertionError("the attendee who was unticked should show apologies")
+
+    for ref, subject, agreement, impact, due in [
+        ("1.1", "Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026"),
+        ("1.2", "Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026"),
+    ]:
+        form = page.locator("form", has=page.locator("button:has-text('Add item')"))
+        form.locator("input[name=ref]").fill(ref)
+        form.locator("input[name=subject]").fill(subject)
+        form.locator("input[name=agreement]").fill(agreement)
+        form.locator("select[name=impact]").select_option(label=impact)
+        form.locator("input[name=due_date]").fill(due)
+        form.locator("select[name=owner_id]").select_option(label="Ahmed Mitwally")
+        form.locator("button:has-text('Add item')").click()
+        page.wait_for_selector("text=Item added", timeout=8000)
+
+    body = page.text_content("body")
+    for expected in ("Quay wall levels", "Marine to reissue the layout", "SIBLINE-PORT"):
+        if expected not in body:
+            raise AssertionError(f"the minutes are missing {expected!r}")
+    page.screenshot(path=str(SHOTS / "14-meeting.png"), full_page=True)
+
+
+def _minutes_filters(page) -> None:
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    body = page.text_content("body")
+    if "Quay wall levels" not in body:
+        raise AssertionError("open items should be shown by default")
+    if "MOM-01" not in body:
+        raise AssertionError("the meeting reference did not save")
+
+    page.click(".chips a:has-text('Overdue')")
+    page.wait_for_timeout(400)
+    body = page.text_content("body")
+    if "Additional bathymetric survey" not in body or "Quay wall levels" in body:
+        raise AssertionError("the overdue filter did not narrow the register")
+
+    page.click(".chips a:has-text('All items')")
+    page.wait_for_timeout(300)
+    page.fill("input[name=q]", "quay")
+    page.click("button:has-text('Apply')")
+    page.wait_for_timeout(400)
+    body = page.text_content("body")
+    if "Quay wall levels" not in body or "bathymetric" in body:
+        raise AssertionError("the keyword search did not narrow the register")
+
+    page.click("a:has-text('Clear')")
+    page.wait_for_timeout(300)
+    page.click("th a:has-text('Due')")
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(SHOTS / "15-minutes.png"), full_page=True)
+
+
+def _minutes_word(page) -> None:
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    with page.expect_download(timeout=10000) as download:
+        page.click("a:has-text('Export Word')")
+    name = download.value.suggested_filename
+    if not name.endswith(".docx"):
+        raise AssertionError(f"unexpected download: {name}")
+
+    page.click("table a:has-text('Weekly design coordination')")
+    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    with page.expect_download(timeout=10000) as download:
+        page.click("a:has-text('Export Word')")
+    if not download.value.suggested_filename.endswith(".docx"):
+        raise AssertionError("the minutes did not download as a Word document")
+
+
+def _minutes_agenda(page) -> None:
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    page.click("a:has-text('Next-meeting agenda')")
+    page.wait_for_selector("text=Agenda", timeout=8000)
+    body = page.text_content("body")
+    for expected in ("Ahmed Mitwally", "Quay wall levels", "Additional bathymetric survey"):
+        if expected not in body:
+            raise AssertionError(f"the agenda is missing {expected!r}")
+    page.screenshot(path=str(SHOTS / "16-agenda.png"), full_page=True)
 
 
 def _dark(page) -> None:

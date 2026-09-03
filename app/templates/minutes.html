@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, date_field, empty, print_header, print_button %}
+{% block title %}Minutes — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% macro item_badge(item) %}
+  {% if not item['is_open'] %}{{ badge('good', 'Closed', 'Closed ' ~ short_date(item['closed_date'])) }}
+  {% elif item['is_overdue'] %}{{ badge('critical', item['days_overdue'] ~ 'd overdue', 'Due ' ~ short_date(item['due_date'])) }}
+  {% elif item['is_due_soon'] %}{{ badge('serious', 'due in ' ~ item['days_to_due'] ~ 'd') }}
+  {% else %}{{ badge('warning', 'Open') }}{% endif %}
+{% endmacro %}
+
+{% macro impact_badge(item) %}
+  {% if item['impact'] == 'both' %}{{ badge('critical', 'Time & cost') }}
+  {% elif item['impact'] == 'time' %}{{ badge('serious', 'Time') }}
+  {% elif item['impact'] == 'cost' %}{{ badge('warning', 'Cost') }}
+  {% else %}<span class="small muted">—</span>{% endif %}
+{% endmacro %}
+
+{# A sortable heading that carries every filter through the link. #}
+{% macro head(key, label, klass='') %}
+  {% set active = sort == key %}
+  {% set next_dir = ('asc' if direction == 'desc' else 'desc') if active else (columns[key][1] and 'desc' or 'asc') %}
+  <th class="{{ klass }}">
+    <a class="sort-link {{ 'active' if active }}"
+       href="{{ url_for('meetings.index', project_id=project['id'], **dict(link_args, sort=key, dir=next_dir)) }}">
+      {{ label }}<span class="sort-arrow" aria-hidden="true">{{ '▲' if active and direction == 'asc' else ('▼' if active else '') }}</span>
+    </a>
+  </th>
+{% endmacro %}
+
+{# The fields of one item, shared by the add form and the edit row. #}
+{% macro item_fields(item) %}
+  <label class="field w-sm">
+    <span class="field-label">Item</span>
+    <input name="ref" value="{{ item['ref'] if item else '' }}" placeholder="1.1">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Subject</span>
+    <input name="subject" value="{{ item['subject'] if item else '' }}" placeholder="What the item is about">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Agreed</span>
+    <input name="agreement" value="{{ item['agreement'] if item else '' }}" placeholder="What was agreed">
+  </label>
+  <label class="field flex1">
+    <span class="field-label">Discussion (optional)</span>
+    <input name="discussion" value="{{ item['discussion'] if item else '' }}" placeholder="Background">
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Meeting</span>
+    <select name="meeting_id">
+      <option value="">— outside a meeting —</option>
+      {% for m in meetings %}
+        <option value="{{ m['id'] }}" {{ 'selected' if item and item['meeting_id'] == m['id'] }}>
+          {{ m['ref'] or m['title'] or 'Meeting' }} — {{ short_date(m['meeting_date']) }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Owner</span>
+    <select name="owner_id">
+      <option value="">— unassigned —</option>
+      {% for person in attendees %}
+        <option value="{{ person['id'] }}" {{ 'selected' if item and item['owner_id'] == person['id'] }}>{{ person['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Or type an owner</span>
+    <input name="owner_name" value="{{ item['owner_name'] if item else '' }}" placeholder="Someone off the list">
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Trade</span>
+    <select name="trade_id">
+      <option value="">— none —</option>
+      {% for tr in trades %}
+        <option value="{{ tr['id'] }}" {{ 'selected' if item and item['trade_id'] == tr['id'] }}>{{ tr['name'] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-md">
+    <span class="field-label">Affects</span>
+    <select name="impact">
+      {% for key, label in impacts %}
+        <option value="{{ key }}" {{ 'selected' if item and item['impact'] == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field w-sm">
+    <span class="field-label">Status</span>
+    <select name="status">
+      {% for key, label in statuses %}
+        <option value="{{ key }}" {{ 'selected' if item and item['status'] == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {{ date_field('raised_date', item['raised_date'] if item else today, 'Raised', 'w-sm') }}
+  {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
+  {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed', 'w-sm') }}
+{% endmacro %}
+
+{% block content %}
+{% set editing = request.args.get('edit') | int %}
+
+<div class="page-head">
+  <div>
+    <h1>Minutes of meeting</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }} ·
+      {{ totals['open'] }} open of {{ totals['total'] }} item{{ '' if totals['total'] == 1 else 's' }}
+      across {{ meetings | length }} meeting{{ '' if meetings | length == 1 else 's' }}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda', project_id=project['id']) }}">Next-meeting agenda</a>
+    <a class="btn btn-ghost no-print"
+       href="{{ url_for('meetings.register_word', project_id=project['id'], **link_args) }}">Export Word</a>
+    {{ print_button('Print / PDF') }}
+  </div>
+</div>
+
+{{ print_header(project, 'Action register', today,
+                shown ~ ' of ' ~ totals['total'] ~ ' items shown') }}
+
+<div class="grid grid-4">
+  {{ tile('Open items', totals['open'], totals['total'] ~ ' raised in total',
+          'warning' if totals['open'] else 'good', 'to close' if totals['open'] else 'all closed') }}
+  {{ tile('Overdue', totals['overdue'], 'past their action date',
+          'critical' if totals['overdue'] else 'good', 'overdue' if totals['overdue'] else 'none') }}
+  {{ tile('Affecting time', totals['time'], 'open items bearing on the programme',
+          'serious' if totals['time'] else 'neutral', 'flagged' if totals['time'] else 'none') }}
+  {{ tile('Affecting cost', totals['cost'], 'open items bearing on cost',
+          'serious' if totals['cost'] else 'neutral', 'flagged' if totals['cost'] else 'none') }}
+</div>
+
+<div class="card no-print" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Filter</h2>
+      <p class="small muted" style="margin-top:2px">{{ shown }} item{{ '' if shown == 1 else 's' }} shown</p>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="chips" style="margin-bottom:10px">
+      {% for key, label in chips %}
+        <a href="{{ url_for('meetings.index', project_id=project['id'], **dict(link_args, filter=key)) }}"
+           class="{{ 'active' if filters['filter'] == key }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+
+    <form method="get" class="inline-form">
+      <input type="hidden" name="filter" value="{{ filters['filter'] }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
+      <label class="field flex1">
+        <span class="field-label">Search</span>
+        <input name="q" value="{{ filters['q'] }}" placeholder="Any word in the subject, discussion or agreement…">
+      </label>
+      <label class="field w-md">
+        <span class="field-label">Owner</span>
+        <select name="owner">
+          <option value="">Anyone</option>
+          {% for person in attendees %}
+            <option value="{{ person['id'] }}" {{ 'selected' if filters['owner'] == person['id'] }}>{{ person['name'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field w-md">
+        <span class="field-label">Trade</span>
+        <select name="trade">
+          <option value="">All trades</option>
+          {% for tr in trades %}
+            <option value="{{ tr['id'] }}" {{ 'selected' if filters['trade'] == tr['id'] }}>{{ tr['name'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field w-md">
+        <span class="field-label">Meeting</span>
+        <select name="meeting">
+          <option value="">All meetings</option>
+          {% for m in meetings %}
+            <option value="{{ m['id'] }}" {{ 'selected' if filters['meeting'] == m['id'] }}>
+              {{ m['ref'] or m['title'] or 'Meeting' }} — {{ short_date(m['meeting_date']) }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {{ date_field('from', filters['from'], 'Raised from', 'w-sm') }}
+      {{ date_field('to', filters['to'], 'Raised to', 'w-sm') }}
+      <button type="submit" class="btn btn-primary">Apply</button>
+      <a class="btn btn-ghost" href="{{ url_for('meetings.index', project_id=project['id']) }}">Clear</a>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Items and agreements</h2>
+      <p class="small muted" style="margin-top:2px">
+        Every item minuted on this project, whichever meeting it came from
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not items %}
+      {{ empty('Nothing matches this filter',
+               'Clear the filter, or add a meeting below and minute its items.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              {{ head('ref', 'Item') }}
+              {{ head('subject', 'Subject & agreement') }}
+              {{ head('meeting', 'Meeting') }}
+              {{ head('owner', 'Owner') }}
+              {{ head('trade', 'Trade') }}
+              {{ head('impact', 'Affects') }}
+              {{ head('due', 'Due', 'right') }}
+              {{ head('status', 'Status', 'right') }}
+              <th class="no-print"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr id="item-{{ item['id'] }}">
+                <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+                <td>
+                  <span style="font-weight:500">{{ item['subject'] or '—' }}</span>
+                  {% if item['discussion'] %}
+                    <p class="small muted" style="margin-top:2px">{{ item['discussion'] }}</p>
+                  {% endif %}
+                  {% if item['agreement'] %}
+                    <p class="small ink2" style="margin-top:2px"><strong>Agreed:</strong> {{ item['agreement'] }}</p>
+                  {% endif %}
+                </td>
+                <td class="small muted nowrap">
+                  {% if item['meeting_id'] %}
+                    <a href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=item['meeting_id']) }}">
+                      {{ item['meeting_ref'] or item['meeting_title'] or 'Meeting' }}</a>
+                    <span style="display:block">{{ short_date(item['meeting_date']) }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td class="small ink2">{{ item['owner_label'] or '—' }}</td>
+                <td class="small">
+                  {% if item['trade_name'] %}
+                    <span class="swatch" style="background:{{ item['trade_color'] }}"></span>{{ item['trade_name'] }}
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="nowrap">{{ impact_badge(item) }}</td>
+                <td class="right small ink2 nowrap">{{ short_date(item['due_date']) }}</td>
+                <td class="right nowrap">{{ item_badge(item) }}</td>
+                <td class="right nowrap no-print">
+                  {% if can_report %}
+                    <form method="post" style="display:inline"
+                          action="{{ url_for('meetings.set_item_status', project_id=project['id'], item_id=item['id'], **link_args) }}">
+                      <input type="hidden" name="status" value="{{ 'open' if not item['is_open'] else 'closed' }}">
+                      <button type="submit" class="btn btn-ghost btn-sm">{{ 'Reopen' if not item['is_open'] else 'Close' }}</button>
+                    </form>
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('meetings.index', project_id=project['id'], **dict(link_args, edit=item['id'])) }}#item-{{ item['id'] }}">Edit</a>
+                  {% endif %}
+                </td>
+              </tr>
+
+              {% if editing == item['id'] and can_report %}
+                <tr class="no-print">
+                  <td colspan="9" style="background:var(--surface)">
+                    <form method="post" class="inline-form"
+                          action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id'], **link_args) }}">
+                      {{ item_fields(item) }}
+                      <button type="submit" class="btn btn-primary">Save item</button>
+                      <a class="btn btn-ghost"
+                         href="{{ url_for('meetings.index', project_id=project['id'], **link_args) }}#item-{{ item['id'] }}">Cancel</a>
+                    </form>
+                    <form method="post" data-confirm="Delete this item from the register?"
+                          style="margin-top:8px"
+                          action="{{ url_for('meetings.delete_item', project_id=project['id'], item_id=item['id'], **link_args) }}">
+                      <button type="submit" class="btn btn-danger btn-sm">Delete item</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if can_report %}
+  <div class="card no-print" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>Add an item</h2>
+        <p class="small muted" style="margin-top:2px">
+          Raise an action outside a meeting, or add one to a set of minutes
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      <form method="post" class="inline-form"
+            action="{{ url_for('meetings.add_item', project_id=project['id'], **link_args) }}">
+        {{ item_fields(none) }}
+        <button type="submit" class="btn btn-primary">Add item</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
+<div class="grid grid-2" style="margin-top:16px;align-items:start">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Meetings</h2>
+        <p class="small muted" style="margin-top:2px">Open one to write its minutes or export it</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not meetings %}
+        {{ empty('No meetings yet', 'Add the first one below.') }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Ref</th><th>Subject</th><th class="right">Date</th>
+                  <th class="right">Present</th><th class="right">Items</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for m in meetings %}
+                <tr>
+                  <td class="small tabular muted nowrap">{{ m['ref'] or '—' }}</td>
+                  <td>
+                    <a href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=m['id']) }}">
+                      {{ m['title'] or 'Minutes of meeting' }}</a>
+                    {% if m['location'] %}<span class="small muted" style="display:block">{{ m['location'] }}</span>{% endif %}
+                  </td>
+                  <td class="right small ink2 nowrap">{{ short_date(m['meeting_date']) }}</td>
+                  <td class="right small ink2">{{ m['present_count'] }}</td>
+                  <td class="right small ink2">
+                    {{ m['item_count'] }}
+                    {% if m['open_count'] %}<span class="muted"> · {{ m['open_count'] }} open</span>{% endif %}
+                  </td>
+                  <td class="right nowrap no-print">
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('meetings.meeting_word', project_id=project['id'], meeting_id=m['id']) }}">Word</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+    {% if can_report %}
+      <div class="card-body no-print" style="border-top:1px solid var(--line)">
+        <form method="post" class="inline-form"
+              action="{{ url_for('meetings.add_meeting', project_id=project['id']) }}">
+          <label class="field w-sm">
+            <span class="field-label">Ref</span>
+            <input name="ref" placeholder="MOM-01">
+          </label>
+          <label class="field flex1">
+            <span class="field-label">Subject</span>
+            <input name="title" placeholder="Weekly design coordination">
+          </label>
+          {{ date_field('meeting_date', today, 'Date', 'w-sm', required=True) }}
+          <label class="field w-sm">
+            <span class="field-label">Time</span>
+            <input name="meeting_time" placeholder="10:00">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Location</span>
+            <input name="location" placeholder="Site office / Teams">
+          </label>
+          <button type="submit" class="btn btn-primary">Add meeting</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Attendance list</h2>
+        <p class="small muted" style="margin-top:2px">
+          Added once here, then ticked present on each meeting
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not attendees %}
+        {{ empty('No attendees yet', 'Add the people who attend this project’s meetings.') }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Organisation</th><th>Role</th><th>Trade</th><th class="no-print"></th></tr>
+            </thead>
+            <tbody>
+              {% for person in attendees %}
+                <tr class="{{ '' if person['active'] else 'muted' }}">
+                  <td>
+                    {{ person['name'] }}
+                    {% if not person['active'] %}<span class="small muted"> · off the project</span>{% endif %}
+                    {% if person['email'] %}<span class="small muted" style="display:block">{{ person['email'] }}</span>{% endif %}
+                  </td>
+                  <td class="small ink2">{{ person['organisation'] or '—' }}</td>
+                  <td class="small ink2">{{ person['job_title'] or '—' }}</td>
+                  <td class="small">
+                    {% if person['trade_name'] %}
+                      <span class="swatch" style="background:{{ person['trade_color'] }}"></span>{{ person['trade_name'] }}
+                    {% else %}<span class="muted">—</span>{% endif %}
+                  </td>
+                  <td class="right nowrap no-print">
+                    {% if can_report %}
+                      <a class="btn btn-ghost btn-sm"
+                         href="{{ url_for('meetings.index', project_id=project['id'], **dict(link_args, owner=person['id'])) }}">Items</a>
+                      <form method="post" style="display:inline"
+                            data-confirm="Remove {{ person['name'] }} from the attendance list?"
+                            action="{{ url_for('meetings.delete_attendee', project_id=project['id'], attendee_id=person['id']) }}">
+                        <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+    {% if can_report %}
+      <div class="card-body no-print" style="border-top:1px solid var(--line)">
+        <form method="post" class="inline-form"
+              action="{{ url_for('meetings.add_attendee', project_id=project['id']) }}">
+          <label class="field flex1">
+            <span class="field-label">Name</span>
+            <input name="name" placeholder="Full name" required>
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Organisation</span>
+            <input name="organisation" placeholder="Client / consultant">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Role</span>
+            <input name="job_title" placeholder="Design manager">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Trade</span>
+            <select name="trade_id">
+              <option value="">— none —</option>
+              {% for tr in trades %}<option value="{{ tr['id'] }}">{{ tr['name'] }}</option>{% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary">Add attendee</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

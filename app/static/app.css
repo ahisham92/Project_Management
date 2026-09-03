@@ -405,6 +405,9 @@ ul.list > li:first-child { border-top: none; }
      repeats so a long schedule stays readable. */
   .table-scroll { overflow: visible !important; }
   table { font-size: 9px; }
+  /* .small is sized in rem, so inside a 9px table it comes out larger than the
+     text it is meant to sit under. On paper it has to scale with the table. */
+  table .small { font-size: 0.9em; }
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }
   tr { break-inside: avoid; }

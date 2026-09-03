@@ -420,3 +420,133 @@ def install_default_steps(project_id: int) -> None:
 def next_sort_order(table: str, project_id: int) -> int:
     row = query_one(f"SELECT COUNT(*) AS n FROM {table} WHERE project_id = ?", (project_id,))
     return int(row["n"]) + 1
+
+
+# --- minutes of meeting ----------------------------------------------------
+
+def load_attendees(project_id: int, include_inactive: bool = True) -> list[dict[str, Any]]:
+    """The attendance roster, each person with their trade if they have one."""
+    clause = "" if include_inactive else " AND a.active = 1"
+    return [
+        dict(r)
+        for r in query(
+            f"""
+            SELECT a.*, tr.name AS trade_name, tr.color AS trade_color
+            FROM attendees a
+            LEFT JOIN trades tr ON tr.id = a.trade_id
+            WHERE a.project_id = ?{clause}
+            ORDER BY a.sort_order, a.id
+            """,
+            (project_id,),
+        )
+    ]
+
+
+def load_meetings(project_id: int) -> list[dict[str, Any]]:
+    """Meetings newest first, each with its attendance and item counts."""
+    return [
+        dict(r)
+        for r in query(
+            """
+            SELECT m.*, u.name AS minuted_by,
+                   (SELECT COUNT(*) FROM meeting_attendance ma
+                     WHERE ma.meeting_id = m.id AND ma.present = 1) AS present_count,
+                   (SELECT COUNT(*) FROM meeting_items i WHERE i.meeting_id = m.id) AS item_count,
+                   (SELECT COUNT(*) FROM meeting_items i
+                     WHERE i.meeting_id = m.id AND i.status = 'open') AS open_count
+            FROM meetings m
+            LEFT JOIN users u ON u.id = m.user_id
+            WHERE m.project_id = ?
+            ORDER BY m.meeting_date DESC, m.id DESC
+            """,
+            (project_id,),
+        )
+    ]
+
+
+def load_meeting(project_id: int, meeting_id: int) -> dict[str, Any] | None:
+    row = query_one(
+        """
+        SELECT m.*, u.name AS minuted_by
+        FROM meetings m LEFT JOIN users u ON u.id = m.user_id
+        WHERE m.id = ? AND m.project_id = ?
+        """,
+        (meeting_id, project_id),
+    )
+    return dict(row) if row is not None else None
+
+
+def load_items(project_id: int, on_date: str | None = None) -> list[dict[str, Any]]:
+    """Every minuted item on the project, ready for filtering.
+
+    Each row carries the names behind its foreign keys, so searching and
+    filtering never has to go back to the database.
+    """
+    from .minutes import decorate
+
+    rows = query(
+        """
+        SELECT i.*, a.name AS owner_person, a.organisation AS owner_org,
+               tr.name AS trade_name, tr.color AS trade_color,
+               m.ref AS meeting_ref, m.title AS meeting_title, m.meeting_date AS meeting_date
+        FROM meeting_items i
+        LEFT JOIN attendees a ON a.id = i.owner_id
+        LEFT JOIN trades tr ON tr.id = i.trade_id
+        LEFT JOIN meetings m ON m.id = i.meeting_id
+        WHERE i.project_id = ?
+        ORDER BY m.meeting_date DESC, i.sort_order, i.id
+        """,
+        (project_id,),
+    )
+    stamp = on_date or today()
+    return [decorate(dict(r), stamp) for r in rows]
+
+
+def load_attendance(meeting_id: int) -> dict[int, int]:
+    """attendee id -> 1 present, 0 invited but absent. Missing means not invited."""
+    return {
+        int(r["attendee_id"]): int(r["present"])
+        for r in query("SELECT attendee_id, present FROM meeting_attendance WHERE meeting_id = ?", (meeting_id,))
+    }
+
+
+def set_attendance(meeting_id: int, present_ids: Sequence[int], invited_ids: Sequence[int]) -> None:
+    """Records who was invited and which of them attended, in one pass."""
+    present = {int(i) for i in present_ids}
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM meeting_attendance WHERE meeting_id = ?", (meeting_id,))
+        for attendee_id in {int(i) for i in invited_ids} | present:
+            conn.execute(
+                "INSERT INTO meeting_attendance (meeting_id, attendee_id, present) VALUES (?, ?, ?)",
+                (meeting_id, attendee_id, 1 if attendee_id in present else 0),
+            )
+
+
+def meeting_sheet(project_id: int, meeting_id: int, on_date: str | None = None) -> dict[str, Any] | None:
+    """Everything one set of minutes needs: the meeting, who was there, its items.
+
+    The attendance list covers the whole roster so absentees are shown as
+    absent rather than simply left out.
+    """
+    meeting = load_meeting(project_id, meeting_id)
+    if meeting is None:
+        return None
+
+    marks = load_attendance(meeting_id)
+    roster = load_attendees(project_id)
+    attendance = []
+    for person in roster:
+        mark = marks.get(int(person["id"]))
+        if mark is None and not person["active"]:
+            continue
+        attendance.append(dict(person, invited=mark is not None, present=bool(mark)))
+
+    items = [i for i in load_items(project_id, on_date) if i.get("meeting_id") == meeting_id]
+    return {
+        "meeting": meeting,
+        "attendance": attendance,
+        "present": [a for a in attendance if a["present"]],
+        "absent": [a for a in attendance if a["invited"] and not a["present"]],
+        "items": items,
+    }

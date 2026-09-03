@@ -90,7 +90,17 @@ The **Minutes** tab keeps the meeting record and the action register in one plac
   the next one is. Adding one invites everyone currently on the list.
 - **An item** carries the subject, the discussion, **what was agreed**, its **owner**, its
   trade, whether it **affects time or cost** (or both, or neither), its action date, and
-  whether it is **open or closed**. Closing one stamps the date it closed.
+  whether it is **open or closed**. Closing one stamps the date it closed. What was agreed
+  and what was discussed are full writing boxes, so a long agreement can be read back
+  before it is saved.
+- **Item numbers are positions, not typing.** The first item in MOM-04 is 4.1, the second
+  4.2, and so on. Two items cannot share a number, and the ▲ ▼ buttons on the meeting page
+  swap an item with its neighbour and renumber both. Deleting an item closes the gap;
+  moving one to another meeting renumbers the meeting it left and the one it joined;
+  renaming MOM-04 to MOM-07 renumbers its items to 7.1, 7.2, ...
+- **Editing happens in place.** Pressing Edit opens the form under the item without
+  reloading the page or losing your position in the list. With JavaScript switched off the
+  same button is an ordinary link that opens the item on the server instead.
 - **Filters**: open, overdue, affects time, affects cost, closed, or everything — combined
   with a keyword search across the subject, discussion, agreement, owner and meeting, and
   with filters by **owner**, **trade**, **meeting** and a **date range**. Every column sorts.

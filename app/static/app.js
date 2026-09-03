@@ -109,6 +109,76 @@
     if (event.target.closest('[data-print]')) window.print();
   });
 
+  // --- edit in place -------------------------------------------------------
+  // An "Edit" control is a real link to ?edit=<id>, so the page still works
+  // without JavaScript. With it, the form opens where it stands — no round
+  // trip, and the page does not jump.
+  //
+  // The form itself is rendered once, into a <template>, and cloned on demand.
+  // Rendering a copy per row would repeat the owner, trade and meeting lists
+  // hundreds of times and turn a long register into a megabyte of HTML.
+
+  function fillForm(form, data) {
+    Object.keys(data).forEach(function (name) {
+      var field = form.elements[name];
+      if (!field) return;
+      field.value = data[name] === null || data[name] === undefined ? '' : data[name];
+    });
+    var ref = form.querySelector('[data-item-ref]');
+    if (ref) ref.textContent = data.ref || '';
+  }
+
+  function buildEditor(host) {
+    var template = document.getElementById('editor-template');
+    if (!template || !host.dataset.item) return false;
+
+    var data;
+    try {
+      data = JSON.parse(host.dataset.item);
+    } catch (err) {
+      return false;                        // fall back to the server-rendered page
+    }
+
+    var form = template.content.firstElementChild.cloneNode(true);
+    form.setAttribute('action', host.dataset.action);
+    fillForm(form, data);
+    var cell = host.querySelector('td');
+    cell.insertBefore(form, cell.firstChild);
+    host.dataset.ready = 'yes';
+    return true;
+  }
+
+  document.addEventListener('click', function (event) {
+    // Cancel inside a cloned form just closes the row it sits in.
+    var close = event.target.closest('[data-close-edit]');
+    if (close) {
+      var open = close.closest('tr');
+      if (open) {
+        event.preventDefault();
+        open.hidden = true;
+        var link = document.querySelector('[data-toggle-row="' + open.id + '"]');
+        if (link) link.setAttribute('aria-expanded', 'false');
+      }
+      return;
+    }
+
+    var trigger = event.target.closest('[data-toggle-row]');
+    if (!trigger) return;
+
+    var host = document.getElementById(trigger.getAttribute('data-toggle-row'));
+    if (!host) return;                     // no placeholder: follow the link
+
+    if (!host.dataset.ready && !buildEditor(host)) return;
+
+    event.preventDefault();
+    host.hidden = !host.hidden;
+    trigger.setAttribute('aria-expanded', String(!host.hidden));
+    if (!host.hidden) {
+      var first = host.querySelector('input, select, textarea');
+      if (first) first.focus({ preventScroll: true });
+    }
+  });
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

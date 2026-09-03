@@ -240,6 +240,13 @@ input[type="checkbox"] { width: auto; }
 .inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .w-sm { width: 90px; } .w-md { width: 140px; } .w-lg { width: 200px; } .flex1 { flex: 1; min-width: 180px; }
 
+/* A minuted item: what was said and what was agreed need room to write and to
+   read back before saving, so they sit on their own row as text areas. */
+.item-form { display: grid; gap: 10px; }
+.item-text { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.item-text textarea { min-height: 88px; resize: vertical; line-height: 1.45; }
+@media (max-width: 800px) { .item-text { grid-template-columns: minmax(0, 1fr); } }
+
 .btn {
   display: inline-block; padding: 8px 14px; font: inherit; font-size: 0.875rem; font-weight: 500;
   border: 1px solid transparent; border-radius: 8px; cursor: pointer; text-decoration: none;

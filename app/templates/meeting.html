@@ -19,66 +19,90 @@
 
 {# The fields of one item. `item` is none on the add form. #}
 {% macro item_fields(item, suggested='') %}
-  <label class="field w-sm">
-    <span class="field-label">Item</span>
-    <input name="ref" value="{{ item['ref'] if item else suggested }}" placeholder="1.1">
-  </label>
-  <label class="field flex1">
-    <span class="field-label">Subject</span>
-    <input name="subject" value="{{ item['subject'] if item else '' }}" placeholder="What the item is about">
-  </label>
-  <label class="field flex1">
-    <span class="field-label">Agreed</span>
-    <input name="agreement" value="{{ item['agreement'] if item else '' }}" placeholder="What was agreed">
-  </label>
-  <label class="field flex1">
-    <span class="field-label">Discussion (optional)</span>
-    <input name="discussion" value="{{ item['discussion'] if item else '' }}" placeholder="Background">
-  </label>
-  <label class="field w-md">
-    <span class="field-label">Owner</span>
-    <select name="owner_id">
-      <option value="">— unassigned —</option>
-      {% for person in attendees %}
-        <option value="{{ person['id'] }}" {{ 'selected' if item and item['owner_id'] == person['id'] }}>{{ person['name'] }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field w-md">
-    <span class="field-label">Or type an owner</span>
-    <input name="owner_name" value="{{ item['owner_name'] if item else '' }}" placeholder="Someone off the list">
-  </label>
-  <label class="field w-md">
-    <span class="field-label">Trade</span>
-    <select name="trade_id">
-      <option value="">— none —</option>
-      {% for tr in trades %}
-        <option value="{{ tr['id'] }}" {{ 'selected' if item and item['trade_id'] == tr['id'] }}>{{ tr['name'] }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field w-md">
-    <span class="field-label">Affects</span>
-    <select name="impact">
-      {% for key, label in impacts %}
-        <option value="{{ key }}" {{ 'selected' if item and item['impact'] == key }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field w-sm">
-    <span class="field-label">Status</span>
-    <select name="status">
-      {% for key, label in statuses %}
-        <option value="{{ key }}" {{ 'selected' if item and item['status'] == key }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
-  {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed', 'w-sm') }}
-  <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}">
-  <input type="hidden" name="raised_date" value="{{ date_input(item['raised_date'] if item else meeting['meeting_date']) }}">
-  <input type="hidden" name="return" value="meeting">
+  <div class="inline-form">
+    {# The number is the item's position in the meeting, so it is shown rather
+       than typed — that is what makes two items with the same number impossible. #}
+    <div class="field w-sm">
+      <span class="field-label">Item</span>
+      <p class="tabular" data-item-ref style="padding:6px 0;font-weight:500">{{ item['ref'] if item else suggested }}</p>
+    </div>
+    <label class="field flex1">
+      <span class="field-label">Subject</span>
+      <input name="subject" value="{{ item['subject'] if item else '' }}"
+             placeholder="What the item is about">
+    </label>
+  </div>
+
+  <div class="item-text">
+    <label class="field">
+      <span class="field-label">Agreed</span>
+      <textarea name="agreement" rows="4"
+                placeholder="What was agreed, in full">{{ item['agreement'] if item else '' }}</textarea>
+    </label>
+    <label class="field">
+      <span class="field-label">Discussion (optional)</span>
+      <textarea name="discussion" rows="4"
+                placeholder="The background — what was raised and what was said">{{ item['discussion'] if item else '' }}</textarea>
+    </label>
+  </div>
+
+  <div class="inline-form">
+    <label class="field w-md">
+      <span class="field-label">Owner</span>
+      <select name="owner_id">
+        <option value="">— unassigned —</option>
+        {% for person in attendees %}
+          <option value="{{ person['id'] }}" {{ 'selected' if item and item['owner_id'] == person['id'] }}>{{ person['name'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field w-md">
+      <span class="field-label">Or type an owner</span>
+      <input name="owner_name" value="{{ item['owner_name'] if item else '' }}" placeholder="Someone off the list">
+    </label>
+    <label class="field w-md">
+      <span class="field-label">Trade</span>
+      <select name="trade_id">
+        <option value="">— none —</option>
+        {% for tr in trades %}
+          <option value="{{ tr['id'] }}" {{ 'selected' if item and item['trade_id'] == tr['id'] }}>{{ tr['name'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field w-md">
+      <span class="field-label">Affects</span>
+      <select name="impact">
+        {% for key, label in impacts %}
+          <option value="{{ key }}" {{ 'selected' if item and item['impact'] == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field w-sm">
+      <span class="field-label">Status</span>
+      <select name="status">
+        {% for key, label in statuses %}
+          <option value="{{ key }}" {{ 'selected' if item and item['status'] == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
+    {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed', 'w-sm') }}
+    <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}">
+    <input type="hidden" name="raised_date" value="{{ date_input(item['raised_date'] if item else meeting['meeting_date']) }}">
+    <input type="hidden" name="return" value="meeting">
+  </div>
 {% endmacro %}
+
+{# What the cloned edit form is filled with. Dates go as dd/mm/yyyy, the same
+   as they are typed. #}
+{% macro item_data(item) %}{{ {
+  'ref': item['ref'], 'subject': item['subject'], 'agreement': item['agreement'],
+  'discussion': item['discussion'], 'owner_id': item['owner_id'] or '',
+  'owner_name': item['owner_name'], 'trade_id': item['trade_id'] or '',
+  'impact': item['impact'], 'status': item['status'],
+  'raised_date': date_input(item['raised_date']), 'due_date': date_input(item['due_date']),
+  'closed_date': date_input(item['closed_date']), 'meeting_id': item['meeting_id'] or '',
+} | tojson }}{% endmacro %}
 
 {% block content %}
 <div class="page-head">
@@ -259,7 +283,8 @@
       <h2>Items and agreements</h2>
       <p class="small muted" style="margin-top:2px">
         {{ items | length }} item{{ '' if items | length == 1 else 's' }} ·
-        {{ items | selectattr('is_open') | list | length }} still open
+        {{ items | selectattr('is_open') | list | length }} still open ·
+        numbered by position — use ▲ ▼ to reorder
       </p>
     </div>
   </div>
@@ -271,7 +296,8 @@
         <table>
           <thead>
             <tr><th>Item</th><th>Subject &amp; agreement</th><th>Owner</th><th>Trade</th>
-                <th>Affects</th><th class="right">Due</th><th class="right">Status</th><th class="no-print"></th></tr>
+                <th>Affects</th><th class="right">Due</th><th class="right">Status</th>
+                <th class="right no-print">Order &amp; actions</th></tr>
           </thead>
           <tbody>
             {% for item in items %}
@@ -294,27 +320,55 @@
                 <td class="right nowrap no-print">
                   {% if can_report %}
                     <form method="post" style="display:inline"
+                          action="{{ url_for('meetings.move', project_id=project['id'], item_id=item['id']) }}">
+                      <input type="hidden" name="return" value="meeting">
+                      <input type="hidden" name="direction" value="up">
+                      <button type="submit" class="btn btn-ghost btn-sm" title="Move up"
+                              {{ 'disabled' if item['id'] == first_id }}>▲</button>
+                    </form>
+                    <form method="post" style="display:inline"
+                          action="{{ url_for('meetings.move', project_id=project['id'], item_id=item['id']) }}">
+                      <input type="hidden" name="return" value="meeting">
+                      <input type="hidden" name="direction" value="down">
+                      <button type="submit" class="btn btn-ghost btn-sm" title="Move down"
+                              {{ 'disabled' if item['id'] == last_id }}>▼</button>
+                    </form>
+                    <form method="post" style="display:inline"
                           action="{{ url_for('meetings.set_item_status', project_id=project['id'], item_id=item['id']) }}">
                       <input type="hidden" name="status" value="{{ 'open' if not item['is_open'] else 'closed' }}">
                       <input type="hidden" name="return" value="meeting">
                       <button type="submit" class="btn btn-ghost btn-sm">{{ 'Reopen' if not item['is_open'] else 'Close' }}</button>
                     </form>
-                    <a class="btn btn-ghost btn-sm"
+                    {# A real link, so the page still works without JavaScript;
+                       with it, the row below simply opens where it stands. #}
+                    <a class="btn btn-ghost btn-sm" data-toggle-row="edit-{{ item['id'] }}"
+                       aria-expanded="{{ 'true' if editing == item['id'] else 'false' }}"
                        href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id'], edit=item['id']) }}#item-{{ item['id'] }}">Edit</a>
                   {% endif %}
                 </td>
               </tr>
 
-              {% if editing == item['id'] and can_report %}
-                <tr class="no-print">
+              {% if can_report %}
+                {# An empty row that the Edit link opens: the form is cloned
+                   into it from the one template below. #}
+                <tr class="no-print" id="edit-{{ item['id'] }}"
+                    data-item='{{ item_data(item) }}'
+                    {# Single-quoted: tojson escapes ' but leaves " alone. #}
+                    data-action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id']) }}"
+                    {{ 'hidden' if editing != item['id'] }}>
                   <td colspan="8" style="background:var(--surface)">
-                    <form method="post" class="inline-form"
-                          action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id']) }}">
-                      {{ item_fields(item) }}
-                      <button type="submit" class="btn btn-primary">Save item</button>
-                      <a class="btn btn-ghost"
-                         href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id']) }}#item-{{ item['id'] }}">Cancel</a>
-                    </form>
+                    {% if editing == item['id'] %}
+                      {# Rendered by the server when JavaScript is off. #}
+                      <form method="post" class="item-form"
+                            action="{{ url_for('meetings.save_item', project_id=project['id'], item_id=item['id']) }}">
+                        {{ item_fields(item) }}
+                        <div class="inline-form">
+                          <button type="submit" class="btn btn-primary">Save item</button>
+                          <a class="btn btn-ghost" data-toggle-row="edit-{{ item['id'] }}"
+                             href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id']) }}#item-{{ item['id'] }}">Cancel</a>
+                        </div>
+                      </form>
+                    {% endif %}
                     <form method="post" style="margin-top:8px" data-confirm="Delete this item?"
                           action="{{ url_for('meetings.delete_item', project_id=project['id'], item_id=item['id']) }}">
                       <input type="hidden" name="return" value="meeting">
@@ -331,12 +385,22 @@
   </div>
 
   {% if can_report %}
+    <template id="editor-template">
+      <form method="post" class="item-form">
+        {{ item_fields(none) }}
+        <div class="inline-form">
+          <button type="submit" class="btn btn-primary">Save item</button>
+          <button type="button" class="btn btn-ghost" data-close-edit>Cancel</button>
+        </div>
+      </form>
+    </template>
+
     <div class="card-body no-print" style="border-top:1px solid var(--line)">
       <p class="field-label" style="margin-bottom:6px">Add an item to these minutes</p>
-      <form method="post" class="inline-form"
+      <form method="post" class="item-form"
             action="{{ url_for('meetings.add_item', project_id=project['id']) }}">
         {{ item_fields(none, suggested_ref) }}
-        <button type="submit" class="btn btn-primary">Add item</button>
+        <div><button type="submit" class="btn btn-primary">Add item</button></div>
       </form>
     </div>
   {% endif %}

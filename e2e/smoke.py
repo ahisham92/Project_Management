@@ -90,6 +90,8 @@ def main() -> int:
         step("minutes: adds attendees, a meeting and its items", _minutes_capture)
         step("minutes: filters, searches and sorts the register", _minutes_filters)
         step("minutes: exports a set of minutes to Word", _minutes_word)
+        step("minutes: reorders items and renumbers them", _minutes_reorder)
+        step("minutes: edits an item in place without reloading", _minutes_edit_in_place)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
@@ -361,14 +363,13 @@ def _minutes_capture(page) -> None:
     if "Apologies" not in page.text_content("body"):
         raise AssertionError("the attendee who was unticked should show apologies")
 
-    for ref, subject, agreement, impact, due in [
-        ("1.1", "Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026"),
-        ("1.2", "Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026"),
+    for subject, agreement, impact, due in [
+        ("Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026"),
+        ("Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026"),
     ]:
         form = page.locator("form", has=page.locator("button:has-text('Add item')"))
-        form.locator("input[name=ref]").fill(ref)
         form.locator("input[name=subject]").fill(subject)
-        form.locator("input[name=agreement]").fill(agreement)
+        form.locator("textarea[name=agreement]").fill(agreement)
         form.locator("select[name=impact]").select_option(label=impact)
         form.locator("input[name=due_date]").fill(due)
         form.locator("select[name=owner_id]").select_option(label="Ahmed Mitwally")
@@ -428,6 +429,73 @@ def _minutes_word(page) -> None:
         page.click("a:has-text('Export Word')")
     if not download.value.suggested_filename.endswith(".docx"):
         raise AssertionError("the minutes did not download as a Word document")
+
+
+def _minutes_reorder(page) -> None:
+    """An item's number is its position, so moving it renumbers both rows."""
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    page.click("table a:has-text('Weekly design coordination')")
+    page.wait_for_selector("text=Items and agreements", timeout=8000)
+
+    rows = page.locator("tbody tr:has(button[title='Move down'])")
+    before = [rows.nth(i).text_content() for i in range(rows.count())]
+    if len(before) != 2 or "Quay wall levels" not in before[0]:
+        raise AssertionError(f"unexpected starting order: {before}")
+    if "1.1" not in before[0] or "1.2" not in before[1]:
+        raise AssertionError("items should start numbered 1.1 and 1.2")
+
+    # The first item cannot go up and the last cannot go down.
+    if not page.locator("button[title='Move up']").first.is_disabled():
+        raise AssertionError("the first item should not be movable up")
+    if not page.locator("button[title='Move down']").last.is_disabled():
+        raise AssertionError("the last item should not be movable down")
+
+    page.locator("button[title='Move down']").first.click()
+    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    rows = page.locator("tbody tr:has(button[title='Move down'])")
+    after = [rows.nth(i).text_content() for i in range(rows.count())]
+    if "Additional bathymetric survey" not in after[0] or "1.1" not in after[0]:
+        raise AssertionError(f"the moved item did not take number 1.1: {after}")
+    if "Quay wall levels" not in after[1] or "1.2" not in after[1]:
+        raise AssertionError(f"the swapped item did not take number 1.2: {after}")
+    page.screenshot(path=str(SHOTS / "17-reordered.png"), full_page=True)
+
+    page.locator("button[title='Move up']").last.click()      # put it back
+    page.wait_for_selector("text=Items and agreements", timeout=8000)
+
+
+def _minutes_edit_in_place(page) -> None:
+    """Edit opens the form where it stands — no round trip, no jump."""
+    page.click("nav.tabs a:has-text('Minutes')")
+    page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
+    page.click("table a:has-text('Weekly design coordination')")
+    page.wait_for_selector("text=Items and agreements", timeout=8000)
+
+    row = page.locator("tr", has_text="Quay wall levels").first
+    item_id = row.get_attribute("id").split("-")[1]
+    editor = page.locator(f"#edit-{item_id}")
+    if editor.is_visible():
+        raise AssertionError("the edit form should start closed")
+
+    url_before = page.url
+    row.locator("a:has-text('Edit')").click()
+    editor.wait_for(state="visible", timeout=4000)
+    if page.url != url_before:
+        raise AssertionError("editing should not navigate away from the page")
+
+    box = editor.locator("textarea[name=agreement]")
+    if not box.is_visible():
+        raise AssertionError("the agreement should be a text area with room to write")
+    if box.bounding_box()["height"] < 60:
+        raise AssertionError("the writing box is too small to read back before saving")
+
+    box.fill("Marine to reissue the layout with the revised levels agreed today")
+    editor.locator("button:has-text('Save item')").click()
+    page.wait_for_selector("text=Item saved", timeout=8000)
+    if "revised levels agreed today" not in page.text_content("body"):
+        raise AssertionError("the edited agreement did not save")
+    page.screenshot(path=str(SHOTS / "18-edit-in-place.png"), full_page=True)
 
 
 def _minutes_agenda(page) -> None:

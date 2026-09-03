@@ -71,7 +71,7 @@ def normalise_status(value: Any) -> str:
     return text if text in STATUS_KEYS else "open"
 
 
-def _ref_key(value: Any) -> tuple:
+def ref_key(value: Any) -> tuple:
     """4.2 before 4.10 — the numeric runs compare as numbers, not as text."""
     parts = _NUMBER.split(str(value or ""))
     return tuple((int(p), "") if p.isdigit() else (10**9, p.lower()) for p in parts if p)
@@ -184,9 +184,9 @@ def filter_items(
 
 def _key_for(column: str):
     getters = {
-        "ref": lambda i: _ref_key(i.get("ref")),
+        "ref": lambda i: ref_key(i.get("ref")),
         "subject": lambda i: str(i.get("subject") or "").lower(),
-        "meeting": lambda i: (str(i.get("meeting_date") or ""), _ref_key(i.get("ref"))),
+        "meeting": lambda i: (str(i.get("meeting_date") or ""), ref_key(i.get("ref"))),
         "owner": lambda i: owner_of(i).lower(),
         "trade": lambda i: str(i.get("trade_name") or "").lower(),
         "impact": lambda i: IMPACT_KEYS.index(normalise_impact(i.get("impact"))),
@@ -213,7 +213,7 @@ def sort_items(items: Sequence[Mapping[str, Any]], column: str, direction: str) 
     that say least.
     """
     key = _key_for(column)
-    settled = sorted(items, key=lambda i: (str(i.get("meeting_date") or ""), _ref_key(i.get("ref"))))
+    settled = sorted(items, key=lambda i: (str(i.get("meeting_date") or ""), ref_key(i.get("ref"))))
     undated: list[Mapping[str, Any]] = []
     if column == "due":
         settled, undated = ([i for i in settled if i.get("due_date")],
@@ -235,16 +235,53 @@ def summarise(items: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     }
 
 
-def next_ref(items: Sequence[Mapping[str, Any]], meeting_ref: str = "") -> str:
-    """A sensible number for the next item added to a meeting: 4.1, 4.2, ...
+def meeting_stem(meeting_ref: Any) -> str:
+    """The number a meeting's items hang off: MOM-04 -> "4".
 
-    Falls back to a plain count when the meeting has no number of its own.
+    Blank when the meeting has no number of its own, so its items read
+    1, 2, 3 rather than acquiring a stem that means nothing.
     """
-    used = [str(i.get("ref") or "") for i in items]
-    numbers = [int(m.group(1)) for m in (_NUMBER.search(r.split(".")[-1]) for r in used if r) if m]
-    nxt = (max(numbers) + 1) if numbers else 1
-    stem = _NUMBER.search(str(meeting_ref or ""))
-    return f"{int(stem.group(1))}.{nxt}" if stem else str(nxt)
+    match = _NUMBER.search(str(meeting_ref or ""))
+    return str(int(match.group(1))) if match else ""
+
+
+def item_ref(stem: str, position: int) -> str:
+    """The number of the item sitting at `position` (1-based)."""
+    return f"{stem}.{position}" if stem else str(position)
+
+
+def renumber(items: Sequence[Mapping[str, Any]], meeting_ref: Any = "") -> list[dict[str, Any]]:
+    """Numbers for one meeting's items, in the order they are given.
+
+    An item's number is its position, so it cannot be typed, cannot collide
+    with another item's, and follows the item when it is moved.
+    """
+    stem = meeting_stem(meeting_ref)
+    return [
+        {"id": item["id"], "sort_order": position, "ref": item_ref(stem, position)}
+        for position, item in enumerate(items, start=1)
+    ]
+
+
+def moved(items: Sequence[Mapping[str, Any]], item_id: int, direction: str) -> list[Mapping[str, Any]]:
+    """The list with one item swapped with the neighbour above or below it.
+
+    Asking to move the first item up, or the last one down, leaves the order
+    alone rather than wrapping around to the other end.
+    """
+    rows = list(items)
+    here = next((index for index, row in enumerate(rows) if row["id"] == item_id), None)
+    if here is None:
+        return rows
+    there = here - 1 if direction == "up" else here + 1
+    if 0 <= there < len(rows):
+        rows[here], rows[there] = rows[there], rows[here]
+    return rows
+
+
+def next_ref(items: Sequence[Mapping[str, Any]], meeting_ref: Any = "") -> str:
+    """The number the next item added to a meeting will take."""
+    return item_ref(meeting_stem(meeting_ref), len(items) + 1)
 
 
 def meeting_label(meeting: Mapping[str, Any]) -> str:

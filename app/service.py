@@ -550,3 +550,82 @@ def meeting_sheet(project_id: int, meeting_id: int, on_date: str | None = None) 
         "absent": [a for a in attendance if a["invited"] and not a["present"]],
         "items": items,
     }
+
+
+def meeting_items(project_id: int, meeting_id: int | None) -> list[dict[str, Any]]:
+    """One meeting's items in the order they are minuted. `meeting_id` of None
+    is the items raised outside any meeting, which are their own group."""
+    if meeting_id is None:
+        rows = query(
+            "SELECT * FROM meeting_items WHERE project_id = ? AND meeting_id IS NULL "
+            "ORDER BY sort_order, id",
+            (project_id,),
+        )
+    else:
+        rows = query(
+            "SELECT * FROM meeting_items WHERE project_id = ? AND meeting_id = ? "
+            "ORDER BY sort_order, id",
+            (project_id, meeting_id),
+        )
+    return [dict(r) for r in rows]
+
+
+def renumber_items(project_id: int, meeting_id: int | None) -> None:
+    """Gives one meeting's items the numbers their positions imply.
+
+    Called after anything that changes the order or the membership of a
+    meeting, so the numbers on screen always run 1, 2, 3 with no gaps and no
+    two items sharing one.
+    """
+    from .minutes import renumber
+
+    rows = meeting_items(project_id, meeting_id)
+    if not rows:
+        return
+
+    ref = ""
+    if meeting_id is not None:
+        meeting = query_one("SELECT ref FROM meetings WHERE id = ?", (meeting_id,))
+        ref = meeting["ref"] if meeting else ""
+
+    current = {row["id"]: (row["sort_order"], row["ref"]) for row in rows}
+    conn = get_db()
+    with conn:
+        for target in renumber(rows, ref):
+            if current[target["id"]] != (target["sort_order"], target["ref"]):
+                conn.execute(
+                    "UPDATE meeting_items SET sort_order = ?, ref = ? WHERE id = ?",
+                    (target["sort_order"], target["ref"], target["id"]),
+                )
+
+
+def move_item(project_id: int, item_id: int, direction: str) -> bool:
+    """Swaps an item with the one above or below it and renumbers the meeting.
+
+    Returns False when the item is already at that end of the list, so the
+    caller can say so rather than claiming a move that did not happen.
+    """
+    from .minutes import moved, renumber
+
+    item = query_one("SELECT * FROM meeting_items WHERE id = ? AND project_id = ?", (item_id, project_id))
+    if item is None:
+        return False
+
+    rows = meeting_items(project_id, item["meeting_id"])
+    order = moved(rows, item_id, "up" if direction == "up" else "down")
+    if [r["id"] for r in order] == [r["id"] for r in rows]:
+        return False
+
+    ref = ""
+    if item["meeting_id"] is not None:
+        meeting = query_one("SELECT ref FROM meetings WHERE id = ?", (item["meeting_id"],))
+        ref = meeting["ref"] if meeting else ""
+
+    conn = get_db()
+    with conn:
+        for target in renumber(order, ref):
+            conn.execute(
+                "UPDATE meeting_items SET sort_order = ?, ref = ? WHERE id = ?",
+                (target["sort_order"], target["ref"], target["id"]),
+            )
+    return True

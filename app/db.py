@@ -91,6 +91,7 @@ def init_db(path: Path | str | None = None) -> None:
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
+        _normalise_item_numbers(conn)
         conn.commit()
     finally:
         conn.close()
@@ -124,6 +125,56 @@ def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:
             "UPDATE tasks SET start_date = ?, submission_date = ? WHERE id = ?",
             (start.isoformat(), finish.isoformat(), row["id"]),
         )
+
+
+def _normalise_item_numbers(conn: sqlite3.Connection) -> None:
+    """Gives every minuted item the number its position implies.
+
+    Item numbers used to be typed, so two items could carry the same one. They
+    are now the item's position within its meeting, which makes a duplicate
+    impossible and lets a number follow its item when it is moved. This puts
+    existing registers on the same footing, keeping the order they are already
+    in, and touches only the rows whose number or position actually changes.
+    """
+    if not conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meeting_items'"
+    ).fetchone():
+        return
+
+    from .minutes import ref_key, renumber
+
+    groups = conn.execute(
+        "SELECT DISTINCT project_id, meeting_id FROM meeting_items"
+    ).fetchall()
+    for group in groups:
+        if group["meeting_id"] is None:
+            rows = conn.execute(
+                "SELECT id, ref, sort_order FROM meeting_items "
+                "WHERE project_id = ? AND meeting_id IS NULL",
+                (group["project_id"],),
+            ).fetchall()
+            meeting_ref = ""
+        else:
+            rows = conn.execute(
+                "SELECT id, ref, sort_order FROM meeting_items "
+                "WHERE project_id = ? AND meeting_id = ?",
+                (group["project_id"], group["meeting_id"]),
+            ).fetchall()
+            meeting = conn.execute(
+                "SELECT ref FROM meetings WHERE id = ?", (group["meeting_id"],)
+            ).fetchone()
+            meeting_ref = meeting["ref"] if meeting else ""
+
+        # The order already on screen is the one to keep: by item number, then
+        # by the order the items were added.
+        ordered = sorted(rows, key=lambda r: (r["sort_order"], ref_key(r["ref"]), r["id"]))
+        current = {r["id"]: (r["sort_order"], r["ref"]) for r in rows}
+        for target in renumber([dict(r) for r in ordered], meeting_ref):
+            if current[target["id"]] != (target["sort_order"], target["ref"]):
+                conn.execute(
+                    "UPDATE meeting_items SET sort_order = ?, ref = ? WHERE id = ?",
+                    (target["sort_order"], target["ref"], target["id"]),
+                )
 
 
 def _ensure_workflow_steps(conn: sqlite3.Connection) -> None:

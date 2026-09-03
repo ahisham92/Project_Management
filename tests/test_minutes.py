@@ -9,8 +9,9 @@ from io import BytesIO
 import pytest
 
 from app.minutes import (
-    DEFAULT_FILTER, IMPACTS, decorate, filter_items, matches_search, meeting_label,
-    next_ref, normalise_impact, normalise_sort, normalise_status, sort_items, summarise,
+    DEFAULT_FILTER, IMPACTS, decorate, filter_items, item_ref, matches_search, meeting_label,
+    meeting_stem, moved, next_ref, normalise_impact, normalise_sort, normalise_status,
+    renumber, sort_items, summarise,
 )
 from app.minutes_doc import minutes_document, register_document
 from app.word import Document
@@ -185,6 +186,54 @@ def test_the_next_item_number_follows_the_meeting_number():
     assert next_ref([], "MOM-04") == "4.1"
     assert next_ref([{"ref": "4.1"}, {"ref": "4.2"}], "MOM-04") == "4.3"
     assert next_ref([{"ref": "1"}], "") == "2"
+
+
+# --- numbering by position -------------------------------------------------
+
+def test_a_meeting_reference_gives_its_items_their_stem():
+    assert meeting_stem("MOM-04") == "4"
+    assert meeting_stem("MOM-01") == "1"          # not "01"
+    assert meeting_stem("Kick-off") == ""         # nothing to hang a stem on
+    assert meeting_stem(None) == ""
+
+
+def test_an_item_with_no_stem_is_numbered_plainly():
+    assert item_ref("4", 2) == "4.2"
+    assert item_ref("", 2) == "2"
+
+
+def test_numbering_follows_position_so_two_items_cannot_share_a_number():
+    rows = [{"id": 7}, {"id": 3}, {"id": 9}]
+    assert renumber(rows, "MOM-02") == [
+        {"id": 7, "sort_order": 1, "ref": "2.1"},
+        {"id": 3, "sort_order": 2, "ref": "2.2"},
+        {"id": 9, "sort_order": 3, "ref": "2.3"},
+    ]
+    numbers = [row["ref"] for row in renumber([{"id": i} for i in range(20)], "MOM-01")]
+    assert len(set(numbers)) == len(numbers)
+
+
+def test_renumbering_ignores_whatever_number_an_item_used_to_carry():
+    rows = [{"id": 1, "ref": "9.9"}, {"id": 2, "ref": "9.9"}]      # a duplicate
+    assert [r["ref"] for r in renumber(rows, "MOM-01")] == ["1.1", "1.2"]
+
+
+def test_moving_an_item_swaps_it_with_its_neighbour():
+    rows = [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert [r["id"] for r in moved(rows, 2, "up")] == [2, 1, 3]
+    assert [r["id"] for r in moved(rows, 2, "down")] == [1, 3, 2]
+
+
+def test_moving_past_either_end_leaves_the_order_alone():
+    rows = [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert [r["id"] for r in moved(rows, 1, "up")] == [1, 2, 3]
+    assert [r["id"] for r in moved(rows, 3, "down")] == [1, 2, 3]
+    assert [r["id"] for r in moved(rows, 99, "up")] == [1, 2, 3]
+
+
+def test_moving_does_not_disturb_the_rest_of_the_list():
+    rows = [{"id": i} for i in range(1, 6)]
+    assert [r["id"] for r in moved(rows, 3, "down")] == [1, 2, 4, 3, 5]
 
 
 def test_a_meeting_reads_as_its_reference_subject_and_date():
@@ -450,9 +499,65 @@ def test_a_new_meeting_invites_everyone_on_the_roster(minuted):
         assert set(load_attendance(2)) == {1, 2}
 
 
-def test_editing_an_item_from_the_register_and_from_the_meeting(minuted):
-    assert "Save item" in page(minuted, "/projects/1/minutes?filter=all&edit=1")
-    assert "Save item" in page(minuted, "/projects/1/minutes/meetings/1?edit=1")
+def test_every_item_has_a_row_the_edit_form_opens_into(minuted):
+    """Clicking Edit fills the row below rather than reloading the page."""
+    body = page(minuted, "/projects/1/minutes/meetings/1")
+    assert body.count('id="edit-') == 3
+    assert body.count("data-toggle-row") == 3        # one Edit control per item
+    assert body.count('id="editor-template"') == 1
+
+
+def test_the_form_is_rendered_once_rather_than_per_row(minuted):
+    """A copy per row would repeat the owner, trade and meeting lists and turn
+    a long register into a megabyte of HTML."""
+    body = page(minuted, "/projects/1/minutes?filter=all")
+    assert body.count('<textarea name="agreement"') == 2      # add form, and the template
+    assert body.count('data-item=') == 3                      # the values to fill in
+
+
+def test_a_long_register_stays_a_reasonable_size(signed_in):
+    from app.service import load_items
+
+    post(signed_in, "/projects/1/minutes/meetings", ref="MOM-01", meeting_date="03/09/2026")
+    for number in range(60):
+        post(signed_in, "/projects/1/minutes/items", meeting_id="1",
+             subject=f"Item {number}", agreement="Something was agreed here")
+    body = page(signed_in, "/projects/1/minutes?filter=all")
+    with signed_in.application.app_context():
+        assert len(load_items(1)) == 60
+    assert len(body) < 300_000, f"{len(body) / 1024:.0f} KB for 60 items"
+
+
+def open_rows(body):
+    """The ids of the edit rows rendered open — the ones without `hidden`."""
+    import re
+
+    return {
+        match.group(1)
+        for match in re.finditer(r'<tr[^>]*id="edit-(\d+)"[^>]*>', body)
+        if "hidden" not in match.group(0)
+    }
+
+
+def test_the_edit_link_still_works_with_javascript_switched_off(minuted):
+    """?edit=<id> renders that one row open — where the link leads when the
+    script that opens it in place is not running."""
+    for url in ("/projects/1/minutes?filter=all&edit=1", "/projects/1/minutes/meetings/1?edit=1"):
+        body = page(minuted, url)
+        assert open_rows(body) == {"1"}
+        assert "Save item" in body
+
+
+def test_no_row_is_open_until_one_is_asked_for(minuted):
+    assert open_rows(page(minuted, "/projects/1/minutes/meetings/1")) == set()
+
+
+def test_the_agreement_and_discussion_are_text_areas_with_room_to_write(minuted):
+    for url in ("/projects/1/minutes", "/projects/1/minutes/meetings/1"):
+        body = page(minuted, url)
+        assert '<textarea name="agreement"' in body
+        assert '<textarea name="discussion"' in body
+        assert 'name="agreement" value=' not in body      # no longer a one-line input
 
 
 def test_saving_an_item_keeps_what_was_changed(minuted):
@@ -562,3 +667,172 @@ def test_a_column_heading_containing_an_ampersand_is_not_escaped_twice(minuted):
     entity by hand printed a literal "&amp;" on screen."""
     assert "&amp;amp;" not in page(minuted, "/projects/1/minutes")
     assert "&amp;amp;" not in page(minuted, "/projects/1/tasks")
+
+
+# --- reordering on the page ------------------------------------------------
+
+def numbers(client, meeting_id=1):
+    """The items of one meeting, in the order they are minuted."""
+    from app.service import meeting_items
+
+    with client.application.app_context():
+        return [(row["ref"], row["subject"]) for row in meeting_items(1, meeting_id)]
+
+
+@pytest.fixture()
+def ordered(minuted):
+    """The three seeded items, which start numbered 1.1, 1.2, 1.3."""
+    assert numbers(minuted) == [("1.1", "Quay wall levels"),
+                                ("1.2", "Additional survey"),
+                                ("1.3", "Drawing register format")]
+    return minuted
+
+
+def test_moving_an_item_down_swaps_it_and_renumbers_both(ordered):
+    post(ordered, "/projects/1/minutes/items/1/move", direction="down")
+    assert numbers(ordered) == [("1.1", "Additional survey"),
+                                ("1.2", "Quay wall levels"),
+                                ("1.3", "Drawing register format")]
+
+
+def test_moving_an_item_up_is_the_mirror_of_moving_it_down(ordered):
+    post(ordered, "/projects/1/minutes/items/3/move", direction="up")
+    post(ordered, "/projects/1/minutes/items/3/move", direction="down")
+    assert numbers(ordered) == [("1.1", "Quay wall levels"),
+                                ("1.2", "Additional survey"),
+                                ("1.3", "Drawing register format")]
+
+
+def test_moving_the_first_item_up_says_so_rather_than_wrapping_around(ordered):
+    body = post(ordered, "/projects/1/minutes/items/1/move", direction="up")
+    assert "already first" in body
+    assert numbers(ordered)[0] == ("1.1", "Quay wall levels")
+
+
+def test_moving_the_last_item_down_says_so(ordered):
+    body = post(ordered, "/projects/1/minutes/items/3/move", direction="down")
+    assert "already last" in body
+    assert numbers(ordered)[-1] == ("1.3", "Drawing register format")
+
+
+def test_an_item_number_cannot_be_typed_in(ordered):
+    """The number comes from the position, so a posted one is ignored rather
+    than creating a second item numbered 1.1."""
+    post(ordered, "/projects/1/minutes/items", meeting_id="1", ref="1.1",
+         subject="Sneaked in", agreement="x")
+    minuted_numbers = [ref for ref, _ in numbers(ordered)]
+    assert minuted_numbers == ["1.1", "1.2", "1.3", "1.4"]
+    assert len(set(minuted_numbers)) == 4
+
+
+def test_deleting_an_item_closes_the_gap_in_the_numbering(ordered):
+    post(ordered, "/projects/1/minutes/items/1/delete")
+    assert numbers(ordered) == [("1.1", "Additional survey"),
+                                ("1.2", "Drawing register format")]
+
+
+def test_moving_an_item_to_another_meeting_renumbers_both(ordered):
+    post(ordered, "/projects/1/minutes/meetings", ref="MOM-02", meeting_date="10/09/2026")
+    post(ordered, "/projects/1/minutes/items/2", meeting_id="2", subject="Additional survey",
+         agreement="Client to confirm the budget", impact="cost", status="open")
+    assert numbers(ordered, 1) == [("1.1", "Quay wall levels"),
+                                   ("1.2", "Drawing register format")]
+    assert numbers(ordered, 2) == [("2.1", "Additional survey")]
+
+
+def test_renaming_a_meeting_renumbers_its_items(ordered):
+    post(ordered, "/projects/1/minutes/meetings/1", ref="MOM-07",
+         title="Weekly design coordination", meeting_date="03/09/2026")
+    assert [ref for ref, _ in numbers(ordered)] == ["7.1", "7.2", "7.3"]
+
+
+def test_items_raised_outside_a_meeting_are_numbered_as_their_own_run(ordered):
+    post(ordered, "/projects/1/minutes/items", subject="Raised by email", agreement="x")
+    post(ordered, "/projects/1/minutes/items", subject="Raised on site", agreement="x")
+    assert numbers(ordered, None) == [("1", "Raised by email"), ("2", "Raised on site")]
+
+
+def test_the_meeting_page_offers_the_move_buttons(ordered):
+    body = page(ordered, "/projects/1/minutes/meetings/1")
+    assert body.count("/move") == 6              # up and down on each of three items
+    assert "▲" in body and "▼" in body
+
+
+def test_the_arrows_are_disabled_at_each_end_of_the_list(ordered):
+    body = page(ordered, "/projects/1/minutes/meetings/1")
+    assert body.count("disabled") == 2           # the first cannot go up, the last down
+
+
+def test_the_item_number_is_shown_but_not_typed(ordered):
+    """The only "ref" field left on either page is the meeting's own
+    reference; an item's number is no longer something anyone types."""
+    for url in ("/projects/1/minutes/meetings/1?edit=1", "/projects/1/minutes?filter=all&edit=1"):
+        assert page(ordered, url).count('name="ref"') == 1
+
+
+def test_a_register_with_duplicate_numbers_is_put_right_on_start(database):
+    """Numbers used to be typed, so an existing register can hold duplicates.
+    Opening the database renumbers them by position, keeping the order."""
+    from app.db import connect, init_db
+
+    conn = connect(database)
+    with conn:
+        conn.execute(
+            "INSERT INTO meetings (project_id, ref, meeting_date) VALUES (1, 'MOM-01', '2026-09-03')"
+        )
+        for subject in ("First", "Second", "Third"):
+            conn.execute(
+                "INSERT INTO meeting_items (project_id, meeting_id, ref, subject, sort_order) "
+                "VALUES (1, 1, '1.1', ?, 0)",
+                (subject,),
+            )
+    conn.close()
+
+    init_db(database)
+
+    conn = connect(database)
+    try:
+        rows = conn.execute(
+            "SELECT ref, subject FROM meeting_items ORDER BY sort_order, id"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert [(r["ref"], r["subject"]) for r in rows] == [
+        ("1.1", "First"), ("1.2", "Second"), ("1.3", "Third")
+    ]
+
+
+def test_the_edit_payload_survives_a_subject_full_of_quotes(minuted):
+    """The values the edit form is filled from ride in an HTML attribute; a
+    quote in the text must not cut the attribute short and break editing."""
+    import json
+    import re
+
+    post(minuted, "/projects/1/minutes/items", meeting_id="1",
+         subject='The "quay" wall & <levels>', agreement="Re-issue 'as agreed'")
+    body = page(minuted, "/projects/1/minutes/meetings/1")
+
+    payloads = re.findall(r"data-item='([^']*)'", body)
+    assert len(payloads) == 4
+    import html as html_module
+
+    decoded = [json.loads(html_module.unescape(p)) for p in payloads]
+    assert any(d["subject"] == 'The "quay" wall & <levels>' for d in decoded)
+    assert any(d["agreement"] == "Re-issue 'as agreed'" for d in decoded)
+
+
+def test_moving_an_item_comes_back_to_the_minutes_it_was_moved_in(minuted):
+    """The arrows sit on the meeting page, so that is where they return to —
+    landing on the register instead loses the list you were reordering."""
+    response = minuted.post("/projects/1/minutes/items/1/move",
+                            data={"direction": "down", "return": "meeting"})
+    assert response.headers["Location"].endswith("/minutes/meetings/1")
+
+
+def test_the_move_buttons_say_to_come_back_to_the_meeting(minuted):
+    body = page(minuted, "/projects/1/minutes/meetings/1")
+    for direction in ("up", "down"):
+        marker = f'<input type="hidden" name="direction" value="{direction}">'
+        assert body.count(marker) == 3
+    # Each move form carries the return, next to its direction.
+    assert body.count('name="return" value="meeting"') >= 6

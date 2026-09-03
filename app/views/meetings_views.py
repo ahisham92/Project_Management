@@ -16,8 +16,8 @@ from ..minutes import (
     normalise_impact, normalise_sort, normalise_status, sort_items, summarise,
 )
 from ..service import (
-    load_attendees, load_items, load_meeting, load_meetings, load_trades, meeting_sheet,
-    next_sort_order, set_attendance, today,
+    load_attendees, load_items, load_meeting, load_meetings, load_trades, meeting_items,
+    meeting_sheet, move_item, next_sort_order, renumber_items, set_attendance, today,
 )
 
 bp = Blueprint("meetings", __name__, url_prefix="/projects/<int:project_id>")
@@ -245,8 +245,10 @@ def meeting(project_id: int, meeting_id: int):
         abort(404)
 
     editing = _to_int(request.args.get("edit"))
+    order = [row["id"] for row in meeting_items(project_id, meeting_id)]
     return render_template(
         "meeting.html",
+        first_id=order[0] if order else None, last_id=order[-1] if order else None,
         project=project, role=role, sheet=sheet, meeting=sheet["meeting"],
         items=sheet["items"], attendance=sheet["attendance"],
         impacts=IMPACTS, statuses=STATUSES, editing=editing,
@@ -322,6 +324,10 @@ def save_meeting(project_id: int, meeting_id: int):
          meeting_id, project_id),
     )
 
+    # The meeting's reference is the stem of its item numbers (MOM-04 -> 4.1),
+    # so renumber when it changes.
+    renumber_items(project_id, meeting_id)
+
     roster = {int(a["id"]) for a in load_attendees(project_id)}
     invited = [i for i in (_to_int(v) for v in request.form.getlist("invited")) if i in roster]
     present = [i for i in (_to_int(v) for v in request.form.getlist("present")) if i in roster]
@@ -341,6 +347,7 @@ def delete_meeting(project_id: int, meeting_id: int):
     # keeps its history even when a set of minutes is removed.
     execute("UPDATE meeting_items SET meeting_id = NULL WHERE meeting_id = ?", (meeting_id,))
     execute("DELETE FROM meetings WHERE id = ? AND project_id = ?", (meeting_id, project_id))
+    renumber_items(project_id, None)
     flash("Meeting deleted — its items stay in the register", "success")
     return _back(project_id)
 
@@ -372,7 +379,6 @@ def _item_fields(project_id: int) -> dict[str, object]:
 
     return {
         "meeting_id": meeting_id,
-        "ref": _clean("ref"),
         "subject": _clean("subject"),
         "discussion": _clean("discussion"),
         "agreement": _clean("agreement"),
@@ -416,11 +422,13 @@ def add_item(project_id: int):
                                    raised_date, due_date, closed_date, sort_order)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, fields["meeting_id"], fields["ref"], fields["subject"], fields["discussion"],
+        (project_id, fields["meeting_id"], "", fields["subject"], fields["discussion"],
          fields["agreement"], fields["owner_id"], fields["owner_name"], fields["trade_id"],
          fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
          fields["closed_date"], next_sort_order("meeting_items", project_id)),
     )
+    # The new item takes the next number in the meeting it landed in.
+    renumber_items(project_id, fields["meeting_id"])
     flash("Item added", "success")
     return _after_item(project_id, fields["meeting_id"])
 
@@ -429,22 +437,29 @@ def add_item(project_id: int):
 @login_required
 def save_item(project_id: int, item_id: int):
     _project, role = load_project(project_id, "member")
-    if not query_one("SELECT 1 FROM meeting_items WHERE id = ? AND project_id = ?", (item_id, project_id)):
+    before = query_one("SELECT meeting_id FROM meeting_items WHERE id = ? AND project_id = ?",
+                       (item_id, project_id))
+    if before is None:
         abort(404)
 
     fields = _item_fields(project_id)
     execute(
         """
-        UPDATE meeting_items SET meeting_id = ?, ref = ?, subject = ?, discussion = ?, agreement = ?,
+        UPDATE meeting_items SET meeting_id = ?, subject = ?, discussion = ?, agreement = ?,
                owner_id = ?, owner_name = ?, trade_id = ?, impact = ?, status = ?,
                raised_date = ?, due_date = ?, closed_date = ?, updated_at = datetime('now')
         WHERE id = ? AND project_id = ?
         """,
-        (fields["meeting_id"], fields["ref"], fields["subject"], fields["discussion"],
+        (fields["meeting_id"], fields["subject"], fields["discussion"],
          fields["agreement"], fields["owner_id"], fields["owner_name"], fields["trade_id"],
          fields["impact"], fields["status"], fields["raised_date"], fields["due_date"],
          fields["closed_date"], item_id, project_id),
     )
+    # Moving an item to another meeting renumbers both: the one it left closes
+    # its gap, the one it joined takes it on the end.
+    if before["meeting_id"] != fields["meeting_id"]:
+        renumber_items(project_id, before["meeting_id"])
+    renumber_items(project_id, fields["meeting_id"])
     flash("Item saved", "success")
     return _after_item(project_id, fields["meeting_id"])
 
@@ -468,6 +483,21 @@ def set_item_status(project_id: int, item_id: int):
     return _after_item(project_id, item["meeting_id"])
 
 
+@bp.post("/minutes/items/<int:item_id>/move")
+@login_required
+def move(project_id: int, item_id: int):
+    """Swaps an item with its neighbour and renumbers the meeting."""
+    _project, role = load_project(project_id, "member")
+    item = query_one("SELECT * FROM meeting_items WHERE id = ? AND project_id = ?", (item_id, project_id))
+    if item is None:
+        abort(404)
+
+    direction = "up" if (request.form.get("direction") or "").strip().lower() == "up" else "down"
+    if not move_item(project_id, item_id, direction):
+        flash(f"That item is already {'first' if direction == 'up' else 'last'}", "error")
+    return _after_item(project_id, item["meeting_id"])
+
+
 @bp.post("/minutes/items/<int:item_id>/delete")
 @login_required
 def delete_item(project_id: int, item_id: int):
@@ -476,6 +506,7 @@ def delete_item(project_id: int, item_id: int):
     if item is None:
         abort(404)
     execute("DELETE FROM meeting_items WHERE id = ?", (item_id,))
+    renumber_items(project_id, item["meeting_id"])
     flash("Item deleted", "success")
     return _after_item(project_id, item["meeting_id"])
 

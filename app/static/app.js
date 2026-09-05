@@ -574,20 +574,24 @@
     }).catch(function () { form.submit(); });
   });
 
-  // "Tidy up" puts every box back under the automatic layout.
+  // "Simplify" reorders the boxes to untangle the lines; "Tidy up" forgets
+  // where they were put by hand. Both redraw the diagram where it stands.
   document.addEventListener('click', function (event) {
-    var button = event.target.closest('[data-reset-layout]');
+    var button = event.target.closest('[data-relayout]');
     if (!button || !window.fetch) return;
     var form = button.closest('form');
     if (!form) return;
 
     event.preventDefault();
+    button.disabled = true;
     fetch(form.action, {
       method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin',
     }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (result) {
         redrawLinks(result, null);
+        if (result.note) say(result.note, 'success');
         window.dispatchEvent(new Event('pm:saved'));
+        button.disabled = false;
       }).catch(function () { form.submit(); });
   });
 
@@ -618,8 +622,10 @@
       if (!from || !to) return;
       var x1 = Number(from.dataset.x), y1 = Number(from.dataset.y);
       var x2 = Number(to.dataset.x), y2 = Number(to.dataset.y);
-      // A start-to-start arrow leaves the left edge, as the server draws it.
-      var side = edge.getAttribute('stroke-dasharray') ? x1 : x1 + w;
+      // A link that waits on the other line's start leaves the left edge, as
+      // the server draws it; one that waits on its finish leaves the right.
+      var kind = edge.dataset.kind || 'FS';
+      var side = (kind === 'SS' || kind === 'SF') ? x1 : x1 + w;
       var bend = Math.max(24, Math.abs(x2 - side) / 2);
       edge.setAttribute('d', 'M' + side + ',' + (y1 + h / 2)
         + ' C' + (side + bend) + ',' + (y1 + h / 2)

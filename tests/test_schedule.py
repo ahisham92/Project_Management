@@ -1513,3 +1513,178 @@ def test_the_dependency_panel_starts_open_while_there_is_nothing_to_see(signed_i
 def test_the_schedule_panel_reopens_after_an_import(signed_in):
     moved = signed_in.post("/projects/1/schedule/1", data={"duration_days": "20"})
     assert "panel=dates" in moved.headers["Location"]
+
+
+# --- the four kinds, told apart at a glance ---------------------------------
+
+def drawn_network(kind: str = "FS"):
+    from app.charts import network
+
+    rows = [{"id": i, "wbs": f"1.{i}", "name": f"line {i}", "start_date": "2026-01-01",
+             "submission_date": "2026-01-10", "total_float": 0, "is_critical": False}
+            for i in (1, 2)]
+    return str(network(rows, [kinded(1, 2, kind)]))
+
+
+def test_each_kind_of_link_has_its_own_colour():
+    from app.charts import KIND_COLOURS
+
+    assert len(set(KIND_COLOURS.values())) == 4, "two kinds share a colour"
+    for kind in ("FS", "SS", "FF", "SF"):
+        assert KIND_COLOURS[kind] in drawn_network(kind)
+
+
+def test_each_kind_of_link_has_its_own_dash_so_colour_is_not_the_only_clue():
+    """Printed in grey, or read by someone who sees colour differently, the
+    pattern still says which kind it is."""
+    from app.charts import KIND_DASHES
+
+    patterns = [KIND_DASHES[kind] for kind in ("FS", "SS", "FF", "SF")]
+    assert len(set(patterns)) == 4
+    assert KIND_DASHES["FS"] == "", "the commonest link should be a plain line"
+    for kind in ("SS", "FF", "SF"):
+        assert f'stroke-dasharray="{KIND_DASHES[kind]}"' in drawn_network(kind)
+
+
+def test_the_legend_names_all_four_kinds():
+    drawn = drawn_network()
+    for kind, label in (("FS", "finish → start"), ("SS", "start → start"),
+                        ("FF", "finish → finish"), ("SF", "start → finish")):
+        assert kind in drawn and label in drawn
+
+
+def test_the_critical_run_keeps_its_red_under_the_coloured_line():
+    """Colour says which kind of link it is, so the critical path is a wide
+    soft trace beneath rather than a colour of its own."""
+    from app.charts import network
+
+    rows = [{"id": i, "wbs": f"1.{i}", "name": f"line {i}", "start_date": "2026-01-01",
+             "submission_date": "2026-01-10", "total_float": 0, "is_critical": True}
+            for i in (1, 2)]
+    drawn = str(network(rows, [kinded(1, 2, "FS")]))
+    assert 'stroke="var(--critical)" stroke-width="5"' in drawn
+    assert 'stroke="var(--series-7)"' in drawn          # and the kind on top
+
+
+def test_a_link_that_waits_on_a_start_leaves_the_other_box_by_its_left_edge():
+    for kind in ("SS", "SF"):
+        assert f'data-kind="{kind}"' in drawn_network(kind)
+    from app.charts import FROM_START
+
+    assert set(FROM_START) == {"SS", "SF"}
+
+
+# --- untangling the diagram --------------------------------------------------
+
+def test_a_tangle_is_undone_without_moving_anything_between_columns():
+    """Three lines wired to three others in reverse: every line crosses every
+    other until the second column is turned round."""
+    from app.layout import arrange
+
+    result = arrange([1, 2, 3, 4, 5, 6], [link(1, 6), link(2, 5), link(3, 4)])
+    assert result["before"] == 3
+    assert result["after"] == 0
+    columns = {task: place[0] for task, place in result["places"].items()}
+    assert columns == {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}
+
+
+def test_a_tidy_programme_is_left_alone():
+    from app.layout import arrange
+
+    rows, links = diamond()
+    result = arrange([1, 2, 3, 4], links)
+    assert result["before"] == 0 and result["after"] == 0
+    assert result["places"][1] == (0, 0) and result["places"][4] == (2, 0)
+
+
+def test_a_line_that_skips_columns_still_counts_its_crossings():
+    """Without a stand-in in each column it passes, a long line would sail over
+    the picture counting as crossing nothing at all."""
+    from app.layout import arrange
+
+    result = arrange([1, 2, 3, 4, 5], [link(1, 2), link(2, 3), link(3, 4),
+                                       link(1, 4), link(5, 3)])
+    assert result["before"] > 0
+
+
+def test_nothing_linked_is_nothing_to_untangle():
+    from app.layout import arrange
+
+    assert arrange([1, 2, 3], []) == {"places": {}, "before": 0, "after": 0}
+
+
+def test_the_columns_still_say_the_order_the_work_runs_in():
+    from app.layout import arrange, columns_of
+
+    links = [link(1, 2), link(2, 3), link(4, 3)]
+    result = arrange([1, 2, 3, 4], links)
+    assert {t: p[0] for t, p in result["places"].items()} == columns_of([1, 2, 3, 4], links)
+
+
+def test_simplify_writes_the_boxes_down_so_they_can_then_be_nudged(signed_in):
+    from app.db import query
+
+    for successor, predecessor in (("6", "1"), ("5", "2"), ("4", "3")):
+        link_two(signed_in, successor, predecessor)
+    answer = signed_in.post("/projects/1/schedule/layout/simplify",
+                            headers={"Accept": "application/json"}).get_json()
+    assert answer["ok"]
+    assert "crossing lines down from" in answer["note"]
+
+    with signed_in.application.app_context():
+        placed = query("SELECT node_x, node_y FROM tasks WHERE project_id = 1 AND node_x IS NOT NULL")
+    assert len(placed) == 6
+
+
+def test_simplify_says_so_when_there_is_nothing_left_to_undo(signed_in):
+    link_two(signed_in, "2", "1")
+    signed_in.post("/projects/1/schedule/layout/simplify")
+    again = signed_in.post("/projects/1/schedule/layout/simplify",
+                           headers={"Accept": "application/json"}).get_json()
+    assert "Already as clear as it gets" in again["note"]
+
+
+def test_simplify_has_nothing_to_do_before_anything_is_linked(signed_in):
+    answer = signed_in.post("/projects/1/schedule/layout/simplify",
+                            headers={"Accept": "application/json"}).get_json()
+    assert "nothing to untangle" in answer["note"]
+
+
+def test_tidy_up_puts_back_what_simplify_wrote_down(signed_in):
+    from app.db import query
+
+    link_two(signed_in, "2", "1")
+    signed_in.post("/projects/1/schedule/layout/simplify")
+    signed_in.post("/projects/1/schedule/layout/reset")
+    with signed_in.application.app_context():
+        placed = query("SELECT 1 FROM tasks WHERE project_id = 1 AND node_x IS NOT NULL")
+    assert not placed
+
+
+def test_only_a_manager_can_relay_the_diagram_out(client, app):
+    client.post("/register", data={"name": "Member", "email": "m4@example.com",
+                                   "password": "longenough1"})
+    with app.app_context():
+        from app.db import connect
+
+        conn = connect(app.config["DATABASE"])
+        with conn:
+            user = conn.execute("SELECT id FROM users WHERE email = 'm4@example.com'").fetchone()
+            conn.execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'member')",
+                         (user["id"],))
+        conn.close()
+
+    assert client.post("/projects/1/schedule/layout/simplify").status_code == 403
+
+
+def test_a_sweep_reads_where_the_last_column_has_just_been_put():
+    """Three columns wired in reverse twice over. Ordering a column against
+    where the one before it *used* to be undoes the work just done to it, and
+    the second gap stays tangled."""
+    from app.layout import arrange
+
+    links = [link(1, 11), link(2, 10), link(3, 9), link(4, 8),
+             link(9, 15), link(10, 14), link(11, 13), link(8, 12)]
+    result = arrange([1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15], links)
+    assert result["before"] == 9
+    assert result["after"] == 0

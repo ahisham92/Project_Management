@@ -154,7 +154,9 @@ Progress and the Dashboard, where they belong.
   line, running from the day the comments landed to the new date and labelled with the code
   that caused it — so rework shows on the programme at the size it actually cost.
 - **Dependencies**, in all four kinds — **finish → start**, **start → start**,
-  **finish → finish** and **start → finish**. Each takes a lag in days, and the lag **may be
+  **finish → finish** and **start → finish** — each with **its own colour and its own dash**
+  in the diagram, so the four are told apart printed in grey, on a projector, and by anyone
+  who reads colour differently. Each takes a lag in days, and the lag **may be
   negative**: "start a week before the survey ends" is finish → start with a lag of -7, which
   is how overlap between two pieces of work is written down. The lag and the kind are both
   changed by clicking them in the row, and so are **both ends of the link** — the deliverable
@@ -174,9 +176,20 @@ Progress and the Dashboard, where they belong.
   on a path, so it is not called critical until it is sequenced.
 - **The network** below the plan draws who waits for whom as boxes laid out in the order the
   work runs. A box is a WBS number — hover it for the deliverable, its dates and its float —
-  so a long programme stays readable. A start-to-start link is drawn dashed. **Drag any box**
-  to move it and the arrows follow; it stays where you put it, and **Tidy up** returns
-  everything to the automatic layout.
+  so a long programme stays readable. A link leaves the left-hand edge of a box when it waits
+  on that line's *start* and the right-hand edge when it waits on its *finish*. The critical
+  run keeps its red, as a wide soft trace beneath the line, so the colour on top is free to
+  say which kind of link it is. **Drag any box** to move it and the arrows follow; it stays
+  where you put it.
+- **Simplify** untangles the picture once the links are all in. It lays the diagram out in
+  layers — columns stay exactly as they are, since they say the order the work runs in — and
+  sweeps up and down them putting each box at the median of what it joins in the column
+  beside it, keeping the best arrangement it finds. A link that skips columns gets a stand-in
+  box in each one it passes, so a long line sailing over the picture is counted properly
+  rather than as crossing nothing. It reports what it managed: *"Simplified — crossing lines
+  down from 9 to 0."* The result is written down as the boxes' positions, so you can nudge
+  one by hand from there, and **Tidy up** forgets the lot and returns to the automatic
+  layout.
 - **The end of every path is blue**, and the diagram says how many unique paths run through
   it — a route being a run from a line nothing precedes to a line nothing waits on. The
   count is worked out along the topological order rather than by walking every route, so a
@@ -690,12 +703,13 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-381 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+397 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
 shifts, refused loops, why a line cannot start where it is drawn, the routes through
-the network, and the schedule and dependency workbooks), the minutes register
+the network, the four link colours and dashes, untangling the diagram, and the schedule and
+dependency workbooks), the minutes register
 (filters, search, sorting, renumbering on a move, and the Word output), the web layer
 (sign-in, every page, reporting progress by status, raising revisions, booking hours, the
 dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
@@ -714,12 +728,12 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 38 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 39 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
 taking the schedule out to Excel and importing the edited workbook back, reading a bar by
-hovering it and folding the tables away under the charts, and a second window picking up a
-change on its own.
+hovering it and folding the tables away under the charts, colour-coding the four kinds of
+link and untangling them with Simplify, and a second window picking up a change on its own.
 
 ---
 
@@ -741,6 +755,7 @@ app/
   dates.py              dd/mm/yyyy in, ISO stored
   sorting.py            column ordering for the progress and schedule tables
   schedule.py           durations, dependencies, float and the critical path
+  layout.py             untangling the dependency diagram: layers and crossings
   minutes.py            minutes of meeting: filtering, sorting, open/closed and time/cost
   minutes_doc.py        the Word documents built from the minutes
   word.py               writes a .docx with the standard library — no extra package

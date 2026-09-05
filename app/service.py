@@ -815,6 +815,32 @@ def clear_node_positions(project_id: int) -> None:
     execute("UPDATE tasks SET node_x = NULL, node_y = NULL WHERE project_id = ?", (project_id,))
 
 
+def simplify_layout(project_id: int) -> dict[str, int]:
+    """Re-lays the diagram out so the lines cross as little as possible.
+
+    The columns are untouched — they say the order the work runs in — so only
+    the order of the boxes within a column changes. The result is written down
+    as their positions, which means it can then be nudged by hand and Tidy up
+    still puts everything back.
+    """
+    from .layout import arrange, point
+    from .sorting import sort_tasks
+
+    tasks = sort_tasks(load_tasks(project_id), "wbs", "asc")
+    result = arrange([task["id"] for task in tasks], load_links(project_id))
+    if not result["places"]:
+        return {"before": 0, "after": 0, "moved": 0}
+
+    db = get_db()
+    with db:
+        for task_id, (depth, row) in result["places"].items():
+            x, y = point(depth, row)
+            db.execute("UPDATE tasks SET node_x = ?, node_y = ? WHERE id = ? AND project_id = ?",
+                       (x, y, task_id, project_id))
+    return {"before": result["before"], "after": result["after"],
+            "moved": len(result["places"])}
+
+
 def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
                    cascade: bool = True) -> dict[int, dict[str, str]]:
     """Moves one deliverable and pushes whatever depends on it.

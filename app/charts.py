@@ -398,6 +398,28 @@ GANTT_LEFT = 96                     # room for the WBS down the side
 GANTT_HEAD = 46                     # the month band and the day ticks above it
 REWORK = "var(--warning)"
 PATH_END = "var(--series-1)"   # a line nothing waits on: the end of a route
+
+# Each kind of link gets its own colour AND its own dash, so the four are told
+# apart in greyscale, on a projector, and by anyone who reads colour
+# differently. Red is left to the critical path and blue to a path's end.
+KIND_COLOURS = {
+    "FS": "var(--series-7)",     # violet
+    "SS": "var(--series-3)",     # teal
+    "FF": "var(--series-4)",     # amber
+    "SF": "var(--series-5)",     # magenta
+}
+KIND_DASHES = {"FS": "", "SS": "6 3", "FF": "2 3", "SF": "10 3 2 3"}
+
+# The same four patterns as a CSS background, for the legend swatch. Drawn in
+# CSS rather than as a little SVG, which the chart's own "svg { width: 100% }"
+# would blow up to fill the row.
+KIND_SWATCH = {
+    "FS": "{ink}",
+    "SS": "repeating-linear-gradient(90deg,{ink} 0 6px,transparent 6px 9px)",
+    "FF": "repeating-linear-gradient(90deg,{ink} 0 2px,transparent 2px 5px)",
+    "SF": ("repeating-linear-gradient(90deg,{ink} 0 10px,transparent 10px 13px,"
+           "{ink} 13px 15px,transparent 15px 18px)"),
+}
 SUBMITTED = "var(--good)"           # the green star that marks a submission
 
 
@@ -669,11 +691,13 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
     for depth in columns:
         columns[depth].sort(key=lambda t: str(by_id[t].get("wbs") or ""))
 
-    box_w, box_h, gap_x, gap_y, pad = 54, 26, 44, 18, 16
+    from .layout import BOX_H, BOX_W, point
+
+    box_w, box_h = BOX_W, BOX_H
     place: dict[int, tuple[float, float]] = {}
     for depth, ids in columns.items():
         for row, task_id in enumerate(ids):
-            place[task_id] = (pad + depth * (box_w + gap_x), pad + row * (box_h + gap_y))
+            place[task_id] = point(depth, row)
 
     # A box that has been dragged sits where it was put instead.
     for task_id in list(place):
@@ -681,13 +705,21 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
         if moved_x is not None and moved_y is not None:
             place[task_id] = (float(moved_x), float(moved_y))
 
-    drawn_w = max(x for x, _ in place.values()) + box_w + pad
-    height = max(y for _, y in place.values()) + box_h + pad
+    from .layout import PAD
+
+    drawn_w = max(x for x, _ in place.values()) + box_w + PAD
+    height = max(y for _, y in place.values()) + box_h + PAD
     width = max(drawn_w, 760)
 
-    parts = ['<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6"'
-             ' markerHeight="6" orient="auto-start-reverse">'
-             f'<path d="M0,0 L8,4 L0,8 z" fill="{AXIS}"/></marker></defs>']
+    # One arrow head per link colour: a marker takes its own fill, not the
+    # line's, so each kind needs its own.
+    heads = "".join(
+        f'<marker id="arrow-{key}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6"'
+        f' markerHeight="6" orient="auto-start-reverse">'
+        f'<path d="M0,0 L8,4 L0,8 z" fill="{colour}"/></marker>'
+        for key, colour in KIND_COLOURS.items()
+    )
+    parts = [f"<defs>{heads}</defs>"]
 
     for link in links:
         first, second = int(link["predecessor_id"]), int(link["successor_id"])
@@ -697,25 +729,31 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
         critical = bool(by_id[first].get("is_critical") and by_id[second].get("is_critical"))
         kind = normalise_kind(link.get("kind"))
         lag = float(link.get("lag_days") or 0)
+        curve = _edge_path(place[first], place[second], box_w, box_h, kind)
 
-        # A start-to-start link is dashed: the two run alongside each other
-        # rather than one waiting for the whole of the other.
-        dashes = ' stroke-dasharray="5 3"' if kind == "SS" else ""
         title = "{} → {}, {}".format(by_id[first].get("wbs") or "",
                                      by_id[second].get("wbs") or "", kind_label(kind))
         if lag:
             title += f", {lag:+g} days"
 
+        # The critical run keeps its red, as a wide soft trace under the line,
+        # so the colour on top is free to say which kind of link it is.
+        if critical:
+            parts.append(f'<path d="{curve}" fill="none" stroke="{CRITICAL}"'
+                         f' stroke-width="5" opacity="0.22" stroke-linecap="round"/>')
+
+        dashes = KIND_DASHES.get(kind, "")
         parts.append(
-            '<path class="net-edge" data-from="{first}" data-to="{second}" d="{path}"'
+            '<path class="net-edge" data-from="{first}" data-to="{second}" data-kind="{kind}"'
+            ' d="{path}"'
             ' fill="none" stroke="{colour}" stroke-width="{weight}" opacity="{opacity}"'
-            '{dashes} marker-end="url(#arrow)"><title>{title}</title></path>'.format(
-                first=first, second=second,
-                path=_edge_path(place[first], place[second], box_w, box_h, kind),
-                colour=CRITICAL if critical else AXIS,
-                weight=1.6 if critical else 1,
-                opacity=1 if critical else 0.6,
-                dashes=dashes, title=escape(title),
+            '{dashes} marker-end="url(#arrow-{kind})"><title>{title}</title></path>'.format(
+                first=first, second=second, path=curve, kind=kind,
+                colour=KIND_COLOURS.get(kind, AXIS),
+                weight=2 if critical else 1.2,
+                opacity=1 if critical else 0.75,
+                dashes=f' stroke-dasharray="{dashes}"' if dashes else "",
+                title=escape(title),
             )
         )
 
@@ -754,23 +792,47 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
             f'{escape(str(task.get("wbs") or ""))}</text></g>'
         )
 
-    legend = _legend([("On the critical path", "var(--critical)"),
-                      ("Has float", AXIS),
-                      ("End of a path — nothing waits on it", PATH_END)], mark="dot")
+    legend = (_legend([("On the critical path", "var(--critical)"),
+                       ("Has float", AXIS),
+                       ("End of a path — nothing waits on it", PATH_END)], mark="dot")
+              + _kind_legend())
     body = f'<g class="net" data-box-w="{box_w}" data-box-h="{box_h}">{"".join(parts)}</g>'
     return _chart(body, legend, view_w=int(width), view_h=int(height), natural=True)
+
+
+def _kind_legend() -> str:
+    """What each colour of line means. The dash is part of the answer, so the
+    swatch is drawn rather than coloured in."""
+    from .schedule import KINDS
+
+    def swatch(key: str) -> str:
+        ink = KIND_COLOURS.get(key, AXIS)
+        pattern = KIND_SWATCH.get(key, "{ink}").format(ink=ink)
+        return f'<span class="legend-line legend-dash" style="background:{pattern}"></span>'
+
+    marks = "".join(
+        f'<span class="legend-item">{swatch(key)}{escape(key)} · {escape(label)}</span>'
+        for key, label in KINDS
+    )
+    return f'<div class="legend">{marks}</div>'
+
+
+# The two kinds that hang on the predecessor's start rather than its finish,
+# and so leave the left-hand edge of its box.
+FROM_START = ("SS", "SF")
 
 
 def _edge_path(start: tuple[float, float], end: tuple[float, float],
                box_w: float, box_h: float, kind: str = "FS") -> str:
     """The curve from one box to another.
 
-    A finish-to-start link leaves the right-hand edge, where the work ends; a
-    start-to-start link leaves the left, because that is the moment it refers to.
+    A link that waits on the other line's finish leaves the right-hand edge,
+    where that work ends; one that waits on its start leaves the left, because
+    that is the moment it refers to.
     """
     x1, y1 = start
     x2, y2 = end
-    from_x = x1 if kind == "SS" else x1 + box_w
+    from_x = x1 if kind in FROM_START else x1 + box_w
     from_y = y1 + box_h / 2
     to_y = y2 + box_h / 2
     bend = max(24.0, abs(x2 - from_x) / 2)

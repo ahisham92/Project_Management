@@ -89,6 +89,7 @@ def main() -> int:
         step("schedule dependencies are edited and dragged", _schedule_deps)
         step("schedule dates go out to Excel and come back", _schedule_excel)
         step("schedule reads at a glance and folds its tables away", _schedule_reading)
+        step("dependency lines are colour-coded, and Simplify untangles them", _schedule_simplify)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -273,6 +274,66 @@ def _schedule_reading(page) -> None:
         if expected not in body:
             raise AssertionError(f"the diagram does not say {expected!r}")
     page.screenshot(path=str(SHOTS / "25-schedule-reading.png"), full_page=True)
+
+
+def _schedule_simplify(page) -> None:
+    """Each kind of link reads differently, and Simplify untangles the picture
+    without the page reloading."""
+    _schedule_page(page, "links")
+
+    # Wire the diagram up crossed, with one of each kind of link.
+    wires = [("11", "1", "FS", "0"), ("10", "2", "SS", "-5"),
+             ("9", "3", "FF", "10"), ("8", "4", "SF", "3")]
+    for successor, predecessor, kind, lag in wires:
+        page.select_option("select[name=successor_id]", value=successor)
+        page.select_option("select[name=predecessor_id]", value=predecessor)
+        page.select_option("select[name=kind]", kind)
+        page.fill("input[name=lag_days]", lag)
+        page.click("button:has-text('Link them')")
+        page.wait_for_timeout(700)
+
+    # Four colours, four dashes, and a legend naming all four.
+    colours = page.eval_on_selector_all(
+        "#network path.net-edge", "nodes => nodes.map(n => n.getAttribute('stroke'))")
+    if len(set(colours)) < 4:
+        raise AssertionError(f"the four kinds should not share a colour: {sorted(set(colours))}")
+    dashes = page.eval_on_selector_all(
+        "#network path.net-edge",
+        "nodes => nodes.map(n => n.getAttribute('stroke-dasharray') || 'solid')")
+    if len(set(dashes)) < 4:
+        raise AssertionError(f"the four kinds should not share a dash: {sorted(set(dashes))}")
+    body = page.text_content("body")
+    for named in ("FS · finish → start", "SS · start → start",
+                  "FF · finish → finish", "SF · start → finish"):
+        if named not in body:
+            raise AssertionError(f"the legend does not name {named!r}")
+
+    page.locator("#network").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(SHOTS / "26-links-tangled.png"), full_page=True)
+
+    url = page.url
+    page.click("button:has-text('Simplify')")
+    page.wait_for_selector(".flash:has-text('Simplif')", timeout=8000)
+    said = page.locator(".flash").last.inner_text()
+    if page.url != url:
+        raise AssertionError("simplifying should not reload the page")
+    if "down from" not in said:
+        raise AssertionError(f"expected a count of the crossings it removed: {said!r}")
+
+    # And it was written down, so the boxes can be nudged from there.
+    page.reload(wait_until="networkidle")
+    placed = page.eval_on_selector_all(
+        "#network .net-node", "nodes => nodes.map(n => n.dataset.y)")
+    if len(set(placed)) < 2:
+        raise AssertionError("the new places did not stick")
+    page.screenshot(path=str(SHOTS / "27-links-simplified.png"), full_page=True)
+
+    # Tidy up forgets them again.
+    page.click("button:has-text('Tidy up')")
+    page.wait_for_timeout(1500)
+    if page.locator("#network .net-node").count() == 0:
+        raise AssertionError("the diagram disappeared")
 
 
 def _dates_read_dd_mm(page) -> None:
@@ -541,7 +602,7 @@ def _schedule_deps(page) -> None:
         raise AssertionError("its own export should import without a complaint")
 
     # And Tidy up puts the boxes back under the automatic layout.
-    page.click("[data-reset-layout]")
+    page.click("button:has-text('Tidy up')")
     page.wait_for_timeout(1400)
     tidied = page.locator(".net-node.movable").first
     if (tidied.get_attribute("data-x"), tidied.get_attribute("data-y")) != ("16", "16"):

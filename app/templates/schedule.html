@@ -215,7 +215,8 @@
       <h2>Dependencies</h2>
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
-        the critical path is the run with no float · a box nothing waits on is blue, and closes a path
+        the critical path is the run with no float · a box nothing waits on is blue, and closes a path ·
+        the colour and dash of a line say which of the four kinds it is
         {% if can_edit %} · drag a box to move it · a lag may be negative, for work that overlaps{% endif %}
       </p>
     </div>
@@ -231,8 +232,16 @@
                   data-confirm="Importing replaces every dependency with what is in the sheet. Continue?">Import</button>
         </form>
         <form method="post"
+              action="{{ url_for('projects.simplify_diagram', project_id=project['id']) }}">
+          <button type="submit" class="btn btn-ghost btn-sm" data-relayout
+                  title="Reorder the boxes within their columns so as few lines cross as possible">
+            Simplify</button>
+        </form>
+        <form method="post"
               action="{{ url_for('projects.reset_layout', project_id=project['id']) }}">
-          <button type="submit" class="btn btn-ghost btn-sm" data-reset-layout>Tidy up</button>
+          <button type="submit" class="btn btn-ghost btn-sm" data-relayout
+                  title="Forget where the boxes were put by hand and draw them automatically">
+            Tidy up</button>
         </form>
       {% endif %}
     </div>

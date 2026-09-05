@@ -21,7 +21,8 @@ from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
     apply_schedule, clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
-    record_progress, remove_link, replace_links, set_node_position, update_link,
+    record_progress, remove_link, replace_links, set_node_position, simplify_layout,
+    update_link,
     set_allocations, set_status, set_task_dates, today,
 )
 from ..workflow import ordered as ordered_steps
@@ -471,7 +472,8 @@ def delete_dependency(project_id: int, link_id: int):
     return _back("projects.schedule", project_id, panel="links")
 
 
-def _links_answer(project_id: int, removed: int | None = None, link_id: int | None = None):
+def _links_answer(project_id: int, removed: int | None = None, link_id: int | None = None,
+                  note: str = ""):
     """A link change answers with the plan as it now reads: the float a change
     moves, the diagram redrawn, and the row itself when either end has changed.
     """
@@ -502,6 +504,7 @@ def _links_answer(project_id: int, removed: int | None = None, link_id: int | No
         ],
         "network_html": str(charts.network(plan["tasks"], plan["links"], movable=_can_edit(role))),
         "critical_count": plan["totals"]["critical"],
+        "note": note,
     })
 
 
@@ -627,6 +630,34 @@ def import_dependencies(project_id: int):
     )
     for note in result["skipped"][:5]:
         flash(note, "error")
+    return _back("projects.schedule", project_id, panel="links")
+
+
+@bp.post("/schedule/layout/simplify")
+@login_required
+def simplify_diagram(project_id: int):
+    """Re-lays the diagram out so as few lines cross as can be managed."""
+    _project, _role = load_project(project_id, "manager")
+    result = simplify_layout(project_id)
+
+    if not result["moved"]:
+        note, tone = "Nothing is linked yet, so there is nothing to untangle", "error"
+    elif result["before"] == result["after"]:
+        note, tone = (
+            f"Already as clear as it gets — {result['before']} crossing"
+            f"{'' if result['before'] == 1 else 's'} left, and none of them can be undone"
+            " without changing what the diagram says",
+            "success",
+        )
+    else:
+        note, tone = (
+            f"Simplified — crossing lines down from {result['before']} to {result['after']}",
+            "success",
+        )
+
+    if _wants_json():
+        return _links_answer(project_id, note=note)
+    flash(note, tone)
     return _back("projects.schedule", project_id, panel="links")
 
 

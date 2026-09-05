@@ -102,6 +102,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_workflow_steps(conn)
         _normalise_item_numbers(conn)
         _migrate_item_owners_and_trades(conn)
+        _install_pulse_triggers(conn)
         conn.commit()
     finally:
         conn.close()
@@ -135,6 +136,79 @@ def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:
             "UPDATE tasks SET start_date = ?, submission_date = ? WHERE id = ?",
             (start.isoformat(), finish.isoformat(), row["id"]),
         )
+
+
+# Every table a project's screens read from, and how a row of it finds its
+# project. The counter these bump is what tells an open page that somebody else
+# has changed something.
+_PULSE_TABLES: tuple[tuple[str, str], ...] = (
+    ("projects", "id"),
+    ("tasks", "project_id"),
+    ("task_links", "project_id"),
+    ("task_revisions", "project_id"),
+    ("progress_updates", "project_id"),
+    ("time_entries", "project_id"),
+    ("trades", "project_id"),
+    ("sections", "project_id"),
+    ("workflow_steps", "project_id"),
+    ("project_members", "project_id"),
+    ("attendees", "project_id"),
+    ("meetings", "project_id"),
+    ("meeting_items", "project_id"),
+)
+
+# These hang off a parent rather than off the project, so they find it through one.
+_PULSE_CHILDREN: tuple[tuple[str, str], ...] = (
+    ("task_allocations", "(SELECT project_id FROM tasks WHERE id = {row}.task_id)"),
+    ("meeting_attendance", "(SELECT project_id FROM meetings WHERE id = {row}.meeting_id)"),
+    ("meeting_item_trades", "(SELECT project_id FROM meeting_items WHERE id = {row}.item_id)"),
+)
+
+
+def _install_pulse_triggers(conn: sqlite3.Connection) -> None:
+    """Counts changes per project, in the database itself.
+
+    A page open in somebody's browser asks for this counter every few seconds to
+    see whether anyone else has changed anything. Doing it with triggers rather
+    than by hand means no write can forget to say so — and unlike a timestamp,
+    a counter cannot miss two changes that land in the same second.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_pulse (
+          project_id INTEGER PRIMARY KEY,
+          version    INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+    def bump(source: str) -> str:
+        return (
+            f"INSERT INTO project_pulse (project_id, version) SELECT {source}, 1 "
+            f"WHERE {source} IS NOT NULL "
+            "ON CONFLICT(project_id) DO UPDATE SET version = version + 1;"
+        )
+
+    existing = {row["name"] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    for table, column in _PULSE_TABLES:
+        if table not in existing:
+            continue
+        for action, row in (("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")):
+            conn.execute(
+                f"CREATE TRIGGER IF NOT EXISTS pulse_{table}_{action.lower()} "
+                f"AFTER {action} ON {table} BEGIN {bump(f'{row}.{column}')} END"
+            )
+
+    for table, lookup in _PULSE_CHILDREN:
+        if table not in existing:
+            continue
+        for action, row in (("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")):
+            conn.execute(
+                f"CREATE TRIGGER IF NOT EXISTS pulse_{table}_{action.lower()} "
+                f"AFTER {action} ON {table} BEGIN {bump(lookup.format(row=row))} END"
+            )
 
 
 def _migrate_item_owners_and_trades(conn: sqlite3.Connection) -> None:

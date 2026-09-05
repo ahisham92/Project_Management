@@ -17,7 +17,8 @@
     } catch (e) {}
   </script>
 </head>
-<body>
+<body{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
+      data-pulse-url="{{ url_for('projects.pulse', project_id=pulse_project_id) }}"{% endif %}>
 {% block chrome %}
   <header class="topbar">
     <div class="wrap">

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import progress, task_status, task_color, revision_badge, badge, date_field, empty, sort_th, print_header, print_button %}
+{% from "partials/progress_bits.html" import progress_cell, status_cell, variance_cell %}
+{% from "partials/progress_actions.html" import actions %}
 {% block title %}Progress — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -112,14 +114,18 @@
               </td>
               <td class="right tabular ink2">{{ pct(task['planned_pct'], 0) }}</td>
               <td>
-                <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
-                  <span class="tabular" style="font-weight:500">
-                    {{ pct(task['actual_pct'], 0) }}
-                    {% if task['status_name'] %}<span class="muted"> · {{ task['status_name'] }}</span>{% endif %}
-                  </span>
-                  <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
-                </div>
-                {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+                <span id="progress-{{ task['id'] }}" style="display:block">
+                  {% if can_report %}
+                    <a class="cell-open" style="display:block"
+                       data-cell="{{ 'status' if task['uses_workflow'] else 'percent' }}"
+                       data-item="{{ task['id'] }}"
+                       data-value="{{ task['status_key'] if task['uses_workflow'] else (task['actual_pct'] * 100) | round | int }}"
+                       data-date="{{ date_input(data_date) }}"
+                       data-action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}"
+                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), edit=task['id']) }}#task-{{ task['id'] }}"
+                       title="Click to change">{{ progress_cell(task, limit) }}</a>
+                  {% else %}{{ progress_cell(task, limit) }}{% endif %}
+                </span>
 
                 {% if editing == task['id'] and can_report %}
                   <form method="post" class="inline-form" style="margin-top:8px;gap:6px"
@@ -186,25 +192,13 @@
                   </form>
                 {% endif %}
               </td>
-              <td class="right tabular {{ 'good-text' if task['variance'] >= 0 else 'bad-text' }}">
-                {{ signed_pct(task['variance'], 2) }}
-              </td>
-              <td class="right nowrap">
-                {{ task_status(task) }}
-                {% if task['revision'] %}<span style="display:block;margin-top:2px">{{ revision_badge(task, limit) }}</span>{% endif %}
-              </td>
-              <td class="right nowrap no-print">
-                {% if can_report and editing != task['id'] and commenting != task['id'] %}
-                  <a class="btn btn-ghost btn-sm"
-                     href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), edit=task['id']) }}#task-{{ task['id'] }}">Update</a>
-                  {% if task['is_submitted'] and not task['is_approved'] %}
-                    <a class="btn btn-ghost btn-sm"
-                       href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), comments=task['id']) }}#task-{{ task['id'] }}"
-                       title="The client returned a Code B or C instead of a Code A">Code B / C</a>
-                  {% endif %}
-                {% endif %}
-                <a class="btn btn-ghost btn-sm"
-                   href="{{ url_for('projects.task_history', project_id=project['id'], task_id=task['id']) }}">History</a>
+              <td class="right tabular" id="variance-{{ task['id'] }}">{{ variance_cell(task) }}</td>
+              <td class="right nowrap" id="status-{{ task['id'] }}">{{ status_cell(task, limit) }}</td>
+              <td class="right nowrap no-print" id="actions-{{ task['id'] }}">
+                {% set link_params = {'filter': active_filter, 'q': search or none,
+                                      'data_date': date_input(data_date)} %}
+                {{ actions(project, task, link_params,
+                           can_report and editing != task['id'] and commenting != task['id']) }}
               </td>
             </tr>
           {% endfor %}
@@ -213,4 +207,18 @@
     </div>
   </div>
 {% endfor %}
+{% if can_report %}
+  <template id="cell-status">
+    <select name="status_key" class="cell-input" aria-label="Status reached">
+      <option value="">Not started — 0%</option>
+      {% for step in steps %}
+        <option value="{{ step['key'] }}">{{ step['name'] }} — {{ pct(step['percent'], 0) }}</option>
+      {% endfor %}
+    </select>
+  </template>
+  <template id="cell-percent">
+    <input type="number" name="actual_pct" class="cell-input right" min="0" max="100" step="1"
+           style="width:74px" aria-label="Percent complete">
+  </template>
+{% endif %}
 {% endblock %}

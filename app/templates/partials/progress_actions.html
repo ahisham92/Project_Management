@@ -1,0 +1,16 @@
+{# The buttons a progress row offers. They follow the state of the line — a
+   submitted deliverable can take a Code B or C — so they are re-rendered when
+   the row is updated rather than waiting for a page load. #}
+{% macro actions(project, task, params, can_report=True) -%}
+  {%- if can_report %}
+    <a class="btn btn-ghost btn-sm"
+       href="{{ url_for('projects.tasks', project_id=project['id'], edit=task['id'], **params) }}#task-{{ task['id'] }}">Update</a>
+    {%- if task['is_submitted'] and not task['is_approved'] %}
+    <a class="btn btn-ghost btn-sm"
+       href="{{ url_for('projects.tasks', project_id=project['id'], comments=task['id'], **params) }}#task-{{ task['id'] }}"
+       title="The client returned a Code B or C instead of a Code A">Code B / C</a>
+    {%- endif %}
+  {%- endif %}
+  <a class="btn btn-ghost btn-sm"
+     href="{{ url_for('projects.task_history', project_id=project['id'], task_id=task['id']) }}">History</a>
+{%- endmacro %}

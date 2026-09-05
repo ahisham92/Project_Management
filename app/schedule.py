@@ -198,6 +198,11 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     result: dict[int, dict[str, Any]] = {}
     for task_id in rows:
         slack = (late_finish[task_id] - early_finish[task_id]).days
+        # A line with nothing before or after it is not on a path, whatever its
+        # float works out to. Calling every unlinked deliverable that happens to
+        # finish on the project's end date "critical" says nothing useful; once
+        # it is sequenced, the float decides as it should.
+        in_a_chain = bool(predecessors.get(task_id) or successors.get(task_id))
         result[task_id] = {
             "duration_days": length[task_id],
             "early_start": iso(early_start[task_id]),
@@ -205,7 +210,8 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
             "late_start": iso(late_start[task_id]),
             "late_finish": iso(late_finish[task_id]),
             "total_float": slack,
-            "is_critical": slack <= 0,
+            "is_critical": slack <= 0 and in_a_chain,
+            "in_a_chain": in_a_chain,
             # A line whose own start is earlier than its predecessors allow is
             # not achievable as drawn, which is worth saying out loud.
             "starts_late": bool(planned_start[task_id]

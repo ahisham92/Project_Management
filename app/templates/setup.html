@@ -18,7 +18,9 @@
   <div>
     <h1>Project setup</h1>
     <p class="small muted" style="margin-top:2px">
-      Deliverables, weights, schedule and trade split — the basis of every figure in this project
+      Deliverables, weights and trade split — the basis of every figure in this project.
+      Dates and durations are amended on the <a href="{{ url_for('projects.schedule', project_id=project['id']) }}">Schedule</a>,
+      where the programme and its dependencies are
     </p>
   </div>
 </div>
@@ -402,7 +404,9 @@
             <thead>
               <tr>
                 <th>WBS</th><th>Deliverable</th><th>Section</th><th class="right">Points</th>
-                <th class="right">Weight</th><th class="right">Start</th><th class="right">Submission</th>
+                <th class="right">Weight</th>
+                <th class="right" title="Amended on the Schedule tab">Start</th>
+                <th class="right" title="Amended on the Schedule tab">Submission</th>
                 <th>Tracked as</th><th></th>
               </tr>
             </thead>
@@ -431,15 +435,13 @@
                            class="right w-sm" value="{{ task['weight_points'] }}" {{ 'disabled' if not can_edit }}>
                   </td>
                   <td class="right tabular small muted">{{ pct(task['weight_pct'], 2) }}</td>
-                  <td class="right">
-                    <input form="{{ F }}" type="text" name="task_{{ task['id'] }}_start_date"
-                           value="{{ date_input(task['start_date']) }}" placeholder="{{ DATE_FORMAT }}"
-                           inputmode="numeric" autocomplete="off" class="w-md" {{ 'disabled' if not can_edit }}>
+                  <td class="right small ink2 nowrap">
+                    <a href="{{ url_for('projects.schedule', project_id=project['id']) }}#task-{{ task['id'] }}"
+                       title="Dates are amended on the Schedule tab">{{ short_date(task['start_date']) }}</a>
                   </td>
-                  <td class="right">
-                    <input form="{{ F }}" type="text" name="task_{{ task['id'] }}_submission_date"
-                           value="{{ date_input(task['submission_date']) }}" placeholder="{{ DATE_FORMAT }}"
-                           inputmode="numeric" autocomplete="off" class="w-md" {{ 'disabled' if not can_edit }}>
+                  <td class="right small ink2 nowrap">
+                    <a href="{{ url_for('projects.schedule', project_id=project['id']) }}#task-{{ task['id'] }}"
+                       title="Dates are amended on the Schedule tab">{{ short_date(task['submission_date']) }}</a>
                   </td>
                   <td>
                     <select form="{{ F }}" name="task_{{ task['id'] }}_tracking" class="w-md" {{ 'disabled' if not can_edit }}>

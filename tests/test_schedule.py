@@ -122,11 +122,24 @@ def test_a_line_that_cannot_start_when_it_is_drawn_to_is_flagged():
     assert not result[1]["starts_late"]
 
 
-def test_a_plan_with_no_links_leaves_everything_free():
+def test_a_plan_with_no_links_has_no_critical_path():
+    """Nothing is sequenced, so nothing is on a path — calling every line that
+    happens to finish on the end date critical would say nothing."""
     tasks = [task(1, "2026-01-01", "2026-01-10"), task(2, "2026-01-01", "2026-01-31")]
     result = analyse(tasks, [])
-    assert result[1]["total_float"] == 21            # to the latest finish on the plan
-    assert result[2]["is_critical"]                  # the longest line sets the end
+    assert result[1]["total_float"] == 21            # float is still worked out
+    assert not result[2]["is_critical"]
+    assert not result[1]["in_a_chain"] and not result[2]["in_a_chain"]
+
+
+def test_a_line_becomes_critical_once_it_is_sequenced():
+    tasks, links = diamond()
+    loose = analyse(tasks, [])
+    assert not any(row["is_critical"] for row in loose.values())
+
+    sequenced = analyse(tasks, links)
+    assert sequenced[1]["is_critical"] and sequenced[1]["in_a_chain"]
+    assert not sequenced[3]["is_critical"]           # it has float
 
 
 def test_analysing_nothing_answers_with_nothing():
@@ -393,3 +406,192 @@ def test_a_code_a_closes_the_revision_rather_than_opening_another(signed_in):
     attempts = history(signed_in)
     assert attempts[-1]["outcome"] == "code_a"
     assert attempts[-1]["code"] == "A"
+
+
+# --- progress edited in the row --------------------------------------------
+
+def test_a_workflow_line_takes_its_status_from_the_row(signed_in):
+    result = signed_in.post("/projects/1/tasks/1/progress",
+                            data={"status_key": "idc", "data_date": "01/09/2026"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert result["ok"] and result["actual"] == 40
+    assert result["status_key"] == "idc"
+    assert "IDC provided" in result["progress_html"]
+    assert "40%" in result["progress_html"]
+
+
+def test_a_simple_line_takes_a_typed_percentage_from_the_row(signed_in):
+    result = signed_in.post("/projects/1/tasks/6/progress",
+                            data={"actual_pct": "55", "data_date": "01/09/2026"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert result["actual"] == 55
+    assert "55%" in result["progress_html"]
+
+
+def test_a_percentage_outside_the_range_is_refused_rather_than_stored(signed_in):
+    response = signed_in.post("/projects/1/tasks/6/progress",
+                              data={"actual_pct": "150"},
+                              headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert "between 0% and 100%" in response.get_json()["error"]
+
+
+def test_the_row_answers_with_its_status_and_variance_redrawn(signed_in):
+    result = signed_in.post("/projects/1/tasks/1/progress",
+                            data={"status_key": "code_a", "data_date": "01/09/2026"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert "badge" in result["status_html"]
+    assert "%" in result["variance_html"]
+
+
+def test_the_progress_rows_offer_their_controls_where_they_stand(signed_in):
+    body = text(signed_in.get("/projects/1/tasks?filter=all"))
+    assert body.count('data-cell="status"') + body.count('data-cell="percent"') > 10
+    assert body.count('id="cell-status"') == 1       # one copy, cloned per row
+    assert body.count('id="cell-percent"') == 1
+
+
+def test_the_controls_are_in_the_body_not_the_title(signed_in):
+    """A template written into the <title> is invisible to getElementById, so
+    every cell fell back to a page load."""
+    body = text(signed_in.get("/projects/1/tasks"))
+    head = body.split("</head>", 1)[0]
+    assert "cell-status" not in head
+    assert 'id="cell-status"' in body.split("</head>", 1)[1]
+
+
+# --- the live check ---------------------------------------------------------
+
+def test_a_project_page_carries_what_it_was_drawn_with(signed_in):
+    body = text(signed_in.get("/projects/1/tasks"))
+    token = signed_in.get("/projects/1/pulse").get_json()["v"]
+    assert f'data-pulse="{token}"' in body
+    assert 'data-pulse-url="/projects/1/pulse"' in body
+
+
+def test_the_token_moves_only_when_something_changes(signed_in):
+    first = signed_in.get("/projects/1/pulse").get_json()["v"]
+    assert signed_in.get("/projects/1/pulse").get_json()["v"] == first
+
+    signed_in.post("/projects/1/tasks/1/progress",
+                   data={"status_key": "idc", "data_date": "01/09/2026"}, follow_redirects=True)
+    assert signed_in.get("/projects/1/pulse").get_json()["v"] != first
+
+
+def test_every_kind_of_change_moves_the_token(signed_in):
+    def token():
+        return signed_in.get("/projects/1/pulse").get_json()["v"]
+
+    changes = [
+        ("a meeting", lambda: signed_in.post("/projects/1/minutes/meetings",
+                                             data={"ref": "M1", "meeting_date": "01/09/2026"},
+                                             follow_redirects=True)),
+        ("a dependency", lambda: signed_in.post("/projects/1/schedule/links",
+                                                data={"predecessor_id": "1", "successor_id": "2"},
+                                                follow_redirects=True)),
+        ("hours booked", lambda: signed_in.post("/projects/1/time",
+                                                data={"hours": "4", "entry_date": "01/09/2026"},
+                                                follow_redirects=True)),
+        ("dates moved", lambda: signed_in.post("/projects/1/schedule/3",
+                                               data={"start_date": "01/09/2026", "duration_days": "9"},
+                                               follow_redirects=True)),
+    ]
+    for what, change in changes:
+        before = token()
+        change()
+        assert token() != before, f"{what} did not move the token"
+
+
+def test_the_pulse_of_a_project_you_cannot_see_is_not_found(client):
+    client.post("/register", data={"name": "Outsider", "email": "out2@example.com",
+                                   "password": "longenough1"})
+    assert client.get("/projects/1/pulse").status_code == 404
+
+
+def test_two_changes_in_the_same_second_both_move_the_token(signed_in):
+    """A timestamp with only seconds would read the two as one, and the second
+    change would never reach anyone else's page."""
+    first = signed_in.get("/projects/1/pulse").get_json()["v"]
+    signed_in.post("/projects/1/schedule/1",
+                   data={"start_date": "01/09/2026", "duration_days": "9"}, follow_redirects=True)
+    second = signed_in.get("/projects/1/pulse").get_json()["v"]
+    signed_in.post("/projects/1/schedule/1",
+                   data={"start_date": "02/09/2026", "duration_days": "9"}, follow_redirects=True)
+    third = signed_in.get("/projects/1/pulse").get_json()["v"]
+
+    assert first != second != third
+    assert int(third) > int(second) > int(first)
+
+
+def test_a_change_to_one_project_leaves_another_alone(signed_in):
+    signed_in.post("/projects/new", data={"code": "OTHER", "name": "Another project",
+                                          "ntp_date": "01/09/2026", "duration_months": "6"},
+                   follow_redirects=True)
+    other = signed_in.get("/projects/2/pulse")
+    if other.status_code != 200:
+        pytest.skip("the second project was not created")
+
+    before = other.get_json()["v"]
+    signed_in.post("/projects/1/tasks/1/progress",
+                   data={"status_key": "idc", "data_date": "01/09/2026"}, follow_redirects=True)
+    assert signed_in.get("/projects/2/pulse").get_json()["v"] == before
+
+
+def test_deleting_something_moves_the_token_too(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2"}, follow_redirects=True)
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        link_id = query_one("SELECT id FROM task_links LIMIT 1")["id"]
+
+    before = signed_in.get("/projects/1/pulse").get_json()["v"]
+    signed_in.post(f"/projects/1/schedule/links/{link_id}/delete", follow_redirects=True)
+    assert signed_in.get("/projects/1/pulse").get_json()["v"] != before
+
+
+def test_dates_are_amended_on_the_schedule_not_the_setup_sheet(signed_in):
+    """The Setup sheet still shows the dates so a row reads as a whole, but it
+    no longer edits them — the programme is where they belong."""
+    signed_in.post("/projects/1/setup/unlock", data={"password": "2026"}, follow_redirects=True)
+    body = text(signed_in.get("/projects/1/setup"))
+
+    assert "_start_date" not in body and "_submission_date" not in body
+    assert "/projects/1/schedule" in body                 # it says where to go instead
+    assert "31/08/2026" in body                           # and still shows them
+
+
+def test_the_setup_sheet_still_saves_everything_else(signed_in):
+    """Removing the date fields must not disturb what Save all writes."""
+    signed_in.post("/projects/1/setup/unlock", data={"password": "2026"}, follow_redirects=True)
+    before = text(signed_in.get("/projects/1/setup"))
+    assert "task_1_points" in before and "task_1_name" in before
+
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        dates = query_one("SELECT start_date, submission_date FROM tasks WHERE id = 1")
+        was = (dates["start_date"], dates["submission_date"])
+
+    signed_in.post("/projects/1/setup/save-all",
+                   data={"task_1_points": "9", "task_1_name": "Renamed line",
+                         "code": "SIBLINE-PORT", "name": "Sibline Port",
+                         "ntp_date": "31/08/2026"},
+                   follow_redirects=True)
+    with signed_in.application.app_context():
+        row = query_one("SELECT name, weight_points, start_date, submission_date FROM tasks WHERE id = 1")
+    assert row["name"] == "Renamed line" and row["weight_points"] == 9
+    assert (row["start_date"], row["submission_date"]) == was      # dates untouched
+
+
+def test_the_buttons_follow_the_state_the_row_has_just_reached(signed_in):
+    """A line that has just been submitted can take a Code B or C, and the row
+    has to offer it without the page being loaded again."""
+    body = text(signed_in.get("/projects/1/tasks?filter=all"))
+    assert "Code B / C" not in body.split('id="actions-1"')[1].split("</td>")[0]
+
+    result = signed_in.post("/projects/1/tasks/1/progress",
+                            data={"status_key": "submitted", "data_date": "01/09/2026"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert "Code B / C" in result["actions_html"]
+    assert "History" in result["actions_html"]

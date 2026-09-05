@@ -1,0 +1,23 @@
+{# The parts of a progress row that change when it is updated. Macros, so the
+   same markup serves the page and the answer a saved row gets back. #}
+{% from "partials/bits.html" import badge, progress, task_color, task_status, revision_badge %}
+
+{% macro progress_cell(task, limit=10) -%}
+  <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+    <span class="tabular" style="font-weight:500">
+      {{ pct(task['actual_pct'], 0) }}
+      {%- if task['status_name'] %}<span class="muted"> · {{ task['status_name'] }}</span>{% endif %}
+    </span>
+    <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
+  </div>
+  {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
+{%- endmacro %}
+
+{% macro status_cell(task, limit=10) -%}
+  {{ task_status(task) }}
+  {%- if task['revision'] %}<span style="display:block;margin-top:2px">{{ revision_badge(task, limit) }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro variance_cell(task) -%}
+  <span class="{{ 'good-text' if task['variance'] >= 0 else 'bad-text' }}">{{ signed_pct(task['variance'], 2) }}</span>
+{%- endmacro %}

@@ -72,12 +72,12 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Portfolio** | Across every project I manage: how far ahead or behind am I, what is late, how many hours have I burned? |
 | **Dashboard** | For one project: earned vs planned progress, the S-curve, progress and budget by trade, what needs attention. |
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
-| **Schedule** | What is **late**, what is **due soon** (any window, or **all dates**), and what is **behind plan** but not yet late. Shows every workflow date per line: IDC, comments, submission, Code A. |
+| **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies** and the **critical path**. Dates are amended here. |
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
-| **Setup** | Deliverables, weights, dates, trade splits, sections, the design workflow, revision rules, and who can see the project. **Locked** by default, and round-trips to **Excel**. |
+| **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
 
@@ -120,6 +120,49 @@ The **Minutes** tab keeps the meeting record and the action register in one plac
 Each of those three screens exports to **Word** (`.docx`) and prints to PDF, and each carries
 the project number and name at the top. The Word file is written by `app/word.py` using the
 standard library alone, so nothing extra has to be installed for it.
+
+### The programme
+
+The **Schedule** tab is the plan, not a reading of progress — late and behind plan sit on
+Progress and the Dashboard, where they belong.
+
+- **Every deliverable, in WBS order**, with its start, its duration in calendar days and its
+  finish. A switch at the top says which way round you enter them: **start + duration**, and
+  the finish follows; or **start and finish**, and the duration follows. Click any of the
+  three and change it in the row.
+- **The Gantt.** A bar per line from start to submission, with progress shown inside it. The
+  **IDC** is a red circle and the **Code A** a red star, so the two dates a reviewer cares
+  about are the two that catch the eye. Today is a dashed vertical line.
+- **Rework.** A submission comes back as **Code A** (approved), **Code B** or **Code C**.
+  B and C raise a revision, and each resubmission draws its own amber bar underneath the
+  line, running from the day the comments landed to the new date and labelled with the code
+  that caused it — so rework shows on the programme at the size it actually cost.
+- **Dependencies.** Link two deliverables and the second waits for the first, with an
+  optional lag. Move a line and everything that depends on it is pushed out with it — only
+  ever later, since bringing work forward frees float rather than dragging the programme
+  back. A link that would make the programme depend on itself is refused.
+- **The critical path** is worked out properly: a forward pass for the earliest each line
+  could run, a backward pass for the latest it could run without moving the finish, and the
+  difference is its float. A line with none is critical. A line with no links at all is not
+  on a path, so it is not called critical until it is sequenced.
+- **The network** below the plan draws who waits for whom as boxes laid out in the order the
+  work runs. A box is a WBS number — hover it for the deliverable, its dates and its float —
+  so a long programme stays readable.
+- A line whose predecessors finish **after its own start** is flagged as one that cannot
+  start as drawn.
+
+### Nothing needs refreshing
+
+Everything you change saves where you change it and redraws in place: a status, a percentage,
+a date, a duration, an owner, a trade. Nothing reloads the page.
+
+Each project page also checks the server every fifteen seconds for a short token that moves
+whenever anything on the project changes, and quietly redraws itself when it does — so two
+people working at once see each other's edits. The check pauses while the tab is in the
+background, and while anything is being edited, so nobody's typing is ever pulled out from
+under them. The counter behind it is kept by triggers inside the database, which is what
+makes it exact: no write can forget to move it, and two changes in the same second cannot be
+mistaken for one.
 
 ### How progress is measured
 
@@ -648,6 +691,7 @@ app/
   excel.py              writing and reading the setup workbook
   dates.py              dd/mm/yyyy in, ISO stored
   sorting.py            column ordering for the progress and schedule tables
+  schedule.py           durations, dependencies, float and the critical path
   minutes.py            minutes of meeting: filtering, sorting, open/closed and time/cost
   minutes_doc.py        the Word documents built from the minutes
   word.py               writes a .docx with the standard library — no extra package

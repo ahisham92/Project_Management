@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import (
+    Blueprint, abort, current_app, flash, g, redirect, render_template, request, url_for,
+)
 
 from .. import charts
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
@@ -18,7 +20,8 @@ from ..schedule import MODES, duration_between, finish_from, normalise_mode
 from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
-    project_s_curve, project_snapshot, record_comments, record_progress, remove_link,
+    project_pulse, project_s_curve, project_snapshot, record_comments, record_progress,
+    remove_link,
     set_allocations, set_status, set_task_dates, today,
 )
 from ..workflow import ordered as ordered_steps
@@ -76,7 +79,30 @@ def _back(endpoint: str, project_id: int, **extra):
     return redirect(url_for(endpoint, project_id=project_id, **extra))
 
 
+@bp.get("/pulse")
+@login_required
+def pulse(project_id: int):
+    """What the page checks to see whether anyone else has changed anything."""
+    from flask import jsonify
+
+    load_project(project_id)
+    return jsonify({"v": project_pulse(project_id)})
+
+
 # --- dashboard -------------------------------------------------------------
+
+@bp.app_context_processor
+def _pulse_context():
+    """The token the open page was drawn with, for the live check."""
+    project_id = (request.view_args or {}).get("project_id")
+    if not project_id or not g.get("user"):
+        return {}
+    try:
+        return {"page_pulse": project_pulse(int(project_id)),
+                "pulse_project_id": int(project_id)}
+    except Exception:  # noqa: BLE001 - a missing project must not break the page
+        return {}
+
 
 @bp.get("/")
 @login_required
@@ -199,24 +225,60 @@ def update_progress(project_id: int, task_id: int):
     note = (request.form.get("note") or "").strip()
     label = task["wbs"] or task["name"][:40]
 
+    trouble = ""
     if "status_key" in request.form:
         steps = load_steps(project_id)
         try:
             percent = set_status(task, (request.form.get("status_key") or "").strip(), note,
                                  data_date, g.user["id"], steps)
         except WorkflowError as exc:
-            flash(str(exc), "error")
+            trouble = str(exc)
         else:
-            flash(f"{label} updated to {percent * 100:g}%", "success")
+            trouble = ""
     else:
-        percent = _to_float(request.form.get("actual_pct"), -1)
-        if not 0 <= percent <= 100:
-            flash("Progress must be a value between 0% and 100%", "error")
+        typed = _to_float(request.form.get("actual_pct"), -1)
+        if not 0 <= typed <= 100:
+            trouble = "Progress must be a value between 0% and 100%"
         else:
-            record_progress(task, percent / 100, note, data_date, g.user["id"])
-            flash(f"{label} updated to {percent:g}%", "success")
+            record_progress(task, typed / 100, note, data_date, g.user["id"])
+            percent = typed / 100
 
+    if _wants_json():
+        return _progress_answer(project_id, task_id, data_date, trouble)
+    flash(trouble or f"{label} updated to {percent * 100:g}%", "error" if trouble else "success")
     return _return_to_tasks(project_id)
+
+
+def _progress_answer(project_id: int, task_id: int, data_date: str, trouble: str = ""):
+    """A row saved on its own answers with how it now reads."""
+    from flask import jsonify
+
+    if trouble:
+        return jsonify({"ok": False, "error": trouble}), 400
+
+    project, _role = load_project(project_id)
+    snapshot = project_snapshot(project, data_date)
+    row = next((t for t in snapshot["tasks"] if t["id"] == task_id), None)
+    if row is None:
+        return jsonify({"ok": False}), 404
+
+    bits = current_app.jinja_env.get_template("partials/progress_bits.html").module
+    # The buttons follow the state: a line that has just been submitted can now
+    # take a Code B or C, and the row should say so without a page load.
+    buttons = render_template(
+        "partials/progress_actions_row.html", project=project, task=row,
+        params={"filter": request.args.get("filter") or "all",
+                "data_date": to_display(data_date)},
+    )
+    return jsonify({
+        "ok": True,
+        "progress_html": str(bits.progress_cell(row, snapshot["max_revisions"])),
+        "status_html": str(bits.status_cell(row, snapshot["max_revisions"])),
+        "variance_html": str(bits.variance_cell(row)),
+        "actions_html": buttons,
+        "actual": round(float(row["actual_pct"]) * 100),
+        "status_key": row["status_key"] or "",
+    })
 
 
 @bp.post("/tasks/<int:task_id>/comments")

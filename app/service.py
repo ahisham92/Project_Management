@@ -826,3 +826,16 @@ def load_project_revisions(project_id: int) -> dict[int, list[dict[str, Any]]]:
     ):
         grouped.setdefault(row["task_id"], []).append(dict(row))
     return grouped
+
+
+# --- knowing when something changed ----------------------------------------
+
+def project_pulse(project_id: int) -> str:
+    """How many times anything on this project has changed.
+
+    Cheap enough to ask for every few seconds — one indexed row. The counter is
+    kept by triggers in the database, so no write can forget to move it, and two
+    changes in the same second cannot be mistaken for one.
+    """
+    row = query_one("SELECT version FROM project_pulse WHERE project_id = ?", (project_id,))
+    return str(row["version"] if row else 0)

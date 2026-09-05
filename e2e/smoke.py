@@ -79,11 +79,12 @@ def main() -> int:
         ))
         step("chart tooltip appears on hover", _hover_tooltip)
         step("progress page lists deliverables", _progress_page)
-        step("records a progress update by status", _record_progress)
+        step("records a progress update by status, in the row", _record_progress)
         step("raises a revision when comments come back", _raise_revision)
         step("filters to late deliverables", _filter_late)
-        step("schedule page splits late / due soon / behind", _schedule)
-        step("schedule shows all dates and every workflow column", _all_dates)
+        step("schedule draws the programme with its milestones", _schedule)
+        step("schedule links two deliverables and shifts what follows", _schedule_links)
+        step("schedule dates and durations are amended in the row", _schedule_amend)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -103,6 +104,7 @@ def main() -> int:
         step("setup exports to Excel", _excel_export)
         step("report tabs print to PDF", _print_to_pdf)
         step("dark mode renders", _dark)
+        step("a change appears on another page without a refresh", _live)
         step("mobile layout does not overflow horizontally", _mobile)
 
         browser.close()
@@ -147,13 +149,16 @@ def _progress_page(page) -> None:
 
 
 def _record_progress(page) -> None:
-    """Progress is reported by moving a deliverable to a workflow step."""
+    """Progress is reported by clicking the row and choosing a workflow step."""
     row = page.locator("tr", has_text="Coastal numerical modelling").first
-    row.locator("a:has-text('Update')").click()
-    page.wait_for_selector("select[name=status_key]", timeout=8000)
-    page.select_option("select[name=status_key]", label="Submitted to client — 80%")
-    page.click("button:has-text('Save')")
-    page.wait_for_selector("text=updated to 80%", timeout=8000)
+    before = page.url
+    row.locator(".cell-open[data-cell]").first.click()
+    page.wait_for_selector("form.cell-form select[name=status_key]", timeout=8000)
+    page.select_option("form.cell-form select[name=status_key]", label="Submitted to client — 80%")
+    page.wait_for_timeout(1200)
+
+    if page.url != before:
+        raise AssertionError("reporting progress should not reload the page")
     text = page.locator("tr", has_text="Coastal numerical modelling").first.text_content()
     if "80%" not in text or "Submitted to client" not in text:
         raise AssertionError(f"status did not persist: {text[:160]}")
@@ -162,29 +167,17 @@ def _record_progress(page) -> None:
 def _raise_revision(page) -> None:
     """The client returns comments instead of a Code A."""
     row = page.locator("tr", has_text="Coastal numerical modelling").first
-    row.locator("a:has-text('Comments')").click()
+    row.locator("a:has-text('Code B / C')").click()
     page.wait_for_selector("input[name=comments_date]", timeout=8000)
+    page.select_option("select[name=code]", "C")
     page.fill("input[name=comments_date]", "05/09/2026")
-    page.fill("input[name=note]", "Code B returned")
+    page.fill("input[name=note]", "Not approved")
     page.click("button:has-text('Raise revision')")
-    page.wait_for_selector("text=moved to revision 1", timeout=8000)
+    page.wait_for_selector("text=Code C", timeout=8000)
     text = page.locator("tr", has_text="Coastal numerical modelling").first.text_content()
     if "Rev 1" not in text:
         raise AssertionError(f"revision not shown: {text[:160]}")
     page.screenshot(path=str(SHOTS / "05-revision.png"), full_page=True)
-
-
-def _all_dates(page) -> None:
-    page.click("a:has-text('Schedule')")
-    page.wait_for_selector("text=Late deliverables", timeout=8000)
-    page.select_option("select[name=horizon]", "all")
-    page.click("button:has-text('Apply')")
-    page.wait_for_selector("text=Due in everything ahead", timeout=8000)
-    body = page.text_content("body")
-    for column in ("IDC", "Comments", "Submission", "Code A"):
-        if column not in body:
-            raise AssertionError(f"the schedule is missing the {column} column")
-    page.screenshot(path=str(SHOTS / "06-schedule-all.png"), full_page=True)
 
 
 def _dates_read_dd_mm(page) -> None:
@@ -294,10 +287,53 @@ def _filter_late(page) -> None:
 
 
 def _schedule(page) -> None:
-    page.click("a:has-text('Schedule')")
-    page.wait_for_selector("text=Late deliverables", timeout=8000)
-    page.wait_for_selector("text=Behind plan")
-    page.screenshot(path=str(SHOTS / "05-schedule.png"), full_page=True)
+    page.click("nav.tabs a:has-text('Schedule')")
+    page.wait_for_selector("text=Dates and durations", timeout=8000)
+    body = page.text_content("body")
+    for expected in ("Programme", "Dependencies", "Duration", "Float"):
+        if expected not in body:
+            raise AssertionError(f"the schedule is missing {expected!r}")
+    for gone in ("Late deliverables", "Behind plan"):
+        if gone in body:
+            raise AssertionError(f"{gone!r} belongs on the Progress tab now")
+    if page.locator(".chart svg circle").count() == 0:
+        raise AssertionError("the IDC marks are missing from the bars")
+    if page.locator(".chart svg polygon").count() == 0:
+        raise AssertionError("the Code A stars are missing from the bars")
+    page.screenshot(path=str(SHOTS / "21-schedule.png"), full_page=True)
+
+
+def _schedule_links(page) -> None:
+    """Linking two lines sequences them, and moving one moves the other."""
+    page.select_option("select[name=successor_id]", index=2)
+    page.select_option("select[name=predecessor_id]", index=1)
+    page.click("button:has-text('Link them')")
+    page.wait_for_selector("text=Dependency added", timeout=8000)
+    if page.locator("text=On the critical path").count() == 0:
+        raise AssertionError("the network should name the critical path")
+    if page.locator("svg path[marker-end]").count() == 0:
+        raise AssertionError("the dependency arrows are missing")
+    page.screenshot(path=str(SHOTS / "22-network.png"), full_page=True)
+
+
+def _schedule_amend(page) -> None:
+    before = page.locator("#submission-1").inner_text().strip()
+    url = page.url
+    page.locator("#duration-1 .cell-open").click()
+    page.wait_for_selector("form.cell-form input[name=duration_days]", timeout=8000)
+    page.fill("form.cell-form input[name=duration_days]", "45")
+    page.locator("form.cell-form input[name=duration_days]").blur()
+    page.wait_for_timeout(1600)
+
+    if page.url != url:
+        raise AssertionError("amending the plan should not reload the page")
+    after = page.locator("#submission-1").inner_text().strip()
+    if after == before:
+        raise AssertionError(f"the finish did not follow the duration: {before} -> {after}")
+    if page.locator("#duration-1 .cell-open").count() != 1:
+        raise AssertionError("the cell must stay clickable after a change")
+    if "45d" not in page.locator("#duration-1").inner_text():
+        raise AssertionError("the duration did not stick")
 
 
 def _budget(page) -> None:
@@ -601,6 +637,32 @@ def _dark(page) -> None:
     page.evaluate("localStorage.setItem('pm-theme','dark');document.documentElement.setAttribute('data-theme','dark')")
     page.wait_for_timeout(500)
     page.screenshot(path=str(SHOTS / "10-dashboard-dark.png"), full_page=True)
+
+
+def _live(page) -> None:
+    """A second window picks up a change on its own, without a refresh."""
+    other = page.context.browser.new_context()
+    watcher = other.new_page()
+    watcher.goto(f"{BASE}/login", wait_until="networkidle")
+    watcher.fill("input[name=email]", EMAIL)
+    watcher.fill("input[name=password]", PASSWORD)
+    watcher.click("button[type=submit]")
+    watcher.wait_for_selector("text=Portfolio", timeout=8000)
+    watcher.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    before = watcher.locator("#duration-1").inner_text().strip()
+
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    page.locator("#duration-1 .cell-open").click()
+    page.wait_for_selector("form.cell-form input[name=duration_days]", timeout=8000)
+    page.fill("form.cell-form input[name=duration_days]", "28")
+    page.locator("form.cell-form input[name=duration_days]").blur()
+    page.wait_for_timeout(1500)
+
+    watcher.wait_for_timeout(20000)          # the live check runs every 15 seconds
+    after = watcher.locator("#duration-1").inner_text().strip()
+    other.close()
+    if after == before:
+        raise AssertionError(f"the other window did not pick the change up: {before} -> {after}")
 
 
 def _mobile(page) -> None:

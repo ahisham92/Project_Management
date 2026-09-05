@@ -246,7 +246,7 @@
     form.dataset.cell = kind;
     form.dataset.was = cell.innerHTML;
 
-    ['back:return', 'mode:mode'].forEach(function (pair) {
+    ['back:return', 'mode:mode', 'date:data_date'].forEach(function (pair) {
       var from = pair.split(':')[0];
       if (!link.dataset[from]) return;
       var hidden = document.createElement('input');
@@ -294,6 +294,18 @@
       // which rows to redraw rather than the page reloading to find out.
       if (result.moved) {
         redrawPlan(result.moved, form);
+        window.dispatchEvent(new Event('pm:saved'));
+        return;
+      }
+      // A progress row: the bar, the badge and the variance all follow the
+      // figure that was just recorded, so the server sends them back drawn.
+      if (result.progress_html !== undefined) {
+        var task = form.dataset.itemId;
+        closeCell(form, cellLink(form, result.progress_html), '');
+        replaceHtml('status-' + task, result.status_html);
+        replaceHtml('variance-' + task, result.variance_html);
+        replaceHtml('actions-' + task, result.actions_html);
+        window.dispatchEvent(new Event('pm:saved'));
         return;
       }
 
@@ -324,9 +336,9 @@
   function redrawPlan(rows, form) {
     var editedId = form.dataset.itemId;
     rows.forEach(function (row) {
-      setPlanCell('start-' + row.id, row.start, row.start);
-      setPlanCell('duration-' + row.id, row.duration + 'd', row.duration);
-      setPlanCell('submission-' + row.id, row.submission, row.submission);
+      setPlanCell('start-' + row.id, 'plan-start', row.start, row.start, form);
+      setPlanCell('duration-' + row.id, 'plan-duration', row.duration + 'd', row.duration, form);
+      setPlanCell('submission-' + row.id, 'plan-submission', row.submission, row.submission, form);
 
       var slack = document.getElementById('float-' + row.id);
       if (slack) {
@@ -346,20 +358,38 @@
     refreshCharts();
   }
 
-  function setPlanCell(id, label, value) {
+  function setPlanCell(id, kind, label, value, form) {
     var cell = document.getElementById(id);
     if (!cell) return;
+
     var link = cell.querySelector('.cell-open');
     if (link) {
       link.textContent = label;
       link.dataset.value = value;
+    } else if (form && cell.contains(form)) {
+      // The cell being edited: put its link back, or it could never be
+      // clicked again without reloading the page.
+      cell.innerHTML = '';
+      cell.appendChild(planLink(kind, form, label, value));
     } else {
-      var form = cell.querySelector('form');
-      if (form) { form.remove(); cell.textContent = label; }
-      else cell.textContent = label;
+      cell.textContent = label;
     }
     cell.classList.add('cell-saved');
     window.setTimeout(function () { cell.classList.remove('cell-saved'); }, 1600);
+  }
+
+  function planLink(kind, form, label, value) {
+    var link = document.createElement('a');
+    link.className = 'cell-open';
+    link.dataset.cell = kind;
+    link.dataset.item = form.dataset.itemId;
+    link.dataset.action = form.action;
+    link.dataset.value = value;
+    if (form.elements.mode) link.dataset.mode = form.elements.mode.value;
+    link.href = window.location.href;
+    link.title = 'Click to change';
+    link.textContent = label;
+    return link;
   }
 
   function refreshCharts() {
@@ -377,6 +407,11 @@
       }).catch(function () { /* the chart simply stays as it was */ });
   }
 
+  function replaceHtml(id, html) {
+    var node = document.getElementById(id);
+    if (node && typeof html === 'string') node.innerHTML = html;
+  }
+
   function cellLink(form, label) {
     // The cell goes back to being a link, carrying what it now holds.
     var kind = form.dataset.cell;
@@ -386,6 +421,7 @@
           .map(function (box) { return box.value; }).join(',')
       : (form.elements.owner_code || form.elements.impact || form.elements.due_date
          || form.elements.status_key || form.elements.actual_pct).value;
+    if (kind === 'status' || kind === 'percent') label = label;
     var link = document.createElement('a');
     link.className = 'cell-open';
     link.dataset.cell = kind;
@@ -558,6 +594,85 @@
   });
 
   window.addEventListener('resize', closeCalendar);
+
+  // --- keeping the page live -----------------------------------------------
+  // Somebody else's edit should appear without anyone pressing refresh. The
+  // page asks the server for a short token every few seconds; when it differs
+  // from the one the page was drawn with, the page fetches itself again and
+  // swaps in the new content. Every handler here is bound to the document, so
+  // replacing the page body leaves them all working.
+  //
+  // Checking pauses while the tab is in the background, and while something is
+  // being edited — nobody's typing should be pulled out from under them.
+
+  var PULSE_MS = 15000;
+  var pulseTimer = null;
+
+  function busyEditing() {
+    if (document.querySelector('form.cell-form')) return true;      // a cell is open
+    var here = document.activeElement;
+    if (!here) return false;
+    return /^(INPUT|SELECT|TEXTAREA)$/.test(here.tagName) || here.isContentEditable;
+  }
+
+  function swapPage(html) {
+    var fresh = new DOMParser().parseFromString(html, 'text/html');
+    var next = fresh.querySelector('main');
+    var here = document.querySelector('main');
+    if (!next || !here) return false;
+
+    var offset = window.scrollY;
+    here.replaceWith(next);
+    window.scrollTo(0, offset);
+    document.body.dataset.pulse = fresh.body.dataset.pulse || '';
+    if (fresh.title) document.title = fresh.title;
+    return true;
+  }
+
+  function refreshPage() {
+    return fetch(window.location.href, {
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'live' },
+    }).then(function (response) {
+      if (!response.ok) throw new Error(response.status);
+      return response.text();
+    }).then(swapPage);
+  }
+
+  function checkPulse() {
+    var url = document.body.dataset.pulseUrl;
+    if (!url || document.hidden || busyEditing()) return;
+
+    fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (result) {
+        if (!result || result.v === document.body.dataset.pulse) return;
+        if (busyEditing()) return;             // they started while we asked
+        return refreshPage();
+      })
+      .catch(function () { /* a missed check is not worth saying anything about */ });
+  }
+
+  function startPulse() {
+    if (!document.body.dataset.pulseUrl || pulseTimer) return;
+    pulseTimer = window.setInterval(checkPulse, PULSE_MS);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) checkPulse();       // catch up the moment they come back
+  });
+  startPulse();
+
+  // The page's own edits move it on, so the next check does not read them as
+  // somebody else's and redraw over the top.
+  window.addEventListener('pm:saved', function () {
+    var url = document.body.dataset.pulseUrl;
+    if (!url) return;
+    fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (result) { if (result) document.body.dataset.pulse = result.v; })
+      .catch(function () { /* the next check will settle it */ });
+  });
 
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.

@@ -239,7 +239,7 @@ def test_the_schedule_opens_on_a_project_with_no_dependencies(signed_in):
 def test_a_dependency_can_be_made_and_removed(signed_in):
     assert "Dependency added" in link_two(signed_in, "2", "1")
     body = text(signed_in.get("/projects/1/schedule"))
-    assert "Waits for" in body
+    assert "waits for" in body
 
     from app.db import query_one
 
@@ -595,3 +595,157 @@ def test_the_buttons_follow_the_state_the_row_has_just_reached(signed_in):
                             headers={"Accept": "application/json"}).get_json()
     assert "Code B / C" in result["actions_html"]
     assert "History" in result["actions_html"]
+
+
+# --- how one deliverable waits for another ---------------------------------
+
+def test_start_to_start_does_not_wait_for_the_other_to_finish():
+    """"Start a fortnight after the survey starts" needs no guess at when the
+    survey will end, which is the whole point of the link."""
+    tasks = [task(1, "2026-01-01", "2026-01-30"), task(2, "2026-01-01", "2026-01-10")]
+    finish_first = analyse(tasks, [link(1, 2)])
+    alongside = analyse(tasks, [dict(link(1, 2, lag=14), kind="SS")])
+
+    assert finish_first[2]["early_start"] == "2026-01-31"     # the day after it ends
+    assert alongside[2]["early_start"] == "2026-01-15"        # fourteen days after it began
+
+
+def test_a_start_to_start_link_shifts_by_the_start_not_the_finish():
+    tasks = [task(1, "2026-01-01", "2026-01-30"), task(2, "2026-01-15", "2026-01-24")]
+    links = [dict(link(1, 2, lag=14), kind="SS")]
+    tasks[0]["start_date"] = "2026-02-01"
+    tasks[0]["submission_date"] = "2026-03-02"
+
+    moves = shift_successors(tasks, links, 1)
+    assert moves[2]["start_date"] == "2026-02-15"             # not after the finish
+    assert duration_between(moves[2]["start_date"], moves[2]["submission_date"]) == 10
+
+
+def test_the_two_kinds_of_link_are_named_for_a_reader():
+    from app.schedule import KINDS, kind_label, normalise_kind
+
+    assert [key for key, _ in KINDS] == ["FS", "SS"]
+    assert kind_label("SS") == "starts after it starts"
+    assert kind_label("FS") == "must finish first"
+    assert normalise_kind("ss") == "SS"
+    assert normalise_kind("nonsense") == "FS"                 # the safe default
+
+
+def test_a_link_records_the_kind_it_was_made_with(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2", "kind": "SS",
+                         "lag_days": "14"}, follow_redirects=True)
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        row = query_one("SELECT kind, lag_days FROM task_links LIMIT 1")
+    assert row["kind"] == "SS" and row["lag_days"] == 14
+
+
+def link_id_of(client):
+    from app.db import query_one
+
+    with client.application.app_context():
+        return query_one("SELECT id FROM task_links LIMIT 1")["id"]
+
+
+def test_a_lag_is_changed_where_it_stands(signed_in):
+    link_two(signed_in, "2", "1")
+    result = signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                            data={"lag_days": "7"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert result["ok"]
+    assert "<svg" in result["network_html"]                   # the diagram comes back drawn
+
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        assert query_one("SELECT lag_days FROM task_links LIMIT 1")["lag_days"] == 7
+
+
+def test_changing_a_lag_leaves_the_kind_alone(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2", "kind": "SS"},
+                   follow_redirects=True)
+    signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                   data={"lag_days": "3"}, headers={"Accept": "application/json"})
+
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        row = query_one("SELECT kind, lag_days FROM task_links LIMIT 1")
+    assert row["kind"] == "SS" and row["lag_days"] == 3
+
+
+def test_the_kind_is_changed_where_it_stands_and_moves_the_float(signed_in):
+    link_two(signed_in, "2", "1")
+    before = signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                            data={"kind": "SS"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert before["ok"]
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        assert query_one("SELECT kind FROM task_links LIMIT 1")["kind"] == "SS"
+
+
+def test_removing_a_dependency_answers_with_the_plan_redrawn(signed_in):
+    link_two(signed_in, "2", "1")
+    link_id = link_id_of(signed_in)
+    result = signed_in.post(f"/projects/1/schedule/links/{link_id}/delete",
+                            headers={"Accept": "application/json"}).get_json()
+    assert result["removed"] == link_id
+    assert result["critical_count"] == 0                      # nothing is sequenced now
+    assert signed_in.post(f"/projects/1/schedule/links/{link_id}/delete").status_code == 404
+
+
+def test_the_dependency_list_offers_the_lag_and_the_kind_in_the_row(signed_in):
+    link_two(signed_in, "2", "1")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert 'data-cell="link-lag"' in body and 'data-cell="link-kind"' in body
+    assert 'id="cell-link-lag"' in body and 'id="cell-link-kind"' in body
+    assert "data-live-remove" in body
+
+
+# --- moving a box by hand --------------------------------------------------
+
+def test_a_box_stays_where_it_is_dragged(signed_in):
+    link_two(signed_in, "2", "1")
+    assert signed_in.post("/projects/1/schedule/layout/1",
+                          data={"x": "320", "y": "140"},
+                          headers={"Accept": "application/json"}).get_json()["ok"]
+
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "translate(320,140)" in body
+
+
+def test_a_box_that_has_not_been_moved_follows_the_automatic_layout(signed_in):
+    link_two(signed_in, "2", "1")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "net-node movable" in body
+    assert "translate(16,16)" in body                        # the first column
+
+
+def test_tidying_up_puts_every_box_back(signed_in):
+    link_two(signed_in, "2", "1")
+    signed_in.post("/projects/1/schedule/layout/1", data={"x": "320", "y": "140"},
+                   follow_redirects=True)
+    assert "translate(320,140)" in text(signed_in.get("/projects/1/schedule"))
+
+    signed_in.post("/projects/1/schedule/layout/reset", follow_redirects=True)
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "translate(320,140)" not in body
+
+
+def test_a_deliverable_from_another_project_cannot_be_moved(signed_in):
+    assert signed_in.post("/projects/1/schedule/layout/99999",
+                          data={"x": "10", "y": "10"}).status_code == 404
+
+
+def test_a_start_to_start_arrow_is_drawn_differently(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2", "kind": "SS", "lag_days": "5"},
+                   follow_redirects=True)
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "stroke-dasharray" in body
+    assert "starts after it starts" in body

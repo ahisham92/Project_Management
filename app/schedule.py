@@ -22,9 +22,29 @@ MODES: tuple[tuple[str, str], ...] = (
 MODE_KEYS = tuple(key for key, _ in MODES)
 DEFAULT_MODE = "duration"
 
-# Only finish-to-start is offered: it is the link a design programme is built
-# from, and the one a reader understands without being told.
-LINK = "FS"
+# How one deliverable waits for another.
+#
+#   FS  it cannot start until the other has finished — the ordinary link
+#   SS  it can start once the other has started, after a lag; the two then run
+#       alongside each other rather than one waiting for the whole of the other
+#
+# Both take a lag in days, which is what makes SS useful: "begin a fortnight
+# after the survey begins" needs no guess at when the survey will end.
+KINDS: tuple[tuple[str, str], ...] = (
+    ("FS", "must finish first"),
+    ("SS", "starts after it starts"),
+)
+KIND_KEYS = tuple(key for key, _ in KINDS)
+DEFAULT_KIND = "FS"
+
+
+def normalise_kind(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    return text if text in KIND_KEYS else DEFAULT_KIND
+
+
+def kind_label(value: Any) -> str:
+    return dict(KINDS).get(normalise_kind(value), "must finish first")
 
 
 def normalise_mode(value: Any) -> str:
@@ -74,13 +94,13 @@ def with_duration(task: Mapping[str, Any]) -> dict[str, Any]:
 
 # --- dependencies ----------------------------------------------------------
 
-def edges_of(links: Iterable[Mapping[str, Any]]) -> list[tuple[int, int, float]]:
-    """(predecessor, successor, lag) for every link, as plain numbers."""
+def edges_of(links: Iterable[Mapping[str, Any]]) -> list[tuple[int, int, float, str]]:
+    """(predecessor, successor, lag, kind) for every link, as plain values."""
     out = []
     for link in links:
         try:
             out.append((int(link["predecessor_id"]), int(link["successor_id"]),
-                        float(link.get("lag_days") or 0)))
+                        float(link.get("lag_days") or 0), normalise_kind(link.get("kind"))))
         except (KeyError, TypeError, ValueError):
             continue
     return out
@@ -95,7 +115,7 @@ def would_cycle(links: Iterable[Mapping[str, Any]], predecessor: int, successor:
     if predecessor == successor:
         return True
     following: dict[int, list[int]] = {}
-    for first, second, _lag in edges_of(links):
+    for first, second, _lag, _kind in edges_of(links):
         following.setdefault(first, []).append(second)
 
     seen = {successor}
@@ -122,7 +142,7 @@ def order(task_ids: Sequence[int], links: Iterable[Mapping[str, Any]]) -> list[i
     known = set(ids)
     following: dict[int, list[int]] = {}
     incoming = {task_id: 0 for task_id in ids}
-    for first, second, _lag in edges:
+    for first, second, _lag, _kind in edges:
         if first in known and second in known:
             following.setdefault(first, []).append(second)
             incoming[second] += 1
@@ -154,12 +174,12 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     if not rows:
         return {}
 
-    edges = [(a, b, lag) for a, b, lag in edges_of(links) if a in rows and b in rows]
-    predecessors: dict[int, list[tuple[int, float]]] = {}
-    successors: dict[int, list[tuple[int, float]]] = {}
-    for first, second, lag in edges:
-        successors.setdefault(first, []).append((second, lag))
-        predecessors.setdefault(second, []).append((first, lag))
+    edges = [(a, b, lag, kind) for a, b, lag, kind in edges_of(links) if a in rows and b in rows]
+    predecessors: dict[int, list[tuple[int, float, str]]] = {}
+    successors: dict[int, list[tuple[int, float, str]]] = {}
+    for first, second, lag, kind in edges:
+        successors.setdefault(first, []).append((second, lag, kind))
+        predecessors.setdefault(second, []).append((first, lag, kind))
 
     sequence = order(list(rows), links)
     length = {
@@ -175,10 +195,16 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     for task_id in sequence:
         own = planned_start[task_id] or floor
         earliest = own
-        for first, lag in predecessors.get(task_id, ()):
-            after = early_finish.get(first)
-            if after:
-                earliest = max(earliest, after + timedelta(days=1 + int(round(lag))))
+        for first, lag, kind in predecessors.get(task_id, ()):
+            # FS waits for the other to finish; SS only for it to have started.
+            if kind == "SS":
+                after = early_start.get(first)
+                if after:
+                    earliest = max(earliest, after + timedelta(days=int(round(lag))))
+            else:
+                after = early_finish.get(first)
+                if after:
+                    earliest = max(earliest, after + timedelta(days=1 + int(round(lag))))
         early_start[task_id] = earliest
         early_finish[task_id] = earliest + timedelta(days=length[task_id] - 1)
 
@@ -188,9 +214,16 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     late_start: dict[int, date] = {}
     for task_id in reversed(sequence):
         latest = horizon
-        for second, lag in successors.get(task_id, ()):
+        for second, lag, kind in successors.get(task_id, ()):
             before = late_start.get(second)
-            if before:
+            if not before:
+                continue
+            if kind == "SS":
+                # It only has to start in time, so its own finish is free to be
+                # as late as its length allows.
+                latest = min(latest, before - timedelta(days=int(round(lag)))
+                             + timedelta(days=length[task_id] - 1))
+            else:
                 latest = min(latest, before - timedelta(days=1 + int(round(lag))))
         late_finish[task_id] = latest
         late_start[task_id] = latest - timedelta(days=length[task_id] - 1)
@@ -216,8 +249,8 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
             # not achievable as drawn, which is worth saying out loud.
             "starts_late": bool(planned_start[task_id]
                                 and early_start[task_id] > planned_start[task_id]),
-            "predecessor_ids": [first for first, _ in predecessors.get(task_id, ())],
-            "successor_ids": [second for second, _ in successors.get(task_id, ())],
+            "predecessor_ids": [first for first, _lag, _kind in predecessors.get(task_id, ())],
+            "successor_ids": [second for second, _lag, _kind in successors.get(task_id, ())],
         }
     return result
 
@@ -239,10 +272,10 @@ def shift_successors(tasks: Sequence[Mapping[str, Any]],
     Returns the lines that actually move, keyed by id.
     """
     rows = {int(t["id"]): dict(t) for t in tasks if t.get("id") is not None}
-    edges = [(a, b, lag) for a, b, lag in edges_of(links) if a in rows and b in rows]
-    successors: dict[int, list[tuple[int, float]]] = {}
-    for first, second, lag in edges:
-        successors.setdefault(first, []).append((second, lag))
+    edges = [(a, b, lag, kind) for a, b, lag, kind in edges_of(links) if a in rows and b in rows]
+    successors: dict[int, list[tuple[int, float, str]]] = {}
+    for first, second, lag, kind in edges:
+        successors.setdefault(first, []).append((second, lag, kind))
 
     starts = {task_id: parse(row.get("start_date")) for task_id, row in rows.items()}
     finishes = {task_id: parse(row.get("submission_date")) for task_id, row in rows.items()}
@@ -255,11 +288,12 @@ def shift_successors(tasks: Sequence[Mapping[str, Any]],
     while queue and guard < len(rows) * len(rows) + len(rows):
         guard += 1
         node = queue.pop(0)
-        done = finishes.get(node)
-        if not done:
+        done, began = finishes.get(node), starts.get(node)
+        if not done or not began:
             continue
-        for second, lag in successors.get(node, ()):
-            earliest = done + timedelta(days=1 + int(round(lag)))
+        for second, lag, kind in successors.get(node, ()):
+            earliest = (began + timedelta(days=int(round(lag))) if kind == "SS"
+                        else done + timedelta(days=1 + int(round(lag))))
             current = starts.get(second)
             if current and current >= earliest:
                 continue                       # it already sits late enough
@@ -289,9 +323,10 @@ def summarise(analysis: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def link_label(predecessor: Mapping[str, Any], successor: Mapping[str, Any], lag: float = 0) -> str:
-    """How one link reads in a list: 1.2 → 1.5, +3 days."""
-    text = f"{predecessor.get('wbs') or '?'} → {successor.get('wbs') or '?'}"
+def link_label(predecessor: Mapping[str, Any], successor: Mapping[str, Any],
+               lag: float = 0, kind: str = DEFAULT_KIND) -> str:
+    """How one link reads in a list: 1.2 → 1.5, starts after it starts, +3 days."""
+    text = f"{predecessor.get('wbs') or '?'} → {successor.get('wbs') or '?'}, {kind_label(kind)}"
     if lag:
         text += f", {'+' if lag > 0 else ''}{lag:g} days"
     return text

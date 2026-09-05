@@ -16,12 +16,12 @@ from ..db import execute, insert, query, query_one
 from ..sorting import COLUMNS as SORT_COLUMNS
 from ..sorting import normalise as normalise_sort
 from ..sorting import sort_tasks
-from ..schedule import MODES, duration_between, finish_from, normalise_mode
+from ..schedule import KINDS, MODES, duration_between, finish_from, normalise_mode
 from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
-    project_pulse, project_s_curve, project_snapshot, record_comments, record_progress,
-    remove_link,
+    clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
+    record_progress, remove_link, set_node_position, update_link,
     set_allocations, set_status, set_task_dates, today,
 )
 from ..workflow import ordered as ordered_steps
@@ -361,8 +361,8 @@ def schedule(project_id: int):
         sort=sort, direction=direction,
         steps=ordered_steps(load_steps(project_id)),
         gantt=charts.gantt(rows, first, last, plan["data_date"]),
-        network=charts.network(plan["tasks"], plan["links"]),
-        can_edit=_can_edit(role),
+        network=charts.network(plan["tasks"], plan["links"], movable=_can_edit(role)),
+        kinds=KINDS, can_edit=_can_edit(role),
     )
 
 
@@ -417,7 +417,8 @@ def add_dependency(project_id: int):
     try:
         add_link(project_id, _to_int(request.form.get("predecessor_id")) or 0,
                  _to_int(request.form.get("successor_id")) or 0,
-                 _to_float(request.form.get("lag_days"), 0))
+                 _to_float(request.form.get("lag_days"), 0),
+                 request.form.get("kind") or "FS")
     except LinkError as exc:
         flash(str(exc), "error")
     else:
@@ -425,12 +426,83 @@ def add_dependency(project_id: int):
     return _back("projects.schedule", project_id)
 
 
+@bp.post("/schedule/links/<int:link_id>")
+@login_required
+def save_dependency(project_id: int, link_id: int):
+    """A link's lag or its type, changed where it stands."""
+    _project, _role = load_project(project_id, "manager")
+    link = update_link(
+        project_id, link_id,
+        lag_days=_to_float(request.form.get("lag_days"), 0) if "lag_days" in request.form else None,
+        kind=request.form.get("kind") if "kind" in request.form else None,
+    )
+    if link is None:
+        abort(404)
+
+    if _wants_json():
+        return _links_answer(project_id)
+    flash("Dependency saved", "success")
+    return _back("projects.schedule", project_id)
+
+
 @bp.post("/schedule/links/<int:link_id>/delete")
 @login_required
 def delete_dependency(project_id: int, link_id: int):
     _project, _role = load_project(project_id, "manager")
-    remove_link(project_id, link_id)
+    if not remove_link(project_id, link_id):
+        abort(404)
+
+    if _wants_json():
+        return _links_answer(project_id, removed=link_id)
     flash("Dependency removed", "success")
+    return _back("projects.schedule", project_id)
+
+
+def _links_answer(project_id: int, removed: int | None = None):
+    """A link change answers with the plan as it now reads: the dates a change
+    of lag or type moves, and the diagram redrawn."""
+    from flask import jsonify
+
+    project, role = load_project(project_id)
+    plan = project_plan(project)
+    return jsonify({
+        "ok": True,
+        "removed": removed,
+        "rows": [
+            {"id": row["id"], "float": row.get("total_float", 0),
+             "critical": bool(row.get("is_critical"))}
+            for row in plan["tasks"]
+        ],
+        "network_html": str(charts.network(plan["tasks"], plan["links"], movable=_can_edit(role))),
+        "critical_count": plan["totals"]["critical"],
+    })
+
+
+@bp.post("/schedule/layout/<int:task_id>")
+@login_required
+def move_node(project_id: int, task_id: int):
+    """Where a box was dragged to on the dependency diagram."""
+    from flask import jsonify
+
+    _project, _role = load_project(project_id, "manager")
+    if not set_node_position(project_id, task_id,
+                             _to_float(request.form.get("x"), 0),
+                             _to_float(request.form.get("y"), 0)):
+        abort(404)
+    if _wants_json():
+        return jsonify({"ok": True})
+    return _back("projects.schedule", project_id)
+
+
+@bp.post("/schedule/layout/reset")
+@login_required
+def reset_layout(project_id: int):
+    """Puts every box back where the automatic layout would draw it."""
+    _project, _role = load_project(project_id, "manager")
+    clear_node_positions(project_id)
+    if _wants_json():
+        return _links_answer(project_id)
+    flash("The diagram is back to its automatic layout", "success")
     return _back("projects.schedule", project_id)
 
 

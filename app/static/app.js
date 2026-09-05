@@ -297,6 +297,13 @@
         window.dispatchEvent(new Event('pm:saved'));
         return;
       }
+      // A dependency changed: the diagram and every line's float follow from
+      // it, so both are redrawn from what the server sent back.
+      if (result.network_html !== undefined) {
+        redrawLinks(result, form);
+        window.dispatchEvent(new Event('pm:saved'));
+        return;
+      }
       // A progress row: the bar, the badge and the variance all follow the
       // figure that was just recorded, so the server sends them back drawn.
       if (result.progress_html !== undefined) {
@@ -406,6 +413,158 @@
         });
       }).catch(function () { /* the chart simply stays as it was */ });
   }
+
+  function redrawLinks(result, form) {
+    if (form) {
+      var kind = form.dataset.cell;
+      var field = form.elements.lag_days || form.elements.kind;
+      var label = field
+        ? (kind === 'link-lag' ? field.value + 'd' : field.options[field.selectedIndex].text)
+        : '';
+      closeCell(form, cellLink(form, label), '');
+    }
+
+    (result.rows || []).forEach(function (row) {
+      var slack = document.getElementById('float-' + row.id);
+      if (slack) {
+        slack.innerHTML = row.critical
+          ? '<span class="badge critical"><span aria-hidden="true">■</span> critical</span>'
+          : row.float + 'd';
+      }
+      var line = document.getElementById('task-' + row.id);
+      if (line) line.classList.toggle('is-critical', !!row.critical);
+    });
+
+    var diagram = document.getElementById('network');
+    if (diagram && result.network_html) diagram.innerHTML = result.network_html;
+  }
+
+  // Removing a dependency takes the row with it, and redraws what it changed.
+  document.addEventListener('submit', function (event) {
+    var form = event.target.closest('form[data-live-remove]');
+    if (!form || !window.fetch) return;
+
+    event.preventDefault();
+    fetch(form.action, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    }).then(function (response) {
+      if (!response.ok) throw new Error(response.status);
+      return response.json();
+    }).then(function (result) {
+      var row = document.getElementById(form.dataset.row);
+      if (row) row.remove();
+      redrawLinks(result, null);
+      window.dispatchEvent(new Event('pm:saved'));
+    }).catch(function () { form.submit(); });
+  });
+
+  // "Tidy up" puts every box back under the automatic layout.
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-reset-layout]');
+    if (!button || !window.fetch) return;
+    var form = button.closest('form');
+    if (!form) return;
+
+    event.preventDefault();
+    fetch(form.action, {
+      method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin',
+    }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (result) {
+        redrawLinks(result, null);
+        window.dispatchEvent(new Event('pm:saved'));
+      }).catch(function () { form.submit(); });
+  });
+
+  // --- dragging a box on the dependency diagram ----------------------------
+  // The automatic layout puts boxes in the order the work runs, which is the
+  // right starting point but leaves arrows crossing on a busy programme. A box
+  // can be dragged anywhere, and stays where it is put.
+
+  var dragging = null;
+
+  function svgPoint(svg, event) {
+    var box = svg.getBoundingClientRect();
+    var view = svg.viewBox.baseVal;
+    var scale = view && view.width ? view.width / box.width : 1;
+    return { x: (event.clientX - box.left) * scale, y: (event.clientY - box.top) * scale };
+  }
+
+  function redrawEdges(node) {
+    var svg = node.ownerSVGElement;
+    var net = svg.querySelector('.net');
+    if (!net) return;
+    var w = Number(net.dataset.boxW || 54);
+    var h = Number(net.dataset.boxH || 26);
+
+    svg.querySelectorAll('.net-edge').forEach(function (edge) {
+      var from = svg.querySelector('.net-node[data-node="' + edge.dataset.from + '"]');
+      var to = svg.querySelector('.net-node[data-node="' + edge.dataset.to + '"]');
+      if (!from || !to) return;
+      var x1 = Number(from.dataset.x), y1 = Number(from.dataset.y);
+      var x2 = Number(to.dataset.x), y2 = Number(to.dataset.y);
+      // A start-to-start arrow leaves the left edge, as the server draws it.
+      var side = edge.getAttribute('stroke-dasharray') ? x1 : x1 + w;
+      var bend = Math.max(24, Math.abs(x2 - side) / 2);
+      edge.setAttribute('d', 'M' + side + ',' + (y1 + h / 2)
+        + ' C' + (side + bend) + ',' + (y1 + h / 2)
+        + ' ' + (x2 - bend) + ',' + (y2 + h / 2)
+        + ' ' + x2 + ',' + (y2 + h / 2));
+    });
+  }
+
+  document.addEventListener('pointerdown', function (event) {
+    var node = event.target.closest('.net-node.movable');
+    if (!node) return;
+
+    var svg = node.ownerSVGElement;
+    var at = svgPoint(svg, event);
+    dragging = {
+      node: node,
+      grabX: at.x - Number(node.dataset.x),
+      grabY: at.y - Number(node.dataset.y),
+      moved: false,
+    };
+    node.classList.add('dragging');
+    event.preventDefault();
+  });
+
+  document.addEventListener('pointermove', function (event) {
+    if (!dragging) return;
+    var node = dragging.node;
+    var at = svgPoint(node.ownerSVGElement, event);
+    var x = Math.max(0, Math.round(at.x - dragging.grabX));
+    var y = Math.max(0, Math.round(at.y - dragging.grabY));
+
+    node.dataset.x = x;
+    node.dataset.y = y;
+    node.setAttribute('transform', 'translate(' + x + ',' + y + ')');
+    dragging.moved = true;
+    redrawEdges(node);
+  });
+
+  document.addEventListener('pointerup', function () {
+    if (!dragging) return;
+    var node = dragging.node;
+    var moved = dragging.moved;
+    node.classList.remove('dragging');
+    dragging = null;
+    if (!moved) return;                        // a plain click, not a drag
+
+    var url = document.body.dataset.pulseUrl;
+    if (!url) return;
+    var save = url.replace(/\/pulse$/, '/schedule/layout/' + node.dataset.node);
+    var body = new FormData();
+    body.append('x', node.dataset.x);
+    body.append('y', node.dataset.y);
+    fetch(save, {
+      method: 'POST', body: body,
+      headers: { Accept: 'application/json' }, credentials: 'same-origin',
+    }).then(function () { window.dispatchEvent(new Event('pm:saved')); })
+      .catch(function () { /* it stays where it was dropped until the next load */ });
+  });
 
   function replaceHtml(id, html) {
     var node = document.getElementById(id);

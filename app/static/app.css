@@ -283,6 +283,12 @@ input[type="checkbox"] { width: auto; }
 
 @media print { .cell-open { border: 0; padding: 0; margin: 0; } .cell-form { display: none !important; } }
 
+/* A box on the dependency diagram can be dragged out of the way. */
+.net-node.movable { cursor: grab; }
+.net-node.movable:hover rect { filter: brightness(0.97); }
+.net-node.dragging { cursor: grabbing; }
+.net-node.dragging rect { stroke-width: 2.4; }
+
 /* The critical path down the schedule: an outline, not colour alone. */
 tr.is-critical > td:first-child { box-shadow: inset 3px 0 0 var(--critical); }
 tr.is-critical { background: color-mix(in srgb, var(--critical) 5%, transparent); }

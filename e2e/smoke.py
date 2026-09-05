@@ -85,6 +85,7 @@ def main() -> int:
         step("schedule draws the programme with its milestones", _schedule)
         step("schedule links two deliverables and shifts what follows", _schedule_links)
         step("schedule dates and durations are amended in the row", _schedule_amend)
+        step("schedule dependencies are edited and dragged", _schedule_deps)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -307,6 +308,7 @@ def _schedule_links(page) -> None:
     """Linking two lines sequences them, and moving one moves the other."""
     page.select_option("select[name=successor_id]", index=2)
     page.select_option("select[name=predecessor_id]", index=1)
+    page.select_option("select[name=kind]", "FS")
     page.click("button:has-text('Link them')")
     page.wait_for_selector("text=Dependency added", timeout=8000)
     if page.locator("text=On the critical path").count() == 0:
@@ -314,6 +316,78 @@ def _schedule_links(page) -> None:
     if page.locator("svg path[marker-end]").count() == 0:
         raise AssertionError("the dependency arrows are missing")
     page.screenshot(path=str(SHOTS / "22-network.png"), full_page=True)
+
+
+def _schedule_deps(page) -> None:
+    """A lag and a link type change in the row; a box can be dragged; a
+    dependency is removed without the page reloading."""
+    # A second link, this one start-to-start.
+    page.select_option("select[name=successor_id]", index=3)
+    page.select_option("select[name=predecessor_id]", index=1)
+    page.select_option("select[name=kind]", "SS")
+    page.fill("input[name=lag_days]", "5")
+    page.click("button:has-text('Link them')")
+    page.wait_for_selector("text=Dependency added", timeout=8000)
+    if page.locator("svg path[stroke-dasharray]").count() == 0:
+        raise AssertionError("a start-to-start link should draw differently")
+
+    url = page.url
+    page.locator("[data-cell='link-lag']").first.click()
+    page.wait_for_selector("form.cell-form input[name=lag_days]", timeout=6000)
+    page.fill("form.cell-form input[name=lag_days]", "12")
+    page.locator("form.cell-form input[name=lag_days]").blur()
+    page.wait_for_timeout(1400)
+    if page.url != url:
+        raise AssertionError("changing a lag should not reload the page")
+    if "12d" not in page.locator("[data-cell='link-lag']").first.inner_text():
+        raise AssertionError("the lag did not stick")
+
+    page.locator("[data-cell='link-kind']").first.click()
+    page.wait_for_selector("form.cell-form select[name=kind]", timeout=6000)
+    page.select_option("form.cell-form select[name=kind]", "SS")
+    page.wait_for_timeout(1400)
+    if "starts after" not in page.locator("[data-cell='link-kind']").first.inner_text():
+        raise AssertionError("the link type did not stick")
+
+    # A box can be dragged out of the way, and stays there.
+    box = page.locator(".net-node.movable").first
+    box.scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    before = (box.get_attribute("data-x"), box.get_attribute("data-y"))
+    place = box.bounding_box()
+    page.mouse.move(place["x"] + place["width"] / 2, place["y"] + place["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(place["x"] + place["width"] / 2 + 160,
+                    place["y"] + place["height"] / 2 + 90, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(1200)
+
+    moved = page.locator(".net-node.movable").first
+    if (moved.get_attribute("data-x"), moved.get_attribute("data-y")) == before:
+        raise AssertionError("the box did not move")
+    page.reload(wait_until="networkidle")
+    kept = page.locator(".net-node.movable").first
+    if (kept.get_attribute("data-x"), kept.get_attribute("data-y")) == before:
+        raise AssertionError("the box did not stay where it was put")
+    page.screenshot(path=str(SHOTS / "23-dependencies.png"), full_page=True)
+
+    # Removing one takes its row with it, and nothing reloads.
+    rows = page.locator("tr[id^='link-']").count()
+    page.once("dialog", lambda dialog: dialog.accept())
+    url = page.url
+    page.locator("form[data-live-remove] button").first.click()
+    page.wait_for_timeout(1400)
+    if page.url != url:
+        raise AssertionError("removing a dependency should not reload the page")
+    if page.locator("tr[id^='link-']").count() != rows - 1:
+        raise AssertionError("the row was not removed")
+
+    # And Tidy up puts the boxes back under the automatic layout.
+    page.click("[data-reset-layout]")
+    page.wait_for_timeout(1400)
+    tidied = page.locator(".net-node.movable").first
+    if (tidied.get_attribute("data-x"), tidied.get_attribute("data-y")) != ("16", "16"):
+        raise AssertionError("tidy up should return the boxes to the layout")
 
 
 def _schedule_amend(page) -> None:

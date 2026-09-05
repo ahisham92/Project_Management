@@ -95,6 +95,12 @@ def init_db(path: Path | str | None = None) -> None:
             ("task_revisions", "code", "TEXT NOT NULL DEFAULT ''"),
             # The day the comments landed, so rework draws on the programme.
             ("task_revisions", "comments_date", "TEXT NOT NULL DEFAULT ''"),
+            # How one deliverable waits for another: FS or SS.
+            ("task_links", "kind", "TEXT NOT NULL DEFAULT 'FS'"),
+            # Where a box sits on the dependency diagram once it has been
+            # dragged. Empty means the automatic layout decides.
+            ("tasks", "node_x", "REAL"),
+            ("tasks", "node_y", "REAL"),
         ):
             _ensure_column(conn, table, column, definition)
 

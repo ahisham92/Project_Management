@@ -137,8 +137,11 @@ Progress and the Dashboard, where they belong.
   B and C raise a revision, and each resubmission draws its own amber bar underneath the
   line, running from the day the comments landed to the new date and labelled with the code
   that caused it — so rework shows on the programme at the size it actually cost.
-- **Dependencies.** Link two deliverables and the second waits for the first, with an
-  optional lag. Move a line and everything that depends on it is pushed out with it — only
+- **Dependencies.** Link two deliverables and say how the second waits:
+  **must finish first**, the ordinary link; or **starts after it starts**, for work that runs
+  alongside — "begin a fortnight after the survey begins" needs no guess at when the survey
+  will end. Both take a lag in days, and both the lag and the type are changed by clicking
+  them in the row. Move a line and everything that depends on it is pushed out with it — only
   ever later, since bringing work forward frees float rather than dragging the programme
   back. A link that would make the programme depend on itself is refused.
 - **The critical path** is worked out properly: a forward pass for the earliest each line
@@ -147,7 +150,9 @@ Progress and the Dashboard, where they belong.
   on a path, so it is not called critical until it is sequenced.
 - **The network** below the plan draws who waits for whom as boxes laid out in the order the
   work runs. A box is a WBS number — hover it for the deliverable, its dates and its float —
-  so a long programme stays readable.
+  so a long programme stays readable. A start-to-start link is drawn dashed. **Drag any box**
+  to move it and the arrows follow; it stays where you put it, and **Tidy up** returns
+  everything to the automatic layout.
 - A line whose predecessors finish **after its own start** is flagged as one that cannot
   start as drawn.
 

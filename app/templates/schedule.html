@@ -18,6 +18,7 @@
 
 {% block content %}
 {% set t = plan['totals'] %}
+{% set kind_names = dict(kinds) %}
 
 <div class="page-head">
   <div>
@@ -190,11 +191,19 @@
       <h2>Dependencies</h2>
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
-        the critical path is the run with no float
+        a dashed arrow is a start-to-start link · the critical path is the run with no float
+        {% if can_edit %} · drag a box to move it{% endif %}
       </p>
     </div>
+    {% if can_edit %}
+      <form method="post" class="no-print"
+            action="{{ url_for('projects.reset_layout', project_id=project['id']) }}">
+        <button type="submit" class="btn btn-ghost btn-sm" data-reset-layout>Tidy up</button>
+      </form>
+    {% endif %}
+    </div>
   </div>
-  <div class="card-body">{{ network }}</div>
+  <div class="card-body" id="network">{{ network }}</div>
 
   {% if can_edit %}
     <div class="card-body no-print" style="border-top:1px solid var(--line)">
@@ -218,6 +227,12 @@
             {% endfor %}
           </select>
         </label>
+        <label class="field w-lg">
+          <span class="field-label">which</span>
+          <select name="kind">
+            {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
         <label class="field w-sm">
           <span class="field-label">Lag (days)</span>
           <input type="number" name="lag_days" value="0" step="1" class="right">
@@ -230,19 +245,40 @@
       <div class="card-body flush">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Waits for</th><th>Deliverable</th><th class="right">Lag</th><th class="no-print"></th></tr></thead>
+            <thead>
+              <tr><th>Deliverable</th><th>waits for</th><th>which</th>
+                  <th class="right">Lag</th><th class="no-print"></th></tr>
+            </thead>
             <tbody>
               {% for link in plan['links'] %}
-                <tr>
-                  <td class="small">
-                    <span class="tabular muted">{{ link['predecessor_wbs'] }}</span> {{ link['predecessor_name'] }}
-                  </td>
+                <tr id="link-{{ link['id'] }}">
                   <td class="small">
                     <span class="tabular muted">{{ link['successor_wbs'] }}</span> {{ link['successor_name'] }}
                   </td>
-                  <td class="right small ink2 tabular">{{ link['lag_days'] | int }}d</td>
+                  <td class="small">
+                    <span class="tabular muted">{{ link['predecessor_wbs'] }}</span> {{ link['predecessor_name'] }}
+                  </td>
+                  <td class="small" id="kind-{{ link['id'] }}">
+                    {% if can_edit %}
+                      <a class="cell-open" data-cell="link-kind" data-item="{{ link['id'] }}"
+                         data-value="{{ link['kind'] }}"
+                         data-action="{{ url_for('projects.save_dependency', project_id=project['id'], link_id=link['id']) }}"
+                         href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+                         title="Click to change">{{ kind_names[link['kind']] }}</a>
+                    {% else %}{{ kind_names[link['kind']] }}{% endif %}
+                  </td>
+                  <td class="right small ink2 tabular" id="lag-{{ link['id'] }}">
+                    {% if can_edit %}
+                      <a class="cell-open" data-cell="link-lag" data-item="{{ link['id'] }}"
+                         data-value="{{ link['lag_days'] | int }}"
+                         data-action="{{ url_for('projects.save_dependency', project_id=project['id'], link_id=link['id']) }}"
+                         href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+                         title="Click to change">{{ link['lag_days'] | int }}d</a>
+                    {% else %}{{ link['lag_days'] | int }}d{% endif %}
+                  </td>
                   <td class="right no-print">
-                    <form method="post" data-confirm="Remove this dependency?"
+                    <form method="post" data-confirm="Remove this dependency?" data-live-remove
+                          data-row="link-{{ link['id'] }}"
                           action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
                       <button type="submit" class="btn btn-danger btn-sm">Remove</button>
                     </form>
@@ -270,6 +306,15 @@
   <template id="cell-plan-duration">
     <input type="number" name="duration_days" class="cell-input" min="1" step="1"
            style="width:70px" aria-label="Duration in days">
+  </template>
+  <template id="cell-link-lag">
+    <input type="number" name="lag_days" class="cell-input right" step="1"
+           style="width:70px" aria-label="Lag in days">
+  </template>
+  <template id="cell-link-kind">
+    <select name="kind" class="cell-input" aria-label="How this deliverable waits">
+      {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select>
   </template>
 {% endif %}
 {% endblock %}

@@ -714,9 +714,10 @@ class LinkError(ValueError):
     """A dependency that cannot be made."""
 
 
-def add_link(project_id: int, predecessor_id: int, successor_id: int, lag_days: float = 0) -> int:
+def add_link(project_id: int, predecessor_id: int, successor_id: int, lag_days: float = 0,
+             kind: str = "FS") -> int:
     """Joins two deliverables, refusing anything that cannot hold."""
-    from .schedule import would_cycle
+    from .schedule import normalise_kind, would_cycle
 
     if predecessor_id == successor_id:
         raise LinkError("A deliverable cannot depend on itself")
@@ -736,14 +737,52 @@ def add_link(project_id: int, predecessor_id: int, successor_id: int, lag_days: 
         raise LinkError("That link would make the programme depend on itself")
 
     return insert(
-        "INSERT INTO task_links (project_id, predecessor_id, successor_id, lag_days) "
-        "VALUES (?, ?, ?, ?)",
-        (project_id, predecessor_id, successor_id, float(lag_days or 0)),
+        "INSERT INTO task_links (project_id, predecessor_id, successor_id, lag_days, kind) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (project_id, predecessor_id, successor_id, float(lag_days or 0), normalise_kind(kind)),
     )
 
 
-def remove_link(project_id: int, link_id: int) -> None:
-    execute("DELETE FROM task_links WHERE id = ? AND project_id = ?", (link_id, project_id))
+def remove_link(project_id: int, link_id: int) -> bool:
+    """Removes a dependency, saying whether there was one to remove."""
+    row = query_one("SELECT id FROM task_links WHERE id = ? AND project_id = ?", (link_id, project_id))
+    if row is None:
+        return False
+    execute("DELETE FROM task_links WHERE id = ?", (link_id,))
+    return True
+
+
+def update_link(project_id: int, link_id: int, lag_days: float | None = None,
+                kind: str | None = None) -> dict[str, Any] | None:
+    """Changes a dependency's lag or its type, leaving the other alone."""
+    from .schedule import normalise_kind
+
+    row = query_one("SELECT * FROM task_links WHERE id = ? AND project_id = ?", (link_id, project_id))
+    if row is None:
+        return None
+
+    execute(
+        "UPDATE task_links SET lag_days = ?, kind = ? WHERE id = ?",
+        (float(lag_days) if lag_days is not None else row["lag_days"],
+         normalise_kind(kind) if kind is not None else row["kind"], link_id),
+    )
+    return dict(query_one("SELECT * FROM task_links WHERE id = ?", (link_id,)))
+
+
+def set_node_position(project_id: int, task_id: int, x: float | None, y: float | None) -> bool:
+    """Where a box sits on the dependency diagram after it has been dragged.
+
+    Clearing both puts the box back under the automatic layout.
+    """
+    if not query_one("SELECT 1 FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id)):
+        return False
+    execute("UPDATE tasks SET node_x = ?, node_y = ? WHERE id = ?", (x, y, task_id))
+    return True
+
+
+def clear_node_positions(project_id: int) -> None:
+    """Puts every box back where the automatic layout would draw it."""
+    execute("UPDATE tasks SET node_x = NULL, node_y = NULL WHERE project_id = ?", (project_id,))
 
 
 def set_task_dates(project_id: int, task_id: int, start: str, submission: str,

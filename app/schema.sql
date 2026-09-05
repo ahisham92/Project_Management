@@ -229,6 +229,7 @@ CREATE TABLE IF NOT EXISTS task_links (
   predecessor_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   successor_id   INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   lag_days       REAL NOT NULL DEFAULT 0,
+  kind           TEXT NOT NULL DEFAULT 'FS',   -- 'FS' finish-to-start | 'SS' start-to-start
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (predecessor_id, successor_id)
 );

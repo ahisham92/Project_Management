@@ -89,9 +89,17 @@ def _empty(message: str) -> Markup:
     return Markup(f'<p class="chart-empty">{escape(message)}</p>')
 
 
-def _chart(body: str, legend: str = "", view_w: int = 800, view_h: int = 300) -> Markup:
+def _chart(body: str, legend: str = "", view_w: int = 800, view_h: int = 300,
+           natural: bool = False) -> Markup:
+    """A chart, sized to its container.
+
+    `natural` caps the width at the drawing's own, so a diagram of boxes is not
+    blown up to fill the card — a handful of boxes stretched across a wide
+    screen reads as a handful of enormous boxes.
+    """
+    style = f' style="max-width:{view_w}px"' if natural else ""
     return Markup(
-        f'<div class="chart">{legend}'
+        f'<div class="chart"{style}>{legend}'
         f'<svg viewBox="0 0 {view_w} {view_h}" role="img" preserveAspectRatio="xMidYMid meet">{body}</svg>'
         f'<div class="chart-tip" hidden></div></div>'
     )
@@ -536,18 +544,21 @@ def _star(cx: float, cy: float, size: float, colour: str) -> str:
     return f'<polygon points="{" ".join(points)}" fill="{colour}" stroke="var(--plane)" stroke-width="0.5"/>'
 
 
-def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]]) -> Markup:
-    """Who depends on whom, as small boxes laid out in columns.
+def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
+            movable: bool = False) -> Markup:
+    """Who depends on whom, as small boxes.
 
     Each box is a WBS number — the name is on hover, so hundreds of boxes stay
-    readable. A box sits in the column after the last of its predecessors, which
-    is the order the work actually runs in. The critical path is picked out.
+    readable. The automatic layout puts a box in the column after the last of
+    its predecessors, which is the order the work actually runs in; a box that
+    has been dragged keeps where it was put. The critical path is picked out.
     """
     if not tasks:
         return _empty("No deliverables to draw yet.")
     if not links:
         return _empty("No dependencies yet — link two deliverables to see the network.")
 
+    from .schedule import kind_label, normalise_kind
     from .schedule import order as topological
 
     by_id = {int(t["id"]): t for t in tasks}
@@ -572,17 +583,21 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
     for depth in columns:
         columns[depth].sort(key=lambda t: str(by_id[t].get("wbs") or ""))
 
-    box_w, box_h, gap_x, gap_y, pad = 54, 26, 34, 12, 14
-    drawn_w = pad * 2 + (max(columns) + 1) * (box_w + gap_x) - gap_x
-    height = pad * 2 + max(len(c) for c in columns.values()) * (box_h + gap_y) - gap_y
-    # The SVG stretches to the card, so a small network is given room around it
-    # rather than being blown up until the boxes swamp the page.
-    width = max(drawn_w, 760)
-
+    box_w, box_h, gap_x, gap_y, pad = 54, 26, 44, 18, 16
     place: dict[int, tuple[float, float]] = {}
     for depth, ids in columns.items():
         for row, task_id in enumerate(ids):
             place[task_id] = (pad + depth * (box_w + gap_x), pad + row * (box_h + gap_y))
+
+    # A box that has been dragged sits where it was put instead.
+    for task_id in list(place):
+        moved_x, moved_y = by_id[task_id].get("node_x"), by_id[task_id].get("node_y")
+        if moved_x is not None and moved_y is not None:
+            place[task_id] = (float(moved_x), float(moved_y))
+
+    drawn_w = max(x for x, _ in place.values()) + box_w + pad
+    height = max(y for _, y in place.values()) + box_h + pad
+    width = max(drawn_w, 760)
 
     parts = ['<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6"'
              ' markerHeight="6" orient="auto-start-reverse">'
@@ -592,15 +607,30 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
         first, second = int(link["predecessor_id"]), int(link["successor_id"])
         if first not in place or second not in place:
             continue
-        x1, y1 = place[first]
-        x2, y2 = place[second]
+
         critical = bool(by_id[first].get("is_critical") and by_id[second].get("is_critical"))
+        kind = normalise_kind(link.get("kind"))
+        lag = float(link.get("lag_days") or 0)
+
+        # A start-to-start link is dashed: the two run alongside each other
+        # rather than one waiting for the whole of the other.
+        dashes = ' stroke-dasharray="5 3"' if kind == "SS" else ""
+        title = "{} → {}, {}".format(by_id[first].get("wbs") or "",
+                                     by_id[second].get("wbs") or "", kind_label(kind))
+        if lag:
+            title += f", {lag:+g} days"
+
         parts.append(
-            f'<path d="M{x1 + box_w},{y1 + box_h / 2} C{x1 + box_w + gap_x / 2},{y1 + box_h / 2}'
-            f' {x2 - gap_x / 2},{y2 + box_h / 2} {x2},{y2 + box_h / 2}"'
-            f' fill="none" stroke="{CRITICAL if critical else AXIS}"'
-            f' stroke-width="{1.6 if critical else 1}" opacity="{1 if critical else 0.6}"'
-            ' marker-end="url(#arrow)"/>'
+            '<path class="net-edge" data-from="{first}" data-to="{second}" d="{path}"'
+            ' fill="none" stroke="{colour}" stroke-width="{weight}" opacity="{opacity}"'
+            '{dashes} marker-end="url(#arrow)"><title>{title}</title></path>'.format(
+                first=first, second=second,
+                path=_edge_path(place[first], place[second], box_w, box_h, kind),
+                colour=CRITICAL if critical else AXIS,
+                weight=1.6 if critical else 1,
+                opacity=1 if critical else 0.6,
+                dashes=dashes, title=escape(title),
+            )
         )
 
     for task_id, (x, y) in place.items():
@@ -614,15 +644,35 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
              "color": CRITICAL if critical else MUTED},
         ]
         parts.append(
-            f'<g><rect class="mark hit" x="{x}" y="{y}" width="{box_w}" height="{box_h}" rx="5"'
+            f'<g class="net-node{" movable" if movable else ""}" data-node="{task_id}"'
+            f' data-x="{x:.0f}" data-y="{y:.0f}" transform="translate({x:.0f},{y:.0f})">'
+            f'<rect class="mark hit" x="0" y="0" width="{box_w}" height="{box_h}" rx="5"'
             f' fill="{SURFACE}" stroke="{CRITICAL if critical else AXIS}"'
             f' stroke-width="{1.8 if critical else 1}"'
             f' data-tip="{_tip(str(task.get("wbs") or ""), rows)}"/>'
-            f'<text x="{x + box_w / 2}" y="{y + box_h / 2 + 3.5}" text-anchor="middle"'
+            f'<text x="{box_w / 2}" y="{box_h / 2 + 3.5}" text-anchor="middle"'
             f' font-size="10" font-weight="{600 if critical else 400}"'
             f' fill="{CRITICAL if critical else INK2}" pointer-events="none">'
             f'{escape(str(task.get("wbs") or ""))}</text></g>'
         )
 
     legend = _legend([("On the critical path", "var(--critical)"), ("Has float", AXIS)], mark="dot")
-    return _chart("".join(parts), legend, view_w=width, view_h=height)
+    body = f'<g class="net" data-box-w="{box_w}" data-box-h="{box_h}">{"".join(parts)}</g>'
+    return _chart(body, legend, view_w=int(width), view_h=int(height), natural=True)
+
+
+def _edge_path(start: tuple[float, float], end: tuple[float, float],
+               box_w: float, box_h: float, kind: str = "FS") -> str:
+    """The curve from one box to another.
+
+    A finish-to-start link leaves the right-hand edge, where the work ends; a
+    start-to-start link leaves the left, because that is the moment it refers to.
+    """
+    x1, y1 = start
+    x2, y2 = end
+    from_x = x1 if kind == "SS" else x1 + box_w
+    from_y = y1 + box_h / 2
+    to_y = y2 + box_h / 2
+    bend = max(24.0, abs(x2 - from_x) / 2)
+    return (f"M{from_x:.0f},{from_y:.0f} C{from_x + bend:.0f},{from_y:.0f}"
+            f" {x2 - bend:.0f},{to_y:.0f} {x2:.0f},{to_y:.0f}")

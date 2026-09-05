@@ -167,6 +167,26 @@ main { padding: 20px 0 48px; }
 .card-body.flush { padding: 0; }
 .card-foot { padding: 12px 16px; border-top: 1px solid var(--border); }
 
+/* A panel of detail folded away under the chart it belongs to. <details> so
+   the page still opens and closes it with no JavaScript at all. */
+.panel { border-top: 1px solid var(--border); }
+.panel-summary {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 10px 16px; cursor: pointer; list-style: none;
+  font-size: 0.85rem; font-weight: 500; color: var(--series-1);
+}
+.panel-summary::-webkit-details-marker { display: none; }
+.panel-summary::before {
+  content: '▸'; font-size: 0.8em; color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.panel[open] > .panel-summary::before { transform: rotate(90deg); }
+.panel-summary:hover { background: var(--surface-2, rgba(127, 127, 127, 0.06)); }
+.panel-summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.panel[open] > .panel-summary > .panel-open,
+.panel:not([open]) > .panel-summary > .panel-shut { display: none; }
+.panel > .card-body:first-of-type { border-top: 1px solid var(--border); }
+
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .tile-label { font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .tile-value { margin-top: 6px; font-size: 1.5rem; font-weight: 600; }
@@ -463,7 +483,9 @@ ul.list > li:first-child { border-top: none; }
   main { padding: 0; }
 
   /* Everything you cannot use on paper. */
-  .topbar, .tabs, .no-print, .chips, form, .btn, .flashes, .sort-arrow { display: none !important; }
+  .topbar, .tabs, .no-print, .chips, form, .btn, .flashes, .sort-arrow,
+  .panel-summary { display: none !important; }
+  .panel { border-top: none; }
   .sort-link { text-decoration: none; font-weight: 600; }
 
   .print-only { display: block; }

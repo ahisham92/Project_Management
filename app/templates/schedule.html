@@ -20,6 +20,9 @@
 {% block content %}
 {% set t = plan['totals'] %}
 {% set kind_names = dict(kinds) %}
+{# A form on a folded panel redirects back with ?panel=, so the panel someone
+   was working in is still open when the page comes back. #}
+{% set panel = request.args.get('panel') %}
 
 <div class="page-head">
   <div>
@@ -50,7 +53,7 @@
   {{ tile('On the critical path', t['critical'], 'of ' ~ t['count'] ~ ' deliverables',
           'critical' if t['critical'] else 'neutral', 'no float' if t['critical'] else '') }}
   {{ tile('Cannot start as drawn', plan['tasks'] | selectattr('starts_late') | list | length,
-          'their predecessors finish later',
+          'a link puts their start later',
           'warning' if plan['tasks'] | selectattr('starts_late') | list | length else 'good',
           'to reschedule' if plan['tasks'] | selectattr('starts_late') | list | length else 'all clear') }}
   {{ tile('In rework', plan['tasks'] | selectattr('revision') | list | length,
@@ -124,6 +127,13 @@
       {% endif %}
     </div>
   </div>
+  <details class="panel" data-panel="schedule-dates"
+           {{ 'open data-keep-open' if panel == 'dates' }}>
+    <summary class="panel-summary">
+      <span class="panel-open">For details click here</span>
+      <span class="panel-shut">Hide the details</span>
+      <span class="small muted">{{ tasks | length }} deliverable{{ '' if tasks | length == 1 else 's' }}</span>
+    </summary>
   <div class="card-body flush">
     {% if not tasks %}
       {{ empty('No deliverables yet', 'Add them on the Setup sheet, or import them from Excel.') }}
@@ -164,7 +174,7 @@
                   {{ plan_cell(task, 'start', short_date(task['start_date']), date_input(task['start_date'])) }}
                   {% if task['starts_late'] %}
                     <span class="small" style="display:block;color:var(--warning)"
-                          title="Its predecessors do not finish until {{ short_date(task['early_start']) }}">
+                          title="{{ task['late_reason'] or 'What it waits for does not allow this start' }}">
                       needs {{ short_date(task['early_start']) }}</span>
                   {% endif %}
                 </td>
@@ -196,6 +206,7 @@
       </div>
     {% endif %}
   </div>
+  </details>
 </div>
 
 <div class="card" style="margin-top:16px">
@@ -204,7 +215,7 @@
       <h2>Dependencies</h2>
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
-        the critical path is the run with no float
+        the critical path is the run with no float · a box nothing waits on is blue, and closes a path
         {% if can_edit %} · drag a box to move it · a lag may be negative, for work that overlaps{% endif %}
       </p>
     </div>
@@ -228,7 +239,29 @@
   </div>
   <div class="card-body" id="network">{{ network }}</div>
 
+  {% if plan['routes']['count'] %}
+    <div class="card-body" style="border-top:1px solid var(--line);padding-top:10px">
+      <p class="small muted" style="margin:0">
+        <strong class="tabular">{{ plan['routes']['count'] }}</strong>
+        unique path{{ '' if plan['routes']['count'] == 1 else 's' }} run through the network,
+        from {{ plan['routes']['starts'] | length }} line{{ '' if plan['routes']['starts'] | length == 1 else 's' }}
+        nothing precedes to
+        <strong>{{ plan['routes']['ends'] | length }}</strong>
+        line{{ '' if plan['routes']['ends'] | length == 1 else 's' }} nothing waits on — the blue boxes.
+      </p>
+    </div>
+  {% endif %}
+
   {% if can_edit %}
+    {# Open while there is nothing to see in the diagram: the form that makes
+       the first link lives in here, and it should not be hidden. #}
+    <details class="panel" data-panel="schedule-links"
+             {{ 'open data-keep-open' if panel == 'links' or not plan['links'] }}>
+    <summary class="panel-summary">
+      <span class="panel-open">For details click here</span>
+      <span class="panel-shut">Hide the details</span>
+      <span class="small muted">{{ plan['links'] | length }} dependenc{{ 'y' if plan['links'] | length == 1 else 'ies' }}</span>
+    </summary>
     <div class="card-body no-print" style="border-top:1px solid var(--line)">
       <form method="post" class="inline-form"
             action="{{ url_for('projects.add_dependency', project_id=project['id']) }}">
@@ -281,6 +314,7 @@
         </div>
       </div>
     {% endif %}
+    </details>
   {% endif %}
 </div>
 

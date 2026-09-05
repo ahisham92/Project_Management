@@ -1288,3 +1288,228 @@ def test_the_notes_under_a_sheet_never_sit_in_a_column_that_is_read(signed_in):
 
     links = read_links_workbook(signed_in.get("/projects/1/schedule/links.xlsx").data)
     assert len(links) == 1
+
+
+# --- why a line cannot start where it is drawn ------------------------------
+
+def kinded(first: int, second: int, kind: str, lag: float = 0):
+    return {"predecessor_id": first, "successor_id": second, "kind": kind, "lag_days": lag}
+
+
+def test_a_finish_to_finish_link_moves_the_start_even_though_it_names_the_finish():
+    """The case that reads as a bug and is not: 1.3 finishes 28/01 and 1.4 is
+    finish → finish with a lag of 5, so 1.4's finish is 02/02 — and a line one
+    day long can only finish on 02/02 by starting on it."""
+    rows = analyse(
+        [task(3, "2026-01-20", "2026-01-28"), task(4, "2026-01-25", "2026-01-25")],
+        [kinded(3, 4, "FF", 5)],
+    )
+    assert rows[4]["early_start"] == "2026-02-02"
+    assert rows[4]["early_finish"] == "2026-02-02"
+    assert rows[4]["starts_late"] is True
+
+
+def test_the_link_that_holds_a_line_back_is_recorded():
+    rows = analyse(
+        [task(3, "2026-01-20", "2026-01-28"), task(4, "2026-01-25", "2026-01-25")],
+        [kinded(3, 4, "FF", 5)],
+    )
+    assert rows[4]["driven_by"] == {"task_id": 3, "kind": "FF", "lag_days": 5}
+    assert rows[3]["driven_by"] is None                  # nothing precedes it
+
+
+def test_only_the_binding_link_is_recorded_when_several_pull_a_line():
+    """Two predecessors, and the later one is the answer to "why"."""
+    rows = analyse(
+        [task(1, "2026-01-01", "2026-01-05"), task(2, "2026-01-01", "2026-01-20"),
+         task(3, "2026-01-02", "2026-01-04")],
+        [kinded(1, 3, "FS", 0), kinded(2, 3, "FS", 0)],
+    )
+    assert rows[3]["driven_by"]["task_id"] == 2
+    assert rows[3]["early_start"] == "2026-01-21"
+
+
+def test_a_line_that_starts_late_enough_on_its_own_has_no_driver():
+    rows = analyse(
+        [task(1, "2026-01-01", "2026-01-05"), task(2, "2026-03-01", "2026-03-04")],
+        [kinded(1, 2, "FS", 0)],
+    )
+    assert rows[2]["starts_late"] is False
+    assert rows[2]["driven_by"] is None
+
+
+def test_the_reason_a_finish_to_finish_link_moves_a_start_is_spelt_out():
+    from app.schedule import start_reason
+
+    said = start_reason({"kind": "FF", "lag_days": 5},
+                        {"wbs": "1.3", "early_start": "2026-01-20", "early_finish": "2026-01-28"},
+                        1, "2026-02-02")
+    assert "1.3 finishes on 28/01/2026" in said
+    assert "Finish → finish with a lag of 5 days" in said
+    assert "puts this line's finish at 02/02/2026" in said
+    assert "at 1 day long that means starting on 02/02/2026" in said
+
+
+def test_a_start_to_start_link_is_explained_from_the_other_line_s_start():
+    from app.schedule import start_reason
+
+    said = start_reason({"kind": "SS", "lag_days": 3},
+                        {"wbs": "2.1", "early_start": "2026-01-20", "early_finish": "2026-01-28"},
+                        6, "2026-01-23")
+    assert "2.1 starts on 20/01/2026" in said
+    assert "cannot start before 23/01/2026" in said
+    assert "finish" not in said.split(". ")[1]          # it says nothing about a finish
+
+
+def test_a_link_with_no_lag_says_so_rather_than_saying_nothing():
+    from app.schedule import start_reason
+
+    said = start_reason({"kind": "FS", "lag_days": 0},
+                        {"wbs": "1.1", "early_start": "2026-01-01", "early_finish": "2026-01-10"},
+                        4, "2026-01-11")
+    assert "with no lag" in said
+
+
+def test_a_negative_lag_reads_as_a_negative_lag():
+    from app.schedule import start_reason
+
+    said = start_reason({"kind": "FS", "lag_days": -7},
+                        {"wbs": "1.1", "early_start": "2026-01-01", "early_finish": "2026-01-10"},
+                        4, "2026-01-04")
+    assert "with a lag of -7 days" in said
+
+
+def test_the_reason_reaches_the_schedule_page(signed_in):
+    """The hint used to claim the predecessors finish on the date shown, which
+    is only ever true of a finish → start link with no lag."""
+    signed_in.post("/projects/1/schedule/links",
+                   data={"successor_id": "2", "predecessor_id": "1", "kind": "FF",
+                         "lag_days": "40"}, follow_redirects=True)
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "Finish → finish with a lag of 40 days" in body
+    assert "Its predecessors do not finish until" not in body
+
+
+# --- the routes through the network -----------------------------------------
+
+def test_a_diamond_has_two_routes_through_it():
+    from app.schedule import paths
+
+    _rows, links = diamond()
+    assert paths([1, 2, 3, 4], links) == {"starts": [1], "ends": [4], "count": 2}
+
+
+def test_two_separate_chains_are_two_routes_with_two_ends():
+    from app.schedule import paths
+
+    assert paths([1, 2, 3, 4], [link(1, 2), link(3, 4)]) == {
+        "starts": [1, 3], "ends": [2, 4], "count": 2,
+    }
+
+
+def test_nothing_linked_is_no_route_at_all():
+    from app.schedule import paths
+
+    assert paths([1, 2], []) == {"starts": [], "ends": [], "count": 0}
+
+
+def test_a_line_outside_the_set_is_not_counted():
+    from app.schedule import paths
+
+    assert paths([1, 2], [link(1, 2), link(2, 99)])["ends"] == [2]
+
+
+def test_routes_multiply_where_the_programme_forks_twice():
+    """Two diamonds in a row: 2 × 2 routes, counted without walking them."""
+    from app.schedule import paths
+
+    links = [link(1, 2), link(1, 3), link(2, 4), link(3, 4),
+             link(4, 5), link(4, 6), link(5, 7), link(6, 7)]
+    assert paths(range(1, 8), links)["count"] == 4
+
+
+def test_the_end_of_every_path_is_drawn_blue():
+    from app.charts import network
+
+    rows = [{"id": i, "wbs": f"1.{i}", "name": f"line {i}", "start_date": "2026-01-01",
+             "submission_date": "2026-01-10", "total_float": 0, "is_critical": False}
+            for i in (1, 2)]
+    drawn = str(network(rows, [kinded(1, 2, "FS")]))
+    assert "var(--series-1)" in drawn                   # 1.2 ends the only path
+    assert "End of a path" in drawn                     # and the legend says so
+
+
+def test_the_number_of_routes_is_said_on_the_schedule_page(signed_in):
+    link_two(signed_in, "2", "1")
+    link_two(signed_in, "3", "2")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "unique path" in body
+    assert "nothing waits on" in body
+
+
+# --- reading the chart and folding the tables away --------------------------
+
+def test_hovering_anywhere_on_a_bar_s_row_says_what_the_line_is():
+    """Including over the WBS label, which sits left of the plotting area."""
+    from app.charts import gantt
+
+    drawn = str(gantt([{
+        "id": 1, "wbs": "1.1", "name": "Consolidate the assessment reports",
+        "section_name": "Sec. 3.0", "start_date": "2026-01-01",
+        "submission_date": "2026-02-10", "actual_pct": 0.25, "is_critical": False,
+        "duration_days": 41, "total_float": 3, "uses_workflow": False,
+        "step_plan": [], "revisions": [],
+    }], "2026-01-01", "2026-03-10", "2026-01-20"))
+    assert 'class="hit" x="0"' in drawn
+    assert "Consolidate the assessment reports" in drawn
+    assert "Sec. 3.0" in drawn
+
+
+def test_a_line_that_cannot_start_as_drawn_says_so_on_the_chart_too():
+    from app.charts import gantt
+
+    drawn = str(gantt([{
+        "id": 1, "wbs": "1.1", "name": "x", "start_date": "2026-01-01",
+        "submission_date": "2026-02-10", "actual_pct": 0, "is_critical": False,
+        "duration_days": 41, "total_float": 0, "uses_workflow": False,
+        "starts_late": True, "early_start": "2026-01-20",
+        "step_plan": [], "revisions": [],
+    }], "2026-01-01", "2026-03-10", "2026-01-20"))
+    assert "Cannot start until" in drawn
+
+
+def test_the_tables_are_folded_away_under_the_charts(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert body.count('<details class="panel"') == 2
+    assert body.count("For details click here") == 2
+    # The charts themselves are not folded, and the dates card comes first.
+    assert body.index("Programme") < body.index("Dates and durations") < body.index("Dependencies")
+
+
+def test_a_folded_table_is_still_in_the_page_for_printing_and_for_search(signed_in):
+    """<details> keeps its content in the document, so Ctrl-F and the print
+    stylesheet both still find it."""
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "Review &amp; consolidate" in body or "Review & consolidate" in body
+
+
+def test_the_panel_someone_was_working_in_is_open_when_the_page_comes_back(signed_in):
+    """A form on a folded panel would otherwise fold itself away on submit."""
+    added = signed_in.post("/projects/1/schedule/links",
+                           data={"successor_id": "2", "predecessor_id": "1"})
+    assert "panel=links" in added.headers["Location"]
+
+    body = text(signed_in.get("/projects/1/schedule?panel=links"))
+    assert 'data-panel="schedule-links"\n             open data-keep-open' in body
+    assert 'data-panel="schedule-dates"\n           >' in body   # the other stays folded
+
+
+def test_the_dependency_panel_starts_open_while_there_is_nothing_to_see(signed_in):
+    """The form that makes the first link lives in it."""
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert 'data-panel="schedule-links"\n             open data-keep-open' in body
+
+
+def test_the_schedule_panel_reopens_after_an_import(signed_in):
+    moved = signed_in.post("/projects/1/schedule/1", data={"duration_days": "20"})
+    assert "panel=dates" in moved.headers["Location"]

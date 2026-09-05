@@ -373,7 +373,7 @@ def schedule_mode(project_id: int):
     _project, _role = load_project(project_id, "manager")
     execute("UPDATE projects SET schedule_mode = ? WHERE id = ?",
             (normalise_mode(request.form.get("mode")), project_id))
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="dates")
 
 
 @bp.post("/schedule/<int:task_id>")
@@ -423,7 +423,7 @@ def add_dependency(project_id: int):
         flash(str(exc), "error")
     else:
         flash("Dependency added", "success")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 @bp.post("/schedule/links/<int:link_id>")
@@ -447,7 +447,7 @@ def save_dependency(project_id: int, link_id: int):
 
             return jsonify({"ok": False, "error": str(exc)}), 400
         flash(str(exc), "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="links")
 
     if link is None:
         abort(404)
@@ -455,7 +455,7 @@ def save_dependency(project_id: int, link_id: int):
     if _wants_json():
         return _links_answer(project_id, link_id=link_id)
     flash("Dependency saved", "success")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 @bp.post("/schedule/links/<int:link_id>/delete")
@@ -468,7 +468,7 @@ def delete_dependency(project_id: int, link_id: int):
     if _wants_json():
         return _links_answer(project_id, removed=link_id)
     flash("Dependency removed", "success")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 def _links_answer(project_id: int, removed: int | None = None, link_id: int | None = None):
@@ -518,7 +518,7 @@ def move_node(project_id: int, task_id: int):
         abort(404)
     if _wants_json():
         return jsonify({"ok": True})
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 @bp.get("/schedule.xlsx")
@@ -536,7 +536,7 @@ def export_schedule(project_id: int):
                                        normalise_mode(project["schedule_mode"]))
     except ExcelUnavailable as exc:
         flash(str(exc), "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="dates")
 
     stamp = today().replace("-", "")
     return send_file(
@@ -557,13 +557,13 @@ def import_schedule(project_id: int):
     upload = request.files.get("workbook")
     if upload is None or not upload.filename:
         flash("Choose a workbook to import", "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="dates")
 
     try:
         rows = read_schedule_workbook(upload.read())
     except (ExcelUnavailable, ImportError_) as exc:
         flash(str(exc), "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="dates")
 
     result = apply_schedule(project_id, rows, normalise_mode(project["schedule_mode"]))
     flash(
@@ -573,7 +573,7 @@ def import_schedule(project_id: int):
     )
     for note in result["skipped"][:5]:
         flash(note, "error")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="dates")
 
 
 @bp.get("/schedule/links.xlsx")
@@ -590,7 +590,7 @@ def export_dependencies(project_id: int):
         data = build_links_workbook(project, plan["tasks"], plan["links"])
     except ExcelUnavailable as exc:
         flash(str(exc), "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="links")
 
     stamp = today().replace("-", "")
     return send_file(
@@ -611,13 +611,13 @@ def import_dependencies(project_id: int):
     upload = request.files.get("workbook")
     if upload is None or not upload.filename:
         flash("Choose a workbook to import", "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="links")
 
     try:
         rows = read_links_workbook(upload.read())
     except (ExcelUnavailable, ImportError_) as exc:
         flash(str(exc), "error")
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="links")
 
     result = replace_links(project_id, rows)
     flash(
@@ -627,7 +627,7 @@ def import_dependencies(project_id: int):
     )
     for note in result["skipped"][:5]:
         flash(note, "error")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 @bp.post("/schedule/layout/reset")
@@ -639,7 +639,7 @@ def reset_layout(project_id: int):
     if _wants_json():
         return _links_answer(project_id)
     flash("The diagram is back to its automatic layout", "success")
-    return _back("projects.schedule", project_id)
+    return _back("projects.schedule", project_id, panel="links")
 
 
 def _wants_json() -> bool:
@@ -650,7 +650,7 @@ def _plan_answer(project_id: int, task_id: int, moves: dict):
     """A saved line answers with the rows that moved, so the page can redraw
     them without fetching the whole plan again."""
     if not _wants_json():
-        return _back("projects.schedule", project_id)
+        return _back("projects.schedule", project_id, panel="dates")
 
     from flask import jsonify
 

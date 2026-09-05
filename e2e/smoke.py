@@ -88,6 +88,7 @@ def main() -> int:
         step("schedule dates and durations are amended in the row", _schedule_amend)
         step("schedule dependencies are edited and dragged", _schedule_deps)
         step("schedule dates go out to Excel and come back", _schedule_excel)
+        step("schedule reads at a glance and folds its tables away", _schedule_reading)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -116,6 +117,12 @@ def main() -> int:
     for failure in failures:
         print("  -", failure)
     return 1 if failures else 0
+
+
+def _schedule_page(page, panel: str = ""):
+    """The schedule, with the folded panel a step needs already open."""
+    page.goto(f"{BASE}/projects/1/schedule" + (f"?panel={panel}" if panel else ""),
+              wait_until="networkidle")
 
 
 def _card(page, heading: str):
@@ -192,7 +199,7 @@ def _schedule_excel(page) -> None:
     """The dates and durations download, survive an edit in Excel, and import."""
     from openpyxl import load_workbook
 
-    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    _schedule_page(page, "dates")
     card = _card(page, "Dates and durations")
     with page.expect_download(timeout=10000) as download:
         card.locator("a:has-text('Export to Excel')").click()
@@ -222,6 +229,50 @@ def _schedule_excel(page) -> None:
     if f"{was + 14}d" not in row.inner_text():
         raise AssertionError(f"the table still reads {was}d, not the imported {was + 14}d")
     page.screenshot(path=str(SHOTS / "24-schedule-excel.png"), full_page=True)
+
+
+def _schedule_reading(page) -> None:
+    """The page opens on its charts; a bar says what it is; the diagram marks
+    where each path ends and says how many there are."""
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+
+    panels = page.locator("details.panel")
+    if panels.count() != 2:
+        raise AssertionError(f"expected a panel under each chart, found {panels.count()}")
+    if panels.first.get_attribute("open") is not None:
+        raise AssertionError("the page should open on the chart, not the table")
+
+    # Hovering a bar — over its WBS label, left of the plotting area — says
+    # what the line is about.
+    label = page.locator(".chart svg text").filter(has_text="1.1").first
+    label.scroll_into_view_if_needed()
+    at = label.bounding_box()
+    page.mouse.move(at["x"] + at["width"] / 2, at["y"] + at["height"] / 2)
+    page.wait_for_selector(".chart-tip:not([hidden])", timeout=4000)
+    said = page.locator(".chart-tip:not([hidden])").first.inner_text()
+    for expected in ("1.1", "Start", "Duration", "Float"):
+        if expected not in said:
+            raise AssertionError(f"the bar's tooltip does not say {expected!r}: {said!r}")
+
+    # The toggle opens the table, and the choice is remembered.
+    panels.first.locator("summary").click()
+    page.wait_for_timeout(400)
+    if panels.first.get_attribute("open") is None:
+        raise AssertionError("the details toggle did not open the table")
+    page.reload(wait_until="networkidle")
+    if page.locator("details.panel").first.get_attribute("open") is None:
+        raise AssertionError("the browser should remember the panel was left open")
+
+    # Where each path ends, and how many there are.
+    page.locator("#network").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    if page.locator("#network rect[stroke*='series-1']").count() == 0:
+        raise AssertionError("a line nothing waits on should be drawn blue")
+    body = page.text_content("body")
+    for expected in ("unique path", "End of a path", "nothing waits on"):
+        if expected not in body:
+            raise AssertionError(f"the diagram does not say {expected!r}")
+    page.screenshot(path=str(SHOTS / "25-schedule-reading.png"), full_page=True)
 
 
 def _dates_read_dd_mm(page) -> None:
@@ -355,6 +406,7 @@ def _schedule(page) -> None:
 
 def _schedule_links(page) -> None:
     """Linking two lines sequences them, and moving one moves the other."""
+    _schedule_page(page, "links")
     page.select_option("select[name=successor_id]", index=2)
     page.select_option("select[name=predecessor_id]", index=1)
     page.select_option("select[name=kind]", "FS")
@@ -370,6 +422,7 @@ def _schedule_links(page) -> None:
 def _schedule_deps(page) -> None:
     """A lag and a link type change in the row; a box can be dragged; a
     dependency is removed without the page reloading."""
+    _schedule_page(page, "links")
     # A second link, this one start-to-start.
     page.select_option("select[name=successor_id]", index=3)
     page.select_option("select[name=predecessor_id]", index=1)
@@ -496,6 +549,7 @@ def _schedule_deps(page) -> None:
 
 
 def _schedule_amend(page) -> None:
+    _schedule_page(page, "dates")
     before = page.locator("#submission-1").inner_text().strip()
     url = page.url
     page.locator("#duration-1 .cell-open").click()
@@ -827,10 +881,10 @@ def _live(page) -> None:
     watcher.fill("input[name=password]", PASSWORD)
     watcher.click("button[type=submit]")
     watcher.wait_for_selector("text=Portfolio", timeout=8000)
-    watcher.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    watcher.goto(f"{BASE}/projects/1/schedule?panel=dates", wait_until="networkidle")
     before = watcher.locator("#duration-1").inner_text().strip()
 
-    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    _schedule_page(page, "dates")
     page.locator("#duration-1 .cell-open").click()
     page.wait_for_selector("form.cell-form input[name=duration_days]", timeout=8000)
     page.fill("form.cell-form input[name=duration_days]", "28")

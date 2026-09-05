@@ -69,36 +69,53 @@
     tip.style.top = y + 'px';
   }
 
-  document.querySelectorAll('.chart').forEach(function (chart) {
+  // Delegated from the document rather than bound per chart: a live refresh
+  // replaces <main>, and charts bound at load would take their handlers with
+  // them and stop answering the mouse.
+  function hideTip(chart) {
+    if (!chart) return;
     var tip = chart.querySelector('.chart-tip');
+    if (tip) tip.hidden = true;
     var crosshair = chart.querySelector('.crosshair');
+    if (crosshair) crosshair.setAttribute('visibility', 'hidden');
+  }
+
+  var overChart = null;
+
+  document.addEventListener('mousemove', function (event) {
+    var node = event.target;
+    var chart = node && node.closest ? node.closest('.chart') : null;
+    if (chart !== overChart) {
+      hideTip(overChart);
+      overChart = chart;
+    }
+    if (!chart) return;
+
+    var tip = chart.querySelector('.chart-tip');
     if (!tip) return;
 
-    chart.addEventListener('mousemove', function (event) {
-      var hit = event.target.closest('.hit');
-      if (!hit || !hit.dataset.tip) return;
+    var hit = node.closest('.hit');
+    if (!hit || !hit.dataset.tip) {
+      hideTip(chart);
+      return;
+    }
 
-      var payload;
-      try {
-        payload = JSON.parse(hit.dataset.tip);
-      } catch (err) {
-        return;
-      }
-      renderTip(tip, payload);
-      tip.hidden = false;
-      place(chart, tip, event);
+    var payload;
+    try {
+      payload = JSON.parse(hit.dataset.tip);
+    } catch (err) {
+      return;
+    }
+    renderTip(tip, payload);
+    tip.hidden = false;
+    place(chart, tip, event);
 
-      if (crosshair && hit.dataset.x) {
-        crosshair.setAttribute('x1', hit.dataset.x);
-        crosshair.setAttribute('x2', hit.dataset.x);
-        crosshair.setAttribute('visibility', 'visible');
-      }
-    });
-
-    chart.addEventListener('mouseleave', function () {
-      tip.hidden = true;
-      if (crosshair) crosshair.setAttribute('visibility', 'hidden');
-    });
+    var crosshair = chart.querySelector('.crosshair');
+    if (crosshair && hit.dataset.x) {
+      crosshair.setAttribute('x1', hit.dataset.x);
+      crosshair.setAttribute('x2', hit.dataset.x);
+      crosshair.setAttribute('visibility', 'visible');
+    }
   });
 
   // --- print ---------------------------------------------------------------
@@ -108,6 +125,67 @@
   document.addEventListener('click', function (event) {
     if (event.target.closest('[data-print]')) window.print();
   });
+
+  // A folded panel is not on the paper unless it is opened first, and closing
+  // it again afterwards leaves the screen as it was.
+  var unfolded = [];
+  var printing = false;
+  window.addEventListener('beforeprint', function () {
+    printing = true;
+    unfolded = [];
+    document.querySelectorAll('details.panel:not([open])').forEach(function (panel) {
+      panel.open = true;
+      unfolded.push(panel);
+    });
+  });
+  window.addEventListener('afterprint', function () {
+    unfolded.forEach(function (panel) { panel.open = false; });
+    unfolded = [];
+    // A toggle event arrives after the task that caused it, so the flag is
+    // dropped a beat later or the folding back up would be recorded.
+    window.setTimeout(function () { printing = false; }, 0);
+  });
+
+  // --- folded panels -------------------------------------------------------
+  // Which details someone has open is their own preference, so it is kept in
+  // their browser and put back on the next visit — and after a live refresh,
+  // which replaces <main> and would otherwise fold everything up again.
+
+  function panelKey(panel) {
+    return 'pm-panel-' + (panel.dataset.panel || '');
+  }
+
+  function restorePanels() {
+    document.querySelectorAll('details.panel[data-panel]').forEach(function (panel) {
+      // One the page itself opened — the panel a form was just submitted from —
+      // stays open whatever this browser remembers.
+      if (panel.hasAttribute('data-keep-open')) return;
+      try {
+        var kept = window.localStorage.getItem(panelKey(panel));
+        if (kept !== null) panel.open = kept === 'open';
+      } catch (err) { /* private browsing; the default stands */ }
+    });
+  }
+
+  // A panel the page itself opened is marked, and the mark says two things:
+  // leave it open, and do not record a state nobody chose. Browsers fire a
+  // toggle event for a <details open> as it is parsed, so without this every
+  // server-opened panel would be remembered as the viewer's preference.
+  document.addEventListener('click', function (event) {
+    var summary = event.target.closest && event.target.closest('.panel-summary');
+    if (summary && summary.parentNode) summary.parentNode.removeAttribute('data-keep-open');
+  }, true);
+
+  document.addEventListener('toggle', function (event) {
+    var panel = event.target;
+    if (!panel.matches || !panel.matches('details.panel[data-panel]')) return;
+    if (printing || panel.hasAttribute('data-keep-open')) return;
+    try {
+      window.localStorage.setItem(panelKey(panel), panel.open ? 'open' : 'shut');
+    } catch (err) { /* nothing to remember it with */ }
+  }, true);
+
+  restorePanels();
 
   // --- edit in place -------------------------------------------------------
   // An "Edit" control is a real link to ?edit=<id>, so the page still works
@@ -837,6 +915,7 @@
 
     var offset = window.scrollY;
     here.replaceWith(next);
+    restorePanels();                 // the fresh page folds up by default
     window.scrollTo(0, offset);
     document.body.dataset.pulse = fresh.body.dataset.pulse || '';
     if (fresh.title) document.title = fresh.title;

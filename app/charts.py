@@ -397,6 +397,7 @@ GANTT_ROW = 26                      # the height one deliverable takes
 GANTT_LEFT = 96                     # room for the WBS down the side
 GANTT_HEAD = 46                     # the month band and the day ticks above it
 REWORK = "var(--warning)"
+PATH_END = "var(--series-1)"   # a line nothing waits on: the end of a route
 SUBMITTED = "var(--good)"           # the green star that marks a submission
 
 
@@ -561,19 +562,33 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
                 parts.append(f'<text x="{rx1:.1f}" y="{bar_y + 11}" font-size="7"'
                              f' fill="{REWORK}">{escape(code)}</text>')
 
-        rows = [
+        rows = []
+        if task.get("section_name"):
+            rows.append({"label": "Section", "value": str(task["section_name"]), "color": MUTED})
+        rows += [
             {"label": "Start", "value": _short_date(start), "color": colour},
             {"label": "Submission", "value": _short_date(finish), "color": SUBMITTED},
             {"label": "Duration", "value": f'{task.get("duration_days", 0)} days', "color": MUTED},
             {"label": "Float", "value": f'{task.get("total_float", 0)} days', "color": MUTED},
         ]
+        if task.get("status_name"):
+            rows.append({"label": "Status", "value": str(task["status_name"]),
+                         "color": PLANNED})
+        if task.get("actual_pct") is not None:
+            rows.append({"label": "Progress", "value": _fmt_pct(float(task.get("actual_pct") or 0)),
+                         "color": EARNED})
         if task.get("uses_workflow") and task.get("approval_due_date"):
             rows.append({"label": "Code A due", "value": _short_date(task["approval_due_date"]),
                          "color": CRITICAL})
         if task.get("revisions"):
             rows.append({"label": "Resubmissions", "value": str(len(task["revisions"])), "color": REWORK})
+        if task.get("starts_late"):
+            rows.append({"label": "Cannot start until", "value": _short_date(task.get("early_start")),
+                         "color": REWORK})
+        # The whole row is the hit target, the WBS label included, so hovering
+        # anywhere on a line says what the line is.
         parts.append(
-            f'<rect class="hit" x="{left}" y="{y}" width="{width}" height="{GANTT_ROW}"'
+            f'<rect class="hit" x="0" y="{y}" width="{left + width}" height="{GANTT_ROW}"'
             f' fill="transparent" data-tip="{_tip(str(task.get("wbs") or "") + " " + str(task.get("name") or ""), rows)}"/>'
         )
 
@@ -629,7 +644,7 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
     if not links:
         return _empty("No dependencies yet — link two deliverables to see the network.")
 
-    from .schedule import kind_label, normalise_kind
+    from .schedule import kind_label, normalise_kind, paths
     from .schedule import order as topological
 
     by_id = {int(t["id"]): t for t in tasks}
@@ -704,9 +719,13 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
             )
         )
 
+    routes = paths(joined, links)
+    ends = set(routes["ends"])
+
     for task_id, (x, y) in place.items():
         task = by_id[task_id]
         critical = bool(task.get("is_critical"))
+        ending = task_id in ends
         rows = [
             {"label": "Deliverable", "value": str(task.get("name") or ""), "color": INK2},
             {"label": "Start", "value": _short_date(task.get("start_date")), "color": PLANNED},
@@ -714,20 +733,30 @@ def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any
             {"label": "Float", "value": f'{task.get("total_float", 0)} days',
              "color": CRITICAL if critical else MUTED},
         ]
+        if ending:
+            rows.append({"label": "Ends a path", "value": "nothing waits on it", "color": PATH_END})
+
+        # A line nothing waits on closes a route through the programme, and is
+        # drawn blue whatever else it is. A critical one keeps the heavier
+        # outline, so both still read on the same box.
+        outline = PATH_END if ending else (CRITICAL if critical else AXIS)
+        ink = PATH_END if ending else (CRITICAL if critical else INK2)
         parts.append(
             f'<g class="net-node{" movable" if movable else ""}" data-node="{task_id}"'
             f' data-x="{x:.0f}" data-y="{y:.0f}" transform="translate({x:.0f},{y:.0f})">'
             f'<rect class="mark hit" x="0" y="0" width="{box_w}" height="{box_h}" rx="5"'
-            f' fill="{SURFACE}" stroke="{CRITICAL if critical else AXIS}"'
-            f' stroke-width="{1.8 if critical else 1}"'
+            f' fill="{SURFACE}" stroke="{outline}"'
+            f' stroke-width="{1.8 if critical or ending else 1}"'
             f' data-tip="{_tip(str(task.get("wbs") or ""), rows)}"/>'
             f'<text x="{box_w / 2}" y="{box_h / 2 + 3.5}" text-anchor="middle"'
-            f' font-size="10" font-weight="{600 if critical else 400}"'
-            f' fill="{CRITICAL if critical else INK2}" pointer-events="none">'
+            f' font-size="10" font-weight="{600 if critical or ending else 400}"'
+            f' fill="{ink}" pointer-events="none">'
             f'{escape(str(task.get("wbs") or ""))}</text></g>'
         )
 
-    legend = _legend([("On the critical path", "var(--critical)"), ("Has float", AXIS)], mark="dot")
+    legend = _legend([("On the critical path", "var(--critical)"),
+                      ("Has float", AXIS),
+                      ("End of a path — nothing waits on it", PATH_END)], mark="dot")
     body = f'<g class="net" data-box-w="{box_w}" data-box-h="{box_h}">{"".join(parts)}</g>'
     return _chart(body, legend, view_w=int(width), view_h=int(height), natural=True)
 

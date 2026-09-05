@@ -141,7 +141,14 @@ Progress and the Dashboard, where they belong.
   **submission** itself is a green star. A line on the design workflow also carries its
   **IDC** as a red circle and its **Code A** as a red star; a line tracked as a plain
   percentage — a meeting, a milestone, a transmittal — has neither, because neither happens
-  to it. Today is a dashed vertical line, and a legend names every mark.
+  to it. Today is a dashed vertical line, and a legend names every mark. **Hover any row** —
+  the bar or the WBS number beside it — and it says what the line is: its full name, its
+  section, its dates, its duration, its float, how far it has got, and whether anything is
+  holding its start back.
+- **The charts come first, the tables fold away underneath.** Each chart carries a *For
+  details click here* toggle that opens the table below it. Your browser remembers which you
+  left open, a form always brings its own panel back open when it saves, and everything is
+  opened for printing whatever state it was left in.
 - **Rework.** A submission comes back as **Code A** (approved), **Code B** or **Code C**.
   B and C raise a revision, and each resubmission draws its own amber bar underneath the
   line, running from the day the comments landed to the new date and labelled with the code
@@ -170,8 +177,16 @@ Progress and the Dashboard, where they belong.
   so a long programme stays readable. A start-to-start link is drawn dashed. **Drag any box**
   to move it and the arrows follow; it stays where you put it, and **Tidy up** returns
   everything to the automatic layout.
-- A line whose predecessors finish **after its own start** is flagged as one that cannot
-  start as drawn.
+- **The end of every path is blue**, and the diagram says how many unique paths run through
+  it — a route being a run from a line nothing precedes to a line nothing waits on. The
+  count is worked out along the topological order rather than by walking every route, so a
+  large network costs one pass.
+- A line that **cannot start where it is drawn** says so, and says why: the hint names the
+  link holding it back and does the arithmetic out loud — *"1.2 finishes on 30/09/2026.
+  Finish → finish with a lag of 40 days puts this line's finish at 09/11/2026, and at 16
+  days long that means starting on 25/10/2026."* Finish → finish and start → finish are the
+  two that surprise people: they fix the finish, never mentioning the start, but a line of a
+  fixed length can only meet a later finish by starting later.
 
 ### Nothing needs refreshing
 
@@ -675,11 +690,12 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-358 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+381 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
-shifts, refused loops, and the schedule and dependency workbooks), the minutes register
+shifts, refused loops, why a line cannot start where it is drawn, the routes through
+the network, and the schedule and dependency workbooks), the minutes register
 (filters, search, sorting, renumbering on a move, and the Word output), the web layer
 (sign-in, every page, reporting progress by status, raising revisions, booking hours, the
 dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
@@ -698,11 +714,12 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 37 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 38 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
-taking the schedule out to Excel and importing the edited workbook back, and a second window
-picking up a change on its own.
+taking the schedule out to Excel and importing the edited workbook back, reading a bar by
+hovering it and folding the tables away under the charts, and a second window picking up a
+change on its own.
 
 ---
 

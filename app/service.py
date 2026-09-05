@@ -851,7 +851,7 @@ def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
 
 def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> dict[str, Any]:
     """Everything the schedule screen draws: the lines, their float, the links."""
-    from .schedule import analyse, critical_path, summarise, window
+    from .schedule import analyse, critical_path, paths, start_reason, summarise, window
 
     project_id = project["id"]
     stamp = data_date or today()
@@ -872,12 +872,26 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
         closed = [a for a in history if a.get("code")]
         row["last_code"] = closed[-1]["code"] if closed else ""
 
+    # A line that cannot start where it is drawn says which link holds it back
+    # and why — a finish → finish link moves a start without ever mentioning it,
+    # which is otherwise a puzzle to read.
+    by_id = {row["id"]: row for row in rows}
+    for row in rows:
+        driver = row.get("driven_by")
+        row["late_reason"] = (
+            start_reason(driver, by_id.get(driver["task_id"], {}),
+                         row.get("duration_days", 1), row.get("early_start"))
+            if row.get("starts_late") and driver and driver["task_id"] in by_id
+            else ""
+        )
+
     first, last = window(rows, stamp)
     return {
         "tasks": rows,
         "links": links,
         "analysis": analysis,
         "critical": critical_path(analysis),
+        "routes": paths([row["id"] for row in rows], links),
         "totals": summarise(analysis),
         "window": (first, last),
         "data_date": stamp,

@@ -63,6 +63,45 @@ def kind_note(value: Any) -> str:
     return KIND_NOTES.get(normalise_kind(value), KIND_NOTES[DEFAULT_KIND])
 
 
+def _lag_words(lag: int) -> str:
+    if lag == 0:
+        return "with no lag"
+    return f"with a lag of {lag} day{'' if abs(lag) == 1 else 's'}"
+
+
+def start_reason(driver: Mapping[str, Any], predecessor: Mapping[str, Any],
+                 duration_days: int, earliest: Any) -> str:
+    """Why a line cannot start where it is drawn, in words.
+
+    The forward pass records which link held a line back; this turns that into
+    a sentence. Finish → finish and start → finish are the two that surprise
+    people: they fix the *finish*, and a line of a fixed length can only meet a
+    later finish by starting later, so the start moves even though nothing was
+    said about it.
+    """
+    kind = normalise_kind(driver.get("kind"))
+    try:
+        lag = int(round(float(driver.get("lag_days") or 0)))
+    except (TypeError, ValueError):
+        lag = 0
+
+    who = str(predecessor.get("wbs") or "").strip() or "the line before it"
+    from_its_start = kind in ("SS", "SF")
+    anchor = predecessor.get("early_start") if from_its_start else predecessor.get("early_finish")
+    when = to_display(anchor)
+    verb = "starts" if from_its_start else "finishes"
+    length = max(1, int(duration_days or 1))
+    start = to_display(earliest)
+    opening = f"{who} {verb} on {when}. " if when else ""
+    rule = f"{kind_label(kind).capitalize()} {_lag_words(lag)}"
+
+    if kind in ("FF", "SF"):
+        return (f"{opening}{rule} puts this line's finish at "
+                f"{to_display(finish_from(earliest, length))}, and at {length} "
+                f"day{'' if length == 1 else 's'} long that means starting on {start}.")
+    return f"{opening}{rule} means this line cannot start before {start}."
+
+
 def _earliest_start(kind: str, lag: float, length: int,
                     began: date | None, done: date | None) -> date | None:
     """The soonest a successor may start, given where its predecessor sits.
@@ -211,6 +250,40 @@ def order(task_ids: Sequence[int], links: Iterable[Mapping[str, Any]]) -> list[i
     return ordered
 
 
+def paths(task_ids: Iterable[int], links: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """The distinct routes through the network: where they begin and end, and
+    how many there are.
+
+    A route runs from a line nothing precedes to a line nothing follows. The
+    count is worked out along the topological order — the number of routes into
+    a line is the sum of the routes into everything before it — so a network of
+    any size is counted in one pass rather than by walking every route.
+    """
+    wanted = {int(task_id) for task_id in task_ids}
+    edges = [(a, b) for a, b, _lag, _kind in edges_of(links) if a in wanted and b in wanted]
+    if not edges:
+        return {"starts": [], "ends": [], "count": 0}
+
+    predecessors: dict[int, set[int]] = {}
+    successors: dict[int, set[int]] = {}
+    for first, second in edges:
+        successors.setdefault(first, set()).add(second)
+        predecessors.setdefault(second, set()).add(first)
+
+    joined = {a for a, _ in edges} | {b for _, b in edges}
+    starts = sorted(t for t in joined if not predecessors.get(t))
+    ends = sorted(t for t in joined if not successors.get(t))
+
+    routes: dict[int, int] = {}
+    for task_id in order(sorted(joined), links):
+        if task_id not in joined:
+            continue
+        before = [p for p in predecessors.get(task_id, ()) if p in joined]
+        routes[task_id] = sum(routes.get(p, 0) for p in before) if before else 1
+
+    return {"starts": starts, "ends": ends, "count": sum(routes.get(e, 0) for e in ends)}
+
+
 def analyse(tasks: Sequence[Mapping[str, Any]],
             links: Iterable[Mapping[str, Any]]) -> dict[int, dict[str, Any]]:
     """Early and late dates, float, and what is critical, for every line.
@@ -242,14 +315,17 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     # Forward: the earliest each line can start.
     early_start: dict[int, date] = {}
     early_finish: dict[int, date] = {}
+    driver: dict[int, tuple[int, float, str]] = {}
     for task_id in sequence:
         own = planned_start[task_id] or floor
         earliest = own
         for first, lag, kind in predecessors.get(task_id, ()):
             soonest = _earliest_start(kind, lag, length[task_id],
                                       early_start.get(first), early_finish.get(first))
-            if soonest:
-                earliest = max(earliest, soonest)
+            # Which link holds the line back is worth keeping: it is the whole
+            # answer to "why can this not start when I drew it?".
+            if soonest and soonest > earliest:
+                earliest, driver[task_id] = soonest, (first, lag, kind)
         early_start[task_id] = earliest
         early_finish[task_id] = earliest + timedelta(days=length[task_id] - 1)
 
@@ -288,6 +364,10 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
             # not achievable as drawn, which is worth saying out loud.
             "starts_late": bool(planned_start[task_id]
                                 and early_start[task_id] > planned_start[task_id]),
+            "driven_by": ({"task_id": driver[task_id][0],
+                           "lag_days": driver[task_id][1],
+                           "kind": normalise_kind(driver[task_id][2])}
+                          if task_id in driver else None),
             "predecessor_ids": [first for first, _lag, _kind in predecessors.get(task_id, ())],
             "successor_ids": [second for second, _lag, _kind in successors.get(task_id, ())],
         }

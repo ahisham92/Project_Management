@@ -9,15 +9,17 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 from .. import charts
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..charts import SERIES_SLOTS
-from ..dates import from_input, from_input_or
+from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query, query_one
 from ..sorting import COLUMNS as SORT_COLUMNS
 from ..sorting import normalise as normalise_sort
 from ..sorting import sort_tasks
+from ..schedule import MODES, duration_between, finish_from, normalise_mode
 from ..service import (
-    AllocationError, WorkflowError, install_default_steps, load_revisions, load_sections,
-    load_steps, load_trades, next_sort_order, project_period, project_s_curve,
-    project_snapshot, record_comments, record_progress, set_allocations, set_status, today,
+    REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
+    load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
+    project_s_curve, project_snapshot, record_comments, record_progress, remove_link,
+    set_allocations, set_status, set_task_dates, today,
 )
 from ..workflow import ordered as ordered_steps
 
@@ -159,7 +161,7 @@ def tasks(project_id: int):
         }] if kept else []
 
     return render_template(
-        "tasks.html",
+        "tasks.html", codes=REVIEW_CODES,
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         groups=grouped, filters=FILTERS, active_filter=active, search=search,
         shown=len(kept), can_report=_can_report(role),
@@ -232,13 +234,15 @@ def record_task_comments(project_id: int, task_id: int):
         result = record_comments(
             task, project, load_steps(project_id), comments_date, new_submission or "",
             (request.form.get("note") or "").strip(), g.user["id"],
+            code=request.form.get("code") or "",
         )
     except WorkflowError as exc:
         flash(str(exc), "error")
         return _return_to_tasks(project_id)
 
     flash(
-        f"{task['wbs'] or task['name'][:40]} moved to revision {result['revision']} — "
+        f"{task['wbs'] or task['name'][:40]} — Code {result['code']}, "
+        f"moved to revision {result['revision']} — "
         f"back to \u201c{result['reset_to']}\u201d, resubmission planned for "
         f"{_display(result['submission_date'])}",
         "success",
@@ -278,29 +282,127 @@ def task_history(project_id: int, task_id: int):
 @bp.get("/schedule")
 @login_required
 def schedule(project_id: int):
+    """The plan: what runs when, what depends on what, and what is critical."""
     project, role = load_project(project_id)
-    data_date, horizon = _params()
-    snapshot = project_snapshot(project, data_date, horizon)
-    rows = snapshot["tasks"]
+    data_date, _horizon = _params()
+    plan = project_plan(project, data_date)
 
     requested = request.args.get("sort")
-    sort, direction = normalise_sort(requested, request.args.get("dir"))
+    sort, direction = normalise_sort(requested or "wbs", request.args.get("dir"))
+    rows = sort_tasks(plan["tasks"], sort, direction)
 
-    def arrange(subset, fallback):
-        """Each table has a sensible default order until a column is chosen."""
-        if requested in SORT_COLUMNS:
-            return sort_tasks(subset, sort, direction)
-        return sorted(subset, key=fallback)
-
+    first, last = plan["window"]
     return render_template(
         "schedule.html",
-        project=project, role=role, snapshot=snapshot, data_date=data_date,
-        horizon=horizon, horizons=HORIZONS, steps=ordered_steps(load_steps(project_id)),
-        sort=sort, direction=direction, sort_columns=SORT_COLUMNS, sorted_by=requested in SORT_COLUMNS,
-        late=arrange([t for t in rows if t["is_late"]], lambda t: -t["days_late"]),
-        upcoming=arrange([t for t in rows if t["is_upcoming"]], lambda t: t["days_to_due"]),
-        behind=arrange([t for t in rows if t["is_behind"] and not t["is_late"]], lambda t: t["variance"]),
+        project=project, role=role, plan=plan, tasks=rows, data_date=data_date,
+        mode=normalise_mode(project["schedule_mode"]), modes=MODES,
+        sort=sort, direction=direction,
+        steps=ordered_steps(load_steps(project_id)),
+        gantt=charts.gantt(rows, first, last, plan["data_date"]),
+        network=charts.network(plan["tasks"], plan["links"]),
+        can_edit=_can_edit(role),
     )
+
+
+@bp.post("/schedule/mode")
+@login_required
+def schedule_mode(project_id: int):
+    """Whether a line is entered as start + duration, or as two dates."""
+    _project, _role = load_project(project_id, "manager")
+    execute("UPDATE projects SET schedule_mode = ? WHERE id = ?",
+            (normalise_mode(request.form.get("mode")), project_id))
+    return _back("projects.schedule", project_id)
+
+
+@bp.post("/schedule/<int:task_id>")
+@login_required
+def save_dates(project_id: int, task_id: int):
+    """One line's dates, however the schedule is being entered.
+
+    By duration the finish follows the start; by dates the duration follows the
+    two. Either way whatever depends on this line is pushed out with it.
+    """
+    project, _role = load_project(project_id, "manager")
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
+    if task is None:
+        abort(404)
+
+    mode = normalise_mode(request.form.get("mode") or project["schedule_mode"])
+    start = from_input(request.form.get("start_date")) or task["start_date"]
+    if mode == "duration" or "duration_days" in request.form:
+        days = _to_float(request.form.get("duration_days"),
+                         duration_between(task["start_date"], task["submission_date"]))
+        submission = finish_from(start, days)
+    else:
+        submission = from_input(request.form.get("submission_date")) or task["submission_date"]
+        if submission < start:
+            submission = start
+
+    moves = set_task_dates(project_id, task_id, start, submission)
+    if not _wants_json():
+        if moves:
+            flash(f"Dates saved — {len(moves)} dependent deliverable"
+                  f"{'' if len(moves) == 1 else 's'} moved with it", "success")
+        else:
+            flash("Dates saved", "success")
+    return _plan_answer(project_id, task_id, moves)
+
+
+@bp.post("/schedule/links")
+@login_required
+def add_dependency(project_id: int):
+    _project, _role = load_project(project_id, "manager")
+    try:
+        add_link(project_id, _to_int(request.form.get("predecessor_id")) or 0,
+                 _to_int(request.form.get("successor_id")) or 0,
+                 _to_float(request.form.get("lag_days"), 0))
+    except LinkError as exc:
+        flash(str(exc), "error")
+    else:
+        flash("Dependency added", "success")
+    return _back("projects.schedule", project_id)
+
+
+@bp.post("/schedule/links/<int:link_id>/delete")
+@login_required
+def delete_dependency(project_id: int, link_id: int):
+    _project, _role = load_project(project_id, "manager")
+    remove_link(project_id, link_id)
+    flash("Dependency removed", "success")
+    return _back("projects.schedule", project_id)
+
+
+def _wants_json() -> bool:
+    return "application/json" in (request.headers.get("Accept") or "")
+
+
+def _plan_answer(project_id: int, task_id: int, moves: dict):
+    """A saved line answers with the rows that moved, so the page can redraw
+    them without fetching the whole plan again."""
+    if not _wants_json():
+        return _back("projects.schedule", project_id)
+
+    from flask import jsonify
+
+    project, _role = load_project(project_id)
+    plan = project_plan(project)
+    by_id = {t["id"]: t for t in plan["tasks"]}
+    touched = [task_id, *moves]
+    return jsonify({
+        "ok": True,
+        "moved": [
+            {
+                "id": row["id"],
+                "start": to_display(row["start_date"]),
+                "submission": to_display(row["submission_date"]),
+                "duration": row.get("duration_days", 0),
+                "float": row.get("total_float", 0),
+                "critical": bool(row.get("is_critical")),
+            }
+            for row in (by_id[i] for i in touched if i in by_id)
+        ],
+        "stale": True,
+    })
 
 
 # --- budget ----------------------------------------------------------------

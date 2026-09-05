@@ -246,13 +246,15 @@
     form.dataset.cell = kind;
     form.dataset.was = cell.innerHTML;
 
-    if (link.dataset.back) {
-      var back = document.createElement('input');
-      back.type = 'hidden';
-      back.name = 'return';
-      back.value = link.dataset.back;
-      form.appendChild(back);
-    }
+    ['back:return', 'mode:mode'].forEach(function (pair) {
+      var from = pair.split(':')[0];
+      if (!link.dataset[from]) return;
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = pair.split(':')[1];
+      hidden.value = link.dataset[from];
+      form.appendChild(hidden);
+    });
 
     var control = template.content.firstElementChild.cloneNode(true);
     fillCell(control, link, kind);
@@ -288,6 +290,13 @@
       if (!response.ok) throw new Error(response.status);
       return response.json();
     }).then(function (result) {
+      // A schedule change can move other lines with it, so the answer says
+      // which rows to redraw rather than the page reloading to find out.
+      if (result.moved) {
+        redrawPlan(result.moved, form);
+        return;
+      }
+
       var kind = form.dataset.cell;
       var id = form.dataset.itemId;
       var state = '';
@@ -312,6 +321,62 @@
     });
   }
 
+  function redrawPlan(rows, form) {
+    var editedId = form.dataset.itemId;
+    rows.forEach(function (row) {
+      setPlanCell('start-' + row.id, row.start, row.start);
+      setPlanCell('duration-' + row.id, row.duration + 'd', row.duration);
+      setPlanCell('submission-' + row.id, row.submission, row.submission);
+
+      var slack = document.getElementById('float-' + row.id);
+      if (slack) {
+        slack.innerHTML = row.critical
+          ? '<span class="badge critical"><span aria-hidden="true">■</span> critical</span>'
+          : row.float + 'd';
+      }
+      var line = document.getElementById('task-' + row.id);
+      if (line) {
+        line.classList.toggle('is-critical', !!row.critical);
+        if (String(row.id) !== String(editedId)) line.classList.add('cell-saved');
+        window.setTimeout(function () { line.classList.remove('cell-saved'); }, 1600);
+      }
+    });
+    // The bars and the network are drawn on the server, so they are fetched
+    // again rather than redrawn by hand.
+    refreshCharts();
+  }
+
+  function setPlanCell(id, label, value) {
+    var cell = document.getElementById(id);
+    if (!cell) return;
+    var link = cell.querySelector('.cell-open');
+    if (link) {
+      link.textContent = label;
+      link.dataset.value = value;
+    } else {
+      var form = cell.querySelector('form');
+      if (form) { form.remove(); cell.textContent = label; }
+      else cell.textContent = label;
+    }
+    cell.classList.add('cell-saved');
+    window.setTimeout(function () { cell.classList.remove('cell-saved'); }, 1600);
+  }
+
+  function refreshCharts() {
+    fetch(window.location.href, { credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var fresh = new DOMParser().parseFromString(html, 'text/html');
+        ['.chart'].forEach(function (selector) {
+          var now = document.querySelectorAll(selector);
+          var next = fresh.querySelectorAll(selector);
+          for (var i = 0; i < now.length && i < next.length; i++) {
+            now[i].replaceWith(next[i]);
+          }
+        });
+      }).catch(function () { /* the chart simply stays as it was */ });
+  }
+
   function cellLink(form, label) {
     // The cell goes back to being a link, carrying what it now holds.
     var kind = form.dataset.cell;
@@ -319,7 +384,8 @@
       ? Array.prototype.filter.call(form.elements.trade_ids.length ? form.elements.trade_ids : [form.elements.trade_ids],
                                     function (box) { return box.checked; })
           .map(function (box) { return box.value; }).join(',')
-      : (form.elements.owner_code || form.elements.impact || form.elements.due_date).value;
+      : (form.elements.owner_code || form.elements.impact || form.elements.due_date
+         || form.elements.status_key || form.elements.actual_pct).value;
     var link = document.createElement('a');
     link.className = 'cell-open';
     link.dataset.cell = kind;

@@ -7,7 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from .calc import build_period_report, build_s_curve, compute_project, parse_date, to_iso
 from .workflow import CODE_A, default_steps, is_submitted, percent_for, step_by_key
-from .db import execute, get_db, query, query_one
+from .db import execute, get_db, insert, query, query_one
 
 
 def today() -> str:
@@ -300,7 +300,8 @@ def set_status(task: Mapping[str, Any], status_key: str, note: str, data_date: s
     record_progress(task, percent, note or f"Status set to {label}", data_date, user_id, status_key=status_key)
 
     if status_key == CODE_A:
-        _open_revision(task, close_as="code_a", outcome_date=data_date, user_id=user_id, note=note)
+        _open_revision(task, close_as="code_a", outcome_date=data_date, user_id=user_id,
+                       note=note, code="A")
     return percent
 
 
@@ -310,29 +311,46 @@ def _current_revision_row(task_id: int):
     )
 
 
-def _open_revision(task: Mapping[str, Any], close_as: str, outcome_date: str, user_id: int, note: str) -> None:
+def _open_revision(task: Mapping[str, Any], close_as: str, outcome_date: str, user_id: int,
+                   note: str, code: str = "") -> None:
     """Closes the deliverable's open revision with an outcome, creating the row
     for revision 0 if it was never recorded."""
     row = _current_revision_row(task["id"])
     if row is None:
         execute(
             """
-            INSERT INTO task_revisions (task_id, project_id, revision, submission_date, outcome, outcome_date, note, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO task_revisions
+                (task_id, project_id, revision, submission_date, outcome, outcome_date, note, user_id, code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (task["id"], task["project_id"], int(task["revision"] or 0), task["submission_date"],
-             close_as, outcome_date, note, user_id),
+             close_as, outcome_date, note, user_id, code),
         )
     elif row["outcome"] == "open":
         execute(
-            "UPDATE task_revisions SET outcome = ?, outcome_date = ?, note = ? WHERE id = ?",
-            (close_as, outcome_date, note or row["note"], row["id"]),
+            "UPDATE task_revisions SET outcome = ?, outcome_date = ?, note = ?, code = ? WHERE id = ?",
+            (close_as, outcome_date, note or row["note"], code or row["code"], row["id"]),
         )
 
 
+REVIEW_CODES: tuple[tuple[str, str], ...] = (
+    ("A", "Code A — approved"),
+    ("B", "Code B — approved with comments, resubmit"),
+    ("C", "Code C — not approved, resubmit"),
+)
+REWORK_CODES = ("B", "C")
+
+
+def normalise_code(value: Any) -> str:
+    """One of A, B or C, or blank when nothing was said."""
+    text = str(value or "").strip().upper().replace("CODE", "").strip()
+    return text if text in {code for code, _ in REVIEW_CODES} else ""
+
+
 def record_comments(task: Mapping[str, Any], project: Mapping[str, Any], steps: Sequence[Mapping[str, Any]],
-                    comments_date: str, new_submission_date: str, note: str, user_id: int) -> dict[str, Any]:
-    """Records that the client returned comments instead of a Code A.
+                    comments_date: str, new_submission_date: str, note: str, user_id: int,
+                    code: str = "") -> dict[str, Any]:
+    """Records that the client returned a Code B or C instead of a Code A.
 
     The deliverable moves to the next revision, drops back to the step the
     project nominates, and is rescheduled around a new submission date — so the
@@ -358,7 +376,9 @@ def record_comments(task: Mapping[str, Any], project: Mapping[str, Any], steps: 
     percent = percent_for(steps, reset_key) if reset_key else 0.0
     reset_name = (step_by_key(steps, reset_key) or {}).get("name", "Not started")
 
-    _open_revision(task, close_as="comments", outcome_date=comments_date, user_id=user_id, note=note)
+    code = normalise_code(code) or "B"
+    _open_revision(task, close_as="comments", outcome_date=comments_date, user_id=user_id,
+                   note=note, code=code)
 
     conn = get_db()
     with conn:
@@ -381,13 +401,16 @@ def record_comments(task: Mapping[str, Any], project: Mapping[str, Any], steps: 
         )
         conn.execute(
             """
-            INSERT INTO task_revisions (task_id, project_id, revision, submission_date, outcome, note, user_id)
-            VALUES (?, ?, ?, ?, 'open', ?, ?)
+            INSERT INTO task_revisions
+                (task_id, project_id, revision, submission_date, outcome, note, user_id, comments_date)
+            VALUES (?, ?, ?, ?, 'open', ?, ?, ?)
             """,
-            (task["id"], task["project_id"], revision, new_submission_date, note, user_id),
+            (task["id"], task["project_id"], revision, new_submission_date, note, user_id,
+             comments_date),
         )
 
-    return {"revision": revision, "submission_date": new_submission_date, "reset_to": reset_name}
+    return {"revision": revision, "submission_date": new_submission_date, "reset_to": reset_name,
+            "code": code}
 
 
 def load_revisions(task_id: int) -> list[dict[str, Any]]:
@@ -664,3 +687,142 @@ def move_item(project_id: int, item_id: int, direction: str) -> bool:
                 (target["sort_order"], target["ref"], target["id"]),
             )
     return True
+
+
+# --- the plan --------------------------------------------------------------
+
+def load_links(project_id: int) -> list[dict[str, Any]]:
+    """Every dependency on the project, each with the two WBS it joins."""
+    return [
+        dict(r)
+        for r in query(
+            """
+            SELECT l.*, p.wbs AS predecessor_wbs, p.name AS predecessor_name,
+                   s.wbs AS successor_wbs, s.name AS successor_name
+            FROM task_links l
+            JOIN tasks p ON p.id = l.predecessor_id
+            JOIN tasks s ON s.id = l.successor_id
+            WHERE l.project_id = ?
+            ORDER BY p.sort_order, p.id, s.sort_order, s.id
+            """,
+            (project_id,),
+        )
+    ]
+
+
+class LinkError(ValueError):
+    """A dependency that cannot be made."""
+
+
+def add_link(project_id: int, predecessor_id: int, successor_id: int, lag_days: float = 0) -> int:
+    """Joins two deliverables, refusing anything that cannot hold."""
+    from .schedule import would_cycle
+
+    if predecessor_id == successor_id:
+        raise LinkError("A deliverable cannot depend on itself")
+
+    owned = {
+        int(r["id"])
+        for r in query("SELECT id FROM tasks WHERE project_id = ? AND id IN (?, ?)",
+                       (project_id, predecessor_id, successor_id))
+    }
+    if len(owned) != 2:
+        raise LinkError("Both deliverables must belong to this project")
+
+    links = load_links(project_id)
+    if any(l["predecessor_id"] == predecessor_id and l["successor_id"] == successor_id for l in links):
+        raise LinkError("Those two are already linked")
+    if would_cycle(links, predecessor_id, successor_id):
+        raise LinkError("That link would make the programme depend on itself")
+
+    return insert(
+        "INSERT INTO task_links (project_id, predecessor_id, successor_id, lag_days) "
+        "VALUES (?, ?, ?, ?)",
+        (project_id, predecessor_id, successor_id, float(lag_days or 0)),
+    )
+
+
+def remove_link(project_id: int, link_id: int) -> None:
+    execute("DELETE FROM task_links WHERE id = ? AND project_id = ?", (link_id, project_id))
+
+
+def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
+                   cascade: bool = True) -> dict[int, dict[str, str]]:
+    """Moves one deliverable and pushes whatever depends on it.
+
+    Successors are only ever pushed later: pulling a predecessor forward frees
+    float rather than dragging the programme back with it.
+    """
+    from .schedule import shift_successors
+
+    execute(
+        "UPDATE tasks SET start_date = ?, submission_date = ?, updated_at = datetime('now') "
+        "WHERE id = ? AND project_id = ?",
+        (start, submission, task_id, project_id),
+    )
+    if not cascade:
+        return {}
+
+    tasks = [
+        {"id": r["id"], "start_date": r["start_date"], "submission_date": r["submission_date"]}
+        for r in query("SELECT id, start_date, submission_date FROM tasks WHERE project_id = ?",
+                       (project_id,))
+    ]
+    moves = shift_successors(tasks, load_links(project_id), task_id)
+    conn = get_db()
+    with conn:
+        for moved_id, dates in moves.items():
+            conn.execute(
+                "UPDATE tasks SET start_date = ?, submission_date = ?, updated_at = datetime('now') "
+                "WHERE id = ? AND project_id = ?",
+                (dates["start_date"], dates["submission_date"], moved_id, project_id),
+            )
+    return moves
+
+
+def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> dict[str, Any]:
+    """Everything the schedule screen draws: the lines, their float, the links."""
+    from .schedule import analyse, critical_path, summarise, window
+
+    project_id = project["id"]
+    stamp = data_date or today()
+    snapshot = project_snapshot(project, stamp)
+    rows = snapshot["tasks"]
+    links = load_links(project_id)
+    analysis = analyse(rows, links)
+
+    revisions = load_project_revisions(project_id)
+    for row in rows:
+        row.update(analysis.get(row["id"], {}))
+        # A revision carries the code that closed it. The rework it caused is
+        # the *next* attempt, so each one is told what sent it back.
+        history = revisions.get(row["id"], [])
+        for index, attempt in enumerate(history):
+            attempt["cause_code"] = history[index - 1].get("code", "") if index else ""
+        row["revisions"] = history
+        closed = [a for a in history if a.get("code")]
+        row["last_code"] = closed[-1]["code"] if closed else ""
+
+    first, last = window(rows, stamp)
+    return {
+        "tasks": rows,
+        "links": links,
+        "analysis": analysis,
+        "critical": critical_path(analysis),
+        "totals": summarise(analysis),
+        "window": (first, last),
+        "data_date": stamp,
+        "trades": snapshot["trades"],
+        "max_revisions": snapshot["max_revisions"],
+    }
+
+
+def load_project_revisions(project_id: int) -> dict[int, list[dict[str, Any]]]:
+    """task id -> its resubmissions, oldest first."""
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in query(
+        "SELECT * FROM task_revisions WHERE project_id = ? ORDER BY task_id, revision, id",
+        (project_id,),
+    ):
+        grouped.setdefault(row["task_id"], []).append(dict(row))
+    return grouped

@@ -381,3 +381,248 @@ def budget_hours(trades: Sequence[Mapping[str, Any]]) -> Markup:
         [("Booked", PLANNED), ("Remaining budget", GRID), ("Over budget", CRITICAL)], mark="dot"
     )
     return _chart("".join(parts), legend, w, h)
+
+
+# --- the plan --------------------------------------------------------------
+
+GANTT_ROW = 26                      # the height one deliverable takes
+GANTT_LEFT = 96                     # room for the WBS down the side
+REWORK = "var(--warning)"
+
+
+def _span(first: str, last: str) -> int:
+    return max(1, days_between(first, last) or 1)
+
+
+def _x_of(day: str, first: str, span: int, left: int, width: int) -> float:
+    return left + (days_between(first, day) / span) * width
+
+
+def _ticks(first: str, last: str, span: int) -> list[str]:
+    """A tick every month for a long plan, every week for a short one."""
+    from datetime import date, timedelta
+
+    start = datetime.strptime(first[:10], "%Y-%m-%d").date()
+    end = datetime.strptime(last[:10], "%Y-%m-%d").date()
+    if span > 120:
+        marks, day = [], date(start.year, start.month, 1)
+        while day <= end:
+            if day >= start:
+                marks.append(day.isoformat())
+            day = date(day.year + (day.month == 12), (day.month % 12) + 1, 1)
+        return marks
+    step = 7 if span > 28 else 1
+    marks, day = [], start
+    while day <= end:
+        marks.append(day.isoformat())
+        day += timedelta(days=step)
+    return marks
+
+
+def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: str,
+          steps: Sequence[Mapping[str, Any]] = ()) -> Markup:
+    """The programme as bars, with the design milestones marked on each line.
+
+    A bar runs from a deliverable's start to its submission. The IDC sits on it
+    as a circle and the Code A as a star, both in red so the two dates a
+    reviewer cares about are the two that catch the eye. A resubmission draws
+    its own bar underneath in amber — the rework a Code B or C caused, and how
+    far it pushed the line out. The vertical line is today.
+    """
+    if not tasks:
+        return _empty("No deliverables to plan yet.")
+
+    span = _span(first, last)
+    width, left = 660, GANTT_LEFT
+    top, foot = 26, 30
+    height = top + len(tasks) * GANTT_ROW + foot
+    x_of = lambda day: _x_of(day, first, span, left, width)
+
+    parts = [f'<rect x="{left}" y="{top}" width="{width}" height="{len(tasks) * GANTT_ROW}"'
+             f' fill="{SURFACE}" rx="4"/>']
+
+    for tick in _ticks(first, last, span):
+        x = x_of(tick)
+        parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{height - foot}"'
+                     f' stroke="{GRID}" stroke-width="1"/>')
+        parts.append(f'<text x="{x:.1f}" y="{height - foot + 14}" text-anchor="middle"'
+                     f' font-size="9" fill="{MUTED}">{escape(_axis_label(tick, span <= 120))}</text>')
+
+    for index, task in enumerate(tasks):
+        y = top + index * GANTT_ROW
+        start, finish = task.get("start_date"), task.get("submission_date")
+        if not start or not finish:
+            continue
+
+        critical = bool(task.get("is_critical"))
+        colour = CRITICAL if critical else PLANNED
+        x1, x2 = x_of(start), x_of(finish)
+        bar_y = y + 6
+        parts.append(
+            f'<text x="{left - 8}" y="{bar_y + 8}" text-anchor="end" font-size="9"'
+            f' fill="{INK2}">{escape(str(task.get("wbs") or ""))}</text>'
+        )
+        parts.append(
+            f'<rect class="mark" x="{x1:.1f}" y="{bar_y}" width="{max(2.0, x2 - x1):.1f}" height="10"'
+            f' rx="3" fill="{colour}" opacity="{0.95 if critical else 0.75}"/>'
+        )
+        # How far the line has actually got, drawn inside its own bar.
+        done = float(task.get("actual_pct") or 0)
+        if done > 0:
+            parts.append(
+                f'<rect x="{x1:.1f}" y="{bar_y + 3}" width="{max(1.0, (x2 - x1) * done):.1f}"'
+                f' height="4" rx="2" fill="var(--ink)" opacity="0.45"/>'
+            )
+
+        plan = {step["key"]: step["date"] for step in (task.get("step_plan") or ())}
+        if plan.get("idc"):
+            cx = x_of(plan["idc"])
+            parts.append(f'<circle cx="{cx:.1f}" cy="{bar_y + 5}" r="4" fill="{CRITICAL}"'
+                         f' stroke="var(--plane)" stroke-width="1"/>')
+        approval = task.get("approval_due_date")
+        if approval:
+            parts.append(_star(x_of(approval), bar_y + 5, 6, CRITICAL))
+
+        # Each resubmission: from the day the comments landed to the new date.
+        for revision in task.get("revisions") or ():
+            raised, again = revision.get("comments_date"), revision.get("submission_date")
+            if not raised or not again:
+                continue
+            rx1, rx2 = x_of(raised), x_of(again)
+            parts.append(
+                f'<rect class="mark" x="{rx1:.1f}" y="{bar_y + 12}" width="{max(2.0, rx2 - rx1):.1f}"'
+                f' height="5" rx="2" fill="{REWORK}"/>'
+            )
+            code = str(revision.get("cause_code") or "").upper()
+            if code:
+                parts.append(f'<text x="{rx1:.1f}" y="{bar_y + 11}" font-size="7"'
+                             f' fill="{REWORK}">{escape(code)}</text>')
+
+        rows = [
+            {"label": "Start", "value": _short_date(start), "color": colour},
+            {"label": "Submission", "value": _short_date(finish), "color": colour},
+            {"label": "Duration", "value": f'{task.get("duration_days", 0)} days', "color": MUTED},
+            {"label": "Float", "value": f'{task.get("total_float", 0)} days', "color": MUTED},
+        ]
+        if approval:
+            rows.append({"label": "Code A due", "value": _short_date(approval), "color": CRITICAL})
+        if task.get("revisions"):
+            rows.append({"label": "Resubmissions", "value": str(len(task["revisions"])), "color": REWORK})
+        parts.append(
+            f'<rect class="hit" x="{left}" y="{y}" width="{width}" height="{GANTT_ROW}"'
+            f' fill="transparent" data-tip="{_tip(str(task.get("wbs") or "") + " " + str(task.get("name") or ""), rows)}"/>'
+        )
+
+    x = x_of(data_date)
+    parts.append(f'<line x1="{x:.1f}" y1="{top - 6}" x2="{x:.1f}" y2="{height - foot}"'
+                 f' stroke="{CRITICAL}" stroke-width="1.5" stroke-dasharray="4 3"/>')
+    parts.append(f'<text x="{x:.1f}" y="{top - 10}" text-anchor="middle" font-size="9"'
+                 f' fill="{CRITICAL}">today</text>')
+
+    legend = _legend([("Critical", "var(--critical)"), ("Has float", "var(--series-1)"),
+                      ("Rework", "var(--warning)")], mark="dot")
+    return _chart("".join(parts), legend, view_w=left + width + 20, view_h=height)
+
+
+def _star(cx: float, cy: float, size: float, colour: str) -> str:
+    """A five-pointed star, for the Code A on a bar."""
+    import math
+
+    points = []
+    for step in range(10):
+        radius = size if step % 2 == 0 else size * 0.45
+        angle = math.pi / 2 * 3 + step * math.pi / 5
+        points.append(f"{cx + radius * math.cos(angle):.1f},{cy + radius * math.sin(angle):.1f}")
+    return f'<polygon points="{" ".join(points)}" fill="{colour}" stroke="var(--plane)" stroke-width="0.5"/>'
+
+
+def network(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]]) -> Markup:
+    """Who depends on whom, as small boxes laid out in columns.
+
+    Each box is a WBS number — the name is on hover, so hundreds of boxes stay
+    readable. A box sits in the column after the last of its predecessors, which
+    is the order the work actually runs in. The critical path is picked out.
+    """
+    if not tasks:
+        return _empty("No deliverables to draw yet.")
+    if not links:
+        return _empty("No dependencies yet — link two deliverables to see the network.")
+
+    from .schedule import order as topological
+
+    by_id = {int(t["id"]): t for t in tasks}
+    predecessors: dict[int, list[int]] = {}
+    for link in links:
+        predecessors.setdefault(int(link["successor_id"]), []).append(int(link["predecessor_id"]))
+
+    # Only what is joined to something; an unlinked line says nothing here.
+    joined = {int(l["predecessor_id"]) for l in links} | {int(l["successor_id"]) for l in links}
+    joined &= set(by_id)
+    if not joined:
+        return _empty("No dependencies yet — link two deliverables to see the network.")
+
+    column: dict[int, int] = {}
+    for task_id in topological(list(joined), links):
+        earlier = [column.get(p, 0) for p in predecessors.get(task_id, ()) if p in joined]
+        column[task_id] = (max(earlier) + 1) if earlier else 0
+
+    columns: dict[int, list[int]] = {}
+    for task_id, depth in column.items():
+        columns.setdefault(depth, []).append(task_id)
+    for depth in columns:
+        columns[depth].sort(key=lambda t: str(by_id[t].get("wbs") or ""))
+
+    box_w, box_h, gap_x, gap_y, pad = 54, 26, 34, 12, 14
+    drawn_w = pad * 2 + (max(columns) + 1) * (box_w + gap_x) - gap_x
+    height = pad * 2 + max(len(c) for c in columns.values()) * (box_h + gap_y) - gap_y
+    # The SVG stretches to the card, so a small network is given room around it
+    # rather than being blown up until the boxes swamp the page.
+    width = max(drawn_w, 760)
+
+    place: dict[int, tuple[float, float]] = {}
+    for depth, ids in columns.items():
+        for row, task_id in enumerate(ids):
+            place[task_id] = (pad + depth * (box_w + gap_x), pad + row * (box_h + gap_y))
+
+    parts = ['<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6"'
+             ' markerHeight="6" orient="auto-start-reverse">'
+             f'<path d="M0,0 L8,4 L0,8 z" fill="{AXIS}"/></marker></defs>']
+
+    for link in links:
+        first, second = int(link["predecessor_id"]), int(link["successor_id"])
+        if first not in place or second not in place:
+            continue
+        x1, y1 = place[first]
+        x2, y2 = place[second]
+        critical = bool(by_id[first].get("is_critical") and by_id[second].get("is_critical"))
+        parts.append(
+            f'<path d="M{x1 + box_w},{y1 + box_h / 2} C{x1 + box_w + gap_x / 2},{y1 + box_h / 2}'
+            f' {x2 - gap_x / 2},{y2 + box_h / 2} {x2},{y2 + box_h / 2}"'
+            f' fill="none" stroke="{CRITICAL if critical else AXIS}"'
+            f' stroke-width="{1.6 if critical else 1}" opacity="{1 if critical else 0.6}"'
+            ' marker-end="url(#arrow)"/>'
+        )
+
+    for task_id, (x, y) in place.items():
+        task = by_id[task_id]
+        critical = bool(task.get("is_critical"))
+        rows = [
+            {"label": "Deliverable", "value": str(task.get("name") or ""), "color": INK2},
+            {"label": "Start", "value": _short_date(task.get("start_date")), "color": PLANNED},
+            {"label": "Submission", "value": _short_date(task.get("submission_date")), "color": PLANNED},
+            {"label": "Float", "value": f'{task.get("total_float", 0)} days',
+             "color": CRITICAL if critical else MUTED},
+        ]
+        parts.append(
+            f'<g><rect class="mark hit" x="{x}" y="{y}" width="{box_w}" height="{box_h}" rx="5"'
+            f' fill="{SURFACE}" stroke="{CRITICAL if critical else AXIS}"'
+            f' stroke-width="{1.8 if critical else 1}"'
+            f' data-tip="{_tip(str(task.get("wbs") or ""), rows)}"/>'
+            f'<text x="{x + box_w / 2}" y="{y + box_h / 2 + 3.5}" text-anchor="middle"'
+            f' font-size="10" font-weight="{600 if critical else 400}"'
+            f' fill="{CRITICAL if critical else INK2}" pointer-events="none">'
+            f'{escape(str(task.get("wbs") or ""))}</text></g>'
+        )
+
+    legend = _legend([("On the critical path", "var(--critical)"), ("Has float", AXIS)], mark="dot")
+    return _chart("".join(parts), legend, view_w=width, view_h=height)

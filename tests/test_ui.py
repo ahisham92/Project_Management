@@ -55,19 +55,17 @@ def test_an_unknown_sort_column_falls_back_to_wbs(signed_in):
 
 
 def test_the_schedule_can_be_sorted(signed_in):
-    body = text(signed_in.get("/projects/1/schedule?horizon=all&sort=submission&dir=desc&data_date=01/09/2026"))
-    # Each of the three tables is sorted in its own right, so check one of them.
-    upcoming = body.split("Due in everything ahead", 1)[1].split("</table>", 1)[0]
-    dates = re.findall(r'<td class="right small nowrap" style="font-weight:500">(\d{2}/\d{2}/\d{4})</td>', upcoming)
-    assert len(dates) > 5, "the upcoming table lists submission dates"
+    body = text(signed_in.get("/projects/1/schedule?sort=submission&dir=desc&data_date=01/09/2026"))
+    dates = re.findall(r'id="submission-\d+"[^>]*>\s*(\d{2}/\d{2}/\d{4})', body)
+    assert len(dates) > 5, "the plan lists a finish date per line"
     keys = [(d[6:], d[3:5], d[:2]) for d in dates]
-    assert keys == sorted(keys, reverse=True), "latest submission first"
+    assert keys == sorted(keys, reverse=True), "latest finish first"
 
 
 def test_schedule_headings_link_to_a_sort(signed_in):
-    body = text(signed_in.get("/projects/1/schedule?horizon=all"))
+    body = text(signed_in.get("/projects/1/schedule"))
     assert "sort=submission" in body
-    assert "sort=weight" in body
+    assert "sort=start" in body
 
 
 # --- Save all ---------------------------------------------------------------

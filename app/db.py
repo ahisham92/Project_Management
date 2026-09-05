@@ -89,6 +89,12 @@ def init_db(path: Path | str | None = None) -> None:
             # An item is owned by a party — PM, Client, MR — rather than by a
             # named person, who changes while the responsibility does not.
             ("meeting_items", "owner_code", "TEXT NOT NULL DEFAULT ''"),
+            # How the schedule is entered: start + duration, or start and finish.
+            ("projects", "schedule_mode", "TEXT NOT NULL DEFAULT 'duration'"),
+            # What the client returned: a Code A approves, B and C mean rework.
+            ("task_revisions", "code", "TEXT NOT NULL DEFAULT ''"),
+            # The day the comments landed, so rework draws on the programme.
+            ("task_revisions", "comments_date", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, table, column, definition)
 

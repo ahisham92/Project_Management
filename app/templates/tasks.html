@@ -162,6 +162,14 @@
                     <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
                     <input type="hidden" name="filter" value="{{ active_filter }}">
                     <input type="hidden" name="q" value="{{ search }}">
+                    <label class="field w-lg">
+                      <span class="field-label">The client returned</span>
+                      <select name="code">
+                        {% for key, label in codes if key != 'A' %}
+                          <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
                     {{ date_field('comments_date', data_date, 'Comments received', 'w-md', required=True) }}
                     {{ date_field('new_submission_date', '', 'Resubmission date', 'w-md') }}
                     <label class="field flex1">
@@ -192,7 +200,7 @@
                   {% if task['is_submitted'] and not task['is_approved'] %}
                     <a class="btn btn-ghost btn-sm"
                        href="{{ url_for('projects.tasks', project_id=project['id'], filter=active_filter, q=search or none, data_date=date_input(data_date), comments=task['id']) }}#task-{{ task['id'] }}"
-                       title="The client returned comments instead of a Code A">Comments</a>
+                       title="The client returned a Code B or C instead of a Code A">Code B / C</a>
                   {% endif %}
                 {% endif %}
                 <a class="btn btn-ghost btn-sm"

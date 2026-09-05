@@ -217,3 +217,19 @@ CREATE TABLE IF NOT EXISTS meeting_item_trades (
   trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
   PRIMARY KEY (item_id, trade_id)
 );
+
+
+-- --- the plan --------------------------------------------------------------
+
+-- One deliverable cannot start until another has finished. Finish-to-start is
+-- the only link offered: it is what a design programme is built from.
+CREATE TABLE IF NOT EXISTS task_links (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id     INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  predecessor_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  successor_id   INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  lag_days       REAL NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (predecessor_id, successor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_links_project ON task_links(project_id);

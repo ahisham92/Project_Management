@@ -93,32 +93,40 @@ def test_the_dashboard_draws_both_curve_series(signed_in):
     assert "Data date" in body
 
 
-def test_the_schedule_lists_the_late_milestone(signed_in):
+def test_the_schedule_is_the_plan_not_a_list_of_what_is_late(signed_in):
+    """Late and behind plan belong to the Progress tab; the Schedule is the
+    programme — what runs when, and what waits for what."""
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
+    assert "Dates and durations" in body and "Dependencies" in body
+    assert "Late deliverables" not in body
+    assert "Behind plan" not in body
+
+
+def test_the_schedule_lists_every_deliverable_in_wbs_order(signed_in):
     body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
     assert "Project kick-off meeting" in body
-    assert "1 day late" in body
+    assert "Structural tender drawings" in body      # no look-ahead window to fall outside
+    wbs = re.findall(r'<td class="tabular small muted nowrap">([\d.]+)</td>', body)
+    assert wbs[:3] == ["1.1", "1.2", "1.3"], wbs[:3]
 
 
-def test_the_schedule_look_ahead_can_be_a_window_or_everything(signed_in):
-    window = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=30"))
-    assert "Due in 30 days" in window
-
-    everything = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=all"))
-    assert "Due in everything ahead" in everything
-    # The all-dates view reaches submissions the 30-day window cannot.
-    assert "Structural tender drawings" in everything
-    assert "Structural tender drawings" not in window
-
-    custom = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=45"))
-    assert "Due in 45 days" in custom
-
-
-def test_the_schedule_shows_each_workflow_date(signed_in):
-    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026&horizon=all"))
-    for heading in (">IDC<", ">Comments<", ">Code A<"):
+def test_the_schedule_shows_start_duration_and_finish(signed_in):
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
+    for heading in (">Duration<", ">IDC<", ">Code A<", ">Float<", ">Depends on<"):
         assert heading in body, f"missing column {heading}"
-    # Submission is a sortable heading, so its text sits inside the sort link.
-    assert re.search(r'sort=submission[^>]*>\s*Submission', body), "missing the Submission column"
+    # Start and Finish sit inside their sort links.
+    assert re.search(r"sort=submission[^>]*>\s*Finish", body), "missing the Finish column"
+    assert re.search(r"sort=start[^>]*>\s*Start", body), "missing the Start column"
+    assert re.search(r"\d+d</a>", body), "durations read in days"
+
+
+def test_the_schedule_draws_the_bars_the_milestones_and_today(signed_in):
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
+    assert "<svg" in body
+    assert "<circle" in body                         # the IDC on each bar
+    assert "<polygon" in body                        # the Code A star
+    assert ">today</text>" in body                   # the line marking now
+    assert "stroke-dasharray" in body
 
 
 def test_the_progress_filter_narrows_the_list(signed_in):

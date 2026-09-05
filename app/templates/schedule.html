@@ -1,154 +1,275 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import badge, progress, task_color, revision_badge, date_field, empty, sort_th, print_header, print_button %}
+{% from "partials/bits.html" import badge, date_field, empty, sort_th, print_header, print_button %}
 {% block title %}Schedule — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
-{% macro task_table(title, subtitle, rows, kind, empty_title, empty_body, limit, sort, direction, params) %}
-  <div class="card" style="margin-top:16px">
-    <div class="card-head">
-      <div>
-        <h2>{{ title }}</h2>
-        <p class="small muted" style="margin-top:2px">{{ rows | length }} · {{ subtitle }}</p>
-      </div>
+{# A date or a duration, edited where it stands. The control is cloned from the
+   templates at the foot of the page, as on the Minutes tab. #}
+{% macro plan_cell(task, kind, label, value) %}
+  {% if can_edit %}
+    <a class="cell-open" data-cell="plan-{{ kind }}" data-item="{{ task['id'] }}"
+       data-value="{{ value }}" data-mode="{{ mode }}"
+       data-action="{{ url_for('projects.save_dates', project_id=project['id'], task_id=task['id']) }}"
+       href="{{ url_for('projects.setup', project_id=project['id']) }}#task-{{ task['id'] }}"
+       title="Click to change">{{ label }}</a>
+  {% else %}{{ label }}{% endif %}
+{% endmacro %}
+
+{% block content %}
+{% set t = plan['totals'] %}
+
+<div class="page-head">
+  <div>
+    <h1>Schedule</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }} ·
+      {{ t['count'] }} deliverable{{ '' if t['count'] == 1 else 's' }} from
+      {{ short_date(t['start']) }} to {{ short_date(t['finish']) }}
+      {% if t['linked'] %} · {{ plan['links'] | length }} dependenc{{ 'y' if plan['links'] | length == 1 else 'ies' }}{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
+      {{ date_field('data_date', data_date, 'As at', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
+</div>
+
+{{ print_header(project, 'Schedule', data_date,
+                short_date(t['start']) ~ ' to ' ~ short_date(t['finish'])) }}
+
+<div class="grid grid-4">
+  {{ tile('Programme', t['days'] ~ ' days', short_date(t['start']) ~ ' → ' ~ short_date(t['finish'])) }}
+  {{ tile('On the critical path', t['critical'], 'of ' ~ t['count'] ~ ' deliverables',
+          'critical' if t['critical'] else 'neutral', 'no float' if t['critical'] else '') }}
+  {{ tile('Cannot start as drawn', plan['tasks'] | selectattr('starts_late') | list | length,
+          'their predecessors finish later',
+          'warning' if plan['tasks'] | selectattr('starts_late') | list | length else 'good',
+          'to reschedule' if plan['tasks'] | selectattr('starts_late') | list | length else 'all clear') }}
+  {{ tile('In rework', plan['tasks'] | selectattr('revision') | list | length,
+          'resubmitted after a Code B or C',
+          'warning' if plan['tasks'] | selectattr('revision') | list | length else 'good',
+          'rework' if plan['tasks'] | selectattr('revision') | list | length else 'none') }}
+</div>
+
+{% if can_edit %}
+  <div class="card no-print" style="margin-top:16px">
+    <div class="card-body inline-form">
+      <form method="post" class="inline-form"
+            action="{{ url_for('projects.schedule_mode', project_id=project['id']) }}">
+        <label class="field w-lg">
+          <span class="field-label">Amend the plan by</span>
+          <select name="mode" onchange="this.form.submit()">
+            {% for key, label in modes %}
+              <option value="{{ key }}" {{ 'selected' if mode == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn btn-ghost save-inline">Set</button>
+      </form>
+      <p class="small muted" style="max-width:52ch">
+        {% if mode == 'duration' %}
+          Change a start or a duration and the finish follows. Anything that depends on the
+          line is pushed out with it.
+        {% else %}
+          Change a start or a finish and the duration follows. Anything that depends on the
+          line is pushed out with it.
+        {% endif %}
+      </p>
     </div>
-    <div class="card-body flush">
-      {% if not rows %}
-        {{ empty(empty_title, empty_body) }}
-      {% else %}
+  </div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Programme</h2>
+      <p class="small muted" style="margin-top:2px">
+        Each bar runs from start to submission · <span style="color:var(--critical)">●</span> IDC ·
+        <span style="color:var(--critical)">★</span> Code A · amber is rework after a Code B or C ·
+        the dashed line is today
+      </p>
+    </div>
+  </div>
+  <div class="card-body">{{ gantt }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Dates and durations</h2>
+      <p class="small muted" style="margin-top:2px">
+        {% if can_edit %}Click a date or a duration to change it — the rest of the row follows,
+        and so does anything that depends on it{% else %}
+        Sorted by WBS; the critical path carries no float{% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not tasks %}
+      {{ empty('No deliverables yet', 'Add them on the Setup sheet, or import them from Excel.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          {% set params = {'project_id': project['id'], 'data_date': date_input(data_date)} %}
+          <thead>
+            <tr>
+              {{ sort_th('wbs', 'WBS', sort, direction, params) }}
+              {{ sort_th('name', 'Deliverable', sort, direction, params) }}
+              {{ sort_th('section', 'Section', sort, direction, params) }}
+              {{ sort_th('start', 'Start', sort, direction, params, 'right') }}
+              <th class="right">Duration</th>
+              {{ sort_th('submission', 'Finish', sort, direction, params, 'right') }}
+              <th class="right">IDC</th>
+              <th class="right">Code A</th>
+              <th class="right">Float</th>
+              <th>Depends on</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in tasks %}
+              {% set plan_dates = {} %}
+              {% for step in task['step_plan'] %}{% set _ = plan_dates.update({step['key']: step['date']}) %}{% endfor %}
+              <tr id="task-{{ task['id'] }}" class="{{ 'is-critical' if task['is_critical'] }}">
+                <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
+                <td>
+                  {{ task['name'] }}
+                  {% if task['revision'] %}
+                    <span class="small" style="color:var(--warning)">
+                      · rev {{ task['revision'] }}{% if task['last_code'] %} (Code {{ task['last_code'] }}){% endif %}
+                    </span>
+                  {% endif %}
+                </td>
+                <td class="small muted">{{ task['section_name'] or '—' }}</td>
+                <td class="right small ink2 nowrap" id="start-{{ task['id'] }}">
+                  {{ plan_cell(task, 'start', short_date(task['start_date']), date_input(task['start_date'])) }}
+                  {% if task['starts_late'] %}
+                    <span class="small" style="display:block;color:var(--warning)"
+                          title="Its predecessors do not finish until {{ short_date(task['early_start']) }}">
+                      needs {{ short_date(task['early_start']) }}</span>
+                  {% endif %}
+                </td>
+                <td class="right small ink2 nowrap tabular" id="duration-{{ task['id'] }}">
+                  {{ plan_cell(task, 'duration', task['duration_days'] ~ 'd', task['duration_days']) }}
+                </td>
+                <td class="right small nowrap" id="submission-{{ task['id'] }}" style="font-weight:500">
+                  {% if mode == 'dates' %}
+                    {{ plan_cell(task, 'submission', short_date(task['submission_date']), date_input(task['submission_date'])) }}
+                  {% else %}{{ short_date(task['submission_date']) }}{% endif %}
+                </td>
+                <td class="right small ink2 nowrap">{{ short_date(plan_dates['idc']) if plan_dates.get('idc') else '—' }}</td>
+                <td class="right small ink2 nowrap">
+                  {{ short_date(task['approval_due_date']) if task['uses_workflow'] else '—' }}
+                </td>
+                <td class="right small nowrap tabular" id="float-{{ task['id'] }}">
+                  {% if task['is_critical'] %}{{ badge('critical', 'critical') }}
+                  {% else %}{{ task['total_float'] }}d{% endif %}
+                </td>
+                <td class="small muted">
+                  {% for link in plan['links'] if link['successor_id'] == task['id'] %}
+                    <span class="nowrap" title="{{ link['predecessor_name'] }}">{{ link['predecessor_wbs'] }}</span>{{ '' if loop.last else ', ' }}
+                  {% else %}—{% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Dependencies</h2>
+      <p class="small muted" style="margin-top:2px">
+        Who waits for whom · a box is a WBS number, hover it for the deliverable ·
+        the critical path is the run with no float
+      </p>
+    </div>
+  </div>
+  <div class="card-body">{{ network }}</div>
+
+  {% if can_edit %}
+    <div class="card-body no-print" style="border-top:1px solid var(--line)">
+      <form method="post" class="inline-form"
+            action="{{ url_for('projects.add_dependency', project_id=project['id']) }}">
+        <label class="field flex1">
+          <span class="field-label">This deliverable</span>
+          <select name="successor_id" required>
+            <option value="">— choose —</option>
+            {% for task in plan['tasks'] %}
+              <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field flex1">
+          <span class="field-label">waits for</span>
+          <select name="predecessor_id" required>
+            <option value="">— choose —</option>
+            {% for task in plan['tasks'] %}
+              <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field w-sm">
+          <span class="field-label">Lag (days)</span>
+          <input type="number" name="lag_days" value="0" step="1" class="right">
+        </label>
+        <button type="submit" class="btn btn-primary">Link them</button>
+      </form>
+    </div>
+
+    {% if plan['links'] %}
+      <div class="card-body flush">
         <div class="table-scroll">
           <table>
-            <thead>
-              <tr>
-                {{ sort_th('wbs', 'WBS', sort, direction, params) }}
-                {{ sort_th('name', 'Deliverable', sort, direction, params) }}
-                {{ sort_th('section', 'Section', sort, direction, params) }}
-                {{ sort_th('weight', 'Weight', sort, direction, params, 'right') }}
-                {{ sort_th('start', 'Start', sort, direction, params, 'right') }}
-                <th class="right">IDC</th><th class="right">Comments</th>
-                {{ sort_th('submission', 'Submission', sort, direction, params, 'right') }}
-                <th class="right">Code A</th>
-                {{ sort_th('actual', 'Progress', sort, direction, params) }}
-                {{ sort_th('days', 'Status', sort, direction, params, 'right') }}
-              </tr>
-            </thead>
+            <thead><tr><th>Waits for</th><th>Deliverable</th><th class="right">Lag</th><th class="no-print"></th></tr></thead>
             <tbody>
-              {% for task in rows %}
-                {% set plan = {} %}
-                {% for step in task['step_plan'] %}{% set _ = plan.update({step['key']: step['date']}) %}{% endfor %}
+              {% for link in plan['links'] %}
                 <tr>
-                  <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
-                  <td>
-                    {{ task['name'] }}
-                    {% if task['revision'] %}<span style="margin-left:4px">{{ revision_badge(task, limit) }}</span>{% endif %}
+                  <td class="small">
+                    <span class="tabular muted">{{ link['predecessor_wbs'] }}</span> {{ link['predecessor_name'] }}
                   </td>
-                  <td class="small muted">{{ task['section_name'] or '—' }}</td>
-                  <td class="right tabular ink2">{{ pct(task['weight_pct'], 2) }}</td>
-                  <td class="right small ink2 nowrap">{{ short_date(task['start_date']) }}</td>
-                  <td class="right small ink2 nowrap">{{ short_date(plan['idc']) if plan.get('idc') else '—' }}</td>
-                  <td class="right small ink2 nowrap">{{ short_date(plan['comments_addressed']) if plan.get('comments_addressed') else '—' }}</td>
-                  <td class="right small nowrap" style="font-weight:500">{{ short_date(task['submission_date']) }}</td>
-                  <td class="right small ink2 nowrap">{{ short_date(task['approval_due_date']) if task['uses_workflow'] else '—' }}</td>
-                  <td>
-                    <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
-                      <span class="tabular" style="font-weight:500">{{ pct(task['actual_pct'], 0) }}</span>
-                      <span class="muted">plan {{ pct(task['planned_pct'], 0) }}</span>
-                    </div>
-                    {{ progress(task['actual_pct'], task['planned_pct'], task_color(task) | trim, slim=True) }}
-                    {% if task['status_name'] %}
-                      <span class="small muted">{{ task['status_name'] }}</span>
-                    {% endif %}
+                  <td class="small">
+                    <span class="tabular muted">{{ link['successor_wbs'] }}</span> {{ link['successor_name'] }}
                   </td>
-                  <td class="right nowrap">
-                    {% if kind == 'late' %}
-                      {{ badge('critical', task['days_late'] ~ (' day late' if task['days_late'] == 1 else ' days late'),
-                               'Approval overdue' if task['due_reason'] == 'approval' else 'Submission overdue') }}
-                    {% elif kind == 'upcoming' %}
-                      {{ badge('serious' if task['days_to_due'] <= 7 else 'neutral', 'in ' ~ task['days_to_due'] ~ ' days') }}
-                    {% else %}
-                      {{ badge('warning', signed_pct(task['variance'], 2)) }}
-                    {% endif %}
+                  <td class="right small ink2 tabular">{{ link['lag_days'] | int }}d</td>
+                  <td class="right no-print">
+                    <form method="post" data-confirm="Remove this dependency?"
+                          action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
+                      <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                    </form>
                   </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-      {% endif %}
-    </div>
-  </div>
-{% endmacro %}
-
-{% block content %}
-{% set t = snapshot['totals'] %}
-{% set limit = snapshot['max_revisions'] %}
-{% set window = 'everything ahead' if horizon is none else horizon ~ ' days' %}
-
-<div class="page-head">
-  <div>
-    <h1>Schedule</h1>
-    <p class="small muted" style="margin-top:2px">What is overdue, what is slipping, and what is coming up</p>
-  </div>
-  <div class="inline-form">
-    <form method="get" class="inline-form">
-      <input type="hidden" name="sort" value="{{ sort }}">
-      <input type="hidden" name="dir" value="{{ direction }}">
-      {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
-      <label class="field w-md">
-        <span class="field-label">Look ahead</span>
-        <select name="horizon">
-          <option value="all" {{ 'selected' if horizon is none }}>All dates</option>
-          {% for h in horizons %}
-            <option value="{{ h }}" {{ 'selected' if horizon == h }}>{{ h }} days</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit" class="btn btn-ghost">Apply</button>
-    </form>
-
-    {# Any other window: its own form, so the two never submit together. #}
-    <form method="get" class="inline-form">
-      <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
-      <input type="hidden" name="sort" value="{{ sort }}">
-      <input type="hidden" name="dir" value="{{ direction }}">
-      <label class="field w-sm">
-        <span class="field-label">Any window</span>
-        <input type="number" name="horizon" min="1" max="3650" class="right"
-               placeholder="days" value="{{ horizon if horizon is not none and horizon not in horizons else '' }}">
-      </label>
-      <button type="submit" class="btn btn-ghost">Go</button>
-    </form>
-    {{ print_button() }}
-  </div>
-
-{{ print_header(project, 'Schedule', data_date, 'look-ahead: ' ~ window) }}
-
-<div class="grid grid-4">
-  {{ tile('Late', t['late_count'], 'past due, not complete',
-          'critical' if t['late_count'] else 'good',
-          (pct(t['weight_at_risk']) ~ ' of weight') if t['late_count'] else 'None') }}
-  {{ tile('Due soon', t['upcoming_count'], 'within ' ~ window,
-          'serious' if t['upcoming_count'] else 'good', 'Upcoming') }}
-  {{ tile('Behind plan', t['behind_count'], 'actual below planned',
-          'warning' if t['behind_count'] else 'good',
-          'Slipping' if t['behind_count'] else 'On plan') }}
-  {{ tile('In rework', t['rework_count'],
-          (t['at_limit_count'] ~ ' at the revision limit') if t['at_limit_count'] else 'resubmissions in progress',
-          'critical' if t['at_limit_count'] else ('warning' if t['rework_count'] else 'good'),
-          'Rev 1+' if t['rework_count'] else 'First issue') }}
+      </div>
+    {% endif %}
+  {% endif %}
 </div>
 
-{% set params = {'project_id': project['id'], 'data_date': date_input(data_date),
-                 'horizon': 'all' if horizon is none else horizon} %}
-
-{{ task_table('Late deliverables',
-              'Past the submission date and not submitted, or past the Code A date and not approved',
-              late, 'late', 'Nothing overdue',
-              'Every deliverable past its date has been submitted or approved.', limit, sort, direction, params) }}
-{{ task_table('Due in ' ~ window,
-              'Upcoming submissions' ~ ('' if sorted_by else ', soonest first'), upcoming, 'upcoming',
-              'Nothing due in this window', 'Widen the look-ahead, or choose All dates.', limit, sort, direction, params) }}
-{{ task_table('Behind plan', 'Not yet late, but reporting less progress than the schedule expects', behind, 'behind',
-              'Nothing behind plan', 'Reported progress is at or above the planned curve on every deliverable.',
-              limit, sort, direction, params) }}
+{% if can_edit %}
+  {# The controls the date and duration cells are cloned from. #}
+  <template id="cell-plan-start">
+    <input type="text" name="start_date" class="cell-input cell-date" data-datepicker
+           placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off" aria-label="Start">
+  </template>
+  <template id="cell-plan-submission">
+    <input type="text" name="submission_date" class="cell-input cell-date" data-datepicker
+           placeholder="{{ DATE_FORMAT }}" inputmode="numeric" autocomplete="off" aria-label="Finish">
+  </template>
+  <template id="cell-plan-duration">
+    <input type="number" name="duration_days" class="cell-input" min="1" step="1"
+           style="width:70px" aria-label="Duration in days">
+  </template>
+{% endif %}
 {% endblock %}

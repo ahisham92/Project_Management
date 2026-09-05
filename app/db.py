@@ -101,8 +101,14 @@ def init_db(path: Path | str | None = None) -> None:
             # dragged. Empty means the automatic layout decides.
             ("tasks", "node_x", "REAL"),
             ("tasks", "node_y", "REAL"),
+            # Which team's working week and holidays a deliverable is planned
+            # against. Empty means the project's default team.
+            ("tasks", "calendar_id", "INTEGER"),
+            ("projects", "calendar_id", "INTEGER"),
         ):
             _ensure_column(conn, table, column, definition)
+
+        _ensure_calendars(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -112,6 +118,59 @@ def init_db(path: Path | str | None = None) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def _ensure_calendars(conn: sqlite3.Connection) -> None:
+    """The working calendars a project plans against, and their holidays.
+
+    Every project gets one to begin with — every day a working day — so nothing
+    moves until somebody says a team keeps a shorter week. A holiday with no
+    calendar belongs to all of them.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendars (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name       TEXT    NOT NULL,
+          workdays   TEXT    NOT NULL DEFAULT '1111111',
+          sort_order INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_calendars_project ON calendars(project_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS holidays (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          calendar_id  INTEGER REFERENCES calendars(id) ON DELETE CASCADE,
+          holiday_date TEXT    NOT NULL,
+          name         TEXT    NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_holidays_project ON holidays(project_id)")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_holidays_once "
+        "ON holidays(project_id, IFNULL(calendar_id, 0), holiday_date)"
+    )
+
+    for row in conn.execute(
+        "SELECT id FROM projects WHERE id NOT IN (SELECT project_id FROM calendars)"
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO calendars (project_id, name, workdays, sort_order) VALUES (?, ?, ?, 1)",
+            (row["id"], "Every day", "1111111"),
+        )
+    conn.execute(
+        """
+        UPDATE projects SET calendar_id = (
+          SELECT id FROM calendars WHERE calendars.project_id = projects.id
+          ORDER BY sort_order, id LIMIT 1
+        ) WHERE calendar_id IS NULL
+        """
+    )
 
 
 def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:
@@ -160,6 +219,8 @@ _PULSE_TABLES: tuple[tuple[str, str], ...] = (
     ("project_members", "project_id"),
     ("attendees", "project_id"),
     ("meetings", "project_id"),
+    ("calendars", "project_id"),
+    ("holidays", "project_id"),
     ("meeting_items", "project_id"),
 )
 

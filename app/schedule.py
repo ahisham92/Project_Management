@@ -103,37 +103,42 @@ def start_reason(driver: Mapping[str, Any], predecessor: Mapping[str, Any],
 
 
 def _earliest_start(kind: str, lag: float, length: int,
-                    began: date | None, done: date | None) -> date | None:
+                    began: date | None, done: date | None,
+                    calendar: Any = None) -> date | None:
     """The soonest a successor may start, given where its predecessor sits.
 
     FS and SS drive the successor's start directly; FF and SF drive its finish,
-    so its own length is taken off to give the start.
+    so its own length is taken off to give the start. A lag is in working days
+    and so is a length, so the answer always lands on a day the team is in.
     """
     days = int(round(lag))
+    plan = working(calendar)
     if kind == "SS":
-        return began + timedelta(days=days) if began else None
+        return plan.add(began, days) if began else None
     if kind == "FF":
-        return done + timedelta(days=days - (length - 1)) if done else None
+        return plan.add(done, days - (length - 1)) if done else None
     if kind == "SF":
-        return began + timedelta(days=days - (length - 1)) if began else None
-    return done + timedelta(days=1 + days) if done else None       # FS
+        return plan.add(began, days - (length - 1)) if began else None
+    return plan.add(done, 1 + days) if done else None              # FS
 
 
 def _latest_finish(kind: str, lag: float, length: int,
-                   starts_by: date | None, ends_by: date | None) -> date | None:
+                   starts_by: date | None, ends_by: date | None,
+                   calendar: Any = None) -> date | None:
     """The latest a predecessor may finish, given where its successor sits.
 
     The mirror of :func:`_earliest_start`: SS and SF are limits on the
     predecessor's start, so its own length is added back on.
     """
     days = int(round(lag))
+    plan = working(calendar)
     if kind == "SS":
-        return starts_by - timedelta(days=days) + timedelta(days=length - 1) if starts_by else None
+        return plan.add(starts_by, length - 1 - days) if starts_by else None
     if kind == "FF":
-        return ends_by - timedelta(days=days) if ends_by else None
+        return plan.add(ends_by, -days) if ends_by else None
     if kind == "SF":
-        return ends_by - timedelta(days=days) + timedelta(days=length - 1) if ends_by else None
-    return starts_by - timedelta(days=1 + days) if starts_by else None   # FS
+        return plan.add(ends_by, length - 1 - days) if ends_by else None
+    return plan.add(starts_by, -(1 + days)) if starts_by else None   # FS
 
 
 def normalise_mode(value: Any) -> str:
@@ -154,16 +159,28 @@ def iso(value: date | None) -> str:
     return value.isoformat() if value else ""
 
 
-def duration_between(start: Any, finish: Any) -> int:
-    """Calendar days from start to finish inclusive: one day is a duration of 1."""
+def working(calendar: Any = None):
+    """The calendar to plan against — the round-the-clock one when none is given.
+
+    Everything here takes an optional calendar and falls back to this, so a
+    project that has not set a team up plans in calendar days exactly as it did
+    before there were teams at all.
+    """
+    from .calendars import ROUND_THE_CLOCK
+
+    return calendar or ROUND_THE_CLOCK
+
+
+def duration_between(start: Any, finish: Any, calendar: Any = None) -> int:
+    """Working days from start to finish inclusive: one day is a duration of 1."""
     first, last = parse(start), parse(finish)
     if not first or not last:
         return 0
-    return max(1, (last - first).days + 1)
+    return max(1, working(calendar).duration(first, last))
 
 
-def finish_from(start: Any, days: Any) -> str:
-    """The finish a start and a duration imply."""
+def finish_from(start: Any, days: Any, calendar: Any = None) -> str:
+    """The finish a start and a duration in working days imply."""
     first = parse(start)
     if not first:
         return ""
@@ -171,13 +188,26 @@ def finish_from(start: Any, days: Any) -> str:
         length = max(1, int(round(float(days))))
     except (TypeError, ValueError):
         length = 1
-    return iso(first + timedelta(days=length - 1))
+    return iso(working(calendar).finish_after(first, length))
 
 
-def with_duration(task: Mapping[str, Any]) -> dict[str, Any]:
+def on_a_working_day(day: Any, calendar: Any = None) -> str:
+    """A date moved forward onto the next day the team is actually in.
+
+    A start on a public holiday is not a start, and nothing is submitted on a
+    day nobody is working, so both are pushed to the next working day.
+    """
+    when = parse(day)
+    if not when:
+        return ""
+    return iso(working(calendar).next_working(when))
+
+
+def with_duration(task: Mapping[str, Any], calendar: Any = None) -> dict[str, Any]:
     """One line with its duration worked out from its dates."""
     row = dict(task)
-    row["duration_days"] = duration_between(row.get("start_date"), row.get("submission_date"))
+    row["duration_days"] = duration_between(row.get("start_date"), row.get("submission_date"),
+                                            calendar)
     return row
 
 
@@ -284,8 +314,21 @@ def paths(task_ids: Iterable[int], links: Iterable[Mapping[str, Any]]) -> dict[s
     return {"starts": starts, "ends": ends, "count": sum(routes.get(e, 0) for e in ends)}
 
 
+def _diaries(rows: Mapping[int, Mapping[str, Any]],
+             calendars: Mapping[Any, Any] | None) -> dict[int, Any]:
+    """Each line's working calendar, ready to ask.
+
+    A project with no teams set up gets the round-the-clock one throughout,
+    which counts every day and moves nothing.
+    """
+    made = calendars or {}
+    return {task_id: working(made.get(row.get("calendar_id")) or made.get(None))
+            for task_id, row in rows.items()}
+
+
 def analyse(tasks: Sequence[Mapping[str, Any]],
-            links: Iterable[Mapping[str, Any]]) -> dict[int, dict[str, Any]]:
+            links: Iterable[Mapping[str, Any]],
+            calendars: Mapping[Any, Any] | None = None) -> dict[int, dict[str, Any]]:
     """Early and late dates, float, and what is critical, for every line.
 
     A forward pass gives the earliest each deliverable could start once its
@@ -305,8 +348,10 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
         predecessors.setdefault(second, []).append((first, lag, kind))
 
     sequence = order(list(rows), links)
+    diary = _diaries(rows, calendars)
     length = {
-        task_id: max(1, duration_between(row.get("start_date"), row.get("submission_date")) or 1)
+        task_id: max(1, duration_between(row.get("start_date"), row.get("submission_date"),
+                                         diary[task_id]) or 1)
         for task_id, row in rows.items()
     }
     planned_start = {task_id: parse(row.get("start_date")) for task_id, row in rows.items()}
@@ -321,13 +366,16 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
         earliest = own
         for first, lag, kind in predecessors.get(task_id, ()):
             soonest = _earliest_start(kind, lag, length[task_id],
-                                      early_start.get(first), early_finish.get(first))
+                                      early_start.get(first), early_finish.get(first),
+                                      diary[task_id])
             # Which link holds the line back is worth keeping: it is the whole
             # answer to "why can this not start when I drew it?".
             if soonest and soonest > earliest:
                 earliest, driver[task_id] = soonest, (first, lag, kind)
-        early_start[task_id] = earliest
-        early_finish[task_id] = earliest + timedelta(days=length[task_id] - 1)
+        early_start[task_id] = diary[task_id].next_working(earliest) or earliest
+        early_finish[task_id] = (diary[task_id].finish_after(early_start[task_id],
+                                                            length[task_id])
+                                 or early_start[task_id])
 
     # Backward: the latest each line can start without moving the finish.
     horizon = max(early_finish.values())
@@ -337,11 +385,13 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
         latest = horizon
         for second, lag, kind in successors.get(task_id, ()):
             limit = _latest_finish(kind, lag, length[task_id],
-                                   late_start.get(second), late_finish.get(second))
+                                   late_start.get(second), late_finish.get(second),
+                                   diary[task_id])
             if limit:
                 latest = min(latest, limit)
-        late_finish[task_id] = latest
-        late_start[task_id] = latest - timedelta(days=length[task_id] - 1)
+        late_finish[task_id] = diary[task_id].last_working(latest) or latest
+        late_start[task_id] = (diary[task_id].add(late_finish[task_id], -(length[task_id] - 1))
+                               or late_finish[task_id])
 
     result: dict[int, dict[str, Any]] = {}
     for task_id in rows:
@@ -383,7 +433,8 @@ def critical_path(analysis: Mapping[int, Mapping[str, Any]]) -> list[int]:
 
 def shift_successors(tasks: Sequence[Mapping[str, Any]],
                      links: Iterable[Mapping[str, Any]],
-                     moved_id: int) -> dict[int, dict[str, str]]:
+                     moved_id: int,
+                     calendars: Mapping[Any, Any] | None = None) -> dict[int, dict[str, str]]:
     """The new dates for whatever a move pushes.
 
     Only later: bringing a predecessor forward frees float rather than dragging
@@ -398,7 +449,10 @@ def shift_successors(tasks: Sequence[Mapping[str, Any]],
 
     starts = {task_id: parse(row.get("start_date")) for task_id, row in rows.items()}
     finishes = {task_id: parse(row.get("submission_date")) for task_id, row in rows.items()}
-    lengths = {task_id: max(1, duration_between(row.get("start_date"), row.get("submission_date")) or 1)
+    diary = _diaries(rows, calendars)
+    lengths = {task_id: max(1, duration_between(row.get("start_date"),
+                                                row.get("submission_date"),
+                                                diary[task_id]) or 1)
                for task_id, row in rows.items()}
 
     moves: dict[int, dict[str, str]] = {}
@@ -411,14 +465,15 @@ def shift_successors(tasks: Sequence[Mapping[str, Any]],
         if not done or not began:
             continue
         for second, lag, kind in successors.get(node, ()):
-            earliest = _earliest_start(kind, lag, lengths[second], began, done)
+            earliest = _earliest_start(kind, lag, lengths[second], began, done, diary[second])
             if not earliest:
                 continue
             current = starts.get(second)
             if current and current >= earliest:
                 continue                       # it already sits late enough
-            starts[second] = earliest
-            finishes[second] = earliest + timedelta(days=lengths[second] - 1)
+            starts[second] = diary[second].next_working(earliest) or earliest
+            finishes[second] = (diary[second].finish_after(starts[second], lengths[second])
+                                or starts[second])
             moves[second] = {"start_date": iso(starts[second]),
                              "submission_date": iso(finishes[second])}
             queue.append(second)

@@ -17,6 +17,16 @@
   {% else %}{{ label }}{% endif %}
 {% endmacro %}
 
+{% macro team_cell(task) %}
+  {% if can_edit and plan['teams'] | length > 1 %}
+    <a class="cell-open" data-cell="plan-team" data-item="{{ task['id'] }}"
+       data-value="{{ task['calendar_id'] or '' }}"
+       data-action="{{ url_for('projects.save_team', project_id=project['id'], task_id=task['id']) }}"
+       href="{{ url_for('projects.setup', project_id=project['id']) }}"
+       title="Whose working week and holidays this line is planned on">{{ task['team_name'] or '—' }}</a>
+  {% else %}{{ task['team_name'] or '—' }}{% endif %}
+{% endmacro %}
+
 {% block content %}
 {% set t = plan['totals'] %}
 {% set kind_names = dict(kinds) %}
@@ -56,6 +66,10 @@
           'a link puts their start later',
           'warning' if plan['tasks'] | selectattr('starts_late') | list | length else 'good',
           'to reschedule' if plan['tasks'] | selectattr('starts_late') | list | length else 'all clear') }}
+  {% set flagged = plan['tasks'] | selectattr('run_up') | selectattr('run_up.count') | list | length %}
+  {{ tile('Holidays before a submission', flagged,
+          'in the week each package is pulled together',
+          'warning' if flagged else 'good', 'to allow for' if flagged else 'none') }}
   {{ tile('In rework', plan['tasks'] | selectattr('revision') | list | length,
           'resubmitted after a Code B or C',
           'warning' if plan['tasks'] | selectattr('revision') | list | length else 'good',
@@ -152,6 +166,7 @@
               <th class="right">IDC</th>
               <th class="right">Code A</th>
               <th class="right">Float</th>
+              <th>Team</th>
               <th>Depends on</th>
             </tr>
           </thead>
@@ -162,7 +177,9 @@
               <tr id="task-{{ task['id'] }}" class="{{ 'is-critical' if task['is_critical'] }}">
                 <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
                 <td>
-                  {{ task['name'] }}
+                  <a class="open-task" data-task="{{ task['id'] }}"
+                     href="{{ url_for('projects.task_panel', project_id=project['id'], task_id=task['id']) }}"
+                     title="Open this deliverable and its dependencies">{{ task['name'] }}</a>
                   {% if task['revision'] %}
                     <span class="small" style="color:var(--warning)">
                       · rev {{ task['revision'] }}{% if task['last_code'] %} (Code {{ task['last_code'] }}){% endif %}
@@ -185,6 +202,16 @@
                   {% if mode == 'dates' %}
                     {{ plan_cell(task, 'submission', short_date(task['submission_date']), date_input(task['submission_date'])) }}
                   {% else %}{{ short_date(task['submission_date']) }}{% endif %}
+                  {% set run_up = task['run_up'] %}
+                  {% if run_up and run_up['count'] %}
+                    <span class="small holiday-flag" style="display:block"
+                          title="{{ run_up['count'] }} holiday{{ '' if run_up['count'] == 1 else 's' }} in the week before this submission:
+{% for day in run_up['days'] %}{{ short_date(day['date']) }} — {{ 'everyone' if day['everyone'] else task['team_name'] or 'this team' }}
+{% endfor %}">
+                      ⚑ {{ run_up['count'] }} holiday{{ '' if run_up['count'] == 1 else 's' }}
+                      {{ 'for everyone' if run_up['everyone'] == run_up['count'] else 'for ' ~ (task['team_name'] or 'this team') }}
+                    </span>
+                  {% endif %}
                 </td>
                 <td class="right small ink2 nowrap">{{ short_date(plan_dates['idc']) if plan_dates.get('idc') else '—' }}</td>
                 <td class="right small ink2 nowrap">
@@ -193,6 +220,9 @@
                 <td class="right small nowrap tabular" id="float-{{ task['id'] }}">
                   {% if task['is_critical'] %}{{ badge('critical', 'critical') }}
                   {% else %}{{ task['total_float'] }}d{% endif %}
+                </td>
+                <td class="small muted nowrap" id="team-{{ task['id'] }}">
+                  {{ team_cell(task) }}
                 </td>
                 <td class="small muted">
                   {% for link in plan['links'] if link['successor_id'] == task['id'] %}
@@ -215,8 +245,7 @@
       <h2>Dependencies</h2>
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
-        the critical path is the run with no float · a box nothing waits on is blue, and closes a path ·
-        the colour and dash of a line say which of the four kinds it is
+        the critical path is the run with no float · a box nothing waits on is blue, and closes a path
         {% if can_edit %} · drag a box to move it · a lag may be negative, for work that overlaps{% endif %}
       </p>
     </div>
@@ -272,7 +301,7 @@
       <span class="small muted">{{ plan['links'] | length }} dependenc{{ 'y' if plan['links'] | length == 1 else 'ies' }}</span>
     </summary>
     <div class="card-body no-print" style="border-top:1px solid var(--line)">
-      <form method="post" class="inline-form"
+      <form method="post" data-live-link class="inline-form"
             action="{{ url_for('projects.add_dependency', project_id=project['id']) }}">
         <label class="field flex1">
           <span class="field-label">This deliverable</span>
@@ -327,6 +356,9 @@
   {% endif %}
 </div>
 
+<aside class="task-panel" id="task-panel" hidden aria-live="polite"></aside>
+<div class="panel-veil" id="panel-veil" hidden></div>
+
 {% if can_edit %}
   {# The controls the date and duration cells are cloned from. #}
   <template id="cell-plan-start">
@@ -357,6 +389,14 @@
     <select name="predecessor_id" class="cell-input" aria-label="Waits for">
       {% for task in plan['tasks'] %}
         <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
+      {% endfor %}
+    </select>
+  </template>
+  <template id="cell-plan-team">
+    <select name="calendar_id" class="cell-input" aria-label="Team">
+      <option value="">— default team —</option>
+      {% for team in plan['teams'] %}
+        <option value="{{ team['id'] }}">{{ team['name'] }} · {{ team['week_label'] }}</option>
       {% endfor %}
     </select>
   </template>

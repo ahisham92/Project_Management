@@ -51,16 +51,29 @@ def percent_for(steps: Sequence[Mapping[str, Any]], key: str) -> float:
     return float(step["percent"]) if step else 0.0
 
 
-def planned_date(step: Mapping[str, Any], start_date: str, submission_date: str) -> str:
-    """When a step is planned, from its anchor and offset."""
+def planned_date(step: Mapping[str, Any], start_date: str, submission_date: str,
+                 calendar: Any = None) -> str:
+    """When a step is planned, from its anchor and offset.
+
+    The offset is counted in the team's working days, and the answer lands on
+    one: a step planned ten days before submission does not fall due on a
+    Saturday the team is not there, which is what used to make a deliverable
+    read as behind over a weekend.
+    """
     anchor = start_date if step.get("anchor") == "start" else submission_date
     if not anchor:
         anchor = submission_date or start_date
-    return to_iso(parse_date(anchor) + timedelta(days=float(step.get("offset_days") or 0)))
+
+    offset = int(round(float(step.get("offset_days") or 0)))
+    if calendar is not None:
+        moved = calendar.add(parse_date(anchor), offset)
+        return to_iso(moved) if moved else to_iso(parse_date(anchor))
+    return to_iso(parse_date(anchor) + timedelta(days=offset))
 
 
 def schedule_for(
-    steps: Sequence[Mapping[str, Any]], start_date: str, submission_date: str
+    steps: Sequence[Mapping[str, Any]], start_date: str, submission_date: str,
+    calendar: Any = None,
 ) -> list[dict[str, Any]]:
     """Every step with the date it is planned for, in progress order."""
     plan = []
@@ -72,7 +85,7 @@ def schedule_for(
                 "percent": float(step["percent"]),
                 "anchor": step.get("anchor", "submission"),
                 "offset_days": float(step.get("offset_days") or 0),
-                "date": planned_date(step, start_date, submission_date),
+                "date": planned_date(step, start_date, submission_date, calendar),
             }
         )
     # A later step should never be planned before an earlier one, however the

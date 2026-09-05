@@ -77,7 +77,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
-| **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
+| **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
 
@@ -154,9 +154,7 @@ Progress and the Dashboard, where they belong.
   line, running from the day the comments landed to the new date and labelled with the code
   that caused it — so rework shows on the programme at the size it actually cost.
 - **Dependencies**, in all four kinds — **finish → start**, **start → start**,
-  **finish → finish** and **start → finish** — each with **its own colour and its own dash**
-  in the diagram, so the four are told apart printed in grey, on a projector, and by anyone
-  who reads colour differently. Each takes a lag in days, and the lag **may be
+  **finish → finish** and **start → finish**. Each takes a lag in days, and the lag **may be
   negative**: "start a week before the survey ends" is finish → start with a lag of -7, which
   is how overlap between two pieces of work is written down. The lag and the kind are both
   changed by clicking them in the row, and so are **both ends of the link** — the deliverable
@@ -177,10 +175,19 @@ Progress and the Dashboard, where they belong.
 - **The network** below the plan draws who waits for whom as boxes laid out in the order the
   work runs. A box is a WBS number — hover it for the deliverable, its dates and its float —
   so a long programme stays readable. A link leaves the left-hand edge of a box when it waits
-  on that line's *start* and the right-hand edge when it waits on its *finish*. The critical
-  run keeps its red, as a wide soft trace beneath the line, so the colour on top is free to
-  say which kind of link it is. **Drag any box** to move it and the arrows follow; it stays
-  where you put it.
+  on that line's *start* and the right-hand edge when it waits on its *finish*, and a
+  start-to-start link is drawn dashed. The critical run is red. **Drag any box** to move it
+  and the arrows follow; it stays where you put it.
+- **The diagram is where links are made and unmade.** Drag from the small plug on a box's
+  right edge onto another box and that line now waits for this one; click a line and it is
+  gone. Both land where they stand — the dates, the float, the bars, the tiles and the count
+  of paths all follow without the page reloading.
+- **Click a deliverable** and it opens in a panel beside the plan: its start, its duration in
+  working days, its submission, its team, its float, its status, anything holding its start
+  back, and both sides of its dependencies — what it waits for and what waits on it. Every
+  one of those is editable in the panel, and a change there is a change on the schedule. The
+  link behind it is a real link to the deliverable's own page, so it works with JavaScript
+  off too.
 - **Simplify** untangles the picture once the links are all in. It lays the diagram out in
   layers — columns stay exactly as they are, since they say the order the work runs in — and
   sweeps up and down them putting each box at the median of what it joins in the column
@@ -200,6 +207,33 @@ Progress and the Dashboard, where they belong.
   days long that means starting on 25/10/2026."* Finish → finish and start → finish are the
   two that surprise people: they fix the finish, never mentioning the start, but a line of a
   fixed length can only meet a later finish by starting later.
+
+### Teams, working weeks and holidays
+
+A programme drawn in calendar days says a deliverable ran over a weekend nobody worked, and
+then reads as behind on the Monday. **Setup → Teams and their working days** fixes that.
+
+- A **team** is a working week plus its holidays. **Monday to Friday**, **Sunday to
+  Thursday**, Monday to Saturday and every day are offered by name; any other week is set day
+  by day with the seven tick boxes.
+- A **holiday** belongs to one team or to everybody. Each deliverable names the team it is
+  planned against — from the Setup sheet, from the Team column on the Schedule, or from its
+  own panel — and anything not given one follows the project's default team.
+- **Durations, lags and the workflow step offsets are counted in that team's working days.**
+  Five days from a Monday finishes on the Friday for Beirut and on the following Sunday for
+  Cairo, and a holiday in the middle pushes both out by a day.
+- **A date that lands on a day off is moved to the next day the team is in.** A start on a
+  public holiday is not a start, and nothing is submitted on a day nobody is working.
+- **Planned progress runs on working days too**, so a line does not read as behind on a
+  Monday morning because the plan moved on over a weekend the team was not there.
+- **Holidays in the week before a submission are flagged** on the schedule, on the
+  deliverable's panel, and counted in a tile of their own — with whose holiday it is, because
+  a day everybody is off is worth knowing about earlier than one only one team takes.
+
+Every project starts with a single **Every day** team, so nothing moves until somebody says a
+team keeps a shorter week. Assigning a team keeps a line's dates and re-reads its duration in
+the days that team actually works — a 30-day span becomes 22 working days, and it is that
+number the next edit works in.
 
 ### Nothing needs refreshing
 
@@ -703,13 +737,15 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-397 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+454 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
 shifts, refused loops, why a line cannot start where it is drawn, the routes through
-the network, the four link colours and dashes, untangling the diagram, and the schedule and
-dependency workbooks), the minutes register
+the network, untangling the diagram, and the schedule and dependency workbooks), working
+calendars (the two working weeks, holidays for one team or all of them, durations and lags in
+working days, dates moved off a day off, planned progress that does not tick over a weekend,
+and the flag on a submission with a holiday in its run-up), the minutes register
 (filters, search, sorting, renumbering on a move, and the Word output), the web layer
 (sign-in, every page, reporting progress by status, raising revisions, booking hours, the
 dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
@@ -728,12 +764,14 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 39 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 42 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
 taking the schedule out to Excel and importing the edited workbook back, reading a bar by
-hovering it and folding the tables away under the charts, colour-coding the four kinds of
-link and untangling them with Simplify, and a second window picking up a change on its own.
+hovering it and folding the tables away under the charts, untangling the diagram with Simplify, drawing a
+link by dragging between two boxes and erasing it by clicking the line, opening a deliverable
+in its panel, setting up two teams with a holiday between them, and a second window picking up
+a change on its own.
 
 ---
 
@@ -755,6 +793,7 @@ app/
   dates.py              dd/mm/yyyy in, ISO stored
   sorting.py            column ordering for the progress and schedule tables
   schedule.py           durations, dependencies, float and the critical path
+  calendars.py          working weeks and holidays: which days a team is in
   layout.py             untangling the dependency diagram: layers and crossings
   minutes.py            minutes of meeting: filtering, sorting, open/closed and time/cost
   minutes_doc.py        the Word documents built from the minutes

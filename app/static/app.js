@@ -441,6 +441,9 @@
       setPlanCell('start-' + row.id, 'plan-start', row.start, row.start, form);
       setPlanCell('duration-' + row.id, 'plan-duration', row.duration + 'd', row.duration, form);
       setPlanCell('submission-' + row.id, 'plan-submission', row.submission, row.submission, form);
+      if (row.team !== undefined) {
+        setPlanCell('team-' + row.id, 'plan-team', row.team, row.team_id, form);
+      }
 
       var slack = document.getElementById('float-' + row.id);
       if (slack) {
@@ -550,7 +553,37 @@
 
     var diagram = document.getElementById('network');
     if (diagram && result.network_html) diagram.innerHTML = result.network_html;
+
+    // A link does not only change the diagram: it moves dates, and with them
+    // the bars, the float, the tiles and the count of paths. The page is
+    // brought into line rather than each of those being patched by hand — and
+    // the promise is handed back, so anything to be said lands after the swap
+    // instead of being wiped by it.
+    return refreshPage().catch(function () { /* the diagram is already right */ });
   }
+
+  // Making a dependency, from the form under the diagram or the one in a
+  // deliverable's panel: posted where it stands, and everything it moves is
+  // redrawn rather than the page being loaded again.
+  document.addEventListener('submit', function (event) {
+    var form = event.target.closest('form[data-live-link]');
+    if (!form || !window.fetch) return;
+
+    event.preventDefault();
+    fetch(form.action, {
+      method: 'POST', body: new FormData(form),
+      headers: { Accept: 'application/json' }, credentials: 'same-origin',
+    }).then(function (r) { return r.json().then(function (body) { return [r.ok, body]; }); })
+      .then(function (answer) {
+        if (!answer[0]) {
+          say((answer[1] && answer[1].error) || 'That link was not accepted');
+          return;
+        }
+        form.reset();
+        redrawLinks(answer[1], null);
+        window.dispatchEvent(new Event('pm:saved'));
+      }).catch(function () { form.submit(); });
+  });
 
   // Removing a dependency takes the row with it, and redraws what it changed.
   document.addEventListener('submit', function (event) {
@@ -588,10 +621,11 @@
       method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin',
     }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (result) {
-        redrawLinks(result, null);
-        if (result.note) say(result.note, 'success');
-        window.dispatchEvent(new Event('pm:saved'));
-        button.disabled = false;
+        return Promise.resolve(redrawLinks(result, null)).then(function () {
+          if (result.note) say(result.note, 'success');
+          window.dispatchEvent(new Event('pm:saved'));
+          button.disabled = false;
+        });
       }).catch(function () { form.submit(); });
   });
 
@@ -634,7 +668,145 @@
     });
   }
 
+  // --- one deliverable, in a panel -----------------------------------------
+  // The link is a real link to the deliverable's own page, so it works with no
+  // JavaScript; with it, the same markup opens beside the schedule instead.
+
+  var openTask = null;
+
+  function panelParts() {
+    return {
+      panel: document.getElementById('task-panel'),
+      veil: document.getElementById('panel-veil'),
+    };
+  }
+
+  function closePanel() {
+    var parts = panelParts();
+    if (!parts.panel) return;
+    parts.panel.hidden = true;
+    parts.panel.innerHTML = '';
+    if (parts.veil) parts.veil.hidden = true;
+    openTask = null;
+  }
+
+  function showPanel(html) {
+    var parts = panelParts();
+    if (!parts.panel) return false;
+    parts.panel.innerHTML = html;
+    parts.panel.hidden = false;
+    if (parts.veil) parts.veil.hidden = false;
+    parts.panel.scrollTop = 0;
+    return true;
+  }
+
+  function loadPanel(taskId, url) {
+    return fetch(url, {
+      credentials: 'same-origin', headers: { Accept: 'application/json' },
+    }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (result) {
+        if (!showPanel(result.panel_html)) throw new Error('no panel');
+        openTask = taskId;
+      });
+  }
+
+  document.addEventListener('click', function (event) {
+    if (event.target.closest('[data-panel-close]') || event.target.id === 'panel-veil') {
+      closePanel();
+      return;
+    }
+
+    var opener = event.target.closest ? event.target.closest('.open-task') : null;
+    if (!opener || !window.fetch || !document.getElementById('task-panel')) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return;   // let it open elsewhere
+
+    event.preventDefault();
+    loadPanel(opener.dataset.task, opener.href)
+      .catch(function () { window.location.href = opener.href; });
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && openTask !== null) closePanel();
+  });
+
+  // A change made in the panel moves dates and links, so the panel is rebuilt
+  // from the server along with everything else.
+  window.addEventListener('pm:saved', function () {
+    if (openTask === null) return;
+    var url = document.body.dataset.pulseUrl;
+    if (!url) return;
+    loadPanel(openTask, url.replace(/\/pulse$/, '/schedule/' + openTask))
+      .catch(function () { /* the panel keeps what it had */ });
+  });
+
+  // Clicking a line on the diagram removes the dependency it stands for.
+  document.addEventListener('click', function (event) {
+    var edge = event.target.closest ? event.target.closest('.net-edge') : null;
+    if (!edge || !edge.dataset.link || !window.fetch) return;
+
+    var svg = edge.ownerSVGElement;
+    var base = linksUrl(svg);
+    if (!base) return;
+
+    event.preventDefault();
+    if (!window.confirm('Remove this dependency?')) return;
+    fetch(base + '/' + edge.dataset.link + '/delete', {
+      method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin',
+    }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (result) {
+        var row = document.getElementById('link-' + edge.dataset.link);
+        if (row) row.remove();
+        redrawLinks(result, null);
+        window.dispatchEvent(new Event('pm:saved'));
+      }).catch(function () { window.location.reload(); });
+  });
+
+  // --- drawing a link on the diagram ---------------------------------------
+  // Dragging the box moves it; dragging the little plug on its right edge
+  // draws a new dependency onto whatever box it is dropped on.
+
+  var drawing = null;
+
+  function linksUrl(svg) {
+    var net = svg && svg.querySelector('.net');
+    return (net && net.dataset.links) || '';
+  }
+
+  function draftLine(svg, from, to) {
+    var line = svg.querySelector('.net-draft');
+    if (!line) {
+      line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      line.setAttribute('class', 'net-draft');
+      line.setAttribute('fill', 'none');
+      svg.appendChild(line);
+    }
+    line.setAttribute('d', 'M' + from.x + ',' + from.y + ' L' + to.x + ',' + to.y);
+  }
+
+  function clearDraft(svg) {
+    var line = svg && svg.querySelector('.net-draft');
+    if (line) line.remove();
+  }
+
   document.addEventListener('pointerdown', function (event) {
+    var plug = event.target.closest('.net-plug');
+    if (plug) {
+      var host = plug.closest('.net-node');
+      var board = host.ownerSVGElement;
+      if (!linksUrl(board)) return;
+      drawing = {
+        svg: board,
+        from: host,
+        at: {
+          x: Number(host.dataset.x) + Number(board.querySelector('.net').dataset.boxW || 54),
+          y: Number(host.dataset.y) + Number(board.querySelector('.net').dataset.boxH || 26) / 2,
+        },
+      };
+      host.classList.add('linking');
+      event.preventDefault();
+      return;
+    }
+
     var node = event.target.closest('.net-node.movable');
     if (!node) return;
 
@@ -651,6 +823,15 @@
   });
 
   document.addEventListener('pointermove', function (event) {
+    if (drawing) {
+      draftLine(drawing.svg, drawing.at, svgPoint(drawing.svg, event));
+      var over = event.target.closest ? event.target.closest('.net-node') : null;
+      drawing.svg.querySelectorAll('.net-node.target').forEach(function (n) {
+        n.classList.remove('target');
+      });
+      if (over && over !== drawing.from) over.classList.add('target');
+      return;
+    }
     if (!dragging) return;
     var node = dragging.node;
     var at = svgPoint(node.ownerSVGElement, event);
@@ -664,7 +845,39 @@
     redrawEdges(node);
   });
 
-  document.addEventListener('pointerup', function () {
+  document.addEventListener('pointerup', function (event) {
+    if (drawing) {
+      var svg = drawing.svg;
+      var source = drawing.from;
+      var onto = event.target.closest ? event.target.closest('.net-node') : null;
+      source.classList.remove('linking');
+      svg.querySelectorAll('.net-node.target').forEach(function (n) {
+        n.classList.remove('target');
+      });
+      clearDraft(svg);
+      var where = linksUrl(svg);
+      drawing = null;
+      if (!onto || onto === source || !where) return;
+
+      var made = new FormData();
+      made.append('predecessor_id', source.dataset.node);
+      made.append('successor_id', onto.dataset.node);
+      made.append('kind', 'FS');
+      made.append('lag_days', '0');
+      fetch(where, {
+        method: 'POST', body: made,
+        headers: { Accept: 'application/json' }, credentials: 'same-origin',
+      }).then(function (r) { return r.json().then(function (body) { return [r.ok, body]; }); })
+        .then(function (answer) {
+          if (!answer[0]) {
+            say((answer[1] && answer[1].error) || 'That link was not accepted');
+            return;
+          }
+          redrawLinks(answer[1], null);
+          window.dispatchEvent(new Event('pm:saved'));
+        }).catch(function () { window.location.reload(); });
+      return;
+    }
     if (!dragging) return;
     var node = dragging.node;
     var moved = dragging.moved;
@@ -919,8 +1132,14 @@
     var here = document.querySelector('main');
     if (!next || !here) return false;
 
+    // An open deliverable panel is carried across the swap, so a live refresh
+    // does not shut it under the reader; pm:saved refreshes its contents.
+    var showing = document.getElementById('task-panel');
+    var wasOpen = showing && !showing.hidden ? showing.innerHTML : '';
+
     var offset = window.scrollY;
     here.replaceWith(next);
+    if (wasOpen) showPanel(wasOpen);
     restorePanels();                 // the fresh page folds up by default
     window.scrollTo(0, offset);
     document.body.dataset.pulse = fresh.body.dataset.pulse || '';

@@ -309,6 +309,58 @@ input[type="checkbox"] { width: auto; }
 .net-node.dragging { cursor: grabbing; }
 .net-node.dragging rect { stroke-width: 2.4; }
 
+/* Drawing a link: the plug on a box's right edge, the line following the
+   pointer, and the box it would land on. */
+.net-plug { cursor: crosshair; opacity: 0.35; transition: opacity 0.12s ease; }
+.net-node.movable:hover .net-plug,
+.net-node.linking .net-plug { opacity: 1; }
+.net-node.target rect { stroke: var(--series-1); stroke-width: 2.6; }
+.net-draft {
+  stroke: var(--series-1); stroke-width: 1.6; stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+.net-edge[data-link] { cursor: pointer; }
+.net-edge[data-link]:hover { stroke-width: 3; opacity: 1; }
+
+/* A holiday in the week before a submission: worth seeing, not worth shouting. */
+.holiday-flag { color: var(--warning); font-weight: 500; }
+
+/* One deliverable, opened from the schedule. A panel on a wide screen, the
+   whole width on a narrow one, and its own page with no JavaScript at all. */
+.task-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%);
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16);
+  overflow-y: auto; z-index: 40;
+}
+.task-panel.is-page {
+  position: static; width: auto; box-shadow: none; border-left: none;
+  border: 1px solid var(--border); border-radius: 12px;
+}
+.panel-veil {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.28); z-index: 39;
+}
+.panel-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+}
+.task-panel .panel-body { padding: 14px 16px 20px; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 12px; }
+.facts dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.facts dd { margin: 2px 0 0; font-size: 0.9rem; }
+.panel-table { width: 100%; }
+.panel-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.open-task { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--axis); }
+.open-task:hover { color: var(--series-1); border-bottom-color: currentColor; }
+
+@media (max-width: 640px) {
+  .task-panel { width: 100%; border-left: none; }
+}
+@media print {
+  .task-panel:not(.is-page), .panel-veil { display: none !important; }
+}
+
 /* The critical path down the schedule: an outline, not colour alone. */
 tr.is-critical > td:first-child { box-shadow: inset 3px 0 0 var(--critical); }
 tr.is-critical { background: color-mix(in srgb, var(--critical) 5%, transparent); }
@@ -385,7 +437,6 @@ tr.is-critical { background: color-mix(in srgb, var(--critical) 5%, transparent)
 .legend-star { font-size: 0.85rem; line-height: 1; }
 .legend-line { width: 14px; height: 2px; border-radius: 1px; }
 .legend-dot { width: 9px; height: 9px; border-radius: 2px; }
-.legend-dash { width: 20px; height: 3px; border-radius: 0; }
 
 .chart-tip {
   position: absolute; z-index: 5; pointer-events: none;

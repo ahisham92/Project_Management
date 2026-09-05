@@ -36,6 +36,10 @@ def main() -> int:
         page.on("console", lambda m: failures.append(f"console: {m.text}")
                 if m.type == "error" and "400 (BAD REQUEST)" not in m.text else None)
         page.on("pageerror", lambda e: failures.append(f"pageerror: {e}"))
+        # Every confirm in the app is one the test means to accept. One handler
+        # for the run, rather than a `once` per step — two of those left over
+        # race for the same dialog and one of them throws.
+        page.on("dialog", lambda dialog: dialog.accept())
 
         def step(name: str, fn) -> None:
             try:
@@ -89,7 +93,10 @@ def main() -> int:
         step("schedule dependencies are edited and dragged", _schedule_deps)
         step("schedule dates go out to Excel and come back", _schedule_excel)
         step("schedule reads at a glance and folds its tables away", _schedule_reading)
-        step("dependency lines are colour-coded, and Simplify untangles them", _schedule_simplify)
+        step("Simplify untangles the diagram", _schedule_simplify)
+        step("a link is drawn and erased on the diagram itself", _diagram_links)
+        step("a deliverable opens in a panel with its dependencies", _task_panel)
+        step("teams keep their own working week and holidays", _teams)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -220,7 +227,6 @@ def _schedule_excel(page) -> None:
     sheet.parent.save(workbook)
 
     card.locator("input[name=workbook]").set_input_files(workbook)
-    page.once("dialog", lambda dialog: dialog.accept())
     card.locator("button:has-text('Import')").click()
     page.wait_for_selector("text=rescheduled", timeout=8000)
     if "skipped" in page.text_content("body"):
@@ -285,28 +291,12 @@ def _schedule_simplify(page) -> None:
     wires = [("11", "1", "FS", "0"), ("10", "2", "SS", "-5"),
              ("9", "3", "FF", "10"), ("8", "4", "SF", "3")]
     for successor, predecessor, kind, lag in wires:
-        page.select_option("select[name=successor_id]", value=successor)
-        page.select_option("select[name=predecessor_id]", value=predecessor)
-        page.select_option("select[name=kind]", kind)
-        page.fill("input[name=lag_days]", lag)
+        page.select_option("form[data-live-link] select[name=successor_id]", value=successor)
+        page.select_option("form[data-live-link] select[name=predecessor_id]", value=predecessor)
+        page.select_option("form[data-live-link] select[name=kind]", kind)
+        page.fill("form[data-live-link] input[name=lag_days]", lag)
         page.click("button:has-text('Link them')")
-        page.wait_for_timeout(700)
-
-    # Four colours, four dashes, and a legend naming all four.
-    colours = page.eval_on_selector_all(
-        "#network path.net-edge", "nodes => nodes.map(n => n.getAttribute('stroke'))")
-    if len(set(colours)) < 4:
-        raise AssertionError(f"the four kinds should not share a colour: {sorted(set(colours))}")
-    dashes = page.eval_on_selector_all(
-        "#network path.net-edge",
-        "nodes => nodes.map(n => n.getAttribute('stroke-dasharray') || 'solid')")
-    if len(set(dashes)) < 4:
-        raise AssertionError(f"the four kinds should not share a dash: {sorted(set(dashes))}")
-    body = page.text_content("body")
-    for named in ("FS · finish → start", "SS · start → start",
-                  "FF · finish → finish", "SF · start → finish"):
-        if named not in body:
-            raise AssertionError(f"the legend does not name {named!r}")
+        page.wait_for_timeout(1400)
 
     page.locator("#network").scroll_into_view_if_needed()
     page.wait_for_timeout(300)
@@ -334,6 +324,142 @@ def _schedule_simplify(page) -> None:
     page.wait_for_timeout(1500)
     if page.locator("#network .net-node").count() == 0:
         raise AssertionError("the diagram disappeared")
+
+
+def _diagram_links(page) -> None:
+    """A link is drawn by dragging from a box's plug, and removed by clicking
+    the line — both without the page reloading."""
+    _schedule_page(page, "links")
+    page.locator("#network").scroll_into_view_if_needed()
+    page.wait_for_timeout(400)
+
+    before = page.locator("#network path.net-edge").count()
+    url = page.url
+
+    # Drag from the plug on one box onto another. Some pairs are already
+    # linked, and one the wrong way round would close a loop, so the first
+    # pair the programme accepts is the one that proves the drag works.
+    boxes = page.locator("#network .net-node.movable")
+    at = boxes.first.locator(".net-plug").bounding_box()
+    after = before
+    for index in range(boxes.count() - 1, 0, -1):
+        onto = boxes.nth(index).bounding_box()
+        page.mouse.move(at["x"] + at["width"] / 2, at["y"] + at["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(onto["x"] + onto["width"] / 2, onto["y"] + onto["height"] / 2, steps=12)
+        page.mouse.up()
+        page.wait_for_timeout(2200)
+        after = page.locator("#network path.net-edge").count()
+        if after > before:
+            break
+        at = boxes.first.locator(".net-plug").bounding_box()
+
+    if page.url != url:
+        raise AssertionError("drawing a link should not reload the page")
+    if after <= before:
+        raise AssertionError(f"the link was not drawn: {before} -> {after}")
+    page.screenshot(path=str(SHOTS / "28-drawn-link.png"), full_page=True)
+
+    # Clicking a line takes it away again.
+    page.locator("#network path.net-edge").last.click(force=True)
+    page.wait_for_timeout(2200)
+    if page.url != url:
+        raise AssertionError("removing a link should not reload the page")
+    if page.locator("#network path.net-edge").count() >= after:
+        raise AssertionError("the line was not removed")
+
+
+def _task_panel(page) -> None:
+    """Clicking a deliverable opens it, dates and dependencies together."""
+    _schedule_page(page, "dates")
+    page.locator("a.open-task").first.click()
+    page.wait_for_selector("#task-panel:not([hidden])", timeout=8000)
+
+    said = page.locator("#task-panel").inner_text()
+    for expected in ("START", "DURATION", "SUBMISSION", "TEAM", "FLOAT",
+                     "Waits for", "Waited on by"):
+        if expected not in said:
+            raise AssertionError(f"the panel does not show {expected!r}")
+    page.screenshot(path=str(SHOTS / "29-task-panel.png"))
+
+    # A dependency made in the panel lands without the page reloading.
+    url = page.url
+    page.select_option("#task-panel select[name=predecessor_id]", index=6)
+    page.click("#task-panel button:has-text('Link')")
+    page.wait_for_timeout(2400)
+    if page.url != url:
+        raise AssertionError("linking from the panel should not reload the page")
+    if "Nothing — it can start" in page.locator("#task-panel").inner_text():
+        raise AssertionError("the panel did not pick the new dependency up")
+
+    # A date changed in the panel is a date changed on the schedule.
+    page.locator("#task-panel .cell-open[data-cell='plan-duration']").click()
+    page.wait_for_selector("form.cell-form input[name=duration_days]", timeout=6000)
+    page.fill("form.cell-form input[name=duration_days]", "17")
+    page.locator("form.cell-form input[name=duration_days]").blur()
+    page.wait_for_timeout(2000)
+    if "17d" not in page.locator("#duration-1").inner_text():
+        raise AssertionError("the schedule row did not follow the panel")
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+    if not page.locator("#task-panel").is_hidden():
+        raise AssertionError("Escape should close the panel")
+
+
+def _teams(page) -> None:
+    """A team is a working week and its holidays; a line planned on one counts
+    its duration in the days that team is actually in."""
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    page.fill("input[name=password]", "2026")
+    page.click("button:has-text('Unlock')")
+    page.wait_for_timeout(700)
+
+    for name, week in (("Cairo", "1111001"), ("Beirut", "1111100")):
+        page.fill("form[action$='/setup/teams'] input[name=name]", name)
+        page.select_option("form[action$='/setup/teams'] select[name=workdays]", week)
+        page.click("form[action$='/setup/teams'] button")
+        page.wait_for_timeout(900)
+
+    body = page.text_content("body")
+    for expected in ("Cairo", "Beirut", "Sunday to Thursday", "Monday to Friday"):
+        if expected not in body:
+            raise AssertionError(f"the setup sheet does not show {expected!r}")
+
+    page.fill("form[action$='/setup/holidays'] input[name=holiday_date]", "28/09/2026")
+    page.fill("form[action$='/setup/holidays'] input[name=name]", "National day")
+    page.click("form[action$='/setup/holidays'] button")
+    page.wait_for_selector("text=Holiday added", timeout=8000)
+    page.screenshot(path=str(SHOTS / "30-teams.png"), full_page=True)
+
+    # Put a line on Beirut, in the row, and watch its duration re-read.
+    _schedule_page(page, "dates")
+    was = page.locator("#duration-1").inner_text().strip()
+    page.locator("#team-1 .cell-open").click()
+    page.wait_for_selector("form.cell-form select[name=calendar_id]", timeout=6000)
+    options = page.locator("form.cell-form select[name=calendar_id] option")
+    beirut = next(options.nth(i).get_attribute("value") for i in range(options.count())
+                  if "Beirut" in (options.nth(i).inner_text() or ""))
+    page.select_option("form.cell-form select[name=calendar_id]", beirut)
+    page.wait_for_timeout(2200)
+
+    if "Beirut" not in page.locator("#team-1").inner_text():
+        raise AssertionError("the line was not moved to the other team")
+    now = page.locator("#duration-1").inner_text().strip()
+    if now == was:
+        raise AssertionError(f"a Monday-to-Friday week should shorten the duration: {was}")
+
+    # And a holiday in the week before a submission is said out loud.
+    if page.locator(".holiday-flag").count() == 0:
+        raise AssertionError("a holiday before a submission should be flagged")
+    if "Holidays before a submission" not in page.text_content("body"):
+        raise AssertionError("the tile counting them is missing")
+    page.screenshot(path=str(SHOTS / "31-holiday-flag.png"), full_page=True)
+
+    # The sheet was unlocked to get here; a later step checks it starts locked.
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    page.click("button:has-text('Lock again')")
+    page.wait_for_timeout(600)
 
 
 def _dates_read_dd_mm(page) -> None:
@@ -471,8 +597,10 @@ def _schedule_links(page) -> None:
     page.select_option("select[name=successor_id]", index=2)
     page.select_option("select[name=predecessor_id]", index=1)
     page.select_option("select[name=kind]", "FS")
+    rows = page.locator("tr[id^='link-']").count()
     page.click("button:has-text('Link them')")
-    page.wait_for_selector("text=Dependency added", timeout=8000)
+    page.wait_for_function(f"document.querySelectorAll(\"tr[id^='link-']\").length > {rows}",
+                           timeout=8000)
     if page.locator("text=On the critical path").count() == 0:
         raise AssertionError("the network should name the critical path")
     if page.locator("svg path[marker-end]").count() == 0:
@@ -489,8 +617,10 @@ def _schedule_deps(page) -> None:
     page.select_option("select[name=predecessor_id]", index=1)
     page.select_option("select[name=kind]", "SS")
     page.fill("input[name=lag_days]", "-5")          # work that overlaps
+    rows = page.locator("tr[id^='link-']").count()
     page.click("button:has-text('Link them')")
-    page.wait_for_selector("text=Dependency added", timeout=8000)
+    page.wait_for_function(f"document.querySelectorAll(\"tr[id^='link-']\").length > {rows}",
+                           timeout=8000)
     if page.locator("svg path[stroke-dasharray]").count() == 0:
         raise AssertionError("a start-to-start link should draw differently")
     if "-5d" not in page.text_content("body"):
@@ -576,7 +706,6 @@ def _schedule_deps(page) -> None:
 
     # Removing one takes its row with it, and nothing reloads.
     rows = page.locator("tr[id^='link-']").count()
-    page.once("dialog", lambda dialog: dialog.accept())
     url = page.url
     page.locator("form[data-live-remove] button").first.click()
     page.wait_for_timeout(1400)
@@ -595,7 +724,6 @@ def _schedule_deps(page) -> None:
         raise AssertionError("the dependencies did not download as a workbook")
 
     card.locator("input[name=workbook]").set_input_files(workbook)
-    page.once("dialog", lambda dialog: dialog.accept())
     card.locator("button:has-text('Import')").click()
     page.wait_for_selector("text=imported", timeout=8000)
     if "skipped" in page.text_content("body"):

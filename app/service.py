@@ -111,6 +111,7 @@ def project_snapshot(project: Mapping[str, Any], data_date: str | None = None,
     project = as_dict(project)
     iso = to_iso(data_date or today())
     project_id = project["id"]
+    diaries = calendars_for(project)
     snapshot = compute_project(
         project,
         load_tasks(project_id),
@@ -119,7 +120,9 @@ def project_snapshot(project: Mapping[str, Any], data_date: str | None = None,
         horizon_days=horizon_days,
         spent_by_trade=spent_hours_by_trade(project_id, iso),
         steps=load_steps(project_id),
+        calendars=diaries,
     )
+    snapshot["calendars"] = diaries
 
     # Hours booked without a trade still count against the project total.
     loose = unallocated_hours(project_id, iso)
@@ -140,6 +143,7 @@ def project_s_curve(project: Mapping[str, Any], data_date: str | None = None, sa
         to_iso(data_date or today()),
         steps=load_steps(project["id"]),
         samples=samples,
+        calendars=calendars_for(project),
     )
 
 
@@ -815,6 +819,152 @@ def clear_node_positions(project_id: int) -> None:
     execute("UPDATE tasks SET node_x = NULL, node_y = NULL WHERE project_id = ?", (project_id,))
 
 
+# --- working calendars ------------------------------------------------------
+
+def load_calendars(project_id: int) -> list[dict[str, Any]]:
+    """The project's teams, each with the days it works and its holidays."""
+    from .calendars import week_label
+
+    rows = [dict(r) for r in query(
+        "SELECT * FROM calendars WHERE project_id = ? ORDER BY sort_order, id", (project_id,))]
+    days = load_holidays(project_id)
+    shared = [h for h in days if h["calendar_id"] is None]
+    for row in rows:
+        own = [h for h in days if h["calendar_id"] == row["id"]]
+        row["holidays"] = sorted(own + shared, key=lambda h: h["holiday_date"])
+        row["own_holidays"] = own
+        row["week_label"] = week_label(row["workdays"])
+    return rows
+
+
+def load_holidays(project_id: int) -> list[dict[str, Any]]:
+    """Every holiday on the project, its own team's or everybody's."""
+    return [dict(r) for r in query(
+        "SELECT * FROM holidays WHERE project_id = ? ORDER BY holiday_date, id", (project_id,))]
+
+
+def calendars_for(project: Mapping[str, Any]) -> dict[Any, Any]:
+    """A ready-made Calendar per team, keyed by id, with a default under None.
+
+    Built once per request and handed round, because every date on the schedule
+    asks it something.
+    """
+    from .calendars import ROUND_THE_CLOCK, Calendar
+
+    project = as_dict(project)
+    rows = load_calendars(project["id"])
+    made: dict[Any, Any] = {}
+    for row in rows:
+        made[row["id"]] = Calendar(row["name"], row["workdays"],
+                                   [h["holiday_date"] for h in row["holidays"]])
+    default_id = project.get("calendar_id")
+    made[None] = made.get(default_id) or (made[rows[0]["id"]] if rows else ROUND_THE_CLOCK)
+    return made
+
+
+def calendar_of(task: Mapping[str, Any], calendars: Mapping[Any, Any]):
+    """The calendar a deliverable is planned against."""
+    from .calendars import ROUND_THE_CLOCK
+
+    return (calendars.get(task.get("calendar_id"))
+            or calendars.get(None)
+            or ROUND_THE_CLOCK)
+
+
+def add_calendar(project_id: int, name: str, workdays: str) -> int:
+    from .calendars import normalise_week
+
+    order = query_one("SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM calendars "
+                      "WHERE project_id = ?", (project_id,))["next"]
+    return insert(
+        "INSERT INTO calendars (project_id, name, workdays, sort_order) VALUES (?, ?, ?, ?)",
+        (project_id, (name or "Team").strip()[:60], normalise_week(workdays), order),
+    )
+
+
+def save_calendar(project_id: int, calendar_id: int, name: str, workdays: str) -> bool:
+    from .calendars import normalise_week
+
+    if not query_one("SELECT 1 FROM calendars WHERE id = ? AND project_id = ?",
+                     (calendar_id, project_id)):
+        return False
+    execute("UPDATE calendars SET name = ?, workdays = ? WHERE id = ?",
+            ((name or "Team").strip()[:60], normalise_week(workdays), calendar_id))
+    return True
+
+
+def delete_calendar(project_id: int, calendar_id: int) -> str:
+    """Removes a team, unless it is the last one or the project's default."""
+    rows = query("SELECT id FROM calendars WHERE project_id = ?", (project_id,))
+    if len(rows) <= 1:
+        return "A project keeps at least one team calendar"
+
+    project = query_one("SELECT calendar_id FROM projects WHERE id = ?", (project_id,))
+    if project and project["calendar_id"] == calendar_id:
+        return "That is the project's default team — make another the default first"
+
+    if not query_one("SELECT 1 FROM calendars WHERE id = ? AND project_id = ?",
+                     (calendar_id, project_id)):
+        return "No such team"
+
+    db = get_db()
+    with db:
+        db.execute("UPDATE tasks SET calendar_id = NULL WHERE calendar_id = ?", (calendar_id,))
+        db.execute("DELETE FROM holidays WHERE calendar_id = ?", (calendar_id,))
+        db.execute("DELETE FROM calendars WHERE id = ?", (calendar_id,))
+    return ""
+
+
+def set_default_calendar(project_id: int, calendar_id: int) -> bool:
+    if not query_one("SELECT 1 FROM calendars WHERE id = ? AND project_id = ?",
+                     (calendar_id, project_id)):
+        return False
+    execute("UPDATE projects SET calendar_id = ? WHERE id = ?", (calendar_id, project_id))
+    return True
+
+
+def add_holiday(project_id: int, calendar_id: int | None, holiday_date: str,
+                name: str) -> str:
+    """A day off, for one team or for everybody. Returns why not, or ""."""
+    from .calendars import as_date
+
+    when = as_date(holiday_date)
+    if when is None:
+        return "That is not a date"
+    if calendar_id is not None and not query_one(
+            "SELECT 1 FROM calendars WHERE id = ? AND project_id = ?", (calendar_id, project_id)):
+        return "No such team"
+
+    already = query_one(
+        "SELECT 1 FROM holidays WHERE project_id = ? AND IFNULL(calendar_id, 0) = ? "
+        "AND holiday_date = ?", (project_id, calendar_id or 0, when.isoformat()))
+    if already:
+        return "That day is already a holiday"
+
+    insert("INSERT INTO holidays (project_id, calendar_id, holiday_date, name) VALUES (?, ?, ?, ?)",
+           (project_id, calendar_id, when.isoformat(), (name or "").strip()[:80]))
+    return ""
+
+
+def remove_holiday(project_id: int, holiday_id: int) -> bool:
+    if not query_one("SELECT 1 FROM holidays WHERE id = ? AND project_id = ?",
+                     (holiday_id, project_id)):
+        return False
+    execute("DELETE FROM holidays WHERE id = ?", (holiday_id,))
+    return True
+
+
+def set_task_calendar(project_id: int, task_id: int, calendar_id: int | None) -> bool:
+    """Which team a deliverable is planned against."""
+    if not query_one("SELECT 1 FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id)):
+        return False
+    if calendar_id is not None and not query_one(
+            "SELECT 1 FROM calendars WHERE id = ? AND project_id = ?", (calendar_id, project_id)):
+        return False
+    execute("UPDATE tasks SET calendar_id = ? WHERE id = ?", (calendar_id, task_id))
+    return True
+
+
 def simplify_layout(project_id: int) -> dict[str, int]:
     """Re-lays the diagram out so the lines cross as little as possible.
 
@@ -848,7 +998,20 @@ def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
     Successors are only ever pushed later: pulling a predecessor forward frees
     float rather than dragging the programme back with it.
     """
-    from .schedule import shift_successors
+    from .schedule import on_a_working_day, shift_successors
+
+    project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    diaries = calendars_for(dict(project)) if project else {}
+    task = query_one("SELECT calendar_id FROM tasks WHERE id = ? AND project_id = ?",
+                     (task_id, project_id))
+    mine = calendar_of(dict(task) if task else {}, diaries)
+
+    # A start on a holiday is not a start, and nothing is submitted on a day
+    # nobody is in, so both land on the next day the team is working.
+    start = on_a_working_day(start, mine) or start
+    submission = on_a_working_day(submission, mine) or submission
+    if submission < start:
+        submission = start
 
     execute(
         "UPDATE tasks SET start_date = ?, submission_date = ?, updated_at = datetime('now') "
@@ -859,11 +1022,12 @@ def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
         return {}
 
     tasks = [
-        {"id": r["id"], "start_date": r["start_date"], "submission_date": r["submission_date"]}
-        for r in query("SELECT id, start_date, submission_date FROM tasks WHERE project_id = ?",
-                       (project_id,))
+        {"id": r["id"], "start_date": r["start_date"], "submission_date": r["submission_date"],
+         "calendar_id": r["calendar_id"]}
+        for r in query("SELECT id, start_date, submission_date, calendar_id FROM tasks "
+                       "WHERE project_id = ?", (project_id,))
     ]
-    moves = shift_successors(tasks, load_links(project_id), task_id)
+    moves = shift_successors(tasks, load_links(project_id), task_id, diaries)
     conn = get_db()
     with conn:
         for moved_id, dates in moves.items():
@@ -884,7 +1048,8 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
     snapshot = project_snapshot(project, stamp)
     rows = snapshot["tasks"]
     links = load_links(project_id)
-    analysis = analyse(rows, links)
+    diaries = snapshot.get("calendars") or calendars_for(project)
+    analysis = analyse(rows, links, diaries)
 
     revisions = load_project_revisions(project_id)
     for row in rows:
@@ -897,6 +1062,14 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
         row["revisions"] = history
         closed = [a for a in history if a.get("code")]
         row["last_code"] = closed[-1]["code"] if closed else ""
+
+    # Holidays in the week before a submission are the ones that hurt: they eat
+    # the days the package is being pulled together, and nobody plans for them.
+    for row in rows:
+        mine = calendar_of(row, diaries)
+        row["team_name"] = mine.name
+        row["team_week"] = mine.week
+        row["run_up"] = run_up_holidays(row, mine, diaries)
 
     # A line that cannot start where it is drawn says which link holds it back
     # and why — a finish → finish link moves a start without ever mentioning it,
@@ -921,8 +1094,49 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
         "totals": summarise(analysis),
         "window": (first, last),
         "data_date": stamp,
+        "calendars": diaries,
+        "teams": load_calendars(project_id),
         "trades": snapshot["trades"],
         "max_revisions": snapshot["max_revisions"],
+    }
+
+
+RUN_UP_DAYS = 7
+
+
+def run_up_holidays(task: Mapping[str, Any], mine: Any,
+                    diaries: Mapping[Any, Any] | None = None) -> dict[str, Any]:
+    """Days off in the last week before a submission, and whose they are.
+
+    A holiday in the run-up to a submission is the one that costs: it takes days
+    out of the week the package is being pulled together, and it is exactly the
+    thing a programme drawn in calendar days hides. A day everybody is off is
+    worth saying more loudly than one only this team takes.
+    """
+    from .calendars import as_date
+
+    submission = as_date(task.get("submission_date"))
+    if submission is None:
+        return {"days": [], "count": 0, "everyone": 0, "from": "", "to": ""}
+
+    from datetime import timedelta
+
+    opens = submission - timedelta(days=RUN_UP_DAYS - 1)
+    others = [c for key, c in (diaries or {}).items()
+              if key is not None and c is not mine]
+
+    days = []
+    for day in mine.holidays_between(opens, submission):
+        iso = day.isoformat()
+        shared = all(iso in team.holidays for team in others) if others else True
+        days.append({"date": iso, "everyone": shared})
+
+    return {
+        "days": days,
+        "count": len(days),
+        "everyone": sum(1 for day in days if day["everyone"]),
+        "from": opens.isoformat(),
+        "to": submission.isoformat(),
     }
 
 
@@ -1017,13 +1231,16 @@ def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str
     written until every row has been checked.
     """
     from .dates import from_input
-    from .schedule import duration_between, finish_from, normalise_mode
+    from .schedule import duration_between, finish_from, normalise_mode, on_a_working_day
+
+    project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    diaries = calendars_for(dict(project)) if project else {}
 
     by_duration = normalise_mode(mode) != "dates"
     by_wbs = {
         str(r["wbs"]).strip(): dict(r)
-        for r in query("SELECT id, wbs, start_date, submission_date FROM tasks WHERE project_id = ?",
-                       (project_id,))
+        for r in query("SELECT id, wbs, start_date, submission_date, calendar_id FROM tasks "
+                       "WHERE project_id = ?", (project_id,))
         if str(r["wbs"] or "").strip()
     }
 
@@ -1042,10 +1259,12 @@ def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str
             trouble.append(f"{wbs}: no start date")
             continue
 
+        mine = calendar_of(task, diaries)
+        start = on_a_working_day(start, mine) or start
         if by_duration:
             days = float(row.get("duration_days") or 0) or duration_between(
-                task["start_date"], task["submission_date"]) or 1
-            finish = finish_from(start, days)
+                task["start_date"], task["submission_date"], mine) or 1
+            finish = finish_from(start, days, mine)
         else:
             finish = from_input(row.get("submission_date")) or task["submission_date"]
             if not finish:
@@ -1054,6 +1273,7 @@ def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str
             if finish < start:
                 trouble.append(f"{wbs}: the finish is before the start")
                 continue
+            finish = on_a_working_day(finish, mine) or finish
 
         wanted.append((int(task["id"]), start, finish))
 

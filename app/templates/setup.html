@@ -13,6 +13,8 @@
 <form id="{{ F }}" method="post" action="{{ url_for('projects.save_all', project_id=pid) }}"></form>
 <form id="setup-remove" method="post" action="{{ url_for('projects.remove_item', project_id=pid) }}"
       data-confirm="Remove this from the setup sheet?"></form>
+<form id="setup-default-team" method="post"
+      action="{{ url_for('projects.default_calendar', project_id=pid) }}"></form>
 
 <div class="page-head">
   <div>
@@ -345,6 +347,108 @@
     {% endif %}
   </div>
 
+  {# --- working calendars --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Teams and their working days</h2>
+        <p class="small muted" style="margin-top:2px">
+          A team is a working week plus its holidays. Durations, lags and the workflow steps
+          are counted in a team's working days, and a date landing on one of its days off moves
+          to the next day it is in — so a Cairo line does not read as late over a Friday nobody
+          worked, and neither does a Beirut one over a Sunday.
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      <ul class="list">
+        {% for team in teams %}
+          <li>
+            <div class="inline-form">
+              <input form="{{ F }}" name="calendar_{{ team['id'] }}_name" value="{{ team['name'] }}"
+                     class="w-lg" aria-label="Team name" {{ 'disabled' if not can_edit }}>
+              <span class="small muted" style="min-width:11ch">{{ team['week_label'] }}</span>
+              <span class="chips">
+                {% for day in week_days(team['workdays']) %}
+                  <label class="chip{{ ' on' if day['worked'] }}" title="{{ day['name'] }}">
+                    <input form="{{ F }}" type="checkbox" name="calendar_{{ team['id'] }}_days"
+                           value="{{ day['index'] }}" {{ 'checked' if day['worked'] }}
+                           {{ 'disabled' if not can_edit }}>
+                    {{ day['short'] }}
+                  </label>
+                {% endfor %}
+              </span>
+              {% if project['calendar_id'] == team['id'] %}
+                <span class="badge good">default</span>
+              {% elif can_edit %}
+                <button form="setup-default-team" type="submit" name="calendar_id" value="{{ team['id'] }}"
+                        class="btn btn-ghost btn-sm">Make default</button>
+                <button form="setup-remove" type="submit" name="target" value="calendar:{{ team['id'] }}"
+                        class="btn btn-danger btn-sm">Remove</button>
+              {% endif %}
+            </div>
+            <div class="small muted" style="padding:0 0 6px 2px">
+              {% set own = team['own_holidays'] %}
+              {% if own %}
+                Holidays:
+                {% for day in own %}
+                  <span class="badge neutral">{{ short_date(day['holiday_date']) }}{% if day['name'] %} · {{ day['name'] }}{% endif %}
+                    {% if can_edit %}
+                      <button form="setup-remove" type="submit" name="target" value="holiday:{{ day['id'] }}"
+                              class="chip-x" title="Remove this holiday">×</button>
+                    {% endif %}
+                  </span>
+                {% endfor %}
+              {% else %}No holidays of its own{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+        {% set shared = holidays | selectattr('calendar_id', 'none') | list %}
+        <li class="small muted">
+          <strong class="ink2">Everyone's holidays</strong> —
+          {% if shared %}
+            {% for day in shared %}
+              <span class="badge neutral">{{ short_date(day['holiday_date']) }}{% if day['name'] %} · {{ day['name'] }}{% endif %}
+                {% if can_edit %}
+                  <button form="setup-remove" type="submit" name="target" value="holiday:{{ day['id'] }}"
+                          class="chip-x" title="Remove this holiday">×</button>
+                {% endif %}
+              </span>
+            {% endfor %}
+          {% else %}none set{% endif %}
+        </li>
+      </ul>
+    </div>
+    {% if can_edit %}
+      <div class="card-foot" style="display:grid;gap:10px">
+        <form method="post" action="{{ url_for('projects.add_calendar_team', project_id=pid) }}"
+              class="inline-form">
+          <label class="field w-lg"><span class="field-label">New team</span>
+            <input name="name" placeholder="Cairo" required></label>
+          <label class="field w-lg"><span class="field-label">Working week</span>
+            <select name="workdays">
+              {% for key, label in week_patterns %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary">Add team</button>
+        </form>
+        <form method="post" action="{{ url_for('projects.add_project_holiday', project_id=pid) }}"
+              class="inline-form">
+          <label class="field w-lg"><span class="field-label">Holiday for</span>
+            <select name="calendar_id">
+              <option value="">Everyone</option>
+              {% for team in teams %}<option value="{{ team['id'] }}">{{ team['name'] }}</option>{% endfor %}
+            </select>
+          </label>
+          {{ date_field('holiday_date', '', 'Date', 'w-md') }}
+          <label class="field flex1"><span class="field-label">What it is</span>
+            <input name="name" placeholder="Eid al-Fitr"></label>
+          <button type="submit" class="btn btn-primary">Add holiday</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
   {# --- deliverables --- #}
   <div class="card">
     <div class="card-head">
@@ -407,7 +511,7 @@
                 <th class="right">Weight</th>
                 <th class="right" title="Amended on the Schedule tab">Start</th>
                 <th class="right" title="Amended on the Schedule tab">Submission</th>
-                <th>Tracked as</th><th></th>
+                <th>Team</th><th>Tracked as</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -444,6 +548,17 @@
                        title="Dates are amended on the Schedule tab">{{ short_date(task['submission_date']) }}</a>
                   </td>
                   <td>
+                    <select form="{{ F }}" name="task_{{ task['id'] }}_calendar" class="w-md"
+                            title="Whose working week and holidays this line is planned against"
+                            {{ 'disabled' if not can_edit }}>
+                      <option value="">— default team —</option>
+                      {% for team in teams %}
+                        <option value="{{ team['id'] }}" {{ 'selected' if task['calendar_id'] == team['id'] }}>
+                          {{ team['name'] }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
                     <select form="{{ F }}" name="task_{{ task['id'] }}_tracking" class="w-md" {{ 'disabled' if not can_edit }}>
                       <option value="workflow" {{ 'selected' if task['tracking'] == 'workflow' }}>Workflow</option>
                       <option value="simple" {{ 'selected' if task['tracking'] == 'simple' }}>Simple %</option>
@@ -460,7 +575,7 @@
                    name beside it, however many trades the project has. #}
                 <tr class="split-row">
                   <td></td>
-                  <td colspan="8">
+                  <td colspan="9">
                     <div class="split-fields">
                       <span class="small muted">Trade split</span>
                       {% for tr in trades %}

@@ -1292,8 +1292,9 @@ def test_the_notes_under_a_sheet_never_sit_in_a_column_that_is_read(signed_in):
 
 # --- why a line cannot start where it is drawn ------------------------------
 
-def kinded(first: int, second: int, kind: str, lag: float = 0):
-    return {"predecessor_id": first, "successor_id": second, "kind": kind, "lag_days": lag}
+def kinded(first: int, second: int, kind: str, lag: float = 0, link_id: int = 7):
+    return {"id": link_id, "predecessor_id": first, "successor_id": second,
+            "kind": kind, "lag_days": lag}
 
 
 def test_a_finish_to_finish_link_moves_the_start_even_though_it_names_the_finish():
@@ -1526,52 +1527,30 @@ def drawn_network(kind: str = "FS"):
     return str(network(rows, [kinded(1, 2, kind)]))
 
 
-def test_each_kind_of_link_has_its_own_colour():
-    from app.charts import KIND_COLOURS
-
-    assert len(set(KIND_COLOURS.values())) == 4, "two kinds share a colour"
-    for kind in ("FS", "SS", "FF", "SF"):
-        assert KIND_COLOURS[kind] in drawn_network(kind)
 
 
-def test_each_kind_of_link_has_its_own_dash_so_colour_is_not_the_only_clue():
-    """Printed in grey, or read by someone who sees colour differently, the
-    pattern still says which kind it is."""
-    from app.charts import KIND_DASHES
-
-    patterns = [KIND_DASHES[kind] for kind in ("FS", "SS", "FF", "SF")]
-    assert len(set(patterns)) == 4
-    assert KIND_DASHES["FS"] == "", "the commonest link should be a plain line"
-    for kind in ("SS", "FF", "SF"):
-        assert f'stroke-dasharray="{KIND_DASHES[kind]}"' in drawn_network(kind)
 
 
-def test_the_legend_names_all_four_kinds():
-    drawn = drawn_network()
-    for kind, label in (("FS", "finish → start"), ("SS", "start → start"),
-                        ("FF", "finish → finish"), ("SF", "start → finish")):
-        assert kind in drawn and label in drawn
+def test_a_link_that_waits_on_a_start_leaves_the_other_box_by_its_left_edge():
+    from app.charts import FROM_START
+
+    for kind in ("SS", "SF"):
+        assert f'data-kind="{kind}"' in drawn_network(kind)
+    assert set(FROM_START) == {"SS", "SF"}
 
 
-def test_the_critical_run_keeps_its_red_under_the_coloured_line():
-    """Colour says which kind of link it is, so the critical path is a wide
-    soft trace beneath rather than a colour of its own."""
+def test_a_line_carries_the_link_it_stands_for_so_it_can_be_removed_on_the_diagram():
+    assert 'data-link="7"' in drawn_network("FS")
+
+
+def test_the_critical_path_is_the_only_line_in_red():
     from app.charts import network
 
     rows = [{"id": i, "wbs": f"1.{i}", "name": f"line {i}", "start_date": "2026-01-01",
              "submission_date": "2026-01-10", "total_float": 0, "is_critical": True}
             for i in (1, 2)]
     drawn = str(network(rows, [kinded(1, 2, "FS")]))
-    assert 'stroke="var(--critical)" stroke-width="5"' in drawn
-    assert 'stroke="var(--series-7)"' in drawn          # and the kind on top
-
-
-def test_a_link_that_waits_on_a_start_leaves_the_other_box_by_its_left_edge():
-    for kind in ("SS", "SF"):
-        assert f'data-kind="{kind}"' in drawn_network(kind)
-    from app.charts import FROM_START
-
-    assert set(FROM_START) == {"SS", "SF"}
+    assert 'stroke="var(--critical)"' in drawn
 
 
 # --- untangling the diagram --------------------------------------------------

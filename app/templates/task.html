@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ task['wbs'] }} {{ task['name'] }} — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{# The panel on its own page, for anyone arriving without JavaScript or with a
+   link to one deliverable. #}
+<div class="page-head">
+  <div>
+    <h1>Deliverable</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · <a href="{{ url_for('projects.schedule', project_id=project['id']) }}">back to the schedule</a>
+    </p>
+  </div>
+</div>
+
+<div class="card task-panel is-page">{{ panel | safe }}</div>
+{% endblock %}

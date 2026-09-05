@@ -20,11 +20,15 @@ from ..schedule import KINDS, MODES, duration_between, finish_from, normalise_mo
 from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
-    apply_schedule, clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
+    add_calendar, add_holiday, apply_schedule, calendar_of, calendars_for,
+    clear_node_positions, delete_calendar, load_calendars, load_holidays,
+    project_pulse, remove_holiday, save_calendar, set_default_calendar,
+    set_task_calendar, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
     set_allocations, set_status, set_task_dates, today,
 )
+from ..calendars import parse_days
 from ..workflow import ordered as ordered_steps
 
 bp = Blueprint("projects", __name__, url_prefix="/projects/<int:project_id>")
@@ -362,7 +366,8 @@ def schedule(project_id: int):
         sort=sort, direction=direction,
         steps=ordered_steps(load_steps(project_id)),
         gantt=charts.gantt(rows, first, last, plan["data_date"]),
-        network=charts.network(plan["tasks"], plan["links"], movable=_can_edit(role)),
+        network=charts.network(plan["tasks"], plan["links"], movable=_can_edit(role),
+                              links_url=url_for("projects.add_dependency", project_id=project_id)),
         kinds=KINDS, can_edit=_can_edit(role),
     )
 
@@ -390,12 +395,13 @@ def save_dates(project_id: int, task_id: int):
     if task is None:
         abort(404)
 
+    mine = calendar_of(dict(task), calendars_for(project))
     mode = normalise_mode(request.form.get("mode") or project["schedule_mode"])
     start = from_input(request.form.get("start_date")) or task["start_date"]
     if mode == "duration" or "duration_days" in request.form:
         days = _to_float(request.form.get("duration_days"),
-                         duration_between(task["start_date"], task["submission_date"]))
-        submission = finish_from(start, days)
+                         duration_between(task["start_date"], task["submission_date"], mine))
+        submission = finish_from(start, days, mine)
     else:
         submission = from_input(request.form.get("submission_date")) or task["submission_date"]
         if submission < start:
@@ -411,9 +417,65 @@ def save_dates(project_id: int, task_id: int):
     return _plan_answer(project_id, task_id, moves)
 
 
+@bp.get("/schedule/<int:task_id>")
+@login_required
+def task_panel(project_id: int, task_id: int):
+    """One deliverable, opened from the schedule.
+
+    Its own page without JavaScript, and the contents of a side panel with it —
+    the same markup either way, so a change made in the panel redraws through
+    the path everything else uses.
+    """
+    from ..calendars import week_label
+
+    project, role = load_project(project_id)
+    plan = project_plan(project, _params()[0])
+    task = next((t for t in plan["tasks"] if t["id"] == task_id), None)
+    if task is None:
+        abort(404)
+
+    body = render_template(
+        "partials/task_panel.html",
+        project=project, plan=plan, task=task, kinds=KINDS, kind_names=dict(KINDS),
+        mode=normalise_mode(project["schedule_mode"]), week_label=week_label,
+        can_edit=_can_edit(role),
+    )
+    if _wants_json():
+        from flask import jsonify
+
+        return jsonify({"ok": True, "panel_html": body, "title": f"{task['wbs']} {task['name']}"})
+    return render_template("task.html", project=project, role=role, task=task, panel=body)
+
+
+@bp.post("/schedule/<int:task_id>/team")
+@login_required
+def save_team(project_id: int, task_id: int):
+    """Which team's working week and holidays a line is planned on.
+
+    Changing it replans the line: the same duration in a different working week
+    lands on a different day, and a date on one of the new team's days off is
+    moved to the next day they are in.
+    """
+    project, _role = load_project(project_id, "manager")
+    wanted = _to_int(request.form.get("calendar_id"))
+    if not set_task_calendar(project_id, task_id, wanted):
+        abort(404)
+
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
+    mine = calendar_of(dict(task), calendars_for(project))
+    days = duration_between(task["start_date"], task["submission_date"], mine)
+    moves = set_task_dates(project_id, task_id, task["start_date"],
+                           finish_from(task["start_date"], days, mine))
+
+    if not _wants_json():
+        flash(f"Planned on {mine.name or 'the default team'}", "success")
+    return _plan_answer(project_id, task_id, moves)
+
+
 @bp.post("/schedule/links")
 @login_required
 def add_dependency(project_id: int):
+    """A new link, from the form under the diagram or drawn on the diagram."""
     _project, _role = load_project(project_id, "manager")
     try:
         add_link(project_id, _to_int(request.form.get("predecessor_id")) or 0,
@@ -421,9 +483,16 @@ def add_dependency(project_id: int):
                  _to_float(request.form.get("lag_days"), 0),
                  request.form.get("kind") or "FS")
     except LinkError as exc:
+        if _wants_json():
+            from flask import jsonify
+
+            return jsonify({"ok": False, "error": str(exc)}), 400
         flash(str(exc), "error")
-    else:
-        flash("Dependency added", "success")
+        return _back("projects.schedule", project_id, panel="links")
+
+    if _wants_json():
+        return _links_answer(project_id, note="Dependency added")
+    flash("Dependency added", "success")
     return _back("projects.schedule", project_id, panel="links")
 
 
@@ -502,7 +571,8 @@ def _links_answer(project_id: int, removed: int | None = None, link_id: int | No
              "critical": bool(row.get("is_critical"))}
             for row in plan["tasks"]
         ],
-        "network_html": str(charts.network(plan["tasks"], plan["links"], movable=_can_edit(role))),
+        "network_html": str(charts.network(plan["tasks"], plan["links"], movable=_can_edit(role),
+                              links_url=url_for("projects.add_dependency", project_id=project_id))),
         "critical_count": plan["totals"]["critical"],
         "note": note,
     })
@@ -699,6 +769,8 @@ def _plan_answer(project_id: int, task_id: int, moves: dict):
                 "duration": row.get("duration_days", 0),
                 "float": row.get("total_float", 0),
                 "critical": bool(row.get("is_critical")),
+                "team": row.get("team_name") or "—",
+                "team_id": row.get("calendar_id") or "",
             }
             for row in (by_id[i] for i in touched if i in by_id)
         ],
@@ -846,16 +918,63 @@ def setup(project_id: int):
         (project_id,),
     )
     owner = query_one("SELECT id, name, email FROM users WHERE id = ?", (project["owner_id"],))
+    from ..calendars import WEEK_PATTERNS, week_days
+
     return render_template(
         "setup.html",
         project=project, role=role, snapshot=snapshot,
         sections=load_sections(project_id), trades=load_trades(project_id),
         steps=ordered_steps(load_steps(project_id)),
+        teams=load_calendars(project_id), holidays=load_holidays(project_id),
+        week_days=week_days, week_patterns=WEEK_PATTERNS,
         members=members, owner=owner, series=SERIES_SLOTS,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),
         editing=_to_int(request.args.get("split")),
     )
+
+
+@bp.post("/setup/teams")
+@login_required
+def add_calendar_team(project_id: int):
+    """A team, with the days of the week it works."""
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    add_calendar(project_id, request.form.get("name") or "", request.form.get("workdays") or "")
+    flash("Team added — put its deliverables on it in the list below", "success")
+    return _back("projects.setup", project_id)
+
+
+@bp.post("/setup/teams/default")
+@login_required
+def default_calendar(project_id: int):
+    """Which team a deliverable follows when it is not given one of its own."""
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    if set_default_calendar(project_id, _to_int(request.form.get("calendar_id")) or 0):
+        flash("Default team set", "success")
+    else:
+        flash("No such team", "error")
+    return _back("projects.setup", project_id)
+
+
+@bp.post("/setup/holidays")
+@login_required
+def add_project_holiday(project_id: int):
+    """A day off, for one team or for everybody."""
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    trouble = add_holiday(project_id, _to_int(request.form.get("calendar_id")),
+                          from_input(request.form.get("holiday_date")) or "",
+                          request.form.get("name") or "")
+    flash(trouble or "Holiday added", "error" if trouble else "success")
+    return _back("projects.setup", project_id)
 
 
 @bp.post("/setup/unlock")
@@ -1319,6 +1438,20 @@ def save_all(project_id: int):
             )
             changed["steps"] += 1
 
+        for team in load_calendars(project_id):
+            field = f"calendar_{team['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                "UPDATE calendars SET name = ?, workdays = ? WHERE id = ? AND project_id = ?",
+                (
+                    (form.get(field) or team["name"]).strip()[:60],
+                    parse_days(form.getlist(f"calendar_{team['id']}_days")),
+                    team["id"], project_id,
+                ),
+            )
+            changed["teams"] = changed.get("teams", 0) + 1
+
         for trade in trades:
             field = f"trade_{trade['id']}_name"
             if field not in form:
@@ -1365,7 +1498,7 @@ def save_all(project_id: int):
                 """
                 UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
                        start_date = ?, submission_date = ?, tracking = ?, remarks = ?,
-                       updated_at = datetime('now')
+                       calendar_id = ?, updated_at = datetime('now')
                 WHERE id = ? AND project_id = ?
                 """,
                 (
@@ -1376,6 +1509,8 @@ def save_all(project_id: int):
                     start or task["start_date"], submission or task["submission_date"],
                     form.get(f"task_{task['id']}_tracking") or task["tracking"],
                     (form.get(f"task_{task['id']}_remarks") or "").strip(),
+                    (_to_int(form.get(f"task_{task['id']}_calendar"))
+                     if f"task_{task['id']}_calendar" in form else task["calendar_id"]),
                     task["id"], project_id,
                 ),
             )
@@ -1400,7 +1535,8 @@ def save_all(project_id: int):
 
     flash(
         f"Saved — project settings, {changed['steps']} workflow steps, {changed['trades']} trades, "
-        f"{changed['sections']} sections and {changed['tasks']} deliverables",
+        f"{changed.get('teams', 0)} teams, {changed['sections']} sections and "
+        f"{changed['tasks']} deliverables",
         "success",
     )
     return _back("projects.setup", project_id)
@@ -1425,6 +1561,19 @@ def remove_item(project_id: int):
 
     kind, raw_id = target
     item_id = _to_int(raw_id)
+
+    # A team and a holiday are not plain rows: removing a team hands its
+    # deliverables back to the default, and the last one is never removed.
+    if kind == "calendar" and item_id is not None:
+        trouble = delete_calendar(project_id, item_id)
+        flash(trouble or "Team removed — its deliverables now follow the default team",
+              "error" if trouble else "success")
+        return _back("projects.setup", project_id)
+    if kind == "holiday" and item_id is not None:
+        gone = remove_holiday(project_id, item_id)
+        flash("Holiday removed" if gone else "No such holiday", "success" if gone else "error")
+        return _back("projects.setup", project_id)
+
     tables = {
         "step": ("workflow_steps", "Step removed"),
         "trade": ("trades", "Trade removed, along with its share of each deliverable"),

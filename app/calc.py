@@ -99,18 +99,27 @@ def uses_workflow(task: Mapping[str, Any]) -> bool:
     return str(task.get("tracking") or "workflow") == "workflow"
 
 
-def task_schedule(task: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _calendar_for(task: Mapping[str, Any], calendars: Mapping[Any, Any] | None):
+    """The working calendar a deliverable is planned against, if any is set up."""
+    if not calendars:
+        return None
+    return calendars.get(task.get("calendar_id")) or calendars.get(None)
+
+
+def task_schedule(task: Mapping[str, Any], steps: Sequence[Mapping[str, Any]],
+                  calendar: Any = None) -> list[dict[str, Any]]:
     """The workflow steps for a deliverable, each with the date it is planned."""
     from .workflow import schedule_for
 
     start, submission = task_dates(task)
     if not submission or not uses_workflow(task) or not steps:
         return []
-    return schedule_for(steps, start, submission)
+    return schedule_for(steps, start, submission, calendar)
 
 
 def planned_pct_on(
-    task: Mapping[str, Any], on_date: Any, steps: Sequence[Mapping[str, Any]] = (), plan: Sequence[Mapping[str, Any]] | None = None
+    task: Mapping[str, Any], on_date: Any, steps: Sequence[Mapping[str, Any]] = (),
+    plan: Sequence[Mapping[str, Any]] | None = None, calendar: Any = None,
 ) -> float:
     """Planned percent complete for one deliverable on a given date."""
     start, submission = task_dates(task)
@@ -120,12 +129,19 @@ def planned_pct_on(
     if uses_workflow(task) and steps:
         from .workflow import planned_pct_from_schedule
 
-        plan = task_schedule(task, steps) if plan is None else plan
+        plan = task_schedule(task, steps, calendar) if plan is None else plan
         return _clamp01(planned_pct_from_schedule(plan, to_iso(on_date)))
 
     day, start_day, end_day = parse_date(on_date), parse_date(start), parse_date(submission)
     if end_day <= start_day:                        # a milestone: it happens on its date
         return 1.0 if day >= end_day else 0.0
+    if calendar is not None:
+        # In working days, so a weekend does not tick the plan on and leave the
+        # line reading as behind on a Monday morning.
+        whole = calendar.duration(start_day, end_day)
+        if whole > 1:
+            return _clamp01((calendar.duration(start_day, min(day, end_day)) - 1) / (whole - 1)
+                            if day >= start_day else 0.0)
     return _clamp01((day - start_day).days / (end_day - start_day).days)
 
 
@@ -161,6 +177,7 @@ def compute_project(
     horizon_days: int | None = 30,
     spent_by_trade: Mapping[Any, float] | None = None,
     steps: Sequence[Mapping[str, Any]] = (),
+    calendars: Mapping[Any, Any] | None = None,
 ) -> dict[str, Any]:
     """Every derived figure for one project at a data date.
 
@@ -189,8 +206,9 @@ def compute_project(
         weight_pct = points / total_points if total_points > 0 else 0.0
         actual = _clamp01(_num(task.get("actual_pct")))
         start, submission = task_dates(task)
-        plan = task_schedule(task, steps)
-        planned = planned_pct_on(task, cutoff, steps, plan)
+        diary = _calendar_for(task, calendars)
+        plan = task_schedule(task, steps, diary)
+        planned = planned_pct_on(task, cutoff, steps, plan, diary)
 
         earned = weight_pct * actual
         planned_progress = weight_pct * planned
@@ -404,6 +422,7 @@ def build_s_curve(
     data_date: Any,
     steps: Sequence[Mapping[str, Any]] = (),
     samples: int = 40,
+    calendars: Mapping[Any, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Planned and earned cumulative curves over the life of the project.
 
@@ -422,7 +441,8 @@ def build_s_curve(
     cutoff_iso = to_iso(data_date)
 
     history = sorted(progress_history, key=lambda h: str(h["data_date"]))
-    plans = {t["id"]: task_schedule(t, steps) for t in tasks if "id" in t}
+    diaries = {t["id"]: _calendar_for(t, calendars) for t in tasks if "id" in t}
+    plans = {t["id"]: task_schedule(t, steps, diaries.get(t["id"])) for t in tasks if "id" in t}
 
     # Sample evenly, but always include the data date so the earned curve ends
     # exactly on the reported progress.
@@ -434,7 +454,9 @@ def build_s_curve(
     points: list[dict[str, Any]] = []
     for offset in sorted(days):
         iso = (first + timedelta(days=offset)).isoformat()
-        planned = sum(weight_of(t) * planned_pct_on(t, iso, steps, plans.get(t.get("id"))) for t in tasks)
+        planned = sum(weight_of(t) * planned_pct_on(t, iso, steps, plans.get(t.get("id")),
+                                                    diaries.get(t.get("id")))
+                      for t in tasks)
 
         earned = None
         if iso <= cutoff_iso:

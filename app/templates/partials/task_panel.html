@@ -1,0 +1,199 @@
+{# One deliverable, opened from the schedule: what it is, when it runs, and
+   everything it waits for — all editable where they stand.
+
+   Rendered by the server rather than assembled in the browser, so the panel is
+   the same markup as the table it came from and a change made in it redraws
+   through exactly the same path. #}
+{% from "partials/link_row.html" import link_cell with context %}
+{% from "partials/bits.html" import badge %}
+
+<div class="panel-head">
+  <div>
+    <p class="small muted" style="margin:0">{{ task['wbs'] }}{% if task['section_name'] %} · {{ task['section_name'] }}{% endif %}</p>
+    <h2 style="margin:2px 0 0">{{ task['name'] }}</h2>
+  </div>
+  <button type="button" class="btn btn-ghost btn-sm" data-panel-close aria-label="Close">Close</button>
+</div>
+
+<div class="panel-body">
+  <dl class="facts">
+    <div>
+      <dt>Start</dt>
+      <dd id="panel-start-{{ task['id'] }}">
+        {% if can_edit %}
+          <a class="cell-open" data-cell="plan-start" data-item="{{ task['id'] }}"
+             data-value="{{ date_input(task['start_date']) }}" data-mode="{{ mode }}"
+             data-action="{{ url_for('projects.save_dates', project_id=project['id'], task_id=task['id']) }}"
+             href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+             title="Click to change">{{ short_date(task['start_date']) }}</a>
+        {% else %}{{ short_date(task['start_date']) }}{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Duration</dt>
+      <dd id="panel-duration-{{ task['id'] }}">
+        {% if can_edit %}
+          <a class="cell-open" data-cell="plan-duration" data-item="{{ task['id'] }}"
+             data-value="{{ task['duration_days'] }}" data-mode="{{ mode }}"
+             data-action="{{ url_for('projects.save_dates', project_id=project['id'], task_id=task['id']) }}"
+             href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+             title="Click to change">{{ task['duration_days'] }}d</a>
+        {% else %}{{ task['duration_days'] }}d{% endif %}
+        <span class="small muted">working days</span>
+      </dd>
+    </div>
+    <div>
+      <dt>Submission</dt>
+      <dd id="panel-submission-{{ task['id'] }}">
+        {% if can_edit and mode == 'dates' %}
+          <a class="cell-open" data-cell="plan-submission" data-item="{{ task['id'] }}"
+             data-value="{{ date_input(task['submission_date']) }}" data-mode="{{ mode }}"
+             data-action="{{ url_for('projects.save_dates', project_id=project['id'], task_id=task['id']) }}"
+             href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+             title="Click to change">{{ short_date(task['submission_date']) }}</a>
+        {% else %}{{ short_date(task['submission_date']) }}{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Team</dt>
+      <dd id="panel-team-{{ task['id'] }}">
+        {% if can_edit and plan['teams'] | length > 1 %}
+          <a class="cell-open" data-cell="plan-team" data-item="{{ task['id'] }}"
+             data-value="{{ task['calendar_id'] or '' }}"
+             data-action="{{ url_for('projects.save_team', project_id=project['id'], task_id=task['id']) }}"
+             href="{{ url_for('projects.setup', project_id=project['id']) }}"
+             title="Click to change">{{ task['team_name'] or '—' }}</a>
+        {% else %}{{ task['team_name'] or '—' }}{% endif %}
+        <span class="small muted">{{ week_label(task['team_week']) }}</span>
+      </dd>
+    </div>
+    <div>
+      <dt>Float</dt>
+      <dd>
+        {% if task['is_critical'] %}{{ badge('critical', 'critical') }}
+        {% else %}{{ task['total_float'] }}d{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Status</dt>
+      <dd>{{ task['status_name'] or 'Not started' }} · {{ pct(task['actual_pct']) }}
+        {% if task['revision'] %}
+          <span class="small" style="color:var(--warning)">rev {{ task['revision'] }}</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+
+  {% if task['starts_late'] %}
+    <p class="small" style="color:var(--warning);margin:0 0 10px">
+      ⚑ Cannot start as drawn — {{ task['late_reason'] or 'a link puts its start later' }}
+    </p>
+  {% endif %}
+  {% set run_up = task['run_up'] %}
+  {% if run_up and run_up['count'] %}
+    <p class="small holiday-flag" style="margin:0 0 10px">
+      ⚑ {{ run_up['count'] }} holiday{{ '' if run_up['count'] == 1 else 's' }} in the week before
+      this submission:
+      {% for day in run_up['days'] %}{{ short_date(day['date']) }}
+        ({{ 'everyone' if day['everyone'] else task['team_name'] or 'this team' }}){{ '' if loop.last else ', ' }}
+      {% endfor %}
+    </p>
+  {% endif %}
+
+  <h3 class="small" style="margin:14px 0 6px">Waits for</h3>
+  {% set before = plan['links'] | selectattr('successor_id', 'equalto', task['id']) | list %}
+  {% if not before %}
+    <p class="small muted" style="margin:0">Nothing — it can start as soon as it is drawn.</p>
+  {% else %}
+    <table class="panel-table">
+      <tbody>
+        {% for link in before %}
+          <tr id="link-{{ link['id'] }}">
+            <td class="small" id="predecessor-{{ link['id'] }}">
+              {{ link_cell(project, link, 'predecessor',
+                           link['predecessor_wbs'] ~ ' ' ~ link['predecessor_name'][:44],
+                           link['predecessor_id']) }}
+            </td>
+            <td class="small" id="kind-{{ link['id'] }}">
+              {{ link_cell(project, link, 'kind', kind_names[link['kind']], link['kind']) }}
+            </td>
+            <td class="right small ink2 tabular" id="lag-{{ link['id'] }}">
+              {{ link_cell(project, link, 'lag', (link['lag_days'] | int) ~ 'd', link['lag_days'] | int) }}
+            </td>
+            <td class="right">
+              {% if can_edit %}
+                <form method="post" data-confirm="Remove this dependency?" data-live-remove
+                      data-row="link-{{ link['id'] }}"
+                      action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
+                  <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h3 class="small" style="margin:14px 0 6px">Waited on by</h3>
+  {% set after = plan['links'] | selectattr('predecessor_id', 'equalto', task['id']) | list %}
+  {% if not after %}
+    <p class="small muted" style="margin:0">Nothing — it closes a path.</p>
+  {% else %}
+    <table class="panel-table">
+      <tbody>
+        {% for link in after %}
+          <tr id="link-{{ link['id'] }}">
+            <td class="small" id="successor-{{ link['id'] }}">
+              {{ link_cell(project, link, 'successor',
+                           link['successor_wbs'] ~ ' ' ~ link['successor_name'][:44],
+                           link['successor_id']) }}
+            </td>
+            <td class="small" id="kind-{{ link['id'] }}">
+              {{ link_cell(project, link, 'kind', kind_names[link['kind']], link['kind']) }}
+            </td>
+            <td class="right small ink2 tabular" id="lag-{{ link['id'] }}">
+              {{ link_cell(project, link, 'lag', (link['lag_days'] | int) ~ 'd', link['lag_days'] | int) }}
+            </td>
+            <td class="right">
+              {% if can_edit %}
+                <form method="post" data-confirm="Remove this dependency?" data-live-remove
+                      data-row="link-{{ link['id'] }}"
+                      action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
+                  <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if can_edit %}
+    <form method="post" data-live-link class="inline-form" style="margin-top:12px"
+          action="{{ url_for('projects.add_dependency', project_id=project['id']) }}">
+      <input type="hidden" name="successor_id" value="{{ task['id'] }}">
+      <label class="field flex1">
+        <span class="field-label">Make it wait for</span>
+        <select name="predecessor_id" required>
+          <option value="">— choose —</option>
+          {% for other in plan['tasks'] if other['id'] != task['id'] %}
+            <option value="{{ other['id'] }}">{{ other['wbs'] }} · {{ other['name'][:44] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field w-md">
+        <span class="field-label">which</span>
+        <select name="kind">
+          {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field w-sm">
+        <span class="field-label">Lag</span>
+        <input type="number" name="lag_days" value="0" step="1" class="right">
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm">Link</button>
+    </form>
+  {% endif %}
+</div>

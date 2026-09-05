@@ -1,0 +1,40 @@
+{# One dependency, as the table draws it. A macro rather than markup in the
+   page, so a row re-rendered after a change comes back exactly as it was
+   drawn — the two ends carry WBS numbers, which move when an end does. #}
+{% macro link_cell(project, link, kind, label, value) %}
+  {% if can_edit %}
+    <a class="cell-open" data-cell="link-{{ kind }}" data-item="{{ link['id'] }}"
+       data-value="{{ value }}"
+       data-action="{{ url_for('projects.save_dependency', project_id=project['id'], link_id=link['id']) }}"
+       href="{{ url_for('projects.schedule', project_id=project['id']) }}"
+       title="Click to change">{{ label }}</a>
+  {% else %}{{ label }}{% endif %}
+{% endmacro %}
+
+{% macro link_row(project, link, kind_names) %}
+  <tr id="link-{{ link['id'] }}">
+    <td class="small" id="successor-{{ link['id'] }}">
+      {{ link_cell(project, link, 'successor', link['successor_wbs'] ~ ' ' ~ link['successor_name'],
+                   link['successor_id']) }}
+    </td>
+    <td class="small" id="predecessor-{{ link['id'] }}">
+      {{ link_cell(project, link, 'predecessor', link['predecessor_wbs'] ~ ' ' ~ link['predecessor_name'],
+                   link['predecessor_id']) }}
+    </td>
+    <td class="small" id="kind-{{ link['id'] }}">
+      {{ link_cell(project, link, 'kind', kind_names[link['kind']], link['kind']) }}
+    </td>
+    <td class="right small ink2 tabular" id="lag-{{ link['id'] }}">
+      {{ link_cell(project, link, 'lag', (link['lag_days'] | int) ~ 'd', link['lag_days'] | int) }}
+    </td>
+    <td class="right no-print">
+      {% if can_edit %}
+        <form method="post" data-confirm="Remove this dependency?" data-live-remove
+              data-row="link-{{ link['id'] }}"
+              action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
+          <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+        </form>
+      {% endif %}
+    </td>
+  </tr>
+{% endmacro %}

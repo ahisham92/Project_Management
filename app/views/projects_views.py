@@ -20,7 +20,7 @@ from ..schedule import KINDS, MODES, duration_between, finish_from, normalise_mo
 from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
-    clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
+    apply_schedule, clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, update_link,
     set_allocations, set_status, set_task_dates, today,
 )
@@ -431,16 +431,29 @@ def add_dependency(project_id: int):
 def save_dependency(project_id: int, link_id: int):
     """A link's lag or its type, changed where it stands."""
     _project, _role = load_project(project_id, "manager")
-    link = update_link(
-        project_id, link_id,
-        lag_days=_to_float(request.form.get("lag_days"), 0) if "lag_days" in request.form else None,
-        kind=request.form.get("kind") if "kind" in request.form else None,
-    )
+    try:
+        link = update_link(
+            project_id, link_id,
+            lag_days=_to_float(request.form.get("lag_days"), 0) if "lag_days" in request.form else None,
+            kind=request.form.get("kind") if "kind" in request.form else None,
+            predecessor_id=(_to_int(request.form.get("predecessor_id"))
+                            if "predecessor_id" in request.form else None),
+            successor_id=(_to_int(request.form.get("successor_id"))
+                          if "successor_id" in request.form else None),
+        )
+    except LinkError as exc:
+        if _wants_json():
+            from flask import jsonify
+
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id)
+
     if link is None:
         abort(404)
 
     if _wants_json():
-        return _links_answer(project_id)
+        return _links_answer(project_id, link_id=link_id)
     flash("Dependency saved", "success")
     return _back("projects.schedule", project_id)
 
@@ -458,16 +471,30 @@ def delete_dependency(project_id: int, link_id: int):
     return _back("projects.schedule", project_id)
 
 
-def _links_answer(project_id: int, removed: int | None = None):
-    """A link change answers with the plan as it now reads: the dates a change
-    of lag or type moves, and the diagram redrawn."""
+def _links_answer(project_id: int, removed: int | None = None, link_id: int | None = None):
+    """A link change answers with the plan as it now reads: the float a change
+    moves, the diagram redrawn, and the row itself when either end has changed.
+    """
     from flask import jsonify
 
     project, role = load_project(project_id)
     plan = project_plan(project)
+
+    row_html = ""
+    if link_id is not None:
+        link = next((l for l in plan["links"] if l["id"] == link_id), None)
+        if link is not None:
+            # Rendered by the macro the table itself uses, so what is swapped
+            # in is exactly what a reload would have drawn.
+            row_html = render_template(
+                "partials/link_row_one.html", project=project, link=link,
+                kind_names=dict(KINDS), can_edit=_can_edit(role),
+            )
+
     return jsonify({
         "ok": True,
         "removed": removed,
+        "link_html": row_html,
         "rows": [
             {"id": row["id"], "float": row.get("total_float", 0),
              "critical": bool(row.get("is_critical"))}
@@ -491,6 +518,61 @@ def move_node(project_id: int, task_id: int):
         abort(404)
     if _wants_json():
         return jsonify({"ok": True})
+    return _back("projects.schedule", project_id)
+
+
+@bp.get("/schedule.xlsx")
+@login_required
+def export_schedule(project_id: int):
+    """The dates and durations as a workbook, ready to edit and import back."""
+    from flask import send_file
+
+    from ..excel import ExcelUnavailable, build_schedule_workbook
+
+    project, _role = load_project(project_id)
+    plan = project_plan(project)
+    try:
+        data = build_schedule_workbook(project, sort_tasks(plan["tasks"], "wbs", "asc"),
+                                       normalise_mode(project["schedule_mode"]))
+    except ExcelUnavailable as exc:
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id)
+
+    stamp = today().replace("-", "")
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"{project['code']}-schedule-{stamp}.xlsx",
+    )
+
+
+@bp.post("/schedule/import")
+@login_required
+def import_schedule(project_id: int):
+    """Puts the dates where an edited workbook says they are."""
+    from ..excel import ExcelUnavailable, ImportError_, read_schedule_workbook
+
+    project, _role = load_project(project_id, "manager")
+    upload = request.files.get("workbook")
+    if upload is None or not upload.filename:
+        flash("Choose a workbook to import", "error")
+        return _back("projects.schedule", project_id)
+
+    try:
+        rows = read_schedule_workbook(upload.read())
+    except (ExcelUnavailable, ImportError_) as exc:
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id)
+
+    result = apply_schedule(project_id, rows, normalise_mode(project["schedule_mode"]))
+    flash(
+        f"{result['applied']} deliverable{'' if result['applied'] == 1 else 's'} rescheduled"
+        + (f" · {len(result['skipped'])} skipped" if result["skipped"] else ""),
+        "error" if result["skipped"] else "success",
+    )
+    for note in result["skipped"][:5]:
+        flash(note, "error")
     return _back("projects.schedule", project_id)
 
 

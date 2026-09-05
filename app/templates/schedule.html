@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import badge, date_field, empty, sort_th, print_header, print_button %}
+{% from "partials/link_row.html" import link_row with context %}
 {% block title %}Schedule — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -109,6 +110,19 @@
         Sorted by WBS; the critical path carries no float{% endif %}
       </p>
     </div>
+    <div class="inline-form no-print">
+      <a class="btn btn-ghost btn-sm"
+         href="{{ url_for('projects.export_schedule', project_id=project['id']) }}">Export to Excel</a>
+      {% if can_edit %}
+        <form method="post" enctype="multipart/form-data" class="inline-form"
+              action="{{ url_for('projects.import_schedule', project_id=project['id']) }}">
+          <input type="file" name="workbook" accept=".xlsx" required class="w-lg"
+                 aria-label="Schedule workbook to import">
+          <button type="submit" class="btn btn-ghost btn-sm"
+                  data-confirm="Import these dates? Every deliverable in the sheet is moved to what it says.">Import</button>
+        </form>
+      {% endif %}
+    </div>
   </div>
   <div class="card-body flush">
     {% if not tasks %}
@@ -211,7 +225,6 @@
         </form>
       {% endif %}
     </div>
-    </div>
   </div>
   <div class="card-body" id="network">{{ network }}</div>
 
@@ -261,39 +274,7 @@
             </thead>
             <tbody>
               {% for link in plan['links'] %}
-                <tr id="link-{{ link['id'] }}">
-                  <td class="small">
-                    <span class="tabular muted">{{ link['successor_wbs'] }}</span> {{ link['successor_name'] }}
-                  </td>
-                  <td class="small">
-                    <span class="tabular muted">{{ link['predecessor_wbs'] }}</span> {{ link['predecessor_name'] }}
-                  </td>
-                  <td class="small" id="kind-{{ link['id'] }}">
-                    {% if can_edit %}
-                      <a class="cell-open" data-cell="link-kind" data-item="{{ link['id'] }}"
-                         data-value="{{ link['kind'] }}"
-                         data-action="{{ url_for('projects.save_dependency', project_id=project['id'], link_id=link['id']) }}"
-                         href="{{ url_for('projects.schedule', project_id=project['id']) }}"
-                         title="Click to change">{{ kind_names[link['kind']] }}</a>
-                    {% else %}{{ kind_names[link['kind']] }}{% endif %}
-                  </td>
-                  <td class="right small ink2 tabular" id="lag-{{ link['id'] }}">
-                    {% if can_edit %}
-                      <a class="cell-open" data-cell="link-lag" data-item="{{ link['id'] }}"
-                         data-value="{{ link['lag_days'] | int }}"
-                         data-action="{{ url_for('projects.save_dependency', project_id=project['id'], link_id=link['id']) }}"
-                         href="{{ url_for('projects.schedule', project_id=project['id']) }}"
-                         title="Click to change">{{ link['lag_days'] | int }}d</a>
-                    {% else %}{{ link['lag_days'] | int }}d{% endif %}
-                  </td>
-                  <td class="right no-print">
-                    <form method="post" data-confirm="Remove this dependency?" data-live-remove
-                          data-row="link-{{ link['id'] }}"
-                          action="{{ url_for('projects.delete_dependency', project_id=project['id'], link_id=link['id']) }}">
-                      <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-                    </form>
-                  </td>
-                </tr>
+                {{ link_row(project, link, kind_names) }}
               {% endfor %}
             </tbody>
           </table>
@@ -320,6 +301,21 @@
   <template id="cell-link-lag">
     <input type="number" name="lag_days" class="cell-input right" step="1"
            style="width:70px" aria-label="Lag in days">
+  </template>
+  {# One copy of the deliverable list, cloned into whichever end is clicked. #}
+  <template id="cell-link-successor">
+    <select name="successor_id" class="cell-input" aria-label="Deliverable">
+      {% for task in plan['tasks'] %}
+        <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
+      {% endfor %}
+    </select>
+  </template>
+  <template id="cell-link-predecessor">
+    <select name="predecessor_id" class="cell-input" aria-label="Waits for">
+      {% for task in plan['tasks'] %}
+        <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
+      {% endfor %}
+    </select>
   </template>
   <template id="cell-link-kind">
     <select name="kind" class="cell-input" aria-label="How this deliverable waits">

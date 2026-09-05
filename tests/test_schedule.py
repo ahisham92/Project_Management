@@ -1026,3 +1026,265 @@ def test_only_a_manager_can_import_dependencies(client, app):
 
     assert client.get("/projects/1/schedule/links.xlsx").status_code == 200     # they may read
     assert client.post("/projects/1/schedule/links/import").status_code == 403
+
+
+# --- moving an end of a dependency -----------------------------------------
+
+def wbs_of(client, link_id: int):
+    from app.db import query_one
+
+    with client.application.app_context():
+        row = query_one(
+            "SELECT p.wbs AS predecessor, s.wbs AS successor FROM task_links l "
+            "JOIN tasks p ON p.id = l.predecessor_id JOIN tasks s ON s.id = l.successor_id "
+            "WHERE l.id = ?", (link_id,))
+    return row["successor"], row["predecessor"]
+
+
+def test_either_end_of_a_dependency_can_be_moved(signed_in):
+    link_two(signed_in, "2", "1")
+    link_id = link_id_of(signed_in)
+
+    result = signed_in.post(f"/projects/1/schedule/links/{link_id}",
+                            data={"successor_id": "3"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert result["ok"]
+    assert wbs_of(signed_in, link_id) == ("1.3", "1.1")
+
+    signed_in.post(f"/projects/1/schedule/links/{link_id}", data={"predecessor_id": "2"},
+                   headers={"Accept": "application/json"})
+    assert wbs_of(signed_in, link_id) == ("1.3", "1.2")
+
+
+def test_the_row_comes_back_drawn_when_an_end_moves(signed_in):
+    """Its WBS numbers change with it, so the row is re-rendered rather than
+    patched in place."""
+    link_two(signed_in, "2", "1")
+    result = signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                            data={"successor_id": "3"},
+                            headers={"Accept": "application/json"}).get_json()
+    assert "1.3" in result["link_html"]
+    assert 'data-cell="link-successor"' in result["link_html"]
+
+
+def test_moving_an_end_onto_itself_is_refused(signed_in):
+    link_two(signed_in, "2", "1")
+    response = signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                              data={"successor_id": "1"},
+                              headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert "cannot depend on itself" in response.get_json()["error"]
+    assert wbs_of(signed_in, link_id_of(signed_in)) == ("1.2", "1.1")   # unchanged
+
+
+def test_moving_an_end_so_the_programme_loops_is_refused(signed_in):
+    link_two(signed_in, "2", "1")
+    link_two(signed_in, "3", "2")
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        first = query_one("SELECT id FROM task_links ORDER BY id LIMIT 1")["id"]
+
+    # 1.2 waits for 1.1; making it wait for 1.3 would close the loop.
+    response = signed_in.post(f"/projects/1/schedule/links/{first}",
+                              data={"predecessor_id": "3"},
+                              headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert "depend on itself" in response.get_json()["error"]
+
+
+def test_moving_an_end_onto_a_pair_that_already_exists_is_refused(signed_in):
+    link_two(signed_in, "2", "1")
+    link_two(signed_in, "3", "1")
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        second = query_one("SELECT id FROM task_links ORDER BY id DESC LIMIT 1")["id"]
+
+    response = signed_in.post(f"/projects/1/schedule/links/{second}",
+                              data={"successor_id": "2"},
+                              headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert "already linked" in response.get_json()["error"]
+
+
+def test_a_deliverable_from_another_project_cannot_be_put_on_a_link(signed_in):
+    link_two(signed_in, "2", "1")
+    response = signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                              data={"successor_id": "99999"},
+                              headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert "must belong to this project" in response.get_json()["error"]
+
+
+def test_moving_an_end_leaves_the_lag_and_the_kind_alone(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2", "kind": "SS",
+                         "lag_days": "-4"}, follow_redirects=True)
+    signed_in.post(f"/projects/1/schedule/links/{link_id_of(signed_in)}",
+                   data={"successor_id": "3"}, headers={"Accept": "application/json"})
+
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        row = query_one("SELECT kind, lag_days FROM task_links LIMIT 1")
+    assert row["kind"] == "SS" and row["lag_days"] == -4
+
+
+def test_both_ends_offer_the_deliverable_list_in_the_row(signed_in):
+    link_two(signed_in, "2", "1")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert 'data-cell="link-successor"' in body and 'data-cell="link-predecessor"' in body
+    assert body.count('id="cell-link-successor"') == 1     # one copy, cloned per row
+    assert body.count('id="cell-link-predecessor"') == 1
+
+
+# --- the schedule workbook -------------------------------------------------
+
+def test_the_schedule_exports_to_a_workbook(signed_in):
+    response = signed_in.get("/projects/1/schedule.xlsx")
+    assert response.status_code == 200
+    assert response.data[:2] == b"PK"
+    assert "schedule" in response.headers["Content-Disposition"]
+
+    from app.excel import read_schedule_workbook
+
+    rows = read_schedule_workbook(response.data)
+    assert len(rows) == 55
+    assert rows[0]["wbs"] == "1.1"
+    assert rows[0]["duration_days"] > 0
+
+
+def test_the_workbook_shades_whichever_column_is_worked_out(signed_in):
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(signed_in.get("/projects/1/schedule.xlsx").data))
+    assert [c.value for c in wb["Schedule"][1]] == [
+        "WBS", "Deliverable", "Start", "Duration (days)", "Finish", "Section"
+    ]
+    assert "worked out from the start and the duration" in str(
+        [c.value for row in wb["Schedule"].iter_rows() for c in row])
+
+    signed_in.post("/projects/1/schedule/mode", data={"mode": "dates"}, follow_redirects=True)
+    wb = openpyxl.load_workbook(io.BytesIO(signed_in.get("/projects/1/schedule.xlsx").data))
+    assert "worked out from the two dates" in str(
+        [c.value for row in wb["Schedule"].iter_rows() for c in row])
+
+
+def schedule_workbook(rows):
+    """A schedule workbook built from (wbs, start, duration, finish)."""
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.active.title = "Schedule"
+    wb.active.append(["WBS", "Deliverable", "Start", "Duration (days)", "Finish", "Section"])
+    for wbs, start, duration, finish in rows:
+        wb.active.append([wbs, "", start, duration, finish, ""])
+    stream = io.BytesIO()
+    wb.save(stream)
+    return stream.getvalue()
+
+
+def send_schedule(client, data: bytes):
+    import io
+
+    return client.post("/projects/1/schedule/import",
+                       data={"workbook": (io.BytesIO(data), "schedule.xlsx")},
+                       content_type="multipart/form-data",
+                       follow_redirects=True).get_data(as_text=True)
+
+
+def test_an_edited_workbook_reschedules_by_duration(signed_in):
+    body = send_schedule(signed_in, schedule_workbook([("1.1", "2026-10-01", 15, "")]))
+    assert "1 deliverable rescheduled" in body
+    assert dates_of(signed_in, 1) == ("2026-10-01", "2026-10-15")
+
+
+def test_an_edited_workbook_reschedules_by_dates_when_that_is_the_setting(signed_in):
+    signed_in.post("/projects/1/schedule/mode", data={"mode": "dates"}, follow_redirects=True)
+    send_schedule(signed_in, schedule_workbook([("1.1", "2026-10-01", 99, "2026-10-20")]))
+    assert dates_of(signed_in, 1) == ("2026-10-01", "2026-10-20")   # the dates win, not 99
+
+
+def test_dd_mm_yyyy_is_understood_in_the_workbook(signed_in):
+    send_schedule(signed_in, schedule_workbook([("1.1", "01/10/2026", 10, "")]))
+    assert dates_of(signed_in, 1) == ("2026-10-01", "2026-10-10")
+
+
+def test_a_row_naming_a_wbs_that_does_not_exist_is_reported_on_import(signed_in):
+    body = send_schedule(signed_in, schedule_workbook(
+        [("9.9", "2026-10-01", 5, ""), ("1.1", "2026-10-01", 5, "")]))
+    assert "1 deliverable rescheduled" in body
+    assert "no deliverable with that WBS" in body
+
+
+def test_a_finish_before_the_start_is_reported_rather_than_written(signed_in):
+    signed_in.post("/projects/1/schedule/mode", data={"mode": "dates"}, follow_redirects=True)
+    before = dates_of(signed_in, 1)
+    body = send_schedule(signed_in, schedule_workbook([("1.1", "2026-10-10", 0, "2026-10-01")]))
+    assert "the finish is before the start" in body
+    assert dates_of(signed_in, 1) == before
+
+
+def test_the_import_takes_the_sheet_as_it_is_written(signed_in):
+    """The sheet is the authority, so a line is not pushed on top of what it
+    says by something it depends on."""
+    link_two(signed_in, "2", "1")
+    send_schedule(signed_in, schedule_workbook(
+        [("1.1", "2026-10-01", 30, ""), ("1.2", "2026-10-05", 10, "")]))
+    assert dates_of(signed_in, 2) == ("2026-10-05", "2026-10-14")    # not pushed to November
+
+
+def test_its_own_export_imports_without_a_complaint(signed_in):
+    assert "skipped" not in send_schedule(signed_in, signed_in.get("/projects/1/schedule.xlsx").data)
+
+
+def test_a_schedule_file_that_is_not_a_workbook_says_so(signed_in):
+    assert "could not be read as an Excel workbook" in send_schedule(signed_in, b"nope")
+
+
+def test_a_workbook_without_the_schedule_sheet_says_which_one_is_missing(signed_in):
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.active.title = "Something else"
+    stream = io.BytesIO()
+    wb.save(stream)
+    assert "no Schedule sheet" in send_schedule(signed_in, stream.getvalue())
+
+
+def test_only_a_manager_can_import_a_schedule(client, app):
+    client.post("/register", data={"name": "Member", "email": "m3@example.com",
+                                   "password": "longenough1"})
+    with app.app_context():
+        from app.db import connect
+
+        conn = connect(app.config["DATABASE"])
+        with conn:
+            user = conn.execute("SELECT id FROM users WHERE email = 'm3@example.com'").fetchone()
+            conn.execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'member')",
+                         (user["id"],))
+        conn.close()
+
+    assert client.get("/projects/1/schedule.xlsx").status_code == 200
+    assert client.post("/projects/1/schedule/import").status_code == 403
+
+
+def test_the_notes_under_a_sheet_never_sit_in_a_column_that_is_read(signed_in):
+    """Prose in the WBS column reads as a row, and the import then complains
+    about a deliverable called "Dates read yyyy-mm-dd"."""
+    from app.excel import read_links_workbook, read_schedule_workbook
+
+    link_two(signed_in, "2", "1")
+    schedule = read_schedule_workbook(signed_in.get("/projects/1/schedule.xlsx").data)
+    assert all(len(row["wbs"]) < 20 for row in schedule), "a note was read as a deliverable"
+    assert len(schedule) == 55
+
+    links = read_links_workbook(signed_in.get("/projects/1/schedule/links.xlsx").data)
+    assert len(links) == 1

@@ -33,7 +33,8 @@ def main() -> int:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**launch)
         page = browser.new_page(viewport={"width": 1440, "height": 1000}, accept_downloads=True)
-        page.on("console", lambda m: failures.append(f"console: {m.text}") if m.type == "error" else None)
+        page.on("console", lambda m: failures.append(f"console: {m.text}")
+                if m.type == "error" and "400 (BAD REQUEST)" not in m.text else None)
         page.on("pageerror", lambda e: failures.append(f"pageerror: {e}"))
 
         def step(name: str, fn) -> None:
@@ -86,6 +87,7 @@ def main() -> int:
         step("schedule links two deliverables and shifts what follows", _schedule_links)
         step("schedule dates and durations are amended in the row", _schedule_amend)
         step("schedule dependencies are edited and dragged", _schedule_deps)
+        step("schedule dates go out to Excel and come back", _schedule_excel)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -114,6 +116,11 @@ def main() -> int:
     for failure in failures:
         print("  -", failure)
     return 1 if failures else 0
+
+
+def _card(page, heading: str):
+    """The card under a heading — several of them carry an Export button now."""
+    return page.locator("div.card").filter(has=page.locator(f"h2:text-is('{heading}')"))
 
 
 def _expect_all(page, needles: list[str]) -> None:
@@ -179,6 +186,42 @@ def _raise_revision(page) -> None:
     if "Rev 1" not in text:
         raise AssertionError(f"revision not shown: {text[:160]}")
     page.screenshot(path=str(SHOTS / "05-revision.png"), full_page=True)
+
+
+def _schedule_excel(page) -> None:
+    """The dates and durations download, survive an edit in Excel, and import."""
+    from openpyxl import load_workbook
+
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    card = _card(page, "Dates and durations")
+    with page.expect_download(timeout=10000) as download:
+        card.locator("a:has-text('Export to Excel')").click()
+    workbook = str(SHOTS / "schedule.xlsx")
+    download.value.save_as(workbook)
+    if not download.value.suggested_filename.endswith(".xlsx"):
+        raise AssertionError("the schedule did not download as a workbook")
+
+    sheet = load_workbook(workbook)["Schedule"]
+    wbs = str(sheet.cell(row=2, column=1).value)
+    if not wbs or wbs[0].isalpha():
+        raise AssertionError(f"the first data row should be a WBS number, got {wbs!r}")
+
+    # Edit it the way anyone would: stretch the first deliverable by a fortnight.
+    was = int(sheet.cell(row=2, column=4).value)
+    sheet.cell(row=2, column=4).value = was + 14
+    sheet.parent.save(workbook)
+
+    card.locator("input[name=workbook]").set_input_files(workbook)
+    page.once("dialog", lambda dialog: dialog.accept())
+    card.locator("button:has-text('Import')").click()
+    page.wait_for_selector("text=rescheduled", timeout=8000)
+    if "skipped" in page.text_content("body"):
+        raise AssertionError("its own export should import without a complaint")
+
+    row = _card(page, "Dates and durations").locator("tbody tr").first
+    if f"{was + 14}d" not in row.inner_text():
+        raise AssertionError(f"the table still reads {was}d, not the imported {was + 14}d")
+    page.screenshot(path=str(SHOTS / "24-schedule-excel.png"), full_page=True)
 
 
 def _dates_read_dd_mm(page) -> None:
@@ -357,6 +400,44 @@ def _schedule_deps(page) -> None:
     if "start → start" not in page.locator("[data-cell='link-kind']").first.inner_text():
         raise AssertionError("the link type did not stick")
 
+    # Either end of the link moves in the row too, and the row redraws with the
+    # deliverable it now points at.
+    link = page.locator("tr[id^='link-']").first.get_attribute("id")
+    end = page.locator(f"#{link} [data-cell='link-successor']")
+    waits_on = page.locator(f"#{link} [data-cell='link-predecessor']").get_attribute("data-value")
+    before = end.inner_text().strip()
+    end.click()
+    page.wait_for_selector("form.cell-form select[name=successor_id]", timeout=6000)
+    choices = page.locator("form.cell-form select[name=successor_id] option")
+    moved_to = next(                       # a late line: nothing yet waits on it
+        choices.nth(i).get_attribute("value")
+        for i in reversed(range(choices.count()))
+        if choices.nth(i).get_attribute("value") != waits_on
+    )
+    page.select_option("form.cell-form select[name=successor_id]", moved_to)
+    page.wait_for_timeout(1400)
+    if page.url != url:
+        raise AssertionError("moving an end of a link should not reload the page")
+    end = page.locator(f"#{link} [data-cell='link-successor']")
+    if end.inner_text().strip() == before:
+        raise AssertionError(f"the link still waits on {before!r}")
+    if end.get_attribute("data-value") != moved_to:
+        raise AssertionError("the cell did not take the deliverable it now points at")
+
+    # A link onto itself is refused, and says so without losing the page.
+    end.click()
+    page.wait_for_selector("form.cell-form select[name=successor_id]", timeout=6000)
+    page.select_option("form.cell-form select[name=successor_id]", waits_on)
+    page.wait_for_selector(".flash.error", timeout=6000)
+    if page.url != url:
+        raise AssertionError("a refused change should not throw the page away")
+    if page.locator(f"#{link} [data-cell='link-successor']").get_attribute("data-value") != moved_to:
+        raise AssertionError("a refused change should leave the cell as it was")
+
+    page.reload(wait_until="networkidle")
+    if page.locator(f"#{link} [data-cell='link-successor']").inner_text().strip() == before:
+        raise AssertionError("the moved end did not survive a reload")
+
     # A box can be dragged out of the way, and stays there.
     box = page.locator(".net-node.movable").first
     box.scroll_into_view_if_needed()
@@ -391,16 +472,17 @@ def _schedule_deps(page) -> None:
         raise AssertionError("the row was not removed")
 
     # The dependencies go out to Excel and come back.
+    card = _card(page, "Dependencies")
     with page.expect_download(timeout=10000) as download:
-        page.click("a:has-text('Export to Excel')")
+        card.locator("a:has-text('Export to Excel')").click()
     workbook = str(SHOTS / "dependencies.xlsx")
     download.value.save_as(workbook)
     if not download.value.suggested_filename.endswith(".xlsx"):
         raise AssertionError("the dependencies did not download as a workbook")
 
-    page.set_input_files("input[name=workbook]", workbook)
+    card.locator("input[name=workbook]").set_input_files(workbook)
     page.once("dialog", lambda dialog: dialog.accept())
-    page.click("button:has-text('Import')")
+    card.locator("button:has-text('Import')").click()
     page.wait_for_selector("text=imported", timeout=8000)
     if "skipped" in page.text_content("body"):
         raise AssertionError("its own export should import without a complaint")

@@ -232,6 +232,13 @@
     window.setTimeout(function () { cell.classList.remove('cell-saved'); }, 1400);
   }
 
+  function restoreCell(form) {
+    // Puts a cell back exactly as it was, with none of the saved flash — the
+    // change did not happen.
+    var cell = form.parentNode;
+    if (cell) cell.innerHTML = form.dataset.was;
+  }
+
   function openCell(link) {
     var kind = link.dataset.cell;
     var template = document.getElementById('cell-' + kind);
@@ -287,9 +294,19 @@
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
     }).then(function (response) {
+      if (response.status === 400) {
+        // The server refused it — a link onto itself, say, or one that would
+        // close a loop. Put the cell back and give the reason.
+        return response.json().then(function (result) {
+          restoreCell(form);
+          say(result.error || 'That change was not accepted');
+          return null;
+        });
+      }
       if (!response.ok) throw new Error(response.status);
       return response.json();
     }).then(function (result) {
+      if (result === null) return;
       // A schedule change can move other lines with it, so the answer says
       // which rows to redraw rather than the page reloading to find out.
       if (result.moved) {
@@ -415,7 +432,9 @@
   }
 
   function redrawLinks(result, form) {
-    if (form) {
+    // A change to either end sends the whole row back; the other two cells are
+    // put back as links here.
+    if (form && !result.link_html) {
       var kind = form.dataset.cell;
       var field = form.elements.lag_days || form.elements.kind;
       var label = field
@@ -434,6 +453,22 @@
       var line = document.getElementById('task-' + row.id);
       if (line) line.classList.toggle('is-critical', !!row.critical);
     });
+
+    // When an end of a link changed, its row carries new WBS numbers, so the
+    // server sends the row back drawn rather than it being patched by hand.
+    if (result.link_html && form) {
+      var row = document.getElementById('link-' + form.dataset.itemId);
+      if (row) {
+        var holder = document.createElement('tbody');
+        holder.innerHTML = result.link_html.trim();
+        var fresh = holder.querySelector('tr');
+        if (fresh) {
+          row.replaceWith(fresh);
+          fresh.classList.add('cell-saved');
+          window.setTimeout(function () { fresh.classList.remove('cell-saved'); }, 1600);
+        }
+      }
+    }
 
     var diagram = document.getElementById('network');
     if (diagram && result.network_html) diagram.innerHTML = result.network_html;
@@ -571,6 +606,26 @@
     if (node && typeof html === 'string') node.innerHTML = html;
   }
 
+  function say(message, category) {
+    // The same strip the server flashes into, so a refused change reads the
+    // way every other message on the page does.
+    var wrap = document.querySelector('main .wrap');
+    if (!wrap) return window.alert(message);
+    var strip = wrap.querySelector('.flashes');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'flashes';
+      wrap.insertBefore(strip, wrap.firstChild);
+    }
+    var note = document.createElement('div');
+    note.className = 'flash ' + (category || 'error');
+    note.setAttribute('role', category === 'success' ? 'status' : 'alert');
+    note.textContent = message;
+    strip.appendChild(note);
+    strip.scrollIntoView({ block: 'nearest' });
+    window.setTimeout(function () { note.remove(); }, 8000);
+  }
+
   function cellLink(form, label) {
     // The cell goes back to being a link, carrying what it now holds.
     var kind = form.dataset.cell;
@@ -579,8 +634,8 @@
                                     function (box) { return box.checked; })
           .map(function (box) { return box.value; }).join(',')
       : (form.elements.owner_code || form.elements.impact || form.elements.due_date
-         || form.elements.status_key || form.elements.actual_pct).value;
-    if (kind === 'status' || kind === 'percent') label = label;
+         || form.elements.status_key || form.elements.actual_pct
+         || form.elements.lag_days || form.elements.kind).value;
     var link = document.createElement('a');
     link.className = 'cell-open';
     link.dataset.cell = kind;

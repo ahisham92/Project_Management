@@ -72,7 +72,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Portfolio** | Across every project I manage: how far ahead or behind am I, what is late, how many hours have I burned? |
 | **Dashboard** | For one project: earned vs planned progress, the S-curve, progress and budget by trade, what needs attention. |
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
-| **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies** and the **critical path**. Dates are amended here. |
+| **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies** and the **critical path**. Dates are amended here, and the whole programme round-trips to **Excel**. |
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
@@ -130,6 +130,12 @@ Progress and the Dashboard, where they belong.
   finish. A switch at the top says which way round you enter them: **start + duration**, and
   the finish follows; or **start and finish**, and the duration follows. Click any of the
   three and change it in the row.
+- **The whole programme exports to Excel and imports back.** The workbook is one Schedule
+  sheet — WBS, deliverable, start, duration, finish and section — with the column the plan
+  works out for itself shaded, so it is clear which two of the three to fill in. Edit the
+  dates in Excel, import it, and every deliverable named by WBS is moved to what the sheet
+  says; anything that pushes work later takes its dependants with it. A row naming a WBS
+  that is not in the project is reported rather than silently dropped.
 - **The Gantt.** A band of months across the top says where in the programme you are looking.
   A bar per line runs from start to submission with progress shown inside it, and the
   **submission** itself is a green star. A line on the design workflow also carries its
@@ -144,10 +150,13 @@ Progress and the Dashboard, where they belong.
   **finish → finish** and **start → finish**. Each takes a lag in days, and the lag **may be
   negative**: "start a week before the survey ends" is finish → start with a lag of -7, which
   is how overlap between two pieces of work is written down. The lag and the kind are both
-  changed by clicking them in the row. Move a line and everything that depends on it is
+  changed by clicking them in the row, and so are **both ends of the link** — the deliverable
+  and what it waits for — so a link put on the wrong line is moved where it belongs instead
+  of being removed and made again. Move a line and everything that depends on it is
   pushed out with it — only ever later, since bringing work forward frees float rather than
-  dragging the programme back. A link that would make the programme depend on itself is
-  refused.
+  dragging the programme back. A link that would make the programme depend on itself, one
+  onto a pair already linked, or one onto a deliverable from another project, is refused
+  with the reason said in place — the row goes back to what it was and nothing is lost.
 - The dependencies **export to Excel and import back**. Deliverables are named by WBS, the
   workbook lists them on a second sheet to copy from, and importing replaces the lot with
   what the sheet says. A row naming a WBS that does not exist, or one that would make the
@@ -666,11 +675,15 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-115 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+358 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
-per-trade man-months), the web layer (sign-in, every page, reporting progress by status,
-raising revisions, booking hours, the dd/mm/yyyy dates, the setup lock and the permission
-rules), sorting, Save all, the print output, the Excel round trip, and what hosting needs —
+per-trade man-months), the programme (durations both ways round, the four link kinds with
+negative lags, the forward and backward passes, float and the critical path, cascading
+shifts, refused loops, and the schedule and dependency workbooks), the minutes register
+(filters, search, sorting, renumbering on a move, and the Word output), the web layer
+(sign-in, every page, reporting progress by status, raising revisions, booking hours, the
+dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
+output, the Excel round trips, editing in the row, the live check, and what hosting needs —
 the health check, six people writing at the same time, and the deployment files agreeing
 with each other.
 
@@ -684,6 +697,12 @@ python e2e/smoke.py                      # in another
 
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
+
+Its 37 steps cover both themes and the mobile layout, and each screenshot lands in
+`e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
+watching what follows shift, moving either end of a link, dragging a box in the network,
+taking the schedule out to Excel and importing the edited workbook back, and a second window
+picking up a change on its own.
 
 ---
 

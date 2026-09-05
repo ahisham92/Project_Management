@@ -753,17 +753,47 @@ def remove_link(project_id: int, link_id: int) -> bool:
 
 
 def update_link(project_id: int, link_id: int, lag_days: float | None = None,
-                kind: str | None = None) -> dict[str, Any] | None:
-    """Changes a dependency's lag or its type, leaving the other alone."""
-    from .schedule import normalise_kind
+                kind: str | None = None, predecessor_id: int | None = None,
+                successor_id: int | None = None) -> dict[str, Any] | None:
+    """Changes a dependency, leaving alone whatever was not given.
+
+    Moving either end is checked the same way making the link was: both
+    deliverables must be this project's, a line cannot wait for itself, the
+    pair must not already exist, and the programme must not come to depend on
+    itself.
+    """
+    from .schedule import normalise_kind, would_cycle
 
     row = query_one("SELECT * FROM task_links WHERE id = ? AND project_id = ?", (link_id, project_id))
     if row is None:
         return None
 
+    first = predecessor_id if predecessor_id is not None else row["predecessor_id"]
+    second = successor_id if successor_id is not None else row["successor_id"]
+
+    if predecessor_id is not None or successor_id is not None:
+        if first == second:
+            raise LinkError("A deliverable cannot depend on itself")
+
+        owned = {
+            int(r["id"])
+            for r in query("SELECT id FROM tasks WHERE project_id = ? AND id IN (?, ?)",
+                           (project_id, first, second))
+        }
+        if len(owned) != 2:
+            raise LinkError("Both deliverables must belong to this project")
+
+        others = [l for l in load_links(project_id) if l["id"] != link_id]
+        if any(l["predecessor_id"] == first and l["successor_id"] == second for l in others):
+            raise LinkError("Those two are already linked")
+        if would_cycle(others, first, second):
+            raise LinkError("That link would make the programme depend on itself")
+
     execute(
-        "UPDATE task_links SET lag_days = ?, kind = ? WHERE id = ?",
-        (float(lag_days) if lag_days is not None else row["lag_days"],
+        "UPDATE task_links SET predecessor_id = ?, successor_id = ?, lag_days = ?, kind = ? "
+        "WHERE id = ?",
+        (first, second,
+         float(lag_days) if lag_days is not None else row["lag_days"],
          normalise_kind(kind) if kind is not None else row["kind"], link_id),
     )
     return dict(query_one("SELECT * FROM task_links WHERE id = ?", (link_id,)))
@@ -936,3 +966,63 @@ def replace_links(project_id: int, rows: Sequence[Mapping[str, Any]]) -> dict[st
                  link["lag_days"], link["kind"]),
             )
     return {"added": len(wanted), "skipped": trouble}
+
+
+def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str) -> dict[str, Any]:
+    """Puts the project's dates where an imported sheet says they are.
+
+    The sheet is the authority, so nothing is cascaded on top of it — every
+    line lands where it was written. Whether the finish or the duration is read
+    follows the project's own setting, the same as on screen. Nothing is
+    written until every row has been checked.
+    """
+    from .dates import from_input
+    from .schedule import duration_between, finish_from, normalise_mode
+
+    by_duration = normalise_mode(mode) != "dates"
+    by_wbs = {
+        str(r["wbs"]).strip(): dict(r)
+        for r in query("SELECT id, wbs, start_date, submission_date FROM tasks WHERE project_id = ?",
+                       (project_id,))
+        if str(r["wbs"] or "").strip()
+    }
+
+    wanted: list[tuple[int, str, str]] = []
+    trouble: list[str] = []
+
+    for row in rows:
+        wbs = str(row.get("wbs") or "").strip()
+        task = by_wbs.get(wbs)
+        if task is None:
+            trouble.append(f"{wbs}: no deliverable with that WBS")
+            continue
+
+        start = from_input(row.get("start_date")) or task["start_date"]
+        if not start:
+            trouble.append(f"{wbs}: no start date")
+            continue
+
+        if by_duration:
+            days = float(row.get("duration_days") or 0) or duration_between(
+                task["start_date"], task["submission_date"]) or 1
+            finish = finish_from(start, days)
+        else:
+            finish = from_input(row.get("submission_date")) or task["submission_date"]
+            if not finish:
+                trouble.append(f"{wbs}: no finish date")
+                continue
+            if finish < start:
+                trouble.append(f"{wbs}: the finish is before the start")
+                continue
+
+        wanted.append((int(task["id"]), start, finish))
+
+    conn = get_db()
+    with conn:
+        for task_id, start, finish in wanted:
+            conn.execute(
+                "UPDATE tasks SET start_date = ?, submission_date = ?, updated_at = datetime('now') "
+                "WHERE id = ? AND project_id = ?",
+                (start, finish, task_id, project_id),
+            )
+    return {"applied": len(wanted), "skipped": trouble}

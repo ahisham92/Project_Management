@@ -347,11 +347,11 @@ def build_links_workbook(project: Mapping[str, Any], tasks: Sequence[Mapping[str
 
     guide = wb[SHEET_LINKS]
     guide.append([])
-    guide.append(["Type is one of " + ", ".join(KIND_KEYS)
-                  + ". Lag may be negative, for work that overlaps."])
-    guide.append(["Importing replaces every dependency with what is in this sheet."])
+    guide.append(["", "Type is one of " + ", ".join(KIND_KEYS)
+                      + ". Lag may be negative, for work that overlaps."])
+    guide.append(["", "Importing replaces every dependency with what is in this sheet."])
     for row in guide.iter_rows(min_row=guide.max_row - 1, max_row=guide.max_row):
-        row[0].font = Font(italic=True, color="898781")
+        row[1].font = Font(italic=True, color="898781")
 
     sheet(
         "Deliverables",
@@ -396,5 +396,104 @@ def read_links_workbook(data: bytes) -> list[dict[str, Any]]:
             "predecessor_wbs": predecessor,
             "kind": normalise_kind(row[2] if len(row) > 2 else ""),
             "lag_days": _number(row[3] if len(row) > 3 else 0, 0.0),
+        })
+    return rows
+
+
+# --- the schedule workbook -------------------------------------------------
+
+SHEET_SCHEDULE = "Schedule"
+
+
+def build_schedule_workbook(project: Mapping[str, Any], tasks: Sequence[Mapping[str, Any]],
+                            mode: str = "duration") -> bytes:
+    """The programme's dates as an .xlsx file, ready to edit and import back.
+
+    Which two of start, duration and finish you edit follows the project's own
+    setting, exactly as on screen: by duration the finish is worked out, by
+    dates the duration is. The calculated one is shaded, so there is no doubt
+    about which column is read on the way back in.
+    """
+    openpyxl = _openpyxl()
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = SHEET_SCHEDULE
+
+    by_duration = mode != "dates"
+    calculated = 4 if by_duration else 3          # Finish, or Duration
+    headers = ["WBS", "Deliverable", "Start", "Duration (days)", "Finish", "Section"]
+
+    ws.append(headers)
+    for index, cell in enumerate(ws[1]):
+        if index in (calculated, 5):
+            cell.font = Font(bold=True, color="52514E")
+            cell.fill = PatternFill("solid", fgColor="E1E0D9")
+        else:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="2A78D6")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+    from .schedule import duration_between
+
+    for task in tasks:
+        ws.append([
+            _cell(task.get("wbs")),
+            _cell(task.get("name")),
+            _cell(task.get("start_date")),
+            duration_between(task.get("start_date"), task.get("submission_date")),
+            _cell(task.get("submission_date")),
+            _cell(task.get("section_name")),
+        ])
+
+    for column, width in zip("ABCDEF", (14, 62, 14, 16, 14, 30)):
+        ws.column_dimensions[column].width = width
+    ws.freeze_panes = "A2"
+
+    ws.append([])
+    note = ("Dates read yyyy-mm-dd or dd/mm/yyyy. "
+            + ("Finish is worked out from the start and the duration — edit those two."
+               if by_duration else
+               "Duration is worked out from the two dates — edit the start and the finish."))
+    ws.append(["", note])
+    ws.append(["", "Deliverables are matched on WBS. A row whose WBS is not on the project is "
+                   "reported rather than added."])
+    for row in ws.iter_rows(min_row=ws.max_row - 1, max_row=ws.max_row):
+        row[1].font = Font(italic=True, color="898781")
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    return stream.getvalue()
+
+
+def read_schedule_workbook(data: bytes) -> list[dict[str, Any]]:
+    """The schedule sheet as plain rows. Nothing is written here.
+
+    Rows without a WBS are skipped, which is what lets the notes under the
+    table ride along in the same file.
+    """
+    openpyxl = _openpyxl()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    except Exception as exc:  # noqa: BLE001 - openpyxl raises a variety of errors
+        raise ImportError_("That file could not be read as an Excel workbook.") from exc
+
+    if SHEET_SCHEDULE not in wb.sheetnames:
+        raise ImportError_(
+            f"The workbook has no {SHEET_SCHEDULE} sheet. Export the schedule "
+            "first and edit that file."
+        )
+
+    rows: list[dict[str, Any]] = []
+    for row in wb[SHEET_SCHEDULE].iter_rows(min_row=2, values_only=True):
+        wbs = _cell(row[0] if len(row) > 0 else "")
+        if not wbs:
+            continue
+        rows.append({
+            "wbs": wbs,
+            "start_date": _cell(row[2] if len(row) > 2 else ""),
+            "duration_days": _number(row[3] if len(row) > 3 else 0, 0.0),
+            "submission_date": _cell(row[4] if len(row) > 4 else ""),
         })
     return rows

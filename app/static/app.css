@@ -574,6 +574,21 @@ ul.list > li:first-child { border-top: none; }
   .chart svg { max-height: 240px; }
   .bar { border: 0.5px solid #999; }
   a { color: inherit; text-decoration: none; }
+
+  /* One chart, on its own sheet. Everything but the chosen card and the
+     print header comes off the page, and the drawing is given all of it —
+     a Gantt squeezed into a quarter of a sheet is not worth printing. */
+  body.print-one .wrap > *:not(.print-header):not(.print-keep) { display: none !important; }
+  body.print-one .print-keep { border: none; margin: 0; break-inside: auto; }
+  body.print-one .print-keep .card-head { border-bottom: 1px solid #bbb; padding-left: 0; }
+  body.print-one .print-keep .card-body { padding: 10px 0 0; }
+  body.print-one .print-keep .panel,
+  body.print-one .print-keep .table-scroll { display: none !important; }
+  body.print-one .chart { max-width: none !important; }
+  body.print-one .chart svg { max-height: none; width: 100%; }
+  body.print-one .legend { justify-content: flex-start; margin-bottom: 8px; }
+  /* The plug is there to drag a new link from; on paper it is just a dot. */
+  .net-plug, .net-draft { display: none !important; }
 }
 
 .auth-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px 16px; }

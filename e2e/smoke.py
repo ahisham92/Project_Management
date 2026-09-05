@@ -97,6 +97,7 @@ def main() -> int:
         step("a link is drawn and erased on the diagram itself", _diagram_links)
         step("a deliverable opens in a panel with its dependencies", _task_panel)
         step("teams keep their own working week and holidays", _teams)
+        step("each chart prints on its own sheet", _print_one_chart)
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
@@ -460,6 +461,45 @@ def _teams(page) -> None:
     page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
     page.click("button:has-text('Lock again')")
     page.wait_for_timeout(600)
+
+
+def _print_one_chart(page) -> None:
+    """A chart prints alone: the sheet holds the project header and that card,
+    and nothing else."""
+    _schedule_page(page)
+
+    for label, heading in (("Print the bar chart", "Programme"),
+                           ("Print the diagram", "Dependencies")):
+        page.click(f"button:has-text('{label}')")
+        page.wait_for_timeout(400)
+        marked = page.evaluate(
+            "() => [...document.querySelectorAll('.print-keep h2')].map(h => h.textContent.trim())")
+        if marked != [heading]:
+            raise AssertionError(f"{label} marked {marked}, not [{heading!r}]")
+
+        page.emulate_media(media="print")
+        page.wait_for_timeout(250)
+        on_paper = page.evaluate("""() => [...document.querySelectorAll('main .wrap > *')]
+            .filter(node => getComputedStyle(node).display !== 'none')
+            .map(node => (node.querySelector('h2') || node).textContent.trim().slice(0, 20))""")
+        if len(on_paper) != 2 or heading not in on_paper[-1]:
+            raise AssertionError(f"the sheet holds {on_paper}, not just the header and {heading}")
+        if page.locator(".net-plug").count() and not page.locator(".net-plug").first.is_hidden():
+            raise AssertionError("the editing plugs should not go on paper")
+        page.screenshot(path=str(SHOTS / f"32-print-{heading.lower()}.png"), full_page=True)
+
+        page.emulate_media(media="screen")
+        page.evaluate("""() => {
+            document.body.classList.remove('print-one');
+            document.querySelectorAll('.print-keep').forEach(c => c.classList.remove('print-keep'));
+        }""")
+        page.wait_for_timeout(200)
+
+    # And the whole-page print is untouched.
+    page.click("button:has-text('Print / PDF')")
+    page.wait_for_timeout(300)
+    if page.evaluate("() => document.body.classList.contains('print-one')"):
+        raise AssertionError("a whole-page print should not leave one card marked")
 
 
 def _dates_read_dd_mm(page) -> None:

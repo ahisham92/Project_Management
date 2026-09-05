@@ -388,6 +388,13 @@ arrows are dropped; the dark theme reverts to ink on white; a report header carr
 its code, the client, the report name and the data date; long tables break across pages without
 splitting a row and repeat their headings on each page. A4 landscape is the default.
 
+**One chart on its own.** The Schedule's two charts each carry their own button — **Print the
+bar chart** and **Print the diagram**. Either one puts that chart on a sheet by itself: the
+project header, the chart's title and its legend, the drawing at the full width of the page,
+and nothing else — no tiles, no tables, and none of the marks that are only there to edit with,
+like the plug you drag a new link from. It is the whole Gantt or the whole network as one PDF,
+which is what goes into a monthly report or on a wall.
+
 ---
 
 ## Adding your own projects
@@ -737,7 +744,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-454 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+459 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
@@ -764,14 +771,14 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 42 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 43 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
 taking the schedule out to Excel and importing the edited workbook back, reading a bar by
 hovering it and folding the tables away under the charts, untangling the diagram with Simplify, drawing a
 link by dragging between two boxes and erasing it by clicking the line, opening a deliverable
-in its panel, setting up two teams with a holiday between them, and a second window picking up
-a change on its own.
+in its panel, setting up two teams with a holiday between them, printing a chart on a sheet of
+its own, and a second window picking up a change on its own.
 
 ---
 

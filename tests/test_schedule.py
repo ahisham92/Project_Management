@@ -1667,3 +1667,42 @@ def test_a_sweep_reads_where_the_last_column_has_just_been_put():
     result = arrange([1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15], links)
     assert result["before"] == 9
     assert result["after"] == 0
+
+
+# --- printing one chart on its own ------------------------------------------
+
+def test_each_chart_carries_a_button_to_print_it_alone(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert body.count("data-print-chart") == 2
+    assert "Print the bar chart" in body
+    assert "Print the diagram" in body
+
+
+def test_the_whole_page_still_prints_as_it_did(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "data-print" in body
+    assert "Print / PDF" in body
+
+
+def test_the_print_sheet_knows_how_to_show_one_card_alone():
+    """The rule the button leans on: with the page marked, everything in the
+    wrap but the header and the chosen card comes off the sheet."""
+    from pathlib import Path
+
+    style = Path("app/static/app.css").read_text(encoding="utf-8")
+    assert "body.print-one .wrap > *:not(.print-header):not(.print-keep)" in style
+    assert "body.print-one .chart svg { max-height: none" in style
+    # The table folded under a chart is not part of that chart.
+    assert "body.print-one .print-keep .panel" in style
+
+
+def test_the_editing_marks_do_not_go_on_paper():
+    from pathlib import Path
+
+    style = Path("app/static/app.css").read_text(encoding="utf-8")
+    assert ".net-plug, .net-draft { display: none !important; }" in style
+
+
+def test_the_diagram_note_keeps_its_editing_hints_off_the_page(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert 'class="no-print"> · drag from a box' in body

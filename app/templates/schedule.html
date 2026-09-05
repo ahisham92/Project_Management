@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
-{% from "partials/bits.html" import badge, date_field, empty, sort_th, print_header, print_button %}
+{% from "partials/bits.html" import badge, date_field, empty, sort_th, print_header, print_button, print_chart_button %}
 {% from "partials/link_row.html" import link_row with context %}
 {% block title %}Schedule — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
@@ -113,6 +113,7 @@
         workflow, so a line tracked as a plain percentage carries neither.
       </p>
     </div>
+    <div class="inline-form no-print">{{ print_chart_button('Print the bar chart') }}</div>
   </div>
   <div class="card-body">{{ gantt }}</div>
 </div>
@@ -246,10 +247,12 @@
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
         the critical path is the run with no float · a box nothing waits on is blue, and closes a path
-        {% if can_edit %} · drag a box to move it · a lag may be negative, for work that overlaps{% endif %}
+        {% if can_edit %}<span class="no-print"> · drag from a box's plug onto another to link them ·
+        click a line to remove it · drag a box to move it</span>{% endif %}
       </p>
     </div>
     <div class="inline-form no-print">
+      {{ print_chart_button('Print the diagram') }}
       <a class="btn btn-ghost btn-sm"
          href="{{ url_for('projects.export_dependencies', project_id=project['id']) }}">Export to Excel</a>
       {% if can_edit %}

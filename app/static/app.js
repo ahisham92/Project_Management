@@ -122,9 +122,35 @@
   // The browser's own print dialog is the PDF writer; "Save as PDF" is offered
   // as a destination in every current browser.
 
+  // Printing one chart on its own: the card is marked, the page is told only
+  // to print what is marked, and both marks come off again afterwards.
+  function unmarkPrint() {
+    document.body.classList.remove('print-one');
+    document.querySelectorAll('.print-keep').forEach(function (card) {
+      card.classList.remove('print-keep');
+    });
+  }
+
   document.addEventListener('click', function (event) {
-    if (event.target.closest('[data-print]')) window.print();
+    var chart = event.target.closest('[data-print-chart]');
+    if (chart) {
+      var card = chart.closest('.card');
+      if (!card) return;
+      unmarkPrint();
+      card.classList.add('print-keep');
+      document.body.classList.add('print-one');
+      window.print();
+      return;
+    }
+    // A whole-page print always starts from a clean slate, in case a browser
+    // never told us the last one had finished.
+    if (event.target.closest('[data-print]')) {
+      unmarkPrint();
+      window.print();
+    }
   });
+
+  window.addEventListener('afterprint', unmarkPrint);
 
   // A folded panel is not on the paper unless it is opened first, and closing
   // it again afterwards leaves the screen as it was.

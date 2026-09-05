@@ -92,3 +92,10 @@
   <button type="button" class="btn btn-ghost no-print" data-print
           title="Opens your browser's print dialog — choose “Save as PDF” there">{{ label }}</button>
 {% endmacro %}
+
+{# Prints the card this button sits in and nothing else: one chart, on its own
+   sheet, under the project's print header. #}
+{% macro print_chart_button(label='Print chart') %}
+  <button type="button" class="btn btn-ghost btn-sm no-print" data-print-chart
+          title="Prints this chart on its own — choose “Save as PDF” in the dialog">{{ label }}</button>
+{% endmacro %}

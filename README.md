@@ -130,20 +130,28 @@ Progress and the Dashboard, where they belong.
   finish. A switch at the top says which way round you enter them: **start + duration**, and
   the finish follows; or **start and finish**, and the duration follows. Click any of the
   three and change it in the row.
-- **The Gantt.** A bar per line from start to submission, with progress shown inside it. The
-  **IDC** is a red circle and the **Code A** a red star, so the two dates a reviewer cares
-  about are the two that catch the eye. Today is a dashed vertical line.
+- **The Gantt.** A band of months across the top says where in the programme you are looking.
+  A bar per line runs from start to submission with progress shown inside it, and the
+  **submission** itself is a green star. A line on the design workflow also carries its
+  **IDC** as a red circle and its **Code A** as a red star; a line tracked as a plain
+  percentage — a meeting, a milestone, a transmittal — has neither, because neither happens
+  to it. Today is a dashed vertical line, and a legend names every mark.
 - **Rework.** A submission comes back as **Code A** (approved), **Code B** or **Code C**.
   B and C raise a revision, and each resubmission draws its own amber bar underneath the
   line, running from the day the comments landed to the new date and labelled with the code
   that caused it — so rework shows on the programme at the size it actually cost.
-- **Dependencies.** Link two deliverables and say how the second waits:
-  **must finish first**, the ordinary link; or **starts after it starts**, for work that runs
-  alongside — "begin a fortnight after the survey begins" needs no guess at when the survey
-  will end. Both take a lag in days, and both the lag and the type are changed by clicking
-  them in the row. Move a line and everything that depends on it is pushed out with it — only
-  ever later, since bringing work forward frees float rather than dragging the programme
-  back. A link that would make the programme depend on itself is refused.
+- **Dependencies**, in all four kinds — **finish → start**, **start → start**,
+  **finish → finish** and **start → finish**. Each takes a lag in days, and the lag **may be
+  negative**: "start a week before the survey ends" is finish → start with a lag of -7, which
+  is how overlap between two pieces of work is written down. The lag and the kind are both
+  changed by clicking them in the row. Move a line and everything that depends on it is
+  pushed out with it — only ever later, since bringing work forward frees float rather than
+  dragging the programme back. A link that would make the programme depend on itself is
+  refused.
+- The dependencies **export to Excel and import back**. Deliverables are named by WBS, the
+  workbook lists them on a second sheet to copy from, and importing replaces the lot with
+  what the sheet says. A row naming a WBS that does not exist, or one that would make the
+  programme loop, is reported rather than silently dropped.
 - **The critical path** is worked out properly: a forward pass for the earliest each line
   could run, a backward pass for the latest it could run without moving the finish, and the
   difference is its float. A line with none is critical. A line with no links at all is not

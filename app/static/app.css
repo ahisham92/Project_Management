@@ -362,6 +362,7 @@ tr.is-critical { background: color-mix(in srgb, var(--critical) 5%, transparent)
 
 .legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 14px; margin-bottom: 4px; font-size: 0.75rem; color: var(--ink-2); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-star { font-size: 0.85rem; line-height: 1; }
 .legend-line { width: 14px; height: 2px; border-radius: 1px; }
 .legend-dot { width: 9px; height: 9px; border-radius: 2px; }
 

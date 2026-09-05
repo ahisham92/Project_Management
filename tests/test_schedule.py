@@ -621,12 +621,14 @@ def test_a_start_to_start_link_shifts_by_the_start_not_the_finish():
     assert duration_between(moves[2]["start_date"], moves[2]["submission_date"]) == 10
 
 
-def test_the_two_kinds_of_link_are_named_for_a_reader():
-    from app.schedule import KINDS, kind_label, normalise_kind
+def test_all_four_kinds_of_link_are_named_for_a_reader():
+    from app.schedule import KINDS, kind_label, kind_note, normalise_kind
 
-    assert [key for key, _ in KINDS] == ["FS", "SS"]
-    assert kind_label("SS") == "starts after it starts"
-    assert kind_label("FS") == "must finish first"
+    assert [key for key, _ in KINDS] == ["FS", "SS", "FF", "SF"]
+    assert kind_label("SS") == "start → start"
+    assert kind_label("FS") == "finish → start"
+    assert kind_note("FF") == "cannot finish until the other finishes"
+    assert kind_note("SF") == "cannot finish until the other starts"
     assert normalise_kind("ss") == "SS"
     assert normalise_kind("nonsense") == "FS"                 # the safe default
 
@@ -748,4 +750,279 @@ def test_a_start_to_start_arrow_is_drawn_differently(signed_in):
                    follow_redirects=True)
     body = text(signed_in.get("/projects/1/schedule"))
     assert "stroke-dasharray" in body
-    assert "starts after it starts" in body
+    assert "start → start" in body
+
+
+# --- the four link types ---------------------------------------------------
+
+def kinds_case():
+    """A 30-day predecessor and a 10-day successor, so each link is distinct."""
+    return [task(1, "2026-01-01", "2026-01-30"), task(2, "2026-01-01", "2026-01-10")]
+
+
+@pytest.mark.parametrize(
+    "kind,lag,start,finish",
+    [
+        ("FS", 0, "2026-01-31", "2026-02-09"),   # the day after it finishes
+        ("SS", 14, "2026-01-15", "2026-01-24"),  # a fortnight after it starts
+        ("FF", 0, "2026-01-21", "2026-01-30"),   # finishes when it finishes
+        ("SF", 0, "2026-01-01", "2026-01-10"),   # finishes when it starts
+    ],
+)
+def test_each_kind_of_link_drives_the_end_it_names(kind, lag, start, finish):
+    result = analyse(kinds_case(), [dict(link(1, 2, lag=lag), kind=kind)])[2]
+    assert (result["early_start"], result["early_finish"]) == (start, finish)
+
+
+def test_a_negative_lag_lets_two_pieces_of_work_overlap():
+    """"Start a week before the survey ends" is how overlap is written down."""
+    result = analyse(kinds_case(), [dict(link(1, 2, lag=-7), kind="FS")])[2]
+    assert result["early_start"] == "2026-01-24"     # a week before 30 January
+    assert result["early_finish"] == "2026-02-02"
+
+
+def test_a_negative_lag_works_on_every_kind():
+    """A move is where a lag shows plainly: the constraint sets the date rather
+    than only raising a floor under the line's own planned start."""
+    for kind in ("FS", "SS", "FF", "SF"):
+        tasks = kinds_case()
+        links = [dict(link(1, 2), kind=kind)]
+        tasks[0]["start_date"] = "2026-02-01"
+        tasks[0]["submission_date"] = "2026-03-02"
+
+        on_time = shift_successors(tasks, links, 1)[2]["start_date"]
+        overlapping = shift_successors(
+            tasks, [dict(link(1, 2, lag=-5), kind=kind)], 1)[2]["start_date"]
+        assert overlapping < on_time, f"{kind} ignored a negative lag"
+
+
+def test_a_negative_lag_only_relaxes_a_constraint_it_does_not_drag_work_back():
+    """A line still starts no earlier than it is planned to; the lag lowers the
+    limit its predecessor puts on it, it does not pull it forward."""
+    result = analyse(kinds_case(), [dict(link(1, 2, lag=-5), kind="SS")])[2]
+    assert result["early_start"] == "2026-01-01"      # its own planned start
+
+
+@pytest.mark.parametrize("kind", ["FS", "SS", "FF", "SF"])
+def test_float_is_worked_out_for_every_kind(kind):
+    result = analyse(kinds_case(), [dict(link(1, 2), kind=kind)])
+    assert result[1]["in_a_chain"] and result[2]["in_a_chain"]
+    assert isinstance(result[1]["total_float"], int)
+    assert result[2]["total_float"] >= 0
+
+
+@pytest.mark.parametrize(
+    "kind,expected",
+    [("FS", "2026-03-03"), ("SS", "2026-02-01"), ("FF", "2026-02-21"), ("SF", "2026-01-23")],
+)
+def test_moving_a_predecessor_moves_the_end_the_link_names(kind, expected):
+    tasks = kinds_case()
+    links = [dict(link(1, 2), kind=kind)]
+    tasks[0]["start_date"] = "2026-02-01"            # a month later
+    tasks[0]["submission_date"] = "2026-03-02"
+
+    moves = shift_successors(tasks, links, 1)
+    assert moves[2]["start_date"] == expected
+    assert duration_between(moves[2]["start_date"], moves[2]["submission_date"]) == 10
+
+
+def test_a_lag_can_be_negative_all_the_way_through_the_app(signed_in):
+    signed_in.post("/projects/1/schedule/links",
+                   data={"predecessor_id": "1", "successor_id": "2", "kind": "FS",
+                         "lag_days": "-7"}, follow_redirects=True)
+    from app.db import query_one
+
+    with signed_in.application.app_context():
+        assert query_one("SELECT lag_days FROM task_links LIMIT 1")["lag_days"] == -7
+    assert "-7d" in text(signed_in.get("/projects/1/schedule"))
+
+
+# --- what the programme chart draws ----------------------------------------
+
+def test_the_chart_carries_a_band_of_months(signed_in):
+    body = text(signed_in.get("/projects/1/schedule?data_date=01/09/2026"))
+    assert "Sep 2026" in body and "Oct 2026" in body
+
+
+def test_a_submission_is_a_green_star(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "<polygon" in body
+    assert "var(--good)" in body
+
+
+def test_the_legend_says_what_every_mark_means(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    for meaning in ("Planned bar", "IDC (workflow only)", "Submission",
+                    "Code A due (workflow only)", "Rework after a Code B or C", "Today"):
+        assert meaning in body, meaning
+
+
+def test_a_line_off_the_workflow_carries_no_idc_and_no_code_a():
+    """A meeting or a transmittal has neither, because neither happens to it."""
+    from app.charts import gantt
+
+    def drawn(uses_workflow):
+        return str(gantt([{
+            "id": 1, "wbs": "1.1", "name": "x", "start_date": "2026-01-01",
+            "submission_date": "2026-02-10", "actual_pct": 0, "is_critical": False,
+            "duration_days": 41, "total_float": 0, "uses_workflow": uses_workflow,
+            "approval_due_date": "2026-02-24",
+            "step_plan": [{"key": "idc", "date": "2026-02-05"}], "revisions": [],
+        }], "2026-01-01", "2026-03-10", "2026-01-20"))
+
+    workflow, simple = drawn(True), drawn(False)
+    assert workflow.count("<circle") == 1 and workflow.count("<polygon") == 2
+    assert simple.count("<circle") == 0                # no IDC
+    assert simple.count("<polygon") == 1               # only the submission star
+
+
+def test_the_schedule_table_leaves_code_a_blank_off_the_workflow(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert ">Code A<" in body                          # the column is still there
+    assert "—" in body                                 # and empty where it does not apply
+
+
+# --- the dependency workbook -----------------------------------------------
+
+def test_the_dependencies_export_to_a_workbook(signed_in):
+    link_two(signed_in, "2", "1")
+    response = signed_in.get("/projects/1/schedule/links.xlsx")
+    assert response.status_code == 200
+    assert response.data[:2] == b"PK"
+    assert "dependencies" in response.headers["Content-Disposition"]
+
+    from app.excel import read_links_workbook
+
+    rows = read_links_workbook(response.data)
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "FS"
+
+
+def test_the_workbook_names_deliverables_by_wbs_and_lists_them(signed_in):
+    link_two(signed_in, "2", "1")
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(signed_in.get("/projects/1/schedule/links.xlsx").data))
+    assert wb.sheetnames == ["Dependencies", "Deliverables"]
+    assert [c.value for c in wb["Dependencies"][1]][:4] == [
+        "Deliverable WBS", "Waits for WBS", "Type", "Lag days"
+    ]
+    assert wb["Deliverables"].max_row > 5              # somewhere to copy a WBS from
+
+
+def upload(client, data: bytes):
+    import io
+
+    return client.post("/projects/1/schedule/links/import",
+                       data={"workbook": (io.BytesIO(data), "links.xlsx")},
+                       content_type="multipart/form-data",
+                       follow_redirects=True).get_data(as_text=True)
+
+
+def workbook_of(rows):
+    """A dependency workbook built from (successor, predecessor, kind, lag)."""
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("Dependencies")
+    ws.append(["Deliverable WBS", "Waits for WBS", "Type", "Lag days"])
+    for row in rows:
+        ws.append(list(row))
+    stream = io.BytesIO()
+    wb.save(stream)
+    return stream.getvalue()
+
+
+def links_now(client):
+    from app.db import query
+
+    with client.application.app_context():
+        return [
+            (r["successor_wbs"], r["predecessor_wbs"], r["kind"], r["lag_days"])
+            for r in query(
+                "SELECT l.kind, l.lag_days, p.wbs AS predecessor_wbs, s.wbs AS successor_wbs "
+                "FROM task_links l JOIN tasks p ON p.id = l.predecessor_id "
+                "JOIN tasks s ON s.id = l.successor_id WHERE l.project_id = 1"
+            )
+        ]
+
+
+def test_an_edited_workbook_becomes_the_programmes_dependencies(signed_in):
+    body = upload(signed_in, workbook_of([
+        ("1.2", "1.1", "FS", 0), ("1.3", "1.2", "SS", 5), ("1.4", "1.1", "FF", -3),
+    ]))
+    assert "3 dependencies imported" in body
+    assert sorted(links_now(signed_in)) == [
+        ("1.2", "1.1", "FS", 0), ("1.3", "1.2", "SS", 5), ("1.4", "1.1", "FF", -3),
+    ]
+
+
+def test_importing_replaces_what_was_there(signed_in):
+    link_two(signed_in, "2", "1")
+    upload(signed_in, workbook_of([("1.3", "1.2", "SS", 2)]))
+    assert links_now(signed_in) == [("1.3", "1.2", "SS", 2)]
+
+
+def test_a_row_naming_a_wbs_that_does_not_exist_is_reported(signed_in):
+    body = upload(signed_in, workbook_of([("1.2", "9.9", "FS", 0), ("1.3", "1.2", "FS", 0)]))
+    assert "1 dependency imported" in body
+    assert "no deliverable with that WBS" in body
+    assert links_now(signed_in) == [("1.3", "1.2", "FS", 0)]
+
+
+def test_a_workbook_that_would_loop_is_refused_row_by_row(signed_in):
+    body = upload(signed_in, workbook_of([("1.2", "1.1", "FS", 0), ("1.1", "1.2", "FS", 0)]))
+    assert "would make the programme depend on itself" in body
+    assert links_now(signed_in) == [("1.2", "1.1", "FS", 0)]
+
+
+def test_the_notes_under_the_sheet_do_not_trip_the_import(signed_in):
+    """The exported sheet carries a blank line and two notes; importing the
+    file it produced has to work."""
+    link_two(signed_in, "2", "1")
+    exported = signed_in.get("/projects/1/schedule/links.xlsx").data
+    assert "1 dependency imported" in upload(signed_in, exported)
+
+
+def test_a_file_that_is_not_a_workbook_says_so(signed_in):
+    assert "could not be read as an Excel workbook" in upload(signed_in, b"not a workbook")
+
+
+def test_a_workbook_without_the_sheet_says_which_one_is_missing(signed_in):
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.active.title = "Something else"
+    stream = io.BytesIO()
+    wb.save(stream)
+    assert "no Dependencies sheet" in upload(signed_in, stream.getvalue())
+
+
+def test_importing_nothing_says_so(signed_in):
+    body = signed_in.post("/projects/1/schedule/links/import", data={},
+                          follow_redirects=True).get_data(as_text=True)
+    assert "Choose a workbook" in body
+
+
+def test_only_a_manager_can_import_dependencies(client, app):
+    client.post("/register", data={"name": "Member", "email": "m2@example.com",
+                                   "password": "longenough1"})
+    with app.app_context():
+        from app.db import connect
+
+        conn = connect(app.config["DATABASE"])
+        with conn:
+            user = conn.execute("SELECT id FROM users WHERE email = 'm2@example.com'").fetchone()
+            conn.execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'member')",
+                         (user["id"],))
+        conn.close()
+
+    assert client.get("/projects/1/schedule/links.xlsx").status_code == 200     # they may read
+    assert client.post("/projects/1/schedule/links/import").status_code == 403

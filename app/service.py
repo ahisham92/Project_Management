@@ -878,3 +878,61 @@ def project_pulse(project_id: int) -> str:
     """
     row = query_one("SELECT version FROM project_pulse WHERE project_id = ?", (project_id,))
     return str(row["version"] if row else 0)
+
+
+def replace_links(project_id: int, rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Puts the project's dependencies where an imported sheet says they are.
+
+    Nothing is written until every row has been checked, so a sheet with a
+    mistake in it cannot leave the programme half-linked. Rows that name a WBS
+    the project does not have, or that would make it depend on itself, are
+    reported rather than silently dropped.
+    """
+    from .schedule import normalise_kind, would_cycle
+
+    by_wbs = {
+        str(r["wbs"]).strip(): int(r["id"])
+        for r in query("SELECT id, wbs FROM tasks WHERE project_id = ?", (project_id,))
+        if str(r["wbs"] or "").strip()
+    }
+
+    wanted: list[dict[str, Any]] = []
+    trouble: list[str] = []
+    seen: set[tuple[int, int]] = set()
+
+    for row in rows:
+        first = by_wbs.get(str(row.get("predecessor_wbs") or "").strip())
+        second = by_wbs.get(str(row.get("successor_wbs") or "").strip())
+        pair = f"{row.get('successor_wbs')} waits for {row.get('predecessor_wbs')}"
+
+        if first is None or second is None:
+            trouble.append(f"{pair}: no deliverable with that WBS")
+            continue
+        if first == second:
+            trouble.append(f"{pair}: a deliverable cannot depend on itself")
+            continue
+        if (first, second) in seen:
+            trouble.append(f"{pair}: listed twice")
+            continue
+        if would_cycle(wanted, first, second):
+            trouble.append(f"{pair}: would make the programme depend on itself")
+            continue
+
+        seen.add((first, second))
+        wanted.append({
+            "predecessor_id": first, "successor_id": second,
+            "kind": normalise_kind(row.get("kind")),
+            "lag_days": float(row.get("lag_days") or 0),
+        })
+
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM task_links WHERE project_id = ?", (project_id,))
+        for link in wanted:
+            conn.execute(
+                "INSERT INTO task_links (project_id, predecessor_id, successor_id, lag_days, kind) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (project_id, link["predecessor_id"], link["successor_id"],
+                 link["lag_days"], link["kind"]),
+            )
+    return {"added": len(wanted), "skipped": trouble}

@@ -296,3 +296,105 @@ def read_workbook(data: bytes) -> dict[str, Any]:
     if not out["tasks"]:
         raise ImportError_("The Deliverables sheet has no rows with a name.")
     return out
+
+
+# --- the dependency workbook -----------------------------------------------
+
+SHEET_LINKS = "Dependencies"
+
+
+def build_links_workbook(project: Mapping[str, Any], tasks: Sequence[Mapping[str, Any]],
+                         links: Sequence[Mapping[str, Any]]) -> bytes:
+    """The programme's dependencies as an .xlsx file, ready to edit and import.
+
+    Deliverables are named by WBS, which is what a reader recognises and what
+    the import matches on. A second sheet lists the WBS numbers to copy from, so
+    nobody has to guess at one.
+    """
+    openpyxl = _openpyxl()
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    def sheet(title: str, headers: Sequence[str], rows: Sequence[Sequence[Any]],
+              widths: Sequence[int]) -> None:
+        ws = wb.create_sheet(title)
+        ws.append(list(headers))
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="2A78D6")
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+        for row in rows:
+            ws.append(list(row))
+        for index, width in enumerate(widths, start=1):
+            ws.column_dimensions[chr(64 + index)].width = width
+        ws.freeze_panes = "A2"
+
+    from .schedule import KIND_KEYS, kind_note, normalise_kind
+
+    sheet(
+        SHEET_LINKS,
+        ["Deliverable WBS", "Waits for WBS", "Type", "Lag days", "What it means"],
+        [
+            [link.get("successor_wbs"), link.get("predecessor_wbs"),
+             normalise_kind(link.get("kind")), float(link.get("lag_days") or 0),
+             kind_note(link.get("kind"))]
+            for link in links
+        ],
+        widths=[18, 18, 10, 12, 44],
+    )
+
+    guide = wb[SHEET_LINKS]
+    guide.append([])
+    guide.append(["Type is one of " + ", ".join(KIND_KEYS)
+                  + ". Lag may be negative, for work that overlaps."])
+    guide.append(["Importing replaces every dependency with what is in this sheet."])
+    for row in guide.iter_rows(min_row=guide.max_row - 1, max_row=guide.max_row):
+        row[0].font = Font(italic=True, color="898781")
+
+    sheet(
+        "Deliverables",
+        ["WBS", "Deliverable", "Start", "Finish"],
+        [[t.get("wbs"), t.get("name"), _cell(t.get("start_date")), _cell(t.get("submission_date"))]
+         for t in tasks],
+        widths=[14, 62, 14, 14],
+    )
+    stream = io.BytesIO()
+    wb.save(stream)
+    return stream.getvalue()
+
+
+def read_links_workbook(data: bytes) -> list[dict[str, Any]]:
+    """The dependency sheet as plain rows. Nothing is written here.
+
+    Rows without both WBS numbers are skipped, which is what lets the sheet
+    carry the blank line and the notes underneath without tripping the import.
+    """
+    from .schedule import normalise_kind
+
+    openpyxl = _openpyxl()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    except Exception as exc:  # noqa: BLE001 - openpyxl raises a variety of errors
+        raise ImportError_("That file could not be read as an Excel workbook.") from exc
+
+    if SHEET_LINKS not in wb.sheetnames:
+        raise ImportError_(
+            f"The workbook has no {SHEET_LINKS} sheet. Export the dependencies "
+            "first and edit that file."
+        )
+
+    rows: list[dict[str, Any]] = []
+    for row in wb[SHEET_LINKS].iter_rows(min_row=2, values_only=True):
+        successor = _cell(row[0] if len(row) > 0 else "")
+        predecessor = _cell(row[1] if len(row) > 1 else "")
+        if not successor or not predecessor:
+            continue
+        rows.append({
+            "successor_wbs": successor,
+            "predecessor_wbs": predecessor,
+            "kind": normalise_kind(row[2] if len(row) > 2 else ""),
+            "lag_days": _number(row[3] if len(row) > 3 else 0, 0.0),
+        })
+    return rows

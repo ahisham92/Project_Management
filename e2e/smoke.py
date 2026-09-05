@@ -297,10 +297,16 @@ def _schedule(page) -> None:
     for gone in ("Late deliverables", "Behind plan"):
         if gone in body:
             raise AssertionError(f"{gone!r} belongs on the Progress tab now")
+    for mark in ("Planned bar", "IDC (workflow only)", "Submission",
+                 "Code A due (workflow only)", "Rework after a Code B or C", "Today"):
+        if mark not in body:
+            raise AssertionError(f"the legend does not say what {mark!r} is")
     if page.locator(".chart svg circle").count() == 0:
         raise AssertionError("the IDC marks are missing from the bars")
     if page.locator(".chart svg polygon").count() == 0:
-        raise AssertionError("the Code A stars are missing from the bars")
+        raise AssertionError("the submission and Code A stars are missing")
+    if "2026" not in page.text_content(".chart"):
+        raise AssertionError("the chart should name the months it covers")
     page.screenshot(path=str(SHOTS / "21-schedule.png"), full_page=True)
 
 
@@ -325,11 +331,13 @@ def _schedule_deps(page) -> None:
     page.select_option("select[name=successor_id]", index=3)
     page.select_option("select[name=predecessor_id]", index=1)
     page.select_option("select[name=kind]", "SS")
-    page.fill("input[name=lag_days]", "5")
+    page.fill("input[name=lag_days]", "-5")          # work that overlaps
     page.click("button:has-text('Link them')")
     page.wait_for_selector("text=Dependency added", timeout=8000)
     if page.locator("svg path[stroke-dasharray]").count() == 0:
         raise AssertionError("a start-to-start link should draw differently")
+    if "-5d" not in page.text_content("body"):
+        raise AssertionError("a negative lag should be kept")
 
     url = page.url
     page.locator("[data-cell='link-lag']").first.click()
@@ -346,7 +354,7 @@ def _schedule_deps(page) -> None:
     page.wait_for_selector("form.cell-form select[name=kind]", timeout=6000)
     page.select_option("form.cell-form select[name=kind]", "SS")
     page.wait_for_timeout(1400)
-    if "starts after" not in page.locator("[data-cell='link-kind']").first.inner_text():
+    if "start → start" not in page.locator("[data-cell='link-kind']").first.inner_text():
         raise AssertionError("the link type did not stick")
 
     # A box can be dragged out of the way, and stays there.
@@ -381,6 +389,21 @@ def _schedule_deps(page) -> None:
         raise AssertionError("removing a dependency should not reload the page")
     if page.locator("tr[id^='link-']").count() != rows - 1:
         raise AssertionError("the row was not removed")
+
+    # The dependencies go out to Excel and come back.
+    with page.expect_download(timeout=10000) as download:
+        page.click("a:has-text('Export to Excel')")
+    workbook = str(SHOTS / "dependencies.xlsx")
+    download.value.save_as(workbook)
+    if not download.value.suggested_filename.endswith(".xlsx"):
+        raise AssertionError("the dependencies did not download as a workbook")
+
+    page.set_input_files("input[name=workbook]", workbook)
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.click("button:has-text('Import')")
+    page.wait_for_selector("text=imported", timeout=8000)
+    if "skipped" in page.text_content("body"):
+        raise AssertionError("its own export should import without a complaint")
 
     # And Tidy up puts the boxes back under the automatic layout.
     page.click("[data-reset-layout]")

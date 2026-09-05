@@ -395,7 +395,9 @@ def budget_hours(trades: Sequence[Mapping[str, Any]]) -> Markup:
 
 GANTT_ROW = 26                      # the height one deliverable takes
 GANTT_LEFT = 96                     # room for the WBS down the side
+GANTT_HEAD = 46                     # the month band and the day ticks above it
 REWORK = "var(--warning)"
+SUBMITTED = "var(--good)"           # the green star that marks a submission
 
 
 def _span(first: str, last: str) -> int:
@@ -413,12 +415,7 @@ def _ticks(first: str, last: str, span: int) -> list[str]:
     start = datetime.strptime(first[:10], "%Y-%m-%d").date()
     end = datetime.strptime(last[:10], "%Y-%m-%d").date()
     if span > 120:
-        marks, day = [], date(start.year, start.month, 1)
-        while day <= end:
-            if day >= start:
-                marks.append(day.isoformat())
-            day = date(day.year + (day.month == 12), (day.month % 12) + 1, 1)
-        return marks
+        return [day for day in _month_starts(start, end) if day >= start.isoformat()]
     step = 7 if span > 28 else 1
     marks, day = [], start
     while day <= end:
@@ -427,34 +424,87 @@ def _ticks(first: str, last: str, span: int) -> list[str]:
     return marks
 
 
+def _month_starts(start, end) -> list[str]:
+    from datetime import date
+
+    days, day = [], date(start.year, start.month, 1)
+    while day <= end:
+        days.append(day.isoformat())
+        day = date(day.year + (day.month == 12), (day.month % 12) + 1, 1)
+    return days
+
+
+def _months(first: str, last: str) -> list[tuple[str, str, str]]:
+    """(first day, last day, label) for every month the plan touches.
+
+    The band across the top says which month you are looking at, which a row of
+    dates alone does not — the point of a programme is where you are in it.
+    """
+    from datetime import date, timedelta
+
+    start = datetime.strptime(first[:10], "%Y-%m-%d").date()
+    end = datetime.strptime(last[:10], "%Y-%m-%d").date()
+    out = []
+    for day in _month_starts(start, end):
+        opens = date.fromisoformat(day)
+        nxt = date(opens.year + (opens.month == 12), (opens.month % 12) + 1, 1)
+        closes = nxt - timedelta(days=1)
+        out.append((max(opens, start).isoformat(), min(closes, end).isoformat(),
+                    opens.strftime("%b %Y")))
+    return out
+
+
 def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: str,
           steps: Sequence[Mapping[str, Any]] = ()) -> Markup:
     """The programme as bars, with the design milestones marked on each line.
 
-    A bar runs from a deliverable's start to its submission. The IDC sits on it
-    as a circle and the Code A as a star, both in red so the two dates a
-    reviewer cares about are the two that catch the eye. A resubmission draws
-    its own bar underneath in amber — the rework a Code B or C caused, and how
-    far it pushed the line out. The vertical line is today.
+    A bar runs from a deliverable's start to its submission, with a green star
+    on the submission itself. A line on the design workflow also carries its
+    IDC as a red circle and its Code A as a red star; a line tracked as a plain
+    percentage — a meeting, a milestone, a transmittal — has neither, because
+    neither happens to it. A resubmission draws its own bar underneath in amber:
+    the rework a Code B or C caused, and how far it pushed the line out. The
+    vertical line is today, and the band across the top says which month you
+    are looking at.
     """
     if not tasks:
         return _empty("No deliverables to plan yet.")
 
     span = _span(first, last)
     width, left = 660, GANTT_LEFT
-    top, foot = 26, 30
+    top, foot = GANTT_HEAD, 30
     height = top + len(tasks) * GANTT_ROW + foot
     x_of = lambda day: _x_of(day, first, span, left, width)
 
     parts = [f'<rect x="{left}" y="{top}" width="{width}" height="{len(tasks) * GANTT_ROW}"'
              f' fill="{SURFACE}" rx="4"/>']
 
+    # The month band, alternating so one month reads apart from the next.
+    for index, (opens, closes, label) in enumerate(_months(first, last)):
+        x1, x2 = x_of(opens), x_of(closes)
+        room = max(0.0, x2 - x1)
+        parts.append(
+            f'<rect x="{x1:.1f}" y="6" width="{room:.1f}" height="18" rx="3"'
+            f' fill="{SURFACE}" opacity="{0.9 if index % 2 == 0 else 0.45}"/>'
+        )
+        if room > 26:                          # only where the name will fit
+            parts.append(
+                f'<text x="{x1 + room / 2:.1f}" y="19" text-anchor="middle" font-size="9"'
+                f' font-weight="500" fill="{INK2}">{escape(label)}</text>'
+            )
+        parts.append(f'<line x1="{x1:.1f}" y1="6" x2="{x1:.1f}" y2="{height - foot}"'
+                     f' stroke="{GRID}" stroke-width="1"/>')
+
+    # Day or week ticks under the band. On a long programme the band already
+    # names every month, so the ticks are drawn without repeating it.
+    named = span > 120
     for tick in _ticks(first, last, span):
         x = x_of(tick)
         parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{height - foot}"'
-                     f' stroke="{GRID}" stroke-width="1"/>')
-        parts.append(f'<text x="{x:.1f}" y="{height - foot + 14}" text-anchor="middle"'
-                     f' font-size="9" fill="{MUTED}">{escape(_axis_label(tick, span <= 120))}</text>')
+                     f' stroke="{GRID}" stroke-width="1" opacity="0.6"/>')
+        if not named:
+            parts.append(f'<text x="{x:.1f}" y="{top - 6}" text-anchor="middle"'
+                         f' font-size="8" fill="{MUTED}">{escape(_axis_label(tick, True))}</text>')
 
     for index, task in enumerate(tasks):
         y = top + index * GANTT_ROW
@@ -482,14 +532,19 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
                 f' height="4" rx="2" fill="var(--ink)" opacity="0.45"/>'
             )
 
-        plan = {step["key"]: step["date"] for step in (task.get("step_plan") or ())}
-        if plan.get("idc"):
-            cx = x_of(plan["idc"])
-            parts.append(f'<circle cx="{cx:.1f}" cy="{bar_y + 5}" r="4" fill="{CRITICAL}"'
-                         f' stroke="var(--plane)" stroke-width="1"/>')
-        approval = task.get("approval_due_date")
-        if approval:
-            parts.append(_star(x_of(approval), bar_y + 5, 6, CRITICAL))
+        # The submission itself, on every line that has one.
+        parts.append(_star(x2, bar_y + 5, 5.5, SUBMITTED))
+
+        # The IDC and the Code A belong to the design workflow. A line tracked
+        # as a plain percentage has neither.
+        if task.get("uses_workflow"):
+            plan = {step["key"]: step["date"] for step in (task.get("step_plan") or ())}
+            if plan.get("idc"):
+                cx = x_of(plan["idc"])
+                parts.append(f'<circle cx="{cx:.1f}" cy="{bar_y + 5}" r="4" fill="{CRITICAL}"'
+                             f' stroke="var(--plane)" stroke-width="1"/>')
+            if task.get("approval_due_date"):
+                parts.append(_star(x_of(task["approval_due_date"]), bar_y + 5, 6, CRITICAL))
 
         # Each resubmission: from the day the comments landed to the new date.
         for revision in task.get("revisions") or ():
@@ -508,12 +563,13 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
 
         rows = [
             {"label": "Start", "value": _short_date(start), "color": colour},
-            {"label": "Submission", "value": _short_date(finish), "color": colour},
+            {"label": "Submission", "value": _short_date(finish), "color": SUBMITTED},
             {"label": "Duration", "value": f'{task.get("duration_days", 0)} days', "color": MUTED},
             {"label": "Float", "value": f'{task.get("total_float", 0)} days', "color": MUTED},
         ]
-        if approval:
-            rows.append({"label": "Code A due", "value": _short_date(approval), "color": CRITICAL})
+        if task.get("uses_workflow") and task.get("approval_due_date"):
+            rows.append({"label": "Code A due", "value": _short_date(task["approval_due_date"]),
+                         "color": CRITICAL})
         if task.get("revisions"):
             rows.append({"label": "Resubmissions", "value": str(len(task["revisions"])), "color": REWORK})
         parts.append(
@@ -522,14 +578,29 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
         )
 
     x = x_of(data_date)
-    parts.append(f'<line x1="{x:.1f}" y1="{top - 6}" x2="{x:.1f}" y2="{height - foot}"'
+    parts.append(f'<line x1="{x:.1f}" y1="{top - 2}" x2="{x:.1f}" y2="{height - foot}"'
                  f' stroke="{CRITICAL}" stroke-width="1.5" stroke-dasharray="4 3"/>')
-    parts.append(f'<text x="{x:.1f}" y="{top - 10}" text-anchor="middle" font-size="9"'
+    parts.append(f'<text x="{x:.1f}" y="{height - foot + 12}" text-anchor="middle" font-size="9"'
                  f' fill="{CRITICAL}">today</text>')
 
-    legend = _legend([("Critical", "var(--critical)"), ("Has float", "var(--series-1)"),
-                      ("Rework", "var(--warning)")], mark="dot")
+    legend = _gantt_legend()
     return _chart("".join(parts), legend, view_w=left + width + 20, view_h=height)
+
+
+def _gantt_legend() -> str:
+    """What each mark on a bar means. Shape as well as colour, since the two
+    stars differ only in what they stand for."""
+    items = [
+        ('<span class="legend-line" style="background:var(--series-1)"></span>', "Planned bar"),
+        ('<span class="legend-dot" style="background:var(--critical)"></span>', "IDC (workflow only)"),
+        ('<span class="legend-star" style="color:var(--good)">★</span>', "Submission"),
+        ('<span class="legend-star" style="color:var(--critical)">★</span>', "Code A due (workflow only)"),
+        ('<span class="legend-line" style="background:var(--warning)"></span>', "Rework after a Code B or C"),
+        ('<span class="legend-line" style="background:var(--critical);height:2px"></span>', "Today"),
+    ]
+    marks = "".join(f'<span class="legend-item">{mark}{escape(label)}</span>'
+                    for mark, label in items)
+    return f'<div class="legend">{marks}</div>'
 
 
 def _star(cx: float, cy: float, size: float, colour: str) -> str:

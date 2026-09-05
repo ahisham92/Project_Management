@@ -91,9 +91,8 @@
     <div>
       <h2>Programme</h2>
       <p class="small muted" style="margin-top:2px">
-        Each bar runs from start to submission · <span style="color:var(--critical)">●</span> IDC ·
-        <span style="color:var(--critical)">★</span> Code A · amber is rework after a Code B or C ·
-        the dashed line is today
+        Each bar runs from start to submission. The IDC and the Code A belong to the design
+        workflow, so a line tracked as a plain percentage carries neither.
       </p>
     </div>
   </div>
@@ -191,16 +190,27 @@
       <h2>Dependencies</h2>
       <p class="small muted" style="margin-top:2px">
         Who waits for whom · a box is a WBS number, hover it for the deliverable ·
-        a dashed arrow is a start-to-start link · the critical path is the run with no float
-        {% if can_edit %} · drag a box to move it{% endif %}
+        the critical path is the run with no float
+        {% if can_edit %} · drag a box to move it · a lag may be negative, for work that overlaps{% endif %}
       </p>
     </div>
-    {% if can_edit %}
-      <form method="post" class="no-print"
-            action="{{ url_for('projects.reset_layout', project_id=project['id']) }}">
-        <button type="submit" class="btn btn-ghost btn-sm" data-reset-layout>Tidy up</button>
-      </form>
-    {% endif %}
+    <div class="inline-form no-print">
+      <a class="btn btn-ghost btn-sm"
+         href="{{ url_for('projects.export_dependencies', project_id=project['id']) }}">Export to Excel</a>
+      {% if can_edit %}
+        <form method="post" enctype="multipart/form-data" class="inline-form"
+              action="{{ url_for('projects.import_dependencies', project_id=project['id']) }}">
+          <input type="file" name="workbook" accept=".xlsx" required class="w-lg"
+                 aria-label="Dependency workbook to import">
+          <button type="submit" class="btn btn-ghost btn-sm"
+                  data-confirm="Importing replaces every dependency with what is in the sheet. Continue?">Import</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('projects.reset_layout', project_id=project['id']) }}">
+          <button type="submit" class="btn btn-ghost btn-sm" data-reset-layout>Tidy up</button>
+        </form>
+      {% endif %}
+    </div>
     </div>
   </div>
   <div class="card-body" id="network">{{ network }}</div>

@@ -21,7 +21,7 @@ from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
     clear_node_positions, project_pulse, project_s_curve, project_snapshot, record_comments,
-    record_progress, remove_link, set_node_position, update_link,
+    record_progress, remove_link, replace_links, set_node_position, update_link,
     set_allocations, set_status, set_task_dates, today,
 )
 from ..workflow import ordered as ordered_steps
@@ -491,6 +491,60 @@ def move_node(project_id: int, task_id: int):
         abort(404)
     if _wants_json():
         return jsonify({"ok": True})
+    return _back("projects.schedule", project_id)
+
+
+@bp.get("/schedule/links.xlsx")
+@login_required
+def export_dependencies(project_id: int):
+    """The dependencies as a workbook, ready to edit and import back."""
+    from flask import send_file
+
+    from ..excel import ExcelUnavailable, build_links_workbook
+
+    project, _role = load_project(project_id)
+    plan = project_plan(project)
+    try:
+        data = build_links_workbook(project, plan["tasks"], plan["links"])
+    except ExcelUnavailable as exc:
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id)
+
+    stamp = today().replace("-", "")
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"{project['code']}-dependencies-{stamp}.xlsx",
+    )
+
+
+@bp.post("/schedule/links/import")
+@login_required
+def import_dependencies(project_id: int):
+    """Replaces the dependencies with what an edited workbook says."""
+    from ..excel import ExcelUnavailable, ImportError_, read_links_workbook
+
+    _project, _role = load_project(project_id, "manager")
+    upload = request.files.get("workbook")
+    if upload is None or not upload.filename:
+        flash("Choose a workbook to import", "error")
+        return _back("projects.schedule", project_id)
+
+    try:
+        rows = read_links_workbook(upload.read())
+    except (ExcelUnavailable, ImportError_) as exc:
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id)
+
+    result = replace_links(project_id, rows)
+    flash(
+        f"{result['added']} dependenc{'y' if result['added'] == 1 else 'ies'} imported"
+        + (f" · {len(result['skipped'])} skipped" if result["skipped"] else ""),
+        "error" if result["skipped"] else "success",
+    )
+    for note in result["skipped"][:5]:
+        flash(note, "error")
     return _back("projects.schedule", project_id)
 
 

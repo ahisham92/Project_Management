@@ -22,18 +22,29 @@ MODES: tuple[tuple[str, str], ...] = (
 MODE_KEYS = tuple(key for key, _ in MODES)
 DEFAULT_MODE = "duration"
 
-# How one deliverable waits for another.
+# How one deliverable waits for another. In each case the first named end is
+# the predecessor's and the second is the successor's.
 #
-#   FS  it cannot start until the other has finished — the ordinary link
-#   SS  it can start once the other has started, after a lag; the two then run
-#       alongside each other rather than one waiting for the whole of the other
+#   FS  finish to start   it cannot start until the other has finished
+#   SS  start to start    it can start once the other has started
+#   FF  finish to finish  it cannot finish until the other has finished
+#   SF  start to finish   it cannot finish until the other has started
 #
-# Both take a lag in days, which is what makes SS useful: "begin a fortnight
-# after the survey begins" needs no guess at when the survey will end.
+# Every one takes a lag in days, and the lag may be negative: "start a week
+# before the survey ends" is FS with a lag of -7, which is how overlap between
+# two pieces of work is written down.
 KINDS: tuple[tuple[str, str], ...] = (
-    ("FS", "must finish first"),
-    ("SS", "starts after it starts"),
+    ("FS", "finish → start"),
+    ("SS", "start → start"),
+    ("FF", "finish → finish"),
+    ("SF", "start → finish"),
 )
+KIND_NOTES: dict[str, str] = {
+    "FS": "cannot start until the other finishes",
+    "SS": "cannot start until the other starts",
+    "FF": "cannot finish until the other finishes",
+    "SF": "cannot finish until the other starts",
+}
 KIND_KEYS = tuple(key for key, _ in KINDS)
 DEFAULT_KIND = "FS"
 
@@ -44,7 +55,46 @@ def normalise_kind(value: Any) -> str:
 
 
 def kind_label(value: Any) -> str:
-    return dict(KINDS).get(normalise_kind(value), "must finish first")
+    return dict(KINDS).get(normalise_kind(value), "finish → start")
+
+
+def kind_note(value: Any) -> str:
+    """The link in words, for a tooltip or a document."""
+    return KIND_NOTES.get(normalise_kind(value), KIND_NOTES[DEFAULT_KIND])
+
+
+def _earliest_start(kind: str, lag: float, length: int,
+                    began: date | None, done: date | None) -> date | None:
+    """The soonest a successor may start, given where its predecessor sits.
+
+    FS and SS drive the successor's start directly; FF and SF drive its finish,
+    so its own length is taken off to give the start.
+    """
+    days = int(round(lag))
+    if kind == "SS":
+        return began + timedelta(days=days) if began else None
+    if kind == "FF":
+        return done + timedelta(days=days - (length - 1)) if done else None
+    if kind == "SF":
+        return began + timedelta(days=days - (length - 1)) if began else None
+    return done + timedelta(days=1 + days) if done else None       # FS
+
+
+def _latest_finish(kind: str, lag: float, length: int,
+                   starts_by: date | None, ends_by: date | None) -> date | None:
+    """The latest a predecessor may finish, given where its successor sits.
+
+    The mirror of :func:`_earliest_start`: SS and SF are limits on the
+    predecessor's start, so its own length is added back on.
+    """
+    days = int(round(lag))
+    if kind == "SS":
+        return starts_by - timedelta(days=days) + timedelta(days=length - 1) if starts_by else None
+    if kind == "FF":
+        return ends_by - timedelta(days=days) if ends_by else None
+    if kind == "SF":
+        return ends_by - timedelta(days=days) + timedelta(days=length - 1) if ends_by else None
+    return starts_by - timedelta(days=1 + days) if starts_by else None   # FS
 
 
 def normalise_mode(value: Any) -> str:
@@ -196,15 +246,10 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
         own = planned_start[task_id] or floor
         earliest = own
         for first, lag, kind in predecessors.get(task_id, ()):
-            # FS waits for the other to finish; SS only for it to have started.
-            if kind == "SS":
-                after = early_start.get(first)
-                if after:
-                    earliest = max(earliest, after + timedelta(days=int(round(lag))))
-            else:
-                after = early_finish.get(first)
-                if after:
-                    earliest = max(earliest, after + timedelta(days=1 + int(round(lag))))
+            soonest = _earliest_start(kind, lag, length[task_id],
+                                      early_start.get(first), early_finish.get(first))
+            if soonest:
+                earliest = max(earliest, soonest)
         early_start[task_id] = earliest
         early_finish[task_id] = earliest + timedelta(days=length[task_id] - 1)
 
@@ -215,16 +260,10 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     for task_id in reversed(sequence):
         latest = horizon
         for second, lag, kind in successors.get(task_id, ()):
-            before = late_start.get(second)
-            if not before:
-                continue
-            if kind == "SS":
-                # It only has to start in time, so its own finish is free to be
-                # as late as its length allows.
-                latest = min(latest, before - timedelta(days=int(round(lag)))
-                             + timedelta(days=length[task_id] - 1))
-            else:
-                latest = min(latest, before - timedelta(days=1 + int(round(lag))))
+            limit = _latest_finish(kind, lag, length[task_id],
+                                   late_start.get(second), late_finish.get(second))
+            if limit:
+                latest = min(latest, limit)
         late_finish[task_id] = latest
         late_start[task_id] = latest - timedelta(days=length[task_id] - 1)
 
@@ -292,8 +331,9 @@ def shift_successors(tasks: Sequence[Mapping[str, Any]],
         if not done or not began:
             continue
         for second, lag, kind in successors.get(node, ()):
-            earliest = (began + timedelta(days=int(round(lag))) if kind == "SS"
-                        else done + timedelta(days=1 + int(round(lag))))
+            earliest = _earliest_start(kind, lag, lengths[second], began, done)
+            if not earliest:
+                continue
             current = starts.get(second)
             if current and current >= earliest:
                 continue                       # it already sits late enough
@@ -325,10 +365,10 @@ def summarise(analysis: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
 
 def link_label(predecessor: Mapping[str, Any], successor: Mapping[str, Any],
                lag: float = 0, kind: str = DEFAULT_KIND) -> str:
-    """How one link reads in a list: 1.2 → 1.5, starts after it starts, +3 days."""
+    """How one link reads in a list: 1.2 → 1.5, finish → start, -3 days."""
     text = f"{predecessor.get('wbs') or '?'} → {successor.get('wbs') or '?'}, {kind_label(kind)}"
     if lag:
-        text += f", {'+' if lag > 0 else ''}{lag:g} days"
+        text += f", {lag:+g} days"
     return text
 
 

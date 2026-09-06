@@ -1170,6 +1170,87 @@ def load_project_revisions(project_id: int) -> dict[int, list[dict[str, Any]]]:
     return grouped
 
 
+# --- backups ----------------------------------------------------------------
+
+def record_backup(ok: bool, where_to: str, size: int, detail: str = "",
+                  link: str = "") -> int:
+    """Writes down what a backup run did, so the screen can say so.
+
+    Only the last handful are kept: this is a health light, not a log.
+    """
+    run_id = insert(
+        "INSERT INTO backup_runs (started_at, ok, where_to, bytes, detail, link) "
+        "VALUES (datetime('now'), ?, ?, ?, ?, ?)",
+        (1 if ok else 0, where_to, int(size), detail[:500], link),
+    )
+    execute(
+        "DELETE FROM backup_runs WHERE id NOT IN "
+        "(SELECT id FROM backup_runs ORDER BY id DESC LIMIT 20)"
+    )
+    return run_id
+
+
+def load_backup_runs(limit: int = 10) -> list[dict[str, Any]]:
+    return [dict(r) for r in query(
+        "SELECT * FROM backup_runs ORDER BY id DESC LIMIT ?", (limit,))]
+
+
+def last_backup() -> dict[str, Any] | None:
+    row = query_one("SELECT * FROM backup_runs ORDER BY id DESC LIMIT 1")
+    return dict(row) if row else None
+
+
+def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
+    """Take a backup, put it on Drive, and write down what happened.
+
+    Never raises: a nightly job that dies on a network hiccup leaves nothing
+    behind saying so, and the whole point is to be able to see that it ran.
+    """
+    from .backup import build, readable
+    from .db import live_database
+    from .drive import DriveError, configured, settings_from_env, upload
+
+    import os
+
+    try:
+        data, manifest = build(live_database(), note)
+    except Exception as exc:                          # noqa: BLE001 - reported, not raised
+        record_backup(False, "backup", 0, f"Could not take the backup: {exc}")
+        return {"ok": False, "detail": f"Could not take the backup: {exc}"}
+
+    result: dict[str, Any] = {
+        "ok": True, "bytes": len(data), "size": readable(len(data)),
+        "manifest": manifest, "data": data, "uploaded": False, "link": "",
+    }
+
+    settings = settings_from_env(os.environ)
+    if not upload_to_drive:
+        record_backup(True, "local", len(data), "Taken, not uploaded")
+        result["detail"] = "Taken, not uploaded"
+        return result
+
+    if not configured(settings):
+        record_backup(False, "drive", len(data),
+                      "Google Drive is not set up — run `python run.py drive-auth`")
+        result["ok"] = False
+        result["detail"] = "Google Drive is not set up — run `python run.py drive-auth`"
+        return result
+
+    try:
+        said = upload(settings, data)
+    except DriveError as exc:
+        record_backup(False, "drive", len(data), str(exc))
+        result["ok"] = False
+        result["detail"] = str(exc)
+        return result
+
+    what = "Replaced" if said.get("replaced") else "Created"
+    detail = f"{what} {said.get('name', 'the backup')} on Google Drive"
+    record_backup(True, "drive", len(data), detail, said.get("link", ""))
+    result.update(uploaded=True, detail=detail, link=said.get("link", ""), drive=said)
+    return result
+
+
 # --- knowing when something changed ----------------------------------------
 
 def project_pulse(project_id: int) -> str:

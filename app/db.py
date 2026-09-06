@@ -30,6 +30,22 @@ def database_path() -> Path:
     return Path(override) if override else data_dir() / "pm.sqlite"
 
 
+def live_database() -> Path:
+    """The database this app is actually using.
+
+    `database_path` is where one would be by default; an app can be told to use
+    another, and anything that copies or replaces the database has to follow
+    the one being served rather than the one that would have been.
+    """
+    from flask import current_app, has_app_context
+
+    if has_app_context():
+        configured = current_app.config.get("DATABASE")
+        if configured:
+            return Path(configured)
+    return database_path()
+
+
 # How long a request waits for another one to finish writing before giving up.
 # SQLite allows one writer at a time; without this a second simultaneous write
 # fails instantly with "database is locked" instead of simply queueing, which is
@@ -113,6 +129,7 @@ def init_db(path: Path | str | None = None) -> None:
             _ensure_column(conn, table, column, definition)
 
         _ensure_calendars(conn)
+        _ensure_backup_log(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -175,6 +192,29 @@ def _ensure_calendars(conn: sqlite3.Connection) -> None:
         ) WHERE calendar_id IS NULL
         """
     )
+
+
+def _ensure_backup_log(conn: sqlite3.Connection) -> None:
+    """What happened the last time a backup ran.
+
+    Kept so the screen can say whether the nightly one is actually working. A
+    backup that has been failing quietly for three weeks is worse than none,
+    because it is the one you were counting on.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backup_runs (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          started_at TEXT    NOT NULL,
+          ok         INTEGER NOT NULL DEFAULT 0,
+          where_to   TEXT    NOT NULL DEFAULT '',
+          bytes      INTEGER NOT NULL DEFAULT 0,
+          detail     TEXT    NOT NULL DEFAULT '',
+          link       TEXT    NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_backup_runs_when ON backup_runs(started_at DESC)")
 
 
 def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:

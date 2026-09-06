@@ -723,6 +723,61 @@ host, so it is harmless to leave in place:
 Data changes need no deployment at all: everyone is reading and writing the same database, so
 a progress update is visible to the next person who loads the page.
 
+### A backup of everything, every night, on Google Drive
+
+The Setup sheet's Excel export is one project's *setup*. It is not a backup: it holds no
+progress history, no booked hours, no minutes, no dependencies, no teams or holidays, and no
+other project. **Backups** (the link beside Portfolio, for administrators) is the whole
+database — every project, everything in it — in one file.
+
+**What it does.** Takes a consistent snapshot with SQLite's own online backup, so the app
+carries on serving while it runs and the copy always opens; zips it with a `manifest.json`
+saying when it was taken, which projects are in it and how many rows of each thing; and puts
+it on Google Drive. **The same file every night** — it finds the file by name and replaces its
+contents, so there is one file, its link never changes, and Drive keeps the older contents
+under *Manage versions* rather than a folder filling up with a copy a day.
+
+**Connecting Drive**, once, on a machine with a browser:
+
+1. At `console.cloud.google.com`: a project, the **Google Drive API** turned on, and an
+   **OAuth client ID** of type **Desktop app**.
+2. `python run.py drive-auth` — it opens a consent page, catches the redirect on localhost,
+   and prints the three values to keep.
+3. Put them in the environment: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `GOOGLE_REFRESH_TOKEN`, and optionally `GOOGLE_DRIVE_FOLDER_ID` (the last part of a
+   folder's URL) and `BACKUP_FILE_NAME`.
+
+The credentials live in the environment and never in the database — a refresh token stored in
+the database would be carried up to Drive inside the very backup it is the key to. The scope
+asked for is `drive.file`, the narrowest one that works: the app can see the file it created
+and nothing else in your Drive.
+
+**Every night.** One scheduled command:
+
+```bash
+cd ~/Project_Management && python run.py backup
+```
+
+On PythonAnywhere that goes on the **Tasks** tab, where a free account gets one task a day.
+Those run in **UTC**, so pick the hour that is midnight where you are — for Beirut and Cairo
+that is 21:00 UTC in summer and 22:00 in winter. The Backups page lists what has run, whether
+each one worked, and links the file on Drive; a backup failing quietly for three weeks is
+worse than none, so that page is where to notice.
+
+**Putting one back.** Download the file from Drive and:
+
+```bash
+python run.py restore project-control-backup.zip
+```
+
+It prints what is in the backup, asks before writing anything, and keeps the database it
+replaced beside the new one. Restoring is deliberately not a button on the page: it discards
+everything since the backup was taken.
+
+One thing worth knowing: the backup holds the `users` table, which means password hashes. They
+are hashes, not passwords, and the file is private to your own Drive — but it is a file worth
+keeping in a Drive you control rather than a shared one.
+
 ### Several people at once
 
 SQLite allows one writer at a time. The app uses write-ahead logging so reads never block, and
@@ -755,6 +810,9 @@ All optional — see `.env.example`.
 | `ALLOW_SIGNUP` | `false` blocks self-registration. The first account is always allowed. |
 | `SQLITE_BUSY_TIMEOUT_MS` | How long a write waits for another to finish (default `10000`). |
 | `SEED_EMAIL` / `SEED_PASSWORD` / `SEED_NAME` | Used by `python run.py seed`. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | The nightly backup's Google Drive account. `python run.py drive-auth` prints all three. |
+| `GOOGLE_DRIVE_FOLDER_ID` | Which Drive folder the backup goes in. Its own My Drive if unset. |
+| `BACKUP_FILE_NAME` | The one file that gets replaced (default `project-control-backup.zip`). |
 
 The **setup password** is not an environment variable — it is stored per project and changed
 on the Setup sheet itself.
@@ -780,7 +838,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-504 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+536 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
@@ -790,7 +848,9 @@ calendars (the two working weeks, holidays for one team or all of them, duration
 working days, dates moved off a day off, planned progress that does not tick over a weekend,
 and the flag on a submission with a holiday in its run-up), the minutes register
 (filters, search, sorting, renumbering on a move, and the Word output), the internal weekly
-register (kept apart from the client's, and either one read as at a past date), the web layer
+register (kept apart from the client's, and either one read as at a past date), the nightly backup
+(what a backup holds, that it restores, that a bad one is refused, and — against a stand-in
+Google — that the same file is replaced rather than a second one made), the web layer
 (sign-in, every page, reporting progress by status, raising revisions, booking hours, the
 dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
 output, the Excel round trips, editing in the row, the live check, and what hosting needs —

@@ -78,8 +78,10 @@ def bar_width(value: Any) -> str:
 
 
 def register(app: Flask) -> None:
+    from .backup import readable
+
     for func in (pct, signed_pct, hours, num, index, short_date, date_input,
-                 variance_state, usage_state, bar_width):
+                 variance_state, usage_state, bar_width, readable):
         app.jinja_env.filters[func.__name__] = func
         app.jinja_env.globals[func.__name__] = func
     app.jinja_env.globals["DATE_FORMAT"] = DISPLAY

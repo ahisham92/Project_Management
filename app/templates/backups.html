@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}Backups — Project Control{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Backups</h1>
+    <p class="small muted" style="margin-top:2px">
+      Everything, in one file — every project's deliverables, progress, hours, minutes,
+      dependencies, teams and holidays. The Setup sheet's Excel export is one project's
+      setup; this is the lot.
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('portfolio.download_backup') }}">Download a copy</a>
+    <form method="post" action="{{ url_for('portfolio.run_backup_now') }}">
+      <button type="submit" class="btn btn-primary">Back up now</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  {% set latest = runs[0] if runs else none %}
+  {{ tile('Last backup',
+          short_date(latest['started_at'][:10]) if latest else '—',
+          latest['detail'] if latest else 'none taken yet',
+          ('good' if latest['ok'] else 'critical') if latest else 'warning',
+          ('done' if latest['ok'] else 'failed') if latest else 'nothing yet') }}
+  {{ tile('Google Drive', 'Connected' if drive_ready else 'Not set up',
+          file_name ~ (' · in a folder' if folder_id else ' · in My Drive'),
+          'good' if drive_ready else 'warning',
+          'ready' if drive_ready else 'to do') }}
+  {{ tile('Database', size, database) }}
+  {{ tile('In it', inside['projects'] | length ~ ' project' ~ ('' if inside['projects'] | length == 1 else 's'),
+          inside['counts'].get('tasks', 0) ~ ' deliverables · ' ~
+          inside['counts'].get('meeting_items', 0) ~ ' minuted items') }}
+</div>
+
+{% if not drive_ready %}
+  <div class="card" style="margin-top:16px;border-color:var(--warning)">
+    <div class="card-head"><div><h2>Connect Google Drive</h2>
+      <p class="small muted" style="margin-top:2px">
+        Once, on a machine with a browser. Nothing is stored in the database — a refresh
+        token is a key to the Drive, and keeping it in the environment keeps it out of the
+        backup it would otherwise be carried inside.
+      </p></div></div>
+    <div class="card-body">
+      <ol class="small" style="margin:0;padding-left:18px;line-height:1.9">
+        <li>At <code>console.cloud.google.com</code>, make a project, turn on the
+          <strong>Google Drive API</strong>, and create an <strong>OAuth client ID</strong>
+          of type <strong>Desktop app</strong>.</li>
+        <li>Run <code>python run.py drive-auth</code> and sign in as the account whose Drive
+          the backups should go to.</li>
+        <li>Put the three values it prints into the environment
+          (<code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>,
+          <code>GOOGLE_REFRESH_TOKEN</code>), and optionally
+          <code>GOOGLE_DRIVE_FOLDER_ID</code> to choose the folder.</li>
+        <li>Schedule <code>python run.py backup</code> once a day.</li>
+      </ol>
+    </div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>What has run</h2>
+      <p class="small muted" style="margin-top:2px">
+        The last twenty. A backup that has been failing quietly is worse than none, so this
+        is the place to notice.
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not runs %}
+      {{ empty('No backup has run yet', 'Take one now, or schedule the nightly job below.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>When</th><th></th><th>Where</th><th class="right">Size</th><th>What happened</th></tr>
+          </thead>
+          <tbody>
+            {% for run in runs %}
+              <tr>
+                <td class="small nowrap tabular">{{ short_date(run['started_at'][:10]) }}
+                  <span class="muted">{{ run['started_at'][11:16] }}</span></td>
+                <td>{{ badge('good', 'ok') if run['ok'] else badge('critical', 'failed') }}</td>
+                <td class="small muted">{{ run['where_to'] }}</td>
+                <td class="right small tabular">{{ readable(run['bytes']) if run['bytes'] else '—' }}</td>
+                <td class="small">
+                  {{ run['detail'] }}
+                  {% if run['link'] %}
+                    · <a href="{{ run['link'] }}" target="_blank" rel="noopener">open in Drive</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px;align-items:start">
+  <div class="card">
+    <div class="card-head"><div><h2>Every night</h2>
+      <p class="small muted" style="margin-top:2px">One scheduled command, replacing the same file</p></div></div>
+    <div class="card-body">
+      <p class="small" style="margin:0 0 8px">On PythonAnywhere, under <strong>Tasks</strong>:</p>
+      <pre class="small" style="margin:0;white-space:pre-wrap"><code>cd ~/Project_Management &amp;&amp; python run.py backup</code></pre>
+      <p class="small muted" style="margin:10px 0 0">
+        Scheduled tasks there run in <strong>UTC</strong>, so pick the hour that is midnight
+        where you are — 21:00 UTC is midnight in Beirut in summer, 22:00 in winter; 21:00 UTC
+        is midnight in Cairo in summer, 22:00 in winter. A free account gets one task a day.
+      </p>
+      <p class="small muted" style="margin:8px 0 0">
+        Each run <strong>replaces</strong> the same file on Drive rather than adding another,
+        so there is one file to look at. Drive keeps the older contents under
+        <em>Manage versions</em> on that file, and its link never changes.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Putting one back</h2>
+      <p class="small muted" style="margin-top:2px">The half nobody tests until the day they need it</p></div></div>
+    <div class="card-body">
+      <p class="small" style="margin:0 0 8px">
+        Download the file from Drive, put it on the server, and:
+      </p>
+      <pre class="small" style="margin:0;white-space:pre-wrap"><code>python run.py restore project-control-backup.zip</code></pre>
+      <p class="small muted" style="margin:10px 0 0">
+        It prints what is in the backup — which projects, how many deliverables — and asks
+        before writing anything, then keeps the database it replaced beside the new one.
+        Restoring is deliberately not a button on this page: it throws away everything since
+        the backup was taken, and that should take more than a mis-click.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

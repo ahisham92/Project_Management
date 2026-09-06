@@ -120,6 +120,7 @@ def main() -> int:
         step("report tabs print to PDF", _print_to_pdf)
         step("dark mode renders", _dark)
         step("a change appears on another page without a refresh", _live)
+        step("backups: the page says where things stand", _backups)
         step("mobile layout does not overflow horizontally", _mobile)
 
         browser.close()
@@ -1240,6 +1241,40 @@ def _live(page) -> None:
     other.close()
     if after == before:
         raise AssertionError(f"the other window did not pick the change up: {before} -> {after}")
+
+
+def _backups(page) -> None:
+    """Everything in one file, and a page that says whether it is happening."""
+    page.goto(f"{BASE}/backups", wait_until="networkidle")
+    body = page.text_content("body")
+    for expected in ("Backups", "Google Drive", "Every night", "python run.py backup",
+                     "Putting one back"):
+        if expected not in body:
+            raise AssertionError(f"the backups page does not mention {expected!r}")
+
+    # It downloads as a zip holding the database.
+    with page.expect_download(timeout=15000) as download:
+        page.click("a:has-text('Download a copy')")
+    saved = str(SHOTS / "backup.zip")
+    download.value.save_as(saved)
+
+    import zipfile
+
+    with zipfile.ZipFile(saved) as book:
+        if "project-control.sqlite3" not in book.namelist():
+            raise AssertionError(f"the backup holds {book.namelist()}")
+        if not book.read("project-control.sqlite3").startswith(b"SQLite format 3\x00"):
+            raise AssertionError("what came down is not a database")
+
+    # Taking one says what happened rather than pretending.
+    page.click("button:has-text('Back up now')")
+    page.wait_for_selector(".flash", timeout=10000)
+    said = page.locator(".flash").last.inner_text()
+    if "not set up" not in said and "Drive" not in said:
+        raise AssertionError(f"the backup said {said!r}")
+    if page.locator("tbody tr").count() == 0:
+        raise AssertionError("the run should be written down whether or not it worked")
+    page.screenshot(path=str(SHOTS / "35-backups.png"), full_page=True)
 
 
 def _mobile(page) -> None:

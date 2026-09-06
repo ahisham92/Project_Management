@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
 from ..auth import login_required
@@ -19,6 +21,79 @@ def index():
     data_date = from_input_or(request.args.get("data_date"), today())
     data = portfolio(g.user, data_date)
     return render_template("portfolio.html", data_date=data_date, **data)
+
+
+@bp.get("/backups")
+@login_required
+def backups():
+    """Whether the nightly backup is working, and a way to take one now.
+
+    Administrators only: a backup is every project's data in one file, so who
+    may download it is who may see all of it.
+    """
+    import os
+
+    from ..backup import DEFAULT_FILE_NAME, describe, readable
+    from ..db import live_database
+    from ..drive import configured, settings_from_env
+    from ..service import load_backup_runs
+
+    if g.user["role"] != "admin":
+        flash("Backups are for administrators", "error")
+        return redirect(url_for("portfolio.index"))
+
+    where = Path(live_database())
+    settings = settings_from_env(os.environ)
+    return render_template(
+        "backups.html",
+        runs=load_backup_runs(),
+        drive_ready=configured(settings),
+        folder_id=settings.get("folder_id", ""),
+        file_name=settings.get("file_name") or DEFAULT_FILE_NAME,
+        database=str(where),
+        size=readable(where.stat().st_size) if where.exists() else "—",
+        inside=describe(where) if where.exists() else {"counts": {}, "projects": []},
+    )
+
+
+@bp.post("/backups/run")
+@login_required
+def run_backup_now():
+    """Take one now, rather than waiting for tonight — and prove it works."""
+    from ..service import run_backup
+
+    if g.user["role"] != "admin":
+        flash("Backups are for administrators", "error")
+        return redirect(url_for("portfolio.index"))
+
+    result = run_backup(upload_to_drive=True)
+    flash(result.get("detail") or "Backup taken", "success" if result["ok"] else "error")
+    return redirect(url_for("portfolio.backups"))
+
+
+@bp.get("/backups/download")
+@login_required
+def download_backup():
+    """The whole thing, as a file, for anyone who would rather keep their own."""
+    import io
+
+    from flask import send_file
+
+    from ..backup import DEFAULT_FILE_NAME, build
+    from ..db import live_database
+    from ..service import record_backup, today
+
+    if g.user["role"] != "admin":
+        flash("Backups are for administrators", "error")
+        return redirect(url_for("portfolio.index"))
+
+    data, _manifest = build(live_database(), note=f"Downloaded by {g.user['email']}")
+    record_backup(True, "download", len(data), f"Downloaded by {g.user['email']}")
+    stem = DEFAULT_FILE_NAME.removesuffix(".zip")
+    return send_file(
+        io.BytesIO(data), mimetype="application/zip", as_attachment=True,
+        download_name=f"{stem}-{today().replace('-', '')}.zip",
+    )
 
 
 @bp.route("/projects/new", methods=("GET", "POST"))

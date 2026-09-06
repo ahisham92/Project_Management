@@ -85,3 +85,10 @@ def register(app: Flask) -> None:
         app.jinja_env.filters[func.__name__] = func
         app.jinja_env.globals[func.__name__] = func
     app.jinja_env.globals["DATE_FORMAT"] = DISPLAY
+
+    # The helper strip at the top of every tab reads its own entry out of the
+    # same dictionary the How to use page renders, so the two cannot drift.
+    from .guide import for_endpoint, terms_for
+
+    app.jinja_env.globals["guide_for"] = for_endpoint
+    app.jinja_env.globals["guide_terms"] = terms_for

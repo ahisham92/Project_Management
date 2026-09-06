@@ -28,6 +28,8 @@
           <span>Project Control</span>
         </a>
         <a href="{{ url_for('portfolio.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Portfolio</a>
+        <a href="{{ url_for('portfolio.guide') }}" class="small"
+           style="text-decoration:none;color:var(--muted)">How to use</a>
         {% if current_user and current_user['role'] == 'admin' %}
           <a href="{{ url_for('portfolio.backups') }}" class="small"
              style="text-decoration:none;color:var(--muted)">Backups</a>
@@ -60,6 +62,7 @@
           </div>
         {% endif %}
       {% endwith %}
+      {% include "partials/guide_strip.html" %}
       {% block content %}{% endblock %}
     </div>
   </main>

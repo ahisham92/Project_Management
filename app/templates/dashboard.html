@@ -22,6 +22,65 @@
   </form>
 </div>
 
+{# The project on one line, before anything is broken down: when it runs, how
+   much room it has left, and where it has got to. #}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head">
+    <div>
+      <h2>Overview</h2>
+      <p class="small muted" style="margin-top:2px">
+        The programme end to end, and where the project stands against it at
+        {{ short_date(data_date) }}
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Starts</th><th>Finishes</th><th>Contract date</th>
+          <th class="right">Float</th><th class="right">Planned</th>
+          <th class="right">Earned</th><th class="right">Variance</th>
+          <th class="right">Earned hours</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="tabular nowrap">{{ short_date(overview['start']) or '—' }}
+            <span class="small muted" style="display:block">first line of work</span></td>
+          <td class="tabular nowrap">{{ short_date(overview['finish']) or '—' }}
+            <span class="small muted" style="display:block">last date on the programme</span></td>
+          <td class="tabular nowrap">{{ short_date(overview['contract_end']) }}
+            <span class="small muted" style="display:block">NTP + {{ num(project['duration_months'], 0) }} months</span></td>
+          <td class="right nowrap">
+            <strong class="tabular {{ 'good-text' if overview['on_time'] else 'bad-text' }}">
+              {{ overview['float_days'] }}d</strong>
+            <span class="small muted" style="display:block">
+              {{ 'working days spare' if overview['on_time'] else 'past the contract date' }}</span>
+          </td>
+          <td class="right tabular ink2">{{ pct(overview['planned'], 2) }}
+            <span class="small muted" style="display:block">where it should be</span></td>
+          <td class="right tabular"><strong>{{ pct(overview['earned'], 2) }}</strong>
+            <span class="small muted" style="display:block">where it is</span></td>
+          <td class="right tabular {{ 'good-text' if overview['variance'] >= 0 else 'bad-text' }}">
+            {{ signed_pct(overview['variance'], 2) }}
+            <span class="small muted" style="display:block">earned less planned</span></td>
+          <td class="right tabular ink2">{{ hours(overview['earned_hours']) }}
+            <span class="small muted" style="display:block">of {{ hours(overview['budget_hours']) }} budgeted</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card-body" style="border-top:1px solid var(--border);padding-top:10px">
+    <p class="small muted" style="margin:0">
+      Float is the project's own, not a deliverable's: working days between the last submission on
+      the programme and the contract date, counted on the {{ overview['team'] or 'default' }} calendar.
+      Every line can have slack while the whole thing still finishes late, which is why it is
+      measured here rather than added up from the rows.
+    </p>
+  </div>
+</div>
+
 <div class="grid grid-4">
   {{ tile('Earned progress', pct(t['earned_progress'], 2),
           'vs ' ~ pct(t['planned_progress'], 2) ~ ' planned',

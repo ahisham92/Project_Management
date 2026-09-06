@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty, print_button %}
+{% block title %}How to use — Project Control{% endblock %}
+{% block tabs %}{% if project %}{% include "partials/project_tabs.html" %}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>How to use this</h1>
+    <p class="small muted" style="margin-top:2px">
+      What every tab is for, in the order you would use it, and what every word on it means —
+      {{ tab_count }} tabs and {{ term_count }} definitions.
+      {% if project %} · {{ project['code'] }} · {{ project['name'] }}{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">{{ print_button('Print / PDF') }}</div>
+</div>
+
+<div class="card no-print">
+  <div class="card-body">
+    <form method="get" class="inline-form" style="margin-bottom:10px">
+      <label class="field flex1">
+        <span class="field-label">Search the definitions</span>
+        <input name="q" value="{{ search }}" placeholder="float, Code B, earned, run-up…">
+      </label>
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if search %}
+        <a class="btn btn-ghost" href="{{ url_for(request.endpoint, **(request.view_args or {})) }}">Clear</a>
+      {% endif %}
+    </form>
+    <p class="field-label">Jump to</p>
+    <div class="guide-jump" style="margin-top:6px">
+      <a class="btn btn-ghost btn-sm" href="#tabs">The tabs</a>
+      {% for group in groups %}
+        <a class="btn btn-ghost btn-sm" href="#group-{{ group['key'] }}">{{ group['name'] }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if not search %}
+  <h2 id="tabs" style="margin:24px 0 8px;font-size:1.05rem">The tabs, and what to do on each</h2>
+  {% for guide in tabs %}
+    <div class="card" id="tab-{{ guide['key'] }}" style="margin-bottom:12px">
+      <div class="card-head">
+        <div>
+          <h2>{{ guide['name'] }}</h2>
+          <p class="small muted" style="margin-top:2px">{{ guide['what'] }}</p>
+        </div>
+        {% if guide['link'] %}
+          <a class="btn btn-ghost btn-sm no-print" href="{{ guide['link'] }}">Open it</a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <p class="guide-lead" style="margin-top:0"><strong>Start here.</strong> {{ guide['start_here'] }}</p>
+        <div class="guide-cols">
+          <div>
+            <p class="field-label">What to do</p>
+            <ol class="guide-list">
+              {% for line in guide['steps'] %}<li>{{ line | safe }}</li>{% endfor %}
+            </ol>
+          </div>
+          <div>
+            <p class="field-label">Worth knowing</p>
+            <ul class="guide-list">
+              {% for line in guide['watch'] %}<li>{{ line | safe }}</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<h2 style="margin:24px 0 8px;font-size:1.05rem">
+  Every word, and how it is worked out
+  {% if search %}<span class="small muted" style="font-weight:400"> · matching “{{ search }}”</span>{% endif %}
+</h2>
+
+{% if not groups %}
+  <div class="card"><div class="card-body">
+    {{ empty('Nothing matches that', 'Try a single word — float, revision, earned, holiday.') }}
+  </div></div>
+{% endif %}
+
+{% for group in groups %}
+  <div class="card" id="group-{{ group['key'] }}" style="margin-bottom:12px">
+    <div class="card-head">
+      <div>
+        <h2>{{ group['name'] }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          {{ group['terms'] | length }} definition{{ '' if group['terms'] | length == 1 else 's' }}
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      <dl style="margin:0">
+        {% for word in group['terms'] %}
+          <div class="guide-term" id="term-{{ word['term'] | lower | replace(' ', '-') | replace('.', '-') }}">
+            <dt>{{ word['term'] }}</dt>
+            <dd>{{ word['says'] | safe }}</dd>
+            {% if word['how'] %}
+              <dd class="guide-how">{{ word['how'] | safe }}</dd>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+{% endfor %}
+
+<div class="card" style="margin-bottom:12px">
+  <div class="card-head">
+    <div>
+      <h2>Five things that hold everywhere</h2>
+      <p class="small muted" style="margin-top:2px">Worth knowing before anything else</p>
+    </div>
+  </div>
+  <div class="card-body">
+    <ul class="guide-list" style="font-size:0.85rem">
+      <li><strong>There is one copy of everything.</strong> A deliverable's progress is the same
+        record on the Progress tab, the Schedule and the week — change it anywhere and it changes
+        everywhere, with nothing to keep in step.</li>
+      <li><strong>Every page is live.</strong> It notices when somebody else changes something and
+        redraws itself within a few seconds, so two people are never looking at different numbers.</li>
+      <li><strong>Dates are always dd/mm/yyyy</strong>, typed or shown, whatever the machine's
+        locale says.</li>
+      <li><strong>Days are working days</strong> — durations, lags and workflow offsets are all
+        counted on the owning team's own week and holidays.</li>
+      <li><strong>Anything can be printed</strong>: the button on each tab opens the browser's print
+        dialog, where “Save as PDF” makes the file. Charts print on their own sheet.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

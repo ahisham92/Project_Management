@@ -17,13 +17,14 @@ from ..sorting import COLUMNS as SORT_COLUMNS
 from ..sorting import normalise as normalise_sort
 from ..sorting import sort_tasks
 from ..schedule import KINDS, MODES, duration_between, finish_from, normalise_mode
+from .portfolio_views import guide_page
 from ..service import (
     REVIEW_CODES, AllocationError, LinkError, WorkflowError, add_link, install_default_steps, load_revisions,
     load_sections, load_steps, load_trades, next_sort_order, project_period, project_plan,
     add_calendar, add_holiday, apply_schedule, calendar_of, calendars_for,
     clear_node_positions, delete_calendar, load_calendars, load_holidays,
     project_pulse, remove_holiday, save_calendar, set_default_calendar,
-    set_task_calendar, project_s_curve, project_snapshot, record_comments,
+    set_task_calendar, project_overview, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
     set_allocations, set_status, set_task_dates, today,
@@ -125,11 +126,21 @@ def dashboard(project_id: int):
     return render_template(
         "dashboard.html",
         project=project, role=role, snapshot=snapshot, data_date=data_date,
+        overview=project_overview(project, snapshot),
         attention=attention,
         s_curve=charts.s_curve(points, snapshot["data_date"]),
         trade_progress=charts.trade_progress(snapshot["trades"]),
         trade_weight=charts.trade_weight(snapshot["trades"]),
     )
+
+
+@bp.get("/help")
+@login_required
+def guide(project_id: int):
+    """How to use this: what each tab is for and what every word on it means."""
+    project, role = load_project(project_id)
+    return render_template("guide.html", project=project, role=role,
+                           **guide_page(project))
 
 
 # --- progress --------------------------------------------------------------

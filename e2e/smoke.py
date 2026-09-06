@@ -113,6 +113,8 @@ def main() -> int:
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("internal: a weekly list of its own, read as at a date", _internal_register)
         step("internal: the week compiles the programme and both registers", _this_week)
+        step("a helper on every tab, and one page of definitions", _how_to_use)
+        step("the dashboard overview shows dates, float, progress and earned", _overview)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -248,7 +250,9 @@ def _schedule_reading(page) -> None:
     where each path ends and says how many there are."""
     page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
 
-    panels = page.locator("details.panel")
+    # The how-to-use helper is a panel too; the two being counted here are the
+    # tables folded under each chart.
+    panels = page.locator("details.panel:not(.guide-strip)")
     if panels.count() != 2:
         raise AssertionError(f"expected a panel under each chart, found {panels.count()}")
     if panels.first.get_attribute("open") is not None:
@@ -272,7 +276,7 @@ def _schedule_reading(page) -> None:
     if panels.first.get_attribute("open") is None:
         raise AssertionError("the details toggle did not open the table")
     page.reload(wait_until="networkidle")
-    if page.locator("details.panel").first.get_attribute("open") is None:
+    if page.locator("details.panel:not(.guide-strip)").first.get_attribute("open") is None:
         raise AssertionError("the browser should remember the panel was left open")
 
     # Where each path ends, and how many there are.
@@ -687,6 +691,66 @@ def _this_week(page) -> None:
 
     page.goto(f"{BASE}/projects/1/internal", wait_until="networkidle")
     page.screenshot(path=str(SHOTS / "36-this-week.png"), full_page=True)
+
+
+def _how_to_use(page) -> None:
+    """A helper at the top of every tab, and one page holding every definition."""
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    strip = page.locator("details.guide-strip")
+    if strip.count() == 0:
+        raise AssertionError("the Schedule tab has no helper")
+    if "How to use the Schedule tab" not in strip.inner_text():
+        raise AssertionError("the helper does not say which tab it is for")
+
+    # It folds away, and the browser remembers — somebody who knows the app
+    # should stop seeing it.
+    page.click("details.guide-strip > summary")
+    page.wait_for_timeout(400)
+    page.reload(wait_until="networkidle")
+    if page.locator("details.guide-strip[open]").count():
+        raise AssertionError("a helper folded away should stay folded away")
+    page.click("details.guide-strip > summary")
+    page.wait_for_timeout(400)
+
+    # Every tab has one of its own.
+    for path, expected in (("/", "How to use the Dashboard tab"),
+                           ("/tasks", "How to use the Progress tab"),
+                           ("/internal", "How to use the Internal tab"),
+                           ("/setup", "How to use the Setup tab")):
+        page.goto(f"{BASE}/projects/1{path}", wait_until="networkidle")
+        if expected not in page.text_content("body"):
+            raise AssertionError(f"{path} has no helper")
+
+    # And the tab that holds the lot.
+    page.click("nav.tabs a:has-text('How to use')")
+    page.wait_for_selector("h1:has-text('How to use this')", timeout=8000)
+    body = page.text_content("body")
+    for expected in ("Earned progress", "Critical path", "Run-up holidays", "CPI",
+                     "The week is worth", "As at", "Code B"):
+        if expected not in body:
+            raise AssertionError(f"the guide does not define {expected!r}")
+
+    page.fill("input[name=q]", "float")
+    page.click("button:has-text('Search')")
+    page.wait_for_timeout(600)
+    narrowed = page.text_content("body")
+    if "Float" not in narrowed or "Man-month" in narrowed:
+        raise AssertionError("searching the definitions did not narrow them")
+    page.screenshot(path=str(SHOTS / "37-how-to-use.png"), full_page=True)
+
+
+def _overview(page) -> None:
+    """The dashboard says when the project runs and how much room is left."""
+    page.goto(f"{BASE}/projects/1/", wait_until="networkidle")
+    card = _card(page, "Overview")
+    said = card.inner_text()
+    for expected in ("Starts", "Finishes", "Contract date", "Float", "Earned hours"):
+        if expected not in said:
+            raise AssertionError(f"the overview does not show {expected!r}")
+    if not re.search(r"-?\d+d", said):
+        raise AssertionError(f"the overview shows no float in days: {said!r}")
+    if not re.search(r"\d{2}/\d{2}/\d{4}", said):
+        raise AssertionError("the overview shows no dates")
 
 
 def _sorting(page) -> None:

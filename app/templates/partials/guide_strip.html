@@ -1,0 +1,51 @@
+{# What this tab is for, at the top of it.
+
+   Folded away with one click and remembered by the browser, so somebody who
+   knows the app never sees it again and somebody new never has to go looking.
+   The wording comes out of app/guide.py — the same source the How to use tab
+   renders — so there is one place to change it. #}
+{% set here = guide_for(request.endpoint) %}
+{% if here %}
+  {# Open the first time; app.js remembers a browser that has folded it away. #}
+  <details class="panel guide-strip no-print" data-panel="guide-{{ here['key'] }}" open>
+    {# The tab's name stays visible whether it is open or shut: a summary that
+       only says "hide this" tells a reader nothing about what they folded. #}
+    <summary class="panel-summary">
+      <span>How to use the {{ here['name'] }} tab</span>
+      <span class="panel-open small muted">show</span>
+      <span class="panel-shut small muted">hide</span>
+      <span class="small muted">{{ here['what'] }}</span>
+    </summary>
+    <div class="guide-body">
+      <p class="guide-lead"><strong>Start here.</strong> {{ here['start_here'] }}</p>
+      <div class="guide-cols">
+        <div>
+          <p class="field-label">What to do</p>
+          <ol class="guide-list">
+            {% for line in here['steps'] %}<li>{{ line | safe }}</li>{% endfor %}
+          </ol>
+        </div>
+        <div>
+          <p class="field-label">Worth knowing</p>
+          <ul class="guide-list">
+            {% for line in here['watch'] %}<li>{{ line | safe }}</li>{% endfor %}
+          </ul>
+          {% set words = guide_terms(here) %}
+          {% if words %}
+            <p class="field-label" style="margin-top:10px">The words on this page</p>
+            <p class="small">
+              {% for word in words %}<span class="guide-word"
+                 title="{{ word['says'] | striptags }}">{{ word['term'] }}</span>{% endfor %}
+            </p>
+          {% endif %}
+          <p class="small" style="margin-top:10px">
+            <a href="{{ url_for('projects.guide', project_id=project['id'], tab=here['key'])
+                       if project is defined and project
+                       else url_for('portfolio.guide', tab=here['key']) }}">
+              Every definition, on the How to use tab →</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </details>
+{% endif %}

@@ -1120,6 +1120,59 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
     }
 
 
+def project_overview(project: Mapping[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """The project on one line: when it runs, how much room it has, where it is.
+
+    "Float" here is the project's own, not a deliverable's: how many working
+    days sit between the last submission on the programme and the completion
+    date the contract gives. It is the number that says whether the programme
+    still fits, which no per-line float can answer — every line can have slack
+    while the whole thing finishes a month late.
+    """
+    from .calc import add_months, to_iso
+
+    project = as_dict(project)
+    rows = list(snapshot.get("tasks") or [])
+    totals = snapshot.get("totals") or {}
+    budget = snapshot.get("budget") or {}
+    diary = (snapshot.get("calendars") or calendars_for(project)).get(None)
+
+    starts = [str(row["start_date"])[:10] for row in rows if row.get("start_date")]
+    # The last date the programme actually asks for: a submission, or the Code A
+    # that follows it, whichever is later.
+    ends = [str(row[field])[:10] for row in rows
+            for field in ("submission_date", "approval_due_date") if row.get(field)]
+
+    start = min(starts) if starts else to_iso(project.get("ntp_date"))
+    finish = max(ends) if ends else ""
+
+    days_per_month = float(project.get("days_per_month") or 30.4375) or 30.4375
+    duration = float(project.get("duration_months") or 12.0) or 12.0
+    contract_end = to_iso(add_months(project["ntp_date"], duration, days_per_month))
+
+    # Positive: the programme finishes with days to spare. Negative: the
+    # contract date has already gone, whatever any single line's float says.
+    slack = 0
+    if finish and diary is not None:
+        slack = (diary.duration(finish, contract_end) - 1 if finish <= contract_end
+                 else -(diary.duration(contract_end, finish) - 1))
+
+    return {
+        "start": start,
+        "finish": finish,
+        "contract_end": contract_end,
+        "float_days": slack,
+        "on_time": slack >= 0,
+        "deliverables": len(rows),
+        "planned": totals.get("planned_progress", 0.0),
+        "earned": totals.get("earned_progress", 0.0),
+        "variance": totals.get("variance", 0.0),
+        "earned_hours": budget.get("earned_hours", 0.0),
+        "budget_hours": budget.get("budget_hours", 0.0),
+        "team": getattr(diary, "name", ""),
+    }
+
+
 RUN_UP_DAYS = 7
 
 

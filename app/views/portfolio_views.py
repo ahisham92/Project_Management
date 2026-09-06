@@ -324,3 +324,36 @@ def _to_float(value: str, default: float = 0.0) -> float:
 
 def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+
+
+# --- how to use -------------------------------------------------------------
+
+def guide_page(project=None) -> dict:
+    """Everything the How to use page renders, whether or not it is inside a
+    project. A tab it can link to gets a link; the rest read as reference."""
+    from ..guide import TABS, count, grouped
+
+    search = (request.args.get("q") or "").strip()
+    tabs = []
+    for tab in TABS:
+        where = ""
+        endpoint = tab["endpoints"][0] if tab["endpoints"] else ""
+        if endpoint and (project or endpoint.startswith("portfolio.")):
+            where = (url_for(endpoint, project_id=project["id"])
+                     if not endpoint.startswith("portfolio.") else url_for(endpoint))
+        tabs.append(dict(tab, link=where))
+
+    return {
+        "tabs": tabs,
+        "groups": grouped(search),
+        "search": search,
+        "term_count": count(),
+        "tab_count": len(TABS),
+    }
+
+
+@bp.get("/help")
+@login_required
+def guide():
+    """The same page from outside a project, for somebody who has not opened one."""
+    return render_template("guide.html", project=None, **guide_page())

@@ -276,7 +276,7 @@ def test_the_client_register_reads_as_at_a_date_too(signed_in):
 def test_an_unreadable_date_is_simply_ignored(signed_in):
     add_internal(signed_in)
     body = text(signed_in.get("/projects/1/internal/register?as_at=the+fifth+of+never"))
-    assert "as it stood on" not in body
+    assert "as-at-banner" not in body
 
 
 # --- taking it to the client ------------------------------------------------

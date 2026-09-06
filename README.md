@@ -70,13 +70,14 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | Screen | What it answers |
 |---|---|
 | **Portfolio** | Across every project I manage: how far ahead or behind am I, what is late, how many hours have I burned? |
-| **Dashboard** | For one project: earned vs planned progress, the S-curve, progress and budget by trade, what needs attention. |
+| **Dashboard** | For one project. An **overview** row first — when the programme starts and finishes, the contract date, how many working days of **float** are left against it, planned against earned, and earned hours — then earned vs planned progress, the S-curve, progress and budget by trade, and what needs attention. |
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
 | **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies**, and the **critical path** traced from start to end. Dates are amended here, and the whole programme round-trips to **Excel**. |
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
+| **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
 | **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
@@ -389,6 +390,30 @@ figures are unchanged.
 The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradicting its own
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
+
+### Knowing what any of it means
+
+Two things, from one source:
+
+**A helper at the top of every tab.** It says what the tab is for, what to do on
+it in the order you would actually do it, what is worth knowing, and the words
+that appear on that page — hover one for its definition. Fold it away with one
+click and the browser remembers, so somebody who knows the app stops seeing it
+and somebody new never has to go looking.
+
+**A How to use tab** holding the lot: every tab written out the same way, and a
+searchable glossary of every term the app uses — weight, planned and earned
+progress, variance, SPI and CPI, float and the critical path, FS/SS/FF/SF and
+lag, working weeks and run-up holidays, Code A/B/C and revisions, the data date,
+as-at readings, what the week is worth, EAC, the backup manifest. Where a number
+is worked out rather than merely stored, the definition gives the arithmetic —
+a figure nobody can reproduce is a figure nobody trusts. Search reads the
+definitions as well as the headwords, so looking up "slack" finds Float.
+
+Both are rendered from `app/guide.py`, so there is one place to change the
+wording and no way for the strip and the page to drift apart. The tests check
+that every tab a guide describes really exists, that every word a tab points at
+is defined, and that no two tabs claim the same page.
 
 ### This week: one page to run the week from
 

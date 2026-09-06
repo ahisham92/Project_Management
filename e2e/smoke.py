@@ -115,8 +115,10 @@ def main() -> int:
         step("internal: the week compiles the programme and both registers", _this_week)
         step("a helper on every tab, and one page of definitions", _how_to_use)
         step("the dashboard overview shows dates, float, progress and earned", _overview)
-        step("the assistant answers, stages a change, and applies it", _assistant)
+        step("Carmen answers, stages a change, and applies it", _assistant)
         step("a presentation downloads as a PowerPoint", _deck)
+        step("Carmen is on every page, minutes a meeting and takes you places",
+             _carmen_everywhere)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -140,6 +142,26 @@ def _schedule_page(page, panel: str = ""):
     """The schedule, with the folded panel a step needs already open."""
     page.goto(f"{BASE}/projects/1/schedule" + (f"?panel={panel}" if panel else ""),
               wait_until="networkidle")
+    _put_carmen_away(page)
+
+
+def _open_carmen(page) -> None:
+    """Opens the pop-up, or leaves it open if a previous page already did —
+    the browser remembers, and the launcher hides itself while it is open."""
+    if not page.locator("#carmen-popup:not([hidden])").count():
+        page.click("#carmen-open")
+    page.wait_for_selector("#carmen-popup:not([hidden])", timeout=6000)
+
+
+def _put_carmen_away(page) -> None:
+    """Shuts the pop-up if a previous step left it open.
+
+    It is fixed in the corner, so anything it covers belongs to it and not to
+    the page underneath — which is true for a person as much as for a test.
+    """
+    if page.locator("#carmen-popup:not([hidden])").count():
+        page.click("[data-carmen-close]")
+        page.wait_for_timeout(200)
 
 
 def _card(page, heading: str):
@@ -773,10 +795,10 @@ def _assistant(page) -> None:
     Groq is stood in for by a small server the test runs itself — pointing a
     smoke test at somebody's paid API would make it slow, flaky and expensive,
     and what is worth checking here is the page, not the model."""
-    page.click("nav.tabs a:has-text('Assistant')")
-    page.wait_for_selector("h1:has-text('Assistant')", timeout=8000)
-    if "What it can do" not in page.text_content("body"):
-        raise AssertionError("the assistant page does not say what it can do")
+    page.click("nav.tabs a:has-text('Carmen')")
+    page.wait_for_selector("h1:has-text('Carmen')", timeout=8000)
+    if "What she can do" not in page.text_content("body"):
+        raise AssertionError("Carmen's tab does not say what she can do")
 
     if not os.environ.get("GROQ_STAND_IN"):
         # Nothing to talk to; what is checked is that the page says how to
@@ -796,8 +818,8 @@ def _assistant(page) -> None:
     # A question that reads the project.
     page.fill("textarea[name=question]", "How is the project doing?")
     page.click("button:has-text('Ask')")
-    page.wait_for_selector(".chat-line.assistant:not(.thinking) .chat-used", timeout=25000)
-    said = page.locator(".chat-line.assistant").last.inner_text()
+    page.wait_for_selector("#chat .chat-line.assistant:not(.thinking) .chat-used", timeout=25000)
+    said = page.locator("#chat .chat-line.assistant").last.inner_text()
     if "overview" not in said:
         raise AssertionError(f"the answer does not say what it read: {said!r}")
 
@@ -805,8 +827,8 @@ def _assistant(page) -> None:
     before = _row_reads(page, 1)
     page.fill("textarea[name=question]", "Set 1.1 to 40%")
     page.click("button:has-text('Ask')")
-    page.wait_for_selector(".chat-staged", timeout=25000)
-    staged = page.locator(".chat-staged").last.inner_text()
+    page.wait_for_selector("#chat .chat-staged", timeout=25000)
+    staged = page.locator("#chat .chat-staged").last.inner_text()
     if "40%" not in staged or "nothing has changed yet" not in staged.lower():
         raise AssertionError(f"the staged change does not read right: {staged!r}")
 
@@ -816,8 +838,8 @@ def _assistant(page) -> None:
     if _row_reads(page, 1) != before:
         raise AssertionError("a staged change must not have been applied already")
 
-    page.click(".chat-staged button:has-text('Apply')")
-    page.wait_for_selector(".chat-staged:has-text('Applied')", timeout=15000)
+    page.click("#chat .chat-staged button:has-text('Apply')")
+    page.wait_for_selector("#chat .chat-staged:has-text('Applied')", timeout=15000)
     page.screenshot(path=str(SHOTS / "38-assistant.png"), full_page=True)
 
     if _row_reads(page, 1) != "40%":
@@ -848,6 +870,73 @@ def _deck(page) -> None:
         words = book.read("ppt/slides/slide1.xml").decode("utf-8")
         if "SIBLINE-PORT" not in words:
             raise AssertionError("the cover does not name the project")
+
+
+def _carmen_everywhere(page) -> None:
+    """Carmen sits in the corner of every project page, minutes a meeting from
+    a paragraph, and takes you somewhere when you ask her to."""
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    if page.locator("#carmen-open").count() == 0:
+        raise AssertionError("Carmen is not on the schedule")
+
+    _open_carmen(page)
+
+    # Opened once, she stays open on the next page — somebody working with her
+    # beside them should not reopen her on every tab.
+    page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
+    page.wait_for_selector("#carmen-popup:not([hidden])", timeout=6000)
+
+    if not os.environ.get("GROQ_STAND_IN"):
+        page.screenshot(path=str(SHOTS / "39-carmen.png"), full_page=True)
+        return
+
+    # Minuting: a paragraph in, a numbered register out.
+    popup = page.locator("#carmen-popup")
+    popup.locator("textarea[name=question]").fill(
+        "Minute this: we had a coordination call, the client asked about bathymetry.")
+    popup.locator("button:has-text('Ask')").click()
+    page.wait_for_selector("#carmen-popup .chat-staged", timeout=25000)
+    staged = popup.locator(".chat-staged").last.inner_text()
+    if "Minute" not in staged:
+        raise AssertionError(f"minuting was not staged: {staged!r}")
+    popup.locator(".chat-staged button:has-text('Apply')").click()
+    page.wait_for_selector("#carmen-popup .chat-staged:has-text('Applied')", timeout=15000)
+    page.screenshot(path=str(SHOTS / "39-carmen.png"), full_page=True)
+
+    minutes = page.request.get(f"{BASE}/projects/1/minutes?filter=all").text()
+    if "Bathymetry survey" not in minutes:
+        raise AssertionError("the minuted item did not reach the Minutes tab")
+
+    # And the Word export comes out on the template.
+    import zipfile
+
+    found = re.search(r'/projects/1/minutes/meetings/(\d+)"', minutes)
+    if not found:
+        raise AssertionError("no meeting to export")
+    document = page.request.get(
+        f"{BASE}/projects/1/minutes/meetings/{found.group(1)}.docx")
+    saved = str(SHOTS / "minutes.docx")
+    with open(saved, "wb") as file:
+        file.write(document.body())
+    with zipfile.ZipFile(saved) as book:
+        names = book.namelist()
+        for part in ("word/header1.xml", "word/footer1.xml", "word/media/logo.png"):
+            if part not in names:
+                raise AssertionError(f"the minutes have no {part}")
+        if "Minutes of Meeting" not in book.read("word/header1.xml").decode("utf-8"):
+            raise AssertionError("the letterhead is missing")
+        body = book.read("word/document.xml").decode("utf-8")
+        for expected in ("Items and Agreement", "Prepared by:", "Reviewed", "Issue date:"):
+            if expected not in body:
+                raise AssertionError(f"the minutes have no {expected!r}")
+
+    # Taking somebody somewhere.
+    page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
+    _open_carmen(page)
+    popup.locator("textarea[name=question]").fill("take me to the schedule")
+    popup.locator("button:has-text('Ask')").click()
+    page.wait_for_url("**/schedule", timeout=25000)
+    _put_carmen_away(page)
 
 
 def _sorting(page) -> None:

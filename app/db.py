@@ -125,11 +125,22 @@ def init_db(path: Path | str | None = None) -> None:
             # against. Empty means the project's default team.
             ("tasks", "calendar_id", "INTEGER"),
             ("projects", "calendar_id", "INTEGER"),
+            # What the issued minutes carry on their first and last pages: who
+            # wrote them, who accepts them, the day they went out, and what was
+            # attached. Blank until somebody fills them in, and the signature
+            # itself is always a line to sign on rather than a name typed for
+            # somebody else.
+            ("meetings", "prepared_by", "TEXT NOT NULL DEFAULT ''"),
+            ("meetings", "reviewed_by", "TEXT NOT NULL DEFAULT ''"),
+            ("meetings", "issue_date", "TEXT NOT NULL DEFAULT ''"),
+            ("meetings", "attachment", "TEXT NOT NULL DEFAULT ''"),
+            ("meetings", "purpose", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, table, column, definition)
 
         _ensure_calendars(conn)
         _ensure_backup_log(conn)
+        _ensure_chat_log(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -215,6 +226,33 @@ def _ensure_backup_log(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_backup_runs_when ON backup_runs(started_at DESC)")
+
+
+def _ensure_chat_log(conn: sqlite3.Connection) -> None:
+    """What everybody has asked Carmen, and what she said back.
+
+    Kept so somebody can see how it is actually being used — which is a
+    different question from whether it works — and uploaded to Drive once a day
+    as a plain text file that reads without this program.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            asked_at    TEXT NOT NULL,
+            project_id  INTEGER,
+            user_id     INTEGER,
+            user_name   TEXT NOT NULL DEFAULT '',
+            question    TEXT NOT NULL DEFAULT '',
+            answer      TEXT NOT NULL DEFAULT '',
+            tools_used  TEXT NOT NULL DEFAULT '',
+            staged      INTEGER NOT NULL DEFAULT 0,
+            applied     INTEGER NOT NULL DEFAULT 0,
+            trouble     TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS chat_log_day ON chat_log (asked_at)")
 
 
 def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:

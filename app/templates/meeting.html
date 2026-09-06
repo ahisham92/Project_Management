@@ -181,6 +181,31 @@
             </label>
             {{ date_field('next_date', meeting['next_date'], 'Next meeting', 'w-sm') }}
           </div>
+
+          {# What the issued document carries on its first and last pages. The
+             signature itself is always a blank rule — a set of minutes that
+             arrives already signed is not signed. #}
+          <div class="inline-form">
+            <label class="field flex1">
+              <span class="field-label">Purpose (on the issued minutes)</span>
+              <input name="purpose" value="{{ meeting['purpose'] }}"
+                     placeholder="{{ meeting['title'] or 'Kick-off Meeting' }}">
+            </label>
+            <label class="field w-md">
+              <span class="field-label">Prepared by</span>
+              <input name="prepared_by" value="{{ meeting['prepared_by'] }}" placeholder="Who wrote them">
+            </label>
+            <label class="field w-md">
+              <span class="field-label">Reviewed &amp; accepted by</span>
+              <input name="reviewed_by" value="{{ meeting['reviewed_by'] }}" placeholder="Who signs them off">
+            </label>
+            {{ date_field('issue_date', meeting['issue_date'], 'Issue date', 'w-sm') }}
+          </div>
+          <label class="field">
+            <span class="field-label">Attachment (named under the items table)</span>
+            <input name="attachment" value="{{ meeting['attachment'] }}"
+                   placeholder="Kick-Off Meeting Presentation (September 2026).">
+          </label>
           <label class="field">
             <span class="field-label">Notes (optional)</span>
             <textarea name="notes" rows="2">{{ meeting['notes'] }}</textarea>

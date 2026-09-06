@@ -475,13 +475,16 @@ def save_meeting(project_id: int, meeting_id: int):
     execute(
         """
         UPDATE meetings SET ref = ?, title = ?, meeting_date = ?, meeting_time = ?,
-               location = ?, chaired_by = ?, next_date = ?, notes = ?
+               location = ?, chaired_by = ?, next_date = ?, notes = ?,
+               purpose = ?, prepared_by = ?, reviewed_by = ?, issue_date = ?, attachment = ?
         WHERE id = ? AND project_id = ?
         """,
         (_clean("ref"), _clean("title"),
          from_input_or(request.form.get("meeting_date"), today()), _clean("meeting_time"),
          _clean("location"), _clean("chaired_by"),
          from_input(request.form.get("next_date")) or "", _clean("notes"),
+         _clean("purpose"), _clean("prepared_by"), _clean("reviewed_by"),
+         from_input(request.form.get("issue_date")) or "", _clean("attachment"),
          meeting_id, project_id),
     )
 

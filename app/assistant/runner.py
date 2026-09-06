@@ -314,12 +314,131 @@ def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
             add_holiday(project_id, action.get("calendar_id"), str(action["date"]),
                         str(action.get("name") or ""))
 
+        elif kind == "minute_meeting":
+            meeting_id = _minute(project_id, action, user_id, stamp)
+            says = says + f" (meeting {meeting_id})"
+
+        elif kind == "add_minute_items":
+            _own_meeting(project_id, action.get("meeting_id"))
+            _put_items(project_id, int(action["meeting_id"]), action.get("items") or [], stamp)
+
+        elif kind == "update_minute_item":
+            item = query_one("SELECT id FROM meeting_items WHERE id = ? AND project_id = ?",
+                             (action.get("item_id"), project_id))
+            if item is None:
+                raise ApplyError("That item is no longer there")
+            fields = dict(action.get("fields") or {})
+            allowed = {"subject", "discussion", "agreement", "owner_code", "impact", "due_date"}
+            fields = {k: v for k, v in fields.items() if k in allowed}
+            if not fields:
+                raise ApplyError("There is nothing to change on that item")
+            execute("UPDATE meeting_items SET "
+                    + ", ".join(f"{name} = ?" for name in fields)
+                    + ", updated_at = datetime('now') WHERE id = ?",
+                    (*fields.values(), item["id"]))
+
+        elif kind == "issue_details":
+            _own_meeting(project_id, action.get("meeting_id"))
+            fields = dict(action.get("fields") or {})
+            allowed = {"prepared_by", "reviewed_by", "issue_date", "attachment"}
+            fields = {k: v for k, v in fields.items() if k in allowed}
+            if not fields:
+                raise ApplyError("There is nothing to set on that meeting")
+            execute("UPDATE meetings SET " + ", ".join(f"{name} = ?" for name in fields)
+                    + " WHERE id = ? AND project_id = ?",
+                    (*fields.values(), action["meeting_id"], project_id))
+
         else:
             raise ApplyError(f"There is nothing called {kind!r} to apply")
 
         done.append({"kind": kind, "says": says})
 
     return done
+
+
+def _own_meeting(project_id: int, meeting_id: Any) -> dict[str, Any]:
+    from ..db import query_one
+
+    row = query_one("SELECT * FROM meetings WHERE id = ? AND project_id = ?",
+                    (meeting_id, project_id))
+    if row is None:
+        raise ApplyError("That meeting is no longer on this project")
+    return dict(row)
+
+
+def _minute(project_id: int, action: Mapping[str, Any], user_id: int, stamp: str) -> int:
+    """A whole set of minutes, written the way the minutes page writes one."""
+    from ..db import insert, query_one
+    from ..service import load_attendees, next_sort_order, set_attendance
+
+    meeting_id = insert(
+        """
+        INSERT INTO meetings (project_id, kind, ref, title, purpose, meeting_date,
+                              meeting_time, location, chaired_by, notes, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
+        """,
+        (project_id, str(action.get("register") or "client"), str(action.get("ref") or ""),
+         str(action.get("title") or ""), str(action.get("purpose") or ""),
+         str(action.get("meeting_date") or stamp), str(action.get("meeting_time") or ""),
+         str(action.get("location") or ""), str(action.get("chaired_by") or ""), user_id),
+    )
+
+    # Somebody named in the minutes who is not on the roster joins it, because
+    # the alternative is a set of minutes with an attendance table of nobody.
+    roster = {str(a["name"]).strip().lower(): a["id"] for a in load_attendees(project_id)}
+    present: list[int] = []
+    invited: list[int] = []
+    for person in action.get("attendees") or []:
+        name = str(person.get("name") or "").strip()
+        if not name:
+            continue
+        found = roster.get(name.lower())
+        if found is None:
+            found = insert(
+                "INSERT INTO attendees (project_id, name, organisation, job_title, sort_order) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (project_id, name[:120], str(person.get("organisation") or "")[:120],
+                 str(person.get("job_title") or "")[:120],
+                 next_sort_order("attendees", project_id)),
+            )
+            roster[name.lower()] = found
+        invited.append(found)
+        if person.get("present", True):
+            present.append(found)
+    if invited:
+        set_attendance(meeting_id, present, invited)
+
+    _put_items(project_id, meeting_id, action.get("items") or [], stamp)
+    return meeting_id
+
+
+def _put_items(project_id: int, meeting_id: int, items: Sequence[Mapping[str, Any]],
+               stamp: str) -> None:
+    """Items onto a meeting, numbered by position rather than by anything said."""
+    from ..db import insert, query_one
+    from ..service import next_sort_order, renumber_items
+
+    when = query_one("SELECT meeting_date FROM meetings WHERE id = ?", (meeting_id,))
+    raised = str((when or {})["meeting_date"] or stamp) if when else stamp
+
+    for line in items:
+        closed = bool(line.get("closed"))
+        insert(
+            """
+            INSERT INTO meeting_items (project_id, meeting_id, kind, ref, subject, discussion,
+                                       agreement, owner_code, impact, raised_date, due_date,
+                                       status, closed_date, sort_order)
+            SELECT ?, ?, kind, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              FROM meetings WHERE id = ?
+            """,
+            (project_id, meeting_id, str(line.get("subject") or ""),
+             str(line.get("discussion") or ""), str(line.get("agreement") or ""),
+             str(line.get("owner") or ""), str(line.get("impact") or "none"),
+             raised, str(line.get("due") or ""),
+             "closed" if closed else "open", raised if closed else "",
+             next_sort_order("meeting_items", project_id), meeting_id),
+        )
+    renumber_items(project_id, meeting_id)
 
 
 def _own_task(project_id: int, task_id: Any) -> dict[str, Any]:

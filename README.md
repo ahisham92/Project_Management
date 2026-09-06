@@ -77,7 +77,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
-| **Assistant** | A language model with the run of the project. Ask it anything — “what is late?”, “how did last month go?” — or tell it what to change. Anything it would change is **staged for you to approve**; it also builds a PowerPoint of the work done in a period, and hands you a link straight into any tab's print dialog. |
+| **Carmen** | The project assistant. Ask her anything — “what is late?”, “how did last month go?” — tell her what to change, type up a meeting and say *minute this*, or say *take me to the schedule*. Anything she would change is **staged for you to approve**. She sits in the corner of every other tab too. |
 | **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
 | **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
@@ -392,19 +392,48 @@ The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradict
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
 
-### The assistant
+### Carmen
 
-A language model, given the run of one project, on the **Assistant** tab. It runs
-on [Groq](https://console.groq.com) — an API key is all it needs, and no extra
-Python package: the whole thing is one POST with a list of messages and a list
-of tools, written against `urllib`.
+The project assistant, on her own tab and in the corner of every other one. She
+runs on [Groq](https://console.groq.com) — an API key is all she needs, and no
+extra Python package: the whole thing is one POST with a list of messages and a
+list of tools, written against `urllib`.
 
-**What it can do.** It reads where the project stands, any deliverable and what
-it waits on, what moved between two dates, what this week needs, either
-register (including as at a past date), and hours by trade. It changes progress,
-dates, dependencies, holidays and actions. It builds a **PowerPoint of the work
-done between two dates**, and it hands you a link straight into any tab — or
-into that tab's print dialog, where "Save as PDF" makes the file.
+**What she can do.** She reads where the project stands, any deliverable and what
+it waits on, what moved between two dates, what this week needs, either register
+(including as at a past date), and hours by trade. She changes progress, dates,
+dependencies, holidays and actions. She builds a **PowerPoint of the work done
+between two dates**, and Word minutes on the practice's template.
+
+**She minutes a meeting.** Type up what was said — a paragraph, however it comes
+out — and say *minute this*. She reads the prose and writes the register:
+the meeting, who was there, and the items, each with a subject, the discussion,
+the agreed action, an owner from the party codes, what it affects and an action
+date where one was given. The **numbers are never hers** — an item's number is
+its position, set when it lands in the meeting, so it cannot collide and cannot
+be typed wrong. Afterwards, *"correct 3.1, the owner is MR"* changes that one
+field and leaves the agreement somebody spent ten minutes wording alone.
+
+**She takes you places.** *"Take me to the schedule"* opens the schedule; *"print
+the budget as a PDF"* opens that tab's print dialog. That is the difference
+between an assistant and a search box.
+
+**She is on every page.** The button in the bottom-right corner of any project
+tab opens the same conversation in a smaller box — one initialiser in `app.js`
+drives both, so there is no second chat to keep in step. Open it once and it
+stays open as you move around; the launcher hides itself while it is, so nothing
+underneath is ever covered by two things at once.
+
+**Her picture** is uploaded on her tab and kept beside the database, not in the
+repository: a photograph of a person is not something to copy everywhere the
+code goes. Until one is uploaded she has a drawn monogram, so a fresh install
+looks finished on its first page load.
+
+**Every conversation is written down** — the question, the answer, which tools
+she read, how many changes she proposed and how many were applied — and the
+day's transcript goes to Drive each night as a plain text file, one per day.
+"Does it work" and "is anybody using it, and what for" are different questions,
+and only the second one says whether it was worth building.
 
 **Three rules make it safe to point at a live project:**
 
@@ -421,17 +450,27 @@ into that tab's print dialog, where "Save as PDF" makes the file.
   never from anything said in the chat, and the loop is bounded: six rounds and
   twelve staged changes at most.
 
-**Connecting it.** An administrator pastes a key from `console.groq.com/keys` on
-the Assistant tab. It is kept in the same file beside the database as the Drive
-credentials, for the same reason — the nightly backup uploads the database.
-`GROQ_API_KEY` and `GROQ_MODEL` in the environment win over anything set on the
-page, and `GROQ_BASE_URL` points it somewhere else entirely, which is how the
-browser test drives it without touching a paid account.
+**Connecting her.** An administrator pastes a key from `console.groq.com/keys` on
+her tab. **One key serves the whole installation** — it is not per person and not
+per project, so setting it once means every administrator and every member on
+every project is using it, and the usage on that Groq account is all of them
+together. That is why only an administrator can set it. It is kept in the same
+file beside the database as the Drive credentials, for the same reason: the
+nightly backup uploads the database. `GROQ_API_KEY` and `GROQ_MODEL` in the
+environment win over anything set on the page, and `GROQ_BASE_URL` points her
+somewhere else entirely, which is how the browser test drives the whole feature
+against a stand-in rather than a paid account.
 
-**One caveat about hosting.** PythonAnywhere's free plan only allows outbound
-requests to sites on its allowlist, and `api.groq.com` is not on it. The
-assistant needs a paid plan there, or a host without that restriction;
-everything else in this app works either way.
+**When every answer is "Groq said 403".** That is almost never the key. A 403
+carrying Groq's own JSON is Groq refusing the key; a 403 carrying *nothing* never
+reached Groq at all — something between the server and the internet refused it.
+On PythonAnywhere's free plan every outbound request goes through a proxy that
+only allows listed sites, and `api.groq.com` is not one of them, so every request
+comes back 403 with an empty body. Press **Test the connection** on her tab: it
+opens a TLS connection to Groq, then tries the key, then lists the models, and
+says which of the three failed. If it cannot open the connection, the fix is a
+paid PythonAnywhere plan or a different host — nothing about the key will help.
+Everything else in this app works on the free plan.
 
 **The presentation** is a real `.pptx`, written by `app/deck.py` with the
 standard library — the same trick `word.py` uses, because a .pptx is a zip of
@@ -509,6 +548,18 @@ bears on, filters, search, sorting, the agenda for the next one, the Word export
 is the same kind of record kept for a different audience. Only which register an item belongs
 to differs, and the two never show each other's items. An item raised inside a meeting takes
 that meeting's register, so the two can never disagree.
+
+**The issued document.** *Export Word* on a set of minutes produces the practice's
+own template, not a generic table: the *Minutes of Meeting* letterhead across
+every page, the logo and a *page n of m* along the bottom, the bordered details
+grid with the attendance list under it and an asterisk against everybody who
+actually attended, the *Items and Agreement* table under its two shaded header
+rows, the attachment named underneath, and at the end two blocks — **Prepared
+by** and **Reviewed & Accepted by** — each with a name, a rule to sign on and an
+issue date. The signature is always a blank rule: a document that arrives with
+somebody else's signature already on it is not signed. Purpose, preparer,
+reviewer, issue date and attachment are fields on the meeting page, or things
+Carmen can set for you.
 
 **As at a date.** A client asking "where did this stand in March?" is not asking what is open
 now. Put a date in the **As at** box on either register and it rewinds: items raised after that
@@ -947,7 +998,7 @@ All optional — see `.env.example`.
 | `GOOGLE_DRIVE_FOLDER_ID` | Which Drive folder the backup goes in. Its own My Drive if unset. |
 | `BACKUP_FILE_NAME` | The one file that gets replaced (default `project-control-backup.zip`). |
 | `GROQ_API_KEY` / `GROQ_MODEL` | The assistant's Groq account. Only needed if you would rather not connect it from the Assistant tab; set here, they win over anything set there. |
-| `GROQ_BASE_URL` | Where the assistant sends its requests. For a gateway, or for the stand-in the browser test runs. |
+| `GROQ_BASE_URL` | Where Carmen sends her requests. For a gateway, or for the stand-in the browser test runs. |
 
 The **setup password** is not an environment variable — it is stored per project and changed
 on the Setup sheet itself.

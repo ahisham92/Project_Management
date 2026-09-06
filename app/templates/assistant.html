@@ -1,30 +1,40 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import badge, empty %}
-{% block title %}Assistant — {{ project['name'] }}{% endblock %}
+{% block title %}Carmen — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <div>
-    <h1>Assistant</h1>
-    <p class="small muted" style="margin-top:2px">
-      {{ project['code'] }} · {{ project['name'] }} · ask it about this project, or tell it what to change
-      {% if ready %} · running on <strong>{{ model }}</strong>{% endif %}
-    </p>
+  <div style="display:flex;gap:14px;align-items:center">
+    <img src="{{ url_for('assistant.face', project_id=project['id']) }}" alt=""
+         width="56" height="56"
+         style="border-radius:50%;object-fit:cover;border:1px solid var(--border)">
+    <div>
+      <h1>Carmen</h1>
+      <p class="small muted" style="margin-top:2px">
+        Project assistant · {{ project['code'] }} · ask her about this project, or tell her what to do
+        {% if ready %} · running on <strong>{{ model }}</strong>{% endif %}
+      </p>
+    </div>
   </div>
   <div class="inline-form">
     {% if ready %}{{ badge('good', 'connected') }}{% else %}{{ badge('warning', 'not connected') }}{% endif %}
+    {% if is_admin and ready %}
+      <button type="button" class="btn btn-ghost btn-sm" id="test-carmen"
+              data-url="{{ url_for('assistant.test_connection', project_id=project['id']) }}">Test the connection</button>
+    {% endif %}
   </div>
 </div>
 
 {% if not ready %}
   <div class="card" style="border-color:var(--warning);margin-bottom:16px">
     <div class="card-head"><div>
-      <h2>Connect the assistant</h2>
+      <h2>Connect Carmen</h2>
       <p class="small muted" style="margin-top:2px">
-        It runs on Groq. The key is kept in a file beside the database, never in it —
-        the nightly backup uploads the database, and a key inside the thing that gets
-        uploaded is a key you have published.
+        She runs on Groq. <strong>One key serves the whole installation</strong> — set it here
+        and everybody who signs in is using it, which is why only an administrator can.
+        It is kept in a file beside the database, never in it: the nightly backup uploads
+        the database, and a key inside the thing that gets uploaded is a key you have published.
       </p></div></div>
     <div class="card-body">
       {% if is_admin %}
@@ -48,7 +58,8 @@
         </form>
       {% else %}
         <p class="small" style="margin:0">
-          An administrator needs to add a Groq API key before this can be used.
+          An administrator needs to add a Groq API key before Carmen can be used. One key
+          covers everybody on this installation, so it only has to be done once.
         </p>
       {% endif %}
     </div>
@@ -56,28 +67,30 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:16px">
-  <div class="card-body">
-    <div id="chat" class="chat" data-ask="{{ url_for('assistant.ask', project_id=project['id']) }}"
+  <div class="card-body" data-carmen>
+    <div id="chat" class="chat" data-chat
+         data-ask="{{ url_for('assistant.ask', project_id=project['id']) }}"
          data-apply="{{ url_for('assistant.apply', project_id=project['id']) }}"
          data-can-write="{{ '1' if can_write else '' }}">
       <div class="chat-line assistant">
         <p style="margin:0">
-          Ask me about {{ project['code'] }} — where it stands, what is late, what this week
-          wants — or tell me to change something. I read the project with the same figures the
-          tabs show, and anything I would <strong>change</strong> is staged for you to approve
-          before it happens.
+          I am Carmen. Ask me about {{ project['code'] }} — where it stands, what is late, what
+          this week wants — tell me to change something, type up a meeting and say
+          <em>minute this</em>, or say <em>take me to the schedule</em>. I read the project with
+          the same figures the tabs show, and anything I would <strong>change</strong> is staged
+          for you to approve before it happens.
         </p>
       </div>
     </div>
 
-    <form id="chat-form" class="inline-form" style="margin-top:12px;align-items:flex-end">
+    <form id="chat-form" data-chat-form class="inline-form" style="margin-top:12px;align-items:flex-end">
       <label class="field flex1">
         <span class="field-label">Ask, or tell it what to do</span>
         <textarea name="question" rows="2" placeholder="What is late, and by how much?"
                   {{ 'disabled' if not ready }}></textarea>
       </label>
       <button type="submit" class="btn btn-primary" {{ 'disabled' if not ready }}>Ask</button>
-      <button type="button" class="btn btn-ghost" id="chat-clear">Start again</button>
+      <button type="button" class="btn btn-ghost" data-chat-clear>Start again</button>
     </form>
 
     {% if ready %}
@@ -93,7 +106,7 @@
 <div class="grid grid-2" style="align-items:start">
   <div class="card">
     <div class="card-head"><div>
-      <h2>What it can do</h2>
+      <h2>What she can do</h2>
       <p class="small muted" style="margin-top:2px">
         The same things you can, through the same code the screens use
       </p></div></div>
@@ -105,17 +118,25 @@
         <li>What moved between two dates, and what this week needs.</li>
         <li>Both registers, including as at a past date.</li>
       </ul>
-      <p class="field-label" style="margin-top:12px">It changes — after you approve</p>
+      <p class="field-label" style="margin-top:12px">She changes — after you approve</p>
       <ul class="guide-list">
         <li>Records progress, by percentage or by workflow step.</li>
         <li>Moves start and submission dates, cascading what waits on them.</li>
         <li>Adds and removes dependencies; adds holidays.</li>
         <li>Raises and closes actions in either register.</li>
+        <li><strong>Minutes a meeting</strong> from what you type — the meeting, who was there,
+          and the items numbered with owners, dates and what each one affects — and corrects
+          items already minuted.</li>
       </ul>
-      <p class="field-label" style="margin-top:12px">It produces</p>
+      <p class="field-label" style="margin-top:12px">She produces</p>
       <ul class="guide-list">
         <li>A PowerPoint of the work done between any two dates.</li>
-        <li>A link straight into any tab, or into its print dialog for a PDF.</li>
+        <li>Word minutes on the practice's template, header, footer and signature blocks.</li>
+      </ul>
+      <p class="field-label" style="margin-top:12px">She takes you places</p>
+      <ul class="guide-list">
+        <li>“Take me to the schedule” opens the schedule.</li>
+        <li>“Print the budget as a PDF” opens that tab's print dialog.</li>
       </ul>
     </div>
   </div>
@@ -129,16 +150,21 @@
         <li><strong>Nothing changes until you press Apply.</strong> A model can be confidently
           wrong about which deliverable “the design basis one” is, and the cost of that should
           be a sentence to correct, not a programme to unpick.</li>
-        <li><strong>It cannot do more than you can.</strong> Every change goes through the same
+        <li><strong>She cannot do more than you can.</strong> Every change goes through the same
           function a form posts to, and applying takes the same role as editing the screen.</li>
-        <li><strong>It only sees this project.</strong> The project comes from the address bar,
+        <li><strong>She only sees this project.</strong> The project comes from the address bar,
           not from anything said in the chat.</li>
-        <li><strong>Check what it tells you.</strong> It reads real figures, but it is a
+        <li><strong>Check what she tells you.</strong> She reads real figures, but she is a
           language model reading them — for anything that matters, the tab it came from is one
           click away.</li>
+        <li><strong>Every conversation is kept</strong> and goes to Drive each night as a text
+          file, so how she is being used is something anybody can look at.</li>
         {% if is_admin and ready %}
-          <li>The key is at <code>{{ '(set by the environment)' if from_env else 'data/drive.json' }}</code>,
-            beside the database and outside the backup.</li>
+          <li><strong>One key, everybody.</strong> It is set for the installation, not per person,
+          so every administrator and every member on every project is using the same account —
+          and the usage on it is the usage of all of them together. The key is at
+          <code>{{ '(set by the environment)' if from_env else 'data/drive.json' }}</code>,
+          beside the database and outside the backup.</li>
         {% endif %}
       </ul>
       {% if is_admin and ready and not from_env %}
@@ -166,6 +192,32 @@
     </div>
   </div>
 </div>
+
+{% if is_admin %}
+  <div class="card no-print" style="margin-top:16px">
+    <div class="card-head"><div>
+      <h2>Her picture</h2>
+      <p class="small muted" style="margin-top:2px">
+        Kept beside the database rather than in the repository — a photograph of a person is not
+        something to copy everywhere the code goes. Until one is uploaded she has a monogram.
+      </p></div></div>
+    <div class="card-body" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+      <img src="{{ url_for('assistant.face', project_id=project['id']) }}" alt=""
+           width="72" height="72"
+           style="border-radius:50%;object-fit:cover;border:1px solid var(--border)">
+      <form method="post" enctype="multipart/form-data" class="inline-form flex1"
+            action="{{ url_for('assistant.set_face', project_id=project['id']) }}">
+        <label class="field flex1">
+          <span class="field-label">Upload a picture (JPEG, PNG or WebP, up to 3 MB)</span>
+          <input type="file" name="picture" accept="image/jpeg,image/png,image/webp" required>
+        </label>
+        <button type="submit" class="btn btn-primary">Use this</button>
+        <button type="submit" name="remove" value="1" class="btn btn-ghost"
+                data-confirm="Go back to the monogram?">Remove</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
 
 <template id="chat-line-template">
   <div class="chat-line"><div class="chat-body"></div></div>

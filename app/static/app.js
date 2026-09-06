@@ -1231,25 +1231,29 @@
       .catch(function () { /* the next check will settle it */ });
   });
 
-  // --- the assistant -------------------------------------------------------
-  // A chat that reads the project and proposes changes. Anything it would
-  // change arrives staged: the page draws the list, and nothing happens until
-  // somebody presses Apply.
+  // --- Carmen --------------------------------------------------------------
+  // A chat that reads the project and proposes changes. The same code runs the
+  // Assistant tab and the pop-up that sits on every other page, because they
+  // are the same conversation in two shapes — one initialiser, taking whichever
+  // container it is given.
 
-  (function () {
-    var chat = document.getElementById('chat');
-    var form = document.getElementById('chat-form');
-    if (!chat || !form) return;
+  function startCarmen(chat) {
+    if (!chat || chat.dataset.started) return;
+    chat.dataset.started = '1';
 
+    var wrap = chat.closest('[data-carmen]') || document;
+    var form = wrap.querySelector('[data-chat-form]');
+    var log = chat;
     var history = [];
     var asking = false;
+    var lastChat = null;
 
     function line(kind, html) {
       var row = document.createElement('div');
       row.className = 'chat-line ' + kind;
       row.innerHTML = html;
-      chat.appendChild(row);
-      row.scrollIntoView({ block: 'nearest' });
+      log.appendChild(row);
+      log.scrollTop = log.scrollHeight;
       return row;
     }
 
@@ -1291,6 +1295,7 @@
         '<button type="button" class="btn btn-ghost btn-sm" data-discard>Discard</button>' +
         '</div>';
       row.appendChild(box);
+      log.scrollTop = log.scrollHeight;
 
       box.querySelector('[data-discard]').addEventListener('click', function () {
         box.innerHTML = '<p class="small muted" style="margin:0">Discarded — nothing changed.</p>';
@@ -1303,7 +1308,7 @@
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ actions: answer.staged }),
+          body: JSON.stringify({ actions: answer.staged, chat_id: answer.chat_id }),
         }).then(function (response) {
           return response.json().then(function (result) { return [response.ok, result]; });
         }).then(function (pair) {
@@ -1328,6 +1333,13 @@
 
     function linksFrom(answer, row) {
       if (!answer.links || !answer.links.length) return;
+
+      // Asked to be taken somewhere, go there. That is the difference between
+      // an assistant and a search box.
+      var going = answer.links.filter(function (link) {
+        return link.kind === 'open_view' && link.go && !link.printable;
+      })[0];
+
       var box = document.createElement('div');
       box.className = 'inline-form';
       box.style.marginTop = '8px';
@@ -1335,11 +1347,15 @@
         var anchor = document.createElement('a');
         anchor.className = 'btn btn-ghost btn-sm';
         anchor.href = link.url;
-        anchor.textContent = link.says || 'Open';
-        if (link.kind === 'presentation') anchor.textContent = 'Download the deck';
+        anchor.textContent = link.kind === 'presentation'
+          ? 'Download the deck' : (link.says || 'Open');
         box.appendChild(anchor);
       });
       row.appendChild(box);
+
+      if (going) {
+        window.setTimeout(function () { window.location.href = going.url; }, 700);
+      }
     }
 
     function send(question) {
@@ -1357,6 +1373,7 @@
         return response.json().then(function (result) { return [response.ok, result]; });
       }).then(function (pair) {
         var answer = pair[1] || {};
+        lastChat = answer.chat_id || null;
         waiting.classList.remove('thinking');
         if (!answer.ok) {
           waiting.classList.add('trouble');
@@ -1376,63 +1393,86 @@
       }).catch(function () {
         waiting.classList.remove('thinking');
         waiting.classList.add('trouble');
-        waiting.innerHTML = '<p>The assistant could not be reached.</p>';
+        waiting.innerHTML = '<p>Carmen could not be reached.</p>';
       }).then(function () {
         asking = false;
-        var box = form.elements.question;
+        var box = form && form.elements.question;
         if (box) { box.disabled = false; box.focus(); }
+        log.scrollTop = log.scrollHeight;
       });
     }
 
-    form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      var box = form.elements.question;
-      var question = (box.value || '').trim();
-      if (!question || asking) return;
-      box.value = '';
-      send(question);
-    });
-
-    // Enter sends; shift-enter is a new line, the way every chat works.
-    form.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' && !event.shiftKey && event.target.name === 'question') {
+    if (form) {
+      form.addEventListener('submit', function (event) {
         event.preventDefault();
-        form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'));
-      }
-    });
+        var box = form.elements.question;
+        var question = (box.value || '').trim();
+        if (!question || asking) return;
+        box.value = '';
+        send(question);
+      });
 
-    document.addEventListener('click', function (event) {
+      // Enter sends; shift-enter is a new line, the way every chat works.
+      form.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey && event.target.name === 'question') {
+          event.preventDefault();
+          if (form.requestSubmit) form.requestSubmit();
+          else form.dispatchEvent(new Event('submit'));
+        }
+      });
+    }
+
+    wrap.addEventListener('click', function (event) {
       var chip = event.target.closest('.chat-suggestion');
       if (chip) {
         event.preventDefault();
         send(chip.textContent.trim());
         return;
       }
-      if (event.target.id === 'chat-clear') {
+      if (event.target.closest('[data-chat-clear]')) {
         history = [];
-        chat.querySelectorAll('.chat-line:not(:first-child)').forEach(function (row) {
-          row.remove();
-        });
-        return;
-      }
-      var models = event.target.closest('#load-models');
-      if (models) {
-        event.preventDefault();
-        fetch(models.dataset.url, { credentials: 'same-origin',
-                                    headers: { Accept: 'application/json' } })
-          .then(function (r) { return r.json(); })
-          .then(function (result) {
-            var list = document.getElementById('groq-models');
-            if (!result.ok || !list) { say(result.error || 'Could not list them'); return; }
-            list.innerHTML = result.models.map(function (name) {
-              var option = document.createElement('option');
-              option.value = name;
-              return option.outerHTML;
-            }).join('');
-            say(result.models.length + ' models — the Model box now suggests them', 'success');
-          }).catch(function () { say('Could not reach Groq'); });
+        var keep = log.querySelector('.chat-line');
+        log.innerHTML = '';
+        if (keep) log.appendChild(keep);
       }
     });
+
+    chat.send = send;
+  }
+
+  document.querySelectorAll('[data-carmen] [data-chat]').forEach(startCarmen);
+
+  // The pop-up: the same chat, on every other page. Opened with a button in
+  // the corner, remembered open or shut so somebody who works with it beside
+  // them does not reopen it on every page.
+  (function () {
+    var panel = document.getElementById('carmen-popup');
+    if (!panel) return;
+
+    var button = document.getElementById('carmen-open');
+
+    function show(open) {
+      panel.hidden = !open;
+      if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      try { window.localStorage.setItem('pm-carmen', open ? 'open' : 'shut'); } catch (err) {}
+      if (open) {
+        startCarmen(panel.querySelector('[data-chat]'));
+        var box = panel.querySelector('textarea[name=question]');
+        if (box && !box.disabled) box.focus();
+      }
+    }
+
+    if (button) button.addEventListener('click', function () { show(panel.hidden); });
+    panel.addEventListener('click', function (event) {
+      if (event.target.closest('[data-carmen-close]')) show(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !panel.hidden) show(false);
+    });
+
+    try {
+      if (window.localStorage.getItem('pm-carmen') === 'open') show(true);
+    } catch (err) { /* private browsing; it stays shut */ }
   })();
 
   // --- confirmations -------------------------------------------------------

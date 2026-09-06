@@ -75,23 +75,41 @@ def _send(url: str, key: str, body: Any = None, method: str = "GET") -> dict[str
 
 
 def _why(exc: urllib.error.HTTPError) -> str:
-    """Groq's own reason, rather than a bare status code."""
+    """Groq's own reason, rather than a bare status code.
+
+    Whether Groq said anything at all is the important part. A 403 carrying
+    Groq's JSON is Groq refusing the key; a 403 carrying nothing came from
+    something in between — which is a completely different fix, and the case
+    that actually happens.
+    """
+    detail = ""
     try:
         said = json.loads(exc.read().decode("utf-8"))
-    except Exception:                                # noqa: BLE001 - the code is the fallback
-        return f"Groq said {exc.code}"
+    except Exception:                                # noqa: BLE001 - no body is itself the answer
+        said = {}
 
-    detail = ""
     if isinstance(said.get("error"), dict):
-        detail = said["error"].get("message") or said["error"].get("type") or ""
+        detail = said["error"].get("message") or said["error"].get("status") or ""
     elif said.get("error"):
-        detail = str(said["error"])
+        detail = str(said.get("error_description") or said["error"])
 
     if exc.code == 401:
         detail = (detail or "the key was not accepted") + \
-            " — check the API key on the Assistant tab."
+            " — check the API key on Carmen's tab."
+    elif exc.code == 403:
+        detail = (
+            detail + " — Groq refused the key itself. Check it is still active at "
+            "console.groq.com/keys."
+            if detail else
+            "forbidden, and Groq said nothing — which means the request did not reach "
+            "Groq. Something between this server and the internet refused it. On "
+            "PythonAnywhere's free plan every outbound request goes through a proxy "
+            "that only allows listed sites, and api.groq.com is not one of them: "
+            "Carmen needs a paid plan there, or a host without that restriction. "
+            "Press “Test the connection” on her tab to see which it is."
+        )
     elif exc.code == 404 and "model" in detail.lower():
-        detail += " — pick another model on the Assistant tab."
+        detail += " — pick another model on Carmen's tab."
     elif exc.code == 429:
         detail = (detail or "too many requests") + \
             " — Groq's free tier has a rate limit; wait a moment and ask again."
@@ -139,6 +157,52 @@ def chat(key: str, messages: Sequence[Mapping[str, Any]],
     if not choices:
         raise GroqError("Groq returned no answer at all")
     return dict(choices[0].get("message") or {})
+
+
+def diagnose(key: str) -> dict[str, Any]:
+    """What is actually wrong, when nothing works.
+
+    Three questions in order, because the answers to the later ones are
+    meaningless if an earlier one failed: can this machine open a socket to
+    Groq at all; does the key work; does the chosen model answer. A 403 from a
+    host's own proxy and a 403 from Groq look identical in a log and need
+    completely different fixes, so they are told apart here rather than left
+    for somebody to guess at.
+    """
+    import socket
+    import ssl
+    import urllib.parse
+
+    found: dict[str, Any] = {"reachable": False, "key_works": False, "detail": "", "models": 0}
+
+    host = urllib.parse.urlparse(BASE).hostname or "api.groq.com"
+    port = urllib.parse.urlparse(BASE).port or 443
+    try:
+        with socket.create_connection((host, port), timeout=10) as raw:
+            # A TLS handshake, not just a socket: a proxy that accepts the
+            # connection and then refuses the site fails here, which is exactly
+            # the case worth telling apart.
+            with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
+                found["reachable"] = True
+    except OSError as exc:
+        found["detail"] = (
+            f"This server cannot open a connection to {host} ({exc}). That is the "
+            f"host's network, not Groq and not the key — on PythonAnywhere's free "
+            f"plan only allowlisted sites can be reached, and api.groq.com is not "
+            f"among them.")
+        return found
+
+    if not str(key or "").strip():
+        found["detail"] = "There is no API key saved yet."
+        return found
+
+    try:
+        found["models"] = len(models(key))
+        found["key_works"] = True
+        found["detail"] = f"Connected. The key can reach {found['models']} models."
+    except GroqError as exc:
+        found["detail"] = str(exc)
+    return found
 
 
 def usage_of(said: Mapping[str, Any]) -> dict[str, int]:

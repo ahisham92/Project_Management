@@ -51,6 +51,18 @@ def answer(messages: list) -> dict:
     if "40" in asked and "1.1" in asked:
         return _reply("", [("set_progress", {"reference": "1.1", "percent": 40,
                                              "note": "asked for in the chat"})])
+    if "minute" in asked:
+        return _reply("", [("minute_meeting", {
+            "register": "client", "ref": "MOM-09", "title": "Coordination call",
+            "date": "10/09/2026", "time": "11:00", "location": "Teams",
+            "attendees": [{"name": "Jihad Zuhairy", "organisation": "Sibline",
+                           "role": "Port Manager"}],
+            "items": [{"subject": "Bathymetry survey",
+                       "discussion": "The client asked when it starts.",
+                       "agreement": "Dar to issue the brief.", "owner": "PM",
+                       "impact": "time", "due": "20/09/2026"}]})])
+    if "take me" in asked or "go to" in asked:
+        return _reply("", [("open_view", {"view": "schedule"})])
     if "presentation" in asked or "deck" in asked:
         return _reply("", [("presentation", {"start": "01/08/2026", "end": "06/09/2026"})])
     if "print" in asked:

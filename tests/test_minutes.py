@@ -252,8 +252,11 @@ def test_a_meeting_reads_as_its_reference_subject_and_date():
 # --- the Word writer -------------------------------------------------------
 
 def parts(data: bytes) -> dict[str, str]:
+    """The document's XML parts. The letterhead's logo is a PNG, and reading it
+    as text would say the whole document was broken."""
     with zipfile.ZipFile(BytesIO(data)) as archive:
-        return {name: archive.read(name).decode("utf-8") for name in archive.namelist()}
+        return {name: archive.read(name).decode("utf-8") for name in archive.namelist()
+                if name.endswith((".xml", ".rels"))}
 
 
 def test_a_word_document_is_a_zip_whose_every_part_is_valid_xml():
@@ -318,14 +321,19 @@ def sheet():
 
 
 def test_the_minutes_carry_the_project_number_and_name():
-    document = parts(minutes_document(PROJECT, sheet()))["word/document.xml"]
+    made = parts(minutes_document(PROJECT, sheet()))
+    document = made["word/document.xml"]
     assert "SIBLINE-PORT" in document and "Sibline Port" in document
-    assert "Minutes of meeting" in document
+    # The title is the letterhead across every page, not a line in the body.
+    assert "Minutes of Meeting" in made["word/header1.xml"]
 
 
 def test_the_minutes_show_who_attended_and_who_sent_apologies():
+    """The template marks who was there with an asterisk beside the number,
+    and says so in a legend under the table."""
     document = parts(minutes_document(PROJECT, sheet()))["word/document.xml"]
-    assert "Present" in document and "Absent" in document
+    assert "Present at this meeting" in document
+    assert "1*" in document                      # the first attendee was there
     assert "Client Rep" in document
 
 
@@ -810,7 +818,10 @@ def test_the_meeting_page_offers_the_move_buttons(ordered):
 
 def test_the_arrows_are_disabled_at_each_end_of_the_list(ordered):
     body = page(ordered, "/projects/1/minutes/meetings/1")
-    assert body.count("disabled") == 2           # the first cannot go up, the last down
+    # Counted inside the item list: Carmen's pop-up sits on every page and has
+    # disabled controls of its own until she is connected.
+    items = body.split("<template", 1)[0].split("carmen-popup", 1)[0]
+    assert items.count("disabled") == 2          # the first cannot go up, the last down
 
 
 def test_the_item_number_is_shown_but_not_typed(ordered):

@@ -209,33 +209,40 @@ TABS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "assistant",
-        "name": "Assistant",
+        "name": "Carmen",
         "endpoints": ("assistant.index",),
-        "what": "A language model with the run of this project — ask it anything, or tell it what to change.",
-        "start_here": "Type a question. Anything it would change is staged for you to approve before it happens.",
+        "what": "The project assistant — ask her anything, or tell her what to change.",
+        "start_here": "Type a question. Anything she would change is staged for you to approve before it happens.",
         "steps": (
-            "Ask it about the project — “what is late?”, “how did last month go?”, "
-            "“what does this week need?”. It reads the same figures the tabs show.",
-            "Tell it to change something — “set 1.1 to 40%”, “move 2.3 to start on 15/10/2026”, "
+            "Ask her about the project — “what is late?”, “how did last month go?”, "
+            "“what does this week need?”. She reads the same figures the tabs show.",
+            "Tell her to change something — “set 1.1 to 40%”, “move 2.3 to start on 15/10/2026”, "
             "“close item 3.1”. It comes back as a <strong>proposal</strong>; nothing happens "
             "until you press Apply.",
-            "Ask for a <strong>presentation</strong> of the work done between two dates and it "
+            "<strong>Type up a meeting</strong> and say “minute this” — she turns the prose into "
+            "numbered items with owners, dates and what each one affects, and fills the Minutes "
+            "page. “Correct 3.1 — the owner is MR” fixes one afterwards.",
+            "Say “<strong>take me to the schedule</strong>” and the page goes there.",
+            "Ask for a <strong>presentation</strong> of the work done between two dates and she "
             "builds a PowerPoint you can download.",
-            "Ask it to <strong>print</strong> a tab and it gives you a link that opens straight "
-            "into the print dialog, where “Save as PDF” makes the file.",
-            "An administrator adds the Groq API key on this tab, once.",
+            "Ask her to <strong>print</strong> a tab and you get a link that opens straight into "
+            "the print dialog, where “Save as PDF” makes the file.",
+            "She is in the corner of every other tab too — the button at the bottom right.",
+            "An administrator adds the Groq API key on this tab, once, for everybody.",
         ),
         "watch": (
             "Nothing changes until you press Apply — a model can be confidently wrong about "
             "which deliverable you meant, and that should cost a sentence, not a programme.",
-            "It cannot do more than you can: every change goes through the same code a form "
+            "She cannot do more than you can: every change goes through the same code a form "
             "posts to, and applying takes the same role as editing the screen.",
-            "It only ever sees the project in the address bar.",
-            "Check anything that matters against the tab it came from. It reads real figures, "
-            "but it is a language model reading them.",
+            "She only ever sees the project in the address bar.",
+            "Check anything that matters against the tab it came from. She reads real figures, "
+            "but she is a language model reading them.",
+            "Every conversation is written down and goes to Drive each night as a text file, "
+            "so how she is actually being used is something anybody can look at.",
         ),
-        "terms": ("assistant", "staged change", "groq", "presentation deck", "data date",
-                  "deliverable", "earned progress"),
+        "terms": ("carmen", "staged change", "chat log", "groq", "presentation deck",
+                  "minuted item", "deliverable", "earned progress"),
     },
     {
         "key": "setup",
@@ -455,19 +462,26 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "itself (WK-2026-37).", ""),
 
     # --- the assistant
-    ("Assistant", "week",
-     "A language model, given the run of one project: it can read anything the tabs show "
-     "and propose changes to any of it.",
-     "It runs on Groq, and it works through the same functions the screens do — so it can do "
-     "what you can do and nothing more."),
+    ("Carmen", "week",
+     "The project assistant: a language model given the run of one project. She reads anything "
+     "the tabs show, proposes changes to any of it, minutes a meeting from what you type, and "
+     "takes you to a page when you ask her to.",
+     "She runs on Groq, and works through the same functions the screens do — so she can do what "
+     "you can do and nothing more."),
     ("Staged change", "week",
      "Something the assistant proposes rather than does. It is listed under its answer, and "
      "nothing happens until you press Apply.",
      "A model can be confidently wrong about which deliverable a phrase meant. Staging makes "
      "that a sentence to correct instead of a programme to unpick."),
+    ("Chat log", "week",
+     "Every question put to Carmen and every answer she gave, written down.",
+     "Uploaded to Drive once a night as a plain text file, one per day, so how much she is "
+     "used — and what for — is readable without this program."),
     ("Groq", "week",
-     "Who runs the model the assistant talks to. The API key is kept in a file beside the "
-     "database, never in it — the nightly backup uploads the database.", ""),
+     "Who runs the model Carmen talks to. One API key serves the whole installation — set it "
+     "once and everybody on it is using it, so it is an administrator's to set.",
+     "The key is kept in a file beside the database, never in it: the nightly backup uploads "
+     "the database."),
     ("Presentation deck", "week",
      "A PowerPoint of the work done between two dates: where the project stands, what moved, "
      "what is late, the critical path, what comes next, and what is open with the client.",

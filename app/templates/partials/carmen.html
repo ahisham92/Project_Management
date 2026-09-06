@@ -1,0 +1,58 @@
+{# Carmen, in the corner of every project page.
+
+   The same conversation as her own tab, in a smaller box — one initialiser in
+   app.js drives both, so there is no second chat to keep in step. It is only
+   rendered inside a project, because everything she can do is scoped to one. #}
+{% if pulse_project_id %}
+  <button type="button" id="carmen-open" class="carmen-button no-print"
+          aria-expanded="false" aria-controls="carmen-popup" title="Ask Carmen">
+    <img src="{{ url_for('assistant.face', project_id=pulse_project_id) }}"
+         alt="" width="34" height="34">
+    <span>Ask Carmen</span>
+  </button>
+
+  <div id="carmen-popup" class="carmen-popup no-print" data-carmen hidden
+       role="dialog" aria-label="Ask Carmen">
+    <div class="carmen-head">
+      <img src="{{ url_for('assistant.face', project_id=pulse_project_id) }}"
+           alt="" width="30" height="30">
+      <div class="min0">
+        <p class="carmen-name">Carmen</p>
+        <p class="small muted carmen-sub">{{ carmen_ready and 'ask, or tell her what to do'
+                                             or 'not connected yet' }}</p>
+      </div>
+      <div class="spacer"></div>
+      <button type="button" class="btn btn-ghost btn-sm" data-chat-clear>Clear</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-carmen-close aria-label="Close">✕</button>
+    </div>
+
+    <div class="chat carmen-log" data-chat
+         data-ask="{{ url_for('assistant.ask', project_id=pulse_project_id) }}"
+         data-apply="{{ url_for('assistant.apply', project_id=pulse_project_id) }}"
+         data-can-write="{{ '1' if carmen_can_write else '' }}">
+      <div class="chat-line assistant">
+        <p style="margin:0">
+          {% if carmen_ready %}
+            Ask me anything about this project, tell me to change something, or say
+            “take me to the schedule”. Anything I would <strong>change</strong> waits
+            for you to approve it.
+          {% else %}
+            I am not connected yet — an administrator adds a Groq API key on my tab.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <form class="inline-form carmen-ask" data-chat-form style="align-items:flex-end">
+      <label class="field flex1">
+        <textarea name="question" rows="2" placeholder="Ask Carmen…"
+                  {{ 'disabled' if not carmen_ready }}></textarea>
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not carmen_ready }}>Ask</button>
+    </form>
+
+    <p class="small muted carmen-foot">
+      <a href="{{ url_for('assistant.index', project_id=pulse_project_id) }}">Open Carmen's tab →</a>
+    </p>
+  </div>
+{% endif %}

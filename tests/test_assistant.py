@@ -608,7 +608,7 @@ def test_the_deck_says_what_the_period_says(app, project):
 
 def test_the_tab_is_there_and_says_it_is_not_connected(signed_in):
     body = text(signed_in.get("/projects/1/assistant"))
-    assert "Assistant" in body
+    assert "Carmen" in body
     assert "not connected" in body
     assert "console.groq.com" in body
 

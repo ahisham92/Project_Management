@@ -489,6 +489,215 @@ def add_project_holiday(project_id: int, date: str = "", team: str = "",
                     (f" — {str(name).strip()[:40]}" if name else "")}
 
 
+# --- minutes ----------------------------------------------------------------
+#
+# The one thing worth being careful about: a set of minutes typed into a chat
+# box is a wall of prose, and what has to come out of it is numbered items with
+# owners and dates. So the model does the reading — it is the thing language
+# models are actually good at — and these tools do the writing, through the
+# same inserts the minutes page uses.
+
+def _meeting(project_id: int, reference: Any) -> dict[str, Any]:
+    """The meeting the reader meant, by reference, by title, or by date."""
+    from ..dates import to_display
+    from ..service import load_meetings
+
+    wanted = " ".join(str(reference or "").strip().lower().split())
+    if not wanted:
+        raise ToolError("Say which meeting — its reference, its title, or its date")
+
+    meetings = load_meetings(project_id)
+    for meeting in meetings:
+        if str(meeting.get("ref") or "").strip().lower() == wanted:
+            return meeting
+        if to_display(meeting.get("meeting_date")) == wanted:
+            return meeting
+
+    named = [m for m in meetings if wanted in str(m.get("title") or "").lower()]
+    if len(named) == 1:
+        return named[0]
+    if len(named) > 1:
+        listed = "; ".join(f"{m['ref'] or m['title']} on {to_display(m['meeting_date'])}"
+                           for m in named[:6])
+        raise ToolError(f"That matches {len(named)} meetings — say which: {listed}")
+    raise ToolError(f"No meeting matches {reference!r}. Use list_meetings to see them.")
+
+
+def list_meetings(project_id: int, register: str = "", **_ignored) -> dict[str, Any]:
+    """Every meeting on the project, with how many items each holds."""
+    from ..minutes import normalise_kind
+    from ..service import load_meetings
+
+    kind = normalise_kind(register) if register else None
+    return {"meetings": [
+        {"ref": m["ref"], "title": m["title"], "date": to_display(m["meeting_date"]),
+         "register": m["kind"], "items": m["item_count"], "open": m["open_count"],
+         "present": m["present_count"]}
+        for m in load_meetings(project_id, kind)]}
+
+
+def minute_meeting(project_id: int, register: str = "client", ref: str = "", title: str = "",
+                   date: str = "", time: str = "", location: str = "", purpose: str = "",
+                   chaired_by: str = "", attendees: Any = None, items: Any = None,
+                   **_ignored) -> dict[str, Any]:
+    """A whole set of minutes: the meeting, who was there, and its items.
+
+    This is the one that turns a paragraph somebody typed into a numbered
+    register. Item numbers are never taken from the model — they are positions,
+    set when the items land in the meeting, so they cannot collide and cannot
+    be typed wrong.
+    """
+    from ..minutes import normalise_impact, normalise_kind, normalise_owner
+
+    if not str(title or "").strip() and not str(purpose or "").strip():
+        raise ToolError("A set of minutes needs a title or a purpose")
+
+    when = _date(date, "The meeting date") if date else ""
+    rows = []
+    for entry in list(items or [])[:40]:
+        line = dict(entry) if isinstance(entry, dict) else {"subject": str(entry)}
+        subject = str(line.get("subject") or "").strip()
+        agreement = str(line.get("agreement") or line.get("agreed") or "").strip()
+        if not subject and not agreement:
+            continue
+        rows.append({
+            "subject": subject[:300],
+            "discussion": str(line.get("discussion") or "").strip()[:4000],
+            "agreement": agreement[:4000],
+            "owner": normalise_owner(line.get("owner")),
+            "impact": normalise_impact(line.get("impact") or line.get("affects")),
+            "due": _date(line.get("due"), "An action date") if line.get("due") else "",
+            "closed": bool(line.get("closed")),
+        })
+
+    people = []
+    for entry in list(attendees or [])[:40]:
+        line = dict(entry) if isinstance(entry, dict) else {"name": str(entry)}
+        name = str(line.get("name") or "").strip()
+        if not name:
+            continue
+        people.append({
+            "name": name[:120],
+            "organisation": str(line.get("organisation") or line.get("organization") or "").strip()[:120],
+            "job_title": str(line.get("role") or line.get("job_title") or "").strip()[:120],
+            "present": bool(line.get("present", True)),
+        })
+
+    kind = normalise_kind(register)
+    return {
+        "kind": "minute_meeting", "register": kind, "ref": str(ref or "").strip()[:40],
+        "title": str(title or purpose or "").strip()[:200],
+        "purpose": str(purpose or title or "").strip()[:200],
+        "meeting_date": when, "meeting_time": str(time or "").strip()[:40],
+        "location": str(location or "").strip()[:200],
+        "chaired_by": str(chaired_by or "").strip()[:120],
+        "attendees": people, "items": rows,
+        "says": (f"Minute “{str(title or purpose)[:50]}”"
+                 + (f" on {to_display(when)}" if when else "")
+                 + f" with {len(rows)} item{'' if len(rows) == 1 else 's'}"
+                 + (f" and {len(people)} attendee{'' if len(people) == 1 else 's'}"
+                    if people else "")),
+    }
+
+
+def add_minute_items(project_id: int, meeting: str = "", items: Any = None,
+                     **_ignored) -> dict[str, Any]:
+    """More items onto a set of minutes that already exists."""
+    from ..minutes import normalise_impact, normalise_owner
+
+    found = _meeting(project_id, meeting)
+    rows = []
+    for entry in list(items or [])[:40]:
+        line = dict(entry) if isinstance(entry, dict) else {"subject": str(entry)}
+        subject = str(line.get("subject") or "").strip()
+        agreement = str(line.get("agreement") or line.get("agreed") or "").strip()
+        if not subject and not agreement:
+            continue
+        rows.append({
+            "subject": subject[:300],
+            "discussion": str(line.get("discussion") or "").strip()[:4000],
+            "agreement": agreement[:4000],
+            "owner": normalise_owner(line.get("owner")),
+            "impact": normalise_impact(line.get("impact") or line.get("affects")),
+            "due": _date(line.get("due"), "An action date") if line.get("due") else "",
+            "closed": bool(line.get("closed")),
+        })
+    if not rows:
+        raise ToolError("No items to add — each one needs a subject or an agreed action")
+
+    return {"kind": "add_minute_items", "meeting_id": found["id"], "items": rows,
+            "says": (f"Add {len(rows)} item{'' if len(rows) == 1 else 's'} to "
+                     f"{found['ref'] or found['title'] or 'the meeting'}")}
+
+
+def update_minute_item(project_id: int, reference: str = "", subject: str = "",
+                       discussion: str = "", agreement: str = "", owner: str = "",
+                       impact: str = "", due: str = "", **_ignored) -> dict[str, Any]:
+    """Change one minuted item — what only the fields that were given.
+
+    Anything left out is left alone, so correcting an owner does not blank the
+    agreement somebody spent ten minutes wording.
+    """
+    from ..minutes import normalise_impact, normalise_owner
+    from ..service import load_items, today as today_is
+
+    wanted = " ".join(str(reference or "").strip().lower().split())
+    if not wanted:
+        raise ToolError("Say which item — its number, like 3.1, or words from its subject")
+
+    items = load_items(project_id, today_is())
+    exact = [i for i in items if str(i.get("ref") or "").strip().lower() == wanted]
+    found = exact or [i for i in items if wanted in str(i.get("subject") or "").lower()]
+    if not found:
+        raise ToolError(f"No item matches {reference!r}")
+    if len(found) > 1:
+        listed = "; ".join(f"{i['ref']} {i['subject'][:50]}" for i in found[:6])
+        raise ToolError(f"That matches {len(found)} items — say which: {listed}")
+
+    item = found[0]
+    fields: dict[str, Any] = {}
+    if subject:
+        fields["subject"] = str(subject).strip()[:300]
+    if discussion:
+        fields["discussion"] = str(discussion).strip()[:4000]
+    if agreement:
+        fields["agreement"] = str(agreement).strip()[:4000]
+    if owner:
+        fields["owner_code"] = normalise_owner(owner)
+    if impact:
+        fields["impact"] = normalise_impact(impact)
+    if due:
+        fields["due_date"] = _date(due, "The action date")
+    if not fields:
+        raise ToolError("Nothing to change — say which field, and what to")
+
+    said = ", ".join(sorted(fields))
+    return {"kind": "update_minute_item", "item_id": item["id"], "fields": fields,
+            "says": f"Change {said} on {item['ref']} “{str(item['subject'])[:50]}”"}
+
+
+def issue_details(project_id: int, meeting: str = "", prepared_by: str = "",
+                  reviewed_by: str = "", issue_date: str = "", attachment: str = "",
+                  **_ignored) -> dict[str, Any]:
+    """Who prepared and accepts a set of minutes, and the day it goes out."""
+    found = _meeting(project_id, meeting)
+    fields: dict[str, Any] = {}
+    if prepared_by:
+        fields["prepared_by"] = str(prepared_by).strip()[:120]
+    if reviewed_by:
+        fields["reviewed_by"] = str(reviewed_by).strip()[:120]
+    if issue_date:
+        fields["issue_date"] = _date(issue_date, "The issue date")
+    if attachment:
+        fields["attachment"] = str(attachment).strip()[:300]
+    if not fields:
+        raise ToolError("Nothing to set — give a preparer, a reviewer, a date or an attachment")
+
+    return {"kind": "issue_details", "meeting_id": found["id"], "fields": fields,
+            "says": (f"Set {', '.join(sorted(fields))} on "
+                     f"{found['ref'] or found['title'] or 'the meeting'}")}
+
+
 # --- views and documents ----------------------------------------------------
 
 VIEWS = {
@@ -506,8 +715,14 @@ VIEWS = {
 
 
 def open_view(project_id: int, view: str = "dashboard", printable: bool = False,
-              start: str = "", end: str = "", **_ignored) -> dict[str, Any]:
-    """A link to one of the app's own pages, optionally straight into print."""
+              go: bool = True, start: str = "", end: str = "",
+              **_ignored) -> dict[str, Any]:
+    """Takes the reader to one of the app's own pages.
+
+    `go` is what makes this an assistant rather than a search box: asked to be
+    taken to the schedule, the page goes to the schedule. Printing does not
+    navigate — it opens the dialog where the reader already is.
+    """
     from flask import url_for
 
     wanted = str(view or "").strip().lower()
@@ -529,7 +744,7 @@ def open_view(project_id: int, view: str = "dashboard", printable: bool = False,
         args["print"] = 1
 
     return {"kind": "open_view", "view": wanted, "url": url_for(endpoint, **args),
-            "printable": bool(printable),
+            "printable": bool(printable), "go": bool(go),
             "says": ("Print " if printable else "Open ") + said}
 
 
@@ -652,11 +867,67 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "team": dict(_TEXT, description="A team name; leave empty for everybody"),
            "name": dict(_TEXT, description="What the holiday is")}, ["date"]),
 
+    _tool("list_meetings", "Every meeting minuted on the project, with how many items each "
+          "holds. Use this to find the one somebody is talking about.",
+          {"register": {"type": "string", "enum": ["client", "internal"]}}),
+    _tool("minute_meeting",
+          "Write a whole set of minutes: the meeting itself, who attended, and its items. "
+          "Use this when somebody types up what was said in a meeting and wants it minuted. "
+          "Read their text and turn it into items — each with a subject, the discussion, the "
+          "agreed action, an owner, what it affects, and an action date where one was given. "
+          "Do not number the items: numbering is done for you.",
+          {"register": {"type": "string", "enum": ["client", "internal"]},
+           "ref": dict(_TEXT, description="e.g. MOM-04"),
+           "title": dict(_TEXT, description="What the meeting was"),
+           "purpose": dict(_TEXT, description="The purpose line on the issued minutes"),
+           "date": dict(_TEXT, description="dd/mm/yyyy"),
+           "time": dict(_TEXT, description="e.g. 11:00"),
+           "location": _TEXT,
+           "chaired_by": _TEXT,
+           "attendees": {"type": "array", "description": "Who was in the meeting",
+                         "items": {"type": "object", "properties": {
+                             "name": _TEXT, "organisation": _TEXT, "role": _TEXT,
+                             "present": dict(_BOOL, description="Were they actually there")}}},
+           "items": {"type": "array", "description": "The items, in the order they were raised",
+                     "items": {"type": "object", "properties": {
+                         "subject": dict(_TEXT, description="What the item is about, in a line"),
+                         "discussion": dict(_TEXT, description="What was said"),
+                         "agreement": dict(_TEXT, description="What was agreed to happen"),
+                         "owner": dict(_TEXT, description="PM, Client, MR, ST, GE, WE, EL or PMC"),
+                         "impact": {"type": "string",
+                                    "enum": ["none", "time", "cost", "both"]},
+                         "due": dict(_TEXT, description="dd/mm/yyyy, if a date was given"),
+                         "closed": dict(_BOOL, description="True when nothing further is needed")}}}},
+          ["title"]),
+    _tool("add_minute_items", "Add more items to a set of minutes that already exists.",
+          {"meeting": dict(_TEXT, description="Its reference, title or date"),
+           "items": {"type": "array", "items": {"type": "object", "properties": {
+               "subject": _TEXT, "discussion": _TEXT, "agreement": _TEXT, "owner": _TEXT,
+               "impact": {"type": "string", "enum": ["none", "time", "cost", "both"]},
+               "due": _TEXT, "closed": _BOOL}}}},
+          ["meeting", "items"]),
+    _tool("update_minute_item",
+          "Correct one minuted item. Only the fields you give are changed — leave the rest "
+          "out and they are left alone.",
+          {"reference": dict(_TEXT, description="Its number, like 3.1, or words from the subject"),
+           "subject": _TEXT, "discussion": _TEXT, "agreement": _TEXT,
+           "owner": _TEXT,
+           "impact": {"type": "string", "enum": ["none", "time", "cost", "both"]},
+           "due": dict(_TEXT, description="dd/mm/yyyy")}, ["reference"]),
+    _tool("issue_details",
+          "Set who prepared a set of minutes, who accepts it, the issue date and what is "
+          "attached — the things that appear on the first and last pages of the Word export.",
+          {"meeting": _TEXT, "prepared_by": _TEXT, "reviewed_by": _TEXT,
+           "issue_date": dict(_TEXT, description="dd/mm/yyyy"), "attachment": _TEXT},
+          ["meeting"]),
+
     _tool("open_view",
-          "Give the reader a link to one of the app's own pages, optionally opening straight "
-          "into the print dialog so they can save it as a PDF.",
+          "Take the reader to one of the app's own pages — use this whenever somebody asks "
+          "to be taken, shown or sent somewhere, or asks to print a tab as a PDF.",
           {"view": {"type": "string", "enum": list(VIEWS)},
            "printable": dict(_BOOL, description="Open the print dialog on arrival"),
+           "go": dict(_BOOL, description="Navigate there straight away (default true). "
+                      "Set false to offer it as a link instead"),
            "start": dict(_TEXT, description="For the period report, dd/mm/yyyy"),
            "end": dict(_TEXT, description="For the period report, dd/mm/yyyy")}, ["view"]),
     _tool("presentation",
@@ -672,7 +943,8 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
 # `presentation` produce a link rather than a change, so they read as free too.
 READ_ONLY: frozenset[str] = frozenset((
     "overview", "find_deliverables", "deliverable", "period_report", "schedule_summary",
-    "week_ahead", "register", "budget_summary", "open_view", "presentation",
+    "week_ahead", "register", "budget_summary", "list_meetings",
+    "open_view", "presentation",
 ))
 
 RUNNERS: dict[str, Callable[..., Any]] = {
@@ -691,6 +963,11 @@ RUNNERS: dict[str, Callable[..., Any]] = {
     "raise_item": raise_item,
     "close_item": close_item,
     "add_project_holiday": add_project_holiday,
+    "list_meetings": list_meetings,
+    "minute_meeting": minute_meeting,
+    "add_minute_items": add_minute_items,
+    "update_minute_item": update_minute_item,
+    "issue_details": issue_details,
     "open_view": open_view,
     "presentation": presentation,
 }

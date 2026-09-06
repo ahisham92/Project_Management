@@ -12,9 +12,24 @@ from flask import (
 
 from ..auth import ROLE_RANK, load_project, login_required
 from ..dates import from_input, to_display
-from ..service import today
+from ..service import note_applied, record_chat, today
 
 bp = Blueprint("assistant", __name__, url_prefix="/projects/<int:project_id>")
+
+
+@bp.app_context_processor
+def _carmen_context():
+    """What the pop-up in the corner of every page needs to draw itself."""
+    from ..vault import groq
+
+    project_id = (request.view_args or {}).get("project_id")
+    if not project_id or not g.get("user"):
+        return {}
+    try:
+        role = g.get("project_role") or "viewer"
+        return {"carmen_ready": bool(groq()["key"]), "carmen_can_write": _can_write(role)}
+    except Exception:                                 # noqa: BLE001 - never break a page
+        return {"carmen_ready": False, "carmen_can_write": False}
 
 # What one question may carry back. A page that has been open all afternoon
 # should not be able to post a megabyte of "history".
@@ -93,7 +108,12 @@ def ask(project_id: int):
     # they cannot do is apply anything, so they are not offered the button.
     if not _can_write(role):
         answer.staged = []
-    return jsonify(answer.as_json()), (200 if not answer.trouble else 502)
+
+    said = answer.as_json()
+    # Written down whether it worked or not: a week of failures is the thing
+    # worth noticing, and it is invisible if only the answers are kept.
+    said["chat_id"] = record_chat(project_id, g.user, question, answer)
+    return jsonify(said), (200 if not answer.trouble else 502)
 
 
 @bp.post("/assistant/apply")
@@ -128,6 +148,7 @@ def apply(project_id: int):
         current_app.logger.exception("Applying an assistant change failed")
         return jsonify({"ok": False, "error": f"That change was refused: {exc}"}), 400
 
+    note_applied(asked.get("chat_id"), len(done))
     return jsonify({"ok": True, "done": done, "note": staged_summary(actions)})
 
 
@@ -153,6 +174,75 @@ def deck(project_id: int):
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         as_attachment=True, download_name=f"{stem}.pptx",
     )
+
+
+@bp.get("/assistant/face")
+@login_required
+def face(project_id: int):
+    """Carmen's picture — the uploaded one, or the drawn monogram."""
+    from flask import Response, send_file
+
+    from . import carmen_avatar as avatar
+
+    load_project(project_id)
+    where = avatar.saved()
+    if where is None:
+        return Response(avatar.MONOGRAM, mimetype="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=300"})
+    return send_file(where, mimetype=avatar.content_type(where),
+                     max_age=300, last_modified=where.stat().st_mtime)
+
+
+@bp.post("/assistant/face")
+@login_required
+def set_face(project_id: int):
+    """Upload a picture for her, or take the one there away."""
+    from . import carmen_avatar as avatar
+
+    load_project(project_id)
+    if g.user["role"] != "admin":
+        flash("Only an administrator can change Carmen's picture", "error")
+        return redirect(url_for("assistant.index", project_id=project_id))
+
+    if request.form.get("remove"):
+        avatar.forget()
+        flash("Carmen is back to her monogram", "success")
+        return redirect(url_for("assistant.index", project_id=project_id))
+
+    upload = request.files.get("picture")
+    data = upload.read(avatar.MAX_BYTES + 1) if upload else b""
+    if not data:
+        flash("Choose a picture first", "error")
+        return redirect(url_for("assistant.index", project_id=project_id))
+
+    try:
+        avatar.store(data)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("assistant.index", project_id=project_id))
+
+    flash("That is Carmen now", "success")
+    return redirect(url_for("assistant.index", project_id=project_id))
+
+
+@bp.get("/assistant/test")
+@login_required
+def test_connection(project_id: int):
+    """Why nothing works, when nothing works.
+
+    A 403 from a host's own outbound proxy and a 403 from Groq read identically
+    in a log and need completely different fixes, so this asks the three
+    questions in order and says which one failed.
+    """
+    from ..groq import diagnose
+    from ..vault import groq
+
+    load_project(project_id)
+    if g.user["role"] != "admin":
+        return jsonify({"ok": False, "error": "Administrators only"}), 403
+
+    found = diagnose(groq()["key"])
+    return jsonify({"ok": bool(found["key_works"]), **found})
 
 
 @bp.post("/assistant/settings")

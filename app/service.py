@@ -1280,10 +1280,20 @@ def backup_due(at: Any = None) -> bool:
 
 
 def backup_if_due(at: Any = None) -> dict[str, Any] | None:
-    """Runs the nightly backup, but only if it has not already run tonight."""
+    """Runs the nightly backup, but only if it has not already run tonight.
+
+    The day's chat transcript goes up with it — one job, one moment, so there
+    is one thing to check rather than two.
+    """
     if not backup_due(at):
         return None
-    return run_backup(note="Nightly")
+
+    result = run_backup(note="Nightly")
+    try:
+        result["chats"] = upload_chat_log()
+    except Exception as exc:                          # noqa: BLE001 - never lose the backup over it
+        result["chats"] = {"ok": False, "detail": str(exc)}
+    return result
 
 
 def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
@@ -1335,6 +1345,121 @@ def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
     record_backup(True, "drive", len(data), detail, said.get("link", ""))
     result.update(uploaded=True, detail=detail, link=said.get("link", ""), drive=said)
     return result
+
+
+# --- what has been asked of Carmen ------------------------------------------
+
+def record_chat(project_id: Any, user: Any, question: str, answer: Any) -> int:
+    """Writes down one exchange.
+
+    Kept because "does it work" and "is anybody using it, and for what" are
+    different questions, and only the second one tells you whether it was worth
+    building. The transcript goes to Drive once a day as plain text.
+    """
+    who = as_dict(user) if user is not None else {}
+    return insert(
+        """
+        INSERT INTO chat_log (asked_at, project_id, user_id, user_name, question, answer,
+                              tools_used, staged, trouble)
+        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (project_id, who.get("id"), str(who.get("name") or "")[:120],
+         str(question)[:4000], str(getattr(answer, "text", "") or "")[:8000],
+         ", ".join(getattr(answer, "used", []) or [])[:400],
+         len(getattr(answer, "staged", []) or []), str(getattr(answer, "trouble", "") or "")[:500]),
+    )
+
+
+def note_applied(chat_id: Any, how_many: int) -> None:
+    """Marks that the reader went on to apply what was proposed."""
+    if chat_id:
+        execute("UPDATE chat_log SET applied = applied + ? WHERE id = ?",
+                (int(how_many), chat_id))
+
+
+def load_chats(on_day: str = "", limit: int = 500) -> list[dict[str, Any]]:
+    """One day's conversations, oldest first — or the most recent, given none."""
+    if on_day:
+        rows = query("SELECT * FROM chat_log WHERE date(asked_at) = ? ORDER BY id", (on_day,))
+    else:
+        rows = query("SELECT * FROM chat_log ORDER BY id DESC LIMIT ?", (limit,))
+        rows = list(reversed(rows))
+    return [dict(r) for r in rows]
+
+
+def chat_transcript(on_day: str) -> str:
+    """One day's conversations as plain text.
+
+    Plain text on purpose: somebody looking at a month of these on Drive should
+    be able to read one in a browser tab without a tool, and grep the lot.
+    """
+    from .dates import to_display
+
+    rows = load_chats(on_day)
+    lines = [
+        f"Project Control — Carmen, {to_display(on_day) or on_day}",
+        f"{len(rows)} exchange{'' if len(rows) == 1 else 's'}",
+        "=" * 72,
+        "",
+    ]
+    projects = {p["id"]: f"{p['code']} — {p['name']}"
+                for p in (dict(r) for r in query("SELECT id, code, name FROM projects"))}
+
+    for row in rows:
+        lines.append(f"[{str(row['asked_at'])[11:16]} UTC] {row['user_name'] or 'someone'}"
+                     f" · {projects.get(row['project_id'], 'no project')}")
+        lines.append(f"  asked: {row['question']}")
+        if row["trouble"]:
+            lines.append(f"  failed: {row['trouble']}")
+        else:
+            for index, part in enumerate((row["answer"] or "").splitlines() or [""]):
+                lines.append(("  said:  " if index == 0 else "         ") + part)
+        if row["tools_used"]:
+            lines.append(f"  read:  {row['tools_used']}")
+        if row["staged"]:
+            lines.append(f"  proposed {row['staged']} change(s); "
+                         f"{row['applied']} applied")
+        lines.append("")
+
+    if not rows:
+        lines.append("Nobody asked her anything.")
+    return "\n".join(lines)
+
+
+def upload_chat_log(on_day: str = "") -> dict[str, Any]:
+    """Puts one day's transcript on Drive, beside the backup.
+
+    A file per day rather than one file replaced, because the question this
+    answers is how usage changes over time — which a single file overwritten
+    every night cannot show. Re-running for the same day replaces that day's
+    file rather than making a second.
+    """
+    from .drive import DriveError, configured, upload
+    from .vault import settings as drive_settings
+
+    from . import clock
+    from .vault import schedule
+
+    when = schedule()
+    day = on_day or clock.local_date(when["zone"])
+    text = chat_transcript(day)
+    name = f"project-control-chats-{day}.txt"
+
+    settings = drive_settings()
+    if not configured(settings):
+        return {"ok": False, "detail": "Google Drive is not connected", "name": name}
+
+    try:
+        said = upload(settings, text.encode("utf-8"), name)
+    except DriveError as exc:
+        record_backup(False, "chats", len(text), f"Chat log: {exc}")
+        return {"ok": False, "detail": str(exc), "name": name}
+
+    what = "Replaced" if said.get("replaced") else "Created"
+    detail = f"{what} {name} on Google Drive"
+    record_backup(True, "chats", len(text.encode("utf-8")), detail, said.get("link", ""))
+    return {"ok": True, "detail": detail, "name": name, "link": said.get("link", ""),
+            "exchanges": len(load_chats(day))}
 
 
 # --- knowing when something changed ----------------------------------------

@@ -314,6 +314,18 @@ def paths(task_ids: Iterable[int], links: Iterable[Mapping[str, Any]]) -> dict[s
     return {"starts": starts, "ends": ends, "count": sum(routes.get(e, 0) for e in ends)}
 
 
+def _float_between(calendar: Any, early: date, late: date) -> int:
+    """Float between an early and a late finish, in the team's working days.
+
+    Zero when they are the same day; negative when the late finish has already
+    been passed, which is a line that cannot be done in time as drawn.
+    """
+    plan = working(calendar)
+    if late >= early:
+        return max(0, plan.duration(early, late) - 1)
+    return -(max(0, plan.duration(late, early) - 1))
+
+
 def _diaries(rows: Mapping[int, Mapping[str, Any]],
              calendars: Mapping[Any, Any] | None) -> dict[int, Any]:
     """Each line's working calendar, ready to ask.
@@ -361,27 +373,64 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
     early_start: dict[int, date] = {}
     early_finish: dict[int, date] = {}
     driver: dict[int, tuple[int, float, str]] = {}
+    after: dict[int, int] = {}
     for task_id in sequence:
         own = planned_start[task_id] or floor
-        earliest = own
+
+        binding: tuple[date, int, float, str] | None = None    # the link that holds it back
+        runs_from: tuple[date, int] | None = None              # the work it follows on from
         for first, lag, kind in predecessors.get(task_id, ()):
             soonest = _earliest_start(kind, lag, length[task_id],
                                       early_start.get(first), early_finish.get(first),
                                       diary[task_id])
-            # Which link holds the line back is worth keeping: it is the whole
-            # answer to "why can this not start when I drew it?".
-            if soonest and soonest > earliest:
-                earliest, driver[task_id] = soonest, (first, lag, kind)
+            if soonest and (binding is None or soonest > binding[0]):
+                binding = (soonest, first, lag, kind)
+            done = early_finish.get(first)
+            if done and (runs_from is None or done > runs_from[0]):
+                runs_from = (done, first)
+
+        # Which link holds the line back is worth keeping: it is the whole
+        # answer to "why can this not start when I drew it?". A link that lands
+        # exactly on the drawn start counts as holding it — a plan laid out to
+        # match its own links is still driven by them, and the run of work
+        # through the programme has to be traceable across it.
+        earliest = own
+        if binding is not None and binding[0] >= own:
+            earliest = binding[0]
+            driver[task_id] = (binding[1], binding[2], binding[3])
+
+        # What to follow back along when tracing the run: whatever holds this
+        # line back, or failing that the last thing to finish before it.
+        follows = driver[task_id][0] if task_id in driver else (runs_from[1] if runs_from else None)
+        if follows is not None:
+            after[task_id] = follows
+
         early_start[task_id] = diary[task_id].next_working(earliest) or earliest
         early_finish[task_id] = (diary[task_id].finish_after(early_start[task_id],
                                                             length[task_id])
                                  or early_start[task_id])
 
     # Backward: the latest each line can start without moving the finish.
-    horizon = max(early_finish.values())
+    #
+    # The finish is the end of the *sequenced* work. A deliverable nobody has
+    # linked up yet is not part of the logic, and letting one that runs past
+    # the end of the chain set the horizon hands every line on that chain float
+    # it does not have — which is how a critical path disappears without any of
+    # the work moving.
+    sequenced = [early_finish[task_id] for task_id in rows
+                 if predecessors.get(task_id) or successors.get(task_id)]
+    horizon = max(sequenced) if sequenced else max(early_finish.values())
+
     late_finish: dict[int, date] = {}
     late_start: dict[int, date] = {}
     for task_id in reversed(sequence):
+        # A line with no logic at all has nothing to be late against, so it is
+        # its own deadline: no float, and never critical.
+        if not predecessors.get(task_id) and not successors.get(task_id):
+            late_finish[task_id] = early_finish[task_id]
+            late_start[task_id] = early_start[task_id]
+            continue
+
         latest = horizon
         for second, lag, kind in successors.get(task_id, ()):
             limit = _latest_finish(kind, lag, length[task_id],
@@ -395,7 +444,11 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
 
     result: dict[int, dict[str, Any]] = {}
     for task_id in rows:
-        slack = (late_finish[task_id] - early_finish[task_id]).days
+        # Float is counted the same way a duration is — in the days the team
+        # actually works. Measured in calendar days it would read three where
+        # a Monday-to-Friday line has one, which is a different unit from the
+        # column beside it.
+        slack = _float_between(diary[task_id], early_finish[task_id], late_finish[task_id])
         # A line with nothing before or after it is not on a path, whatever its
         # float works out to. Calling every unlinked deliverable that happens to
         # finish on the project's end date "critical" says nothing useful; once
@@ -408,8 +461,9 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
             "late_start": iso(late_start[task_id]),
             "late_finish": iso(late_finish[task_id]),
             "total_float": slack,
-            "is_critical": slack <= 0 and in_a_chain,
+            "no_float": slack <= 0 and in_a_chain,
             "in_a_chain": in_a_chain,
+            "after": after.get(task_id),
             # A line whose own start is earlier than its predecessors allow is
             # not achievable as drawn, which is worth saying out loud.
             "starts_late": bool(planned_start[task_id]
@@ -421,14 +475,60 @@ def analyse(tasks: Sequence[Mapping[str, Any]],
             "predecessor_ids": [first for first, _lag, _kind in predecessors.get(task_id, ())],
             "successor_ids": [second for second, _lag, _kind in successors.get(task_id, ())],
         }
+
+    # The critical path is the run of work that ends the programme, traced back
+    # from the last thing to finish. Every line on it is critical, and so is
+    # anything else with no float — a second path of the same length is just as
+    # critical as the one that happened to be traced.
+    chain = set(critical_chain(result))
+    for task_id, row in result.items():
+        row["is_critical"] = task_id in chain or row["no_float"]
+        row["on_critical_path"] = task_id in chain
     return result
 
 
+def critical_chain(analysis: Mapping[int, Mapping[str, Any]]) -> list[int]:
+    """The run of work that ends the programme, from its first line to its last.
+
+    Traced backwards from the last sequenced line to finish, following what
+    each line waits on, until nothing precedes it. That is what a planner means
+    by the critical path: an unbroken run of activities from the start of the
+    work to the end of it.
+
+    Tracing it beats reading it off the float, which depends on where the
+    programme's finish happens to fall. One unsequenced deliverable running past
+    the end of the chain gives every line on that chain float, and the path
+    disappears — while the work that actually sets the finish date has not
+    changed at all.
+    """
+    linked = [task_id for task_id, row in analysis.items() if row.get("in_a_chain")]
+    if not linked:
+        return []
+
+    end = max(linked, key=lambda task_id: (analysis[task_id]["early_finish"],
+                                           analysis[task_id]["early_start"]))
+    chain: list[int] = []
+    seen: set[int] = set()
+    node: int | None = end
+    while node is not None and node in analysis and node not in seen:
+        seen.add(node)
+        chain.append(node)
+        node = analysis[node].get("after")
+    return list(reversed(chain))
+
+
 def critical_path(analysis: Mapping[int, Mapping[str, Any]]) -> list[int]:
-    """The critical lines, in the order they run."""
-    critical = [task_id for task_id, row in analysis.items() if row["is_critical"]]
-    return sorted(critical, key=lambda task_id: (analysis[task_id]["early_start"],
-                                                 analysis[task_id]["early_finish"]))
+    """Every critical line, in the order it runs.
+
+    The traced chain first — it is the answer to "what sets the end date?" —
+    and then anything else with no float, which is just as unable to slip.
+    """
+    chain = critical_chain(analysis)
+    on_it = set(chain)
+    others = [task_id for task_id, row in analysis.items()
+              if row.get("is_critical") and task_id not in on_it]
+    return chain + sorted(others, key=lambda task_id: (analysis[task_id]["early_start"],
+                                                       analysis[task_id]["early_finish"]))
 
 
 def shift_successors(tasks: Sequence[Mapping[str, Any]],

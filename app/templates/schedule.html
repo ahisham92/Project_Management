@@ -60,8 +60,9 @@
 
 <div class="grid grid-4">
   {{ tile('Programme', t['days'] ~ ' days', short_date(t['start']) ~ ' → ' ~ short_date(t['finish'])) }}
-  {{ tile('On the critical path', t['critical'], 'of ' ~ t['count'] ~ ' deliverables',
-          'critical' if t['critical'] else 'neutral', 'no float' if t['critical'] else '') }}
+  {{ tile('On the critical path', plan['chain'] | length, 'of ' ~ t['count'] ~ ' deliverables',
+          'critical' if plan['chain'] else 'neutral',
+          'sets the end date' if plan['chain'] else 'nothing linked yet') }}
   {{ tile('Cannot start as drawn', plan['tasks'] | selectattr('starts_late') | list | length,
           'a link puts their start later',
           'warning' if plan['tasks'] | selectattr('starts_late') | list | length else 'good',
@@ -103,6 +104,53 @@
     </div>
   </div>
 {% endif %}
+
+{% set chain = plan['chain'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Critical path</h2>
+      <p class="small muted" style="margin-top:2px">
+        {% if chain %}
+          The run of work that sets the end date, from the first line to the last ·
+          {{ chain | length }} deliverable{{ '' if chain | length == 1 else 's' }} ·
+          {{ short_date(chain[0]['early_start']) }} to {{ short_date(chain[-1]['early_finish']) }}
+        {% else %}
+          Link two deliverables and the run of work that sets the end date is traced here
+        {% endif %}
+      </p>
+    </div>
+    <div class="inline-form no-print">{{ print_chart_button('Print the path') }}</div>
+  </div>
+  <div class="card-body{{ ' flush' if chain }}">
+    {% if not chain %}
+      {{ empty('Nothing is sequenced yet',
+               'A critical path is a run of linked work. Link two deliverables under the diagram below.') }}
+    {% else %}
+      <ol class="path">
+        {% for step in chain %}
+          <li class="path-step{{ ' has-float' if step['total_float'] > 0 }}">
+            <span class="path-mark" aria-hidden="true"></span>
+            <span class="path-wbs tabular">{{ step['wbs'] }}</span>
+            <a class="open-task path-name" data-task="{{ step['id'] }}"
+               href="{{ url_for('projects.task_panel', project_id=project['id'], task_id=step['id']) }}"
+               >{{ step['name'] }}</a>
+            <span class="small ink2 nowrap path-dates">
+              {{ short_date(step['early_start']) }} → {{ short_date(step['early_finish']) }}
+            </span>
+            <span class="small muted nowrap tabular">{{ step['duration_days'] }}d</span>
+            <span class="small nowrap">
+              {% if step['total_float'] > 0 %}
+                <span style="color:var(--warning)" title="Slack inside the run: this line could slip this far before it pushed the next one">
+                  {{ step['total_float'] }}d slack</span>
+              {% else %}<span class="muted">no float</span>{% endif %}
+            </span>
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
+  </div>
+</div>
 
 <div class="card" style="margin-top:16px">
   <div class="card-head">

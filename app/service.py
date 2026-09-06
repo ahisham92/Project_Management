@@ -1041,7 +1041,8 @@ def set_task_dates(project_id: int, task_id: int, start: str, submission: str,
 
 def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> dict[str, Any]:
     """Everything the schedule screen draws: the lines, their float, the links."""
-    from .schedule import analyse, critical_path, paths, start_reason, summarise, window
+    from .schedule import (analyse, critical_chain, critical_path, paths,
+                           start_reason, summarise, window)
 
     project_id = project["id"]
     stamp = data_date or today()
@@ -1090,6 +1091,9 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
         "links": links,
         "analysis": analysis,
         "critical": critical_path(analysis),
+        # The run of work that ends the programme, in the order it runs, each
+        # line whole so the card below the plan can simply be drawn from it.
+        "chain": [by_id[task_id] for task_id in critical_chain(analysis) if task_id in by_id],
         "routes": paths([row["id"] for row in rows], links),
         "totals": summarise(analysis),
         "window": (first, last),

@@ -322,6 +322,33 @@ input[type="checkbox"] { width: auto; }
 .net-edge[data-link] { cursor: pointer; }
 .net-edge[data-link]:hover { stroke-width: 3; opacity: 1; }
 
+/* The critical path, as a run you can read down: one line per activity, in
+   the order the work happens, joined by a rule down the left. */
+.path { list-style: none; margin: 0; padding: 0; }
+.path-step {
+  display: grid; gap: 4px 12px; align-items: baseline;
+  grid-template-columns: 18px 5.5ch minmax(0, 1fr) auto auto auto;
+  padding: 7px 16px; border-bottom: 1px solid var(--border);
+}
+.path-step:last-child { border-bottom: none; }
+.path-mark {
+  position: relative; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--critical); align-self: center;
+}
+.path-mark::before {
+  content: ''; position: absolute; left: 4px; top: 9px; width: 1px; height: 100%;
+  background: var(--critical); opacity: 0.5;
+}
+.path-step:last-child .path-mark::before { display: none; }
+.path-step.has-float .path-mark { background: var(--warning); }
+.path-wbs { color: var(--muted); font-size: 0.8rem; }
+.path-name { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--axis); }
+.path-name:hover { color: var(--series-1); border-bottom-color: currentColor; }
+
+@media (max-width: 720px) {
+  .path-step { grid-template-columns: 18px 5.5ch minmax(0, 1fr); }
+}
+
 /* A holiday in the week before a submission: worth seeing, not worth shouting. */
 .holiday-flag { color: var(--warning); font-weight: 500; }
 

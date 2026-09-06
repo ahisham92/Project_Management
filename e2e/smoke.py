@@ -94,6 +94,7 @@ def main() -> int:
         step("schedule dates go out to Excel and come back", _schedule_excel)
         step("schedule reads at a glance and folds its tables away", _schedule_reading)
         step("Simplify untangles the diagram", _schedule_simplify)
+        step("the critical path is traced start to end", _critical_path)
         step("a link is drawn and erased on the diagram itself", _diagram_links)
         step("a deliverable opens in a panel with its dependencies", _task_panel)
         step("teams keep their own working week and holidays", _teams)
@@ -500,6 +501,48 @@ def _print_one_chart(page) -> None:
     page.wait_for_timeout(300)
     if page.evaluate("() => document.body.classList.contains('print-one')"):
         raise AssertionError("a whole-page print should not leave one card marked")
+
+
+def _critical_path(page) -> None:
+    """The run of work that sets the end date, unbroken, in the order it runs —
+    and still there when something unsequenced finishes after it."""
+    _schedule_page(page, "links")
+
+    steps = page.locator(".path-step")
+    if steps.count() == 0:
+        raise AssertionError("the earlier steps linked deliverables, so there should be a path")
+
+    said = page.locator(".card:has(h2:text-is('Critical path')) .card-head p").inner_text()
+    if "sets the end date" not in said:
+        raise AssertionError(f"the path card does not say what it is: {said!r}")
+
+    # Every step in date order, and each one red on the table below.
+    dates = page.locator(".path-step .path-dates")
+    starts = [dates.nth(i).inner_text().split("→")[0].strip() for i in range(dates.count())]
+    ordered = sorted(starts, key=lambda d: tuple(reversed(d.split("/"))))
+    if starts != ordered:
+        raise AssertionError(f"the path is not in the order the work runs: {starts}")
+    if page.locator("tr.is-critical").count() < steps.count():
+        raise AssertionError("every line on the path should be marked on the table")
+
+    # Push an unsequenced deliverable out past the end of the run: the path
+    # must not vanish with it.
+    was = steps.count()
+    _schedule_page(page, "dates")
+    last = page.locator("tbody tr[id^='task-']").last
+    row = last.get_attribute("id").split("-")[1]
+    page.locator(f"#start-{row} .cell-open").click()
+    page.wait_for_selector("form.cell-form input[name=start_date]", timeout=6000)
+    page.fill("form.cell-form input[name=start_date]", "01/06/2030")
+    page.locator("form.cell-form input[name=start_date]").blur()
+    page.wait_for_timeout(2200)
+
+    _schedule_page(page)
+    now = page.locator(".path-step").count()
+    if now != was:
+        raise AssertionError(
+            f"an unsequenced line finishing last should not change the path: {was} -> {now}")
+    page.screenshot(path=str(SHOTS / "33-critical-path.png"), full_page=True)
 
 
 def _dates_read_dd_mm(page) -> None:

@@ -124,10 +124,15 @@ def test_a_line_that_cannot_start_when_it_is_drawn_to_is_flagged():
 
 def test_a_plan_with_no_links_has_no_critical_path():
     """Nothing is sequenced, so nothing is on a path — calling every line that
-    happens to finish on the end date critical would say nothing."""
+    happens to finish on the end date critical would say nothing.
+
+    An unlinked line has no logic to be late against either, so it is its own
+    deadline and carries no float. Measuring it against whatever else happens to
+    finish last says only that the two were drawn on different dates.
+    """
     tasks = [task(1, "2026-01-01", "2026-01-10"), task(2, "2026-01-01", "2026-01-31")]
     result = analyse(tasks, [])
-    assert result[1]["total_float"] == 21            # float is still worked out
+    assert result[1]["total_float"] == 0
     assert not result[2]["is_critical"]
     assert not result[1]["in_a_chain"] and not result[2]["in_a_chain"]
 
@@ -1673,9 +1678,9 @@ def test_a_sweep_reads_where_the_last_column_has_just_been_put():
 
 def test_each_chart_carries_a_button_to_print_it_alone(signed_in):
     body = text(signed_in.get("/projects/1/schedule"))
-    assert body.count("data-print-chart") == 2
-    assert "Print the bar chart" in body
-    assert "Print the diagram" in body
+    assert body.count("data-print-chart") == 3
+    for named in ("Print the path", "Print the bar chart", "Print the diagram"):
+        assert named in body
 
 
 def test_the_whole_page_still_prints_as_it_did(signed_in):
@@ -1706,3 +1711,145 @@ def test_the_editing_marks_do_not_go_on_paper():
 def test_the_diagram_note_keeps_its_editing_hints_off_the_page(signed_in):
     body = text(signed_in.get("/projects/1/schedule"))
     assert 'class="no-print"> · drag from a box' in body
+
+
+# --- the critical path as a run from start to end ---------------------------
+
+def chain_of(tasks, links, calendars=None):
+    from app.schedule import critical_chain
+
+    return critical_chain(analyse(tasks, links, calendars))
+
+
+def test_the_critical_path_is_traced_as_one_unbroken_run():
+    """Start to end, in the order the work happens."""
+    tasks = [task(1, "2026-01-05", "2026-01-09"), task(2, "2026-01-12", "2026-01-16"),
+             task(3, "2026-01-19", "2026-01-23")]
+    links = [link(1, 2), link(2, 3)]
+    assert chain_of(tasks, links) == [1, 2, 3]
+
+
+def test_an_unsequenced_line_finishing_last_no_longer_hides_the_path():
+    """The bug this was reported for. One deliverable nobody has linked yet ran
+    past the end of the chain, gave every line on it float, and the whole
+    critical path went grey — while the work setting the end date had not
+    moved at all."""
+    tasks = [task(1, "2026-01-05", "2026-01-09"), task(2, "2026-01-12", "2026-01-16"),
+             task(9, "2026-03-02", "2026-03-06")]
+    rows = analyse(tasks, [link(1, 2)])
+
+    assert [t for t, r in rows.items() if r["on_critical_path"]] == [1, 2]
+    assert rows[1]["is_critical"] and rows[2]["is_critical"]
+    assert not rows[9]["is_critical"], "a line with no logic is not on any path"
+
+
+def test_a_line_with_no_logic_is_its_own_deadline():
+    """It has nothing to be late against, so it carries no float — measuring it
+    against whatever else finishes last says only that they were drawn on
+    different dates."""
+    tasks = [task(1, "2026-01-05", "2026-01-09"), task(9, "2026-03-02", "2026-03-06")]
+    rows = analyse(tasks, [])
+    assert rows[1]["total_float"] == 0 and rows[9]["total_float"] == 0
+    assert not rows[1]["is_critical"] and not rows[9]["is_critical"]
+
+
+def test_the_path_is_traced_even_where_the_dates_were_drawn_to_match_the_links():
+    """A link landing exactly on the drawn start still drives the line. Without
+    that the run breaks at every deliverable whose dates were already right."""
+    tasks = [task(1, "2026-01-01", "2026-01-10"), task(2, "2026-01-11", "2026-01-20")]
+    rows = analyse(tasks, [link(1, 2)])
+    assert rows[2]["driven_by"]["task_id"] == 1
+    assert rows[2]["starts_late"] is False           # it was drawn where it belongs
+    assert chain_of(tasks, [link(1, 2)]) == [1, 2]
+
+
+def test_the_longer_of_two_paths_is_the_one_traced():
+    """1 → 2 → 4 runs to the end of March; 1 → 3 → 4 is over in January."""
+    tasks = [task(1, "2026-01-01", "2026-01-10"), task(2, "2026-01-11", "2026-03-20"),
+             task(3, "2026-01-11", "2026-01-15"), task(4, "2026-03-21", "2026-03-31")]
+    links = [link(1, 2), link(1, 3), link(2, 4), link(3, 4)]
+    assert chain_of(tasks, links) == [1, 2, 4]
+
+
+def test_a_run_with_a_gap_in_it_is_still_the_run_and_says_where_the_slack_is():
+    """Dates drawn with a gap between two linked lines: the earlier one can
+    slip that far before it pushes anything, and it is still on the path."""
+    tasks = [task(1, "2026-01-05", "2026-01-09"), task(2, "2026-01-14", "2026-01-16")]
+    rows = analyse(tasks, [link(1, 2)])
+    assert rows[1]["on_critical_path"] and rows[2]["on_critical_path"]
+    assert rows[1]["total_float"] == 4
+    assert rows[2]["total_float"] == 0
+
+
+def test_nothing_sequenced_is_no_path_at_all():
+    assert chain_of([task(1, "2026-01-01", "2026-01-10")], []) == []
+
+
+def test_a_second_path_of_the_same_length_is_critical_too():
+    """Only one run can be traced, but a parallel one with no float cannot slip
+    either, so it is marked all the same."""
+    tasks = [task(1, "2026-01-01", "2026-01-10"), task(2, "2026-01-11", "2026-01-20"),
+             task(3, "2026-01-11", "2026-01-20"), task(4, "2026-01-21", "2026-01-25")]
+    links = [link(1, 2), link(1, 3), link(2, 4), link(3, 4)]
+    rows = analyse(tasks, links)
+    assert all(rows[t]["is_critical"] for t in (1, 2, 3, 4))
+    assert sum(1 for r in rows.values() if r["on_critical_path"]) == 3    # one traced run
+
+
+def test_float_is_counted_in_the_days_the_team_works():
+    """It sat beside a duration in working days while being measured in
+    calendar ones — a Monday-to-Friday line with one day of slack read three."""
+    from app.calendars import Calendar
+
+    tasks = [task(1, "2026-01-05", "2026-01-09"), task(2, "2026-01-13", "2026-01-16")]
+    links = [link(1, 2)]
+    team = {None: Calendar("Beirut", "1111100")}
+
+    assert analyse(tasks, links)[1]["total_float"] == 3          # Sat, Sun, Mon
+    assert analyse(tasks, links, team)[1]["total_float"] == 1    # only the Monday
+
+
+def test_a_late_finish_already_passed_reads_as_float_below_zero():
+    """Nothing in the app imposes a deadline, so the plan cannot produce this
+    on its own — but the arithmetic has to give the right sign if one ever
+    does, rather than reporting a huge positive float."""
+    from datetime import date
+
+    from app.calendars import Calendar
+    from app.schedule import _float_between
+
+    team = Calendar("Beirut", "1111100")
+    assert _float_between(team, date(2026, 1, 9), date(2026, 1, 9)) == 0
+    assert _float_between(team, date(2026, 1, 9), date(2026, 1, 12)) == 1
+    assert _float_between(team, date(2026, 1, 12), date(2026, 1, 9)) == -1
+
+
+def test_a_loop_cannot_send_the_trace_round_for_ever():
+    """order() leaves a bad link at the end rather than dropping it, so the
+    walk has to stop on a node it has already seen."""
+    from app.schedule import critical_chain
+
+    rows = analyse([task(1, "2026-01-01", "2026-01-05"), task(2, "2026-01-06", "2026-01-10")],
+                   [link(1, 2), link(2, 1)])
+    assert len(critical_chain(rows)) <= 2
+
+
+def test_the_schedule_shows_the_path_as_a_path(signed_in):
+    link_two(signed_in, "2", "1")
+    link_two(signed_in, "3", "2")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "Critical path" in body
+    assert "The run of work that sets the end date" in body
+    assert body.count('class="path-step') == 3
+
+
+def test_the_path_card_says_when_nothing_is_sequenced(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "Nothing is sequenced yet" in body
+    assert "nothing linked yet" in body
+
+
+def test_the_tile_counts_the_run_rather_than_a_loose_set_of_lines(signed_in):
+    link_two(signed_in, "2", "1")
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert "sets the end date" in body

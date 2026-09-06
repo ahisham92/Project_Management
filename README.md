@@ -72,7 +72,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Portfolio** | Across every project I manage: how far ahead or behind am I, what is late, how many hours have I burned? |
 | **Dashboard** | For one project: earned vs planned progress, the S-curve, progress and budget by trade, what needs attention. |
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
-| **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies** and the **critical path**. Dates are amended here, and the whole programme round-trips to **Excel**. |
+| **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies**, and the **critical path** traced from start to end. Dates are amended here, and the whole programme round-trips to **Excel**. |
 | **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
@@ -168,10 +168,23 @@ Progress and the Dashboard, where they belong.
   workbook lists them on a second sheet to copy from, and importing replaces the lot with
   what the sheet says. A row naming a WBS that does not exist, or one that would make the
   programme loop, is reported rather than silently dropped.
-- **The critical path** is worked out properly: a forward pass for the earliest each line
-  could run, a backward pass for the latest it could run without moving the finish, and the
-  difference is its float. A line with none is critical. A line with no links at all is not
-  on a path, so it is not called critical until it is sequenced.
+- **The critical path** is shown as a path: an unbroken run of activities from the first line
+  of the work to the last, in the order it happens, in a card of its own above the Gantt —
+  each step with its dates, its duration, and how much slack sits inside the run at that
+  point. Click a step to open that deliverable.
+- It is **traced**, not read off the float. A forward pass gives the earliest each line could
+  run and a backward pass the latest it could run without moving the finish, and the
+  difference is its float; but the path itself is followed back from the last sequenced line
+  to finish, through whatever each line waits on, until nothing precedes it. Reading it off
+  the float alone breaks: one deliverable nobody has linked yet, running past the end of the
+  chain, hands every line on that chain float it does not have and the whole path goes grey —
+  while the work that actually sets the end date has not moved at all. The finish the backward
+  pass measures against is the end of the *sequenced* work, and a line with no logic at all is
+  its own deadline: no float, and never critical.
+- **Float is counted in the team's working days**, the same as a duration — a Monday-to-Friday
+  line with one day of slack reads 1, not the 3 that counting the weekend would give.
+- A second path of the same length carries no float either, so it is marked critical too; only
+  one run can be traced, and that is the one the card lists.
 - **The network** below the plan draws who waits for whom as boxes laid out in the order the
   work runs. A box is a WBS number — hover it for the deliverable, its dates and its float —
   so a long programme stays readable. A link leaves the left-hand edge of a box when it waits
@@ -744,7 +757,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-459 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+473 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
@@ -771,11 +784,12 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 43 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 44 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
 taking the schedule out to Excel and importing the edited workbook back, reading a bar by
-hovering it and folding the tables away under the charts, untangling the diagram with Simplify, drawing a
+hovering it and folding the tables away under the charts, untangling the diagram with Simplify, tracing the critical path and keeping it
+when an unsequenced line finishes after it, drawing a
 link by dragging between two boxes and erasing it by clicking the line, opening a deliverable
 in its panel, setting up two teams with a holiday between them, printing a chart on a sheet of
 its own, and a second window picking up a change on its own.

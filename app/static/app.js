@@ -152,6 +152,15 @@
 
   window.addEventListener('afterprint', unmarkPrint);
 
+  // ?print=1 opens the print dialog on arrival. It is how the assistant hands
+  // somebody a PDF of a tab — a link they click, rather than a file it had to
+  // render itself.
+  if (/[?&]print=1\b/.test(window.location.search)) {
+    window.addEventListener('load', function () {
+      window.setTimeout(function () { unmarkPrint(); window.print(); }, 350);
+    });
+  }
+
   // A folded panel is not on the paper unless it is opened first, and closing
   // it again afterwards leaves the screen as it was.
   var unfolded = [];
@@ -1221,6 +1230,210 @@
       .then(function (result) { if (result) document.body.dataset.pulse = result.v; })
       .catch(function () { /* the next check will settle it */ });
   });
+
+  // --- the assistant -------------------------------------------------------
+  // A chat that reads the project and proposes changes. Anything it would
+  // change arrives staged: the page draws the list, and nothing happens until
+  // somebody presses Apply.
+
+  (function () {
+    var chat = document.getElementById('chat');
+    var form = document.getElementById('chat-form');
+    if (!chat || !form) return;
+
+    var history = [];
+    var asking = false;
+
+    function line(kind, html) {
+      var row = document.createElement('div');
+      row.className = 'chat-line ' + kind;
+      row.innerHTML = html;
+      chat.appendChild(row);
+      row.scrollIntoView({ block: 'nearest' });
+      return row;
+    }
+
+    function words(text) {
+      // The model writes plain text. Paragraphs and simple lists are all that
+      // is honoured; anything else is shown as it was written.
+      var safe = document.createElement('div');
+      safe.textContent = String(text || '');
+      return safe.innerHTML
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .split(/\n{2,}/).map(function (part) {
+          if (/^\s*[-*•]\s/m.test(part)) {
+            var items = part.split(/\n/).filter(Boolean).map(function (item) {
+              return '<li>' + item.replace(/^\s*[-*•]\s?/, '') + '</li>';
+            }).join('');
+            return '<ul class="guide-list">' + items + '</ul>';
+          }
+          return '<p>' + part.replace(/\n/g, '<br>') + '</p>';
+        }).join('');
+    }
+
+    function staging(answer, row) {
+      if (!answer.staged || !answer.staged.length || !chat.dataset.canWrite) return;
+
+      var list = answer.staged.map(function (change) {
+        var said = document.createElement('span');
+        said.textContent = change.says || change.kind;
+        return '<li>' + said.innerHTML + '</li>';
+      }).join('');
+
+      var box = document.createElement('div');
+      box.className = 'chat-staged';
+      box.innerHTML =
+        '<p class="field-label">Waiting for you — nothing has changed yet</p>' +
+        '<ul class="guide-list">' + list + '</ul>' +
+        '<div class="inline-form" style="margin-top:8px">' +
+        '<button type="button" class="btn btn-primary btn-sm" data-apply>Apply ' +
+        answer.staged.length + ' change' + (answer.staged.length === 1 ? '' : 's') + '</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-discard>Discard</button>' +
+        '</div>';
+      row.appendChild(box);
+
+      box.querySelector('[data-discard]').addEventListener('click', function () {
+        box.innerHTML = '<p class="small muted" style="margin:0">Discarded — nothing changed.</p>';
+      });
+      box.querySelector('[data-apply]').addEventListener('click', function (event) {
+        var button = event.target;
+        button.disabled = true;
+        button.textContent = 'Applying…';
+        fetch(chat.dataset.apply, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ actions: answer.staged }),
+        }).then(function (response) {
+          return response.json().then(function (result) { return [response.ok, result]; });
+        }).then(function (pair) {
+          if (!pair[0] || !pair[1].ok) {
+            button.disabled = false;
+            button.textContent = 'Try again';
+            say((pair[1] && pair[1].error) || 'That could not be applied');
+            return;
+          }
+          var done = document.createElement('span');
+          done.textContent = pair[1].note || 'Done';
+          box.innerHTML = '<p class="small" style="margin:0"><strong>Applied.</strong> ' +
+            done.innerHTML + ' The tabs it touched are already showing it.</p>';
+          window.dispatchEvent(new Event('pm:saved'));
+        }).catch(function () {
+          button.disabled = false;
+          button.textContent = 'Try again';
+          say('That could not be applied');
+        });
+      });
+    }
+
+    function linksFrom(answer, row) {
+      if (!answer.links || !answer.links.length) return;
+      var box = document.createElement('div');
+      box.className = 'inline-form';
+      box.style.marginTop = '8px';
+      answer.links.forEach(function (link) {
+        var anchor = document.createElement('a');
+        anchor.className = 'btn btn-ghost btn-sm';
+        anchor.href = link.url;
+        anchor.textContent = link.says || 'Open';
+        if (link.kind === 'presentation') anchor.textContent = 'Download the deck';
+        box.appendChild(anchor);
+      });
+      row.appendChild(box);
+    }
+
+    function send(question) {
+      if (asking || !question) return;
+      asking = true;
+      line('you', words(question));
+      var waiting = line('assistant thinking', '<p class="muted">Reading the project…</p>');
+
+      fetch(chat.dataset.ask, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ question: question, history: history }),
+      }).then(function (response) {
+        return response.json().then(function (result) { return [response.ok, result]; });
+      }).then(function (pair) {
+        var answer = pair[1] || {};
+        waiting.classList.remove('thinking');
+        if (!answer.ok) {
+          waiting.classList.add('trouble');
+          waiting.innerHTML = words(answer.error || 'That did not work');
+          return;
+        }
+        waiting.innerHTML = words(answer.text);
+        if (answer.used && answer.used.length) {
+          var used = document.createElement('p');
+          used.className = 'small muted chat-used';
+          used.textContent = 'Read: ' + answer.used.join(', ');
+          waiting.appendChild(used);
+        }
+        linksFrom(answer, waiting);
+        staging(answer, waiting);
+        history = answer.history || history;
+      }).catch(function () {
+        waiting.classList.remove('thinking');
+        waiting.classList.add('trouble');
+        waiting.innerHTML = '<p>The assistant could not be reached.</p>';
+      }).then(function () {
+        asking = false;
+        var box = form.elements.question;
+        if (box) { box.disabled = false; box.focus(); }
+      });
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var box = form.elements.question;
+      var question = (box.value || '').trim();
+      if (!question || asking) return;
+      box.value = '';
+      send(question);
+    });
+
+    // Enter sends; shift-enter is a new line, the way every chat works.
+    form.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' && !event.shiftKey && event.target.name === 'question') {
+        event.preventDefault();
+        form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'));
+      }
+    });
+
+    document.addEventListener('click', function (event) {
+      var chip = event.target.closest('.chat-suggestion');
+      if (chip) {
+        event.preventDefault();
+        send(chip.textContent.trim());
+        return;
+      }
+      if (event.target.id === 'chat-clear') {
+        history = [];
+        chat.querySelectorAll('.chat-line:not(:first-child)').forEach(function (row) {
+          row.remove();
+        });
+        return;
+      }
+      var models = event.target.closest('#load-models');
+      if (models) {
+        event.preventDefault();
+        fetch(models.dataset.url, { credentials: 'same-origin',
+                                    headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(function (result) {
+            var list = document.getElementById('groq-models');
+            if (!result.ok || !list) { say(result.error || 'Could not list them'); return; }
+            list.innerHTML = result.models.map(function (name) {
+              var option = document.createElement('option');
+              option.value = name;
+              return option.outerHTML;
+            }).join('');
+            say(result.models.length + ' models — the Model box now suggests them', 'success');
+          }).catch(function () { say('Could not reach Groq'); });
+      }
+    });
+  })();
 
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.

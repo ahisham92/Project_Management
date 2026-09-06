@@ -221,6 +221,35 @@ main { padding: 20px 0 48px; }
 }
 .guide-jump { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* --- the assistant --------------------------------------------------------
+   A chat, and the list of changes it is proposing. The proposal is deliberately
+   loud: it is the thing somebody has to read before pressing a button. */
+.chat {
+  max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  padding-right: 4px;
+}
+.chat-line {
+  border-radius: 10px; padding: 10px 13px; font-size: 0.88rem; line-height: 1.6;
+  max-width: 88%; border: 1px solid var(--border); background: var(--surface);
+}
+.chat-line p { margin: 0 0 8px; }
+.chat-line p:last-child { margin-bottom: 0; }
+.chat-line.you {
+  align-self: flex-end; background: var(--series-1); border-color: var(--series-1);
+  color: #fff;
+}
+.chat-line.assistant { align-self: flex-start; }
+.chat-line.thinking { color: var(--muted); font-style: italic; }
+.chat-line.trouble { border-color: var(--critical); }
+.chat-used { margin-top: 8px !important; font-size: 0.72rem; opacity: 0.75; }
+.chat-staged {
+  margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--warning); background: var(--surface-2, rgba(127, 127, 127, 0.06));
+}
+.chat-staged .guide-list { margin-top: 4px; }
+.chat-suggestion { font-size: 0.78rem; }
+@media (max-width: 700px) { .chat-line { max-width: 100%; } }
+
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .tile-label { font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .tile-value { margin-top: 6px; font-size: 1.5rem; font-weight: 600; }

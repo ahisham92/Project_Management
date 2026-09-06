@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}Assistant — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Assistant</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }} · ask it about this project, or tell it what to change
+      {% if ready %} · running on <strong>{{ model }}</strong>{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    {% if ready %}{{ badge('good', 'connected') }}{% else %}{{ badge('warning', 'not connected') }}{% endif %}
+  </div>
+</div>
+
+{% if not ready %}
+  <div class="card" style="border-color:var(--warning);margin-bottom:16px">
+    <div class="card-head"><div>
+      <h2>Connect the assistant</h2>
+      <p class="small muted" style="margin-top:2px">
+        It runs on Groq. The key is kept in a file beside the database, never in it —
+        the nightly backup uploads the database, and a key inside the thing that gets
+        uploaded is a key you have published.
+      </p></div></div>
+    <div class="card-body">
+      {% if is_admin %}
+        <ol class="small" style="margin:0 0 12px;padding-left:18px;line-height:1.9">
+          <li>Make an API key at <code>console.groq.com/keys</code>.</li>
+          <li>Paste it below. It is stored for everyone on this installation, so only
+            an administrator can set it.</li>
+          <li>Ask it something — “how is the project doing?” — to check it works.</li>
+        </ol>
+        <form method="post" action="{{ url_for('assistant.settings', project_id=project['id']) }}"
+              class="inline-form">
+          <label class="field flex1">
+            <span class="field-label">Groq API key</span>
+            <input name="groq_key" type="password" placeholder="gsk_…" required autocomplete="off">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Model</span>
+            <input name="groq_model" value="{{ model }}" placeholder="{{ default_model }}">
+          </label>
+          <button type="submit" id="connect-assistant" class="btn btn-primary">Connect</button>
+        </form>
+      {% else %}
+        <p class="small" style="margin:0">
+          An administrator needs to add a Groq API key before this can be used.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-body">
+    <div id="chat" class="chat" data-ask="{{ url_for('assistant.ask', project_id=project['id']) }}"
+         data-apply="{{ url_for('assistant.apply', project_id=project['id']) }}"
+         data-can-write="{{ '1' if can_write else '' }}">
+      <div class="chat-line assistant">
+        <p style="margin:0">
+          Ask me about {{ project['code'] }} — where it stands, what is late, what this week
+          wants — or tell me to change something. I read the project with the same figures the
+          tabs show, and anything I would <strong>change</strong> is staged for you to approve
+          before it happens.
+        </p>
+      </div>
+    </div>
+
+    <form id="chat-form" class="inline-form" style="margin-top:12px;align-items:flex-end">
+      <label class="field flex1">
+        <span class="field-label">Ask, or tell it what to do</span>
+        <textarea name="question" rows="2" placeholder="What is late, and by how much?"
+                  {{ 'disabled' if not ready }}></textarea>
+      </label>
+      <button type="submit" class="btn btn-primary" {{ 'disabled' if not ready }}>Ask</button>
+      <button type="button" class="btn btn-ghost" id="chat-clear">Start again</button>
+    </form>
+
+    {% if ready %}
+      <div class="chips" style="margin-top:10px">
+        {% for line in suggestions %}
+          <a href="#" class="chat-suggestion">{{ line }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-head"><div>
+      <h2>What it can do</h2>
+      <p class="small muted" style="margin-top:2px">
+        The same things you can, through the same code the screens use
+      </p></div></div>
+    <div class="card-body">
+      <p class="field-label">It reads</p>
+      <ul class="guide-list">
+        <li>Where the project stands — dates, float, planned against earned, hours and CPI.</li>
+        <li>Any deliverable: its dates, progress, team, float, what it waits on.</li>
+        <li>What moved between two dates, and what this week needs.</li>
+        <li>Both registers, including as at a past date.</li>
+      </ul>
+      <p class="field-label" style="margin-top:12px">It changes — after you approve</p>
+      <ul class="guide-list">
+        <li>Records progress, by percentage or by workflow step.</li>
+        <li>Moves start and submission dates, cascading what waits on them.</li>
+        <li>Adds and removes dependencies; adds holidays.</li>
+        <li>Raises and closes actions in either register.</li>
+      </ul>
+      <p class="field-label" style="margin-top:12px">It produces</p>
+      <ul class="guide-list">
+        <li>A PowerPoint of the work done between any two dates.</li>
+        <li>A link straight into any tab, or into its print dialog for a PDF.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div>
+      <h2>Where the limits are</h2>
+      <p class="small muted" style="margin-top:2px">Worth reading once</p></div></div>
+    <div class="card-body">
+      <ul class="guide-list">
+        <li><strong>Nothing changes until you press Apply.</strong> A model can be confidently
+          wrong about which deliverable “the design basis one” is, and the cost of that should
+          be a sentence to correct, not a programme to unpick.</li>
+        <li><strong>It cannot do more than you can.</strong> Every change goes through the same
+          function a form posts to, and applying takes the same role as editing the screen.</li>
+        <li><strong>It only sees this project.</strong> The project comes from the address bar,
+          not from anything said in the chat.</li>
+        <li><strong>Check what it tells you.</strong> It reads real figures, but it is a
+          language model reading them — for anything that matters, the tab it came from is one
+          click away.</li>
+        {% if is_admin and ready %}
+          <li>The key is at <code>{{ '(set by the environment)' if from_env else 'data/drive.json' }}</code>,
+            beside the database and outside the backup.</li>
+        {% endif %}
+      </ul>
+      {% if is_admin and ready and not from_env %}
+        <form method="post" action="{{ url_for('assistant.settings', project_id=project['id']) }}"
+              class="inline-form" style="margin-top:12px">
+          <label class="field flex1">
+            <span class="field-label">Change the key (leave blank to keep it)</span>
+            <input name="groq_key" type="password" placeholder="gsk_…" autocomplete="off">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Model</span>
+            <input name="groq_model" value="{{ model }}" list="groq-models">
+            <datalist id="groq-models"></datalist>
+          </label>
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="submit" name="disconnect" value="1" class="btn btn-danger"
+                  data-confirm="Disconnect the assistant and delete the key?">Disconnect</button>
+        </form>
+        <p class="small muted" style="margin:8px 0 0">
+          <a href="#" id="load-models"
+             data-url="{{ url_for('assistant.models', project_id=project['id']) }}">List the models
+            this key can use →</a>
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<template id="chat-line-template">
+  <div class="chat-line"><div class="chat-body"></div></div>
+</template>
+{% endblock %}

@@ -115,6 +115,8 @@ def main() -> int:
         step("internal: the week compiles the programme and both registers", _this_week)
         step("a helper on every tab, and one page of definitions", _how_to_use)
         step("the dashboard overview shows dates, float, progress and earned", _overview)
+        step("the assistant answers, stages a change, and applies it", _assistant)
+        step("a presentation downloads as a PowerPoint", _deck)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -751,6 +753,101 @@ def _overview(page) -> None:
         raise AssertionError(f"the overview shows no float in days: {said!r}")
     if not re.search(r"\d{2}/\d{2}/\d{4}", said):
         raise AssertionError("the overview shows no dates")
+
+
+def _row_reads(page, task_id: int) -> str:
+    """What the Progress tab says one deliverable has reached, fetched through
+    the browser's own session rather than by navigating to it."""
+    body = page.request.get(f"{BASE}/projects/1/tasks").text()
+    found = re.search(r'id="progress-%d"(.*?)</span>' % task_id, body, re.S)
+    if not found:
+        raise AssertionError(f"deliverable {task_id} is not on the Progress tab")
+    percent = re.search(r"(\d+)%", found.group(1))
+    return (percent.group(0) if percent else "")
+
+
+def _assistant(page) -> None:
+    """The chat: it answers, it shows what it would change, and nothing changes
+    until Apply is pressed.
+
+    Groq is stood in for by a small server the test runs itself — pointing a
+    smoke test at somebody's paid API would make it slow, flaky and expensive,
+    and what is worth checking here is the page, not the model."""
+    page.click("nav.tabs a:has-text('Assistant')")
+    page.wait_for_selector("h1:has-text('Assistant')", timeout=8000)
+    if "What it can do" not in page.text_content("body"):
+        raise AssertionError("the assistant page does not say what it can do")
+
+    if not os.environ.get("GROQ_STAND_IN"):
+        # Nothing to talk to; what is checked is that the page says how to
+        # connect one.
+        if "console.groq.com" not in page.text_content("body"):
+            raise AssertionError("the page does not say where to get a key")
+        page.screenshot(path=str(SHOTS / "38-assistant.png"), full_page=True)
+        return
+
+    # By id, not by text: "Connect" is a substring of "Disconnect", and a
+    # loose selector here would press the wrong one.
+    if page.locator("#connect-assistant").count():
+        page.fill("input[name=groq_key]", "gsk_stand_in")
+        page.click("#connect-assistant")
+    page.wait_for_selector("textarea[name=question]:not([disabled])", timeout=8000)
+
+    # A question that reads the project.
+    page.fill("textarea[name=question]", "How is the project doing?")
+    page.click("button:has-text('Ask')")
+    page.wait_for_selector(".chat-line.assistant:not(.thinking) .chat-used", timeout=25000)
+    said = page.locator(".chat-line.assistant").last.inner_text()
+    if "overview" not in said:
+        raise AssertionError(f"the answer does not say what it read: {said!r}")
+
+    # A change: staged, listed, and not done.
+    before = _row_reads(page, 1)
+    page.fill("textarea[name=question]", "Set 1.1 to 40%")
+    page.click("button:has-text('Ask')")
+    page.wait_for_selector(".chat-staged", timeout=25000)
+    staged = page.locator(".chat-staged").last.inner_text()
+    if "40%" not in staged or "nothing has changed yet" not in staged.lower():
+        raise AssertionError(f"the staged change does not read right: {staged!r}")
+
+    # Read without leaving the page: navigating away would throw the chat away,
+    # and the point is that nothing has changed while the proposal is still on
+    # screen waiting to be approved.
+    if _row_reads(page, 1) != before:
+        raise AssertionError("a staged change must not have been applied already")
+
+    page.click(".chat-staged button:has-text('Apply')")
+    page.wait_for_selector(".chat-staged:has-text('Applied')", timeout=15000)
+    page.screenshot(path=str(SHOTS / "38-assistant.png"), full_page=True)
+
+    if _row_reads(page, 1) != "40%":
+        raise AssertionError("applying should have recorded the progress")
+
+
+def _deck(page) -> None:
+    """The presentation downloads as a real PowerPoint package."""
+    import zipfile
+
+    # Fetched through the browser's own session rather than navigated to: a
+    # download is not a page, and goto treats it as a failure to load one.
+    answer = page.request.get(
+        f"{BASE}/projects/1/assistant/deck.pptx?start=01/08/2026&end=06/09/2026")
+    if not answer.ok:
+        raise AssertionError(f"the deck came back {answer.status}")
+    saved = str(SHOTS / "report.pptx")
+    with open(saved, "wb") as file:
+        file.write(answer.body())
+
+    with zipfile.ZipFile(saved) as book:
+        names = book.namelist()
+        slides = [n for n in names if n.startswith("ppt/slides/slide")]
+        if len(slides) < 6:
+            raise AssertionError(f"the deck has {len(slides)} slides")
+        if "ppt/presentation.xml" not in names or "ppt/theme/theme1.xml" not in names:
+            raise AssertionError(f"the deck is missing parts: {names}")
+        words = book.read("ppt/slides/slide1.xml").decode("utf-8")
+        if "SIBLINE-PORT" not in words:
+            raise AssertionError("the cover does not name the project")
 
 
 def _sorting(page) -> None:

@@ -208,6 +208,36 @@ TABS: tuple[dict[str, Any], ...] = (
         "terms": ("internal register", "minuted item", "as at", "open", "closed"),
     },
     {
+        "key": "assistant",
+        "name": "Assistant",
+        "endpoints": ("assistant.index",),
+        "what": "A language model with the run of this project — ask it anything, or tell it what to change.",
+        "start_here": "Type a question. Anything it would change is staged for you to approve before it happens.",
+        "steps": (
+            "Ask it about the project — “what is late?”, “how did last month go?”, "
+            "“what does this week need?”. It reads the same figures the tabs show.",
+            "Tell it to change something — “set 1.1 to 40%”, “move 2.3 to start on 15/10/2026”, "
+            "“close item 3.1”. It comes back as a <strong>proposal</strong>; nothing happens "
+            "until you press Apply.",
+            "Ask for a <strong>presentation</strong> of the work done between two dates and it "
+            "builds a PowerPoint you can download.",
+            "Ask it to <strong>print</strong> a tab and it gives you a link that opens straight "
+            "into the print dialog, where “Save as PDF” makes the file.",
+            "An administrator adds the Groq API key on this tab, once.",
+        ),
+        "watch": (
+            "Nothing changes until you press Apply — a model can be confidently wrong about "
+            "which deliverable you meant, and that should cost a sentence, not a programme.",
+            "It cannot do more than you can: every change goes through the same code a form "
+            "posts to, and applying takes the same role as editing the screen.",
+            "It only ever sees the project in the address bar.",
+            "Check anything that matters against the tab it came from. It reads real figures, "
+            "but it is a language model reading them.",
+        ),
+        "terms": ("assistant", "staged change", "groq", "presentation deck", "data date",
+                  "deliverable", "earned progress"),
+    },
+    {
         "key": "setup",
         "name": "Setup",
         "endpoints": ("projects.setup",),
@@ -423,6 +453,26 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
     ("Weekly meeting", "week",
      "The internal meeting for the current week, opened with one button and referenced from the week "
      "itself (WK-2026-37).", ""),
+
+    # --- the assistant
+    ("Assistant", "week",
+     "A language model, given the run of one project: it can read anything the tabs show "
+     "and propose changes to any of it.",
+     "It runs on Groq, and it works through the same functions the screens do — so it can do "
+     "what you can do and nothing more."),
+    ("Staged change", "week",
+     "Something the assistant proposes rather than does. It is listed under its answer, and "
+     "nothing happens until you press Apply.",
+     "A model can be confidently wrong about which deliverable a phrase meant. Staging makes "
+     "that a sentence to correct instead of a programme to unpick."),
+    ("Groq", "week",
+     "Who runs the model the assistant talks to. The API key is kept in a file beside the "
+     "database, never in it — the nightly backup uploads the database.", ""),
+    ("Presentation deck", "week",
+     "A PowerPoint of the work done between two dates: where the project stands, what moved, "
+     "what is late, the critical path, what comes next, and what is open with the client.",
+     "Built from the same period report the Period tab draws, so the deck and the screen can "
+     "never say different things."),
 
     # --- minutes and actions
     ("Minuted item", "minutes",

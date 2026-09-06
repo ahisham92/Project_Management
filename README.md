@@ -77,6 +77,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
+| **Assistant** | A language model with the run of the project. Ask it anything — “what is late?”, “how did last month go?” — or tell it what to change. Anything it would change is **staged for you to approve**; it also builds a PowerPoint of the work done in a period, and hands you a link straight into any tab's print dialog. |
 | **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
 | **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
@@ -390,6 +391,55 @@ figures are unchanged.
 The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradicting its own
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
+
+### The assistant
+
+A language model, given the run of one project, on the **Assistant** tab. It runs
+on [Groq](https://console.groq.com) — an API key is all it needs, and no extra
+Python package: the whole thing is one POST with a list of messages and a list
+of tools, written against `urllib`.
+
+**What it can do.** It reads where the project stands, any deliverable and what
+it waits on, what moved between two dates, what this week needs, either
+register (including as at a past date), and hours by trade. It changes progress,
+dates, dependencies, holidays and actions. It builds a **PowerPoint of the work
+done between two dates**, and it hands you a link straight into any tab — or
+into that tab's print dialog, where "Save as PDF" makes the file.
+
+**Three rules make it safe to point at a live project:**
+
+* **Reading runs; changing is staged.** A tool that would change something is
+  not run. It comes back described in the words a person would use, the page
+  lists it, and nothing happens until somebody presses **Apply**. A model can be
+  confidently wrong about which deliverable "the design basis one" is, and that
+  should cost a sentence to correct rather than a programme to unpick.
+* **It cannot do more than you can.** Every tool goes through the same service
+  function a form posts to, and applying takes the same role as editing the
+  screen — so it is another way in, not another set of rules. Somebody who may
+  read but not write is never offered the button.
+* **It only ever sees one project.** The project id comes from the address bar,
+  never from anything said in the chat, and the loop is bounded: six rounds and
+  twelve staged changes at most.
+
+**Connecting it.** An administrator pastes a key from `console.groq.com/keys` on
+the Assistant tab. It is kept in the same file beside the database as the Drive
+credentials, for the same reason — the nightly backup uploads the database.
+`GROQ_API_KEY` and `GROQ_MODEL` in the environment win over anything set on the
+page, and `GROQ_BASE_URL` points it somewhere else entirely, which is how the
+browser test drives it without touching a paid account.
+
+**One caveat about hosting.** PythonAnywhere's free plan only allows outbound
+requests to sites on its allowlist, and `api.groq.com` is not on it. The
+assistant needs a paid plan there, or a host without that restriction;
+everything else in this app works either way.
+
+**The presentation** is a real `.pptx`, written by `app/deck.py` with the
+standard library — the same trick `word.py` uses, because a .pptx is a zip of
+XML and adding a presentation library would be the first dependency that needs
+compiling. Nine slides: where the project stands, what the period did, what
+moved, by trade, what is behind, the critical path, what is next, and what is
+open with the client. It is built from the same period report the Period tab
+draws, so the deck and the screen can never say different things.
 
 ### Knowing what any of it means
 
@@ -896,6 +946,8 @@ All optional — see `.env.example`.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | The nightly backup's Google Drive account. Only needed if you would rather not connect it from the Backups page; set here, they win over anything set there. |
 | `GOOGLE_DRIVE_FOLDER_ID` | Which Drive folder the backup goes in. Its own My Drive if unset. |
 | `BACKUP_FILE_NAME` | The one file that gets replaced (default `project-control-backup.zip`). |
+| `GROQ_API_KEY` / `GROQ_MODEL` | The assistant's Groq account. Only needed if you would rather not connect it from the Assistant tab; set here, they win over anything set there. |
+| `GROQ_BASE_URL` | Where the assistant sends its requests. For a gateway, or for the stand-in the browser test runs. |
 
 The **setup password** is not an environment variable — it is stored per project and changed
 on the Setup sheet itself.

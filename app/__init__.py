@@ -54,6 +54,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
             "Set SECRET_KEY when hosting this for a team, or everyone is signed out on restart."
         )
 
+    from .views.assistant_views import bp as assistant_bp
     from .views.auth_views import bp as auth_bp
     from .views.meetings_views import bp as meetings_bp
     from .views.portfolio_views import bp as portfolio_bp
@@ -63,6 +64,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(meetings_bp)
+    app.register_blueprint(assistant_bp)
 
     @app.get("/healthz")
     def _healthz():

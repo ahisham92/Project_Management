@@ -26,7 +26,10 @@ FILE_NAME = "drive.json"
 # What may be kept here. Anything else in the file is ignored rather than
 # handed on, so a stray key cannot become a request parameter.
 FIELDS = ("client_id", "client_secret", "refresh_token", "folder_id", "file_name",
-          "account", "connected_at", "auto", "hour", "zone")
+          "account", "connected_at", "auto", "hour", "zone",
+          # The assistant's Groq key lives here for the same reason the Drive
+          # token does: the nightly backup uploads the database.
+          "groq_key", "groq_model")
 
 
 def path() -> Path:
@@ -100,6 +103,22 @@ def settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     merged.setdefault("zone", str(held.get("zone") or "Africa/Cairo"))
     merged["from_env"] = bool(from_env.get("refresh_token"))
     return merged
+
+
+def groq(env: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The assistant's key and model. The environment wins, as everywhere else."""
+    import os as _os
+
+    from .groq import DEFAULT_MODEL, settings_from_env
+
+    held = read()
+    from_env = settings_from_env(env if env is not None else _os.environ)
+    return {
+        "key": from_env.get("groq_key") or str(held.get("groq_key") or ""),
+        "model": (from_env.get("groq_model") or str(held.get("groq_model") or "")
+                  or DEFAULT_MODEL),
+        "from_env": bool(from_env.get("groq_key")),
+    }
 
 
 def schedule() -> dict[str, Any]:

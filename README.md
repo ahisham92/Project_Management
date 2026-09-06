@@ -77,6 +77,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
+| **Internal** | The same register, kept for the internal weekly meeting rather than the client — a task list, open until it is done. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
@@ -388,6 +389,28 @@ figures are unchanged.
 The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradicting its own
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
+
+### The internal weekly, and where things stood on a date
+
+The **Internal** tab is the same register as the Minutes, kept for the internal weekly meeting
+instead of the client. It is a task list: an item is open until it is done, then it is closed.
+Everything the client register does, this one does — attendance, owners, trades, what an item
+bears on, filters, search, sorting, the agenda for the next one, the Word export — because it
+is the same kind of record kept for a different audience. Only which register an item belongs
+to differs, and the two never show each other's items. An item raised inside a meeting takes
+that meeting's register, so the two can never disagree.
+
+**As at a date.** A client asking "where did this stand in March?" is not asking what is open
+now. Put a date in the **As at** box on either register and it rewinds: items raised after that
+date are gone, and anything closed since is shown as it was then — still open. A banner across
+the top says plainly that this is not today, the tiles count the same day the table shows, and
+the Word export says the date it was read at, so a document handed over cannot be mistaken for
+the current position.
+
+None of it needs a separate history to be trusted: it is read off the two dates the register
+already keeps, the day an item was raised and the day it was closed. The **Closed on** date is
+editable for exactly that reason — an item closed in January and ticked off in March was closed
+in January, and the register should say so.
 
 ### Printing and PDF for management
 
@@ -757,7 +780,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-473 tests: the calculation engine (the workflow step dates, the stepped planned figure,
+504 tests: the calculation engine (the workflow step dates, the stepped planned figure,
 resubmissions and the revision cap, and the workbook's own weights, earned progress and
 per-trade man-months), the programme (durations both ways round, the four link kinds with
 negative lags, the forward and backward passes, float and the critical path, cascading
@@ -766,7 +789,8 @@ the network, untangling the diagram, and the schedule and dependency workbooks),
 calendars (the two working weeks, holidays for one team or all of them, durations and lags in
 working days, dates moved off a day off, planned progress that does not tick over a weekend,
 and the flag on a submission with a holiday in its run-up), the minutes register
-(filters, search, sorting, renumbering on a move, and the Word output), the web layer
+(filters, search, sorting, renumbering on a move, and the Word output), the internal weekly
+register (kept apart from the client's, and either one read as at a past date), the web layer
 (sign-in, every page, reporting progress by status, raising revisions, booking hours, the
 dd/mm/yyyy dates, the setup lock and the permission rules), sorting, Save all, the print
 output, the Excel round trips, editing in the row, the live check, and what hosting needs —
@@ -784,7 +808,7 @@ python e2e/smoke.py                      # in another
 Run it against a freshly seeded database — it books hours, so repeated runs against the
 same database accumulate them.
 
-Its 44 steps cover both themes and the mobile layout, and each screenshot lands in
+Its 45 steps cover both themes and the mobile layout, and each screenshot lands in
 `e2e/screenshots/`. Among them: recording progress in the row, linking two deliverables and
 watching what follows shift, moving either end of a link, dragging a box in the network,
 taking the schedule out to Excel and importing the edited workbook back, reading a bar by
@@ -792,7 +816,8 @@ hovering it and folding the tables away under the charts, untangling the diagram
 when an unsequenced line finishes after it, drawing a
 link by dragging between two boxes and erasing it by clicking the line, opening a deliverable
 in its panel, setting up two teams with a holiday between them, printing a chart on a sheet of
-its own, and a second window picking up a change on its own.
+its own, keeping an internal weekly list apart from the client's minutes and reading it as at a
+past date, and a second window picking up a change on its own.
 
 ---
 

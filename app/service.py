@@ -469,8 +469,12 @@ def load_attendees(project_id: int, include_inactive: bool = True) -> list[dict[
     ]
 
 
-def load_meetings(project_id: int) -> list[dict[str, Any]]:
-    """Meetings newest first, each with its attendance and item counts."""
+def load_meetings(project_id: int, kind: str | None = None) -> list[dict[str, Any]]:
+    """Meetings newest first, each with its attendance and item counts.
+
+    `kind` narrows to one register — the client's minutes or the internal
+    weekly one — and None takes both.
+    """
     return [
         dict(r)
         for r in query(
@@ -483,10 +487,10 @@ def load_meetings(project_id: int) -> list[dict[str, Any]]:
                      WHERE i.meeting_id = m.id AND i.status = 'open') AS open_count
             FROM meetings m
             LEFT JOIN users u ON u.id = m.user_id
-            WHERE m.project_id = ?
+            WHERE m.project_id = ? AND (? IS NULL OR m.kind = ?)
             ORDER BY m.meeting_date DESC, m.id DESC
             """,
-            (project_id,),
+            (project_id, kind, kind),
         )
     ]
 
@@ -503,30 +507,41 @@ def load_meeting(project_id: int, meeting_id: int) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
 
 
-def load_items(project_id: int, on_date: str | None = None) -> list[dict[str, Any]]:
+def load_items(project_id: int, on_date: str | None = None, kind: str | None = None,
+               rewind_to: str = "") -> list[dict[str, Any]]:
     """Every minuted item on the project, ready for filtering.
 
     Each row carries the names behind its foreign keys, so searching and
     filtering never has to go back to the database.
+
+    `kind` narrows to one register. `rewind_to` gives the register as it stood
+    on a date — items raised by then, each open or closed as it was — which is
+    the answer to "where were we on the fifteenth?".
     """
-    from .minutes import decorate
+    from .minutes import decorate, rewind
+
+    where = "WHERE i.project_id = ?"
+    params: list[Any] = [project_id]
+    if kind:
+        where += " AND i.kind = ?"
+        params.append(kind)
 
     rows = query(
-        """
+        f"""
         SELECT i.*, m.ref AS meeting_ref, m.title AS meeting_title, m.meeting_date AS meeting_date
         FROM meeting_items i
         LEFT JOIN meetings m ON m.id = i.meeting_id
-        WHERE i.project_id = ?
+        {where}
         ORDER BY m.meeting_date DESC, i.sort_order, i.id
         """,
-        (project_id,),
+        params,
     )
     by_item = item_trades(project_id)
-    stamp = on_date or today()
-    return [
-        decorate(dict(r, trades=by_item.get(r["id"], [])), stamp)
-        for r in rows
-    ]
+    plain = [dict(r, trades=by_item.get(r["id"], [])) for r in rows]
+    if rewind_to:
+        plain = rewind(plain, rewind_to)
+    stamp = rewind_to or on_date or today()
+    return [decorate(row, stamp) for row in plain]
 
 
 def item_trades(project_id: int) -> dict[int, list[dict[str, Any]]]:

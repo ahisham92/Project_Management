@@ -27,6 +27,24 @@ IMPACT_NAMES = dict(IMPACTS)
 # go from a project while the responsibility stays where it is.
 OWNERS: tuple[str, ...] = ("PM", "Client", "MR", "ST", "GE", "WE", "EL", "PMC")
 
+# The two registers. The client's minutes and the internal weekly list are the
+# same kind of record — an item, an owner, a date, open until it is done — so
+# they share every rule; only which register an item belongs to differs.
+KINDS: tuple[tuple[str, str, str], ...] = (
+    ("client", "Minutes of meeting", "Meeting"),
+    ("internal", "Internal weekly", "Weekly meeting"),
+)
+KIND_KEYS = tuple(key for key, _title, _word in KINDS)
+KIND_TITLES = {key: title for key, title, _word in KINDS}
+KIND_WORDS = {key: word for key, _title, word in KINDS}
+DEFAULT_KIND = "client"
+
+
+def normalise_kind(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in KIND_KEYS else DEFAULT_KIND
+
+
 STATUSES: tuple[tuple[str, str], ...] = (("open", "Open"), ("closed", "Closed"))
 STATUS_KEYS = tuple(key for key, _ in STATUSES)
 STATUS_NAMES = dict(STATUSES)
@@ -131,6 +149,49 @@ def decorate(item: Mapping[str, Any], on_date: str) -> dict[str, Any]:
         row["is_open"] and row["days_to_due"] is not None and 0 <= row["days_to_due"] <= 7
     )
     return row
+
+
+def as_at(item: Mapping[str, Any], on_date: str) -> dict[str, Any] | None:
+    """One item as it stood on a date, or None if it had not been raised yet.
+
+    The register is a running record, so "where were we on the fifteenth?" is
+    not the same question as "where are we now". An item closed last week was
+    still open then, and one raised yesterday did not exist at all. Both are
+    read off the dates the register already keeps — the day it was raised and
+    the day it was closed — so no separate history has to be trusted.
+    """
+    row = dict(item)
+    raised = str(row.get("raised_date") or "")
+    if raised and raised > on_date:
+        return None
+
+    closed = str(row.get("closed_date") or "")
+    if normalise_status(row.get("status")) == "closed" and (not closed or closed <= on_date):
+        row["status"] = "closed"
+        row["closed_date"] = closed
+    else:
+        # Either still open, or closed after the date being asked about.
+        row["was_reopened"] = normalise_status(row.get("status")) == "closed"
+        row["closed_after"] = closed if row.get("was_reopened") else ""
+        row["status"] = "open"
+        row["closed_date"] = ""
+    return row
+
+
+def rewind(items: Iterable[Mapping[str, Any]], on_date: str) -> list[dict[str, Any]]:
+    """The whole register as it stood on a date."""
+    if not on_date:
+        return [dict(item) for item in items]
+    return [row for row in (as_at(item, on_date) for item in items) if row is not None]
+
+
+def progress_note(items: Sequence[Mapping[str, Any]], on_date: str) -> str:
+    """What the register said on a date, in one line, for the top of a report."""
+    closed = sum(1 for item in items if normalise_status(item.get("status")) == "closed")
+    open_items = len(items) - closed
+    when = to_display(on_date) or on_date
+    return (f"As at {when}: {len(items)} item{'' if len(items) == 1 else 's'} raised, "
+            f"{closed} closed, {open_items} still open")
 
 
 def _days_between(from_iso: str, to_iso: str) -> int | None:

@@ -322,6 +322,15 @@ input[type="checkbox"] { width: auto; }
 .net-edge[data-link] { cursor: pointer; }
 .net-edge[data-link]:hover { stroke-width: 3; opacity: 1; }
 
+/* Reading the register as at a past date is not the live register, and the
+   page has to say so plainly before anyone acts on what is on it. */
+.as-at-banner {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin: 16px 0 0; padding: 10px 14px; border-radius: 10px;
+  background: var(--tint-warning); border: 1px solid var(--warning);
+}
+.as-at-banner .small { color: var(--ink-2); }
+
 /* The critical path, as a run you can read down: one line per activity, in
    the order the work happens, joined by a rule down the left. */
 .path { list-style: none; margin: 0; padding: 0; }

@@ -116,6 +116,9 @@
       </label>
       {{ date_field('raised_date', item['raised_date'] if item else today, 'Raised', 'w-sm') }}
       {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
+      {# The day it was actually closed, not the day somebody got round to
+         ticking it. A register read as at a past date turns on this. #}
+      {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed on', 'w-sm') }}
     </div>
   {% endif %}
 {% endmacro %}
@@ -135,23 +138,40 @@
 
 <div class="page-head">
   <div>
-    <h1>Minutes of meeting</h1>
+    <h1>{{ kind_title }}</h1>
     <p class="small muted" style="margin-top:2px">
       {{ project['code'] }} · {{ project['name'] }} ·
       {{ totals['open'] }} open of {{ totals['total'] }} item{{ '' if totals['total'] == 1 else 's' }}
-      across {{ meetings | length }} meeting{{ '' if meetings | length == 1 else 's' }}
+      across {{ meetings | length }} {{ kind_word | lower }}{{ '' if meetings | length == 1 else 's' }}
+      {% if kind == 'internal' %} · kept for us, not for the client{% endif %}
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda', project_id=project['id']) }}">Next-meeting agenda</a>
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda', project_id=project['id'], kind=kind) }}">Next-meeting agenda</a>
     <a class="btn btn-ghost no-print"
        href="{{ url_for('meetings.register_word', project_id=project['id'], **link_args) }}">Export Word</a>
     {{ print_button('Print / PDF') }}
   </div>
 </div>
 
-{{ print_header(project, 'Action register', today,
+{{ print_header(project, kind_title ~ ' — action register', as_at or today,
                 shown ~ ' of ' ~ totals['total'] ~ ' items shown') }}
+
+{% if as_at %}
+  <div class="as-at-banner">
+    <div>
+      <strong>Showing the register as it stood on {{ short_date(as_at) }}.</strong>
+      <span class="small">{{ as_at_note }}</span>
+      <p class="small" style="margin:4px 0 0">
+        Items raised after that date are not here, and anything closed since is
+        shown as it was then — still open.
+      </p>
+    </div>
+    <a class="btn btn-ghost btn-sm no-print"
+       href="{{ url_for('meetings.index', project_id=project['id'],
+                        **dict(link_args, as_at=none)) }}">Back to today</a>
+  </div>
+{% endif %}
 
 <div class="grid grid-4">
   {{ tile('Open items', totals['open'], totals['total'] ~ ' raised in total',
@@ -168,7 +188,11 @@
   <div class="card-head">
     <div>
       <h2>Filter</h2>
-      <p class="small muted" style="margin-top:2px">{{ shown }} item{{ '' if shown == 1 else 's' }} shown</p>
+      <p class="small muted" style="margin-top:2px">
+        {{ shown }} item{{ '' if shown == 1 else 's' }} shown ·
+        <strong>As at</strong> rewinds the register to how it stood on a date, which is what to
+        show a client asking where things were then
+      </p>
     </div>
   </div>
   <div class="card-body">
@@ -218,8 +242,10 @@
       </label>
       {{ date_field('from', filters['from'], 'Raised from', 'w-sm') }}
       {{ date_field('to', filters['to'], 'Raised to', 'w-sm') }}
+      {{ date_field('as_at', filters['as_at'], 'As at', 'w-sm') }}
+      <input type="hidden" name="kind" value="{{ kind }}">
       <button type="submit" class="btn btn-primary">Apply</button>
-      <a class="btn btn-ghost" href="{{ url_for('meetings.index', project_id=project['id']) }}">Clear</a>
+      <a class="btn btn-ghost" href="{{ url_for('meetings.index', project_id=project['id'], kind=kind) }}">Clear</a>
     </form>
   </div>
 </div>
@@ -409,7 +435,7 @@
     {% if can_report %}
       <div class="card-body no-print" style="border-top:1px solid var(--line)">
         <form method="post" class="inline-form"
-              action="{{ url_for('meetings.add_meeting', project_id=project['id']) }}">
+              action="{{ url_for('meetings.add_meeting', project_id=project['id'], kind=kind) }}">
           <label class="field w-sm">
             <span class="field-label">Ref</span>
             <input name="ref" placeholder="MOM-01">

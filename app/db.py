@@ -89,6 +89,10 @@ def init_db(path: Path | str | None = None) -> None:
             # An item is owned by a party — PM, Client, MR — rather than by a
             # named person, who changes while the responsibility does not.
             ("meeting_items", "owner_code", "TEXT NOT NULL DEFAULT ''"),
+            # Which register an item belongs to: the client's minutes, or the
+            # internal weekly one. Two registers, one set of rules.
+            ("meetings", "kind", "TEXT NOT NULL DEFAULT 'client'"),
+            ("meeting_items", "kind", "TEXT NOT NULL DEFAULT 'client'"),
             # How the schedule is entered: start + duration, or start and finish.
             ("projects", "schedule_mode", "TEXT NOT NULL DEFAULT 'duration'"),
             # What the client returned: a Code A approves, B and C mean rework.

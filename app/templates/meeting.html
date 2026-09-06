@@ -91,6 +91,9 @@
         </select>
       </label>
       {{ date_field('due_date', item['due_date'] if item else '', 'Due', 'w-sm') }}
+      {# The day it was actually closed, not the day somebody got round to
+         ticking it. A register read as at a past date turns on this. #}
+      {{ date_field('closed_date', item['closed_date'] if item else '', 'Closed on', 'w-sm') }}
     </div>
   {% endif %}
   <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}">
@@ -121,7 +124,7 @@
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id']) }}">All items</a>
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id'], kind=meeting['kind']) }}">All items</a>
     <a class="btn btn-ghost no-print"
        href="{{ url_for('meetings.meeting_word', project_id=project['id'], meeting_id=meeting['id']) }}">Export Word</a>
     {{ print_button('Print / PDF') }}
@@ -188,7 +191,7 @@
             {% if not attendance %}
               <p class="small muted">
                 Nobody is on the attendance list yet — add people on the
-                <a href="{{ url_for('meetings.index', project_id=project['id']) }}">Minutes tab</a>.
+                <a href="{{ url_for('meetings.index', project_id=project['id'], kind=meeting['kind']) }}">Minutes tab</a>.
               </p>
             {% else %}
               <div class="table-scroll">
@@ -401,7 +404,7 @@
     <div class="card-body no-print" style="border-top:1px solid var(--line)">
       <p class="field-label" style="margin-bottom:6px">Add an item to these minutes</p>
       <form method="post" class="item-form"
-            action="{{ url_for('meetings.add_item', project_id=project['id']) }}">
+            action="{{ url_for('meetings.add_item', project_id=project['id'], kind=meeting['kind']) }}">
         {{ item_fields(none, suggested_ref) }}
         <div><button type="submit" class="btn btn-primary">Add item</button></div>
       </form>

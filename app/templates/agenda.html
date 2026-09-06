@@ -14,16 +14,16 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Agenda — open items</h1>
+    <h1>{{ kind_title }} — agenda</h1>
     <p class="small muted" style="margin-top:2px">
       {{ project['code'] }} · {{ project['name'] }} ·
       everything still open as at {{ short_date(today) }}, grouped by who owns it
-      {% if last_meeting %} · last meeting {{ short_date(last_meeting['meeting_date']) }}{% endif %}
+      {% if last_meeting %} · last {{ kind_word | lower }} {{ short_date(last_meeting['meeting_date']) }}{% endif %}
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id']) }}">All items</a>
-    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda_word', project_id=project['id']) }}">Export Word</a>
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id'], kind=kind) }}">All items</a>
+    <a class="btn btn-ghost no-print" href="{{ url_for('meetings.agenda_word', project_id=project['id'], kind=kind) }}">Export Word</a>
     {{ print_button('Print / PDF') }}
   </div>
 </div>
@@ -65,7 +65,7 @@
     </select>
   </label>
   <button type="submit" class="btn btn-primary">Apply</button>
-  <a class="btn btn-ghost" href="{{ url_for('meetings.agenda', project_id=project['id']) }}">Clear</a>
+  <a class="btn btn-ghost" href="{{ url_for('meetings.agenda', project_id=project['id'], kind=kind) }}">Clear</a>
 </form>
 
 {% if not groups %}

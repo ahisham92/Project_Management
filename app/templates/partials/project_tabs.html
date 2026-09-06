@@ -1,17 +1,28 @@
-{# Navigation across one project's screens. #}
+{# Navigation across one project's screens.
+
+   The two registers share an endpoint, so they carry the one thing that tells
+   them apart and are marked active on which register is actually open rather
+   than on the endpoint alone. #}
 <nav class="tabs">
+  {% set here = request.view_args.get('kind') if request.view_args else none %}
   {% set tabs = [
-    ('projects.dashboard', 'Dashboard'),
-    ('projects.tasks', 'Progress'),
-    ('projects.schedule', 'Schedule'),
-    ('projects.budget', 'Budget'),
-    ('projects.period', 'Period'),
-    ('projects.timesheet', 'Timesheet'),
-    ('meetings.index', 'Minutes'),
-    ('projects.setup', 'Setup'),
+    ('projects.dashboard', 'Dashboard', none),
+    ('projects.tasks', 'Progress', none),
+    ('projects.schedule', 'Schedule', none),
+    ('projects.budget', 'Budget', none),
+    ('projects.period', 'Period', none),
+    ('projects.timesheet', 'Timesheet', none),
+    ('meetings.index', 'Minutes', 'client'),
+    ('meetings.index', 'Internal', 'internal'),
+    ('projects.setup', 'Setup', none),
   ] %}
-  {% for endpoint, label in tabs %}
-    <a href="{{ url_for(endpoint, project_id=project['id']) }}"
-       class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+  {% for endpoint, label, register in tabs %}
+    {% if register %}
+      <a href="{{ url_for(endpoint, project_id=project['id'], kind=register) }}"
+         class="{{ 'active' if request.endpoint == endpoint and here == register }}">{{ label }}</a>
+    {% else %}
+      <a href="{{ url_for(endpoint, project_id=project['id']) }}"
+         class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+    {% endif %}
   {% endfor %}
 </nav>

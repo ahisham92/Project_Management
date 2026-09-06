@@ -111,6 +111,7 @@ def main() -> int:
         step("minutes: changes a field by clicking it in the row", _minutes_cells)
         step("minutes: picks a date from the calendar", _minutes_calendar)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
+        step("internal: a weekly list of its own, read as at a date", _internal_register)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -551,6 +552,77 @@ def _dates_read_dd_mm(page) -> None:
         raise AssertionError("dates should read dd/mm/yyyy")
     if page.locator("input[type=date]").count():
         raise AssertionError("a native date picker would follow the machine's locale")
+
+
+def _internal_register(page) -> None:
+    """The internal weekly list: its own tab and path, separate from the
+    client's minutes, and readable as it stood on a past date."""
+    page.click("nav.tabs a:has-text('Internal')")
+    page.wait_for_selector("h1:has-text('Internal weekly')", timeout=8000)
+    if "/internal" not in page.url:
+        raise AssertionError(f"the internal register should have its own path: {page.url}")
+    if "kept for us, not for the client" not in page.text_content("body"):
+        raise AssertionError("the page should say whose register this is")
+
+    # A weekly meeting and two requirements on it.
+    page.fill("form[action*='/meetings'] input[name=title]", "Weekly internal – week 1")
+    page.fill("form[action*='/meetings'] input[name=meeting_date]", "05/01/2026")
+    page.click("form[action*='/meetings'] button:has-text('Add')")
+    page.wait_for_selector("h1:has-text('Weekly internal')", timeout=8000)
+
+    for subject, due in (("Issue the mooring calc note", "12/01/2026"),
+                         ("Chase the bathymetry survey", "20/01/2026")):
+        page.fill("form[action*='/items'] input[name=subject]", subject)
+        page.fill("form[action*='/items'] input[name=due_date]", due)
+        # Raised on the meeting's own date, which the page carries for us.
+        page.click("form[action*='/items'] button:has-text('Add item')")
+        page.wait_for_timeout(900)
+
+    page.goto(f"{BASE}/projects/1/internal?filter=all", wait_until="networkidle")
+    rows = page.locator("tbody tr[id^='item-']")
+    if rows.count() != 2:
+        raise AssertionError(f"expected the two internal items, found {rows.count()}")
+
+    # Close one on the day it was actually closed.
+    first = rows.first.get_attribute("id").split("-")[1]
+    page.goto(f"{BASE}/projects/1/internal?filter=all&edit={first}", wait_until="networkidle")
+    editor = page.locator(f"#edit-{first} form.item-form")
+    editor.locator("select[name=status]").select_option("closed")
+    editor.locator("input[name=closed_date]").fill("10/01/2026")
+    editor.locator("button:has-text('Save item')").click()
+    page.wait_for_timeout(1200)
+
+    # The client asks where things stood on the fifteenth.
+    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=15/01/2026", wait_until="networkidle")
+    said = page.locator(".as-at-banner").inner_text()
+    if "as it stood on 15/01/2026" not in said:
+        raise AssertionError(f"the page does not say it is showing a past date: {said!r}")
+    if "1 closed" not in said:
+        raise AssertionError(f"the note should count what was closed by then: {said!r}")
+    page.screenshot(path=str(SHOTS / "34-internal-as-at.png"), full_page=True)
+
+    # A week earlier, that item had not been closed yet.
+    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=08/01/2026", wait_until="networkidle")
+    if "0 closed" not in page.locator(".as-at-banner").inner_text():
+        raise AssertionError("an item closed on the tenth was still open on the eighth")
+
+    # Before anything was raised, the register was empty.
+    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=01/01/2020", wait_until="networkidle")
+    if page.locator("tbody tr[id^='item-']").count() != 0:
+        raise AssertionError("nothing had been raised in 2020")
+
+    # And none of it reached the client's minutes.
+    page.goto(f"{BASE}/projects/1/minutes?filter=all", wait_until="networkidle")
+    if "Issue the mooring calc note" in page.text_content("body"):
+        raise AssertionError("the internal list must not show in the client's minutes")
+
+    # It goes to Word under its own name, saying the date it was read at.
+    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=15/01/2026", wait_until="networkidle")
+    with page.expect_download(timeout=10000) as download:
+        page.click("a:has-text('Export Word')")
+    name = download.value.suggested_filename
+    if "internal" not in name:
+        raise AssertionError(f"the internal register downloaded as {name}")
 
 
 def _sorting(page) -> None:

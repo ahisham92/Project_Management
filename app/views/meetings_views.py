@@ -13,8 +13,9 @@ from ..auth import ROLE_RANK, load_project, login_required
 from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query_one
 from ..minutes import (
-    COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, OWNERS, STATUSES, filter_items, next_ref,
-    normalise_impact, normalise_owner, normalise_sort, normalise_status, sort_items, summarise,
+    COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, KIND_TITLES, KIND_WORDS, KINDS, OWNERS,
+    STATUSES, filter_items, next_ref, normalise_impact, normalise_kind, normalise_owner,
+    normalise_sort, normalise_status, progress_note, sort_items, summarise,
 )
 from ..service import (
     load_attendees, load_items, load_meeting, load_meetings, load_trades, meeting_items,
@@ -45,6 +46,18 @@ def _clean(name: str) -> str:
     return (request.form.get(name) or "").strip()
 
 
+def _kind() -> str:
+    """Which register this request belongs to.
+
+    The URL says it on the pages that have one of their own; a form posted from
+    either register carries it, so a change made on the internal list comes
+    back to the internal list.
+    """
+    if request.view_args and request.view_args.get("kind"):
+        return normalise_kind(request.view_args["kind"])
+    return normalise_kind(request.form.get("kind") or request.args.get("kind"))
+
+
 def _filters() -> dict[str, object]:
     """Everything narrowing the register, read from the query string.
 
@@ -63,6 +76,10 @@ def _filters() -> dict[str, object]:
         "impact": (request.args.get("impact") or "").strip().lower(),
         "from": from_input(request.args.get("from")) or "",
         "to": from_input(request.args.get("to")) or "",
+        # The date the register is being read as at. Empty means today, which
+        # is the live register; a date rewinds it to how it stood then.
+        "as_at": from_input(request.args.get("as_at")) or "",
+        "kind": _kind(),
         "sort": sort,
         "dir": direction,
     }
@@ -79,6 +96,8 @@ def _link_args(filters: dict[str, object]) -> dict[str, object]:
         "impact": filters["impact"] or None,
         "from": to_display(filters["from"]) or None,
         "to": to_display(filters["to"]) or None,
+        "as_at": to_display(filters["as_at"]) or None,
+        "kind": filters["kind"],
         "sort": filters["sort"],
         "dir": filters["dir"],
     }
@@ -87,7 +106,8 @@ def _link_args(filters: dict[str, object]) -> dict[str, object]:
 
 def _selection(project_id: int, filters: dict[str, object]) -> list[dict]:
     """The items the filters ask for, in the requested order."""
-    items = load_items(project_id, today())
+    items = load_items(project_id, today(), kind=str(filters["kind"]),
+                       rewind_to=str(filters["as_at"]))
     kept = filter_items(
         items,
         chip=str(filters["filter"]),
@@ -124,12 +144,22 @@ def _stamp() -> str:
 
 # --- the register ----------------------------------------------------------
 
-@bp.get("/minutes")
+@bp.get("/minutes", defaults={"kind": "client"})
+@bp.get("/internal", defaults={"kind": "internal"})
 @login_required
-def index(project_id: int):
+def index(project_id: int, kind: str):
+    """One register: the client's minutes, or the internal weekly list.
+
+    The same page either way — an item, an owner, a date, open until it is
+    done — because they are the same kind of record kept for two audiences.
+    """
     project, role = load_project(project_id)
     filters = _filters()
-    everything = load_items(project_id, today())
+    # The tiles count the same register the table is showing. Read as at a past
+    # date, counting today's open items above a table of how things stood then
+    # would put two different days on one page.
+    everything = load_items(project_id, today(), kind=str(filters["kind"]),
+                            rewind_to=str(filters["as_at"]))
     rows = _selection(project_id, filters)
 
     return render_template(
@@ -137,25 +167,41 @@ def index(project_id: int):
         project=project, role=role, items=rows, totals=summarise(everything),
         shown=len(rows), filters=filters, link_args=_link_args(filters),
         chips=FILTERS, impacts=IMPACTS, owners=OWNERS, statuses=STATUSES, columns=COLUMNS,
+        kind=filters["kind"], kinds=KINDS, kind_title=KIND_TITLES[str(filters["kind"])],
+        kind_word=KIND_WORDS[str(filters["kind"])],
+        as_at=filters["as_at"],
+        as_at_note=progress_note(rows, str(filters["as_at"])) if filters["as_at"] else "",
         sort=filters["sort"], direction=filters["dir"],
         attendees=load_attendees(project_id), trades=load_trades(project_id),
-        meetings=load_meetings(project_id), today=today(),
+        meetings=load_meetings(project_id, str(filters["kind"])), today=today(),
         can_report=_can_report(role), can_edit=_can_edit(role),
     )
 
 
-@bp.get("/minutes/register.docx")
+@bp.get("/minutes/register.docx", defaults={"kind": "client"})
+@bp.get("/internal/register.docx", defaults={"kind": "internal"})
 @login_required
-def register_word(project_id: int):
-    """The register exactly as filtered on screen, as a Word document."""
+def register_word(project_id: int, kind: str):
+    """The register exactly as filtered on screen, as a Word document.
+
+    Read as at a date, it is the answer to a client asking where things stood
+    then — so the document says so at the top rather than looking like today's.
+    """
     from ..minutes_doc import register_document
 
     project, _role = load_project(project_id)
     filters = _filters()
     rows = _selection(project_id, filters)
-    note = "Filtered: " + ", ".join(_describe(project_id, filters)) if _describe(project_id, filters) else ""
-    data = register_document(project, rows, "Action register", note)
-    return _download(data, f"{project['code']}-actions-{_stamp()}.docx")
+
+    said = _describe(project_id, filters)
+    note = "Filtered: " + ", ".join(said) if said else ""
+    if filters["as_at"]:
+        note = progress_note(rows, str(filters["as_at"])) + ((" · " + note) if note else "")
+
+    title = KIND_TITLES[str(filters["kind"])] + " — action register"
+    data = register_document(project, rows, title, note)
+    stem = "internal" if filters["kind"] == "internal" else "actions"
+    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx")
 
 
 def _describe(project_id: int, filters: dict[str, object]) -> list[str]:
@@ -189,17 +235,19 @@ def _describe(project_id: int, filters: dict[str, object]) -> list[str]:
 
 # --- the agenda for the next meeting ---------------------------------------
 
-@bp.get("/minutes/agenda")
+@bp.get("/minutes/agenda", defaults={"kind": "client"})
+@bp.get("/internal/agenda", defaults={"kind": "internal"})
 @login_required
-def agenda(project_id: int):
+def agenda(project_id: int, kind: str):
     """Everything still open, grouped by owner — the sheet you walk into the
     next meeting with."""
     project, role = load_project(project_id)
     search = (request.args.get("q") or "").strip()
     trade_id = _to_int(request.args.get("trade"))
     owner = normalise_owner(request.args.get("owner"))
+    kind = _kind()
 
-    items = filter_items(load_items(project_id, today()), chip="open", search=search,
+    items = filter_items(load_items(project_id, today(), kind=kind), chip="open", search=search,
                          trade_id=trade_id, owner=owner)
     items = sort_items(items, "due", "asc")
 
@@ -209,28 +257,33 @@ def agenda(project_id: int):
     groups = [{"name": name, "items": rows} for name, rows in by_owner.items()]
     groups.sort(key=lambda grp: (grp["name"] == "Unassigned", grp["name"].lower()))
 
-    meetings = load_meetings(project_id)
+    meetings = load_meetings(project_id, kind)
     return render_template(
         "agenda.html",
         project=project, role=role, items=items, groups=groups, totals=summarise(items),
         search=search, trade_id=trade_id, owner=owner, owners=OWNERS,
+        kind=kind, kind_title=KIND_TITLES[kind], kind_word=KIND_WORDS[kind],
         trades=load_trades(project_id), attendees=load_attendees(project_id),
         last_meeting=meetings[0] if meetings else None, today=today(),
     )
 
 
-@bp.get("/minutes/agenda.docx")
+@bp.get("/minutes/agenda.docx", defaults={"kind": "client"})
+@bp.get("/internal/agenda.docx", defaults={"kind": "internal"})
 @login_required
-def agenda_word(project_id: int):
+def agenda_word(project_id: int, kind: str):
     from ..minutes_doc import register_document
 
     project, _role = load_project(project_id)
-    items = sort_items(filter_items(load_items(project_id, today()), chip="open"), "due", "asc")
+    kind = _kind()
+    items = sort_items(
+        filter_items(load_items(project_id, today(), kind=kind), chip="open"), "due", "asc")
     data = register_document(
-        project, items, "Agenda — open items",
+        project, items, f"{KIND_TITLES[kind]} — agenda",
         f"Every item still open as at {to_display(today())}.",
     )
-    return _download(data, f"{project['code']}-agenda-{_stamp()}.docx")
+    stem = "internal-agenda" if kind == "internal" else "agenda"
+    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx")
 
 
 # --- one meeting -----------------------------------------------------------
@@ -283,11 +336,11 @@ def add_meeting(project_id: int):
 
     meeting_id = insert(
         """
-        INSERT INTO meetings (project_id, ref, title, meeting_date, meeting_time, location,
+        INSERT INTO meetings (project_id, kind, ref, title, meeting_date, meeting_time, location,
                               chaired_by, next_date, notes, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, _clean("ref"), _clean("title"), meeting_date, _clean("meeting_time"),
+        (project_id, _kind(), _clean("ref"), _clean("title"), meeting_date, _clean("meeting_time"),
          _clean("location"), _clean("chaired_by"), from_input(request.form.get("next_date")) or "",
          _clean("notes"), g.user["id"]),
     )
@@ -381,7 +434,9 @@ def _item_fields(project_id: int) -> dict[str, object]:
     if "due_date" in form:
         fields["due_date"] = from_input(form.get("due_date")) or ""
 
-    # Closing an item stamps the date unless one was given; reopening clears it.
+    # Closing an item stamps today unless a date was given. The date it was
+    # actually closed is what a register read as at a past day turns on, so it
+    # is editable rather than being whenever somebody got round to ticking it.
     if "status" in form:
         status = normalise_status(form.get("status"))
         fields["status"] = status
@@ -441,8 +496,17 @@ def add_item(project_id: int):
             stamp = query_one("SELECT meeting_date FROM meetings WHERE id = ?", (fields["meeting_id"],))
         fields["raised_date"] = stamp["meeting_date"] if stamp else today()
 
+    # An item belongs to whichever register it was raised in — the meeting's
+    # own, when it was raised inside one, so the two can never disagree.
+    kind = _kind()
+    if fields.get("meeting_id"):
+        row = query_one("SELECT kind FROM meetings WHERE id = ? AND project_id = ?",
+                        (fields["meeting_id"], project_id))
+        if row:
+            kind = normalise_kind(row["kind"])
+
     # The number is set by renumbering once the item is in its meeting.
-    columns = dict(fields, project_id=project_id, ref="",
+    columns = dict(fields, project_id=project_id, ref="", kind=kind,
                    sort_order=next_sort_order("meeting_items", project_id))
     names = ", ".join(columns)
     item_id = insert(

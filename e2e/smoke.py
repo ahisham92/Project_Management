@@ -792,18 +792,18 @@ def _assistant(page) -> None:
     """The chat: it answers, it shows what it would change, and nothing changes
     until Apply is pressed.
 
-    Groq is stood in for by a small server the test runs itself — pointing a
-    smoke test at somebody's paid API would make it slow, flaky and expensive,
+    Anthropic is stood in for by a small server the test runs itself — pointing
+    a smoke test at somebody's paid API would make it slow, flaky and expensive,
     and what is worth checking here is the page, not the model."""
     page.click("nav.tabs a:has-text('Carmen')")
     page.wait_for_selector("h1:has-text('Carmen')", timeout=8000)
     if "What she can do" not in page.text_content("body"):
         raise AssertionError("Carmen's tab does not say what she can do")
 
-    if not os.environ.get("GROQ_STAND_IN"):
+    if not os.environ.get("CLAUDE_STAND_IN"):
         # Nothing to talk to; what is checked is that the page says how to
         # connect one.
-        if "console.groq.com" not in page.text_content("body"):
+        if "console.anthropic.com" not in page.text_content("body"):
             raise AssertionError("the page does not say where to get a key")
         page.screenshot(path=str(SHOTS / "38-assistant.png"), full_page=True)
         return
@@ -811,7 +811,7 @@ def _assistant(page) -> None:
     # By id, not by text: "Connect" is a substring of "Disconnect", and a
     # loose selector here would press the wrong one.
     if page.locator("#connect-assistant").count():
-        page.fill("input[name=groq_key]", "gsk_stand_in")
+        page.fill("input[name=anthropic_key]", "sk-ant-stand-in")
         page.click("#connect-assistant")
     page.wait_for_selector("textarea[name=question]:not([disabled])", timeout=8000)
 
@@ -886,7 +886,7 @@ def _carmen_everywhere(page) -> None:
     page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
     page.wait_for_selector("#carmen-popup:not([hidden])", timeout=6000)
 
-    if not os.environ.get("GROQ_STAND_IN"):
+    if not os.environ.get("CLAUDE_STAND_IN"):
         page.screenshot(path=str(SHOTS / "39-carmen.png"), full_page=True)
         return
 

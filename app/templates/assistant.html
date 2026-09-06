@@ -31,35 +31,37 @@
     <div class="card-head"><div>
       <h2>Connect Carmen</h2>
       <p class="small muted" style="margin-top:2px">
-        She runs on Groq. <strong>One key serves the whole installation</strong> — set it here
-        and everybody who signs in is using it, which is why only an administrator can.
+        She runs on <strong>Claude Opus 5</strong>. <strong>One key serves the whole
+        installation</strong> — set it here and everybody who signs in is using it, which is
+        why only an administrator can.
         It is kept in a file beside the database, never in it: the nightly backup uploads
         the database, and a key inside the thing that gets uploaded is a key you have published.
       </p></div></div>
     <div class="card-body">
       {% if is_admin %}
         <ol class="small" style="margin:0 0 12px;padding-left:18px;line-height:1.9">
-          <li>Make an API key at <code>console.groq.com/keys</code>.</li>
+          <li>Make an API key at <code>console.anthropic.com</code> → API keys.</li>
           <li>Paste it below. It is stored for everyone on this installation, so only
             an administrator can set it.</li>
-          <li>Ask it something — “how is the project doing?” — to check it works.</li>
+          <li>Ask her something — “how is the project doing?” — to check it works.</li>
         </ol>
         <form method="post" action="{{ url_for('assistant.settings', project_id=project['id']) }}"
               class="inline-form">
           <label class="field flex1">
-            <span class="field-label">Groq API key</span>
-            <input name="groq_key" type="password" placeholder="gsk_…" required autocomplete="off">
+            <span class="field-label">Anthropic API key</span>
+            <input name="anthropic_key" type="password" placeholder="sk-ant-…" required
+                   autocomplete="off">
           </label>
           <label class="field w-md">
             <span class="field-label">Model</span>
-            <input name="groq_model" value="{{ model }}" placeholder="{{ default_model }}">
+            <input name="anthropic_model" value="{{ model }}" placeholder="{{ default_model }}">
           </label>
           <button type="submit" id="connect-assistant" class="btn btn-primary">Connect</button>
         </form>
       {% else %}
         <p class="small" style="margin:0">
-          An administrator needs to add a Groq API key before Carmen can be used. One key
-          covers everybody on this installation, so it only has to be done once.
+          An administrator needs to add an Anthropic API key before Carmen can be used. One
+          key covers everybody on this installation, so it only has to be done once.
         </p>
       {% endif %}
     </div>
@@ -172,12 +174,20 @@
               class="inline-form" style="margin-top:12px">
           <label class="field flex1">
             <span class="field-label">Change the key (leave blank to keep it)</span>
-            <input name="groq_key" type="password" placeholder="gsk_…" autocomplete="off">
+            <input name="anthropic_key" type="password" placeholder="sk-ant-…" autocomplete="off">
           </label>
           <label class="field w-md">
             <span class="field-label">Model</span>
-            <input name="groq_model" value="{{ model }}" list="groq-models">
-            <datalist id="groq-models"></datalist>
+            <input name="anthropic_model" value="{{ model }}" list="claude-models">
+            <datalist id="claude-models"></datalist>
+          </label>
+          <label class="field w-sm">
+            <span class="field-label">Effort</span>
+            <select name="anthropic_effort">
+              {% for level in efforts %}
+                <option value="{{ level }}" {{ 'selected' if level == effort }}>{{ level }}</option>
+              {% endfor %}
+            </select>
           </label>
           <button type="submit" class="btn btn-primary">Save</button>
           <button type="submit" name="disconnect" value="1" class="btn btn-danger"
@@ -186,7 +196,9 @@
         <p class="small muted" style="margin:8px 0 0">
           <a href="#" id="load-models"
              data-url="{{ url_for('assistant.models', project_id=project['id']) }}">List the models
-            this key can use →</a>
+            this key can use →</a> · <strong>Effort</strong> is how hard she thinks: “high” is
+          the default, “low” is quicker and cheaper, “max” is for when correctness matters more
+          than cost.
         </p>
       {% endif %}
     </div>

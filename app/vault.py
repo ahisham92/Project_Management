@@ -27,9 +27,9 @@ FILE_NAME = "drive.json"
 # handed on, so a stray key cannot become a request parameter.
 FIELDS = ("client_id", "client_secret", "refresh_token", "folder_id", "file_name",
           "account", "connected_at", "auto", "hour", "zone",
-          # The assistant's Groq key lives here for the same reason the Drive
+          # Carmen's Anthropic key lives here for the same reason the Drive
           # token does: the nightly backup uploads the database.
-          "groq_key", "groq_model")
+          "anthropic_key", "anthropic_model", "anthropic_effort")
 
 
 def path() -> Path:
@@ -105,19 +105,21 @@ def settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     return merged
 
 
-def groq(env: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The assistant's key and model. The environment wins, as everywhere else."""
+def carmen(env: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Carmen's key, model and effort. The environment wins, as everywhere else."""
     import os as _os
 
-    from .groq import DEFAULT_MODEL, settings_from_env
+    from .claude import DEFAULT_EFFORT, DEFAULT_MODEL, EFFORTS, settings_from_env
 
     held = read()
     from_env = settings_from_env(env if env is not None else _os.environ)
+    effort = str(held.get("anthropic_effort") or "")
     return {
-        "key": from_env.get("groq_key") or str(held.get("groq_key") or ""),
-        "model": (from_env.get("groq_model") or str(held.get("groq_model") or "")
+        "key": from_env.get("anthropic_key") or str(held.get("anthropic_key") or ""),
+        "model": (from_env.get("anthropic_model") or str(held.get("anthropic_model") or "")
                   or DEFAULT_MODEL),
-        "from_env": bool(from_env.get("groq_key")),
+        "effort": effort if effort in EFFORTS else DEFAULT_EFFORT,
+        "from_env": bool(from_env.get("anthropic_key")),
     }
 
 

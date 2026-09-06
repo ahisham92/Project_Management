@@ -20,14 +20,14 @@ bp = Blueprint("assistant", __name__, url_prefix="/projects/<int:project_id>")
 @bp.app_context_processor
 def _carmen_context():
     """What the pop-up in the corner of every page needs to draw itself."""
-    from ..vault import groq
+    from ..vault import carmen
 
     project_id = (request.view_args or {}).get("project_id")
     if not project_id or not g.get("user"):
         return {}
     try:
         role = g.get("project_role") or "viewer"
-        return {"carmen_ready": bool(groq()["key"]), "carmen_can_write": _can_write(role)}
+        return {"carmen_ready": bool(carmen()["key"]), "carmen_can_write": _can_write(role)}
     except Exception:                                 # noqa: BLE001 - never break a page
         return {"carmen_ready": False, "carmen_can_write": False}
 
@@ -53,16 +53,16 @@ def _asked() -> dict:
 @login_required
 def index(project_id: int):
     """The chat, and — for an administrator — where the key goes."""
-    from ..groq import DEFAULT_MODEL
-    from ..vault import groq
+    from ..claude import DEFAULT_MODEL, EFFORTS
+    from ..vault import carmen
 
     project, role = load_project(project_id)
-    held = groq()
+    held = carmen()
     return render_template(
         "assistant.html",
         project=project, role=role, today=today(),
         ready=bool(held["key"]), model=held["model"], from_env=held["from_env"],
-        default_model=DEFAULT_MODEL,
+        effort=held["effort"], efforts=EFFORTS, default_model=DEFAULT_MODEL,
         is_admin=g.user["role"] == "admin",
         can_write=_can_write(role),
         suggestions=SUGGESTIONS,
@@ -86,14 +86,14 @@ SUGGESTIONS = (
 def ask(project_id: int):
     """One question. Reading happens; changing is staged for approval."""
     from ..assistant import ask as ask_it
-    from ..vault import groq
+    from ..vault import carmen
 
     project, role = load_project(project_id)
-    held = groq()
+    held = carmen()
     if not held["key"]:
         return jsonify({"ok": False, "error":
-                        "The assistant is not connected yet — an administrator adds a "
-                        "Groq API key on this page."}), 400
+                        "Carmen is not connected yet — an administrator adds an "
+                        "Anthropic API key on her tab."}), 400
 
     asked = _asked()
     question = str(asked.get("question") or "")[:MAX_QUESTION]
@@ -102,7 +102,7 @@ def ask(project_id: int):
         history = []
 
     answer = ask_it(project, question, held["key"], held["model"],
-                    history[-MAX_HISTORY:], today())
+                    history[-MAX_HISTORY:], today(), held["effort"])
 
     # Somebody who may not write to the project may still ask about it; what
     # they cannot do is apply anything, so they are not offered the button.
@@ -230,18 +230,18 @@ def set_face(project_id: int):
 def test_connection(project_id: int):
     """Why nothing works, when nothing works.
 
-    A 403 from a host's own outbound proxy and a 403 from Groq read identically
+    A 403 from a host's own outbound proxy and a 403 from Anthropic read identically
     in a log and need completely different fixes, so this asks the three
     questions in order and says which one failed.
     """
-    from ..groq import diagnose
-    from ..vault import groq
+    from ..claude import diagnose
+    from ..vault import carmen
 
     load_project(project_id)
     if g.user["role"] != "admin":
         return jsonify({"ok": False, "error": "Administrators only"}), 403
 
-    found = diagnose(groq()["key"])
+    found = diagnose(carmen()["key"])
     return jsonify({"ok": bool(found["key_works"]), **found})
 
 
@@ -256,17 +256,21 @@ def settings(project_id: int):
         flash("Only an administrator can connect the assistant", "error")
         return redirect(url_for("assistant.index", project_id=project_id))
 
-    key = (request.form.get("groq_key") or "").strip()
-    model = (request.form.get("groq_model") or "").strip()
+    from ..claude import EFFORTS
+
+    key = (request.form.get("anthropic_key") or "").strip()
+    model = (request.form.get("anthropic_model") or "").strip()
+    effort = (request.form.get("anthropic_effort") or "").strip()
 
     if request.form.get("disconnect"):
-        update(groq_key="", groq_model="")
-        flash("The assistant is disconnected — the key is gone", "success")
+        update(anthropic_key="", anthropic_model="", anthropic_effort="")
+        flash("Carmen is disconnected — the key is gone", "success")
         return redirect(url_for("assistant.index", project_id=project_id))
 
-    changes: dict[str, str] = {"groq_model": model}
+    changes: dict[str, str] = {"anthropic_model": model,
+                               "anthropic_effort": effort if effort in EFFORTS else ""}
     if key:
-        changes["groq_key"] = key
+        changes["anthropic_key"] = key
     update(**changes)
     flash("Saved. Ask it something to check it works.", "success")
     return redirect(url_for("assistant.index", project_id=project_id))
@@ -275,18 +279,18 @@ def settings(project_id: int):
 @bp.get("/assistant/models")
 @login_required
 def models(project_id: int):
-    """Which models this account can actually use, read from Groq itself."""
-    from ..groq import GroqError, models as list_them
-    from ..vault import groq
+    """Which models this account can actually use, read from Anthropic itself."""
+    from ..claude import ClaudeError, models as list_them
+    from ..vault import carmen
 
     load_project(project_id)
     if g.user["role"] != "admin":
         return jsonify({"ok": False, "error": "Administrators only"}), 403
 
-    held = groq()
+    held = carmen()
     if not held["key"]:
         return jsonify({"ok": False, "error": "Add a key first"}), 400
     try:
         return jsonify({"ok": True, "models": list_them(held["key"]), "using": held["model"]})
-    except GroqError as exc:
+    except ClaudeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502

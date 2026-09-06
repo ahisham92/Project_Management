@@ -37,7 +37,7 @@ MAX_STAGED = 12
 KEEP_TURNS = 12
 
 
-SYSTEM = """You are the assistant inside Project Control, a design-programme \
+SYSTEM = """You are Carmen, the assistant inside Project Control — a design-programme \
 control app used by a project manager on {project}.
 
 Today is {today}. Every date you say or accept is dd/mm/yyyy.
@@ -89,16 +89,14 @@ class Answer:
         }
 
 
-def _system(project: Mapping[str, Any], today: str) -> dict[str, str]:
+def _system(project: Mapping[str, Any], today: str) -> str:
+    """The standing instruction. Its own field on this API, not a message."""
     from ..dates import to_display
 
-    return {
-        "role": "system",
-        "content": SYSTEM.format(
-            project=f"{project.get('code')} — {project.get('name')}",
-            today=to_display(today),
-        ),
-    }
+    return SYSTEM.format(
+        project=f"{project.get('code')} — {project.get('name')}",
+        today=to_display(today),
+    )
 
 
 def _trim(history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -115,9 +113,10 @@ def _trim(history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
 
 def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
-        history: Sequence[Mapping[str, Any]] = (), today: str = "") -> Answer:
+        history: Sequence[Mapping[str, Any]] = (), today: str = "",
+        effort: str = "") -> Answer:
     """One question, answered — with anything it wants to change staged."""
-    from ..groq import GroqError, chat
+    from ..claude import (ClaudeError, DEFAULT_EFFORT, chat, refused, said, tool_calls)
     from ..service import as_dict, today as today_is
 
     project = as_dict(project)
@@ -128,34 +127,39 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
         return answer
 
     project_id = int(project["id"])
-    messages: list[dict[str, Any]] = [_system(project, today or today_is())]
-    messages.extend(_trim(history))
-    messages.append({"role": "user", "content": asked})
+    system = _system(project, today or today_is())
+    messages: list[dict[str, Any]] = [*_trim(history), {"role": "user", "content": asked}]
 
     catalogue = describe()
     for round_number in range(1, MAX_ROUNDS + 1):
         answer.rounds = round_number
         try:
-            said = chat(key, messages, catalogue, model)
-        except GroqError as exc:
+            reply = chat(key, system, messages, catalogue, model,
+                         effort or DEFAULT_EFFORT)
+        except ClaudeError as exc:
             answer.trouble = str(exc)
             return answer
 
-        calls = said.get("tool_calls") or []
+        declined = refused(reply)
+        if declined:
+            answer.trouble = declined
+            return answer
+
+        calls = tool_calls(reply)
         if not calls:
-            answer.text = str(said.get("content") or "").strip()
+            answer.text = said(reply)
             break
 
-        # The model's own turn has to go back verbatim, or the tool results
-        # that follow it have nothing to attach to.
-        messages.append({
-            "role": "assistant",
-            "content": said.get("content") or "",
-            "tool_calls": calls,
-        })
+        # Claude's own turn goes back whole — thinking blocks and all. Trimming
+        # it is how a tool result ends up with nothing to attach to, and on this
+        # model a replayed turn has to be the one that was sent.
+        messages.append({"role": "assistant", "content": reply.content})
 
-        for call in calls:
-            messages.append(_do(call, project_id, answer))
+        # Every result for a turn goes back in one user message. Splitting them
+        # across several quietly teaches the model to stop calling tools in
+        # parallel, which makes every later answer slower for no reason.
+        messages.append({"role": "user",
+                         "content": [_do(call, project_id, answer) for call in calls]})
 
     else:
         # Out of rounds with nothing said. Better to admit that than to leave
@@ -177,16 +181,11 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
 
 def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, Any]:
     """One tool call: run it, or stage it, and say which."""
-    function = call.get("function") or {}
-    name = str(function.get("name") or "")
+    name = str(call.get("name") or "")
     call_id = str(call.get("id") or name)
-
-    try:
-        arguments = json.loads(function.get("arguments") or "{}")
-        if not isinstance(arguments, dict):
-            raise ValueError("arguments were not an object")
-    except (TypeError, ValueError) as exc:
-        return _result(call_id, name, {"error": f"Those arguments did not parse: {exc}"})
+    arguments = call.get("input")
+    if not isinstance(arguments, dict):
+        return _result(call_id, {"error": "Those arguments were not an object"}, True)
 
     if name not in answer.used:
         answer.used.append(name)
@@ -196,24 +195,24 @@ def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, A
     except ToolError as exc:
         # A wrong reference is something the model can correct on the next
         # round, so it is told rather than the whole answer failing.
-        return _result(call_id, name, {"error": str(exc)})
+        return _result(call_id, {"error": str(exc)}, True)
     except Exception as exc:                          # noqa: BLE001 - never break the chat
-        return _result(call_id, name, {"error": f"That did not work: {exc}"})
+        return _result(call_id, {"error": f"That did not work: {exc}"}, True)
 
     if name in READ_ONLY:
         if isinstance(outcome, dict) and outcome.get("kind") in ("open_view", "presentation"):
             answer.links.append(outcome)
-        return _result(call_id, name, outcome)
+        return _result(call_id, outcome)
 
     if len(answer.staged) >= MAX_STAGED:
-        return _result(call_id, name, {
+        return _result(call_id, {
             "error": f"That is more than {MAX_STAGED} changes in one answer. Tell the "
-                     f"reader what else needs doing and let them ask again."})
+                     f"reader what else needs doing and let them ask again."}, True)
 
     staged = dict(outcome)
     staged["id"] = f"{name}-{len(answer.staged) + 1}"
     answer.staged.append(staged)
-    return _result(call_id, name, {
+    return _result(call_id, {
         "staged": True,
         "change": staged.get("says", name),
         "note": "Not done yet — it is waiting for the reader to press Apply. "
@@ -221,13 +220,20 @@ def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, A
     })
 
 
-def _result(call_id: str, name: str, payload: Any) -> dict[str, Any]:
-    return {
-        "role": "tool",
-        "tool_call_id": call_id,
-        "name": name,
+def _result(call_id: str, payload: Any, failed: bool = False) -> dict[str, Any]:
+    """One tool result, in the shape the Messages API wants it.
+
+    A failure comes back as a result marked as one rather than being dropped:
+    a tool call with no result at all is what makes the next turn incoherent.
+    """
+    block: dict[str, Any] = {
+        "type": "tool_result",
+        "tool_use_id": call_id,
         "content": json.dumps(payload, default=str)[:12000],
     }
+    if failed:
+        block["is_error"] = True
+    return block
 
 
 def staged_summary(staged: Sequence[Mapping[str, Any]]) -> str:

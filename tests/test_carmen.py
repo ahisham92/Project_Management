@@ -378,7 +378,7 @@ def test_a_failure_is_written_down_too(app):
     only the answers are kept."""
     from app.service import load_chats
 
-    _say(app, "anything", trouble="Groq said 403: forbidden")
+    _say(app, "anything", trouble="Forbidden (403), and Anthropic said nothing")
     with app.app_context():
         rows = load_chats()
     assert "403" in rows[-1]["trouble"]
@@ -460,14 +460,14 @@ def test_the_transcript_goes_up_under_the_day_it_covers(app, monkeypatch):
 
 
 def test_asking_writes_a_line_in_the_log_through_the_page(signed_in, app, monkeypatch):
-    from app import groq, vault
-    from tests.test_assistant import StandInGroq, _call
+    from app import claude, vault
+    from tests.test_assistant import Reply, StandInClaude, _call
 
     with app.app_context():
-        vault.write({"groq_key": "gsk_x"})
-    monkeypatch.setattr(groq, "chat", StandInGroq(
-        {"content": "", "tool_calls": [_call("overview", {})]},
-        {"content": "It is behind."}))
+        vault.write({"anthropic_key": "sk-ant-x"})
+    monkeypatch.setattr(claude, "chat", StandInClaude(
+        Reply(calls=[_call("overview", {})]),
+        Reply(text="It is behind.")))
 
     answer = signed_in.post("/projects/1/assistant/ask", json={"question": "how is it?"})
     said = answer.get_json()
@@ -484,42 +484,59 @@ def test_asking_writes_a_line_in_the_log_through_the_page(signed_in, app, monkey
 # --- why nothing works ------------------------------------------------------
 
 def test_the_diagnosis_tells_the_host_apart_from_the_key(app, monkeypatch):
-    """A 403 from a host's outbound proxy and a 403 from Groq read identically
-    in a log and need completely different fixes."""
+    """A 403 from a host's outbound proxy and a 403 from Anthropic read
+    identically in a log and need completely different fixes."""
     import socket
 
-    from app import groq
+    from app import claude
 
     def refuse(*_args, **_kwargs):
         raise OSError("Connection refused")
 
     monkeypatch.setattr(socket, "create_connection", refuse)
-    found = groq.diagnose("gsk_x")
+    found = claude.diagnose("sk-ant-x")
     assert found["reachable"] is False
     assert "PythonAnywhere" in found["detail"]
 
 
 def test_a_403_with_no_message_is_explained_as_the_host(app):
-    import urllib.error
-    from io import BytesIO
+    import anthropic
 
-    from app.groq import _why
+    from app.claude import _why
 
-    said = _why(urllib.error.HTTPError("u", 403, "Forbidden", {}, BytesIO(b"")))
-    assert "did not reach Groq" in said
+    said = _why(anthropic.PermissionDeniedError.__new__(anthropic.PermissionDeniedError))
+    assert "never reached them" in said
     assert "PythonAnywhere" in said
 
 
-def test_a_403_that_groq_itself_sent_is_explained_as_the_key(app):
-    import urllib.error
-    from io import BytesIO
+def test_a_403_that_anthropic_itself_sent_is_explained_as_the_key(app):
+    import anthropic
 
-    from app.groq import _why
+    from app.claude import _why
 
-    body = b'{"error": {"message": "Organization has been disabled"}}'
-    said = _why(urllib.error.HTTPError("u", 403, "Forbidden", {}, BytesIO(body)))
-    assert "Groq refused the key" in said
-    assert "Organization has been disabled" in said
+    refusal = anthropic.PermissionDeniedError.__new__(anthropic.PermissionDeniedError)
+    refusal.message = "Your organization has been disabled"
+    said = _why(refusal)
+    assert "not the network" in said
+    assert "Your organization has been disabled" in said
+
+
+def test_a_bad_key_is_named_as_a_bad_key(app):
+    import anthropic
+
+    from app.claude import _why
+
+    said = _why(anthropic.AuthenticationError.__new__(anthropic.AuthenticationError))
+    assert "did not accept that API key" in said
+
+
+def test_being_unable_to_reach_anthropic_is_not_read_as_a_bad_key(app):
+    import anthropic
+
+    from app.claude import _why
+
+    said = _why(anthropic.APIConnectionError.__new__(anthropic.APIConnectionError))
+    assert "Could not reach api.anthropic.com" in said
 
 
 def test_only_an_administrator_can_run_the_test(client, app):
@@ -544,8 +561,8 @@ def test_the_key_is_the_installations_not_one_persons(app):
     from app import vault
 
     with app.app_context():
-        vault.write({"groq_key": "gsk_shared"})
-        assert vault.groq()["key"] == "gsk_shared"
+        vault.write({"anthropic_key": "sk-ant-shared"})
+        assert vault.carmen()["key"] == "sk-ant-shared"
 
     # Nothing about it is per user: it is one file beside the database.
     with app.app_context():

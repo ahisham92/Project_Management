@@ -5,3 +5,9 @@ waitress>=3.0,<4.0
 
 # Reading and writing the setup workbook (Setup -> Export / Import to Excel).
 openpyxl>=3.1,<4.0
+
+# Carmen, the assistant. Anthropic's own client rather than hand-rolled HTTP:
+# typed errors worth catching apart, retries and timeouts already thought about,
+# and a tool-use surface that will not drift out from under us. Pure Python —
+# nothing here needs a compiler either.
+anthropic>=1.4,<2.0

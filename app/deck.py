@@ -2,9 +2,8 @@
 
 Like `word.py` next door: a .pptx is a zip of XML parts, so a deck of titles,
 bullets, figures and tables needs nothing installed. That matters here — the
-whole app runs on Flask, waitress and openpyxl, and adding a presentation
-library for one feature would be the fourth dependency and the first one that
-needs compiling.
+whole app runs on Flask, waitress, openpyxl and anthropic — none of which needs
+a compiler — and a presentation library would be the first one that does.
 
 Everything is drawn as explicit shapes at explicit positions rather than filled
 into a layout's placeholders. A layout is a promise about what a theme will do

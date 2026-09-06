@@ -8,8 +8,8 @@ It replaces the spreadsheet with something several people can use at once, from 
 across a whole **portfolio** of projects.
 
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
-is SQLite, which is part of Python itself. It needs three packages: Flask, Waitress and
-openpyxl (for the Excel round trip).
+is SQLite, which is part of Python itself. It needs four packages: Flask, Waitress,
+openpyxl (for the Excel round trip) and anthropic (for Carmen).
 
 ---
 
@@ -395,9 +395,7 @@ per-project setting under **Setup → Elapsed time convention**.
 ### Carmen
 
 The project assistant, on her own tab and in the corner of every other one. She
-runs on [Groq](https://console.groq.com) — an API key is all she needs, and no
-extra Python package: the whole thing is one POST with a list of messages and a
-list of tools, written against `urllib`.
+runs on **Claude Opus 5**, through Anthropic's own Python SDK.
 
 **What she can do.** She reads where the project stands, any deliverable and what
 it waits on, what moved between two dates, what this week needs, either register
@@ -450,27 +448,37 @@ and only the second one says whether it was worth building.
   never from anything said in the chat, and the loop is bounded: six rounds and
   twelve staged changes at most.
 
-**Connecting her.** An administrator pastes a key from `console.groq.com/keys` on
+**Connecting her.** An administrator pastes a key from `console.anthropic.com` on
 her tab. **One key serves the whole installation** — it is not per person and not
 per project, so setting it once means every administrator and every member on
-every project is using it, and the usage on that Groq account is all of them
+every project is using it, and the usage on that Anthropic account is all of them
 together. That is why only an administrator can set it. It is kept in the same
 file beside the database as the Drive credentials, for the same reason: the
-nightly backup uploads the database. `GROQ_API_KEY` and `GROQ_MODEL` in the
-environment win over anything set on the page, and `GROQ_BASE_URL` points her
-somewhere else entirely, which is how the browser test drives the whole feature
-against a stand-in rather than a paid account.
+nightly backup uploads the database. `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` in the
+environment win over anything set on the page, and `ANTHROPIC_BASE_URL` points
+her somewhere else entirely, which is how the browser test drives the whole
+feature against a stand-in rather than a paid account.
 
-**When every answer is "Groq said 403".** That is almost never the key. A 403
-carrying Groq's own JSON is Groq refusing the key; a 403 carrying *nothing* never
-reached Groq at all — something between the server and the internet refused it.
-On PythonAnywhere's free plan every outbound request goes through a proxy that
-only allows listed sites, and `api.groq.com` is not one of them, so every request
-comes back 403 with an empty body. Press **Test the connection** on her tab: it
-opens a TLS connection to Groq, then tries the key, then lists the models, and
-says which of the three failed. If it cannot open the connection, the fix is a
-paid PythonAnywhere plan or a different host — nothing about the key will help.
-Everything else in this app works on the free plan.
+**Effort** is on the same card: how hard she thinks before answering, from `low`
+to `max`. `high` is the default; `low` is quicker and cheaper on a small
+project; `max` is for when being right matters more than what it costs. She
+thinks adaptively either way — Claude decides how much reasoning a question
+actually needs, which is the right setting for work that is sometimes "what is
+late" and sometimes "read these four paragraphs and turn them into a numbered
+register".
+
+**When every answer is a 403.** That is almost never the key. A 403 carrying
+Anthropic's own message is Anthropic refusing the key or the account; a 403
+carrying *nothing* never reached them at all — something between the server and
+the internet refused it. On PythonAnywhere's free plan every outbound request
+goes through a proxy that only allows listed sites, and neither
+`api.anthropic.com` nor any other model provider is on it, so every request comes
+back 403 with an empty body. **Changing provider does not fix this** — the block
+is the host's, not the provider's. Press **Test the connection** on her tab: it
+opens a TLS connection to Anthropic, then tries the key, then lists the models,
+and says which of the three failed. If it cannot open the connection, the fix is
+a paid PythonAnywhere plan or a different host. Everything else in this app works
+on the free plan.
 
 **The presentation** is a real `.pptx`, written by `app/deck.py` with the
 standard library — the same trick `word.py` uses, because a .pptx is a zip of
@@ -997,8 +1005,8 @@ All optional — see `.env.example`.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | The nightly backup's Google Drive account. Only needed if you would rather not connect it from the Backups page; set here, they win over anything set there. |
 | `GOOGLE_DRIVE_FOLDER_ID` | Which Drive folder the backup goes in. Its own My Drive if unset. |
 | `BACKUP_FILE_NAME` | The one file that gets replaced (default `project-control-backup.zip`). |
-| `GROQ_API_KEY` / `GROQ_MODEL` | The assistant's Groq account. Only needed if you would rather not connect it from the Assistant tab; set here, they win over anything set there. |
-| `GROQ_BASE_URL` | Where Carmen sends her requests. For a gateway, or for the stand-in the browser test runs. |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Carmen's Anthropic account. Only needed if you would rather not connect her from her own tab; set here, they win over anything set there. |
+| `ANTHROPIC_BASE_URL` | Where Carmen sends her requests. For a gateway, or for the stand-in the browser test runs. |
 
 The **setup password** is not an environment variable — it is stored per project and changed
 on the Setup sheet itself.

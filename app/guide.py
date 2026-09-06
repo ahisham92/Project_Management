@@ -228,7 +228,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "Ask her to <strong>print</strong> a tab and you get a link that opens straight into "
             "the print dialog, where “Save as PDF” makes the file.",
             "She is in the corner of every other tab too — the button at the bottom right.",
-            "An administrator adds the Groq API key on this tab, once, for everybody.",
+            "An administrator adds the Anthropic API key on this tab, once, for everybody.",
         ),
         "watch": (
             "Nothing changes until you press Apply — a model can be confidently wrong about "
@@ -241,7 +241,8 @@ TABS: tuple[dict[str, Any], ...] = (
             "Every conversation is written down and goes to Drive each night as a text file, "
             "so how she is actually being used is something anybody can look at.",
         ),
-        "terms": ("carmen", "staged change", "chat log", "groq", "presentation deck",
+        "terms": ("carmen", "staged change", "chat log", "claude opus 5", "effort",
+                  "presentation deck",
                   "minuted item", "deliverable", "earned progress"),
     },
     {
@@ -466,8 +467,8 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "The project assistant: a language model given the run of one project. She reads anything "
      "the tabs show, proposes changes to any of it, minutes a meeting from what you type, and "
      "takes you to a page when you ask her to.",
-     "She runs on Groq, and works through the same functions the screens do — so she can do what "
-     "you can do and nothing more."),
+     "She runs on Claude Opus 5, and works through the same functions the screens do — so she "
+     "can do what you can do and nothing more."),
     ("Staged change", "week",
      "Something the assistant proposes rather than does. It is listed under its answer, and "
      "nothing happens until you press Apply.",
@@ -477,11 +478,15 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "Every question put to Carmen and every answer she gave, written down.",
      "Uploaded to Drive once a night as a plain text file, one per day, so how much she is "
      "used — and what for — is readable without this program."),
-    ("Groq", "week",
-     "Who runs the model Carmen talks to. One API key serves the whole installation — set it "
-     "once and everybody on it is using it, so it is an administrator's to set.",
+    ("Claude Opus 5", "week",
+     "The model Carmen runs on, from Anthropic. One API key serves the whole installation — "
+     "set it once and everybody on it is using it, so it is an administrator's to set.",
      "The key is kept in a file beside the database, never in it: the nightly backup uploads "
      "the database."),
+    ("Effort", "week",
+     "How hard Carmen thinks before answering — low, medium, high, xhigh or max.",
+     "“high” is the default. Lower is quicker and cheaper; “max” is for when being right "
+     "matters more than what it costs."),
     ("Presentation deck", "week",
      "A PowerPoint of the work done between two dates: where the project stands, what moved, "
      "what is late, the critical path, what comes next, and what is open with the client.",

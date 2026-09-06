@@ -1,6 +1,6 @@
 """The assistant: its tools, its loop, and the deck it builds.
 
-Nothing here calls Groq. What is worth testing is everything either side of it:
+Nothing here calls Anthropic. What is worth testing is everything either side:
 that a tool reads what the screens read, that a phrase turns into the right
 deliverable or an honest question, that a change is staged rather than done,
 that applying it goes through the ordinary service layer, and that the loop
@@ -63,17 +63,17 @@ def project(app):
 def test_every_tool_the_model_is_offered_can_actually_be_run():
     """A tool in the catalogue with no runner is one the model will call and
     get an error from, which is worse than not offering it."""
-    offered = {tool["function"]["name"] for tool in tools.CATALOGUE}
+    offered = {tool["name"] for tool in tools.CATALOGUE}
     assert offered == set(tools.RUNNERS)
 
 
 def test_every_tool_says_what_it_is_for():
     for tool in tools.CATALOGUE:
-        function = tool["function"]
-        assert function["description"], f"{function['name']} has no description"
-        assert function["parameters"]["type"] == "object"
-        for name in function["parameters"].get("required", []):
-            assert name in function["parameters"]["properties"]
+        assert tool["description"], f"{tool['name']} has no description"
+        assert tool["input_schema"]["type"] == "object"
+        for name in tool["input_schema"].get("required", []):
+            assert name in tool["input_schema"]["properties"], \
+                f"{tool['name']} requires {name}, which it does not define"
 
 
 def test_reading_and_changing_are_told_apart():
@@ -277,27 +277,58 @@ def test_a_view_nobody_has_is_refused_with_the_list(app):
 
 # --- the loop ---------------------------------------------------------------
 
-class StandInGroq:
+class Block:
+    """One content block, the shape the SDK hands back."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+class Reply:
+    """One Messages API answer, as the runner reads it."""
+
+    def __init__(self, text="", calls=(), stop_reason="", refusal=""):
+        self.content = ([Block(type="text", text=text)] if text else []) + [
+            Block(type="tool_use", id=call["id"], name=call["name"], input=call["input"])
+            for call in calls
+        ]
+        self.stop_reason = stop_reason or ("tool_use" if calls else "end_turn")
+        self.stop_details = Block(explanation=refusal, category="test") if refusal else None
+
+
+class StandInClaude:
     """A model that says exactly what a test needs it to say, in order."""
 
     def __init__(self, *turns):
         self.turns = list(turns)
         self.asked: list[list[dict]] = []
+        self.systems: list[str] = []
+        self.efforts: list[str] = []
 
-    def __call__(self, key, messages, tools_=None, model="", **kwargs):
+    def __call__(self, key, system, messages, tools=None, model="", effort="", **kwargs):
         self.asked.append([dict(m) for m in messages])
-        return self.turns.pop(0) if self.turns else {"content": "Nothing more to say."}
+        self.systems.append(system)
+        self.efforts.append(effort)
+        return self.turns.pop(0) if self.turns else Reply(text="Nothing more to say.")
 
 
-def _call(name, arguments, call_id="c1"):
-    return {"id": call_id, "type": "function",
-            "function": {"name": name, "arguments": json.dumps(arguments)}}
+def _call(name, arguments, call_id="toolu_1"):
+    return {"id": call_id, "name": name, "input": arguments}
+
+
+def _tool_result(turn) -> str:
+    """What went back to the model for the tools it asked for."""
+    blocks = turn.get("content") or []
+    if isinstance(blocks, str):
+        return blocks
+    return " ".join(str(b.get("content") or "") for b in blocks
+                    if isinstance(b, dict) and b.get("type") == "tool_result")
 
 
 def test_a_plain_question_comes_back_as_words(app, project, monkeypatch):
-    from app import groq
+    from app import claude
 
-    monkeypatch.setattr(groq, "chat", StandInGroq({"content": "It is going fine."}))
+    monkeypatch.setattr(claude, "chat", StandInClaude(Reply(text="It is going fine.")))
     with app.app_context():
         answer = ask(project, "How is it going?", "key")
 
@@ -307,13 +338,13 @@ def test_a_plain_question_comes_back_as_words(app, project, monkeypatch):
 
 
 def test_a_tool_the_model_asks_for_is_run_and_fed_back(app, project, monkeypatch):
-    from app import groq
+    from app import claude
 
-    model = StandInGroq(
-        {"content": "", "tool_calls": [_call("overview", {})]},
-        {"content": "It is 0.5% earned against 2.4% planned."},
+    model = StandInClaude(
+        Reply(calls=[_call("overview", {})]),
+        Reply(text="It is 0.5% earned against 2.4% planned."),
     )
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "How is it going?", "key")
 
@@ -321,19 +352,19 @@ def test_a_tool_the_model_asks_for_is_run_and_fed_back(app, project, monkeypatch
     assert answer.rounds == 2
     # The tool's answer really went back to the model.
     last = model.asked[-1]
-    assert last[-1]["role"] == "tool"
-    assert "earned_percent" in last[-1]["content"]
+    assert last[-1]["role"] == "user"
+    assert "earned_percent" in _tool_result(last[-1])
 
 
 def test_a_change_is_staged_and_the_model_is_told_it_is_waiting(app, project, monkeypatch):
-    from app import groq
+    from app import claude
     from app.db import query_one
 
-    model = StandInGroq(
-        {"content": "", "tool_calls": [_call("set_progress", {"reference": "1.1", "percent": 40})]},
-        {"content": "I have staged 1.1 at 40%."},
+    model = StandInClaude(
+        Reply(calls=[_call("set_progress", {"reference": "1.1", "percent": 40})]),
+        Reply(text="I have staged 1.1 at 40%."),
     )
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         before = query_one("SELECT actual_pct FROM tasks WHERE wbs = '1.1' AND project_id = 1")
         answer = ask(project, "Set 1.1 to 40", "key")
@@ -342,48 +373,47 @@ def test_a_change_is_staged_and_the_model_is_told_it_is_waiting(app, project, mo
     assert len(answer.staged) == 1
     assert answer.staged[0]["kind"] == "set_progress"
     assert after["actual_pct"] == before["actual_pct"]
-    assert "Apply" in model.asked[-1][-1]["content"]      # the model knows it is not done
+    assert "Apply" in _tool_result(model.asked[-1][-1])  # the model knows it is not done
 
 
 def test_a_tool_that_fails_is_reported_to_the_model_rather_than_ending_the_answer(
         app, project, monkeypatch):
     """A wrong reference is something it can correct on the next round."""
-    from app import groq
+    from app import claude
 
-    model = StandInGroq(
-        {"content": "", "tool_calls": [_call("deliverable", {"reference": "the biscuit tin"})]},
-        {"content": "I could not find that — which one did you mean?"},
+    model = StandInClaude(
+        Reply(calls=[_call("deliverable", {"reference": "the biscuit tin"})]),
+        Reply(text="I could not find that — which one did you mean?"),
     )
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "How is the biscuit tin?", "key")
 
     assert answer.trouble == ""
-    assert "error" in model.asked[-1][-1]["content"]
+    assert "error" in _tool_result(model.asked[-1][-1])
     assert answer.text.startswith("I could not find that")
 
 
-def test_arguments_that_are_not_json_do_not_break_the_answer(app, project, monkeypatch):
-    from app import groq
+def test_arguments_that_are_not_an_object_do_not_break_the_answer(app, project, monkeypatch):
+    from app import claude
 
-    model = StandInGroq(
-        {"content": "", "tool_calls": [{"id": "c1", "function":
-                                        {"name": "overview", "arguments": "{not json"}}]},
-        {"content": "Sorry — let me try again."},
+    model = StandInClaude(
+        Reply(calls=[{"id": "toolu_1", "name": "overview", "input": "not an object"}]),
+        Reply(text="Sorry — let me try again."),
     )
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "How is it going?", "key")
     assert answer.trouble == ""
-    assert "did not parse" in model.asked[-1][-1]["content"]
+    assert "not an object" in _tool_result(model.asked[-1][-1])
 
 
 def test_the_loop_cannot_run_for_ever(app, project, monkeypatch):
-    from app import groq
+    from app import claude
     from app.assistant import runner
 
-    always = StandInGroq(*[{"content": "", "tool_calls": [_call("overview", {})]}] * 50)
-    monkeypatch.setattr(groq, "chat", always)
+    always = StandInClaude(*[Reply(calls=[_call("overview", {})]) for _ in range(50)])
+    monkeypatch.setattr(claude, "chat", always)
     with app.app_context():
         answer = ask(project, "Go round for ever", "key")
 
@@ -392,38 +422,51 @@ def test_the_loop_cannot_run_for_ever(app, project, monkeypatch):
 
 
 def test_one_answer_cannot_stage_the_whole_programme(app, project, monkeypatch):
-    from app import groq
+    from app import claude
     from app.assistant import runner
 
-    many = [_call("set_progress", {"reference": "1.1", "percent": 10}, f"c{n}")
+    many = [_call("set_progress", {"reference": "1.1", "percent": 10}, f"toolu_{n}")
             for n in range(runner.MAX_STAGED + 4)]
-    model = StandInGroq({"content": "", "tool_calls": many}, {"content": "Staged what I could."})
-    monkeypatch.setattr(groq, "chat", model)
+    model = StandInClaude(Reply(calls=many), Reply(text="Staged what I could."))
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "Change everything", "key")
 
     assert len(answer.staged) == runner.MAX_STAGED
 
 
-def test_groq_failing_is_reported_rather_than_swallowed(app, project, monkeypatch):
-    from app import groq
+def test_the_api_failing_is_reported_rather_than_swallowed(app, project, monkeypatch):
+    from app import claude
 
     def refuse(*_args, **_kwargs):
-        raise groq.GroqError("Groq said 401: the key was not accepted")
+        raise claude.ClaudeError("Anthropic did not accept that API key (401).")
 
-    monkeypatch.setattr(groq, "chat", refuse)
+    monkeypatch.setattr(claude, "chat", refuse)
     with app.app_context():
         answer = ask(project, "Anything", "key")
 
-    assert answer.trouble.startswith("Groq said 401")
+    assert "401" in answer.trouble
     assert answer.as_json()["ok"] is False
 
 
-def test_an_empty_question_is_not_sent_anywhere(app, project, monkeypatch):
-    from app import groq
+def test_a_refusal_is_reported_rather_than_read_as_an_empty_answer(app, project, monkeypatch):
+    """A declined request comes back 200 with nothing to say; treating that as
+    an answer would show the reader an empty box."""
+    from app import claude
 
-    model = StandInGroq({"content": "should never be reached"})
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", StandInClaude(
+        Reply(stop_reason="refusal", refusal="that is not something I can help with")))
+    with app.app_context():
+        answer = ask(project, "Anything", "key")
+
+    assert "declined" in answer.trouble
+
+
+def test_an_empty_question_is_not_sent_anywhere(app, project, monkeypatch):
+    from app import claude
+
+    model = StandInClaude(Reply(text="should never be reached"))
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "   ", "key")
     assert answer.trouble
@@ -432,18 +475,18 @@ def test_an_empty_question_is_not_sent_anywhere(app, project, monkeypatch):
 
 def test_the_project_comes_from_the_caller_not_from_the_model(app, project, monkeypatch):
     """No phrasing can reach another project's data."""
-    from app import groq
+    from app import claude
 
-    model = StandInGroq(
-        {"content": "", "tool_calls": [_call("overview", {"project_id": 999})]},
-        {"content": "Here it is."},
+    model = StandInClaude(
+        Reply(calls=[_call("overview", {"project_id": 999})]),
+        Reply(text="Here it is."),
     )
-    monkeypatch.setattr(groq, "chat", model)
+    monkeypatch.setattr(claude, "chat", model)
     with app.app_context():
         answer = ask(project, "Show me project 999", "key")
 
     assert answer.trouble == ""
-    assert project["code"] in model.asked[-1][-1]["content"]
+    assert project["code"] in _tool_result(model.asked[-1][-1])
 
 
 # --- applying what was approved ---------------------------------------------
@@ -610,50 +653,51 @@ def test_the_tab_is_there_and_says_it_is_not_connected(signed_in):
     body = text(signed_in.get("/projects/1/assistant"))
     assert "Carmen" in body
     assert "not connected" in body
-    assert "console.groq.com" in body
+    assert "console.anthropic.com" in body
 
 
 def test_asking_without_a_key_says_what_to_do_rather_than_failing(signed_in):
     answer = signed_in.post("/projects/1/assistant/ask", json={"question": "hello"})
     assert answer.status_code == 400
     assert "not connected" in answer.get_json()["error"]
+    assert "Anthropic" in answer.get_json()["error"]
 
 
 def test_an_administrator_can_connect_it_and_the_key_stays_out_of_the_database(signed_in, app):
     from app import vault
 
     signed_in.post("/projects/1/assistant/settings",
-                   data={"groq_key": "gsk_secret", "groq_model": "llama-3.3-70b-versatile"},
+                   data={"anthropic_key": "sk-ant-secret", "anthropic_model": "claude-opus-5"},
                    follow_redirects=True)
     with app.app_context():
-        assert vault.read()["groq_key"] == "gsk_secret"
+        assert vault.read()["anthropic_key"] == "sk-ant-secret"
 
         from app.backup import build
         data, _manifest = build(app.config["DATABASE"])
-    assert b"gsk_secret" not in data
+    assert b"sk-ant-secret" not in data
 
 
 def test_only_an_administrator_can_connect_it(client, app):
     _member(app, "plain@example.com", "manager")
     client.post("/login", data={"email": "plain@example.com", "password": "password123"})
-    answer = client.post("/projects/1/assistant/settings", data={"groq_key": "gsk_x"},
+    answer = client.post("/projects/1/assistant/settings", data={"anthropic_key": "sk-ant-x"},
                          follow_redirects=True)
     assert "Only an administrator" in text(answer)
 
     with app.app_context():
         from app import vault
 
-        assert not vault.read().get("groq_key")
+        assert not vault.read().get("anthropic_key")
 
 
 def test_the_page_answers_a_question_end_to_end(signed_in, app, monkeypatch):
-    from app import groq
+    from app import claude
 
-    monkeypatch.setattr(groq, "chat", StandInGroq(
-        {"content": "", "tool_calls": [_call("overview", {})]},
-        {"content": "Earned is behind planned."},
+    monkeypatch.setattr(claude, "chat", StandInClaude(
+        Reply(calls=[_call("overview", {})]),
+        Reply(text="Earned is behind planned."),
     ))
-    signed_in.post("/projects/1/assistant/settings", data={"groq_key": "gsk_x"},
+    signed_in.post("/projects/1/assistant/settings", data={"anthropic_key": "sk-ant-x"},
                    follow_redirects=True)
 
     answer = signed_in.post("/projects/1/assistant/ask", json={"question": "How is it going?"})
@@ -687,16 +731,16 @@ def test_applying_nothing_is_refused(signed_in):
 def test_a_reader_who_cannot_edit_is_not_offered_changes(client, app, monkeypatch):
     """Somebody who may look but not write can still ask about the project —
     they are simply never handed a button that would change it."""
-    from app import groq, vault
+    from app import claude, vault
 
     with app.app_context():
-        vault.write({"groq_key": "gsk_x"})
+        vault.write({"anthropic_key": "sk-ant-x"})
     _member(app, "look@example.com", "viewer")
     client.post("/login", data={"email": "look@example.com", "password": "password123"})
 
-    monkeypatch.setattr(groq, "chat", StandInGroq(
-        {"content": "", "tool_calls": [_call("set_progress", {"reference": "1.1", "percent": 40})]},
-        {"content": "I would set 1.1 to 40%."},
+    monkeypatch.setattr(claude, "chat", StandInClaude(
+        Reply(calls=[_call("set_progress", {"reference": "1.1", "percent": 40})]),
+        Reply(text="I would set 1.1 to 40%."),
     ))
     answer = client.post("/projects/1/assistant/ask", json={"question": "set 1.1 to 40"})
     assert answer.status_code == 200

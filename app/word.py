@@ -1,8 +1,8 @@
 """Writes a Word document (.docx) using the standard library only.
 
 A .docx is a zip of XML parts, so a document with headings, paragraphs and
-tables needs nothing installed — which keeps the install to Flask, waitress and
-openpyxl. Word, LibreOffice, Google Docs and Pages all open what this produces.
+tables needs nothing installed — which keeps the install to Flask, waitress,
+openpyxl and anthropic. Word, LibreOffice, Google Docs and Pages all open what this produces.
 """
 
 from __future__ import annotations

@@ -772,14 +772,12 @@ def presentation(project_id: int, start: str = "", end: str = "", title: str = "
 
 def _tool(name: str, says: str, properties: dict[str, Any],
           required: list[str] | None = None) -> dict[str, Any]:
+    """One tool, in the shape the Messages API wants it."""
     return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": says,
-            "parameters": {"type": "object", "properties": properties,
-                           "required": required or []},
-        },
+        "name": name,
+        "description": says,
+        "input_schema": {"type": "object", "properties": properties,
+                         "required": required or []},
     }
 
 

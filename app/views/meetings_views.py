@@ -18,10 +18,11 @@ from ..minutes import (
     normalise_sort, normalise_status, progress_note, sort_items, summarise,
 )
 from ..service import (
-    load_attendees, load_items, load_meeting, load_meetings, load_trades, meeting_items,
-    meeting_sheet, move_item, next_sort_order, renumber_items, set_attendance,
-    set_item_trades, today,
+    load_attendees, load_items, load_meeting, load_meetings, load_steps, load_trades,
+    meeting_items, meeting_sheet, move_item, next_sort_order, renumber_items,
+    set_attendance, set_item_trades, today,
 )
+from ..workflow import ordered as ordered_steps
 
 bp = Blueprint("meetings", __name__, url_prefix="/projects/<int:project_id>")
 
@@ -145,7 +146,7 @@ def _stamp() -> str:
 # --- the register ----------------------------------------------------------
 
 @bp.get("/minutes", defaults={"kind": "client"})
-@bp.get("/internal", defaults={"kind": "internal"})
+@bp.get("/internal/register", defaults={"kind": "internal"})
 @login_required
 def index(project_id: int, kind: str):
     """One register: the client's minutes, or the internal weekly list.
@@ -176,6 +177,114 @@ def index(project_id: int, kind: str):
         meetings=load_meetings(project_id, str(filters["kind"])), today=today(),
         can_report=_can_report(role), can_edit=_can_edit(role),
     )
+
+
+
+# --- this week -------------------------------------------------------------
+
+@bp.get("/internal")
+@login_required
+def week(project_id: int):
+    """What the project needs from us this week, from wherever it comes from.
+
+    The Internal tab opens here rather than on a list, because a list of
+    minuted items is only ever half a week. The other half is on the programme
+    — what goes out, what comes back, and the lines that simply have to be
+    carried forward with nothing to show at the end of it. Reading two tabs and
+    holding the join in your head is how a week goes wrong.
+
+    Nothing on this page is stored. Every row is a reading of a deliverable or
+    an item that already exists, so a change made here is a change to that
+    record — it shows on the Progress, Schedule and Minutes tabs at once, and a
+    change made on any of them shows here.
+    """
+    from .. import week as weeks
+    from ..service import project_plan, project_snapshot
+
+    project, role = load_project(project_id)
+    plan = project_plan(project)
+
+    # A Sunday-to-Thursday team's week opens on Sunday. Reading it off the
+    # project's own calendar beats assuming a Monday for everyone.
+    first_day = weeks.first_working_day(plan["calendars"][None].week)
+
+    asked = from_input(request.args.get("week")) or today()
+    start, end = weeks.week_window(asked, first_day)
+
+    # Where each line is meant to have got to by the end of the week, not by
+    # today: that is what turns "carry on with it" into a number.
+    targets = {row["id"]: row["planned_pct"]
+               for row in project_snapshot(project, end)["tasks"]}
+
+    trades = {t["id"]: t["name"] for t in plan["trades"]}
+    for row in plan["tasks"]:
+        row["trade_names"] = ", ".join(
+            trades[key] for key, share in (row.get("allocations") or {}).items()
+            if share and key in trades)
+
+    client_items = load_items(project_id, today(), kind="client")
+    internal_items = load_items(project_id, today(), kind="internal")
+    rows = weeks.compile_week(plan["tasks"], client_items, internal_items, start, end, targets)
+
+    meetings = load_meetings(project_id, "internal")
+    return render_template(
+        "week.html",
+        project=project, role=role, kind="internal",
+        kind_title=KIND_TITLES["internal"], kind_word=KIND_WORDS["internal"],
+        start=start, end=end, today=today(),
+        is_this_week=start <= today() <= end,
+        previous=weeks.shift(start, -1), next=weeks.shift(start, 1),
+        groups=weeks.group(rows), rows=rows, totals=weeks.summarise(rows),
+        sources=weeks.SOURCES,
+        meeting=weeks.in_week(meetings, start, end),
+        suggested_ref=weeks.meeting_ref(start),
+        meetings=meetings, trades=plan["trades"], owners=OWNERS, impacts=IMPACTS,
+        steps=ordered_steps(load_steps(project_id)),
+        limit=plan["max_revisions"],
+        editing=_to_int(request.args.get("edit")),
+        can_report=_can_report(role), can_edit=_can_edit(role),
+    )
+
+
+@bp.post("/internal/weekly")
+@login_required
+def weekly_meeting(project_id: int):
+    """Opens this week's internal meeting, making it if it is not there yet.
+
+    One button rather than a form: the week decides the date and the reference,
+    and a weekly meeting that has to be described before it can be opened is a
+    weekly meeting that gets skipped.
+    """
+    from .. import week as weeks
+
+    project, _role = load_project(project_id, "member")
+    asked = from_input(request.form.get("week")) or today()
+    start, end = weeks.week_window(asked)
+
+    existing = weeks.in_week(load_meetings(project_id, "internal"), start, end)
+    if existing:
+        return redirect(url_for("meetings.meeting", project_id=project_id,
+                                meeting_id=existing["id"]))
+
+    # Dated the day it is held — today when this is the current week, otherwise
+    # the day the week opens.
+    held = today() if start <= today() <= end else start
+    meeting_id = insert(
+        """
+        INSERT INTO meetings (project_id, kind, ref, title, meeting_date, chaired_by, notes, user_id)
+        VALUES (?, 'internal', ?, ?, ?, ?, '', ?)
+        """,
+        (project_id, weeks.meeting_ref(start),
+         f"Internal weekly — week of {to_display(start)}", held,
+         g.user["name"], g.user["id"]),
+    )
+
+    roster = [int(a["id"]) for a in load_attendees(project_id, include_inactive=False)]
+    if roster:
+        set_attendance(meeting_id, roster, roster)
+
+    flash("Weekly meeting opened — the week's requirements are on the Internal tab", "success")
+    return redirect(url_for("meetings.meeting", project_id=project_id, meeting_id=meeting_id))
 
 
 @bp.get("/minutes/register.docx", defaults={"kind": "client"})
@@ -475,9 +584,18 @@ def _saved(project_id: int, item_id: int, meeting_id: object):
 
 
 def _after_item(project_id: int, meeting_id: object):
-    """Back to wherever the item was added from."""
-    if (request.form.get("return") or "") == "meeting" and meeting_id:
+    """Back to wherever the item was added from.
+
+    An item closed on the week page belongs to the week page: sending somebody
+    to the register because that is where the record lives is the sort of thing
+    that makes a page not worth using.
+    """
+    back = (request.form.get("return") or "").strip()
+    if back == "meeting" and meeting_id:
         return redirect(url_for("meetings.meeting", project_id=project_id, meeting_id=meeting_id))
+    if back == "week":
+        return redirect(url_for("meetings.week", project_id=project_id,
+                                week=(request.form.get("week") or "").strip() or None))
     return _back(project_id)
 
 

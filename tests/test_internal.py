@@ -118,7 +118,7 @@ def add_client(client, subject="Approve the layout", **extra):
 
 
 def test_the_internal_register_has_a_tab_and_a_path_of_its_own(signed_in):
-    body = text(signed_in.get("/projects/1/internal"))
+    body = text(signed_in.get("/projects/1/internal/register"))
     assert "Internal weekly" in body
     assert "kept for us, not for the client" in body
     assert '/projects/1/internal"' in body and '/projects/1/minutes"' in body
@@ -134,7 +134,7 @@ def active_tab(body: str) -> str:
 def test_the_tab_marks_which_register_is_open(signed_in):
     """Both registers share an endpoint, so marking the active one on the
     endpoint alone would light up whichever was listed last."""
-    assert active_tab(text(signed_in.get("/projects/1/internal"))) == "/projects/1/internal"
+    assert active_tab(text(signed_in.get("/projects/1/internal/register"))) == "/projects/1/internal"
     assert active_tab(text(signed_in.get("/projects/1/minutes"))) == "/projects/1/minutes"
 
 
@@ -155,8 +155,8 @@ def test_neither_register_shows_the_other_s_items(signed_in):
     add_internal(signed_in, "Internal only")
     add_client(signed_in, "Client only")
 
-    assert "Internal only" in text(signed_in.get("/projects/1/internal?filter=all"))
-    assert "Client only" not in text(signed_in.get("/projects/1/internal?filter=all"))
+    assert "Internal only" in text(signed_in.get("/projects/1/internal/register?filter=all"))
+    assert "Client only" not in text(signed_in.get("/projects/1/internal/register?filter=all"))
     assert "Client only" in text(signed_in.get("/projects/1/minutes?filter=all"))
     assert "Internal only" not in text(signed_in.get("/projects/1/minutes?filter=all"))
 
@@ -239,21 +239,21 @@ def test_the_register_reads_as_it_stood_on_a_date(signed_in):
                  if i["subject"] == "Closed in January"][0]["id"]
     closed_on(signed_in, first, "10/01/2026")
 
-    on_the_eighth = text(signed_in.get("/projects/1/internal?filter=all&as_at=08/01/2026"))
+    on_the_eighth = text(signed_in.get("/projects/1/internal/register?filter=all&as_at=08/01/2026"))
     assert "Closed in January" in on_the_eighth
     assert "Raised in March" not in on_the_eighth
     assert "2 items raised, 0 closed, 2 still open" in on_the_eighth
 
-    on_the_twentieth = text(signed_in.get("/projects/1/internal?filter=all&as_at=20/01/2026"))
+    on_the_twentieth = text(signed_in.get("/projects/1/internal/register?filter=all&as_at=20/01/2026"))
     assert "2 items raised, 1 closed, 1 still open" in on_the_twentieth
 
-    in_april = text(signed_in.get("/projects/1/internal?filter=all&as_at=01/04/2026"))
+    in_april = text(signed_in.get("/projects/1/internal/register?filter=all&as_at=01/04/2026"))
     assert "3 items raised, 1 closed, 2 still open" in in_april
 
 
 def test_the_page_says_plainly_that_it_is_not_today(signed_in):
     add_internal(signed_in)
-    body = text(signed_in.get("/projects/1/internal?as_at=20/01/2026"))
+    body = text(signed_in.get("/projects/1/internal/register?as_at=20/01/2026"))
     assert "Showing the register as it stood on 20/01/2026" in body
     assert "Back to today" in body
 
@@ -275,7 +275,7 @@ def test_the_client_register_reads_as_at_a_date_too(signed_in):
 
 def test_an_unreadable_date_is_simply_ignored(signed_in):
     add_internal(signed_in)
-    body = text(signed_in.get("/projects/1/internal?as_at=the+fifth+of+never"))
+    body = text(signed_in.get("/projects/1/internal/register?as_at=the+fifth+of+never"))
     assert "as it stood on" not in body
 
 
@@ -342,7 +342,7 @@ def test_a_member_can_keep_the_internal_list(client, app):
                          (user["id"],))
         conn.close()
 
-    assert client.get("/projects/1/internal").status_code == 200
+    assert client.get("/projects/1/internal/register").status_code == 200
     assert add_internal(client).status_code == 200
 
 
@@ -359,8 +359,8 @@ def test_the_tiles_count_the_same_day_the_table_shows(signed_in):
                  if i["subject"] == "Closed in January"][0]["id"]
     closed_on(signed_in, first, "10/01/2026")
 
-    live = text(signed_in.get("/projects/1/internal"))
+    live = text(signed_in.get("/projects/1/internal/register"))
     assert "1 open of 2 items" in live
 
-    past = text(signed_in.get("/projects/1/internal?as_at=20/01/2026"))
+    past = text(signed_in.get("/projects/1/internal/register?as_at=20/01/2026"))
     assert "0 open of 1 item" in past

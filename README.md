@@ -77,7 +77,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Period** | What moved between two dates, and which trades earned it. |
 | **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
-| **Internal** | The same register, kept for the internal weekly meeting rather than the client — a task list, open until it is done. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
+| **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
@@ -390,10 +390,45 @@ The workbook's elapsed-time quirk (it measures `data date - NTP + 1`, contradict
 "month 0 = NTP" note) now only affects the headline "months elapsed" figure. It remains a
 per-project setting under **Setup → Elapsed time convention**.
 
-### The internal weekly, and where things stood on a date
+### This week: one page to run the week from
 
-The **Internal** tab is the same register as the Minutes, kept for the internal weekly meeting
-instead of the client. It is a task list: an item is open until it is done, then it is closed.
+The **Internal** tab opens on **This week** — everything the project wants of us between the
+start of the week and the end of it, gathered into one list:
+
+* **Going out** — packages due to be issued this week.
+* **Coming back** — approvals due from the client.
+* **Starting** — work that begins this week.
+* **Carrying on** — the half a programme never shows. Nothing is due, nothing is submitted,
+  and the days still have to go in. Each of these says where the line is meant to have got to
+  by the *end of the week* rather than by today, so "carry on with it" becomes a number:
+  *wants 40% by Friday — 15% to find*.
+* **Actions** — items falling due, from the client's minutes and from our own list, side by
+  side, because a week does not care which register a job was written in.
+
+Anything already late follows you into every week until it is done, which is exactly when it
+otherwise stops being noticed. The week is titled with what it is worth: each line's shortfall
+weighted by how much of the project that line is, so a week reads as *0.84% of the project*
+rather than as a busy-looking list. Deliverables on the critical path say so, and a submission
+with holidays in its run-up carries the warning here too. Step back and forward a week at a
+time; a Sunday-to-Thursday team gets a week that opens on Sunday, read off the project's own
+working calendar rather than assumed.
+
+**Nothing on the page is stored.** Every row is a *reading* of a deliverable or a minuted item
+that already exists. Change progress here and it is the same record the Progress and Schedule
+tabs show — no copy, no sync, nothing to disagree. Close an action here and it closes in the
+register. Change either one anywhere else and this page redraws within a few seconds without a
+refresh. That is the whole design: there is one copy of everything, which is the only way two
+screens can never contradict each other.
+
+**One button for the weekly meeting.** *Start the weekly meeting* opens this week's internal
+meeting, dated and referenced from the week itself (`WK-2026-37`), with the roster ticked in.
+Press it again and it opens the same one rather than making a second. Anything raised in that
+meeting lands in the internal register and comes back onto this page the moment it falls due.
+
+### The internal register, and where things stood on a date
+
+Behind the week, the **Register** is the same record as the Minutes, kept for us instead of the
+client. It is a task list: an item is open until it is done, then it is closed.
 Everything the client register does, this one does — attendance, owners, trades, what an item
 bears on, filters, search, sorting, the agenda for the next one, the Word export — because it
 is the same kind of record kept for a different audience. Only which register an item belongs
@@ -737,32 +772,55 @@ it on Google Drive. **The same file every night** — it finds the file by name 
 contents, so there is one file, its link never changes, and Drive keeps the older contents
 under *Manage versions* rather than a folder filling up with a copy a day.
 
-**Connecting Drive**, once, on a machine with a browser:
+**Connecting Drive from the browser**, once. On the Backups page, press *Connect Google Drive*:
 
 1. At `console.cloud.google.com`: a project, the **Google Drive API** turned on, and an
-   **OAuth client ID** of type **Desktop app**.
-2. `python run.py drive-auth` — it opens a consent page, catches the redirect on localhost,
-   and prints the three values to keep.
-3. Put them in the environment: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `GOOGLE_REFRESH_TOKEN`, and optionally `GOOGLE_DRIVE_FOLDER_ID` (the last part of a
-   folder's URL) and `BACKUP_FILE_NAME`.
+   **OAuth client ID** of type **Web application** with one authorised redirect URI — the
+   Backups page prints the exact one to paste, e.g.
+   `https://you.pythonanywhere.com/backups/connected`.
+2. Paste the client ID and secret into the form and press Connect. Google asks you to sign in;
+   the backups go to that account's Drive, and the page then shows which account is linked.
 
-The credentials live in the environment and never in the database — a refresh token stored in
-the database would be carried up to Drive inside the very backup it is the key to. The scope
-asked for is `drive.file`, the narrowest one that works: the app can see the file it created
-and nothing else in your Drive.
+The round trip carries a one-time `state` that this app made and checks on the way back, so a
+code arriving from anywhere else is refused rather than exchanged — otherwise anyone who could
+reach the page could plant their own token and tonight's database would go to a stranger's
+Drive.
 
-**Every night.** One scheduled command:
+`python run.py drive-auth` still works for a machine with a shell instead, and now saves the
+result where the app looks rather than only printing it.
+
+**Where the key lives.** In a small `drive.json` beside the database — never in the database,
+because the nightly backup uploads the database, and a key to the safe kept inside the safe is
+not a plan. It is in the ignored `data/` directory, so it cannot be committed either. Anything
+set in the environment (`GOOGLE_CLIENT_ID` and friends) still wins, so a host configured that
+way is never overridden by something clicked in a browser. The scope asked for is `drive.file`,
+the narrowest one that works: the app can see the file it created and nothing else in your
+Drive.
+
+**Every night at midnight, in your own time zone.** Pick the hour and the zone on the Backups
+page — `00:00` `Africa/Cairo` — and leave *Take it automatically* ticked. The hour is kept in
+that zone and converted each time it is asked for, because Egypt puts its clocks forward in
+April and back in October: midnight in Cairo is 21:00 UTC in summer and 22:00 in winter, and a
+fixed UTC hour is right for half the year.
+
+Ticked, **nothing else has to be scheduled**. The app checks on ordinary page loads and takes
+the backup itself, off the request, once the hour has passed and nothing has run — so a night
+the server was idle is caught the next time anybody opens a page rather than skipped. Only a
+run that actually reached Drive settles it; a failed one does not count as a backup.
+
+A scheduler is still the belt to that pair of braces, and on PythonAnywhere it goes on the
+**Tasks** tab (a free account gets one task a day, and they run in **UTC** — the Backups page
+prints today's UTC equivalent of your hour):
 
 ```bash
-cd ~/Project_Management && python run.py backup
+cd ~/Project_Management && python run.py backup --if-due
 ```
 
-On PythonAnywhere that goes on the **Tasks** tab, where a free account gets one task a day.
-Those run in **UTC**, so pick the hour that is midnight where you are — for Beirut and Cairo
-that is 21:00 UTC in summer and 22:00 in winter. The Backups page lists what has run, whether
-each one worked, and links the file on Drive; a backup failing quietly for three weeks is
-worse than none, so that page is where to notice.
+`--if-due` does nothing when tonight's has already been taken, so the same command can be run
+by a scheduler and by hand without producing two.
+
+The Backups page lists what has run, whether each one worked, and links the file on Drive; a
+backup failing quietly for three weeks is worse than none, so that page is where to notice.
 
 **Putting one back.** Download the file from Drive and:
 
@@ -810,7 +868,7 @@ All optional — see `.env.example`.
 | `ALLOW_SIGNUP` | `false` blocks self-registration. The first account is always allowed. |
 | `SQLITE_BUSY_TIMEOUT_MS` | How long a write waits for another to finish (default `10000`). |
 | `SEED_EMAIL` / `SEED_PASSWORD` / `SEED_NAME` | Used by `python run.py seed`. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | The nightly backup's Google Drive account. `python run.py drive-auth` prints all three. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | The nightly backup's Google Drive account. Only needed if you would rather not connect it from the Backups page; set here, they win over anything set there. |
 | `GOOGLE_DRIVE_FOLDER_ID` | Which Drive folder the backup goes in. Its own My Drive if unset. |
 | `BACKUP_FILE_NAME` | The one file that gets replaced (default `project-control-backup.zip`). |
 

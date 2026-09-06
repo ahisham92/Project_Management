@@ -373,7 +373,7 @@ def test_not_being_set_up_is_reported_rather_than_crashing(app, monkeypatch):
     with app.app_context():
         result = run_backup()
     assert result["ok"] is False
-    assert "not set up" in result["detail"]
+    assert "not connected" in result["detail"]
 
 
 def test_a_backup_can_be_taken_without_uploading(app, monkeypatch):
@@ -403,7 +403,7 @@ def test_only_the_last_twenty_runs_are_kept(app):
 def test_the_backups_page_says_where_things_stand(signed_in):
     body = text(signed_in.get("/backups"))
     assert "Backups" in body
-    assert "Not set up" in body                   # no Google credentials in a test run
+    assert "Not connected" in body                # no Google credentials in a test run
     assert "Every night" in body
     assert "python run.py backup" in body
     assert "Putting one back" in body
@@ -424,7 +424,7 @@ def test_a_backup_downloads_as_a_zip_that_opens(signed_in):
 
 def test_taking_one_from_the_page_says_what_happened(signed_in):
     answer = signed_in.post("/backups/run", follow_redirects=True)
-    assert "not set up" in text(answer)           # honest, rather than a silent success
+    assert "not connected" in text(answer)           # honest, rather than a silent success
 
 
 def test_only_an_administrator_may_see_or_take_a_backup(client, app):
@@ -620,3 +620,324 @@ def test_a_host_that_cannot_reach_google_says_which_names_to_allow(monkeypatch):
     with pytest.raises(drive.DriveError) as raised:
         drive.access_token("id", "secret", "refresh")
     assert "oauth2.googleapis.com" in str(raised.value)
+
+
+# --- what time it is where the project is -----------------------------------
+#
+# "Every day at midnight" means midnight in Cairo, and Egypt puts its clocks
+# forward in April and back in October. A UTC hour is right for half the year.
+
+from datetime import datetime, timezone      # noqa: E402 - beside the tests that use it
+
+from app import clock                        # noqa: E402
+from app import vault                        # noqa: E402
+
+
+def utc(month: int, day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, month, day, hour, minute, tzinfo=timezone.utc)
+
+
+def test_midnight_in_cairo_is_a_different_utc_hour_in_summer_and_winter():
+    assert clock.utc_hour(0, "Africa/Cairo", utc(1, 15, 12)) == "22:00"      # UTC+2
+    assert clock.utc_hour(0, "Africa/Cairo", utc(7, 15, 12)) == "21:00"      # UTC+3
+
+
+def test_the_offset_is_said_in_words_so_it_can_be_checked_by_eye():
+    assert clock.offset_words("Africa/Cairo", utc(1, 15, 12)) == "UTC+2"
+    assert clock.offset_words("Africa/Cairo", utc(7, 15, 12)) == "UTC+3"
+
+
+def test_a_backup_that_has_never_run_is_owed_one():
+    assert clock.due("", 0, "Africa/Cairo", utc(7, 15, 12)) is True
+
+
+def test_one_taken_after_tonights_hour_is_not_owed_again():
+    # 21:00 UTC on the 15th is midnight in Cairo on the 16th.
+    assert clock.due("2026-07-15 21:00:00", 0, "Africa/Cairo", utc(7, 16, 5)) is False
+
+
+def test_one_taken_before_tonights_hour_is_owed_again():
+    assert clock.due("2026-07-14 21:00:00", 0, "Africa/Cairo", utc(7, 16, 5)) is True
+
+
+def test_a_missed_night_is_caught_rather_than_waited_out():
+    """Nothing ran for three days. The moment anybody looks, one is owed."""
+    assert clock.due("2026-07-12 21:00:00", 0, "Africa/Cairo", utc(7, 16, 5)) is True
+
+
+def test_before_the_hour_has_come_round_yesterdays_run_still_counts():
+    # 18:00 UTC on the 16th is 21:00 in Cairo — tonight's midnight has not
+    # arrived, so this morning's run is still the current one.
+    assert clock.due("2026-07-15 21:30:00", 0, "Africa/Cairo", utc(7, 16, 18)) is False
+
+
+def test_the_next_run_is_always_ahead_of_now():
+    assert clock.next_run(0, "Africa/Cairo", utc(7, 16, 18)) > clock.now("Africa/Cairo", utc(7, 16, 18))
+
+
+def test_egypts_rule_is_written_out_for_a_machine_with_no_timezone_database():
+    """`zoneinfo` reads the system's database; a bare Windows install has none,
+    and an hour out twice a year is not something to discover in October."""
+    egypt = clock._Egypt()
+    assert utc(1, 15, 12).astimezone(egypt).hour == 14        # UTC+2
+    assert utc(7, 15, 12).astimezone(egypt).hour == 15        # UTC+3
+
+
+def test_an_unreadable_stamp_is_treated_as_never_run():
+    assert clock.parse_utc("") is None
+    assert clock.parse_utc("nonsense") is None
+    assert clock.due("nonsense", 0, "Africa/Cairo", utc(7, 16, 5)) is True
+
+
+# --- where the credentials live ---------------------------------------------
+
+def test_the_token_is_kept_beside_the_database_not_in_it(app):
+    """A key to the safe, inside the safe, uploaded nightly, is not a plan."""
+    with app.app_context():
+        vault.write({"client_id": "abc", "refresh_token": "secret"})
+        assert vault.path().parent == Path(app.config["DATABASE"]).parent
+        assert vault.read()["refresh_token"] == "secret"
+
+        # And it is nowhere in the backup that gets uploaded.
+        data, _manifest = build(app.config["DATABASE"])
+        assert b"secret" not in data
+
+
+def test_only_the_fields_it_knows_about_are_kept(app):
+    with app.app_context():
+        vault.write({"client_id": "abc", "nonsense": "dropped"})
+        assert vault.read() == {"client_id": "abc"}
+
+
+def test_updating_leaves_the_rest_alone(app):
+    with app.app_context():
+        vault.write({"client_id": "abc", "client_secret": "shh"})
+        vault.update(refresh_token="token")
+        held = vault.read()
+        assert held["client_id"] == "abc" and held["refresh_token"] == "token"
+
+
+def test_disconnecting_deletes_it_rather_than_switching_it_off(app):
+    with app.app_context():
+        vault.write({"refresh_token": "token"})
+        vault.forget()
+        assert vault.read() == {}
+        assert not vault.path().exists()
+
+
+def test_a_half_written_file_is_not_read_as_settings(app):
+    with app.app_context():
+        vault.path().parent.mkdir(parents=True, exist_ok=True)
+        vault.path().write_text("{ not json", "utf-8")
+        assert vault.read() == {}
+
+
+def test_the_environment_still_wins_so_a_configured_host_is_never_overridden(app, monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "from-env")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "env-secret")
+    monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "env-token")
+    with app.app_context():
+        vault.write({"client_id": "from-file", "refresh_token": "file-token"})
+        held = vault.settings()
+    assert held["client_id"] == "from-env"
+    assert held["from_env"] is True
+
+
+def test_without_the_environment_the_file_is_what_counts(app, monkeypatch):
+    for key in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+    with app.app_context():
+        vault.write({"client_id": "a", "client_secret": "b", "refresh_token": "c"})
+        held = vault.settings()
+    assert held["refresh_token"] == "c"
+    assert held["from_env"] is False
+
+
+# --- whether tonight's is owed ----------------------------------------------
+
+def _connect(app, **extra):
+    with app.app_context():
+        vault.write(dict({"client_id": "a", "client_secret": "b", "refresh_token": "c"}, **extra))
+
+
+def test_nothing_is_owed_while_drive_is_not_connected(app, monkeypatch):
+    from app.service import backup_due
+
+    for key in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+    with app.app_context():
+        vault.forget()
+        assert backup_due() is False
+
+
+def test_nothing_is_owed_when_the_nightly_run_is_switched_off(app):
+    from app.service import backup_due
+
+    _connect(app, auto=False)
+    with app.app_context():
+        assert backup_due() is False
+
+
+def test_once_connected_the_first_one_is_owed(app):
+    from app.service import backup_due
+
+    _connect(app, auto=True)
+    with app.app_context():
+        assert backup_due() is True
+
+
+def test_a_run_that_failed_does_not_count_as_a_backup(app):
+    """A failed run is not a backup, and treating it as one is how a month
+    goes by with nothing on Drive."""
+    from app.service import backup_due, record_backup
+
+    _connect(app, auto=True)
+    with app.app_context():
+        record_backup(False, "drive", 0, "Google said 403")
+        assert backup_due() is True
+
+
+def test_one_that_landed_settles_it_until_the_next_hour(app):
+    from app.service import backup_due, record_backup
+
+    _connect(app, auto=True)
+    with app.app_context():
+        record_backup(True, "drive", 1000, "Replaced it")
+        assert backup_due() is False
+
+
+def test_only_the_run_that_reached_drive_settles_it(app):
+    """A local copy is a copy on the same disk as the thing it protects."""
+    from app.service import backup_due, record_backup
+
+    _connect(app, auto=True)
+    with app.app_context():
+        record_backup(True, "local", 1000, "Taken, not uploaded")
+        assert backup_due() is True
+
+
+# --- connecting from the browser --------------------------------------------
+
+def test_the_page_shows_what_to_register_with_google(signed_in):
+    body = text(signed_in.get("/backups"))
+    assert "/backups/connected" in body            # the redirect URI to paste
+    assert "Connect Google Drive" in body
+
+
+def test_connecting_sends_you_to_google_with_a_state_of_our_own(signed_in):
+    answer = signed_in.post("/backups/connect",
+                            data={"client_id": "id.apps.googleusercontent.com",
+                                  "client_secret": "GOCSPX-x"})
+    assert answer.status_code == 302
+    where = answer.headers["Location"]
+    assert where.startswith("https://accounts.google.com/")
+    assert "access_type=offline" in where and "prompt=consent" in where
+    assert "state=" in where
+
+
+def test_a_code_that_did_not_come_from_our_own_request_is_refused(signed_in, app):
+    """Otherwise anyone who can reach this page could plant their own token,
+    and tonight the database goes to a Drive nobody here owns."""
+    signed_in.post("/backups/connect", data={"client_id": "a", "client_secret": "b"})
+    answer = signed_in.get("/backups/connected?code=theirs&state=wrong", follow_redirects=True)
+    assert "did not come back from the request this page made" in text(answer)
+
+    with app.app_context():
+        assert not vault.read().get("refresh_token")
+
+
+def test_a_code_with_no_state_at_all_is_refused(signed_in, app):
+    answer = signed_in.get("/backups/connected?code=theirs", follow_redirects=True)
+    assert "did not come back" in text(answer)
+    with app.app_context():
+        assert not vault.read().get("refresh_token")
+
+
+def test_google_saying_no_is_reported_rather_than_swallowed(signed_in):
+    answer = signed_in.get("/backups/connected?error=access_denied", follow_redirects=True)
+    assert "access_denied" in text(answer)
+
+
+def test_a_good_round_trip_saves_the_token_and_the_account(signed_in, app, monkeypatch):
+    from app import drive
+
+    monkeypatch.setattr(drive, "exchange",
+                        lambda *a, **k: {"refresh_token": "1//long-lived"})
+    monkeypatch.setattr(drive, "access_token", lambda *a, **k: "an-hour")
+    monkeypatch.setattr(drive, "about", lambda *a, **k: {"emailAddress": "me@example.com"})
+
+    answer = signed_in.post("/backups/connect",
+                            data={"client_id": "a", "client_secret": "b"})
+    state = answer.headers["Location"].split("state=")[1]
+
+    page = signed_in.get(f"/backups/connected?code=good&state={state}", follow_redirects=True)
+    assert "Google Drive connected" in text(page)
+
+    with app.app_context():
+        held = vault.read()
+    assert held["refresh_token"] == "1//long-lived"
+    assert held["account"] == "me@example.com"
+    assert "me@example.com" in text(signed_in.get("/backups"))
+
+
+def test_the_same_state_cannot_be_used_twice(signed_in, app, monkeypatch):
+    from app import drive
+
+    monkeypatch.setattr(drive, "exchange", lambda *a, **k: {"refresh_token": "first"})
+    monkeypatch.setattr(drive, "access_token", lambda *a, **k: "t")
+    monkeypatch.setattr(drive, "about", lambda *a, **k: {})
+
+    answer = signed_in.post("/backups/connect", data={"client_id": "a", "client_secret": "b"})
+    state = answer.headers["Location"].split("state=")[1]
+    signed_in.get(f"/backups/connected?code=good&state={state}")
+
+    again = signed_in.get(f"/backups/connected?code=again&state={state}", follow_redirects=True)
+    assert "did not come back" in text(again)
+
+
+def test_disconnecting_forgets_the_account(signed_in, app):
+    _connect(app)
+    signed_in.post("/backups/disconnect", follow_redirects=True)
+    with app.app_context():
+        assert vault.read() == {}
+
+
+def test_the_schedule_is_kept_in_the_zone_it_was_meant_in(signed_in, app):
+    answer = signed_in.post("/backups/schedule",
+                            data={"hour": "0", "zone": "Africa/Cairo", "auto": "1"},
+                            follow_redirects=True)
+    assert "00:00 Africa/Cairo" in text(answer)
+    with app.app_context():
+        held = vault.schedule()
+    assert held == {"auto": True, "hour": 0, "zone": "Africa/Cairo"}
+
+
+def test_an_impossible_hour_is_brought_back_into_the_day(signed_in, app):
+    signed_in.post("/backups/schedule", data={"hour": "99", "zone": "UTC"},
+                   follow_redirects=True)
+    with app.app_context():
+        assert vault.schedule()["hour"] == 23
+
+
+def test_unticking_it_stops_the_app_taking_one_by_itself(signed_in, app):
+    signed_in.post("/backups/schedule", data={"hour": "0", "zone": "UTC"},
+                   follow_redirects=True)
+    with app.app_context():
+        assert vault.schedule()["auto"] is False
+
+
+def test_only_an_administrator_may_connect_a_drive(client, app):
+    from app.auth import hash_password
+    from app.db import execute
+
+    with app.app_context():
+        execute("INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, 'user')",
+                ("plain@example.com", "Plain", hash_password("password123")))
+    client.post("/login", data={"email": "plain@example.com", "password": "password123"})
+
+    for where in ("/backups/connect", "/backups/disconnect", "/backups/schedule"):
+        answer = client.post(where, data={"client_id": "a", "client_secret": "b"},
+                             follow_redirects=True)
+        assert "for administrators" in text(answer)
+    with app.app_context():
+        assert vault.read() == {}

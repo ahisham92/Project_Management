@@ -6,7 +6,9 @@ Run it with ``python run.py``; see the README for first-time setup.
 from __future__ import annotations
 
 import os
+import time
 from datetime import timedelta
+from threading import Lock, Thread
 
 from flask import Flask, g, render_template
 
@@ -37,6 +39,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     @app.before_request
     def _before():
         load_user()
+        _nightly(app)
 
     @app.context_processor
     def _context():
@@ -82,3 +85,54 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
         return render_template("error.html", code=404, message="That page could not be found."), 404
 
     return app
+
+
+# The last time the nightly backup was even considered. Checking the database
+# on every request for something that happens once a day is waste; checking it
+# once every few minutes is not.
+_LOOKED_AT = 0.0
+_ASKING = Lock()
+_LOOK_EVERY = 300                                     # seconds
+
+
+def _nightly(app: Flask) -> None:
+    """Runs the nightly backup if the hour has passed and nothing has run.
+
+    A scheduled task is the proper way to do this and the README says so. This
+    is the second belt: on a host whose scheduler runs in UTC, or whose free
+    plan allows one task a day, or where somebody forgot, a backup that is owed
+    is taken the next time anybody opens a page. Two of them cannot collide —
+    whichever gets there first writes the run, and the other sees it.
+    """
+    global _LOOKED_AT
+
+    if app.config.get("TESTING") or os.environ.get("BACKUP_ON_REQUEST", "").lower() == "off":
+        return
+
+    now = time.monotonic()
+    if now - _LOOKED_AT < _LOOK_EVERY or not _ASKING.acquire(blocking=False):
+        return
+    try:
+        _LOOKED_AT = now
+        from .service import backup_due
+
+        if not backup_due():
+            return
+    except Exception:                                 # noqa: BLE001 - never break a page
+        return
+    finally:
+        _ASKING.release()
+
+    # Off the request: uploading a database to Drive is not something a reader
+    # should wait for. The thread opens its own application context because the
+    # request's is gone by the time it runs.
+    def _run() -> None:
+        with app.app_context():
+            try:
+                from .service import backup_if_due
+
+                backup_if_due()
+            except Exception:                         # noqa: BLE001 - it records its own failures
+                app.logger.exception("The nightly backup could not be taken")
+
+    Thread(target=_run, name="nightly-backup", daemon=True).start()

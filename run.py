@@ -7,6 +7,7 @@
     python run.py create-user     add an account from the command line
     python run.py init-db         create an empty database
     python run.py backup          back everything up and put it on Google Drive
+    python run.py backup --if-due only if tonight's has not been taken yet
     python run.py restore FILE    put a backup back
     python run.py drive-auth      connect a Google account, once
 
@@ -102,11 +103,19 @@ def _backup(args: argparse.Namespace) -> int:
     from app.backup import readable
     from app.service import run_backup
 
+    from app.service import backup_due
+
     app = create_app()
     with app.app_context():
+        # `--if-due` is for a scheduler: it does nothing when tonight's backup
+        # has already been taken, so the same command can be run hourly, or
+        # twice, without producing two.
+        if args.if_due and not backup_due():
+            print("Already backed up — nothing to do.")
+            return 0
         result = run_backup(upload_to_drive=not args.local, note=args.note or "")
 
-    if args.out:
+    if args.out and result.get("data"):
         target = Path(args.out)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(result["data"])
@@ -234,7 +243,26 @@ def _drive_auth(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print("\nConnected. Set these three, and keep them out of the repository:\n")
+    # Saved where the app itself looks, so nothing has to be copied anywhere for
+    # this to start working. The values are printed as well, for a host that is
+    # configured by environment variables instead.
+    saved = ""
+    try:
+        from app import create_app
+        from app.vault import path as vault_path, update
+
+        with create_app().app_context():
+            update(client_id=client_id, client_secret=client_secret,
+                   refresh_token=token["refresh_token"])
+            saved = str(vault_path())
+    except Exception as exc:                          # noqa: BLE001 - the printout still works
+        print(f"(Could not save it here: {exc})", file=sys.stderr)
+
+    if saved:
+        print(f"\nConnected, and saved to {saved} — nothing else to do.")
+        print("It is beside the database, is not in the repository, and is not")
+        print("inside the backup it uploads.")
+    print("\nSet these three instead if this host is configured by environment:\n")
     print(f'  GOOGLE_CLIENT_ID="{client_id}"')
     print(f'  GOOGLE_CLIENT_SECRET="{client_secret}"')
     print(f'  GOOGLE_REFRESH_TOKEN="{token["refresh_token"]}"')
@@ -270,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
     back.add_argument("--local", action="store_true", help="take it but do not upload")
     back.add_argument("--out", help="also write the zip here")
     back.add_argument("--note", help="a line stored inside the backup")
+    back.add_argument("--if-due", action="store_true",
+                      help="only if tonight's has not been taken yet")
     back.set_defaults(func=_backup)
 
     put = sub.add_parser("restore", help="put a backup back over the live database")

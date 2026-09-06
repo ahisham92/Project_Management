@@ -1200,6 +1200,39 @@ def last_backup() -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def last_good_backup() -> dict[str, Any] | None:
+    """The last one that actually landed. A failed run is not a backup."""
+    row = query_one("SELECT * FROM backup_runs WHERE ok = 1 AND where_to = 'drive' "
+                    "ORDER BY id DESC LIMIT 1")
+    return dict(row) if row else None
+
+
+def backup_due(at: Any = None) -> bool:
+    """Whether tonight's backup is still owed.
+
+    Read off the appointed hour in the project's own zone and the last run that
+    actually reached Drive, so a night the server was asleep is caught the next
+    time anybody opens a page rather than waited out for another day.
+    """
+    from . import clock
+    from .drive import configured
+    from .vault import schedule, settings
+
+    when = schedule()
+    if not when["auto"] or not configured(settings()):
+        return False
+
+    last = last_good_backup()
+    return clock.due(last["started_at"] if last else "", when["hour"], when["zone"], at)
+
+
+def backup_if_due(at: Any = None) -> dict[str, Any] | None:
+    """Runs the nightly backup, but only if it has not already run tonight."""
+    if not backup_due(at):
+        return None
+    return run_backup(note="Nightly")
+
+
 def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
     """Take a backup, put it on Drive, and write down what happened.
 
@@ -1208,9 +1241,8 @@ def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
     """
     from .backup import build, readable
     from .db import live_database
-    from .drive import DriveError, configured, settings_from_env, upload
-
-    import os
+    from .drive import DriveError, configured, upload
+    from .vault import settings as drive_settings
 
     try:
         data, manifest = build(live_database(), note)
@@ -1223,17 +1255,18 @@ def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
         "manifest": manifest, "data": data, "uploaded": False, "link": "",
     }
 
-    settings = settings_from_env(os.environ)
+    settings = drive_settings()
     if not upload_to_drive:
         record_backup(True, "local", len(data), "Taken, not uploaded")
         result["detail"] = "Taken, not uploaded"
         return result
 
     if not configured(settings):
-        record_backup(False, "drive", len(data),
-                      "Google Drive is not set up — run `python run.py drive-auth`")
+        missing = ("Google Drive is not connected — open the Backups page and "
+                   "press Connect Google Drive")
+        record_backup(False, "drive", len(data), missing)
         result["ok"] = False
-        result["detail"] = "Google Drive is not set up — run `python run.py drive-auth`"
+        result["detail"] = missing
         return result
 
     try:

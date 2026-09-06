@@ -356,6 +356,9 @@
     form.dataset.itemId = link.dataset.item;
     form.dataset.cell = kind;
     form.dataset.was = cell.innerHTML;
+    // A page showing deliverables and minuted items together has a task 5 and
+    // an item 5. The prefix keeps one save from rewriting the other's badge.
+    form.dataset.rows = link.dataset.rows || '';
 
     ['back:return', 'mode:mode', 'date:data_date'].forEach(function (pair) {
       var from = pair.split(':')[0];
@@ -428,11 +431,12 @@
       // A progress row: the bar, the badge and the variance all follow the
       // figure that was just recorded, so the server sends them back drawn.
       if (result.progress_html !== undefined) {
+        var where = form.dataset.rows || '';
         var task = form.dataset.itemId;
         closeCell(form, cellLink(form, result.progress_html), '');
-        replaceHtml('status-' + task, result.status_html);
-        replaceHtml('variance-' + task, result.variance_html);
-        replaceHtml('actions-' + task, result.actions_html);
+        replaceHtml(where + 'status-' + task, result.status_html);
+        replaceHtml(where + 'variance-' + task, result.variance_html);
+        replaceHtml(where + 'actions-' + task, result.actions_html);
         window.dispatchEvent(new Event('pm:saved'));
         return;
       }
@@ -452,7 +456,7 @@
       closeCell(form, cellLink(form, html), state);
 
       // The badge reads on the date and on whether the item is closed.
-      var status = document.getElementById('status-' + id);
+      var status = document.getElementById((form.dataset.rows || '') + 'status-' + id);
       if (status && result.status_html) status.innerHTML = result.status_html;
     }).catch(function () {
       // Something went wrong out of sight; post it properly so the change is

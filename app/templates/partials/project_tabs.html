@@ -1,10 +1,13 @@
 {# Navigation across one project's screens.
 
-   The two registers share an endpoint, so they carry the one thing that tells
-   them apart and are marked active on which register is actually open rather
-   than on the endpoint alone. #}
+   The client register and the internal week are two tabs on one blueprint, so
+   each is marked active on which of them is actually open rather than on the
+   endpoint alone. Internal opens on the week; its register and agenda are
+   reached from inside it. #}
 <nav class="tabs">
   {% set here = request.view_args.get('kind') if request.view_args else none %}
+  {% set internal = request.endpoint in ('meetings.week', 'meetings.weekly_meeting')
+                    or (request.endpoint in ('meetings.index', 'meetings.agenda') and here == 'internal') %}
   {% set tabs = [
     ('projects.dashboard', 'Dashboard', none),
     ('projects.tasks', 'Progress', none),
@@ -13,13 +16,16 @@
     ('projects.period', 'Period', none),
     ('projects.timesheet', 'Timesheet', none),
     ('meetings.index', 'Minutes', 'client'),
-    ('meetings.index', 'Internal', 'internal'),
     ('projects.setup', 'Setup', none),
   ] %}
   {% for endpoint, label, register in tabs %}
     {% if register %}
       <a href="{{ url_for(endpoint, project_id=project['id'], kind=register) }}"
          class="{{ 'active' if request.endpoint == endpoint and here == register }}">{{ label }}</a>
+      {# The internal week sits beside the client register, where the eye
+         expects the pair. #}
+      <a href="{{ url_for('meetings.week', project_id=project['id']) }}"
+         class="{{ 'active' if internal }}">Internal</a>
     {% else %}
       <a href="{{ url_for(endpoint, project_id=project['id']) }}"
          class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>

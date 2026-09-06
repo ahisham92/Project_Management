@@ -1,0 +1,10 @@
+{# The three internal pages. The week is the one you open on; the register and
+   the agenda are where you go when the week is not the question. #}
+<div class="chips no-print" style="margin-bottom:12px">
+  <a href="{{ url_for('meetings.week', project_id=project['id']) }}"
+     class="{{ 'active' if request.endpoint == 'meetings.week' }}">This week</a>
+  <a href="{{ url_for('meetings.index', project_id=project['id'], kind='internal') }}"
+     class="{{ 'active' if request.endpoint == 'meetings.index' }}">Register</a>
+  <a href="{{ url_for('meetings.agenda', project_id=project['id'], kind='internal') }}"
+     class="{{ 'active' if request.endpoint == 'meetings.agenda' }}">Agenda</a>
+</div>

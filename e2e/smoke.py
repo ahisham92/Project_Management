@@ -112,6 +112,7 @@ def main() -> int:
         step("minutes: picks a date from the calendar", _minutes_calendar)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("internal: a weekly list of its own, read as at a date", _internal_register)
+        step("internal: the week compiles the programme and both registers", _this_week)
         step("progress sorts by a column", _sorting)
         step("planned reads only the workflow step values", _stepped_planned)
         step("setup starts locked and opens with the password", _setup_lock)
@@ -558,7 +559,7 @@ def _dates_read_dd_mm(page) -> None:
 def _internal_register(page) -> None:
     """The internal weekly list: its own tab and path, separate from the
     client's minutes, and readable as it stood on a past date."""
-    page.click("nav.tabs a:has-text('Internal')")
+    page.goto(f"{BASE}/projects/1/internal/register", wait_until="networkidle")
     page.wait_for_selector("h1:has-text('Internal weekly')", timeout=8000)
     if "/internal" not in page.url:
         raise AssertionError(f"the internal register should have its own path: {page.url}")
@@ -579,14 +580,14 @@ def _internal_register(page) -> None:
         page.click("form[action*='/items'] button:has-text('Add item')")
         page.wait_for_timeout(900)
 
-    page.goto(f"{BASE}/projects/1/internal?filter=all", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all", wait_until="networkidle")
     rows = page.locator("tbody tr[id^='item-']")
     if rows.count() != 2:
         raise AssertionError(f"expected the two internal items, found {rows.count()}")
 
     # Close one on the day it was actually closed.
     first = rows.first.get_attribute("id").split("-")[1]
-    page.goto(f"{BASE}/projects/1/internal?filter=all&edit={first}", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all&edit={first}", wait_until="networkidle")
     editor = page.locator(f"#edit-{first} form.item-form")
     editor.locator("select[name=status]").select_option("closed")
     editor.locator("input[name=closed_date]").fill("10/01/2026")
@@ -594,7 +595,7 @@ def _internal_register(page) -> None:
     page.wait_for_timeout(1200)
 
     # The client asks where things stood on the fifteenth.
-    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=15/01/2026", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all&as_at=15/01/2026", wait_until="networkidle")
     said = page.locator(".as-at-banner").inner_text()
     if "as it stood on 15/01/2026" not in said:
         raise AssertionError(f"the page does not say it is showing a past date: {said!r}")
@@ -603,12 +604,12 @@ def _internal_register(page) -> None:
     page.screenshot(path=str(SHOTS / "34-internal-as-at.png"), full_page=True)
 
     # A week earlier, that item had not been closed yet.
-    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=08/01/2026", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all&as_at=08/01/2026", wait_until="networkidle")
     if "0 closed" not in page.locator(".as-at-banner").inner_text():
         raise AssertionError("an item closed on the tenth was still open on the eighth")
 
     # Before anything was raised, the register was empty.
-    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=01/01/2020", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all&as_at=01/01/2020", wait_until="networkidle")
     if page.locator("tbody tr[id^='item-']").count() != 0:
         raise AssertionError("nothing had been raised in 2020")
 
@@ -618,12 +619,74 @@ def _internal_register(page) -> None:
         raise AssertionError("the internal list must not show in the client's minutes")
 
     # It goes to Word under its own name, saying the date it was read at.
-    page.goto(f"{BASE}/projects/1/internal?filter=all&as_at=15/01/2026", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/internal/register?filter=all&as_at=15/01/2026", wait_until="networkidle")
     with page.expect_download(timeout=10000) as download:
         page.click("a:has-text('Export Word')")
     name = download.value.suggested_filename
     if "internal" not in name:
         raise AssertionError(f"the internal register downloaded as {name}")
+
+
+def _reading(cell: str) -> str:
+    """What a progress cell says it stands at, without the plan beside it."""
+    return " ".join(cell.split("plan")[0].split())
+
+
+def _this_week(page) -> None:
+    """The Internal tab opens on the week: what the programme and both
+    registers want between Monday and Sunday, in one list, editable in place."""
+    page.click("nav.tabs a:has-text('Internal')")
+    page.wait_for_selector("h1:has-text('This week')", timeout=8000)
+    if not page.url.rstrip("/").endswith("/internal"):
+        raise AssertionError(f"the Internal tab should open on the week: {page.url}")
+
+    body = page.text_content("body")
+    for expected in ("Wanted this week", "Already late", "The week is worth"):
+        if expected not in body:
+            raise AssertionError(f"the week does not show {expected!r}")
+
+    # It says where each row came from — that is the point of the page.
+    if page.locator("a.badge:has-text('Schedule')").count() == 0:
+        raise AssertionError("the week should say which rows came off the programme")
+
+    # Change progress here; it is the deliverable itself, not a copy of it.
+    # A select saves the moment it is changed, as it does everywhere else.
+    cell = page.locator("a.cell-open[data-rows='t'][data-cell='status']").first
+    task_id = cell.get_attribute("data-item")
+    before = _reading(page.text_content(f"#tprogress-{task_id}"))
+    cell.click()
+    page.wait_for_selector(f"#tprogress-{task_id} select", timeout=4000)
+    picked = page.locator(f"#tprogress-{task_id} select option").nth(3).get_attribute("value")
+    page.select_option(f"#tprogress-{task_id} select", picked)
+    page.wait_for_selector(f"#tprogress-{task_id} .cell-open", timeout=8000)
+    after = _reading(page.text_content(f"#tprogress-{task_id}"))
+    if after == before:
+        raise AssertionError(f"the week's progress cell did not take the change: {after!r}")
+
+    # And it is the same record the Progress tab shows, not a copy of it.
+    page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
+    row = page.locator(f"tr#task-{task_id}")
+    if row.count() == 0:
+        raise AssertionError("the deliverable is not on the Progress tab")
+    if _reading(row.locator("[id^=progress-]").inner_text()) != after:
+        raise AssertionError("progress recorded on the week should show on the Progress tab")
+
+    # One button opens the weekly meeting, and pressing it again opens the same one.
+    page.goto(f"{BASE}/projects/1/internal", wait_until="networkidle")
+    page.click("button:has-text('the weekly meeting')")
+    page.wait_for_selector("h1", timeout=8000)
+    if "/meetings/" not in page.url:
+        raise AssertionError(f"the weekly button should open a meeting: {page.url}")
+    opened = page.url
+
+    page.goto(f"{BASE}/projects/1/internal", wait_until="networkidle")
+    page.click("button:has-text('the weekly meeting')")
+    page.wait_for_selector("h1", timeout=8000)
+    if page.url != opened:
+        raise AssertionError("pressing it again should open the same meeting, not a second one")
+
+    page.goto(f"{BASE}/projects/1/internal", wait_until="networkidle")
+    page.screenshot(path=str(SHOTS / "36-this-week.png"), full_page=True)
 
 
 def _sorting(page) -> None:
@@ -1248,7 +1311,7 @@ def _backups(page) -> None:
     page.goto(f"{BASE}/backups", wait_until="networkidle")
     body = page.text_content("body")
     for expected in ("Backups", "Google Drive", "Every night", "python run.py backup",
-                     "Putting one back"):
+                     "Putting one back", "Connect Google Drive", "/backups/connected"):
         if expected not in body:
             raise AssertionError(f"the backups page does not mention {expected!r}")
 
@@ -1270,10 +1333,21 @@ def _backups(page) -> None:
     page.click("button:has-text('Back up now')")
     page.wait_for_selector(".flash", timeout=10000)
     said = page.locator(".flash").last.inner_text()
-    if "not set up" not in said and "Drive" not in said:
+    if "not connected" not in said and "Drive" not in said:
         raise AssertionError(f"the backup said {said!r}")
     if page.locator("tbody tr").count() == 0:
         raise AssertionError("the run should be written down whether or not it worked")
+
+    # The nightly hour is kept in a real time zone and converted, so the page
+    # can say what it is in UTC — which is what a scheduler has to be told.
+    page.select_option("select[name=hour]", "0")
+    page.select_option("select[name=zone]", "Africa/Cairo")
+    page.check("input[name=auto]")
+    page.click("button:has-text('Save the schedule')")
+    page.wait_for_selector(".flash", timeout=8000)
+    said = page.locator(".flash").last.inner_text()
+    if "00:00 Africa/Cairo" not in said or "UTC" not in said:
+        raise AssertionError(f"the schedule was saved as {said!r}")
     page.screenshot(path=str(SHOTS / "35-backups.png"), full_page=True)
 
 

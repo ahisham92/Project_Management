@@ -36,6 +36,7 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 FILES_URL = "https://www.googleapis.com/drive/v3/files"
 UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
+ABOUT_URL = "https://www.googleapis.com/drive/v3/about"
 
 # The narrowest scope that can do this: the app sees only the files it created
 # itself, never the rest of your Drive.
@@ -181,6 +182,16 @@ def replace(token: str, file_id: str, data: bytes) -> dict[str, Any]:
     """
     url = f"{UPLOAD_URL}/{file_id}?uploadType=media&fields=id,name,modifiedTime,size"
     return _request(url, token, "PATCH", data, "application/zip")
+
+
+def about(token: str) -> dict[str, Any]:
+    """Whose Drive this is. Never fatal: a backup that landed is what matters,
+    and the name on the account is only there so you can see where it went."""
+    try:
+        said = _request(f"{ABOUT_URL}?fields=user(displayName,emailAddress)", token)
+    except DriveError:
+        return {}
+    return dict(said.get("user") or {})
 
 
 def upload(settings: Mapping[str, str], data: bytes, name: str = "") -> dict[str, Any]:

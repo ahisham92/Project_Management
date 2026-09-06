@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, date_field, empty, print_header, print_button %}
+{% from "partials/item_cells.html" import owner_cell, due_cell, cell_templates with context %}
+{% from "partials/item_bits.html" import item_status %}
+{% from "partials/progress_bits.html" import progress_cell, status_cell %}
+{% block title %}This week — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{# Where a requirement came from, said plainly. It is the point of the page
+   that these are gathered from three places, so each row says which. #}
+{% macro source_badge(row) %}
+  {% if row['source'] == 'schedule' %}
+    <a class="badge neutral" style="text-decoration:none"
+       href="{{ url_for('projects.schedule', project_id=project['id'], panel=row['id']) }}"
+       title="Open it on the schedule">Schedule</a>
+  {% elif row['source'] == 'client' %}
+    <a class="badge neutral" style="text-decoration:none"
+       href="{{ url_for('meetings.index', project_id=project['id'], kind='client') }}#item-{{ row['id'] }}"
+       title="Open the client register">Minutes</a>
+  {% else %}
+    <a class="badge neutral" style="text-decoration:none"
+       href="{{ url_for('meetings.index', project_id=project['id'], kind='internal') }}#item-{{ row['id'] }}"
+       title="Open the internal register">Internal</a>
+  {% endif %}
+{% endmacro %}
+
+{% macro state_badge(row) %}
+  {% if row['state'] == 'late' %}
+    {{ badge('critical', row['days_late'] ~ 'd late' if row['days_late'] else 'Late') }}
+  {% elif row['state'] == 'due' %}{{ badge('serious', 'This week') }}
+  {% elif row['state'] == 'done' %}{{ badge('good', 'Done') }}
+  {% else %}{{ badge('warning', 'Open') }}{% endif %}
+{% endmacro %}
+
+{% block content %}
+{% set params = {'week': date_input(start)} %}
+
+<div class="page-head">
+  <div>
+    <h1>This week</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ project['code'] }} · {{ project['name'] }} ·
+      {{ short_date(start) }} to {{ short_date(end) }}
+      {% if not is_this_week %} · <strong>not the current week</strong>{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <form method="post" action="{{ url_for('meetings.weekly_meeting', project_id=project['id']) }}">
+      <input type="hidden" name="week" value="{{ date_input(start) }}">
+      <button type="submit" class="btn btn-primary no-print">
+        {{ 'Open the weekly meeting' if meeting else 'Start the weekly meeting' }}
+      </button>
+    </form>
+    {{ print_button('Print / PDF') }}
+  </div>
+</div>
+
+{{ print_header(project, 'The week — ' ~ short_date(start) ~ ' to ' ~ short_date(end), today,
+                totals['total'] ~ ' requirement' ~ ('' if totals['total'] == 1 else 's')) }}
+
+{% include "partials/internal_nav.html" %}
+
+<div class="card no-print" style="margin-bottom:16px">
+  <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <a class="btn btn-ghost btn-sm"
+       href="{{ url_for('meetings.week', project_id=project['id'], week=date_input(previous)) }}">◀ Previous week</a>
+    {% if not is_this_week %}
+      <a class="btn btn-ghost btn-sm"
+         href="{{ url_for('meetings.week', project_id=project['id']) }}">Back to this week</a>
+    {% endif %}
+    <a class="btn btn-ghost btn-sm"
+       href="{{ url_for('meetings.week', project_id=project['id'], week=date_input(next)) }}">Next week ▶</a>
+    <span class="small muted" style="margin-left:auto">
+      Compiled from the schedule and both registers. Change anything here and it changes there —
+      there is only one copy of each of these.
+    </span>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Wanted this week', totals['total'],
+          totals['deliverables'] ~ ' from the programme · ' ~ totals['actions'] ~ ' action' ~
+          ('' if totals['actions'] == 1 else 's'),
+          'warning' if totals['total'] else 'good',
+          'to work through' if totals['total'] else 'nothing outstanding') }}
+  {{ tile('Already late', totals['late'], 'past the date they were wanted',
+          'critical' if totals['late'] else 'good', 'behind' if totals['late'] else 'none') }}
+  {{ tile('Going out', totals['submitting'], 'packages due to be issued',
+          'serious' if totals['submitting'] else 'neutral',
+          'to issue' if totals['submitting'] else 'none') }}
+  {{ tile('The week is worth', pct(totals['worth'], 2),
+          'of the whole project, across ' ~ totals['behind'] ~ ' line' ~
+          ('' if totals['behind'] == 1 else 's') ~ ' short of where it wants them',
+          'warning' if totals['behind'] else 'good',
+          'to make up' if totals['behind'] else 'all on plan') }}
+</div>
+
+{% if not groups %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-body">
+      {{ empty('Nothing is wanted this week',
+               'No package is due, nothing is running through it, and no action falls due. Look at the next week, or raise something below.') }}
+    </div>
+  </div>
+{% endif %}
+
+{% for group in groups %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>{{ group['title'] }}
+          <span class="small muted" style="font-weight:400">· {{ group['rows'] | length }}</span></h2>
+        <p class="small muted" style="margin-top:2px">{{ group['hint'] }}</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>What</th>
+              <th>From</th>
+              <th>Who</th>
+              <th class="right">Wanted</th>
+              <th>{{ 'Where it is' if group['need'] != 'close' else 'State' }}</th>
+              <th class="right">{{ 'How it stands' if group['need'] != 'close' else '' }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in group['rows'] %}
+              <tr id="week-{{ row['source'] }}-{{ row['id'] }}">
+                <td class="tabular small muted nowrap">{{ row['ref'] or '—' }}</td>
+                <td>
+                  <span style="font-weight:500">{{ row['title'] or '—' }}</span>
+                  {% if row['source'] == 'schedule' and row['task']['is_critical'] %}
+                    <span style="margin-left:6px">{{ badge('critical', 'critical path',
+                          'Anything lost here is lost off the end of the project') }}</span>
+                  {% endif %}
+                  {% if row['detail'] %}
+                    <p class="small muted" style="margin-top:2px">{{ row['detail'] }}</p>
+                  {% endif %}
+                  {% if row['source'] == 'schedule' and row['task']['run_up'] and row['task']['run_up']['count'] %}
+                    <p class="small" style="margin-top:2px">
+                      {{ badge('warning', row['task']['run_up']['count'] ~ ' holiday' ~
+                               ('' if row['task']['run_up']['count'] == 1 else 's') ~ ' in the run-up',
+                               'Days off in the week before this submission') }}
+                    </p>
+                  {% endif %}
+                </td>
+                <td class="nowrap">{{ source_badge(row) }}</td>
+                <td class="small ink2">
+                  {% if row['source'] == 'schedule' %}
+                    {{ row['who'] or '—' }}
+                    {% if row['task']['team_name'] %}
+                      <span class="muted" style="display:block">{{ row['task']['team_name'] }}</span>
+                    {% endif %}
+                  {% else %}
+                    {{ owner_cell(project, row['item'], owners, '', 'i',
+                                  url_for('meetings.index', project_id=project['id'],
+                                          kind=row['source'], edit=row['id']) ~ '#item-' ~ row['id']) }}
+                  {% endif %}
+                </td>
+                <td class="right small ink2 nowrap">
+                  {% if row['source'] == 'schedule' %}
+                    {{ short_date(row['due']) or '—' }}
+                  {% else %}
+                    {{ due_cell(project, row['item'], '', 'i',
+                                url_for('meetings.index', project_id=project['id'],
+                                        kind=row['source'], edit=row['id']) ~ '#item-' ~ row['id']) }}
+                  {% endif %}
+                </td>
+
+                {% if row['source'] == 'schedule' %}
+                  {% set task = row['task'] %}
+                  <td style="min-width:190px">
+                    <span id="tprogress-{{ task['id'] }}" style="display:block">
+                      {% if can_report %}
+                        <a class="cell-open" style="display:block"
+                           data-cell="{{ 'status' if task['uses_workflow'] else 'percent' }}"
+                           data-item="{{ task['id'] }}" data-rows="t"
+                           data-value="{{ task['status_key'] if task['uses_workflow'] else (task['actual_pct'] * 100) | round | int }}"
+                           data-date="{{ date_input(today) }}"
+                           data-action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}"
+                           href="{{ url_for('projects.tasks', project_id=project['id'], edit=task['id']) }}#task-{{ task['id'] }}"
+                           title="Click to change — it saves onto the Progress and Schedule tabs too">{{ progress_cell(task, limit) }}</a>
+                      {% else %}{{ progress_cell(task, limit) }}{% endif %}
+                    </span>
+                    {% if row['to_do_pct'] > 0.001 %}
+                      <p class="small muted" style="margin-top:4px">
+                        Wants {{ pct(row['target_pct'], 0) }} by {{ short_date(end) }} —
+                        <strong>{{ pct(row['to_do_pct'], 0) }} to find</strong>
+                      </p>
+                    {% endif %}
+                  </td>
+                  <td class="right nowrap">
+                    <span id="tstatus-{{ task['id'] }}" style="display:inline-block">{{ state_badge(row) }}</span>
+                  </td>
+                {% else %}
+                  <td class="nowrap" id="istatus-{{ row['id'] }}">{{ item_status(row['item']) }}</td>
+                  <td class="right nowrap">
+                    {% if can_report %}
+                      <form method="post" class="no-print" style="display:inline"
+                            action="{{ url_for('meetings.set_item_status', project_id=project['id'], item_id=row['id']) }}">
+                        <input type="hidden" name="status" value="closed">
+                        <input type="hidden" name="return" value="week">
+                        <input type="hidden" name="week" value="{{ date_input(start) }}">
+                        <button type="submit" class="btn btn-ghost btn-sm">Close</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+
+<div class="grid grid-2" style="margin-top:16px;align-items:start">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>The weekly meeting</h2>
+        <p class="small muted" style="margin-top:2px">
+          {% if meeting %}Held {{ short_date(meeting['meeting_date']) }}{% else %}Not opened yet for this week{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if meeting %}
+        <p style="margin:0 0 8px">
+          <a href="{{ url_for('meetings.meeting', project_id=project['id'], meeting_id=meeting['id']) }}"
+             style="font-weight:500">{{ meeting['ref'] or 'Weekly' }} — {{ meeting['title'] or 'Internal weekly' }}</a>
+        </p>
+        <p class="small muted" style="margin:0">
+          {{ meeting['item_count'] }} item{{ '' if meeting['item_count'] == 1 else 's' }} minuted,
+          {{ meeting['open_count'] }} still open · {{ meeting['present_count'] }} present.
+          Anything raised in it lands in the internal register and comes back onto this page
+          the moment it falls due.
+        </p>
+      {% else %}
+        <p class="small" style="margin:0 0 10px">
+          One button. The week decides the date and the reference — a weekly meeting that has to
+          be described before it can be opened is a weekly meeting that gets skipped.
+        </p>
+        <form method="post" action="{{ url_for('meetings.weekly_meeting', project_id=project['id']) }}">
+          <input type="hidden" name="week" value="{{ date_input(start) }}">
+          <button type="submit" class="btn btn-primary">Start {{ suggested_ref }}</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_report %}
+    <div class="card no-print">
+      <div class="card-head">
+        <div>
+          <h2>Raise something for this week</h2>
+          <p class="small muted" style="margin-top:2px">
+            Straight into the internal register, dated to close by {{ short_date(end) }}
+          </p>
+        </div>
+      </div>
+      <div class="card-body">
+        <form method="post" class="inline-form"
+              action="{{ url_for('meetings.add_item', project_id=project['id'], kind='internal') }}">
+          <input type="hidden" name="kind" value="internal">
+          <input type="hidden" name="return" value="week">
+          <input type="hidden" name="week" value="{{ date_input(start) }}">
+          <input type="hidden" name="meeting_id" value="{{ meeting['id'] if meeting else '' }}">
+          <label class="field flex1">
+            <span class="field-label">What is needed</span>
+            <input name="subject" placeholder="Chase the client on the jetty layout" required>
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Owner</span>
+            <select name="owner_code">
+              <option value="">— unassigned —</option>
+              {% for code in owners %}<option value="{{ code }}">{{ code }}</option>{% endfor %}
+            </select>
+          </label>
+          {{ date_field('due_date', end, 'By', 'w-md') }}
+          <button type="submit" class="btn btn-primary">Raise it</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% if can_report %}
+  {{ cell_templates(owners, impacts, trades) }}
+  <template id="cell-status">
+    <select name="status_key" class="cell-input" aria-label="Status reached">
+      <option value="">Not started — 0%</option>
+      {% for step in steps %}
+        <option value="{{ step['key'] }}">{{ step['name'] }} — {{ pct(step['percent'], 0) }}</option>
+      {% endfor %}
+    </select>
+  </template>
+  <template id="cell-percent">
+    <input type="number" name="actual_pct" class="cell-input right" min="0" max="100" step="1"
+           style="width:74px" aria-label="Percent complete">
+  </template>
+{% endif %}
+{% endblock %}

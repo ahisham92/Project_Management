@@ -8,7 +8,7 @@ from flask import (
     Blueprint, abort, current_app, flash, g, redirect, render_template, request, url_for,
 )
 
-from .. import charts
+from .. import charts, offices
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..charts import SERIES_SLOTS
 from ..dates import from_input, from_input_or, to_display
@@ -161,9 +161,14 @@ def tasks(project_id: int):
 
     active = request.args.get("filter", "all")
     search = (request.args.get("q") or "").strip()
+    office = offices.normalise(request.args.get("office"))
 
     def keep(task) -> bool:
         if search and search.lower() not in f"{task['wbs']} {task['name']}".lower():
+            return False
+        # A deliverable is kept if the office has any share of it at all: two
+        # offices sharing a line means both of them are working it.
+        if office and office not in task["offices"]:
             return False
         if active == "late":
             return task["is_late"]
@@ -206,6 +211,8 @@ def tasks(project_id: int):
         "tasks.html", codes=REVIEW_CODES,
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         groups=grouped, filters=FILTERS, active_filter=active, search=search,
+        office=office, office_list=offices.OFFICES,
+        office_split=[o for o in snapshot["offices"] if o["office"]],
         shown=len(kept), can_report=_can_report(role),
         steps=ordered_steps(load_steps(project_id)),
         sort=sort, direction=direction, sort_columns=SORT_COLUMNS,
@@ -945,7 +952,7 @@ def setup(project_id: int):
         # set is set for everybody rather than per person.
         is_admin=g.user["role"] == "admin", carmen=carmen(), efforts=EFFORTS,
         carmen_picture_uploaded=carmen_uploaded() is not None,
-        members=members, owner=owner, series=SERIES_SLOTS,
+        members=members, owner=owner, series=SERIES_SLOTS, office_list=offices.OFFICES,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),
         editing=_to_int(request.args.get("split")),
@@ -1208,10 +1215,12 @@ def add_trade(project_id: int):
     else:
         count = next_sort_order("trades", project_id)
         insert(
-            "INSERT INTO trades (project_id, key, name, budget_hours, color, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO trades (project_id, key, name, budget_hours, color, office, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 project_id, key, name, _to_float(request.form.get("budget_hours")),
-                request.form.get("color") or SERIES_SLOTS[(count - 1) % len(SERIES_SLOTS)][1], count,
+                request.form.get("color") or SERIES_SLOTS[(count - 1) % len(SERIES_SLOTS)][1],
+                offices.normalise(request.form.get("office")), count,
             ),
         )
         flash("Trade added", "success")
@@ -1233,9 +1242,10 @@ def save_trade(project_id: int, trade_id: int):
             flash("Trade name cannot be empty", "error")
         else:
             execute(
-                "UPDATE trades SET name = ?, budget_hours = ?, color = ? WHERE id = ? AND project_id = ?",
+                "UPDATE trades SET name = ?, budget_hours = ?, color = ?, office = ? "
+                "WHERE id = ? AND project_id = ?",
                 (name, _to_float(request.form.get("budget_hours")), request.form.get("color") or "#2a78d6",
-                 trade_id, project_id),
+                 offices.normalise(request.form.get("office")), trade_id, project_id),
             )
             flash("Trade saved", "success")
     return _back("projects.setup", project_id)
@@ -1475,11 +1485,13 @@ def save_all(project_id: int):
             if field not in form:
                 continue
             conn.execute(
-                "UPDATE trades SET name = ?, budget_hours = ?, color = ? WHERE id = ? AND project_id = ?",
+                "UPDATE trades SET name = ?, budget_hours = ?, color = ?, office = ? "
+                "WHERE id = ? AND project_id = ?",
                 (
                     (form.get(field) or trade["name"]).strip(),
                     _to_float(form.get(f"trade_{trade['id']}_budget"), trade["budget_hours"]),
                     form.get(f"trade_{trade['id']}_color") or trade["color"],
+                    offices.normalise(form.get(f"trade_{trade['id']}_office")),
                     trade["id"], project_id,
                 ),
             )
@@ -1746,16 +1758,19 @@ def _apply_setup(project, parsed) -> dict[str, int]:
             found = existing_trades.pop(trade["name"].lower(), None)
             if found:
                 conn.execute(
-                    "UPDATE trades SET name = ?, budget_hours = ?, color = ?, sort_order = ? WHERE id = ?",
-                    (trade["name"], trade["budget_hours"], trade["color"], order, found["id"]),
+                    "UPDATE trades SET name = ?, budget_hours = ?, color = ?, office = ?, "
+                    "sort_order = ? WHERE id = ?",
+                    (trade["name"], trade["budget_hours"], trade["color"],
+                     trade.get("office") or "", order, found["id"]),
                 )
                 trade_ids[trade["name"].lower()] = found["id"]
             else:
                 key = "".join(c if c.isalnum() else "_" for c in trade["name"].lower()).strip("_")
                 cursor = conn.execute(
-                    "INSERT INTO trades (project_id, key, name, budget_hours, color, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO trades (project_id, key, name, budget_hours, color, office, "
+                    "sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (project_id, key or f"trade_{order}", trade["name"], trade["budget_hours"],
-                     trade["color"], order),
+                     trade["color"], trade.get("office") or "", order),
                 )
                 trade_ids[trade["name"].lower()] = cursor.lastrowid
         for leftover in existing_trades.values():

@@ -61,6 +61,54 @@
   <div class="card-body">{{ budget_chart }}</div>
 </div>
 
+{% set office_rows = snapshot['offices'] %}
+{% if office_rows | length > 1 %}
+  {# Two offices on one programme is two teams to answer for, so the figures
+     add up per office as well as per trade. A trade with no office set falls
+     into "Not set" rather than being hidden. #}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>By office</h2>
+        <p class="small muted" style="margin-top:2px">
+          The same figures, added up for the office carrying the trades
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Office</th><th>Trades</th><th class="right">Scope</th><th class="right">Progress</th>
+            <th class="right">Planned</th><th class="right">Budget</th><th class="right">Booked</th>
+            <th class="right">Earned</th><th class="right">CPI</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in office_rows %}
+            <tr>
+              <td class="nowrap"><strong>{{ row['name'] }}</strong></td>
+              <td class="small muted">{{ row['trades'] | join(', ') }}</td>
+              <td class="right tabular ink2">{{ pct(row['scope_weight_pct'], 1) }}</td>
+              <td class="right tabular ink2">{{ pct(row['earned_pct_of_office'], 1) }}</td>
+              <td class="right tabular muted">{{ pct(row['planned_pct_of_office'], 1) }}</td>
+              <td class="right tabular ink2">{{ hours(row['budget_hours']) }}</td>
+              <td class="right tabular ink2">{{ hours(row['spent_hours']) }}</td>
+              <td class="right tabular ink2">{{ hours(row['earned_hours'], 1) }}</td>
+              <td class="right tabular ink2">{{ index(row['cpi']) }}</td>
+              <td>{{ badge(STATUS_STATE.get(row['budget_status'], 'neutral'), row['budget_status']) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-foot small muted">
+      An office is set against each trade on the Setup tab. A deliverable worked by
+      two offices counts in both, in the proportions its trades carry.
+    </div>
+  </div>
+{% endif %}
+
 <div class="card" style="margin-top:16px">
   <div class="card-head">
     <div>
@@ -72,7 +120,7 @@
     <table>
       <thead>
         <tr>
-          <th>Trade</th><th class="right">Budget</th><th class="right">Man-months</th><th class="right">Booked</th>
+          <th>Trade</th><th>Office</th><th class="right">Budget</th><th class="right">Man-months</th><th class="right">Booked</th>
           <th style="min-width:120px">Used</th><th class="right">Earned</th><th class="right">Over / (under)</th>
           <th class="right">CPI</th><th class="right">Forecast</th><th>Status</th>
         </tr>
@@ -81,6 +129,7 @@
         {% for tr in snapshot['trades'] %}
           <tr>
             <td class="nowrap"><span class="swatch" style="background:{{ tr['color'] }}"></span><strong>{{ tr['name'] }}</strong></td>
+            <td class="small {{ 'muted' if not tr['office'] }}">{{ office_name(tr['office']) }}</td>
             <td class="right tabular ink2">{{ hours(tr['budget_hours']) }}</td>
             <td class="right tabular muted">{{ num(tr['budget_months'], 1) }}</td>
             <td class="right tabular ink2">{{ hours(tr['spent_hours']) }}</td>
@@ -105,6 +154,7 @@
       <tfoot>
         <tr>
           <td>Total</td>
+          <td></td>
           <td class="right tabular">{{ hours(b['budget_hours']) }}</td>
           <td class="right tabular ink2">{{ num(b['budget_hours'] / per_month, 1) }}</td>
           <td class="right tabular">{{ hours(b['spent_hours']) }}</td>

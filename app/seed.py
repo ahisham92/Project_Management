@@ -78,8 +78,10 @@ def seed(database: str | None = None, seed_file: Path | None = None, quiet: bool
             trade_ids = {}
             for trade in data["trades"]:
                 trade_ids[trade["key"]] = conn.execute(
-                    "INSERT INTO trades (project_id, key, name, budget_hours, color, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-                    (project_id, trade["key"], trade["name"], trade["budget_hours"], trade["color"], trade["sort_order"]),
+                    "INSERT INTO trades (project_id, key, name, budget_hours, color, office, "
+                    "sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, trade["key"], trade["name"], trade["budget_hours"],
+                     trade["color"], trade.get("office", ""), trade["sort_order"]),
                 ).lastrowid
 
             section_ids = {}

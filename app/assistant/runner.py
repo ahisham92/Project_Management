@@ -21,6 +21,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
+from . import edits
+from .common import ApplyError
 from .tools import READ_ONLY, ToolError, describe, run
 
 # How many times round the loop before it has to answer in words. Enough to
@@ -42,22 +44,35 @@ control app used by a project manager on {project}.
 
 Today is {today}. Every date you say or accept is dd/mm/yyyy.
 
-You have tools that read this project and tools that change it. Use them — never \
-answer from memory, never guess a date, a percentage or a WBS number. If you have \
-not read it with a tool in this conversation, look it up.
+You have tools that read this project and tools that change it, and between them \
+they reach every tab: progress, the schedule and its dependencies, the budget and \
+the timesheet, both registers of minutes, and the setup sheet itself — the project's \
+settings, its trades and the office that carries each, sections, workflow steps, \
+teams and holidays, the deliverable list and how each line is split between the \
+trades. Use them — never answer from memory, never guess a date, a percentage or a \
+WBS number. If you have not read it with a tool in this conversation, look it up.
 
 How to work:
 * Turn what the reader said into exact deliverables first. "the design basis" is \
   a phrase; 3.1 is a deliverable. Use find_deliverables when you are not certain.
-* Read before you change. Check where a line actually is before setting it.
+* Read before you change. Check where a line actually is before setting it, and \
+  read setup_sheet before changing anything on the setup sheet.
 * One question can need several tools. Chain them.
 * If a tool tells you something is ambiguous, ask the reader which they meant \
   rather than picking one.
+* A change that touches every deliverable — a trade taking a share of all of them, \
+  say — is one call to share_across, not fifty calls to set_trade_split.
 
 About changing things: a tool that changes something does not change it \
 immediately — it is staged for the reader to approve, and the page shows them \
 the list. So say plainly what you have staged and why, in one or two sentences. \
 Do not claim it is done; say what will happen when they press Apply.
+
+One guard you do not get past: changes to the setup sheet — settings, trades, \
+offices, sections, workflow steps, teams, the deliverable list and the trade split \
+— only apply for somebody with manager access who has unlocked the Setup tab, the \
+same as making the change by hand. Stage it anyway; if it is refused for that, tell \
+them to unlock Setup and ask again.
 
 Answer in plain English, short. Figures in a small table or a short list, never \
 a wall of prose. Do not repeat the raw tool output back — say what it means. If \
@@ -247,18 +262,16 @@ def staged_summary(staged: Sequence[Mapping[str, Any]]) -> str:
 
 # --- doing what was staged --------------------------------------------------
 
-class ApplyError(Exception):
-    """A staged change that cannot be applied, said in words."""
-
-
 def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
-          data_date: str = "") -> list[dict[str, Any]]:
+          data_date: str = "", setup_open: bool = True) -> list[dict[str, Any]]:
     """Carries out what the reader approved.
 
     Every one goes through the same service function the screens post to, so a
     change made here is a change made the ordinary way — the same validation,
     the same cascade, the same history. The caller has already checked that
-    this person may write to this project.
+    this person may write to this project, and says in ``setup_open`` whether
+    they may also edit the setup sheet — which is its own guard on the screens
+    and stays its own guard here.
     """
     from ..service import (add_holiday, add_link, load_steps, next_sort_order,
                            record_progress, remove_link, renumber_items, set_status,
@@ -271,6 +284,11 @@ def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
     for action in actions:
         kind = str(action.get("kind") or "")
         says = str(action.get("says") or kind)
+
+        if kind in edits.SETUP_KINDS and not setup_open:
+            raise ApplyError(
+                "That changes the setup sheet, which is locked. Unlock it on the Setup "
+                "tab — it takes manager access and the setup password — and ask me again.")
 
         if kind == "set_progress":
             task = _own_task(project_id, action.get("task_id"))
@@ -355,7 +373,12 @@ def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
                     (*fields.values(), action["meeting_id"], project_id))
 
         else:
-            raise ApplyError(f"There is nothing called {kind!r} to apply")
+            # Everything on the setup sheet, the deliverable list, the trade
+            # split and the timesheet lives in its own module.
+            try:
+                says = edits.apply_one(project_id, action, user_id, stamp)
+            except KeyError:
+                raise ApplyError(f"There is nothing called {kind!r} to apply") from None
 
         done.append({"kind": kind, "says": says})
 

@@ -116,6 +116,8 @@ def main() -> int:
         step("a helper on every tab, and one page of definitions", _how_to_use)
         step("the dashboard overview shows dates, float, progress and earned", _overview)
         step("Carmen answers, stages a change, and applies it", _assistant)
+        step("Carmen changes the setup sheet and shares a trade across every line",
+             _assistant_changes_the_setup)
         step("a presentation downloads as a PowerPoint", _deck)
         step("Carmen is on every page, minutes a meeting and takes you places",
              _carmen_everywhere)
@@ -848,6 +850,71 @@ def _assistant(page) -> None:
 
     if _row_reads(page, 1) != "40%":
         raise AssertionError("applying should have recorded the progress")
+
+
+def _assistant_changes_the_setup(page) -> None:
+    """The setup sheet, from the chat: a trade added, an office set, and then
+    the one change nobody would make by hand fifty-five times — a trade taking
+    a share of every deliverable, with the rest rescaled to fit."""
+    if not os.environ.get("CLAUDE_STAND_IN"):
+        return
+
+    # The setup sheet's own guard applies to a change she staged, so it has to
+    # be unlocked first — the same as making the change by hand.
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    if page.locator("input[name=password]").count():
+        page.fill("input[name=password]", "2026")
+        page.click("button:has-text('Unlock')")
+        page.wait_for_selector("text=Setup sheet unlocked >> visible=true", timeout=8000)
+
+    page.goto(f"{BASE}/projects/1/assistant", wait_until="networkidle")
+    page.wait_for_selector("#chat-form textarea:not([disabled])", timeout=8000)
+
+    # First the trade itself.
+    page.fill("#chat-form textarea[name=question]",
+              "Add a trade called Project Manager, Beirut, 400 hours")
+    page.click("#chat-form button[type=submit]")
+    page.wait_for_selector("#chat .chat-staged", timeout=25000)
+    staged = page.locator("#chat .chat-staged").last.inner_text()
+    if "Project Manager" not in staged or "Beirut" not in staged:
+        raise AssertionError(f"adding a trade does not read right: {staged!r}")
+    page.click("#chat .chat-staged button:has-text('Apply')")
+    page.wait_for_selector("#chat .chat-staged:has-text('Applied')", timeout=15000)
+
+    # Then its share of everything, as one thing to approve.
+    page.fill("#chat-form textarea[name=question]",
+              "Give the Project Manager 10% of every deliverable")
+    page.click("#chat-form button[type=submit]")
+    page.wait_for_selector("#chat .chat-staged:not(:has-text('Applied'))", timeout=25000)
+    staged = page.locator("#chat .chat-staged").last.inner_text()
+    if "every deliverable" not in staged or "rescaled" not in staged:
+        raise AssertionError(f"the bulk change does not say what it does: {staged!r}")
+    page.click("#chat .chat-staged:not(:has-text('Applied')) button:has-text('Apply')")
+    page.wait_for_selector("#chat .chat-staged:has-text('Applied')", timeout=20000)
+    page.screenshot(path=str(SHOTS / "40-carmen-setup.png"), full_page=True)
+
+    # And it reached the project: the trade is on the budget, carrying scope.
+    page.goto(f"{BASE}/projects/1/budget", wait_until="networkidle")
+    body = page.text_content("body")
+    if "Project Manager" not in body:
+        raise AssertionError("the new trade is not on the budget")
+
+    # And every split still totals 100%, which is the whole point of rescaling
+    # the others rather than bolting a tenth on the side.
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    page.click("summary:has-text('deliverable')" if page.locator(
+        "summary:has-text('deliverable')").count() else "body")
+    shares = page.locator("input[name*='_alloc_']")
+    if shares.count() == 0:
+        raise AssertionError("the trade split is not on the setup sheet")
+    off = page.locator(".split-total.bad-text").count()
+    if off:
+        raise AssertionError(f"{off} deliverables no longer total 100%")
+
+    # Lock it again on the way out: the sheet re-locks itself in real use, and
+    # a later step here reads it as it would be found.
+    page.click("button:has-text('Lock again')")
+    page.wait_for_selector("text=Setup sheet locked >> visible=true", timeout=8000)
 
 
 def _deck(page) -> None:

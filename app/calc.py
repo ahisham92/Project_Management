@@ -184,8 +184,10 @@ def compute_project(
     ``horizon_days`` of None means "everything ahead", for the schedule's
     all-dates view.
     """
+    from . import offices
     from .workflow import CODE_A, is_approved, is_submitted, step_by_key
 
+    office_of_trade = offices.by_id(trades)
     spent_by_trade = spent_by_trade or {}
     days_per_month = _num(project.get("days_per_month"), DEFAULT_DAYS_PER_MONTH) or DEFAULT_DAYS_PER_MONTH
     hours_per_month = _num(project.get("hours_per_month"), DEFAULT_HOURS_PER_MONTH) or DEFAULT_HOURS_PER_MONTH
@@ -268,6 +270,8 @@ def compute_project(
             is_milestone=bool(submission) and submission == start,
             in_rework=revision > 0 and not is_complete,
             at_revision_limit=revision >= max_revisions,
+            offices=offices.of_task(task, office_of_trade),
+            office_shares=offices.shares(task, office_of_trade),
         )
         rows.append(row)
 
@@ -329,6 +333,7 @@ def compute_project(
         },
         "tasks": rows,
         "trades": trade_rows,
+        "offices": offices.rollup(trade_rows, hours_per_month),
     }
 
 
@@ -367,6 +372,7 @@ def _trade_rows(
                 "key": trade.get("key"),
                 "name": trade.get("name"),
                 "color": trade.get("color"),
+                "office": trade.get("office") or "",
                 "sort_order": trade.get("sort_order"),
                 "scope_weight_pct": scope_weight,
                 "earned_contribution": earned_contrib,

@@ -65,7 +65,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "A line in rework carries its revision number; at the revision limit it turns red.",
         ),
         "terms": ("deliverable", "weight", "planned progress", "earned progress", "workflow step",
-                  "code a", "code b", "code c", "revision", "data date", "variance"),
+                  "code a", "code b", "code c", "revision", "data date", "variance", "office"),
     },
     {
         "key": "schedule",
@@ -112,7 +112,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "Hours booked without a trade still count against the project total.",
             "A high CPI early usually means hours have not been booked yet, not that you are ahead.",
         ),
-        "terms": ("budget hours", "booked hours", "earned hours", "cpi", "eac", "trade",
+        "terms": ("budget hours", "booked hours", "earned hours", "cpi", "eac", "trade", "office",
                   "man-month"),
     },
     {
@@ -222,6 +222,13 @@ TABS: tuple[dict[str, Any], ...] = (
             "<strong>Type up a meeting</strong> and say “minute this” — she turns the prose into "
             "numbered items with owners, dates and what each one affects, and fills the Minutes "
             "page. “Correct 3.1 — the owner is MR” fixes one afterwards.",
+            "Tell her to change the <strong>setup sheet</strong> — “put Utilities under Cairo”, "
+            "“add a trade called Project Manager”, “add a team on Sunday to Thursday”, “add a "
+            "deliverable to Marine Design”. Setup has to be unlocked for those to apply, the "
+            "same as changing them by hand.",
+            "Ask for a change across <strong>every deliverable</strong> at once — “give the "
+            "Project Manager 10% of every deliverable” — and the trades already on each line are "
+            "rescaled to fit what is left. It arrives as one proposal, not fifty-five.",
             "Say “<strong>take me to the schedule</strong>” and the page goes there.",
             "Ask for a <strong>presentation</strong> of the work done between two dates and she "
             "builds a PowerPoint you can download.",
@@ -234,7 +241,10 @@ TABS: tuple[dict[str, Any], ...] = (
             "Nothing changes until you press Apply — a model can be confidently wrong about "
             "which deliverable you meant, and that should cost a sentence, not a programme.",
             "She cannot do more than you can: every change goes through the same code a form "
-            "posts to, and applying takes the same role as editing the screen.",
+            "posts to, and applying takes the same role as editing the screen. A setup change "
+            "still needs the Setup tab unlocked in your own session.",
+            "A line worked by nobody but the trade being given a share has nothing to rescale, "
+            "so it is skipped and named rather than guessed at.",
             "She only ever sees the project in the address bar.",
             "Check anything that matters against the tab it came from. She reads real figures, "
             "but she is a language model reading them.",
@@ -259,6 +269,8 @@ TABS: tuple[dict[str, Any], ...] = (
             "Set the <strong>workflow steps</strong> and the percentage each one is worth.",
             "Add the <strong>teams</strong>: which works Monday to Friday, which Sunday to Thursday, "
             "and the holidays each takes.",
+            "Set each trade's <strong>office</strong> — Beirut or Cairo — and every tab that shows "
+            "trades adds the figures up per office as well.",
             "<strong>Export to Excel</strong>, edit in the sheet, and import it back.",
         ),
         "watch": (
@@ -267,7 +279,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "Changing a working week or a holiday moves every date planned against it.",
         ),
         "terms": ("section", "deliverable", "weight", "weighted points", "trade", "allocation",
-                  "workflow step", "team", "working week", "holiday", "setup password"),
+                  "office", "workflow step", "team", "working week", "holiday", "setup password"),
     },
     {
         "key": "backups",
@@ -467,8 +479,10 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "The project assistant: a language model given the run of one project. She reads anything "
      "the tabs show, proposes changes to any of it, minutes a meeting from what you type, and "
      "takes you to a page when you ask her to.",
-     "She runs on Claude Opus 5, and works through the same functions the screens do — so she "
-     "can do what you can do and nothing more."),
+     "She reaches every tab, the setup sheet included: settings, trades and their offices, "
+     "sections, workflow steps, teams and holidays, the deliverable list, the trade split, the "
+     "timesheet and both registers. She runs on Claude Opus 5 and works through the same "
+     "functions the screens do — so she can do what you can do and nothing more."),
     ("Staged change", "week",
      "Something the assistant proposes rather than does. It is listed under its answer, and "
      "nothing happens until you press Apply.",
@@ -543,6 +557,11 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
     ("Allocation", "money",
      "What share of a deliverable belongs to each trade. It is how a line's progress becomes a "
      "trade's progress.", ""),
+    ("Office", "money",
+     "Which of the firm's offices carries a trade — Beirut or Cairo — set against the trade on "
+     "Setup. A deliverable is worked by whichever offices its trades belong to, in the same "
+     "proportions, so a line split 60/40 between a Beirut trade and a Cairo one counts as both.",
+     "An office's progress = the earned progress of its trades ÷ the scope weight they carry."),
 
     # --- setup and structure
     ("Section", "setup",

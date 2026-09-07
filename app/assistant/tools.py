@@ -22,57 +22,12 @@ from __future__ import annotations
 from typing import Any, Callable, Mapping
 
 from ..dates import from_input, to_display
+from . import edits
+from ..offices import name_of as office_name
+from .common import ToolError, _date, _deliverable, _project
+from .edits import trade_split
 
 # --- finding what the reader meant ------------------------------------------
-
-class ToolError(Exception):
-    """Something the model asked for that cannot be done, said in words it can
-    read and act on — a wrong reference is a thing to correct, not to crash."""
-
-
-def _project(project_id: int) -> dict[str, Any]:
-    from ..db import query_one
-    from ..service import as_dict
-
-    row = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
-    if row is None:
-        raise ToolError("That project does not exist")
-    return as_dict(row)
-
-
-def _deliverable(project_id: int, reference: Any) -> dict[str, Any]:
-    """The deliverable the reader meant, by WBS number or by name.
-
-    People say "1.2" and they say "the design basis report"; both have to work,
-    and an ambiguous phrase has to come back as a question rather than as a
-    guess about which of four lines to change.
-    """
-    from ..service import load_tasks
-
-    wanted = " ".join(str(reference or "").strip().lower().split())
-    if not wanted:
-        raise ToolError("Say which deliverable — its WBS number, like 1.2, or its name")
-
-    rows = load_tasks(project_id)
-    exact = [t for t in rows if str(t.get("wbs") or "").strip().lower() == wanted]
-    if len(exact) == 1:
-        return exact[0]
-
-    named = [t for t in rows if wanted in str(t.get("name") or "").lower()]
-    if len(named) == 1:
-        return named[0]
-    if len(named) > 1:
-        listed = "; ".join(f"{t['wbs']} {t['name'][:60]}" for t in named[:6])
-        raise ToolError(f"That matches {len(named)} deliverables — say which: {listed}")
-    raise ToolError(f"No deliverable matches {reference!r}. Use find_deliverables to look one up.")
-
-
-def _date(value: Any, what: str) -> str:
-    iso = from_input(value)
-    if not iso:
-        raise ToolError(f"{what} must be a date as dd/mm/yyyy — got {value!r}")
-    return iso
-
 
 def _line(task: Mapping[str, Any]) -> dict[str, Any]:
     """One deliverable, said the way the model should read it back."""
@@ -189,6 +144,9 @@ def deliverable(project_id: int, reference: str = "", **_ignored) -> dict[str, A
         "drives": drives,
         "cannot_start_because": row.get("late_reason") or "",
         "holidays_in_run_up": (row.get("run_up") or {}).get("count", 0),
+        "section": row.get("section_name") or "",
+        "offices": [office_name(key) for key in (row.get("offices") or [])],
+        "trade_split": trade_split(project_id, reference)["split"],
     })
 
 
@@ -314,12 +272,23 @@ def budget_summary(project_id: int, **_ignored) -> dict[str, Any]:
         "earned_hours": round(budget["earned_hours"], 1),
         "cpi": budget.get("cpi"),
         "estimate_at_completion_hours": round(budget.get("eac_hours") or 0, 1),
-        "trades": [{"name": t["name"], "budget_hours": round(t["budget_hours"], 1),
+        "trades": [{"name": t["name"], "office": office_name(t["office"]) if t["office"] else "",
+                    "budget_hours": round(t["budget_hours"], 1),
                     "booked_hours": round(t["spent_hours"], 1),
                     "earned_hours": round(t["earned_hours"], 1),
                     "earned_percent": round(t["earned_pct_of_trade"] * 100, 2),
                     "cpi": t.get("cpi")}
                    for t in snapshot["trades"]],
+        # Beirut and Cairo answer for their own scope, so the same figures add
+        # up per office as well as per trade.
+        "offices": [{"office": o["name"], "trades": o["trades"],
+                     "scope_percent": round(o["scope_weight_pct"] * 100, 2),
+                     "earned_percent": round(o["earned_pct_of_office"] * 100, 2),
+                     "planned_percent": round(o["planned_pct_of_office"] * 100, 2),
+                     "budget_hours": round(o["budget_hours"], 1),
+                     "booked_hours": round(o["spent_hours"], 1),
+                     "cpi": o.get("cpi")}
+                    for o in snapshot["offices"]],
     }
 
 
@@ -935,6 +904,7 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           {"start": dict(_TEXT, description="dd/mm/yyyy"),
            "end": dict(_TEXT, description="dd/mm/yyyy"),
            "title": dict(_TEXT, description="A title for the deck")}, ["start", "end"]),
+    *edits.CATALOGUE,
 )
 
 # Reading is free; changing is staged and applied by hand. `open_view` and
@@ -943,7 +913,7 @@ READ_ONLY: frozenset[str] = frozenset((
     "overview", "find_deliverables", "deliverable", "period_report", "schedule_summary",
     "week_ahead", "register", "budget_summary", "list_meetings",
     "open_view", "presentation",
-))
+)) | edits.READ_ONLY
 
 RUNNERS: dict[str, Callable[..., Any]] = {
     "overview": overview,
@@ -968,6 +938,8 @@ RUNNERS: dict[str, Callable[..., Any]] = {
     "issue_details": issue_details,
     "open_view": open_view,
     "presentation": presentation,
+    # The setup sheet, the deliverable list, the trade split and the timesheet.
+    **edits.RUNNERS,
 }
 
 WRITES: frozenset[str] = frozenset(RUNNERS) - READ_ONLY

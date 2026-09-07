@@ -135,6 +135,9 @@ def init_db(path: Path | str | None = None) -> None:
             ("meetings", "issue_date", "TEXT NOT NULL DEFAULT ''"),
             ("meetings", "attachment", "TEXT NOT NULL DEFAULT ''"),
             ("meetings", "purpose", "TEXT NOT NULL DEFAULT ''"),
+            # Which office carries a trade. Blank until somebody says, because
+            # an unanswered question should read as one rather than as Beirut.
+            ("trades", "office", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, table, column, definition)
 

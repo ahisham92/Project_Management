@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS trades (
   name         TEXT NOT NULL,
   budget_hours REAL NOT NULL DEFAULT 0,
   color        TEXT NOT NULL DEFAULT '#2563eb',
+  office       TEXT NOT NULL DEFAULT '',      -- which office carries it: 'beirut' | 'cairo' | blank
   sort_order   INTEGER NOT NULL DEFAULT 0,
   UNIQUE (project_id, key)
 );

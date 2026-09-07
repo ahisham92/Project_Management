@@ -13,6 +13,7 @@ import io
 from typing import Any, Mapping, Sequence
 
 from .dates import from_input, to_display
+from .offices import OFFICES, name_of as office_name, normalise as normalise_office
 
 SHEET_PROJECT = "Project"
 SHEET_WORKFLOW = "Workflow"
@@ -127,10 +128,15 @@ def build_workbook(
 
     sheet(
         SHEET_TRADES,
-        ["Trade", "Budget (hours)", "Colour"],
-        [[t["name"], t["budget_hours"], t["color"]] for t in trades],
-        widths=[28, 16, 12],
+        ["Trade", "Budget (hours)", "Colour", "Office"],
+        [[t["name"], t["budget_hours"], t["color"], (office_name(t["office"]) if t.get("office") else "")] for t in trades],
+        widths=[28, 16, 12, 14],
     )
+    ws = wb[SHEET_TRADES]
+    ws.append([])
+    ws.append([f"Office is one of: {', '.join(name for _key, name in OFFICES)}. "
+               "Leave it blank for a trade nobody has placed yet."])
+    ws.cell(row=ws.max_row, column=1).font = note_font
     sheet(
         SHEET_SECTIONS,
         ["Code", "Section"],
@@ -242,7 +248,9 @@ def read_workbook(data: bytes) -> dict[str, Any]:
         name = _cell(row[0])
         if name:
             out["trades"].append(
-                {"name": name, "budget_hours": _number(row[1]), "color": _cell(row[2]) or "#2a78d6"}
+                {"name": name, "budget_hours": _number(row[1]),
+                 "color": _cell(row[2]) or "#2a78d6",
+                 "office": normalise_office(_cell(row[3]) if len(row) > 3 else "")}
             )
 
     if SHEET_SECTIONS in wb.sheetnames:

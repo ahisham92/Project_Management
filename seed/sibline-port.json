@@ -1,7 +1,7 @@
 {
   "project": {
     "code": "SIBLINE-PORT",
-    "name": "Sibline Port – Detailed Design & Reconstruction",
+    "name": "Sibline Port \u2013 Detailed Design & Reconstruction",
     "client": "Sibline Port Authority",
     "description": "Detailed design and reconstruction of the marine and structural works at Sibline Port, covering marine design, structural design, geotechnical design and ancillary / utilities design.",
     "ntp_date": "2026-08-31",
@@ -17,28 +17,32 @@
       "name": "Marine",
       "color": "#2a78d6",
       "sort_order": 1,
-      "budget_hours": 1056.0
+      "budget_hours": 1056.0,
+      "office": "beirut"
     },
     {
       "key": "geotechnical",
       "name": "Geotechnical",
       "color": "#eb6834",
       "sort_order": 2,
-      "budget_hours": 440.0
+      "budget_hours": 440.0,
+      "office": "cairo"
     },
     {
       "key": "marine_structures",
       "name": "Marine Structures",
       "color": "#1baf7a",
       "sort_order": 3,
-      "budget_hours": 1056.0
+      "budget_hours": 1056.0,
+      "office": "beirut"
     },
     {
       "key": "utilities",
       "name": "Utilities",
       "color": "#eda100",
       "sort_order": 4,
-      "budget_hours": 88.0
+      "budget_hours": 88.0,
+      "office": "cairo"
     }
   ],
   "sections": [
@@ -140,7 +144,7 @@
     {
       "wbs": "1.5",
       "section_code": "1.0",
-      "name": "Client review – incorporation of consolidated comments & final issue",
+      "name": "Client review \u2013 incorporation of consolidated comments & final issue",
       "weight_points": 1.8,
       "start_month": 3.0,
       "finish_month": 4.0,
@@ -157,7 +161,7 @@
     {
       "wbs": "1.6",
       "section_code": "1.0",
-      "name": "Project kick-off meeting with Client – NTP, mobilisation, communication protocol, reporting format & minutes (milestone)",
+      "name": "Project kick-off meeting with Client \u2013 NTP, mobilisation, communication protocol, reporting format & minutes (milestone)",
       "weight_points": 1.0,
       "start_month": 0.0,
       "finish_month": 0.0,
@@ -174,7 +178,7 @@
     {
       "wbs": "1.7",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 1 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 1 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 0.0,
       "finish_month": 0.5,
@@ -191,7 +195,7 @@
     {
       "wbs": "1.8",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 2 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 2 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 0.5,
       "finish_month": 1.0,
@@ -208,7 +212,7 @@
     {
       "wbs": "1.9",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 3 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 3 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 1.0,
       "finish_month": 1.5,
@@ -225,7 +229,7 @@
     {
       "wbs": "1.10",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 4 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 4 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 1.5,
       "finish_month": 2.0,
@@ -242,7 +246,7 @@
     {
       "wbs": "1.11",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 5 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 5 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 2.0,
       "finish_month": 2.5,
@@ -259,7 +263,7 @@
     {
       "wbs": "1.12",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 6 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 6 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 2.5,
       "finish_month": 3.0,
@@ -276,7 +280,7 @@
     {
       "wbs": "1.13",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 7 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 7 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 3.0,
       "finish_month": 3.5,
@@ -293,7 +297,7 @@
     {
       "wbs": "1.14",
       "section_code": "1.0",
-      "name": "Bi-weekly progress meeting No. 8 – agenda, progress presentation, minutes & action log (milestone)",
+      "name": "Bi-weekly progress meeting No. 8 \u2013 agenda, progress presentation, minutes & action log (milestone)",
       "weight_points": 1.0,
       "start_month": 3.5,
       "finish_month": 4.0,
@@ -344,7 +348,7 @@
     {
       "wbs": "2.3",
       "section_code": "2.0",
-      "name": "Coastal numerical modelling – wave propagation studies & marine design parameters",
+      "name": "Coastal numerical modelling \u2013 wave propagation studies & marine design parameters",
       "weight_points": 4.6,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -378,7 +382,7 @@
     {
       "wbs": "2.5",
       "section_code": "2.0",
-      "name": "Zone X – seabed cleaning limits & levels (restore documented design levels, 100 x 100 m)",
+      "name": "Zone X \u2013 seabed cleaning limits & levels (restore documented design levels, 100 x 100 m)",
       "weight_points": 1.4,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -395,7 +399,7 @@
     {
       "wbs": "2.6",
       "section_code": "2.0",
-      "name": "Zone Y – dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
+      "name": "Zone Y \u2013 dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
       "weight_points": 2.7,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -412,7 +416,7 @@
     {
       "wbs": "2.7",
       "section_code": "2.0",
-      "name": "Zone Z – dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
+      "name": "Zone Z \u2013 dredging design: design dredge levels, geometry, volumes, tolerances & interfaces",
       "weight_points": 2.3,
       "start_month": 2.0,
       "finish_month": 4.0,
@@ -463,7 +467,7 @@
     {
       "wbs": "2.10",
       "section_code": "2.0",
-      "name": "Marine drawings – dredging layout for each phase (Zones X, Y, Z)",
+      "name": "Marine drawings \u2013 dredging layout for each phase (Zones X, Y, Z)",
       "weight_points": 1.8,
       "start_month": 2.0,
       "finish_month": 4.0,
@@ -480,7 +484,7 @@
     {
       "wbs": "2.11",
       "section_code": "2.0",
-      "name": "Marine drawings – marine works layout (revetment, breakwater head)",
+      "name": "Marine drawings \u2013 marine works layout (revetment, breakwater head)",
       "weight_points": 1.8,
       "start_month": 2.0,
       "finish_month": 4.0,
@@ -497,7 +501,7 @@
     {
       "wbs": "2.12",
       "section_code": "2.0",
-      "name": "Marine drawings – cross sections for revetment & breakwater head",
+      "name": "Marine drawings \u2013 cross sections for revetment & breakwater head",
       "weight_points": 1.8,
       "start_month": 2.0,
       "finish_month": 4.0,
@@ -548,12 +552,12 @@
     {
       "wbs": "2.15",
       "section_code": "2.0",
-      "name": "OPTIONAL – Breakwater extension / coastal mitigation reassessment & design",
+      "name": "OPTIONAL \u2013 Breakwater extension / coastal mitigation reassessment & design",
       "weight_points": 0.0,
       "start_month": 1.0,
       "finish_month": 4.0,
       "actual_pct": 0.0,
-      "remarks": "Optional scope – enter pts to activate; all weights rebase automatically",
+      "remarks": "Optional scope \u2013 enter pts to activate; all weights rebase automatically",
       "allocations": {
         "marine": 1.0,
         "geotechnical": 0.0,
@@ -650,7 +654,7 @@
     {
       "wbs": "3.6",
       "section_code": "3.0",
-      "name": "Mooring system design – bollard capacity & spacing for design vessel range",
+      "name": "Mooring system design \u2013 bollard capacity & spacing for design vessel range",
       "weight_points": 1.4,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -667,7 +671,7 @@
     {
       "wbs": "3.7",
       "section_code": "3.0",
-      "name": "Fender system design – size, spacing & berthing energy absorption check",
+      "name": "Fender system design \u2013 size, spacing & berthing energy absorption check",
       "weight_points": 1.4,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -803,7 +807,7 @@
     {
       "wbs": "4.4",
       "section_code": "4.0",
-      "name": "Existing pile foundations – axial & lateral capacity assessment under additional / upgraded loads",
+      "name": "Existing pile foundations \u2013 axial & lateral capacity assessment under additional / upgraded loads",
       "weight_points": 1.8,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -820,7 +824,7 @@
     {
       "wbs": "4.5",
       "section_code": "4.0",
-      "name": "New piles – axial & lateral capacity calculations",
+      "name": "New piles \u2013 axial & lateral capacity calculations",
       "weight_points": 1.4,
       "start_month": 1.0,
       "finish_month": 3.0,
@@ -939,7 +943,7 @@
     {
       "wbs": "5.4",
       "section_code": "5.0",
-      "name": "Marine accessories & ancillary items – fenders, bollards, ladders, mooring rings: layout & installation details",
+      "name": "Marine accessories & ancillary items \u2013 fenders, bollards, ladders, mooring rings: layout & installation details",
       "weight_points": 1.4,
       "start_month": 2.0,
       "finish_month": 4.0,

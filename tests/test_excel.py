@@ -40,7 +40,11 @@ def upload(client, wb, filename="setup.xlsx"):
 def test_the_export_carries_the_whole_setup(workbook):
     assert workbook.sheetnames == ["Project", "Workflow", "Trades", "Sections", "Deliverables"]
     assert workbook["Deliverables"].max_row == 56, "a header plus 55 deliverables"
-    assert workbook["Trades"].max_row == 5
+    # Four trades under the header, then a blank line and the note saying what
+    # the Office column will accept.
+    trades = [r for r in workbook["Trades"].iter_rows(min_row=2, values_only=True) if r[0]]
+    assert len(trades) == 5
+    assert trades[-1][0].startswith("Office is one of")
     assert workbook["Sections"].max_row == 6
 
 

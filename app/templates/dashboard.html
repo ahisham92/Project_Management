@@ -140,7 +140,7 @@
     <table>
       <thead>
         <tr>
-          <th>Trade</th><th class="right">Scope weight</th><th class="right">Planned</th>
+          <th>Trade</th><th>Office</th><th class="right">Scope weight</th><th class="right">Planned</th>
           <th class="right">Earned</th><th class="right">Variance</th><th class="right">Budget</th>
           <th class="right">Booked</th><th class="right">CPI</th>
         </tr>
@@ -149,6 +149,7 @@
         {% for tr in snapshot['trades'] %}
           <tr>
             <td><span class="swatch" style="background:{{ tr['color'] }}"></span><strong>{{ tr['name'] }}</strong></td>
+            <td class="small {{ 'muted' if not tr['office'] }}">{{ office_name(tr['office']) }}</td>
             <td class="right tabular ink2">{{ pct(tr['scope_weight_pct']) }}</td>
             <td class="right tabular ink2">{{ pct(tr['planned_pct_of_trade'], 2) }}</td>
             <td class="right tabular"><strong>{{ pct(tr['earned_pct_of_trade'], 2) }}</strong></td>
@@ -164,6 +165,7 @@
       <tfoot>
         <tr>
           <td>Total</td>
+          <td></td>
           <td class="right tabular">{{ pct(snapshot['trades'] | sum(attribute='scope_weight_pct')) }}</td>
           <td class="right tabular">{{ pct(t['planned_progress'], 2) }}</td>
           <td class="right tabular">{{ pct(t['earned_progress'], 2) }}</td>
@@ -175,6 +177,29 @@
       </tfoot>
     </table>
   </div>
+  {% set office_rows = snapshot['offices'] %}
+  {% if office_rows | length > 1 %}
+    <div class="card-foot">
+      <p class="field-label" style="margin:0 0 8px">By office</p>
+      <div class="grid grid-2">
+        {% for row in office_rows %}
+          <div>
+            <div class="inline-form" style="justify-content:space-between;margin-bottom:4px">
+              <strong>{{ row['name'] }}</strong>
+              <span class="small muted">
+                {{ pct(row['scope_weight_pct'], 1) }} of the scope · {{ hours(row['spent_hours']) }} booked
+              </span>
+            </div>
+            {{ progress(row['earned_pct_of_office'], row['planned_pct_of_office']) }}
+            <p class="small muted" style="margin-top:4px">
+              {{ pct(row['earned_pct_of_office'], 1) }} earned against
+              {{ pct(row['planned_pct_of_office'], 1) }} planned
+            </p>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 <div class="grid grid-2" style="margin-top:16px">

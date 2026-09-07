@@ -72,6 +72,15 @@ def usage_state(value: Any) -> str:
     return "good"
 
 
+def office_name(value: Any) -> str:
+    """An office, or the offices on one deliverable, as it reads on a screen."""
+    from .offices import label, name_of
+
+    if isinstance(value, (list, tuple)):
+        return label(value)
+    return name_of(value)
+
+
 def bar_width(value: Any) -> str:
     """A CSS percentage clamped to the track."""
     return f"{min(1.0, max(0.0, float(value or 0))) * 100:.2f}%"
@@ -81,7 +90,7 @@ def register(app: Flask) -> None:
     from .backup import readable
 
     for func in (pct, signed_pct, hours, num, index, short_date, date_input,
-                 variance_state, usage_state, bar_width, readable):
+                 variance_state, usage_state, bar_width, office_name, readable):
         app.jinja_env.filters[func.__name__] = func
         app.jinja_env.globals[func.__name__] = func
     app.jinja_env.globals["DATE_FORMAT"] = DISPLAY

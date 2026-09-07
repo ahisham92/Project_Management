@@ -10,7 +10,7 @@ from flask import (
     send_file, url_for,
 )
 
-from ..auth import ROLE_RANK, load_project, login_required
+from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..dates import from_input, to_display
 from ..service import note_applied, record_chat, today
 
@@ -73,9 +73,12 @@ SUGGESTIONS = (
     "How is the project doing?",
     "What is late, and by how much?",
     "What does this week need?",
+    "Give the Project Manager 10% of every deliverable",
     "Prepare a presentation of the work done in the last month",
     "Set 1.1 to 40% — the drawings went out today",
     "Move 2.1 to start on 15/10/2026",
+    "How are Beirut and Cairo doing against their scope?",
+    "Put Utilities under Cairo and set its budget to 120 hours",
     "Print the schedule as a PDF",
     "What is on the critical path?",
 )
@@ -139,6 +142,9 @@ def apply(project_id: int):
     from ..assistant.runner import ApplyError, apply as apply_them, staged_summary
 
     _project, role = load_project(project_id, "member")
+    # Changing the setup sheet takes what changing it takes on the Setup tab:
+    # manager access, and the sheet unlocked in this person's own session.
+    setup_open = ROLE_RANK[role] >= ROLE_RANK["manager"] and setup_unlocked(project_id)
 
     asked = _asked()
     actions = asked.get("actions") or []
@@ -150,7 +156,7 @@ def apply(project_id: int):
         return jsonify({"ok": False, "error": "That is too many changes at once"}), 400
 
     try:
-        done = apply_them(project_id, actions, g.user["id"], today())
+        done = apply_them(project_id, actions, g.user["id"], today(), setup_open)
     except ApplyError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:                          # noqa: BLE001 - said, not swallowed

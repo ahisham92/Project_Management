@@ -84,6 +84,15 @@ def answer(messages: list) -> dict:
                        "discussion": "The client asked when it starts.",
                        "agreement": "Dar to issue the brief.", "owner": "PM",
                        "impact": "time", "due": "20/09/2026"}]})])
+    # The bulk change, in the two steps it actually takes: the trade has to
+    # exist before it can be given a share of anything.
+    if "project manager" in asked and "%" in asked:
+        return _message("", [("share_across", {"trade": "Project Manager", "percent": 10})])
+    if "project manager" in asked:
+        return _message("", [("set_trade", {"trade": "Project Manager", "office": "Beirut",
+                                            "budget_hours": 400})])
+    if "office" in asked and ("cairo" in asked or "beirut" in asked):
+        return _message("", [("set_trade", {"trade": "Utilities", "office": "Cairo"})])
     if "take me" in asked or "go to" in asked:
         return _message("", [("open_view", {"view": "schedule"})])
     if "presentation" in asked or "deck" in asked:

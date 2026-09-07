@@ -252,13 +252,15 @@
     <div class="card-head">
       <div>
         <h2>Trades</h2>
-        <p class="small muted" style="margin-top:2px">Disciplines that carry the hour budget</p>
+        <p class="small muted" style="margin-top:2px">
+          Disciplines that carry the hour budget, and the office that carries each of them
+        </p>
       </div>
     </div>
     <div class="card-body flush table-scroll">
       <table>
         <thead>
-          <tr><th>Colour</th><th>Trade</th><th class="right">Budget (hours)</th>
+          <tr><th>Colour</th><th>Trade</th><th>Office</th><th class="right">Budget (hours)</th>
               <th class="right">Scope weight</th><th class="right">Booked</th><th></th></tr>
         </thead>
         <tbody>
@@ -273,6 +275,14 @@
                 </select>
               </td>
               <td><input form="{{ F }}" name="trade_{{ tr['id'] }}_name" value="{{ tr['name'] }}" {{ 'disabled' if not can_edit }}></td>
+              <td>
+                <select form="{{ F }}" name="trade_{{ tr['id'] }}_office" class="w-md" {{ 'disabled' if not can_edit }}>
+                  <option value="">Not set</option>
+                  {% for key, name in office_list %}
+                    <option value="{{ key }}" {{ 'selected' if tr['office'] == key }}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
               <td class="right">
                 <input form="{{ F }}" type="number" name="trade_{{ tr['id'] }}_budget" min="0" step="1"
                        class="right w-md" value="{{ tr['budget_hours'] }}" {{ 'disabled' if not can_edit }}>
@@ -297,6 +307,13 @@
           <label class="field w-md">
             <span class="field-label">Budget (hours)</span>
             <input type="number" name="budget_hours" min="0" step="1" value="0" class="right">
+          </label>
+          <label class="field w-md">
+            <span class="field-label">Office</span>
+            <select name="office">
+              <option value="">Not set</option>
+              {% for key, name in office_list %}<option value="{{ key }}">{{ name }}</option>{% endfor %}
+            </select>
           </label>
           <label class="field w-md">
             <span class="field-label">Colour</span>

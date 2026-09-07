@@ -282,6 +282,55 @@ def test_she_starts_minimised_on_every_page(signed_in):
     assert "hidden" in popup
 
 
+def test_nothing_can_override_the_pages_own_hidden(signed_in, app):
+    """`.carmen-popup { display: flex }` beat the browser's rule for the hidden
+    attribute, so she was never actually hidden and the close button appeared to
+    do nothing. One rule, high enough to win, fixes it for every panel."""
+    from pathlib import Path as _Path
+
+    css = (_Path(app.root_path) / "static" / "app.css").read_text()
+    assert "[hidden] { display: none !important; }" in css
+
+
+def test_the_key_is_set_on_setup_not_on_her_tab(signed_in):
+    """One place, administrators only, and what is set is set for everybody."""
+    setup = text(signed_in.get("/projects/1/setup"))
+    assert "Carmen's API key" in setup
+    assert 'name="anthropic_key"' in setup
+
+    tab = text(signed_in.get("/projects/1/assistant"))
+    assert 'name="anthropic_key"' not in tab
+    assert "Open Setup" in tab
+
+
+def test_only_an_administrator_sees_the_key_on_setup(client, app):
+    from app.auth import hash_password
+    from app.db import execute, insert
+
+    with app.app_context():
+        user_id = insert("INSERT INTO users (email, name, password_hash, role) "
+                         "VALUES (?, ?, ?, 'user')",
+                         ("boss@example.com", "Boss", hash_password("password123")))
+        execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'manager')",
+                (user_id,))
+    client.post("/login", data={"email": "boss@example.com", "password": "password123"})
+
+    body = text(client.get("/projects/1/setup"))
+    assert "Carmen's API key" not in body
+    assert 'name="anthropic_key"' not in body
+
+
+def test_saving_the_key_from_setup_comes_back_to_setup(signed_in, app):
+    answer = signed_in.post("/projects/1/assistant/settings",
+                            data={"anthropic_key": "sk-ant-x", "back": "setup"})
+    assert answer.headers["Location"].endswith("/setup")
+
+    from app import vault
+
+    with app.app_context():
+        assert vault.carmen()["key"] == "sk-ant-x"
+
+
 def test_she_is_not_doubled_up_on_her_own_tab(signed_in):
     """The whole page is already the conversation there."""
     body = text(signed_in.get("/projects/1/assistant"))
@@ -304,9 +353,23 @@ def test_the_pop_up_and_the_tab_are_the_same_conversation(signed_in):
 
 # --- her face ---------------------------------------------------------------
 
-def test_she_has_a_face_before_anybody_uploads_one(signed_in):
+def test_she_ships_with_a_face(signed_in):
+    """A fresh install has her on it rather than a placeholder waiting for
+    somebody to notice."""
     answer = signed_in.get("/projects/1/assistant/face")
     assert answer.status_code == 200
+    assert answer.mimetype == "image/jpeg"
+    assert answer.data[:3] == b"\xff\xd8\xff"
+
+
+def test_there_is_a_drawn_face_if_the_bundled_one_is_ever_missing(signed_in, monkeypatch):
+    """The page can never have a broken image on it."""
+    from pathlib import Path as _Path
+
+    from app.views import carmen_avatar as avatar
+
+    monkeypatch.setattr(avatar, "BUNDLED", _Path("/nowhere/carmen.jpg"))
+    answer = signed_in.get("/projects/1/assistant/face")
     assert answer.mimetype == "image/svg+xml"
     assert b"<svg" in answer.data
 
@@ -323,9 +386,12 @@ def test_a_picture_can_be_uploaded_and_is_kept_out_of_the_repository(signed_in, 
                    content_type="multipart/form-data", follow_redirects=True)
 
     with app.app_context():
-        where = avatar.saved()
+        where = avatar.uploaded()
         assert where is not None
+        # Beside the database, not in the repository: a picture somebody
+        # uploads is theirs, not something to copy everywhere the code goes.
         assert where.parent == Path(app.config["DATABASE"]).parent
+        assert avatar.saved() == where
 
     answer = signed_in.get("/projects/1/assistant/face")
     assert answer.mimetype == "image/png"
@@ -341,7 +407,9 @@ def test_something_that_is_not_a_picture_is_refused(signed_in, app):
                             content_type="multipart/form-data", follow_redirects=True)
     assert "not a JPEG, PNG or WebP" in text(answer)
     with app.app_context():
-        assert avatar.saved() is None
+        # Nothing was kept, so she is still the one she ships with.
+        assert avatar.uploaded() is None
+        assert avatar.saved() == avatar.BUNDLED
 
 
 def test_only_an_administrator_changes_her_picture(client, app):

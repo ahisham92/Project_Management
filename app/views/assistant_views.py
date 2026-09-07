@@ -290,9 +290,13 @@ def settings(project_id: int):
     from ..vault import update
 
     load_project(project_id)
+    # Whichever page the form was on — the key lives on Setup, and somebody who
+    # saved it there should still be looking at Setup afterwards.
+    where = ("projects.setup" if (request.form.get("back") or "") == "setup"
+             else "assistant.index")
     if g.user["role"] != "admin":
-        flash("Only an administrator can connect the assistant", "error")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        flash("Only an administrator can connect Carmen", "error")
+        return redirect(url_for(where, project_id=project_id))
 
     from ..claude import EFFORTS
 
@@ -303,15 +307,15 @@ def settings(project_id: int):
     if request.form.get("disconnect"):
         update(anthropic_key="", anthropic_model="", anthropic_effort="")
         flash("Carmen is disconnected — the key is gone", "success")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        return redirect(url_for(where, project_id=project_id))
 
     changes: dict[str, str] = {"anthropic_model": model,
                                "anthropic_effort": effort if effort in EFFORTS else ""}
     if key:
         changes["anthropic_key"] = key
     update(**changes)
-    flash("Saved. Ask it something to check it works.", "success")
-    return redirect(url_for("assistant.index", project_id=project_id))
+    flash("Saved. Ask her something to check it works.", "success")
+    return redirect(url_for(where, project_id=project_id))
 
 
 @bp.get("/assistant/models")

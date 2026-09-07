@@ -249,6 +249,12 @@ main { padding: 20px 0 48px; }
 .chat-staged .guide-list { margin-top: 4px; }
 .chat-suggestion { font-size: 0.78rem; }
 
+/* An element the page has hidden stays hidden, whatever else says otherwise.
+   Without this a class that sets `display` — a flex panel, say — quietly beats
+   the browser's own rule for the attribute, and the close button appears to do
+   nothing at all. */
+[hidden] { display: none !important; }
+
 /* Carmen in the corner: the same chat as her tab, on every project page.
    Fixed rather than in the flow, because it has to be reachable from the
    bottom of a long schedule without scrolling back up. */

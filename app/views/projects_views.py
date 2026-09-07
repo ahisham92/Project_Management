@@ -930,6 +930,8 @@ def setup(project_id: int):
     )
     owner = query_one("SELECT id, name, email FROM users WHERE id = ?", (project["owner_id"],))
     from ..calendars import WEEK_PATTERNS, week_days
+    from ..claude import EFFORTS
+    from ..vault import carmen
 
     return render_template(
         "setup.html",
@@ -938,6 +940,9 @@ def setup(project_id: int):
         steps=ordered_steps(load_steps(project_id)),
         teams=load_calendars(project_id), holidays=load_holidays(project_id),
         week_days=week_days, week_patterns=WEEK_PATTERNS,
+        # The keys live here now: one place, administrators only, and what is
+        # set is set for everybody rather than per person.
+        is_admin=g.user["role"] == "admin", carmen=carmen(), efforts=EFFORTS,
         members=members, owner=owner, series=SERIES_SLOTS,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),

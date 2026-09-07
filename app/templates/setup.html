@@ -663,6 +663,78 @@
     {% endif %}
   </div>
 
+  {# Keys and connections: one place, administrators only, and what is set here
+     is set for everybody on this installation rather than per person. #}
+  {% if is_admin %}
+    <div class="card" {% if not carmen['key'] %}style="border-color:var(--warning)"{% endif %}>
+      <div class="card-head">
+        <div style="display:flex;gap:12px;align-items:center">
+          <img src="{{ url_for('assistant.face', project_id=pid) }}" alt="" width="40" height="40"
+               style="border-radius:50%;object-fit:cover;border:1px solid var(--border)">
+          <div>
+            <h2>Carmen's API key</h2>
+            <p class="small muted" style="margin-top:2px">
+              She runs on <strong>Claude Opus 5</strong>. One key serves the whole
+              installation — set it here and every account on every project is using it,
+              which is why only an administrator can. It is kept in a file beside the
+              database, never in it: the nightly backup uploads the database.
+            </p>
+          </div>
+        </div>
+        {% if carmen['key'] %}{{ badge('good', 'key set') }}{% else %}{{ badge('warning', 'no key yet') }}{% endif %}
+      </div>
+      <div class="card-body">
+        {% if carmen['from_env'] %}
+          <p class="small muted" style="margin:0">
+            The key comes from the environment (<code>ANTHROPIC_API_KEY</code>), which wins
+            over anything set here. Clear that variable to manage it from this page.
+          </p>
+        {% else %}
+          <form method="post" action="{{ url_for('assistant.settings', project_id=pid) }}"
+                class="inline-form">
+            <input type="hidden" name="back" value="setup">
+            <label class="field flex1">
+              <span class="field-label">
+                {{ 'Change the key (leave blank to keep it)' if carmen['key'] else 'Anthropic API key' }}
+              </span>
+              <input name="anthropic_key" type="password" placeholder="sk-ant-…"
+                     autocomplete="off" {{ 'required' if not carmen['key'] }}>
+            </label>
+            <label class="field w-md">
+              <span class="field-label">Model</span>
+              <input name="anthropic_model" value="{{ carmen['model'] }}">
+            </label>
+            <label class="field w-sm">
+              <span class="field-label">Effort</span>
+              <select name="anthropic_effort">
+                {% for level in efforts %}
+                  <option value="{{ level }}" {{ 'selected' if level == carmen['effort'] }}>{{ level }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button type="submit" class="btn btn-primary">Save</button>
+            {% if carmen['key'] %}
+              <button type="submit" name="disconnect" value="1" class="btn btn-danger"
+                      data-confirm="Disconnect Carmen and delete the key?">Disconnect</button>
+            {% endif %}
+          </form>
+          <p class="small muted" style="margin:10px 0 0">
+            Make one at <code>console.anthropic.com</code> → API keys.
+            {% if carmen['key'] %}
+              Check it works on <a href="{{ url_for('assistant.index', project_id=pid) }}">Carmen's
+              tab</a> — <strong>Test the connection</strong> and <strong>Ask her one question</strong>.
+            {% endif %}
+          </p>
+        {% endif %}
+        <p class="small muted" style="margin:10px 0 0">
+          Google Drive, for the nightly backup, is connected on the
+          <a href="{{ url_for('portfolio.backups') }}">Backups page</a> — also once, also for
+          everybody.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
   {% if can_edit %}
     <div class="card">
       <div class="card-head"><h2>Setup password</h2></div>

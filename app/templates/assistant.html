@@ -35,39 +35,24 @@
 {% if not ready %}
   <div class="card" style="border-color:var(--warning);margin-bottom:16px">
     <div class="card-head"><div>
-      <h2>Connect Carmen</h2>
+      <h2>She has no key yet</h2>
       <p class="small muted" style="margin-top:2px">
-        She runs on <strong>Claude Opus 5</strong>. <strong>One key serves the whole
-        installation</strong> — set it here and everybody who signs in is using it, which is
-        why only an administrator can.
-        It is kept in a file beside the database, never in it: the nightly backup uploads
-        the database, and a key inside the thing that gets uploaded is a key you have published.
+        She runs on <strong>Claude Opus 5</strong>. One key serves the whole installation,
+        so it is set once and only by an administrator.
       </p></div></div>
     <div class="card-body">
       {% if is_admin %}
-        <ol class="small" style="margin:0 0 12px;padding-left:18px;line-height:1.9">
-          <li>Make an API key at <code>console.anthropic.com</code> → API keys.</li>
-          <li>Paste it below. It is stored for everyone on this installation, so only
-            an administrator can set it.</li>
-          <li>Ask her something — “how is the project doing?” — to check it works.</li>
-        </ol>
-        <form method="post" action="{{ url_for('assistant.settings', project_id=project['id']) }}"
-              class="inline-form">
-          <label class="field flex1">
-            <span class="field-label">Anthropic API key</span>
-            <input name="anthropic_key" type="password" placeholder="sk-ant-…" required
-                   autocomplete="off">
-          </label>
-          <label class="field w-md">
-            <span class="field-label">Model</span>
-            <input name="anthropic_model" value="{{ model }}" placeholder="{{ default_model }}">
-          </label>
-          <button type="submit" id="connect-assistant" class="btn btn-primary">Connect</button>
-        </form>
+        <p class="small" style="margin:0 0 10px">
+          Make one at <code>console.anthropic.com</code> → API keys, then put it on the
+          <strong>Setup</strong> tab, under <em>Carmen's API key</em>.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('projects.setup', project_id=project['id']) }}">
+          Open Setup</a>
       {% else %}
         <p class="small" style="margin:0">
-          An administrator needs to add an Anthropic API key before Carmen can be used. One
-          key covers everybody on this installation, so it only has to be done once.
+          An administrator needs to add an Anthropic API key on the Setup tab before Carmen
+          can be used. One key covers everybody on this installation, so it only has to be
+          done once.
         </p>
       {% endif %}
     </div>
@@ -175,67 +160,15 @@
           beside the database and outside the backup.</li>
         {% endif %}
       </ul>
-      {% if is_admin and ready and not from_env %}
-        <form method="post" action="{{ url_for('assistant.settings', project_id=project['id']) }}"
-              class="inline-form" style="margin-top:12px">
-          <label class="field flex1">
-            <span class="field-label">Change the key (leave blank to keep it)</span>
-            <input name="anthropic_key" type="password" placeholder="sk-ant-…" autocomplete="off">
-          </label>
-          <label class="field w-md">
-            <span class="field-label">Model</span>
-            <input name="anthropic_model" value="{{ model }}" list="claude-models">
-            <datalist id="claude-models"></datalist>
-          </label>
-          <label class="field w-sm">
-            <span class="field-label">Effort</span>
-            <select name="anthropic_effort">
-              {% for level in efforts %}
-                <option value="{{ level }}" {{ 'selected' if level == effort }}>{{ level }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <button type="submit" class="btn btn-primary">Save</button>
-          <button type="submit" name="disconnect" value="1" class="btn btn-danger"
-                  data-confirm="Disconnect the assistant and delete the key?">Disconnect</button>
-        </form>
-        <p class="small muted" style="margin:8px 0 0">
-          <a href="#" id="load-models"
-             data-url="{{ url_for('assistant.models', project_id=project['id']) }}">List the models
-            this key can use →</a> · <strong>Effort</strong> is how hard she thinks: “high” is
-          the default, “low” is quicker and cheaper, “max” is for when correctness matters more
-          than cost.
+      {% if is_admin and ready %}
+        <p class="small muted" style="margin:12px 0 0">
+          The key, the model and the effort are on the
+          <a href="{{ url_for('projects.setup', project_id=project['id']) }}">Setup tab</a>.
         </p>
       {% endif %}
     </div>
   </div>
 </div>
-
-{% if is_admin %}
-  <div class="card no-print" style="margin-top:16px">
-    <div class="card-head"><div>
-      <h2>Her picture</h2>
-      <p class="small muted" style="margin-top:2px">
-        Kept beside the database rather than in the repository — a photograph of a person is not
-        something to copy everywhere the code goes. Until one is uploaded she has a monogram.
-      </p></div></div>
-    <div class="card-body" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
-      <img src="{{ url_for('assistant.face', project_id=project['id']) }}" alt=""
-           width="72" height="72"
-           style="border-radius:50%;object-fit:cover;border:1px solid var(--border)">
-      <form method="post" enctype="multipart/form-data" class="inline-form flex1"
-            action="{{ url_for('assistant.set_face', project_id=project['id']) }}">
-        <label class="field flex1">
-          <span class="field-label">Upload a picture (JPEG, PNG or WebP, up to 3 MB)</span>
-          <input type="file" name="picture" accept="image/jpeg,image/png,image/webp" required>
-        </label>
-        <button type="submit" class="btn btn-primary">Use this</button>
-        <button type="submit" name="remove" value="1" class="btn btn-ghost"
-                data-confirm="Go back to the monogram?">Remove</button>
-      </form>
-    </div>
-  </div>
-{% endif %}
 
 <template id="chat-line-template">
   <div class="chat-line"><div class="chat-body"></div></div>

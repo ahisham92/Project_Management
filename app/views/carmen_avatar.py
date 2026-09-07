@@ -1,11 +1,10 @@
 """Carmen's face.
 
-Her photograph is not in the repository — it is a picture of a person, and a
-picture of a person belongs with the installation's own data rather than in
-source control where it would be copied everywhere the code goes. So it is
-uploaded once and kept beside the database, and until somebody uploads one she
-has a drawn monogram instead. Either way the page never has a broken image on
-it.
+She ships with a picture, so a fresh install has her on it rather than a
+placeholder waiting for somebody to notice. An installation that would rather
+use a different one puts a file beside the database and that wins — kept there
+rather than in the repository, because a picture somebody uploads is theirs and
+not something to copy everywhere the code goes.
 """
 
 from __future__ import annotations
@@ -21,8 +20,11 @@ SIGNATURES: tuple[tuple[bytes, str, str], ...] = (
 )
 MAX_BYTES = 3 * 1024 * 1024
 
-# Drawn rather than fetched, so a fresh install looks finished on its first
-# page load and nothing on the internet has to be reachable for it to.
+# The one she comes with.
+BUNDLED = Path(__file__).resolve().parent.parent / "static" / "carmen.jpg"
+
+# Drawn rather than fetched, and only ever reached if the bundled picture has
+# been deleted — so the page can never have a broken image on it.
 MONOGRAM = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">'
     '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
@@ -48,13 +50,18 @@ def folder() -> Path:
     return Path(live_database()).parent
 
 
-def saved() -> Path | None:
-    """Her photograph, if one has been uploaded."""
-    for extension, _content in ((e, c) for _s, e, c in SIGNATURES):
+def uploaded() -> Path | None:
+    """A picture this installation chose, if there is one."""
+    for extension in (e for _s, e, _c in SIGNATURES):
         where = folder() / f"carmen.{extension}"
         if where.exists():
             return where
     return None
+
+
+def saved() -> Path | None:
+    """The picture to serve: this installation's, or the one she ships with."""
+    return uploaded() or (BUNDLED if BUNDLED.exists() else None)
 
 
 def content_type(where: Path) -> str:
@@ -72,7 +79,7 @@ def store(data: bytes) -> str:
     if len(data) > MAX_BYTES:
         raise ValueError("That picture is larger than 3 MB")
 
-    for _signature, other, _kind in SIGNATURES:
+    for other in (e for _s, e, _c in SIGNATURES):
         stale = folder() / f"carmen.{other}"
         if stale.exists():
             stale.unlink()
@@ -84,6 +91,7 @@ def store(data: bytes) -> str:
 
 
 def forget() -> None:
-    where = saved()
+    """Back to the picture she ships with."""
+    where = uploaded()
     if where is not None:
         where.unlink()

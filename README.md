@@ -422,10 +422,9 @@ drives both, so there is no second chat to keep in step. Open it once and it
 stays open as you move around; the launcher hides itself while it is, so nothing
 underneath is ever covered by two things at once.
 
-**Her picture** is uploaded on her tab and kept beside the database, not in the
-repository: a photograph of a person is not something to copy everywhere the
-code goes. Until one is uploaded she has a drawn monogram, so a fresh install
-looks finished on its first page load.
+**Her picture** ships with the app, so a fresh install has her on it rather than
+a placeholder. An installation that would rather use a different one puts a
+`carmen.jpg` (or `.png`, or `.webp`) beside the database and that wins.
 
 **Every conversation is written down** — the question, the answer, which tools
 she read, how many changes she proposed and how many were applied — and the
@@ -448,8 +447,9 @@ and only the second one says whether it was worth building.
   never from anything said in the chat, and the loop is bounded: six rounds and
   twelve staged changes at most.
 
-**Connecting her.** An administrator pastes a key from `console.anthropic.com` on
-her tab. **One key serves the whole installation** — it is not per person and not
+**Connecting her.** An administrator pastes a key from `console.anthropic.com`
+into *Carmen's API key* on the **Setup** tab — one place for the keys, and only
+an administrator sees the card at all. **One key serves the whole installation** — it is not per person and not
 per project, so setting it once means every administrator and every member on
 every project is using it, and the usage on that Anthropic account is all of them
 together. That is why only an administrator can set it. It is kept in the same

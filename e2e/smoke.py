@@ -803,19 +803,21 @@ def _assistant(page) -> None:
         raise AssertionError("Carmen's tab does not say what she can do")
 
     if not os.environ.get("CLAUDE_STAND_IN"):
-        # Nothing to talk to; what is checked is that the page says how to
-        # connect one.
-        if "console.anthropic.com" not in page.text_content("body"):
-            raise AssertionError("the page does not say where to get a key")
+        # Nothing to talk to; what is checked is that the page says where the
+        # key goes.
+        if "Open Setup" not in page.text_content("body"):
+            raise AssertionError("the page does not point at Setup for the key")
         page.screenshot(path=str(SHOTS / "38-assistant.png"), full_page=True)
         return
 
-    # By id, not by text: "Connect" is a substring of "Disconnect", and a
-    # loose selector here would press the wrong one.
-    if page.locator("#connect-assistant").count():
+    # The key lives on Setup — one place, administrators only.
+    if not page.locator("#chat-form textarea:not([disabled])").count():
+        page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
         page.fill("input[name=anthropic_key]", "sk-ant-stand-in")
-        page.click("#connect-assistant")
-    page.wait_for_selector("textarea[name=question]:not([disabled])", timeout=8000)
+        page.click("form:has(input[name=anthropic_key]) button:has-text('Save')")
+        page.wait_for_selector(".flash", timeout=8000)
+        page.goto(f"{BASE}/projects/1/assistant", wait_until="networkidle")
+    page.wait_for_selector("#chat-form textarea:not([disabled])", timeout=8000)
 
     # A question that reads the project.
     page.fill("#chat-form textarea[name=question]", "How is the project doing?")
@@ -890,12 +892,18 @@ def _carmen_everywhere(page) -> None:
 
     if page.locator("#carmen-popup:not([hidden])").count():
         raise AssertionError("she should start minimised on every page")
+    face = page.locator("#carmen-open img")
+    if face.count() == 0:
+        raise AssertionError("the launcher should show her picture")
+
     _open_carmen(page)
 
     # Shut again with the ✕, and shut again on the next page: a chat box that
     # reappears in the corner of every tab is not a feature.
     page.click("[data-carmen-close]")
-    page.wait_for_selector("#carmen-popup[hidden]", timeout=4000)
+    # state="hidden": the default waits for an element to become visible, which
+    # is never true of the thing this step is checking got hidden.
+    page.wait_for_selector("#carmen-popup", state="hidden", timeout=4000)
     page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
     if page.locator("#carmen-popup:not([hidden])").count():
         raise AssertionError("she should not reopen herself on the next page")

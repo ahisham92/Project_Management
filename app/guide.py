@@ -228,7 +228,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "Ask her to <strong>print</strong> a tab and you get a link that opens straight into "
             "the print dialog, where “Save as PDF” makes the file.",
             "She is in the corner of every other tab too — the button at the bottom right.",
-            "An administrator adds the Anthropic API key on this tab, once, for everybody.",
+            "An administrator adds the Anthropic API key on the <strong>Setup</strong> tab, once, for everybody.",
         ),
         "watch": (
             "Nothing changes until you press Apply — a model can be confidently wrong about "

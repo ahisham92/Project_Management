@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty, date_field, print_header, print_button %}
+
+{# One register's worth of movement. The same table twice — what closed and
+   what was raised — because "we closed eleven and picked up four" is the
+   sentence somebody is trying to write. #}
+{% macro item_table(title, hint, items, kind, nothing) %}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>{{ title }}</h2>
+        <p class="small muted" style="margin-top:2px">{{ items | length }} · {{ hint }}</p>
+      </div>
+    </div>
+    <div class="card-body flush">
+      {% if not items %}
+        {{ empty(nothing, '') }}
+      {% else %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Item</th><th>Subject</th><th>Owner</th><th>Register</th>
+                  <th class="right">{{ 'Closed' if kind == 'closed' else 'Raised' }}</th></tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+                <tr>
+                  <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+                  <td>{{ item['subject'] }}
+                    {% if item['agreement'] %}
+                      <span class="small muted" style="display:block">{{ item['agreement'] }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">{{ item['owner_name'] or item['owner_code'] or '—' }}</td>
+                  <td class="small muted">{{ 'Client' if item['kind'] == 'client' else 'Internal' }}</td>
+                  <td class="right small nowrap">
+                    {{ short_date(item['closed_date'] if kind == 'closed' else item['raised_date']) or '—' }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+{% block title %}Summarized Progress — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Summarized Progress</h1>
+    <p class="small muted" style="margin-top:2px">
+      What moved between two dates — on the programme, and in the minutes
+    </p>
+  </div>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      {{ date_field('from', report['from'], 'From', 'w-md') }}
+      {{ date_field('to', report['to'], 'To', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
+</div>
+
+{{ print_header(project, 'Summarized Progress', '',
+                short_date(report['from']) ~ ' to ' ~ short_date(report['to'])) }}
+
+<div class="grid grid-4">
+  {{ tile('Earned in period', signed_pct(report['earned_in_period'], 2),
+          report['days_in_period'] ~ ' days',
+          'good' if report['earned_in_period'] > 0 else 'neutral',
+          'Progress gained' if report['earned_in_period'] > 0 else 'No movement') }}
+  {{ tile('Earned at start', pct(report['earned_at_start'], 2), short_date(report['from'])) }}
+  {{ tile('Earned at end', pct(report['earned_at_end'], 2), short_date(report['to'])) }}
+  {{ tile('Planned at end', pct(report['planned_at_end'], 2), 'where the schedule expected to be',
+          variance_state(report['earned_at_end'] - report['planned_at_end']),
+          signed_pct(report['earned_at_end'] - report['planned_at_end'], 2) ~ ' variance') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Earned in period by trade</h2>
+      <p class="small muted" style="margin-top:2px">Each trade&rsquo;s share of the progress gained</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    <table>
+      <tbody>
+        {% for tr in report['trade_earned_in_period'] %}
+          <tr>
+            <td><span class="swatch" style="background:{{ tr['color'] }}"></span>{{ tr['name'] }}</td>
+            <td class="right tabular ink2">{{ signed_pct(tr['earned_in_period'], 3) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td>Total</td><td class="right tabular">{{ signed_pct(report['earned_in_period'], 3) }}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Deliverables that moved</h2>
+      <p class="small muted" style="margin-top:2px">{{ moved | length }} of {{ report['tasks'] | length }} lines changed in this period</p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not moved %}
+      {{ empty('Nothing moved in this period', 'No progress was reported against these dates.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>WBS</th><th>Deliverable</th><th class="right">Weight</th>
+              <th class="right">At start</th><th class="right">At end</th>
+              <th class="right">Earned in period</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in moved %}
+              <tr>
+                <td class="tabular small muted nowrap">{{ task['wbs'] }}</td>
+                <td>{{ task['name'] }}</td>
+                <td class="right tabular ink2">{{ pct(task['weight_pct'], 2) }}</td>
+                <td class="right tabular ink2">{{ pct(task['actual_start'], 0) }}</td>
+                <td class="right tabular"><strong>{{ pct(task['actual_end'], 0) }}</strong></td>
+                <td class="right tabular good-text">{{ signed_pct(task['earned_in_period'], 3) }}</td>
+                <td class="small muted">{{ task['period_status'] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# The other half of a month. A report that says progress moved 4% and nothing
+   about the eleven actions that were closed to make it move is a report
+   somebody has to write a covering note for. #}
+<div class="grid grid-2" style="align-items:start;margin-top:16px">
+  {{ item_table('Actions closed in this period',
+                'What was settled between these dates',
+                report['items_closed'], 'closed',
+                'Nothing was closed in this period') }}
+  {{ item_table('Actions raised in this period',
+                'What came up between these dates',
+                report['items_raised'], 'raised',
+                'Nothing new was raised in this period') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Still open at {{ short_date(report['to']) }}</h2>
+      <p class="small muted" style="margin-top:2px">
+        {{ report['items_open_at_end'] | length }} open
+        {%- if report['items_overdue_at_end'] %},
+          <strong>{{ report['items_overdue_at_end'] | length }} of them overdue</strong>
+        {%- endif %}
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not report['items_open_at_end'] %}
+      {{ empty('Nothing open', 'Every action raised by this date was closed.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Subject</th><th>Owner</th><th>Register</th>
+                <th class="right">Due</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for item in report['items_overdue_at_end'] + (report['items_open_at_end']
+                 | reject('in', report['items_overdue_at_end']) | list) %}
+              <tr>
+                <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+                <td>{{ item['subject'] }}
+                  {% if item['agreement'] %}
+                    <span class="small muted" style="display:block">{{ item['agreement'] }}</span>
+                  {% endif %}
+                </td>
+                <td class="small">{{ item['owner_name'] or item['owner_code'] or '—' }}</td>
+                <td class="small muted">{{ 'Client' if item['kind'] == 'client' else 'Internal' }}</td>
+                <td class="right small nowrap">{{ short_date(item['due_date']) or '—' }}</td>
+                <td class="nowrap">
+                  {% if item['is_overdue'] %}
+                    {{ badge('critical', item['days_overdue'] ~ 'd overdue') }}
+                  {% else %}{{ badge('serious', 'Open') }}{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

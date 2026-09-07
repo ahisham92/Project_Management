@@ -279,16 +279,34 @@ def _one_task(**overrides) -> list[dict]:
     return [task]
 
 
-def test_a_deliverable_awaiting_code_a_is_judged_on_the_approval_date():
+def test_a_deliverable_with_the_client_is_not_late_however_long_they_take():
+    """It is issued. How long the client takes to review it is the client's
+    business, and holding a team to a date only the client controls is how a
+    progress report stops being read."""
     tasks = _one_task(status_key="submitted", actual_pct=0.8)
-    # Submitted on time: the Code A date (15 Feb) is what it is measured against.
-    on_time = compute_project(PROJECT, tasks, [], "2026-02-05", steps=STEPS)["tasks"][0]
-    assert on_time["due_reason"] == "approval"
-    assert on_time["due_date"] == "2026-02-15"
-    assert not on_time["is_late"]
 
-    overdue = compute_project(PROJECT, tasks, [], "2026-02-20", steps=STEPS)["tasks"][0]
-    assert overdue["is_late"] and overdue["days_late"] == 5
+    just_issued = compute_project(PROJECT, tasks, [], "2026-02-05", steps=STEPS)["tasks"][0]
+    assert just_issued["with_client"] is True
+    assert just_issued["due_reason"] == "approval"
+    assert just_issued["due_date"] == "2026-02-15", "the Code A date is still shown"
+    assert not just_issued["is_late"] and not just_issued["is_behind"]
+    assert just_issued["waiting_days"] == 4
+
+    # Well past the Code A date, and still not our lateness.
+    waited = compute_project(PROJECT, tasks, [], "2026-02-20", steps=STEPS)["tasks"][0]
+    assert not waited["is_late"] and waited["days_late"] == 0
+    assert waited["overdue_back"] is True, "but it is overdue back from the client"
+    assert waited["waiting_days"] == 19
+
+
+def test_a_code_b_hands_it_back_and_lateness_starts_again():
+    """Returned with comments, the status drops below submitted: it is work
+    again from that moment, and the submission date is the deadline again."""
+    tasks = _one_task(status_key="comments_addressed", actual_pct=0.6, revision=1)
+    row = compute_project(PROJECT, tasks, [], "2026-02-20", steps=STEPS)["tasks"][0]
+    assert row["with_client"] is False
+    assert row["due_reason"] == "submission"
+    assert row["is_late"] and row["days_late"] == 19
 
 
 def test_a_deliverable_not_yet_submitted_is_judged_on_the_submission_date():

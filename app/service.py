@@ -198,8 +198,15 @@ def project_s_curve(project: Mapping[str, Any], data_date: str | None = None, sa
 
 
 def project_period(project: Mapping[str, Any], start: str, end: str) -> dict[str, Any]:
+    """What moved between two dates — on the programme and in the minutes.
+
+    A month is not only percentages. Half of what actually happened is in the
+    register: the actions that were raised, and the ones that were closed. A
+    report that leaves those out is a report somebody has to write a covering
+    note for.
+    """
     project = as_dict(project)
-    return build_period_report(
+    report = build_period_report(
         project,
         load_tasks(project["id"]),
         load_trades(project["id"]),
@@ -208,6 +215,38 @@ def project_period(project: Mapping[str, Any], start: str, end: str) -> dict[str
         end,
         steps=load_steps(project["id"]),
     )
+    report.update(items_in_period(int(project["id"]), start, end))
+    return report
+
+
+def items_in_period(project_id: int, start: str, end: str) -> dict[str, Any]:
+    """The minuted items that moved between two dates, from both registers.
+
+    Closed in the window and raised in it are two different things, so they are
+    two lists — "we closed eleven and picked up four" is the sentence somebody
+    is trying to write.
+    """
+    from .dates import from_input
+
+    first = from_input(start) or str(start or "")[:10]
+    last = from_input(end) or str(end or "")[:10]
+
+    def inside(value: Any) -> bool:
+        stamp = str(value or "")[:10]
+        return bool(stamp) and first <= stamp <= last
+
+    # Read as at the end of the window: an item closed inside it reads as
+    # closed here even if it was reopened afterwards.
+    items = load_items(project_id, last)
+    closed = [i for i in items if not i.get("is_open") and inside(i.get("closed_date"))]
+    raised = [i for i in items if inside(i.get("raised_date"))]
+    still_open = [i for i in items if i.get("is_open") and str(i.get("raised_date") or "")[:10] <= last]
+    return {
+        "items_closed": closed,
+        "items_raised": raised,
+        "items_open_at_end": still_open,
+        "items_overdue_at_end": [i for i in still_open if i.get("is_overdue")],
+    }
 
 
 def portfolio_card(project: Mapping[str, Any], data_date: str | None = None) -> dict[str, Any]:

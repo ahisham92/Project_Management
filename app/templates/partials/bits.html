@@ -17,11 +17,26 @@
 {# The colour a deliverable's progress bar takes, by how it is tracking. #}
 {% macro task_color(task) %}{% if task['is_late'] %}var(--critical){% elif task['is_behind'] %}var(--warning){% else %}var(--series-1){% endif %}{% endmacro %}
 
+{# Where a deliverable stands, in one badge.
+
+   A line already issued to the client reads green whatever the calendar says:
+   the work is done and out of the door, and how long the client takes over the
+   review is the client's business. A Code B or C drops the status below
+   submitted and it is ours again — and late again — from that moment. #}
 {% macro task_status(task) %}
-  {% if task['is_late'] %}
+  {% if task['is_complete'] %}{{ badge('good', 'Complete') }}
+  {% elif task['with_client'] %}
+    {{ badge('good', 'With client',
+             'Issued ' ~ short_date(task['submission_date'])
+             ~ (' — ' ~ task['waiting_days'] ~ ' days with them' if task['waiting_days'] else '')
+             ~ (', Code A was due ' ~ short_date(task['due_date']) if task['overdue_back']
+                else ', Code A due ' ~ short_date(task['due_date']))) }}
+    {%- if task['overdue_back'] %}
+      <span class="small muted" style="display:block;margin-top:2px">chase the Code A</span>
+    {% endif %}
+  {% elif task['is_late'] %}
     {{ badge('critical', task['days_late'] ~ 'd late',
              ('Approval due ' if task['due_reason'] == 'approval' else 'Submission due ') ~ short_date(task['due_date'])) }}
-  {% elif task['is_complete'] %}{{ badge('good', 'Complete') }}
   {% elif task['is_behind'] %}{{ badge('warning', 'Behind plan') }}
   {% elif task['is_upcoming'] %}{{ badge('serious', 'Due in ' ~ task['days_to_due'] ~ 'd') }}
   {% elif task['actual_pct'] > 0 %}{{ badge('good', 'On plan') }}

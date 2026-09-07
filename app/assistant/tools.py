@@ -43,6 +43,11 @@ def _line(task: Mapping[str, Any]) -> dict[str, Any]:
         "late": bool(task.get("is_late")),
         "days_late": int(task.get("days_late") or 0),
         "behind_plan": bool(task.get("is_behind")),
+        # Issued and waiting for the client's Code A. Not late and not behind:
+        # the work is out of the door, and the review is the client's.
+        "with_client": bool(task.get("with_client")),
+        "days_with_client": int(task.get("waiting_days") or 0),
+        "code_a_overdue": bool(task.get("overdue_back")),
         "complete": bool(task.get("is_complete")),
         "revision": int(task.get("revision") or 0),
         "team": task.get("team_name") or "",
@@ -81,6 +86,8 @@ def overview(project_id: int, **_ignored) -> dict[str, Any]:
         "deliverables": totals.get("task_count"),
         "late": totals.get("late_count"),
         "behind_plan": totals.get("behind_count"),
+        "with_client": totals.get("with_client_count"),
+        "awaiting_code_a_past_its_date": totals.get("awaiting_code_a_count"),
     }
 
 
@@ -181,6 +188,24 @@ def period_report(project_id: int, start: str = "", end: str = "", **_ignored) -
         "movements": moved[:40],
         "trades": [{"name": t["name"], "gained_percent": round(t["earned_in_period"] * 100, 2)}
                    for t in report.get("trade_earned_in_period", [])],
+        # The other half of a month: what was settled, and what was picked up.
+        "actions_closed": [_action(i) for i in report.get("items_closed", [])[:40]],
+        "actions_raised": [_action(i) for i in report.get("items_raised", [])[:40]],
+        "actions_open_at_end": len(report.get("items_open_at_end", [])),
+        "actions_overdue_at_end": len(report.get("items_overdue_at_end", [])),
+    }
+
+
+def _action(item: Mapping[str, Any]) -> dict[str, Any]:
+    """One minuted item, as a period report reads it."""
+    return {
+        "ref": item.get("ref") or "",
+        "subject": item.get("subject") or "",
+        "agreed": item.get("agreement") or "",
+        "owner": item.get("owner_name") or item.get("owner_code") or "",
+        "register": "client" if item.get("kind") == "client" else "internal",
+        "raised": to_display(item.get("raised_date")),
+        "closed": to_display(item.get("closed_date")),
     }
 
 
@@ -833,9 +858,10 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           {"reference": dict(_TEXT, description="WBS number like 1.2, or words from its name")},
           ["reference"]),
     _tool("period_report",
-          "What actually moved between two dates — which deliverables gained progress and "
-          "by how much. This is the source for any question about a period, and for a "
-          "presentation of work done.",
+          "What actually moved between two dates: which deliverables gained progress and by "
+          "how much, and what moved in the minutes — the actions closed in the window, the "
+          "ones raised in it, and how many are still open at the end. This is the source for "
+          "any question about a period, and for a presentation of work done.",
           {"start": dict(_TEXT, description="dd/mm/yyyy"),
            "end": dict(_TEXT, description="dd/mm/yyyy")}, ["start", "end"]),
     _tool("schedule_summary",

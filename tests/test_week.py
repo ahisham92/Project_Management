@@ -352,3 +352,21 @@ def test_each_week_gets_its_own_meeting(signed_in, app):
 
     with app.app_context():
         assert len(load_meetings(1, "internal")) == 2
+
+
+def test_a_line_with_the_client_is_never_asked_for_work():
+    """It is issued. There is nothing to carry on with, so it appears once
+    under what is coming back and never under carrying on."""
+    from app.week import _task_need
+
+    issued = {"is_complete": False, "with_client": True,
+              "start_date": "2026-08-01", "submission_date": "2026-08-20",
+              "approval_due_date": "2026-09-03", "is_submitted": True,
+              "is_approved": False}
+
+    # The Code A falls in this week: it is coming back.
+    assert _task_need(issued, "2026-08-31", "2026-09-06") == "approve"
+    # Already past it and still not returned: it stays there until it arrives.
+    assert _task_need(issued, "2026-09-07", "2026-09-13") == "approve"
+    # Before it is expected back, the week asks nothing of anybody.
+    assert _task_need(issued, "2026-08-24", "2026-08-30") == ""

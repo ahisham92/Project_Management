@@ -96,6 +96,14 @@ def _task_need(task: Mapping[str, Any], start: str, end: str) -> str:
     if task.get("is_complete"):
         return ""
 
+    # Issued and waiting for the client. There is nothing to carry on with, so
+    # it is listed once under what is coming back — this week if the Code A
+    # falls in it, and every week after that until it arrives. It is never a
+    # line anybody here is being asked for work on.
+    if task.get("with_client"):
+        expected = str(task.get("approval_due_date") or "")[:10]
+        return "approve" if (not expected or expected <= end) else ""
+
     if within(task.get("submission_date"), start, end):
         return "submit"
     if task.get("is_submitted") and not task.get("is_approved") \

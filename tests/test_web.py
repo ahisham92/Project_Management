@@ -541,3 +541,77 @@ def test_a_duplicate_project_code_is_rejected(signed_in):
         follow_redirects=True,
     )
     assert "already exists" in text(response)
+
+
+def test_a_deliverable_with_the_client_reads_as_released_not_as_late(signed_in):
+    """Submitted and waiting for Code A. The work is out of the door; how long
+    the client takes over the review is the client's business."""
+    signed_in.post("/projects/1/tasks/1/progress",
+                   data={"status_key": "submitted", "data_date": "01/09/2026"})
+
+    # Well past the Code A date, and still not our lateness.
+    body = text(signed_in.get("/projects/1/tasks?data_date=31/12/2026"))
+    line = body[body.index('id="task-1"'):][:2500]
+    assert "With client" in line
+    assert "late" not in line.lower().replace("translate", "")
+    assert "Behind plan" not in line
+
+    # And it can be filtered to.
+    only = text(signed_in.get("/projects/1/tasks?filter=client&data_date=31/12/2026"))
+    assert 'id="task-1"' in only
+    assert "With client" in only
+
+
+def test_a_code_b_hands_it_back_and_it_can_be_late_again(signed_in):
+    signed_in.post("/projects/1/tasks/1/progress",
+                   data={"status_key": "submitted", "data_date": "01/09/2026"})
+    signed_in.post("/projects/1/tasks/1/comments",
+                   data={"code": "B", "comments_date": "10/09/2026",
+                         "note": "Levels to be reissued"})
+
+    body = text(signed_in.get("/projects/1/tasks?data_date=31/12/2026"))
+    line = body[body.index('id="task-1"'):][:2500]
+    assert "With client" not in line, "it is ours again"
+
+
+def test_summarized_progress_shows_what_moved_in_the_minutes(signed_in):
+    """A month is not only percentages. Half of what happened is in the
+    register: what was closed, and what was picked up."""
+    signed_in.post("/projects/1/minutes/attendees", data={"name": "Ahmed"})
+    answer = signed_in.post("/projects/1/minutes/meetings",
+                            data={"meeting_date": "05/09/2026", "ref": "MOM-01",
+                                  "title": "Coordination"})
+    meeting_id = int(answer.headers["Location"].rstrip("/").split("/")[-1])
+    for subject in ("Bathymetry brief", "Quay levels"):
+        signed_in.post("/projects/1/minutes/items",
+                       data={"meeting_id": meeting_id, "subject": subject,
+                             "agreement": f"Agreed: {subject}", "owner_code": "PM",
+                             "raised_date": "05/09/2026", "due_date": "20/09/2026",
+                             "return": "meeting"})
+
+    # One of them closed inside the window, the other left open.
+    signed_in.post("/projects/1/minutes/items/1/status",
+                   data={"status": "closed", "closed_date": "12/09/2026",
+                         "return": "meeting"})
+
+    body = text(signed_in.get("/projects/1/period?from=01/09/2026&to=30/09/2026"))
+    assert "Summarized Progress" in body
+    closed = body[body.index("Actions closed in this period"):
+                  body.index("Actions raised in this period")]
+    assert "Bathymetry brief" in closed and "Quay levels" not in closed
+
+    raised = body[body.index("Actions raised in this period"):body.index("Still open at")]
+    assert "Bathymetry brief" in raised and "Quay levels" in raised
+
+    open_now = body[body.index("Still open at"):]
+    assert "Quay levels" in open_now and "Bathymetry brief" not in open_now
+
+    # A window before any of it happened has none of it.
+    august = text(signed_in.get("/projects/1/period?from=01/08/2026&to=31/08/2026"))
+    assert "Bathymetry brief" not in august
+
+
+def test_the_period_report_is_now_called_summarized_progress(signed_in):
+    body = text(signed_in.get("/projects/1/period"))
+    assert "Summarized Progress" in body
+    assert "Period report" not in body

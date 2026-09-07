@@ -87,6 +87,7 @@ def main() -> int:
         step("records a progress update by status, in the row", _record_progress)
         step("raises a revision when comments come back", _raise_revision)
         step("filters to late deliverables", _filter_late)
+        step("a line with the client reads as released, not as late", _with_client)
         step("schedule draws the programme with its milestones", _schedule)
         step("schedule links two deliverables and shifts what follows", _schedule_links)
         step("schedule squeezes a run into fewer days", _squeeze)
@@ -103,7 +104,8 @@ def main() -> int:
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
-        step("period report shows what moved", _period)
+        step("summarized progress shows what moved, on the plan and in the minutes",
+             _period)
         step("minutes: adds attendees, a meeting and its items", _minutes_capture)
         step("minutes: filters, searches and sorts the register", _minutes_filters)
         step("minutes: exports a set of minutes to Word", _minutes_word)
@@ -1316,7 +1318,8 @@ def _save_all(page) -> None:
 def _print_to_pdf(page) -> None:
     """Each report tab offers a print button and carries a print-only header."""
     for tab, heading in [("Progress", "Progress update"), ("Schedule", "Schedule"),
-                         ("Finance", "Finance"), ("Period", "Period report")]:
+                         ("Finance", "Finance"),
+                         ("Summarized Progress", "Summarized Progress")]:
         page.click(f"a.tabs >> nth=0" if False else f"nav.tabs a:has-text('{tab}')")
         page.wait_for_selector(f"text={heading}", timeout=8000)
         if page.locator("[data-print]").count() == 0:
@@ -1650,10 +1653,50 @@ def _book_hours(page) -> None:
 
 
 def _period(page) -> None:
-    page.click("a:has-text('Period')")
-    page.wait_for_selector("text=Period report >> visible=true", timeout=8000)
+    """A month is not only percentages: half of what happened is in the
+    register, so what closed and what was raised are on the same page."""
+    page.click("nav.tabs a:has-text('Summarized Progress')")
+    page.wait_for_selector("h1:has-text('Summarized Progress')", timeout=8000)
     page.wait_for_selector("text=Earned in period by trade >> visible=true")
+
+    body = page.text_content("body")
+    for expected in ("Actions closed in this period", "Actions raised in this period",
+                     "Still open at"):
+        if expected not in body:
+            raise AssertionError(f"the report does not carry {expected!r}")
     page.screenshot(path=str(SHOTS / "08-period.png"), full_page=True)
+
+
+def _with_client(page) -> None:
+    """Submitted and waiting for the Code A: the work is out of the door, so
+    the line reads green rather than late, however long the client takes."""
+    page.goto(f"{BASE}/projects/1/tasks?data_date=31/12/2026", wait_until="networkidle")
+    _put_carmen_away(page)
+
+    # Moved to submitted through the cell on the row, as anybody would. The
+    # control saves as soon as the step is chosen; no button.
+    row = page.locator("#task-2")
+    row.locator(".cell-open[data-cell]").first.click()
+    page.wait_for_selector("form.cell-form select[name=status_key]", timeout=8000)
+    page.select_option("form.cell-form select[name=status_key]",
+                       label="Submitted to client — 80%")
+    page.wait_for_function(
+        "() => { const line = document.getElementById('task-2');"
+        " return line && line.innerText.includes('With client'); }", timeout=8000)
+
+    line = row.inner_text()
+    if "late" in line.lower():
+        raise AssertionError(f"a line with the client should not read as late: {line!r}")
+    if "Behind plan" in line:
+        raise AssertionError("a line with the client should not read as behind plan")
+
+    # And it can be filtered to.
+    page.goto(f"{BASE}/projects/1/tasks?filter=client&data_date=31/12/2026",
+              wait_until="networkidle")
+    _put_carmen_away(page)
+    if "With client" not in page.text_content("body"):
+        raise AssertionError("the With client filter shows nothing")
+    page.screenshot(path=str(SHOTS / "47-with-client.png"), full_page=True)
 
 
 def _minutes_capture(page) -> None:

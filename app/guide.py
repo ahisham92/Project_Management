@@ -131,18 +131,26 @@ TABS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "period",
-        "name": "Period",
+        "name": "Summarized Progress",
         "endpoints": ("projects.period",),
-        "what": "What moved between two dates — the report you send at the end of a month.",
+        "what": "What moved between two dates — on the programme and in the minutes. The "
+                "report you send at the end of a month.",
         "start_here": "Set the two dates and read what changed. Nothing here is stored; it is worked out from the record.",
         "steps": (
             "Pick a <strong>from</strong> and a <strong>to</strong> date.",
             "Read the progress made in that window, by trade and by deliverable.",
+            "Read what moved in the <strong>minutes</strong>: the actions closed in the window, "
+            "the ones raised in it, and what is still open at the end — from both registers.",
             "<strong>Print / PDF</strong> it — the header carries the project, the dates and the "
             "data date, so a printed page cannot be mistaken for the current one.",
         ),
-        "watch": ("Progress is attributed to the date it was reported for, not the date it was typed in.",),
-        "terms": ("data date", "earned progress", "planned progress", "variance"),
+        "watch": (
+            "Progress is attributed to the date it was reported for, not the date it was typed in.",
+            "An item counts as closed in the window on the date it was closed, read as the "
+            "register stood at the end of it.",
+        ),
+        "terms": ("data date", "earned progress", "planned progress", "variance",
+                  "minuted item", "open", "closed"),
     },
     {
         "key": "minutes",

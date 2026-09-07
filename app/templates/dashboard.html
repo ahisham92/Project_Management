@@ -98,6 +98,21 @@
           (pct(t['weight_at_risk']) ~ ' of weight at risk') if t['late_count'] else 'Nothing overdue') }}
 </div>
 
+{% if t['with_client_count'] %}
+  {# Issued and waiting. Not our lateness — but a project with fifteen
+     submissions sitting unanswered has a problem all the same, and it is
+     invisible if it is not counted anywhere. #}
+  <div class="grid grid-4" style="margin-top:16px">
+    {{ tile('With the client', t['with_client_count'],
+            'issued, waiting for Code A',
+            'warning' if t['awaiting_code_a_count'] else 'good',
+            (t['awaiting_code_a_count'] ~ ' past the Code A date')
+            if t['awaiting_code_a_count'] else 'All within the review time') }}
+    {{ tile('Longest wait', t['longest_wait_days'] ~ 'd',
+            'since it was issued', 'neutral', 'the oldest one out') }}
+  </div>
+{% endif %}
+
 <div class="card" style="margin-top:16px">
   <div class="card-head">
     <div>

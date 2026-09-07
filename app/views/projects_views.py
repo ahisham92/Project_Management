@@ -151,6 +151,7 @@ def guide(project_id: int):
 
 FILTERS = (
     ("all", "All"), ("late", "Late"), ("behind", "Behind plan"),
+    ("client", "With client"),
     ("open", "In progress"), ("notstarted", "Not started"), ("complete", "Complete"),
     ("rework", "In rework"),
 )
@@ -178,6 +179,8 @@ def tasks(project_id: int):
             return task["is_late"]
         if active == "behind":
             return task["is_behind"]
+        if active == "client":
+            return task["with_client"]
         if active == "open":
             return 0 < task["actual_pct"] < 1
         if active == "notstarted":
@@ -909,7 +912,7 @@ def _booked_hours(project_id: int) -> tuple[list, dict]:
     return list(entries), booked
 
 
-# --- period report ---------------------------------------------------------
+# --- summarized progress ---------------------------------------------------
 
 @bp.get("/period")
 @login_required
@@ -920,7 +923,8 @@ def period(project_id: int):
     report = project_period(project, start, end)
     moved = [t for t in report["tasks"] if abs(t["earned_in_period"]) > 1e-9]
     return render_template(
-        "period.html", project=project, role=role, report=report, moved=moved, start=start, end=end
+        "summarized.html", project=project, role=role, report=report, moved=moved,
+        start=start, end=end,
     )
 
 

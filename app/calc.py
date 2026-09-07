@@ -236,16 +236,29 @@ def compute_project(
         approved = is_approved(steps, status_key) if workflow else actual >= 1
         is_complete = actual >= 1
 
-        # The submission date is the deadline that matters; once a deliverable is
-        # with the client, the approval date takes over.
+        # Issued and waiting for the client's Code A. The work is done and out
+        # of the door; how long the client takes to review it is the client's
+        # business, and holding a team to a date only the client controls is how
+        # a progress report stops being read. A Code B or C hands it back — the
+        # status drops below submitted and it is ours again from that moment.
+        with_client = bool(workflow and submitted and not approved)
+
+        # The submission date is the deadline that matters; once a deliverable
+        # is with the client, the approval date is when it is expected back
+        # rather than something anybody here can be late on.
         approval_due = next((s["date"] for s in plan if s["key"] == CODE_A), submission)
-        if workflow and submitted and not approved:
+        if with_client:
             deadline, late_reason = approval_due, "approval"
         else:
             deadline, late_reason = submission, "submission"
 
-        is_late = bool(deadline) and (not is_complete) and deadline < cutoff_iso
+        is_late = bool(deadline) and (not is_complete) and (not with_client) \
+            and deadline < cutoff_iso
         days_to_due = days_between(cutoff_iso, deadline) if deadline else 0
+        # How long the client has had it, which is the figure worth chasing on.
+        waiting_days = (days_between(submission, cutoff_iso)
+                        if with_client and submission and submission <= cutoff_iso else 0)
+        overdue_back = with_client and bool(approval_due) and approval_due < cutoff_iso
 
         current = step_by_key(steps, status_key) if workflow else None
         next_due = next((s for s in plan if s["percent"] > (current["percent"] if current else -1)), None)
@@ -279,9 +292,15 @@ def compute_project(
             is_approved=approved,
             is_late=is_late,
             days_late=-days_to_due if is_late else 0,
-            is_upcoming=(not is_complete) and (not is_late) and bool(deadline)
+            with_client=with_client,
+            waiting_days=waiting_days,
+            overdue_back=overdue_back,
+            is_upcoming=(not is_complete) and (not is_late) and (not with_client)
+            and bool(deadline)
             and (horizon_end is None or deadline <= horizon_end.isoformat()),
-            is_behind=(not is_complete) and actual < planned - 1e-9,
+            # A line already issued is not behind on anything: the remaining
+            # percent is the client's review, not work anybody here owes.
+            is_behind=(not is_complete) and (not with_client) and actual < planned - 1e-9,
             is_milestone=bool(submission) and submission == start,
             in_rework=revision > 0 and not is_complete,
             at_revision_limit=revision >= max_revisions,
@@ -305,6 +324,11 @@ def compute_project(
     upcoming = [r for r in rows if r["is_upcoming"]]
     behind = [r for r in rows if r["is_behind"]]
     rework = [r for r in rows if r["in_rework"]]
+    # Issued and waiting. Not our lateness, but worth a number of its own: a
+    # project with fifteen submissions sitting unanswered has a problem, even
+    # though none of them is anybody here's fault.
+    issued = [r for r in rows if r["with_client"]]
+    unanswered = [r for r in issued if r["overdue_back"]]
 
     return {
         "data_date": cutoff_iso,
@@ -328,6 +352,9 @@ def compute_project(
             "late_count": len(late),
             "upcoming_count": len(upcoming),
             "behind_count": len(behind),
+            "with_client_count": len(issued),
+            "awaiting_code_a_count": len(unanswered),
+            "longest_wait_days": max((r["waiting_days"] for r in issued), default=0),
             "rework_count": len(rework),
             "at_limit_count": sum(1 for r in rework if r["at_revision_limit"]),
             "weight_at_risk": sum(r["weight_pct"] for r in late),

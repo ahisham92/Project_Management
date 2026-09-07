@@ -75,7 +75,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
 | **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies**, and the **critical path** traced from start to end. Dates are amended here, and the whole programme round-trips to **Excel**. |
 | **Finance** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion — and, at the foot of the same tab, the **hours themselves**: book time against a trade and optionally a deliverable, and every figure above is built from them. |
-| **Period** | What moved between two dates, and which trades earned it. |
+| **Summarized Progress** | What moved between two dates: the progress gained by trade and by deliverable, **and what moved in the minutes** — the actions closed in the window, the ones raised in it, and what is still open at the end. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
 | **Carmen** | The project assistant. Ask her anything — “what is late?”, “how did last month go?” — tell her what to change, type up a meeting and say *minute this*, or say *take me to the schedule*. Anything she would change is **staged for you to approve**. She sits in the corner of every other tab too. |
 | **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
@@ -341,8 +341,27 @@ it goes round again. On the Progress tab, **Comments** on a submitted line recor
 - every downstream planned date moves with it, so the schedule and the S-curve follow;
 - the cycle is written to the deliverable's **history**, with the outcome of each revision.
 
-Once submitted, a line is judged on its **Code A date** rather than its submission date, so
-work sitting with the client is not reported as late until the approval is actually overdue.
+### Once it is with the client, it is not ours to be late on
+
+A deliverable that has been **submitted and is waiting for the Code A** is issued. The work
+is done and out of the door, and how long the client takes over the review is the client's
+business — holding a team to a date only the client controls is how a progress report stops
+being read. So a submitted line:
+
+- reads **With client**, in green, whatever the calendar says;
+- is **not late and not behind plan**, and is out of both counts;
+- is never asked for work on the Task List — it appears once under *Coming back*, and never
+  under *Carrying on*, because there is nothing to carry on with.
+
+That is not the same as pretending nothing is wrong. The Dashboard counts **how many are
+with the client**, how many are **past their Code A date**, and the **longest wait** — a
+project with fifteen submissions sitting unanswered has a problem, even though none of them
+is anybody here's fault. The badge names the day it went out and how long they have had it,
+and says *chase the Code A* once the review time is up. **Progress → With client** filters
+to exactly that list.
+
+A **Code B or C** hands it back: the status drops below submitted, the line is ours again
+from that moment, and it can be late again like anything else.
 
 A project has a **maximum revisions** setting (default 10). A deliverable that reaches it is
 flagged for escalation on the schedule and cannot be pushed further without raising the

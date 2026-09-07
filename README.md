@@ -467,6 +467,28 @@ actually needs, which is the right setting for work that is sometimes "what is
 late" and sometimes "read these four paragraphs and turn them into a numbered
 register".
 
+**A dependency warning when installing `anthropic`.** pip may print a red
+`ERROR: pip's dependency resolver…` about `httpcore 1.0.7 requires h11<0.15` while
+still saying `Successfully installed anthropic-…`. That is a warning about a
+*different*, older package already on the account, not about this one: the SDK
+uses `httpx2`/`httpcore2`, which are separate packages from `httpx`/`httpcore`,
+and nothing in this app touches the old ones. It is safe to ignore. The way to
+stop seeing it at all — and the right way to run this on a shared host anyway —
+is a virtualenv:
+
+```bash
+mkvirtualenv --python=/usr/bin/python3.13 project-control
+pip install -r requirements.txt
+```
+
+then name that virtualenv on PythonAnywhere's **Web** tab and Reload. Which
+brings up the failure worth knowing about: **`pip install` in a console installs
+into whatever Python that console is using**, which is not necessarily the one
+serving the web app. If it goes to the wrong one, Carmen's tab says the key is
+set and every question fails. Press **Test the connection**: its first check is
+whether the package is importable from the Python actually running the app, and
+it names that Python's path when it is not.
+
 **When every answer is a 403.** That is almost never the key. A 403 carrying
 Anthropic's own message is Anthropic refusing the key or the account; a 403
 carrying *nothing* never reached them at all — something between the server and
@@ -474,9 +496,12 @@ the internet refused it. On PythonAnywhere's free plan every outbound request
 goes through a proxy that only allows listed sites, and neither
 `api.anthropic.com` nor any other model provider is on it, so every request comes
 back 403 with an empty body. **Changing provider does not fix this** — the block
-is the host's, not the provider's. Press **Test the connection** on her tab: it
-opens a TLS connection to Anthropic, then tries the key, then lists the models,
-and says which of the three failed. If it cannot open the connection, the fix is
+is the host's, not the provider's. Press **Test the connection** on her tab: it checks
+the package is installed for the right Python, then opens a TLS connection to
+Anthropic, then tries the key and lists the models, and says which of the four
+failed. **Ask her one question** beside it goes further and puts a real request
+to the model — the badge only ever meant "a key is saved", and that is now what
+it says. If it cannot open the connection, the fix is
 a paid PythonAnywhere plan or a different host. Everything else in this app works
 on the free plan.
 

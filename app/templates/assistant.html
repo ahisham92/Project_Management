@@ -18,10 +18,16 @@
     </div>
   </div>
   <div class="inline-form">
-    {% if ready %}{{ badge('good', 'connected') }}{% else %}{{ badge('warning', 'not connected') }}{% endif %}
+    {# "Key set", not "connected": all this knows is that a key has been saved.
+       The buttons beside it are what actually prove anything. #}
+    {% if ready %}{{ badge('good', 'key set') }}{% else %}{{ badge('warning', 'no key yet') }}{% endif %}
     {% if is_admin and ready %}
       <button type="button" class="btn btn-ghost btn-sm" id="test-carmen"
-              data-url="{{ url_for('assistant.test_connection', project_id=project['id']) }}">Test the connection</button>
+              data-url="{{ url_for('assistant.test_connection', project_id=project['id']) }}"
+              title="Checks the package, the network and the key, in that order">Test the connection</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="ping-carmen"
+              data-url="{{ url_for('assistant.ping', project_id=project['id']) }}"
+              title="Asks the model one real question">Ask her one question</button>
     {% endif %}
   </div>
 </div>

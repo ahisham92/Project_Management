@@ -101,8 +101,17 @@ def ask(project_id: int):
     if not isinstance(history, list):
         history = []
 
-    answer = ask_it(project, question, held["key"], held["model"],
-                    history[-MAX_HISTORY:], today(), held["effort"])
+    try:
+        answer = ask_it(project, question, held["key"], held["model"],
+                        history[-MAX_HISTORY:], today(), held["effort"])
+    except Exception as exc:                          # noqa: BLE001 - said, not swallowed
+        # Never an HTML 500 here. The page can only show what it is given, and
+        # "Carmen could not be reached" while the real reason sits in a server
+        # log sends somebody to check a key, a network and a host that were all
+        # fine.
+        current_app.logger.exception("Carmen failed on a question")
+        return jsonify({"ok": False,
+                        "error": f"{type(exc).__name__}: {exc}"}), 500
 
     # Somebody who may not write to the project may still ask about it; what
     # they cannot do is apply anything, so they are not offered the button.
@@ -243,6 +252,35 @@ def test_connection(project_id: int):
 
     found = diagnose(carmen()["key"])
     return jsonify({"ok": bool(found["key_works"]), **found})
+
+
+@bp.get("/assistant/ping")
+@login_required
+def ping(project_id: int):
+    """One real question, end to end, with no tools in the way.
+
+    "Connected" on the badge only ever meant a key is saved. This is the thing
+    that actually proves she works: the smallest possible request to the model
+    the settings name, and whatever comes back.
+    """
+    from ..claude import ClaudeError, chat, said
+    from ..vault import carmen
+
+    load_project(project_id)
+    if g.user["role"] != "admin":
+        return jsonify({"ok": False, "error": "Administrators only"}), 403
+
+    held = carmen()
+    if not held["key"]:
+        return jsonify({"ok": False, "error": "There is no API key saved yet"}), 400
+
+    try:
+        answer = chat(held["key"], "Reply with the single word: ready.",
+                      [{"role": "user", "content": "Are you there?"}],
+                      None, held["model"], "low")
+    except ClaudeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify({"ok": True, "detail": f"{held['model']} answered: {said(answer)[:120]}"})
 
 
 @bp.post("/assistant/settings")

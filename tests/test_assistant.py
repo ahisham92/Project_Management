@@ -649,10 +649,10 @@ def test_the_deck_says_what_the_period_says(app, project):
 
 # --- the web layer ----------------------------------------------------------
 
-def test_the_tab_is_there_and_says_it_is_not_connected(signed_in):
+def test_the_tab_is_there_and_says_it_has_no_key_yet(signed_in):
     body = text(signed_in.get("/projects/1/assistant"))
     assert "Carmen" in body
-    assert "not connected" in body
+    assert "no key yet" in body
     assert "console.anthropic.com" in body
 
 

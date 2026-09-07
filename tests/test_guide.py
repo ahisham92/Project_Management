@@ -143,12 +143,16 @@ def test_each_tab_carries_its_own_helper(signed_in):
         assert expected in text(signed_in.get(url)), f"{url} has no helper"
 
 
-def test_the_helper_can_be_folded_away_and_is_remembered(signed_in):
-    """It is a <details> the browser remembers, so somebody who knows the app
-    stops seeing it without anybody having to store a preference."""
+def test_the_helper_starts_folded_away(signed_in):
+    """It is reference, not something to read again on every page: the summary
+    says which tab it is for, and one click opens it. A <details> the browser
+    remembers, so somebody who opens it keeps it open."""
     body = text(signed_in.get("/projects/1/schedule"))
     assert 'data-panel="guide-schedule"' in body
     assert "guide-strip" in body
+
+    strip = body.split('data-panel="guide-schedule"', 1)[1].split(">", 1)[0]
+    assert "open" not in strip
 
 
 def test_the_helper_links_to_the_full_guide(signed_in):

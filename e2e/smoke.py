@@ -54,7 +54,7 @@ def main() -> int:
 
         step("login page renders", lambda p: (
             p.goto(f"{BASE}/login", wait_until="networkidle"),
-            p.wait_for_selector("text=Project Control"),
+            p.wait_for_selector("text=Project Control >> visible=true"),
             shot("01-login"),
         ))
 
@@ -62,15 +62,15 @@ def main() -> int:
             p.fill("input[name=email]", EMAIL),
             p.fill("input[name=password]", "totallywrong"),
             p.click("button[type=submit]"),
-            p.wait_for_selector("text=Incorrect email or password", timeout=5000),
+            p.wait_for_selector("text=Incorrect email or password >> visible=true", timeout=5000),
         ))
 
         step("signs in", lambda p: (
             p.fill("input[name=email]", EMAIL),
             p.fill("input[name=password]", PASSWORD),
             p.click("button[type=submit]"),
-            p.wait_for_selector("text=Portfolio", timeout=8000),
-            p.wait_for_selector("text=SIBLINE-PORT"),
+            p.wait_for_selector("text=Portfolio >> visible=true", timeout=8000),
+            p.wait_for_selector("text=SIBLINE-PORT >> visible=true"),
             shot("02-portfolio"),
         ))
 
@@ -146,8 +146,8 @@ def _schedule_page(page, panel: str = ""):
 
 
 def _open_carmen(page) -> None:
-    """Opens the pop-up, or leaves it open if a previous page already did —
-    the browser remembers, and the launcher hides itself while it is open."""
+    """Opens the pop-up. It starts shut on every page, and the launcher hides
+    itself while it is open."""
     if not page.locator("#carmen-popup:not([hidden])").count():
         page.click("#carmen-open")
     page.wait_for_selector("#carmen-popup:not([hidden])", timeout=6000)
@@ -177,8 +177,8 @@ def _expect_all(page, needles: list[str]) -> None:
 
 
 def _dashboard(page) -> None:
-    page.click("text=Sibline Port")
-    page.wait_for_selector("text=Progress S-curve", timeout=8000)
+    page.click("text=Sibline Port >> visible=true")
+    page.wait_for_selector("text=Progress S-curve >> visible=true", timeout=8000)
     page.wait_for_selector(".chart svg", timeout=8000)
     lines = page.locator(".chart polyline").count()
     if lines < 2:
@@ -197,8 +197,8 @@ def _hover_tooltip(page) -> None:
 
 def _progress_page(page) -> None:
     page.click("a:has-text('Progress')")
-    page.wait_for_selector("text=Progress update", timeout=8000)
-    page.wait_for_selector("text=Marine Design")
+    page.wait_for_selector("text=Progress update >> visible=true", timeout=8000)
+    page.wait_for_selector("text=Marine Design >> visible=true")
     page.screenshot(path=str(SHOTS / "04-progress.png"), full_page=True)
 
 
@@ -227,7 +227,7 @@ def _raise_revision(page) -> None:
     page.fill("input[name=comments_date]", "05/09/2026")
     page.fill("input[name=note]", "Not approved")
     page.click("button:has-text('Raise revision')")
-    page.wait_for_selector("text=Code C", timeout=8000)
+    page.wait_for_selector("text=Code C >> visible=true", timeout=8000)
     text = page.locator("tr", has_text="Coastal numerical modelling").first.text_content()
     if "Rev 1" not in text:
         raise AssertionError(f"revision not shown: {text[:160]}")
@@ -259,7 +259,7 @@ def _schedule_excel(page) -> None:
 
     card.locator("input[name=workbook]").set_input_files(workbook)
     card.locator("button:has-text('Import')").click()
-    page.wait_for_selector("text=rescheduled", timeout=8000)
+    page.wait_for_selector("text=rescheduled >> visible=true", timeout=8000)
     if "skipped" in page.text_content("body"):
         raise AssertionError("its own export should import without a complaint")
 
@@ -462,7 +462,7 @@ def _teams(page) -> None:
     page.fill("form[action$='/setup/holidays'] input[name=holiday_date]", "28/09/2026")
     page.fill("form[action$='/setup/holidays'] input[name=name]", "National day")
     page.click("form[action$='/setup/holidays'] button")
-    page.wait_for_selector("text=Holiday added", timeout=8000)
+    page.wait_for_selector("text=Holiday added >> visible=true", timeout=8000)
     page.screenshot(path=str(SHOTS / "30-teams.png"), full_page=True)
 
     # Put a line on Beirut, in the row, and watch its duration re-read.
@@ -723,16 +723,18 @@ def _how_to_use(page) -> None:
     strip = page.locator("details.guide-strip")
     if strip.count() == 0:
         raise AssertionError("the Schedule tab has no helper")
+    if strip.first.get_attribute("open") is not None:
+        raise AssertionError("the helper should start folded away")
     if "How to use the Schedule tab" not in strip.inner_text():
         raise AssertionError("the helper does not say which tab it is for")
 
-    # It folds away, and the browser remembers — somebody who knows the app
-    # should stop seeing it.
+    # Opened, it stays open — the browser remembers, so somebody working
+    # through it does not reopen it on every page.
     page.click("details.guide-strip > summary")
     page.wait_for_timeout(400)
     page.reload(wait_until="networkidle")
-    if page.locator("details.guide-strip[open]").count():
-        raise AssertionError("a helper folded away should stay folded away")
+    if not page.locator("details.guide-strip[open]").count():
+        raise AssertionError("a helper opened should stay open")
     page.click("details.guide-strip > summary")
     page.wait_for_timeout(400)
 
@@ -816,8 +818,8 @@ def _assistant(page) -> None:
     page.wait_for_selector("textarea[name=question]:not([disabled])", timeout=8000)
 
     # A question that reads the project.
-    page.fill("textarea[name=question]", "How is the project doing?")
-    page.click("button:has-text('Ask')")
+    page.fill("#chat-form textarea[name=question]", "How is the project doing?")
+    page.click("#chat-form button[type=submit]")
     page.wait_for_selector("#chat .chat-line.assistant:not(.thinking) .chat-used", timeout=25000)
     said = page.locator("#chat .chat-line.assistant").last.inner_text()
     if "overview" not in said:
@@ -825,8 +827,8 @@ def _assistant(page) -> None:
 
     # A change: staged, listed, and not done.
     before = _row_reads(page, 1)
-    page.fill("textarea[name=question]", "Set 1.1 to 40%")
-    page.click("button:has-text('Ask')")
+    page.fill("#chat-form textarea[name=question]", "Set 1.1 to 40%")
+    page.click("#chat-form button[type=submit]")
     page.wait_for_selector("#chat .chat-staged", timeout=25000)
     staged = page.locator("#chat .chat-staged").last.inner_text()
     if "40%" not in staged or "nothing has changed yet" not in staged.lower():
@@ -879,12 +881,25 @@ def _carmen_everywhere(page) -> None:
     if page.locator("#carmen-open").count() == 0:
         raise AssertionError("Carmen is not on the schedule")
 
+    # Her own tab is the conversation already; a second copy in the corner is
+    # two chats to keep track of.
+    page.goto(f"{BASE}/projects/1/assistant", wait_until="networkidle")
+    if page.locator("#carmen-popup").count():
+        raise AssertionError("the pop-up should not be on her own tab")
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+
+    if page.locator("#carmen-popup:not([hidden])").count():
+        raise AssertionError("she should start minimised on every page")
     _open_carmen(page)
 
-    # Opened once, she stays open on the next page — somebody working with her
-    # beside them should not reopen her on every tab.
+    # Shut again with the ✕, and shut again on the next page: a chat box that
+    # reappears in the corner of every tab is not a feature.
+    page.click("[data-carmen-close]")
+    page.wait_for_selector("#carmen-popup[hidden]", timeout=4000)
     page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
-    page.wait_for_selector("#carmen-popup:not([hidden])", timeout=6000)
+    if page.locator("#carmen-popup:not([hidden])").count():
+        raise AssertionError("she should not reopen herself on the next page")
+    _open_carmen(page)
 
     if not os.environ.get("CLAUDE_STAND_IN"):
         page.screenshot(path=str(SHOTS / "39-carmen.png"), full_page=True)
@@ -941,14 +956,14 @@ def _carmen_everywhere(page) -> None:
 
 def _sorting(page) -> None:
     page.click("a:has-text('Progress')")
-    page.wait_for_selector("text=Progress update", timeout=8000)
+    page.wait_for_selector("text=Progress update >> visible=true", timeout=8000)
     page.click("th a:has-text('Variance')")
-    page.wait_for_selector("text=All deliverables", timeout=8000)
+    page.wait_for_selector("text=All deliverables >> visible=true", timeout=8000)
     first = page.locator("tbody tr").first.text_content()
     if "1.6" not in first:
         raise AssertionError(f"worst variance should sort first, got {first[:80]}")
     page.click("th a:has-text('WBS')")
-    page.wait_for_selector("text=Sec. 3.1 Marine Design", timeout=8000)
+    page.wait_for_selector("text=Sec. 3.1 Marine Design >> visible=true", timeout=8000)
     page.screenshot(path=str(SHOTS / "12-sorted.png"), full_page=True)
 
 
@@ -975,7 +990,7 @@ def _stepped_planned(page) -> None:
 def _save_all(page) -> None:
     page.fill("input[name='max_revisions']", "8")
     page.click("button:has-text('Save all changes')")
-    page.wait_for_selector("text=Saved — project settings", timeout=8000)
+    page.wait_for_selector("text=Saved — project settings >> visible=true", timeout=8000)
     if page.input_value("input[name='max_revisions']") != "8":
         raise AssertionError("the saved value did not come back")
 
@@ -1005,13 +1020,13 @@ def _print_to_pdf(page) -> None:
 
 def _setup_lock(page) -> None:
     page.click("a:has-text('Setup')")
-    page.wait_for_selector("text=Project setup", timeout=8000)
+    page.wait_for_selector("text=Project setup >> visible=true", timeout=8000)
     if "Locked" not in page.text_content("body"):
         raise AssertionError("the setup sheet should start locked")
 
     page.fill("input[name=password]", "2026")
     page.click("button:has-text('Unlock')")
-    page.wait_for_selector("text=Setup sheet unlocked", timeout=8000)
+    page.wait_for_selector("text=Setup sheet unlocked >> visible=true", timeout=8000)
     body = page.text_content("body")
     for expected in ("Design workflow", "IDC provided", "Maximum revisions",
                      "Rework days", "Export to Excel", "Import from Excel"):
@@ -1039,7 +1054,7 @@ def _filter_late(page) -> None:
 
 def _schedule(page) -> None:
     page.click("nav.tabs a:has-text('Schedule')")
-    page.wait_for_selector("text=Dates and durations", timeout=8000)
+    page.wait_for_selector("text=Dates and durations >> visible=true", timeout=8000)
     body = page.text_content("body")
     for expected in ("Programme", "Dependencies", "Duration", "Float"):
         if expected not in body:
@@ -1194,7 +1209,7 @@ def _schedule_deps(page) -> None:
 
     card.locator("input[name=workbook]").set_input_files(workbook)
     card.locator("button:has-text('Import')").click()
-    page.wait_for_selector("text=imported", timeout=8000)
+    page.wait_for_selector("text=imported >> visible=true", timeout=8000)
     if "skipped" in page.text_content("body"):
         raise AssertionError("its own export should import without a complaint")
 
@@ -1229,40 +1244,40 @@ def _schedule_amend(page) -> None:
 
 def _budget(page) -> None:
     page.click("a:has-text('Budget')")
-    page.wait_for_selector("text=Budget control", timeout=8000)
+    page.wait_for_selector("text=Budget control >> visible=true", timeout=8000)
     page.wait_for_selector(".chart svg", timeout=8000)
     page.screenshot(path=str(SHOTS / "06-budget.png"), full_page=True)
 
 
 def _book_hours(page) -> None:
     page.click("a:has-text('Timesheet')")
-    page.wait_for_selector("text=Book hours", timeout=8000)
+    page.wait_for_selector("text=Book hours >> visible=true", timeout=8000)
     page.select_option("select[name=trade_id]", label="Geotechnical")
     page.fill("input[name=hours]", "36")
     page.fill("input[name=description]", "Borehole data review")
     page.click("button:has-text('Book hours')")
-    page.wait_for_selector("text=Booked 36 hours", timeout=8000)
+    page.wait_for_selector("text=Booked 36 hours >> visible=true", timeout=8000)
     if "Borehole data review" not in page.text_content("body"):
         raise AssertionError("entry not listed")
     page.screenshot(path=str(SHOTS / "07-timesheet.png"), full_page=True)
 
     page.click("a:has-text('Budget')")
-    page.wait_for_selector("text=Budget control", timeout=8000)
+    page.wait_for_selector("text=Budget control >> visible=true", timeout=8000)
     if "36 h" not in page.text_content("body"):
         raise AssertionError("booked hours did not reach budget control")
 
 
 def _period(page) -> None:
     page.click("a:has-text('Period')")
-    page.wait_for_selector("text=Period report", timeout=8000)
-    page.wait_for_selector("text=Earned in period by trade")
+    page.wait_for_selector("text=Period report >> visible=true", timeout=8000)
+    page.wait_for_selector("text=Earned in period by trade >> visible=true")
     page.screenshot(path=str(SHOTS / "08-period.png"), full_page=True)
 
 
 def _minutes_capture(page) -> None:
     """The roster is typed once, then ticked; items carry an owner and an impact."""
     page.click("nav.tabs a:has-text('Minutes')")
-    page.wait_for_selector("text=Attendance list", timeout=8000)
+    page.wait_for_selector("text=Attendance list >> visible=true", timeout=8000)
 
     for name, org, role in [("Ahmed Mitwally", "Dar", "Project manager"),
                             ("Client Rep", "Sibline Port Authority", "Design manager")]:
@@ -1279,7 +1294,7 @@ def _minutes_capture(page) -> None:
     meeting_form.locator("input[name=meeting_date]").fill("03/09/2026")
     meeting_form.locator("input[name=location]").fill("Site office")
     meeting_form.locator("button:has-text('Add meeting')").click()
-    page.wait_for_selector("text=tick who attended", timeout=8000)
+    page.wait_for_selector("text=tick who attended >> visible=true", timeout=8000)
 
     # Everyone is invited by default; untick one to show apologies.
     boxes = page.locator("input[name=present]")
@@ -1289,7 +1304,7 @@ def _minutes_capture(page) -> None:
     page.fill("input[name=chaired_by]", "Ahmed Mitwally")
     page.fill("input[name=next_date]", "10/09/2026")
     page.click("button:has-text('Save meeting')")
-    page.wait_for_selector("text=Meeting saved", timeout=8000)
+    page.wait_for_selector("text=Meeting saved >> visible=true", timeout=8000)
     if "Apologies" not in page.text_content("body"):
         raise AssertionError("the attendee who was unticked should show apologies")
 
@@ -1307,7 +1322,7 @@ def _minutes_capture(page) -> None:
         form.locator("input[name=trade_ids]").first.check()
         form.locator("input[name=trade_ids]").nth(1).check()
         form.locator("button:has-text('Add item')").click()
-        page.wait_for_selector("text=Item added", timeout=8000)
+        page.wait_for_selector("text=Item added >> visible=true", timeout=8000)
 
     body = page.text_content("body")
     for expected in ("Quay wall levels", "Marine to reissue the layout", "SIBLINE-PORT",
@@ -1358,7 +1373,7 @@ def _minutes_word(page) -> None:
         raise AssertionError(f"unexpected download: {name}")
 
     page.click("table a:has-text('Weekly design coordination')")
-    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
     with page.expect_download(timeout=10000) as download:
         page.click("a:has-text('Export Word')")
     if not download.value.suggested_filename.endswith(".docx"):
@@ -1370,7 +1385,7 @@ def _minutes_reorder(page) -> None:
     page.click("nav.tabs a:has-text('Minutes')")
     page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
     page.click("table a:has-text('Weekly design coordination')")
-    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
 
     rows = page.locator("tbody tr:has(button[title='Move down'])")
     before = [rows.nth(i).text_content() for i in range(rows.count())]
@@ -1386,7 +1401,7 @@ def _minutes_reorder(page) -> None:
         raise AssertionError("the last item should not be movable down")
 
     page.locator("button[title='Move down']").first.click()
-    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
     rows = page.locator("tbody tr:has(button[title='Move down'])")
     after = [rows.nth(i).text_content() for i in range(rows.count())]
     if "Additional bathymetric survey" not in after[0] or "1.1" not in after[0]:
@@ -1396,7 +1411,7 @@ def _minutes_reorder(page) -> None:
     page.screenshot(path=str(SHOTS / "17-reordered.png"), full_page=True)
 
     page.locator("button[title='Move up']").last.click()      # put it back
-    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
 
 
 def _minutes_edit_in_place(page) -> None:
@@ -1404,7 +1419,7 @@ def _minutes_edit_in_place(page) -> None:
     page.click("nav.tabs a:has-text('Minutes')")
     page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
     page.click("table a:has-text('Weekly design coordination')")
-    page.wait_for_selector("text=Items and agreements", timeout=8000)
+    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
 
     row = page.locator("tr", has_text="Quay wall levels").first
     item_id = row.get_attribute("id").split("-")[1]
@@ -1426,7 +1441,7 @@ def _minutes_edit_in_place(page) -> None:
 
     box.fill("Marine to reissue the layout with the revised levels agreed today")
     editor.locator("button:has-text('Save item')").click()
-    page.wait_for_selector("text=Item saved", timeout=8000)
+    page.wait_for_selector("text=Item saved >> visible=true", timeout=8000)
     if "revised levels agreed today" not in page.text_content("body"):
         raise AssertionError("the edited agreement did not save")
     page.screenshot(path=str(SHOTS / "18-edit-in-place.png"), full_page=True)
@@ -1514,7 +1529,7 @@ def _minutes_agenda(page) -> None:
     page.click("nav.tabs a:has-text('Minutes')")
     page.wait_for_selector("h1:has-text('Minutes of meeting')", timeout=8000)
     page.click("a:has-text('Next-meeting agenda')")
-    page.wait_for_selector("text=Agenda", timeout=8000)
+    page.wait_for_selector("text=Agenda >> visible=true", timeout=8000)
     body = page.text_content("body")
     for expected in ("MR", "Client", "Quay wall levels", "Additional bathymetric survey"):
         if expected not in body:
@@ -1524,7 +1539,7 @@ def _minutes_agenda(page) -> None:
 
 def _dark(page) -> None:
     page.click("a:has-text('Dashboard')")
-    page.wait_for_selector("text=Progress S-curve", timeout=8000)
+    page.wait_for_selector("text=Progress S-curve >> visible=true", timeout=8000)
     page.evaluate("localStorage.setItem('pm-theme','dark');document.documentElement.setAttribute('data-theme','dark')")
     page.wait_for_timeout(500)
     page.screenshot(path=str(SHOTS / "10-dashboard-dark.png"), full_page=True)

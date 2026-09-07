@@ -6,8 +6,10 @@
    renders — so there is one place to change it. #}
 {% set here = guide_for(request.endpoint) %}
 {% if here %}
-  {# Open the first time; app.js remembers a browser that has folded it away. #}
-  <details class="panel guide-strip no-print" data-panel="guide-{{ here['key'] }}" open>
+  {# Folded away by default. It is reference, not something to read again on
+     every page — the summary says which tab it is for, and one click opens it.
+     app.js remembers a browser that has opened it. #}
+  <details class="panel guide-strip no-print" data-panel="guide-{{ here['key'] }}">
     {# The tab's name stays visible whether it is open or shut: a summary that
        only says "hide this" tells a reader nothing about what they folded. #}
     <summary class="panel-summary">

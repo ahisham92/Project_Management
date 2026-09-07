@@ -3,7 +3,9 @@
    The same conversation as her own tab, in a smaller box — one initialiser in
    app.js drives both, so there is no second chat to keep in step. It is only
    rendered inside a project, because everything she can do is scoped to one. #}
-{% if pulse_project_id %}
+{# Not on her own tab: the whole page is already the conversation, and a
+   second copy of it in the corner is two chats to keep track of. #}
+{% if pulse_project_id and request.endpoint != 'assistant.index' %}
   <button type="button" id="carmen-open" class="carmen-button no-print"
           aria-expanded="false" aria-controls="carmen-popup" title="Ask Carmen">
     <img src="{{ url_for('assistant.face', project_id=pulse_project_id) }}"

@@ -274,6 +274,21 @@ def test_carmen_sits_in_the_corner_of_every_project_page(signed_in):
         assert "Ask Carmen" in body
 
 
+def test_she_starts_minimised_on_every_page(signed_in):
+    """A chat box that reappears in the corner of every tab because it was
+    opened once is not a feature."""
+    body = text(signed_in.get("/projects/1/schedule"))
+    popup = body.split('id="carmen-popup"', 1)[1].split(">", 1)[0]
+    assert "hidden" in popup
+
+
+def test_she_is_not_doubled_up_on_her_own_tab(signed_in):
+    """The whole page is already the conversation there."""
+    body = text(signed_in.get("/projects/1/assistant"))
+    assert 'id="carmen-popup"' not in body
+    assert 'id="chat"' in body
+
+
 def test_she_is_not_offered_outside_a_project(signed_in):
     """Everything she can do is scoped to one, so a chat with no project is a
     chat that can only disappoint."""
@@ -537,6 +552,108 @@ def test_being_unable_to_reach_anthropic_is_not_read_as_a_bad_key(app):
 
     said = _why(anthropic.APIConnectionError.__new__(anthropic.APIConnectionError))
     assert "Could not reach api.anthropic.com" in said
+
+
+def test_the_sdk_being_missing_is_its_own_answer(app, monkeypatch):
+    """On a host where the web app runs in a virtualenv, `pip install` in a
+    console installs somewhere else. That looks like every other failure from a
+    browser and needs a completely different fix, so it is named."""
+    import builtins
+
+    from app import claude
+
+    real = builtins.__import__
+
+    def hide(name, *rest):
+        if name == "anthropic":
+            raise ImportError("No module named 'anthropic'")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", hide)
+    found = claude.diagnose("sk-ant-x")
+    assert found["installed"] is False
+    assert "not installed for the Python running this app" in found["detail"]
+
+
+def test_an_unexpected_failure_is_named_rather_than_swallowed(app, monkeypatch):
+    """"Could not be reached" for a TypeError sends somebody to check a key, a
+    network and a host that were all fine."""
+    from app import claude
+
+    class Boom:
+        def __init__(self, *a, **k):
+            pass
+
+        @property
+        def messages(self):
+            raise TypeError("unexpected keyword argument 'effort'")
+
+    monkeypatch.setattr(claude, "client", lambda key: Boom())
+    with app.app_context():
+        try:
+            claude.chat("k", "system", [{"role": "user", "content": "hi"}])
+        except claude.ClaudeError as exc:
+            assert "TypeError" in str(exc)
+            assert "effort" in str(exc)
+        else:
+            raise AssertionError("that should not have succeeded")
+
+
+def test_asking_never_answers_with_html_when_something_goes_wrong(signed_in, app, monkeypatch):
+    """The page can only show what it is given."""
+    from app import claude, vault
+
+    with app.app_context():
+        vault.write({"anthropic_key": "sk-ant-x"})
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("something nobody predicted")
+
+    monkeypatch.setattr("app.assistant.ask", explode)
+    answer = signed_in.post("/projects/1/assistant/ask", json={"question": "hello"})
+    assert answer.status_code == 500
+    assert answer.is_json
+    assert "something nobody predicted" in answer.get_json()["error"]
+
+
+def test_the_badge_only_claims_a_key_is_set(signed_in, app):
+    """It never knew anything more than that, and saying "connected" sent
+    somebody looking for a fault that was not where they were told."""
+    from app import vault
+
+    with app.app_context():
+        vault.write({"anthropic_key": "sk-ant-x"})
+    body = text(signed_in.get("/projects/1/assistant"))
+    assert "key set" in body
+    assert "Ask her one question" in body
+
+
+def test_one_real_question_is_what_proves_she_works(signed_in, app, monkeypatch):
+    from app import claude, vault
+    from tests.test_assistant import Reply, StandInClaude
+
+    with app.app_context():
+        vault.write({"anthropic_key": "sk-ant-x"})
+    monkeypatch.setattr(claude, "chat", StandInClaude(Reply(text="ready.")))
+
+    answer = signed_in.get("/projects/1/assistant/ping").get_json()
+    assert answer["ok"] is True
+    assert "ready." in answer["detail"]
+
+
+def test_a_failing_ping_says_why(signed_in, app, monkeypatch):
+    from app import claude, vault
+
+    with app.app_context():
+        vault.write({"anthropic_key": "sk-ant-x"})
+
+    def refuse(*_args, **_kwargs):
+        raise claude.ClaudeError("Anthropic did not accept that API key (401).")
+
+    monkeypatch.setattr(claude, "chat", refuse)
+    answer = signed_in.get("/projects/1/assistant/ping")
+    assert answer.status_code == 502
+    assert "401" in answer.get_json()["error"]
 
 
 def test_only_an_administrator_can_run_the_test(client, app):

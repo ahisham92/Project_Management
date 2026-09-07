@@ -1442,9 +1442,9 @@
 
   document.querySelectorAll('[data-carmen] [data-chat]').forEach(startCarmen);
 
-  // The pop-up: the same chat, on every other page. Opened with a button in
-  // the corner, remembered open or shut so somebody who works with it beside
-  // them does not reopen it on every page.
+  // The pop-up: the same chat, on every other page. It starts shut on every
+  // page and opens when somebody asks for it — a chat box that reappears in the
+  // corner of every tab because it was opened once is not a feature.
   (function () {
     var panel = document.getElementById('carmen-popup');
     if (!panel) return;
@@ -1453,12 +1453,16 @@
 
     function show(open) {
       panel.hidden = !open;
+      // A class rather than a :has() rule, so hiding the launcher works the
+      // same in every browser that can run the rest of this file.
+      document.body.classList.toggle('carmen-open', open);
       if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
-      try { window.localStorage.setItem('pm-carmen', open ? 'open' : 'shut'); } catch (err) {}
       if (open) {
         startCarmen(panel.querySelector('[data-chat]'));
         var box = panel.querySelector('textarea[name=question]');
         if (box && !box.disabled) box.focus();
+      } else if (button) {
+        button.focus();
       }
     }
 
@@ -1469,10 +1473,6 @@
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && !panel.hidden) show(false);
     });
-
-    try {
-      if (window.localStorage.getItem('pm-carmen') === 'open') show(true);
-    } catch (err) { /* private browsing; it stays shut */ }
   })();
 
   // --- confirmations -------------------------------------------------------

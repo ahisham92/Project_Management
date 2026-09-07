@@ -272,8 +272,9 @@ main { padding: 20px 0 48px; }
 .carmen-button:hover span, .carmen-button:focus-visible span { max-width: 8em; }
 .carmen-button:hover { border-color: var(--series-1); }
 /* Open, the panel is the launcher — two of them in the same corner is one too
-   many, and the button underneath is unreachable anyway. */
-body:has(#carmen-popup:not([hidden])) .carmen-button { display: none; }
+   many, and the button underneath is unreachable anyway. Driven by a class
+   app.js sets rather than by :has(), so it behaves the same everywhere. */
+body.carmen-open .carmen-button { display: none; }
 
 /* Nothing clickable should ever sit under the launcher. The charts scroll
    inside their own box, so the room is made there rather than on the page. */

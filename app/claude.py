@@ -38,7 +38,22 @@ BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
 
 
 class ClaudeError(Exception):
-    """Anything the API refused, in words worth putting on a screen."""
+    """Anything that stopped an answer, in words worth putting on a screen."""
+
+
+def _log(exc: Exception) -> None:
+    """The whole traceback into the server log, once.
+
+    The screen gets a sentence; whoever has to fix it gets the stack. Silent on
+    a machine with no app running, so this file stays importable on its own.
+    """
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            current_app.logger.exception("Carmen could not reach Claude: %s", exc)
+    except Exception:                                 # noqa: BLE001 - logging must not raise
+        pass
 
 
 def configured(settings: Mapping[str, Any]) -> bool:
@@ -52,10 +67,36 @@ def settings_from_env(env: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+class NotInstalled(ClaudeError):
+    """The SDK is not importable from the Python actually serving the app.
+
+    Its own kind of failure because it looks like every other one from a
+    browser, and the fix is completely different: nothing about the key or the
+    network is wrong, the package simply is not there. On a host where the web
+    app runs in a virtualenv, `pip install` in a console installs somewhere
+    else, and this is what that looks like.
+    """
+
+
+def sdk():
+    """The Anthropic SDK, or a failure that says where to look."""
+    try:
+        import anthropic
+    except ImportError as exc:                        # pragma: no cover - environment
+        import sys
+
+        raise NotInstalled(
+            f"The `anthropic` package is not installed for the Python running this app "
+            f"({sys.executable}). Install it there — on PythonAnywhere that means the "
+            f"virtualenv named on the Web tab, not a bare console — then Reload. "
+            f"({exc})") from exc
+    return anthropic
+
+
 def client(key: str):
     """A client for this key. Built per call — it is cheap, and a long-lived one
     would outlive the key being changed on the settings page."""
-    import anthropic
+    anthropic = sdk()
 
     made: dict[str, Any] = {"api_key": key, "timeout": TIMEOUT, "max_retries": 2}
     if BASE_URL:
@@ -68,11 +109,21 @@ def client(key: str):
 def _why(exc: Exception) -> str:
     """The failure, said in words somebody can act on.
 
-    The 403 is the one worth care. A 403 from Anthropic is Anthropic refusing
-    the key; a 403 from a host's own outbound proxy looks identical in a log and
-    needs a completely different fix, and it is the one that actually happens.
+    Everything reaches here, not only the SDK's own errors. A bare "could not be
+    reached" on the screen while the real reason sits in a server log is the
+    worst possible outcome — it sends somebody to check a key, a network and a
+    host that were all fine.
+
+    The 403 is the one worth most care. A 403 from Anthropic is Anthropic
+    refusing the key; a 403 from a host's own outbound proxy looks identical in
+    a log and needs a completely different fix.
     """
-    import anthropic
+    if isinstance(exc, ClaudeError):
+        return str(exc)
+    try:
+        anthropic = sdk()
+    except NotInstalled as missing:
+        return str(missing)
 
     if isinstance(exc, anthropic.AuthenticationError):
         return ("Anthropic did not accept that API key (401). Check it at "
@@ -101,7 +152,12 @@ def _why(exc: Exception) -> str:
                 "not, and Carmen cannot work there.")
     if isinstance(exc, anthropic.APIStatusError):
         return f"Anthropic said {exc.status_code}: {getattr(exc, 'message', '')}"
-    return f"That did not work: {exc}"
+    if isinstance(exc, anthropic.APIError):
+        return f"Anthropic's client refused the request: {exc}"
+    # Anything else — a bad parameter, a version mismatch, a TypeError in this
+    # file. Named rather than swallowed, because "could not be reached" for one
+    # of these is a wild goose chase.
+    return f"{type(exc).__name__}: {exc}"
 
 
 def models(key: str) -> list[str]:
@@ -110,11 +166,9 @@ def models(key: str) -> list[str]:
     Not written down here, so the list is what is really available today rather
     than what was true when this was written.
     """
-    import anthropic
-
     try:
         return sorted(model.id for model in client(key).models.list(limit=100))
-    except anthropic.AnthropicError as exc:
+    except Exception as exc:                          # noqa: BLE001 - said, not swallowed
         raise ClaudeError(_why(exc)) from exc
 
 
@@ -126,8 +180,6 @@ def chat(key: str, system: str, messages: Sequence[Mapping[str, Any]],
     The answer is either words for the reader or one or more requests to call a
     tool. The caller runs them and asks again with the results.
     """
-    import anthropic
-
     body: dict[str, Any] = {
         "model": model or DEFAULT_MODEL,
         "max_tokens": MAX_TOKENS,
@@ -144,7 +196,8 @@ def chat(key: str, system: str, messages: Sequence[Mapping[str, Any]],
 
     try:
         return client(key).messages.create(**body)
-    except anthropic.AnthropicError as exc:
+    except Exception as exc:                          # noqa: BLE001 - said, not swallowed
+        _log(exc)
         raise ClaudeError(_why(exc)) from exc
 
 
@@ -194,8 +247,19 @@ def diagnose(key: str) -> dict[str, Any]:
     import ssl
     import urllib.parse
 
-    found: dict[str, Any] = {"reachable": False, "key_works": False, "detail": "",
-                             "models": 0}
+    found: dict[str, Any] = {"installed": False, "reachable": False, "key_works": False,
+                             "detail": "", "models": 0, "version": ""}
+
+    # Step zero: is the SDK even here? On a host where the web app runs in a
+    # virtualenv, `pip install` in a console installs somewhere else, and every
+    # later question is meaningless until this one is answered.
+    try:
+        found["installed"] = True
+        found["version"] = getattr(sdk(), "__version__", "")
+    except NotInstalled as missing:
+        found["installed"] = False
+        found["detail"] = str(missing)
+        return found
 
     where = urllib.parse.urlparse(BASE_URL or "https://api.anthropic.com")
     host = where.hostname or "api.anthropic.com"

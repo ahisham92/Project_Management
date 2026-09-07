@@ -160,18 +160,28 @@ TABS: tuple[dict[str, Any], ...] = (
             "what was agreed, who owns it and by when.",
             "Change an item's owner, trades, impact or date by <strong>clicking the cell</strong> in "
             "the row.",
-            "<strong>Export Word</strong> for a set of minutes, or for the register exactly as you "
-            "have filtered it.",
+            "Fill in <strong>prepared by</strong>, <strong>reviewed &amp; accepted by</strong> and "
+            "the <strong>issue date</strong> on the meeting, and the exported document carries "
+            "them — the signatures themselves stay blank rules to sign on.",
+            "<strong>Attach</strong> a PDF to a meeting: it is named at the end of the minutes "
+            "and compiled onto the end of the exported PDF.",
+            "<strong>Export PDF</strong> for the issued document — the letterhead, the grids and "
+            "the signature blocks, with the attachments on the end. <strong>Export Word</strong> "
+            "for the same thing to edit, or for the register exactly as you have filtered it.",
             "Put a date in <strong>As at</strong> to show a client where things stood then.",
         ),
         "watch": (
             "An item's number is its position in its meeting, so it cannot be typed or collide — "
-            "move it with the arrows and it renumbers.",
+            "move it with the arrows and it renumbers where it stands, without the page reloading.",
+            "The attendance and the meeting details are the first page; the items start on the "
+            "page after, the way the practice issues them.",
+            "Attachments have to be PDFs, and they are kept in the database so the nightly "
+            "backup carries them. They are named in the Word but not embedded in it.",
             "Closing an item asks for the day it was <em>actually</em> closed, because that is what "
             "an As-at reading turns on.",
         ),
         "terms": ("minuted item", "owner", "impact", "open", "closed", "as at", "agenda",
-                  "attendee", "trade"),
+                  "attendee", "trade", "attachment", "attendance order"),
     },
     {
         "key": "internal",
@@ -230,6 +240,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "“add a trade called Project Manager”, “add a team on Sunday to Thursday”, “add a "
             "deliverable to Marine Design”. Setup has to be unlocked for those to apply, the "
             "same as changing them by hand.",
+            "Every conversation is <strong>kept down the left</strong>. Come back to one and "
+            "carry on rather than starting from nothing; rename it, or start a new one. "
+            "Whoever runs the project can read everybody’s.",
             "Say “<strong>squeeze 1.1 to 1.6 into 40 working days</strong>” and she works out "
             "what every duration in that run becomes and what it saves, and stages it as one "
             "change.",
@@ -480,6 +493,22 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
     ("Weekly meeting", "week",
      "The internal meeting for the current week, opened with one button and referenced from the week "
      "itself (WK-2026-37).", ""),
+
+    ("Attachment", "minutes",
+     "A PDF kept with a set of minutes: named at the end of the document, and compiled onto "
+     "the end of the exported PDF so the client opens one file rather than three.",
+     "Kept in the database rather than in a folder beside it, because the nightly backup "
+     "uploads the database — an attachment in a folder is one that does not come back."),
+    ("Attendance order", "minutes",
+     "How the attendance table is listed in an issued set of minutes: as the roster has them, "
+     "or client first, then directors, then the project manager, then everybody else.",
+     "One setting for the project, on the Minutes tab. The client is recognised by the "
+     "organisation on the project; the ranks by what is in somebody's job title."),
+    ("Conversation", "week",
+     "One thread of questions to Carmen, kept so it can be picked up again days later instead "
+     "of starting from nothing.",
+     "Resuming one sends the last few turns back with the question, so it costs a little more "
+     "per question than a cold start and far less than explaining the background again."),
 
     # --- the assistant
     ("Carmen", "week",

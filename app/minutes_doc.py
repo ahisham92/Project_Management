@@ -33,6 +33,9 @@ SIGN_FONT = "Arial"
 
 HEADING = "Minutes of Meeting"
 
+# The form the issued minutes are, bottom left of every page.
+FORM_CODE = "PRC-PM-07 (F6) REV1"
+
 
 @lru_cache(maxsize=1)
 def letterhead_logo() -> bytes:
@@ -104,7 +107,7 @@ def _details(project: Mapping[str, Any], meeting: Mapping[str, Any],
     label = {"bold": True, "size": 9}
     rows: list[list[Any]] = [
         [dict(label, text="Project:"),
-         {"text": _project_line(project), "span": 5, "bold": True, "size": 10}],
+         {"text": _project_line(project), "span": 5, "bold": True, "size": 9}],
         [dict(label, text="Reference"),
          {"text": str(meeting.get("ref") or "—"), "span": 5, "size": 9}],
         [dict(label, text="Purpose:"),
@@ -137,10 +140,10 @@ def _details(project: Mapping[str, Any], meeting: Mapping[str, Any],
 
 def _items_table(items: Sequence[Mapping[str, Any]]) -> list[list[Any]]:
     """The second grid: the items, under two shaded header rows."""
-    head = {"fill": HEAD_FILL, "bold": True, "size": 10, "repeat": True}
+    head = {"fill": HEAD_FILL, "bold": True, "size": 9, "repeat": True}
     rows: list[list[Any]] = [
         [{"text": "Items and Agreement", "span": 7, "fill": HEAD_FILL, "bold": True,
-          "size": 11, "align": "center", "repeat": True}],
+          "size": 10, "align": "center", "repeat": True}],
         [dict(head, text="Item"), dict(head, text="Subject & discussion"),
          dict(head, text="Agreed action"), dict(head, text="Owner"),
          dict(head, text="Affects"), dict(head, text="Due"), dict(head, text="Status")],
@@ -177,39 +180,51 @@ def _signature_block(role: str, name: str, issued: str) -> list[list[Any]]:
     ]
 
 
-def minutes_document(project: Mapping[str, Any], sheet: Mapping[str, Any]) -> bytes:
-    """One meeting's minutes, on the practice's template."""
-    project = dict(project)          # a database row does not answer .get()
+def _attachment_note(attachments: Sequence[Mapping[str, Any]],
+                     typed: str = "") -> list[str]:
+    """The lines that say what is attached, as the last thing in the minutes."""
+    named = [str(a.get("name") or a.get("filename") or "Attachment").strip()
+             for a in attachments]
+    if typed.strip() and typed.strip() not in named:
+        named.append(typed.strip())
+    if not named:
+        return []
+    if len(named) == 1:
+        return [f"Attachment: {named[0]}"]
+    return ["Attachments:"] + [f"{n}. {name}" for n, name in enumerate(named, start=1)]
+
+
+def _write(doc: Any, project: Mapping[str, Any], sheet: Mapping[str, Any],
+           attachments: Sequence[Mapping[str, Any]]) -> Any:
+    """The minutes, written into whichever document was handed in.
+
+    One body for both formats: the Word writer and the PDF writer take the same
+    calls and the same grids, so a change to the layout cannot reach one of them
+    and not the other.
+    """
     meeting = dict(sheet["meeting"])
     attendance = list(sheet.get("attendance") or [])
     items = list(sheet.get("items") or [])
 
-    title = str(meeting.get("title") or "").strip() or "Minutes of meeting"
-    doc = Document(
-        title=f"{project.get('code')} — {title}",
-        heading=HEADING,
-        logo=letterhead_logo(),
-        footer_note=_project_line(project),
-    )
-
     doc.add_grid(DETAILS_GRID, _details(project, meeting, attendance), indent=-34)
-    if attendance:
-        doc.add_paragraph("* Present at this meeting", style="Caption")
-    else:
-        doc.add_paragraph("No attendees recorded.", style="Caption")
+    doc.add_paragraph("* Present at this meeting" if attendance else "No attendees recorded.",
+                      style="Caption")
+
+    # The attendance and the details are the cover: the minutes themselves start
+    # on the page after, the way the practice issues them.
+    doc.add_page_break()
 
     if items:
         doc.add_grid(ITEMS_GRID, _items_table(items))
     else:
         doc.add_paragraph("No items were minuted for this meeting.", italic=True)
 
-    attachment = str(meeting.get("attachment") or "").strip()
-    if attachment:
-        doc.add_paragraph(f"Attachment: {attachment}", style="Caption")
-
     if str(meeting.get("notes") or "").strip():
         doc.add_heading("Notes", 2)
         doc.add_paragraph(meeting["notes"])
+
+    for line in _attachment_note(attachments, str(meeting.get("attachment") or "")):
+        doc.add_paragraph(line, style="Caption")
 
     doc.add_paragraph("", style="Caption")
     doc.add_grid(SIGNATURE_GRID,
@@ -217,10 +232,59 @@ def minutes_document(project: Mapping[str, Any], sheet: Mapping[str, Any]) -> by
                                   to_display(meeting.get("issue_date"))),
                  borders=False)
     doc.add_grid(SIGNATURE_GRID,
+                 # The reviewer signs and dates it themselves, so both are rules.
                  _signature_block("Reviewed & Accepted by:",
                                   str(meeting.get("reviewed_by") or ""), ""),
                  borders=False)
+    return doc
+
+
+def minutes_document(project: Mapping[str, Any], sheet: Mapping[str, Any],
+                     attachments: Sequence[Mapping[str, Any]] = ()) -> bytes:
+    """One meeting's minutes as a Word document, on the practice's template.
+
+    The attachments are named here but not embedded: a PDF does not go inside a
+    .docx in any way a client can open. The exported PDF carries them.
+    """
+    project = dict(project)          # a database row does not answer .get()
+    meeting = dict(sheet["meeting"])
+    title = str(meeting.get("title") or "").strip() or "Minutes of meeting"
+    doc = Document(
+        title=f"{project.get('code')} — {title}",
+        heading=HEADING,
+        logo=letterhead_logo(),
+        footer_note=_project_line(project),
+        footer_code=FORM_CODE,
+    )
+    _write(doc, project, sheet, attachments)
     return doc.render()
+
+
+def minutes_pdf(project: Mapping[str, Any], sheet: Mapping[str, Any],
+                attachments: Sequence[Mapping[str, Any]] = ()) -> bytes:
+    """The same minutes as a PDF, with whatever is attached stapled on the end.
+
+    Built rather than printed, so what the client opens is the document itself
+    — the same letterhead, the same grids, the same signature blocks — instead
+    of a screen with a browser's own margins around it.
+    """
+    from .pdf import Document as PdfDocument, join
+
+    project = dict(project)
+    meeting = dict(sheet["meeting"])
+    title = str(meeting.get("title") or "").strip() or "Minutes of meeting"
+    doc = PdfDocument(
+        title=f"{project.get('code')} — {title}",
+        heading=HEADING,
+        logo=letterhead_logo(),
+        footer_note=_project_line(project),
+        footer_code=FORM_CODE,
+    )
+    _write(doc, project, sheet, attachments)
+    minutes = doc.render()
+
+    files = [a.get("content") for a in attachments if a.get("content")]
+    return join(minutes, *files) if files else minutes
 
 
 # --- the register and the agenda --------------------------------------------

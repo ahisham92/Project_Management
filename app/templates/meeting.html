@@ -127,7 +127,10 @@
     <a class="btn btn-ghost no-print" href="{{ url_for('meetings.index', project_id=project['id'], kind=meeting['kind']) }}">All items</a>
     <a class="btn btn-ghost no-print"
        href="{{ url_for('meetings.meeting_word', project_id=project['id'], meeting_id=meeting['id']) }}">Export Word</a>
-    {{ print_button('Print / PDF') }}
+    <a class="btn btn-primary no-print"
+       href="{{ url_for('meetings.meeting_pdf', project_id=project['id'], meeting_id=meeting['id']) }}"
+       title="The issued minutes as a PDF, with anything attached compiled onto the end">Export PDF</a>
+    {{ print_button('Print') }}
   </div>
 </div>
 
@@ -202,7 +205,9 @@
             {{ date_field('issue_date', meeting['issue_date'], 'Issue date', 'w-sm') }}
           </div>
           <label class="field">
-            <span class="field-label">Attachment (named under the items table)</span>
+            <span class="field-label">
+              Attachment referred to but not uploaded (named under the items table)
+            </span>
             <input name="attachment" value="{{ meeting['attachment'] }}"
                    placeholder="Kick-Off Meeting Presentation (September 2026).">
           </label>
@@ -212,7 +217,14 @@
           </label>
 
           <div>
-            <p class="field-label" style="margin-bottom:6px">Attendance</p>
+            <p class="field-label" style="margin-bottom:6px">
+              Attendance
+              <span class="small muted" style="font-weight:400">
+                — listed in the exported minutes {{
+                  'client first, then directors, then the project manager'
+                  if attendee_order == 'seniority' else 'in this order' }}
+              </span>
+            </p>
             {% if not attendance %}
               <p class="small muted">
                 Nobody is on the attendance list yet — add people on the
@@ -309,6 +321,69 @@
   </div>
 </div>
 
+{# What goes out with the minutes. PDFs only, kept in the database so the
+   nightly backup carries them, and compiled onto the end of the exported PDF
+   rather than sent as a second file somebody has to remember. #}
+<div class="card" style="margin-top:16px" id="attachments">
+  <div class="card-head">
+    <div>
+      <h2>Attachments</h2>
+      <p class="small muted" style="margin-top:2px">
+        Named at the end of the minutes, and compiled onto the end of the exported PDF.
+        PDFs only, up to 20 MB each — they do not go into the Word document.
+      </p>
+    </div>
+    {% if attachments %}
+      <span class="small muted">
+        {{ attachments | length }} file{{ '' if attachments | length == 1 else 's' }} ·
+        {{ attachments | sum(attribute='pages') }} pages
+      </span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if attachments %}
+      <ul class="list" style="margin-bottom:12px">
+        {% for file in attachments %}
+          <li class="inline-form" style="justify-content:space-between">
+            <span class="flex1">
+              <a href="{{ url_for('meetings.read_attachment', project_id=project['id'], attachment_id=file['id']) }}"
+                 target="_blank" rel="noopener"><strong>{{ file['name'] }}</strong></a>
+              <span class="small muted" style="margin-left:8px">
+                {{ file['filename'] }} · {{ readable(file['bytes']) }}
+                {%- if file['pages'] %} · {{ file['pages'] }} page{{ '' if file['pages'] == 1 else 's' }}{% endif %}
+              </span>
+            </span>
+            {% if can_report %}
+              <form method="post" style="display:inline"
+                    action="{{ url_for('meetings.delete_attachment', project_id=project['id'], attachment_id=file['id']) }}">
+                <button type="submit" class="btn btn-danger btn-sm"
+                        data-confirm="Remove “{{ file['name'] }}” from these minutes?">Remove</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="small muted" style="margin:0 0 12px">Nothing attached yet.</p>
+    {% endif %}
+
+    {% if can_report %}
+      <form method="post" enctype="multipart/form-data" class="inline-form"
+            action="{{ url_for('meetings.add_meeting_attachment', project_id=project['id'], meeting_id=meeting['id']) }}">
+        <label class="field flex1">
+          <span class="field-label">What it is called in the minutes</span>
+          <input name="name" placeholder="Kick-off meeting presentation" required>
+        </label>
+        <label class="field flex1">
+          <span class="field-label">The PDF</span>
+          <input type="file" name="file" accept="application/pdf,.pdf" required>
+        </label>
+        <button type="submit" class="btn btn-primary">Attach</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
 <div class="card" style="margin-top:16px">
   <div class="card-head">
     <div>
@@ -332,10 +407,10 @@
                 <th>Affects</th><th class="right">Due</th><th class="right">Status</th>
                 <th class="right no-print">Order &amp; actions</th></tr>
           </thead>
-          <tbody>
+          <tbody data-items-table>
             {% for item in items %}
               <tr id="item-{{ item['id'] }}">
-                <td class="tabular small muted nowrap">{{ item['ref'] or '—' }}</td>
+                <td class="tabular small muted nowrap" data-ref>{{ item['ref'] or '—' }}</td>
                 <td>
                   <span style="font-weight:500">{{ item['subject'] or '—' }}</span>
                   {% if item['discussion'] %}<p class="small muted" style="margin-top:2px">{{ item['discussion'] }}</p>{% endif %}
@@ -348,19 +423,19 @@
                 <td class="right nowrap" id="status-{{ item['id'] }}">{{ item_status(item) }}</td>
                 <td class="right nowrap no-print">
                   {% if can_report %}
-                    <form method="post" style="display:inline"
+                    <form method="post" style="display:inline" data-live-move
                           action="{{ url_for('meetings.move', project_id=project['id'], item_id=item['id']) }}">
                       <input type="hidden" name="return" value="meeting">
                       <input type="hidden" name="direction" value="up">
                       <button type="submit" class="btn btn-ghost btn-sm" title="Move up"
-                              {{ 'disabled' if item['id'] == first_id }}>▲</button>
+                              data-move="up" {{ 'disabled' if item['id'] == first_id }}>▲</button>
                     </form>
-                    <form method="post" style="display:inline"
+                    <form method="post" style="display:inline" data-live-move
                           action="{{ url_for('meetings.move', project_id=project['id'], item_id=item['id']) }}">
                       <input type="hidden" name="return" value="meeting">
                       <input type="hidden" name="direction" value="down">
                       <button type="submit" class="btn btn-ghost btn-sm" title="Move down"
-                              {{ 'disabled' if item['id'] == last_id }}>▼</button>
+                              data-move="down" {{ 'disabled' if item['id'] == last_id }}>▼</button>
                     </form>
                     <form method="post" style="display:inline"
                           action="{{ url_for('meetings.set_item_status', project_id=project['id'], item_id=item['id']) }}">

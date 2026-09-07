@@ -619,6 +619,15 @@ def meeting_sheet(project_id: int, meeting_id: int, on_date: str | None = None) 
             continue
         attendance.append(dict(person, invited=mark is not None, present=bool(mark)))
 
+    # The order an issued set of minutes wants: as the roster lists them, or
+    # client first and down the seniority. One setting, on the project.
+    from .minutes import in_order
+
+    project = query_one("SELECT client, attendee_order FROM projects WHERE id = ?",
+                        (project_id,))
+    attendance = in_order(attendance, (project or {})["attendee_order"] if project else "",
+                          (project or {})["client"] if project else "")
+
     items = [i for i in load_items(project_id, on_date) if i.get("meeting_id") == meeting_id]
     return {
         "meeting": meeting,
@@ -627,6 +636,70 @@ def meeting_sheet(project_id: int, meeting_id: int, on_date: str | None = None) 
         "absent": [a for a in attendance if a["invited"] and not a["present"]],
         "items": items,
     }
+
+
+# --- what is attached to a set of minutes -----------------------------------
+
+# A PDF a client would actually open. Bigger than this is a file to send by
+# other means, not to staple onto minutes.
+MAX_ATTACHMENT = 20 * 1024 * 1024
+
+
+class AttachmentError(ValueError):
+    """An attachment that cannot be kept, said in words."""
+
+
+def load_attachments(project_id: int, meeting_id: int,
+                     with_content: bool = False) -> list[dict[str, Any]]:
+    """What is attached to one meeting. The bytes only when they are wanted."""
+    columns = ("id, meeting_id, name, filename, bytes, pages, added_at, sort_order"
+               + (", content" if with_content else ""))
+    return [dict(r) for r in query(
+        f"SELECT {columns} FROM meeting_attachments "
+        "WHERE project_id = ? AND meeting_id = ? ORDER BY sort_order, id",
+        (project_id, meeting_id))]
+
+
+def add_attachment(project_id: int, meeting_id: int, name: str, filename: str,
+                   data: bytes, user_id: Any = None) -> int:
+    """Keeps a PDF with the minutes.
+
+    PDF only, and checked by what is in the file rather than what the name says
+    — the export staples these onto the end, and something that is not a PDF
+    cannot be stapled onto anything.
+    """
+    from .pdf import is_pdf, page_count
+
+    if not data:
+        raise AttachmentError("Choose a file first")
+    if len(data) > MAX_ATTACHMENT:
+        raise AttachmentError(
+            f"That file is {len(data) / 1024 / 1024:.1f} MB. Attachments are kept in the "
+            f"database so the nightly backup carries them, so they stop at "
+            f"{MAX_ATTACHMENT // 1024 // 1024} MB.")
+    if not is_pdf(data):
+        raise AttachmentError("Attachments have to be PDFs — that file is not one")
+
+    called = (str(name or "").strip() or str(filename or "").strip()
+              or "Attachment")[:160]
+    return insert(
+        "INSERT INTO meeting_attachments (project_id, meeting_id, name, filename, bytes, "
+        "pages, content, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, meeting_id, called, str(filename or "")[:160], len(data),
+         page_count(data), data, user_id,
+         len(load_attachments(project_id, meeting_id)) + 1),
+    )
+
+
+def remove_attachment(project_id: int, attachment_id: int) -> bool:
+    return bool(execute("DELETE FROM meeting_attachments WHERE id = ? AND project_id = ?",
+                        (attachment_id, project_id)))
+
+
+def attachment(project_id: int, attachment_id: int) -> dict[str, Any] | None:
+    row = query_one("SELECT * FROM meeting_attachments WHERE id = ? AND project_id = ?",
+                    (attachment_id, project_id))
+    return dict(row) if row else None
 
 
 def meeting_items(project_id: int, meeting_id: int | None) -> list[dict[str, Any]]:
@@ -1349,7 +1422,109 @@ def run_backup(upload_to_drive: bool = True, note: str = "") -> dict[str, Any]:
 
 # --- what has been asked of Carmen ------------------------------------------
 
-def record_chat(project_id: Any, user: Any, question: str, answer: Any) -> int:
+# --- conversations ----------------------------------------------------------
+#
+# A question on its own is a search box. A conversation somebody can come back
+# to a week later and carry on is the thing that is actually useful, so the
+# thread is a record of its own and the exchanges hang from it.
+
+TITLE_LENGTH = 70
+
+
+def open_thread(project_id: Any, user: Any, title: str = "") -> int:
+    """Starts a conversation. The title is the first thing asked, tidied."""
+    who = as_dict(user) if user is not None else {}
+    words = " ".join(str(title or "").split())
+    if len(words) > TITLE_LENGTH:
+        words = words[:TITLE_LENGTH].rsplit(" ", 1)[0] + "…"
+    return insert(
+        "INSERT INTO chat_threads (project_id, user_id, user_name, title) VALUES (?, ?, ?, ?)",
+        (project_id, who.get("id"), str(who.get("name") or "")[:120],
+         words or "New conversation"),
+    )
+
+
+def touch_thread(thread_id: Any, title: str = "") -> None:
+    """Marks a conversation as the one most recently used."""
+    if not thread_id:
+        return
+    execute("UPDATE chat_threads SET last_at = datetime('now') WHERE id = ?", (thread_id,))
+    if title:
+        execute("UPDATE chat_threads SET title = ? WHERE id = ? AND "
+                "(title = '' OR title = 'New conversation')",
+                (title[:TITLE_LENGTH], thread_id))
+
+
+def load_threads(project_id: Any, user_id: Any = None, limit: int = 60) -> list[dict[str, Any]]:
+    """The conversations on a project — everybody's, or one person's.
+
+    Each one carries how many exchanges it holds, so a thread somebody opened
+    and never used reads as empty rather than as something to go back to.
+    """
+    where = "t.project_id = ?"
+    params: list[Any] = [project_id]
+    if user_id is not None:
+        where += " AND t.user_id = ?"
+        params.append(user_id)
+    rows = query(
+        f"""
+        SELECT t.*, COUNT(c.id) AS exchanges
+        FROM chat_threads t
+        LEFT JOIN chat_log c ON c.thread_id = t.id
+        WHERE {where}
+        GROUP BY t.id
+        ORDER BY t.last_at DESC, t.id DESC
+        LIMIT ?
+        """,
+        (*params, limit),
+    )
+    return [dict(r) for r in rows]
+
+
+def load_thread(project_id: Any, thread_id: Any) -> dict[str, Any] | None:
+    row = query_one("SELECT * FROM chat_threads WHERE id = ? AND project_id = ?",
+                    (thread_id, project_id))
+    return dict(row) if row else None
+
+
+def thread_messages(thread_id: Any) -> list[dict[str, Any]]:
+    """One conversation, as the page draws it and the model reads it back."""
+    rows = query(
+        "SELECT question, answer, tools_used, trouble, asked_at, user_name "
+        "FROM chat_log WHERE thread_id = ? ORDER BY id",
+        (thread_id,),
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        out.append({"role": "user", "content": row["question"], "who": row["user_name"],
+                    "at": row["asked_at"]})
+        out.append({"role": "assistant", "content": row["answer"] or row["trouble"],
+                    "used": [t for t in str(row["tools_used"] or "").split(", ") if t],
+                    "failed": bool(row["trouble"]) and not row["answer"]})
+    return out
+
+
+def rename_thread(project_id: Any, thread_id: Any, title: str) -> bool:
+    words = " ".join(str(title or "").split())[:TITLE_LENGTH]
+    if not words:
+        return False
+    return bool(execute("UPDATE chat_threads SET title = ? WHERE id = ? AND project_id = ?",
+                        (words, thread_id, project_id)))
+
+
+def delete_thread(project_id: Any, thread_id: Any) -> bool:
+    """Forgets a conversation. What was said stays in the log — the transcript
+    that goes to Drive is the record of use, and it is not somebody's to erase."""
+    if not query_one("SELECT 1 FROM chat_threads WHERE id = ? AND project_id = ?",
+                     (thread_id, project_id)):
+        return False
+    execute("UPDATE chat_log SET thread_id = NULL WHERE thread_id = ?", (thread_id,))
+    execute("DELETE FROM chat_threads WHERE id = ?", (thread_id,))
+    return True
+
+
+def record_chat(project_id: Any, user: Any, question: str, answer: Any,
+                thread_id: Any = None) -> int:
     """Writes down one exchange.
 
     Kept because "does it work" and "is anybody using it, and for what" are
@@ -1357,17 +1532,20 @@ def record_chat(project_id: Any, user: Any, question: str, answer: Any) -> int:
     building. The transcript goes to Drive once a day as plain text.
     """
     who = as_dict(user) if user is not None else {}
-    return insert(
+    written = insert(
         """
         INSERT INTO chat_log (asked_at, project_id, user_id, user_name, question, answer,
-                              tools_used, staged, trouble)
-        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
+                              tools_used, staged, trouble, thread_id)
+        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (project_id, who.get("id"), str(who.get("name") or "")[:120],
          str(question)[:4000], str(getattr(answer, "text", "") or "")[:8000],
          ", ".join(getattr(answer, "used", []) or [])[:400],
-         len(getattr(answer, "staged", []) or []), str(getattr(answer, "trouble", "") or "")[:500]),
+         len(getattr(answer, "staged", []) or []), str(getattr(answer, "trouble", "") or "")[:500],
+         thread_id),
     )
+    touch_thread(thread_id, " ".join(str(question).split())[:TITLE_LENGTH])
+    return written
 
 
 def note_applied(chat_id: Any, how_many: int) -> None:

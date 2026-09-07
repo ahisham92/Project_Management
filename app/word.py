@@ -70,7 +70,7 @@ _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:docDefaults>
     <w:rPrDefault><w:rPr>
       <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
-      <w:sz w:val="20"/><w:szCs w:val="20"/>
+      <w:sz w:val="18"/><w:szCs w:val="18"/>
     </w:rPr></w:rPrDefault>
     <w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="252" w:lineRule="auto"/></w:pPr></w:pPrDefault>
   </w:docDefaults>
@@ -104,7 +104,7 @@ _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:style w:type="paragraph" w:styleId="Cell">
     <w:name w:val="Cell"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:spacing w:before="40" w:after="40" w:line="220" w:lineRule="atLeast"/></w:pPr>
-    <w:rPr><w:sz w:val="18"/></w:rPr>
+    <w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>
   </w:style>
   <!-- The letterhead line across the top of every page. Verdana 20pt, as the
        template has it, so a document produced here and one typed by hand sit
@@ -149,6 +149,11 @@ _USABLE_TWIPS = {"portrait": 9638, "landscape": 15570}   # page width less margi
 
 # Two blank lines above the title, as the template has it, so the letterhead
 # sits where a reader expects it rather than tight against the page edge.
+# The footer's text, in half-points — the same size as the body so a page
+# number does not read as an afterthought.
+FOOTER_HALF_POINTS = 18
+
+
 def _header_part(heading: str) -> str:
     return (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -162,7 +167,7 @@ def _header_part(heading: str) -> str:
     )
 
 
-def _footer_part(logo: tuple[int, int] | None, note: str = "") -> str:
+def _footer_part(logo: tuple[int, int] | None, note: str = "", code: str = "") -> str:
     """The page number, a line of small print, and the logo on the right.
 
     The logo is anchored rather than inline so the text beside it keeps its own
@@ -196,23 +201,21 @@ def _footer_part(logo: tuple[int, int] | None, note: str = "") -> str:
             "</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"
         )
 
-    # PAGE and NUMPAGES as real fields, so they follow the document rather than
-    # being a number typed once and wrong by the second page.
-    page_number = (
+    # The form code on the left and the page number in the middle, on one line
+    # and in the document's own size — the practice's forms carry the code, and
+    # a reader looking for "which form is this" looks bottom left.
+    #
+    # PAGE as a real field, so it follows the document rather than being a
+    # number typed once and wrong by the second page.
+    look = f'<w:rPr><w:sz w:val="{FOOTER_HALF_POINTS}"/><w:szCs w:val="{FOOTER_HALF_POINTS}"/></w:rPr>'
+    line = (
         '<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr>'
-        '<w:r><w:rPr><w:sz w:val="16"/><w:color w:val="666666"/></w:rPr>'
-        '<w:t xml:space="preserve">Page </w:t></w:r>'
+        + (f'<w:r>{look}<w:t xml:space="preserve">{_text(code)}</w:t></w:r>' if code else "")
+        + '<w:r><w:tab/></w:r>'
         '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
         '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
         '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-        '<w:r><w:rPr><w:sz w:val="16"/><w:color w:val="666666"/></w:rPr><w:t>1</w:t></w:r>'
-        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
-        '<w:r><w:rPr><w:sz w:val="16"/><w:color w:val="666666"/></w:rPr>'
-        '<w:t xml:space="preserve"> of </w:t></w:r>'
-        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-        '<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>'
-        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-        '<w:r><w:rPr><w:sz w:val="16"/><w:color w:val="666666"/></w:rPr><w:t>1</w:t></w:r>'
+        f'<w:r>{look}<w:t>1</w:t></w:r>'
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
         "</w:p>"
     )
@@ -225,7 +228,7 @@ def _footer_part(logo: tuple[int, int] | None, note: str = "") -> str:
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:ftr xmlns:w="{W}">'
         f'<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr>{drawing}</w:p>'
-        f"{page_number}{small_print}</w:ftr>"
+        f"{line}{small_print}</w:ftr>"
     )
 
 
@@ -282,7 +285,8 @@ class Document:
     """Builds one Word document. Call the add_* methods, then ``render()``."""
 
     def __init__(self, title: str = "", orientation: str = "portrait",
-                 heading: str = "", logo: bytes = b"", footer_note: str = "") -> None:
+                 heading: str = "", logo: bytes = b"", footer_note: str = "",
+                 footer_code: str = "") -> None:
         self.title = title
         self.orientation = orientation if orientation in _PAGE else "portrait"
         self._body: list[str] = []
@@ -292,10 +296,11 @@ class Document:
         self.heading = heading
         self.logo = logo
         self.footer_note = footer_note
+        self.footer_code = footer_code
 
     @property
     def letterhead(self) -> bool:
-        return bool(self.heading or self.logo or self.footer_note)
+        return bool(self.heading or self.logo or self.footer_note or self.footer_code)
 
     # --- content ----------------------------------------------------------
 
@@ -500,7 +505,8 @@ class Document:
             if self.letterhead:
                 archive.writestr("word/header1.xml", _header_part(self.heading))
                 archive.writestr("word/footer1.xml",
-                                 _footer_part(_png_size(self.logo), self.footer_note))
+                                 _footer_part(_png_size(self.logo), self.footer_note,
+                                              self.footer_code))
                 archive.writestr("word/_rels/footer1.xml.rels", _FOOTER_RELS)
                 if self.logo:
                     archive.writestr("word/media/logo.png", self.logo)

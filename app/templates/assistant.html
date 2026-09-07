@@ -59,40 +59,109 @@
   </div>
 {% endif %}
 
-<div class="card" style="margin-bottom:16px">
-  <div class="card-body" data-carmen>
-    <div id="chat" class="chat" data-chat
-         data-ask="{{ url_for('assistant.ask', project_id=project['id']) }}"
-         data-apply="{{ url_for('assistant.apply', project_id=project['id']) }}"
-         data-can-write="{{ '1' if can_write else '' }}">
-      <div class="chat-line assistant">
-        <p style="margin:0">
-          I am Carmen. Ask me about {{ project['code'] }} — where it stands, what is late, what
-          this week wants — tell me to change something, type up a meeting and say
-          <em>minute this</em>, or say <em>take me to the schedule</em>. I read the project with
-          the same figures the tabs show, and anything I would <strong>change</strong> is staged
-          for you to approve before it happens.
-        </p>
-      </div>
+{# The conversation list beside the chat: a thread is something to come back
+   to and carry on, which is the difference between an assistant and a search
+   box that forgets you every time. #}
+<div class="chat-shell">
+  <aside class="chat-side no-print">
+    <div class="chat-side-head">
+      <a class="btn btn-primary btn-sm" style="width:100%"
+         href="{{ url_for('assistant.index', project_id=project['id'], who='all' if everyone else none) }}">
+        + New conversation</a>
+      {% if can_see_everyone %}
+        <div class="chips" style="margin-top:8px">
+          <a href="{{ url_for('assistant.index', project_id=project['id']) }}"
+             class="{{ '' if everyone else 'active' }}">Mine</a>
+          <a href="{{ url_for('assistant.index', project_id=project['id'], who='all') }}"
+             class="{{ 'active' if everyone else '' }}">Everyone’s</a>
+        </div>
+      {% endif %}
     </div>
-
-    <form id="chat-form" data-chat-form class="inline-form" style="margin-top:12px;align-items:flex-end">
-      <label class="field flex1">
-        <span class="field-label">Ask, or tell it what to do</span>
-        <textarea name="question" rows="2" placeholder="What is late, and by how much?"
-                  {{ 'disabled' if not ready }}></textarea>
-      </label>
-      <button type="submit" class="btn btn-primary" {{ 'disabled' if not ready }}>Ask</button>
-      <button type="button" class="btn btn-ghost" data-chat-clear>Start again</button>
-    </form>
-
-    {% if ready %}
-      <div class="chips" style="margin-top:10px">
-        {% for line in suggestions %}
-          <a href="#" class="chat-suggestion">{{ line }}</a>
+    <div class="chat-list">
+      {% if not threads %}
+        <p class="small muted" style="padding:10px 12px;margin:0">
+          Nothing yet. Ask something and it is kept here.
+        </p>
+      {% else %}
+        {% for line in threads %}
+          <a class="chat-thread {{ 'active' if thread and thread['id'] == line['id'] }}"
+             href="{{ url_for('assistant.index', project_id=project['id'], thread=line['id'], who='all' if everyone else none) }}">
+            <span class="chat-thread-title">{{ line['title'] }}</span>
+            <span class="chat-thread-foot">
+              {{ line['exchanges'] }} message{{ '' if line['exchanges'] == 1 else 's' }}
+              {%- if everyone and line['user_name'] %} · {{ line['user_name'] }}{% endif %}
+            </span>
+          </a>
         {% endfor %}
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="chat-main">
+    {% if thread %}
+      <div class="chat-topbar no-print">
+        <form method="post" class="inline-form flex1"
+              action="{{ url_for('assistant.rename_conversation', project_id=project['id'], thread_id=thread['id']) }}">
+          <input name="title" value="{{ thread['title'] }}" class="chat-rename"
+                 aria-label="Name of this conversation">
+          <button type="submit" class="btn btn-ghost btn-sm">Rename</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('assistant.delete_conversation', project_id=project['id'], thread_id=thread['id']) }}">
+          <button type="submit" class="btn btn-ghost btn-sm"
+                  data-confirm="Remove “{{ thread['title'] }}” from the list?">Delete</button>
+        </form>
       </div>
     {% endif %}
+
+    <div data-carmen>
+      <div id="chat" class="chat" data-chat
+           data-ask="{{ url_for('assistant.ask', project_id=project['id']) }}"
+           data-apply="{{ url_for('assistant.apply', project_id=project['id']) }}"
+           data-thread="{{ thread['id'] if thread else '' }}"
+           data-here="{{ url_for('assistant.index', project_id=project['id']) }}"
+           data-can-write="{{ '1' if can_write else '' }}">
+        {% if messages %}
+          {% for line in messages %}
+            <div class="chat-line {{ 'you' if line['role'] == 'user' else 'assistant' }}">
+              {% for para in (line['content'] or '').split('\n') %}
+                {% if para.strip() %}<p>{{ para }}</p>{% endif %}
+              {% endfor %}
+              {% if line['role'] != 'user' and line['used'] %}
+                <p class="small muted chat-used">Read: {{ line['used'] | join(', ') }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="chat-line assistant">
+            <p style="margin:0">
+              I am Carmen. Ask me about {{ project['code'] }} — where it stands, what is late,
+              what this week wants — tell me to change something, type up a meeting and say
+              <em>minute this</em>, or say <em>take me to the schedule</em>. I read the project
+              with the same figures the tabs show, and anything I would <strong>change</strong>
+              is staged for you to approve before it happens.
+            </p>
+          </div>
+        {% endif %}
+      </div>
+
+      <form id="chat-form" data-chat-form class="chat-composer no-print">
+        <textarea name="question" rows="1" placeholder="Ask about {{ project['code'] }}, or tell me what to change…"
+                  {{ 'disabled' if not ready }}></textarea>
+        <div class="chat-composer-foot">
+          <span class="small muted">Enter sends · Shift + Enter for a new line</span>
+          <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not ready }}>Send</button>
+        </div>
+      </form>
+
+      {% if ready and not messages %}
+        <div class="chips no-print" style="margin-top:10px">
+          {% for line in suggestions %}
+            <a href="#" class="chat-suggestion">{{ line }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
   </div>
 </div>
 

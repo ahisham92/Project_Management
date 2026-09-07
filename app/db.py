@@ -138,12 +138,16 @@ def init_db(path: Path | str | None = None) -> None:
             # Which office carries a trade. Blank until somebody says, because
             # an unanswered question should read as one rather than as Beirut.
             ("trades", "office", "TEXT NOT NULL DEFAULT ''"),
+            # How the attendance table is ordered in an issued set of minutes:
+            # as the roster lists them, or client first and down the seniority.
+            ("projects", "attendee_order", "TEXT NOT NULL DEFAULT 'roster'"),
         ):
             _ensure_column(conn, table, column, definition)
 
         _ensure_calendars(conn)
         _ensure_backup_log(conn)
         _ensure_chat_log(conn)
+        _ensure_attachments(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -231,6 +235,36 @@ def _ensure_backup_log(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_backup_runs_when ON backup_runs(started_at DESC)")
 
 
+def _ensure_attachments(conn: sqlite3.Connection) -> None:
+    """What is attached to a set of minutes.
+
+    The file itself is kept in the database rather than beside it, because the
+    nightly backup uploads the database: an attachment in a folder next to it is
+    one that does not come back when somebody restores. A PDF of a few hundred
+    kilobytes in a BLOB is nothing to SQLite, and it keeps "the minutes" one
+    thing rather than two.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS meeting_attachments (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            meeting_id  INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+            name        TEXT    NOT NULL DEFAULT '',
+            filename    TEXT    NOT NULL DEFAULT '',
+            bytes       INTEGER NOT NULL DEFAULT 0,
+            pages       INTEGER NOT NULL DEFAULT 0,
+            content     BLOB    NOT NULL,
+            user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            added_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            sort_order  INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_meeting "
+                 "ON meeting_attachments(meeting_id, sort_order)")
+
+
 def _ensure_chat_log(conn: sqlite3.Connection) -> None:
     """What everybody has asked Carmen, and what she said back.
 
@@ -256,6 +290,26 @@ def _ensure_chat_log(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS chat_log_day ON chat_log (asked_at)")
+
+    # A conversation, so somebody can come back to a thread and carry on rather
+    # than starting from nothing every time. The questions and answers stay in
+    # chat_log — this is the spine they hang from.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_threads (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER,
+            user_id     INTEGER,
+            user_name   TEXT NOT NULL DEFAULT '',
+            title       TEXT NOT NULL DEFAULT '',
+            started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            last_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS chat_threads_project "
+                 "ON chat_threads (project_id, last_at DESC)")
+    _ensure_column(conn, "chat_log", "thread_id", "INTEGER")
 
 
 def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:

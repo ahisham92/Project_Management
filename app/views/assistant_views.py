@@ -6,7 +6,7 @@ import io
 import json
 
 from flask import (
-    Blueprint, current_app, flash, g, jsonify, redirect, render_template, request,
+    Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request,
     send_file, url_for,
 )
 
@@ -52,12 +52,27 @@ def _asked() -> dict:
 @bp.get("/assistant")
 @login_required
 def index(project_id: int):
-    """The chat, and — for an administrator — where the key goes."""
+    """The chat, its conversations, and — for an administrator — the key.
+
+    A conversation is picked with ``?thread=``. Somebody's own threads are what
+    they see; a manager can ask for everybody's, because "what is this being
+    used for" is a question they are meant to be able to answer.
+    """
     from ..claude import DEFAULT_MODEL, EFFORTS
+    from ..service import load_thread, load_threads, thread_messages
     from ..vault import carmen
 
     project, role = load_project(project_id)
     held = carmen()
+
+    everyone = (request.args.get("who") == "all"
+                and ROLE_RANK[role] >= ROLE_RANK["manager"])
+    threads = load_threads(project_id, None if everyone else g.user["id"])
+
+    wanted = request.args.get("thread")
+    thread = load_thread(project_id, wanted) if wanted else None
+    messages = thread_messages(thread["id"]) if thread else []
+
     return render_template(
         "assistant.html",
         project=project, role=role, today=today(),
@@ -65,8 +80,40 @@ def index(project_id: int):
         effort=held["effort"], efforts=EFFORTS, default_model=DEFAULT_MODEL,
         is_admin=g.user["role"] == "admin",
         can_write=_can_write(role),
+        can_see_everyone=ROLE_RANK[role] >= ROLE_RANK["manager"],
+        everyone=everyone, threads=threads, thread=thread, messages=messages,
         suggestions=SUGGESTIONS,
     )
+
+
+@bp.post("/assistant/threads/<int:thread_id>/rename")
+@login_required
+def rename_conversation(project_id: int, thread_id: int):
+    from ..service import rename_thread
+
+    load_project(project_id)
+    if not rename_thread(project_id, thread_id, request.form.get("title") or ""):
+        flash("That conversation could not be renamed", "error")
+    return redirect(url_for("assistant.index", project_id=project_id, thread=thread_id))
+
+
+@bp.post("/assistant/threads/<int:thread_id>/delete")
+@login_required
+def delete_conversation(project_id: int, thread_id: int):
+    from ..service import delete_thread, load_thread
+
+    _project, role = load_project(project_id)
+    found = load_thread(project_id, thread_id)
+    if found is None:
+        abort(404)
+    # Your own, or anybody's if you run the project.
+    if found["user_id"] != g.user["id"] and ROLE_RANK[role] < ROLE_RANK["manager"]:
+        flash("That conversation is somebody else's", "error")
+        return redirect(url_for("assistant.index", project_id=project_id))
+
+    delete_thread(project_id, thread_id)
+    flash("Conversation removed from the list — what was said stays in the log", "success")
+    return redirect(url_for("assistant.index", project_id=project_id))
 
 
 SUGGESTIONS = (
@@ -99,11 +146,24 @@ def ask(project_id: int):
                         "Carmen is not connected yet — an administrator adds an "
                         "Anthropic API key on her tab."}), 400
 
+    from ..service import load_thread, open_thread, thread_messages
+
     asked = _asked()
     question = str(asked.get("question") or "")[:MAX_QUESTION]
-    history = asked.get("history") or []
-    if not isinstance(history, list):
-        history = []
+
+    # A question belongs to a conversation. Given one, it carries on; given
+    # none, it starts one — so nothing has to be pressed before asking.
+    thread_id = asked.get("thread_id")
+    thread = load_thread(project_id, thread_id) if thread_id else None
+    if thread is None:
+        thread_id = open_thread(project_id, g.user, question)
+    else:
+        thread_id = thread["id"]
+
+    # The thread on the server is the history, so a page reopened a week later
+    # picks up exactly where the conversation was.
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in thread_messages(thread_id) if m["content"]]
 
     try:
         answer = ask_it(project, question, held["key"], held["model"],
@@ -125,7 +185,8 @@ def ask(project_id: int):
     said = answer.as_json()
     # Written down whether it worked or not: a week of failures is the thing
     # worth noticing, and it is invisible if only the answers are kept.
-    said["chat_id"] = record_chat(project_id, g.user, question, answer)
+    said["chat_id"] = record_chat(project_id, g.user, question, answer, thread_id)
+    said["thread_id"] = thread_id
     return jsonify(said), (200 if not answer.trouble else 502)
 
 

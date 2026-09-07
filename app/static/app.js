@@ -1244,9 +1244,26 @@
     var wrap = chat.closest('[data-carmen]') || document;
     var form = wrap.querySelector('[data-chat-form]');
     var log = chat;
-    var history = [];
     var asking = false;
     var lastChat = null;
+
+    // The list of conversations is server-rendered, so it is refreshed rather
+    // than rebuilt here — one shape of the truth, not two.
+    var refreshing = null;
+    function threadsSoon() {
+      var side = document.querySelector('.chat-list');
+      if (!side || !window.fetch || !chat.dataset.here) return;
+      window.clearTimeout(refreshing);
+      refreshing = window.setTimeout(function () {
+        fetch(window.location.href, { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+          .then(function (html) {
+            var fresh = new DOMParser().parseFromString(html, 'text/html')
+              .querySelector('.chat-list');
+            if (fresh) side.innerHTML = fresh.innerHTML;
+          }).catch(function () { /* the list is one reload away */ });
+      }, 400);
+    }
 
     function line(kind, html) {
       var row = document.createElement('div');
@@ -1368,12 +1385,25 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ question: question, history: history }),
+        // The conversation lives on the server now, so what goes up is which
+        // thread this belongs to rather than a transcript the page has been
+        // carrying around all afternoon.
+        body: JSON.stringify({ question: question, thread_id: chat.dataset.thread || null }),
       }).then(function (response) {
         return response.json().then(function (result) { return [response.ok, result]; });
       }).then(function (pair) {
         var answer = pair[1] || {};
         lastChat = answer.chat_id || null;
+        if (answer.thread_id) {
+          var fresh = !chat.dataset.thread;
+          chat.dataset.thread = answer.thread_id;
+          // The first question in a new conversation puts it in the list on the
+          // left, and in the address bar, so a reload lands back in it.
+          if (fresh && window.history && window.history.replaceState && chat.dataset.here) {
+            window.history.replaceState({}, '', chat.dataset.here + '?thread=' + answer.thread_id);
+            threadsSoon();
+          }
+        }
         waiting.classList.remove('thinking');
         if (!answer.ok) {
           waiting.classList.add('trouble');
@@ -1389,7 +1419,7 @@
         }
         linksFrom(answer, waiting);
         staging(answer, waiting);
-        history = answer.history || history;
+        threadsSoon();
       }).catch(function () {
         waiting.classList.remove('thinking');
         waiting.classList.add('trouble');
@@ -1412,6 +1442,20 @@
         send(question);
       });
 
+      // The box grows with the question rather than scrolling inside three
+      // lines, which is what makes typing up a meeting into it bearable.
+      var box = form.elements.question;
+      if (box && box.tagName === 'TEXTAREA') {
+        var grow = function () {
+          box.style.height = 'auto';
+          box.style.height = Math.min(box.scrollHeight, 240) + 'px';
+        };
+        box.addEventListener('input', grow);
+        form.addEventListener('submit', function () {
+          window.setTimeout(function () { box.style.height = 'auto'; }, 0);
+        });
+      }
+
       // Enter sends; shift-enter is a new line, the way every chat works.
       form.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' && !event.shiftKey && event.target.name === 'question') {
@@ -1430,7 +1474,9 @@
         return;
       }
       if (event.target.closest('[data-chat-clear]')) {
-        history = [];
+        // Starting again is a new conversation, not an erased one: what was
+        // said stays on the left where somebody can go back to it.
+        chat.dataset.thread = '';
         var keep = log.querySelector('.chat-line');
         log.innerHTML = '';
         if (keep) log.appendChild(keep);
@@ -1472,6 +1518,74 @@
     });
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && !panel.hidden) show(false);
+    });
+  })();
+
+  // --- reordering a minuted item -------------------------------------------
+  // The numbers come from the order, so moving a row renumbers everything under
+  // it. Doing that by loading the page again loses where you were reading; the
+  // row moves where it stands and the numbers follow it.
+
+  (function () {
+    var table = document.querySelector('[data-items-table]');
+
+    function ends() {
+      // ▲ on the first row and ▼ on the last have nothing to do, so they are
+      // off. The page renders them that way — this only keeps it true after a
+      // move, when the rows have swapped and the server has not been asked for
+      // a new page.
+      if (!table) return;
+      var rows = table.querySelectorAll('tr[id^="item-"]');
+      rows.forEach(function (row, index) {
+        var up = row.querySelector('[data-move="up"]');
+        var down = row.querySelector('[data-move="down"]');
+        if (up) up.disabled = index === 0;
+        if (down) down.disabled = index === rows.length - 1;
+      });
+    }
+
+    function reorder(order) {
+      // Laid out in the order the server gave back rather than by swapping two
+      // siblings: every item carries a hidden edit row behind it, so "the next
+      // row" is not the next item and a swap moves the wrong thing.
+      order.forEach(function (line) {
+        ['item-', 'edit-'].forEach(function (prefix) {
+          var row = document.getElementById(prefix + line.id);
+          if (row) table.appendChild(row);
+        });
+        var cell = document.querySelector('#item-' + line.id + ' [data-ref]');
+        if (cell) cell.textContent = line.ref || '—';
+      });
+    }
+
+    document.addEventListener('submit', function (event) {
+      var form = event.target.closest('form[data-live-move]');
+      if (!form || !window.fetch || !table) return;
+
+      event.preventDefault();
+      var row = form.closest('tr');
+      var moving = form.querySelectorAll('button');
+      moving.forEach(function (b) { b.disabled = true; });
+
+      fetch(form.action, {
+        method: 'POST', body: new FormData(form),
+        headers: { Accept: 'application/json' }, credentials: 'same-origin',
+      }).then(function (r) { return r.json().then(function (body) { return [r.ok, body]; }); })
+        .then(function (answer) {
+          if (!answer[0]) {
+            say((answer[1] && answer[1].error) || 'That item did not move');
+            ends();
+            return;
+          }
+          // The order and the numbers both come back from the server: they are
+          // positional, and guessing at them here is how a page ends up
+          // disagreeing with the database it is showing.
+          reorder(answer[1].order || []);
+          row.classList.add('just-moved');
+          window.setTimeout(function () { row.classList.remove('just-moved'); }, 700);
+          ends();
+          window.dispatchEvent(new Event('pm:saved'));
+        }).catch(function () { form.submit(); });
     });
   })();
 

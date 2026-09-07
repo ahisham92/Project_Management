@@ -224,21 +224,86 @@ main { padding: 20px 0 48px; }
 /* --- the assistant --------------------------------------------------------
    A chat, and the list of changes it is proposing. The proposal is deliberately
    loud: it is the thing somebody has to read before pressing a button. */
+/* The chat and its conversations, side by side: the list on the left is what
+   makes a thread something to come back to rather than something that scrolls
+   away. */
+.chat-shell {
+  display: grid; grid-template-columns: 244px minmax(0, 1fr); gap: 16px;
+  align-items: start; margin-bottom: 16px;
+}
+.chat-side {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  overflow: hidden; position: sticky; top: 12px;
+}
+.chat-side-head { padding: 12px; border-bottom: 1px solid var(--border); }
+.chat-list { max-height: 62vh; overflow-y: auto; }
+.chat-thread {
+  display: block; padding: 9px 12px; border-bottom: 1px solid var(--border);
+  text-decoration: none; color: inherit;
+}
+.chat-thread:hover { background: var(--surface-2, rgba(127, 127, 127, 0.06)); }
+.chat-thread.active {
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  box-shadow: inset 3px 0 0 var(--series-1);
+}
+.chat-thread-title {
+  display: block; font-size: 0.82rem; line-height: 1.35; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-thread-foot { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+.chat-main {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  padding: 14px 16px;
+}
+.chat-topbar {
+  display: flex; gap: 8px; align-items: center; margin: -4px 0 10px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.chat-rename {
+  flex: 1; border: 1px solid transparent; background: transparent;
+  font-size: 0.95rem; font-weight: 600; padding: 4px 6px; border-radius: 8px;
+  color: inherit; min-width: 0;
+}
+.chat-rename:hover, .chat-rename:focus { border-color: var(--border); background: var(--bg); }
+
 .chat {
-  max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-  padding-right: 4px;
+  min-height: 220px; max-height: 58vh; overflow-y: auto; display: flex;
+  flex-direction: column; gap: 14px; padding-right: 4px;
 }
 .chat-line {
-  border-radius: 10px; padding: 10px 13px; font-size: 0.88rem; line-height: 1.6;
-  max-width: 88%; border: 1px solid var(--border); background: var(--surface);
+  border-radius: 12px; padding: 11px 14px; font-size: 0.9rem; line-height: 1.65;
+  max-width: 90%; border: 1px solid transparent;
 }
-.chat-line p { margin: 0 0 8px; }
+.chat-line p { margin: 0 0 10px; }
 .chat-line p:last-child { margin-bottom: 0; }
 .chat-line.you {
-  align-self: flex-end; background: var(--series-1); border-color: var(--series-1);
-  color: #fff;
+  align-self: flex-end; max-width: 74%;
+  background: var(--surface-2, rgba(127, 127, 127, 0.10));
+  border-color: var(--border); color: inherit;
 }
-.chat-line.assistant { align-self: flex-start; }
+.chat-line.assistant { align-self: stretch; max-width: 100%; padding-left: 0; padding-right: 0; }
+
+/* The composer: one box that grows with what is typed, with the send button
+   under it rather than beside it, so a long question has the whole width. */
+.chat-composer {
+  margin-top: 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); padding: 10px 12px;
+}
+.chat-composer:focus-within { border-color: var(--series-1); }
+.chat-composer textarea {
+  width: 100%; border: 0; background: transparent; resize: none; outline: none;
+  font: inherit; font-size: 0.92rem; line-height: 1.6; color: inherit;
+  max-height: 240px; padding: 0;
+}
+.chat-composer-foot {
+  display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
+}
+@media (max-width: 900px) {
+  .chat-shell { grid-template-columns: 1fr; }
+  .chat-side { position: static; }
+  .chat-list { max-height: 220px; }
+}
 .chat-line.thinking { color: var(--muted); font-style: italic; }
 .chat-line.trouble { border-color: var(--critical); }
 .chat-used { margin-top: 8px !important; font-size: 0.72rem; opacity: 0.75; }
@@ -753,3 +818,14 @@ ul.list > li:first-child { border-top: none; }
 
 .auth-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px 16px; }
 .auth-card { width: 100%; max-width: 380px; }
+
+/* A minuted item that has just been moved: it settles rather than teleporting,
+   so the eye keeps hold of the row it was reading. */
+tr.just-moved > td { animation: settle 0.7s ease-out; }
+@keyframes settle {
+  from { background: var(--accent-soft, rgba(42, 120, 214, 0.16)); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  tr.just-moved > td { animation: none; }
+}

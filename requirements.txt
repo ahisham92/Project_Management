@@ -11,3 +11,9 @@ openpyxl>=3.1,<4.0
 # and a tool-use surface that will not drift out from under us. Pure Python —
 # nothing here needs a compiler either.
 anthropic>=1.4,<2.0
+
+# The issued minutes as a real PDF, and the attachments stapled onto the end of
+# it. reportlab draws the document; pypdf joins it to whatever is attached.
+# Both are pure Python wheels — nothing here needs a compiler either.
+reportlab>=4.0,<6.0
+pypdf>=4.0,<7.0

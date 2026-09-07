@@ -468,6 +468,26 @@
         </p>
       </div>
     </div>
+    {% if can_report %}
+      {# What order they appear in on an issued set of minutes. One setting for
+         the project, because it is a house convention rather than a decision
+         to take again at every meeting. #}
+      <div class="card-body" style="padding-bottom:0">
+        <form method="post" class="inline-form"
+              action="{{ url_for('meetings.set_attendee_order', project_id=project['id']) }}">
+          <input type="hidden" name="back" value="{{ request.full_path }}">
+          <label class="field flex1">
+            <span class="field-label">Order in the exported minutes</span>
+            <select name="attendee_order">
+              {% for key, label in attendee_orders %}
+                <option value="{{ key }}" {{ 'selected' if attendee_order == key }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="btn btn-ghost">Set</button>
+        </form>
+      </div>
+    {% endif %}
     <div class="card-body flush">
       {% if not attendees %}
         {{ empty('No attendees yet', 'Add the people who attend this project’s meetings.') }}

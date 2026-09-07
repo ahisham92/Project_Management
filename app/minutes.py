@@ -102,6 +102,67 @@ def normalise_owner(value: Any) -> str:
     return ""
 
 
+# --- who sits where in the attendance table ---------------------------------
+#
+# The client reads their own name first, then the people who answer for the
+# work. Recognised by job title rather than by a field somebody has to keep up
+# to date, because the title is already there and already right.
+
+ATTENDEE_ORDERS: tuple[tuple[str, str], ...] = (
+    ("roster", "As the roster lists them"),
+    ("seniority", "Client first, then directors, then the project manager, then the rest"),
+)
+
+_RANKS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (1, ("director", "chairman", "board", "partner")),
+    (2, ("project manager", "pm ", "project director")),
+    (3, ("manager", "lead", "head")),
+)
+
+
+def normalise_attendee_order(value: Any) -> str:
+    wanted = str(value or "").strip().lower()
+    return wanted if wanted in dict(ATTENDEE_ORDERS) else "roster"
+
+
+def seniority(person: Mapping[str, Any], client: str = "") -> int:
+    """Where somebody sits in the ordering: lower comes first.
+
+    The client's organisation leads whatever anybody's title says — they are
+    the ones the minutes are addressed to.
+    """
+    organisation = " ".join(str(person.get("organisation") or "").lower().split())
+    wanted = " ".join(str(client or "").lower().split())
+    if wanted and organisation:
+        # "Sibline Cement" and "Sibline Port Authority" are the same client
+        # written two ways, which is how organisations are actually typed. One
+        # containing the other, or sharing the name they are known by, is
+        # enough — an exact match would never fire.
+        if wanted in organisation or organisation in wanted:
+            return 0
+        if organisation.split()[0] == wanted.split()[0]:
+            return 0
+
+    title = " ".join(str(person.get("job_title") or "").lower().split()) + " "
+    for rank, words in _RANKS:
+        if any(word in title for word in words):
+            return rank
+    return 9
+
+
+def in_order(people: Sequence[Mapping[str, Any]], how: Any = "roster",
+             client: str = "") -> list[dict[str, Any]]:
+    """The attendance list in the order an issued set of minutes wants it.
+
+    Stable within each band, so people who rank the same stay in the order
+    somebody put them in.
+    """
+    rows = [dict(p) for p in people]
+    if normalise_attendee_order(how) != "seniority":
+        return rows
+    return sorted(rows, key=lambda person: seniority(person, client))
+
+
 def ref_key(value: Any) -> tuple:
     """4.2 before 4.10 — the numeric runs compare as numbers, not as text."""
     parts = _NUMBER.split(str(value or ""))

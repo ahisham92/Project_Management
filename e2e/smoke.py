@@ -112,6 +112,8 @@ def main() -> int:
         step("minutes: changes a field by clicking it in the row", _minutes_cells)
         step("minutes: picks a date from the calendar", _minutes_calendar)
         step("minutes: the agenda lists what is still open", _minutes_agenda)
+        step("minutes: a PDF on the template with an attachment compiled in", _minutes_export)
+        step("minutes: an item moves where it stands, without a reload", _minutes_live_move)
         step("internal: a weekly list of its own, read as at a date", _internal_register)
         step("internal: the week compiles the programme and both registers", _this_week)
         step("a helper on every tab, and one page of definitions", _how_to_use)
@@ -851,6 +853,95 @@ def _assistant(page) -> None:
 
     if _row_reads(page, 1) != "40%":
         raise AssertionError("applying should have recorded the progress")
+
+    # The conversation is kept: it appears on the left, and reopening it brings
+    # back what was said rather than an empty box. The list refreshes itself a
+    # moment after the answer lands, so it is waited for rather than assumed.
+    page.wait_for_selector(".chat-thread", timeout=8000)
+    title = page.locator(".chat-thread").first.inner_text()
+    if "project doing" not in title.lower():
+        raise AssertionError(f"the conversation is not named after the question: {title!r}")
+
+    page.goto(f"{BASE}/projects/1/assistant", wait_until="networkidle")
+    page.click(".chat-thread")
+    page.wait_for_selector(".chat-line.you", timeout=8000)
+    said = page.text_content("#chat")
+    if "How is the project doing?" not in said:
+        raise AssertionError("reopening the conversation lost the question")
+    if "overview" not in said:
+        raise AssertionError("reopening the conversation lost the answer")
+    page.screenshot(path=str(SHOTS / "41-conversations.png"), full_page=True)
+
+
+def _minutes_export(page) -> None:
+    """The issued minutes: a PDF built on the template, with a PDF attached to
+    it compiled onto the end."""
+    page.goto(f"{BASE}/projects/1/minutes", wait_until="networkidle")
+    _put_carmen_away(page)
+
+    # The ordering option lives with the roster and covers the whole project.
+    if page.locator("select[name=attendee_order]").count() == 0:
+        raise AssertionError("the attendance order cannot be set")
+    page.select_option("select[name=attendee_order]", "seniority")
+    page.click("form[action$='/attendee-order'] button")
+    page.wait_for_selector("text=every set of minutes >> visible=true", timeout=8000)
+
+    page.goto(f"{BASE}/projects/1/minutes", wait_until="networkidle")
+    _put_carmen_away(page)
+    page.click("a[href*='/minutes/meetings/']")
+    page.wait_for_selector("text=Attachments >> visible=true", timeout=8000)
+
+    # A PDF to attach: the app's own export of these minutes will do.
+    where = page.url.split("?")[0]
+    saved = str(SHOTS / "attachment.pdf")
+    answer = page.request.get(where + ".pdf")
+    if not answer.ok:
+        raise AssertionError(f"the minutes PDF came back {answer.status}")
+    before = answer.body()
+    with open(saved, "wb") as file:
+        file.write(before)
+    if before[:5] != b"%PDF-":
+        raise AssertionError("that is not a PDF")
+
+    page.fill("form[action$='/attachments'] input[name=name]", "Kick-off presentation")
+    page.set_input_files("form[action$='/attachments'] input[name=file]", saved)
+    page.click("form[action$='/attachments'] button[type=submit]")
+    page.wait_for_selector("text=compiled into the exported PDF >> visible=true", timeout=8000)
+    if "Kick-off presentation" not in page.text_content("body"):
+        raise AssertionError("the attachment is not listed")
+
+    after = page.request.get(where + ".pdf").body()
+    if len(after) <= len(before):
+        raise AssertionError("the attachment was not compiled into the export")
+    page.screenshot(path=str(SHOTS / "42-minutes-export.png"), full_page=True)
+
+
+def _minutes_live_move(page) -> None:
+    """The arrows move a row where it stands and renumber it, without a reload."""
+    page.goto(f"{BASE}/projects/1/minutes", wait_until="networkidle")
+    _put_carmen_away(page)
+    page.click("a[href*='/minutes/meetings/']")
+    page.wait_for_selector("tbody[data-items-table] tr[id^=item-]", timeout=8000)
+
+    # Item rows only: each one carries a hidden edit row behind it.
+    rows = page.locator("tbody[data-items-table] tr[id^=item-]")
+    if rows.count() < 2:
+        raise AssertionError("two items are needed to reorder them")
+    was = rows.first.inner_text()
+    page.evaluate("() => { window.__stayed = true; }")
+
+    rows.nth(1).locator("[data-move=up]").click()
+    page.wait_for_function(
+        "was => document.querySelector('tbody[data-items-table] tr[id^=item-]').innerText !== was",
+        arg=was, timeout=8000)
+
+    if not page.evaluate("() => window.__stayed === true"):
+        raise AssertionError("the page reloaded — the move should happen where it stands")
+    numbers = [t.strip() for t in
+               page.locator("tbody[data-items-table] tr[id^=item-] td[data-ref]").all_inner_texts()]
+    if numbers != sorted(numbers):
+        raise AssertionError(f"the items did not renumber in order: {numbers}")
+    page.screenshot(path=str(SHOTS / "43-minutes-move.png"), full_page=True)
 
 
 def _assistant_changes_the_setup(page) -> None:

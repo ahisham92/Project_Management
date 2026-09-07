@@ -5,21 +5,22 @@ from __future__ import annotations
 import io
 
 from flask import (
-    Blueprint, abort, current_app, flash, g, redirect, render_template, request, send_file,
-    url_for,
+    Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request,
+    send_file, url_for,
 )
 
 from ..auth import ROLE_RANK, load_project, login_required
 from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query_one
 from ..minutes import (
-    COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, KIND_TITLES, KIND_WORDS, KINDS, OWNERS,
-    STATUSES, filter_items, next_ref, normalise_impact, normalise_kind, normalise_owner,
-    normalise_sort, normalise_status, progress_note, sort_items, summarise,
+    ATTENDEE_ORDERS, COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, KIND_TITLES, KIND_WORDS,
+    KINDS, OWNERS, STATUSES, filter_items, next_ref, normalise_attendee_order,
+    normalise_impact, normalise_kind, normalise_owner, normalise_sort, normalise_status,
+    progress_note, sort_items, summarise,
 )
 from ..service import (
-    load_attendees, load_items, load_meeting, load_meetings, load_steps, load_trades,
-    meeting_items, meeting_sheet, move_item, next_sort_order, renumber_items,
+    load_attachments, load_attendees, load_items, load_meeting, load_meetings, load_steps,
+    load_trades, meeting_items, meeting_sheet, move_item, next_sort_order, renumber_items,
     set_attendance, set_item_trades, today,
 )
 from ..workflow import ordered as ordered_steps
@@ -174,6 +175,8 @@ def index(project_id: int, kind: str):
         as_at_note=progress_note(rows, str(filters["as_at"])) if filters["as_at"] else "",
         sort=filters["sort"], direction=filters["dir"],
         attendees=load_attendees(project_id), trades=load_trades(project_id),
+        attendee_orders=ATTENDEE_ORDERS,
+        attendee_order=normalise_attendee_order(project["attendee_order"]),
         meetings=load_meetings(project_id, str(filters["kind"])), today=today(),
         can_report=_can_report(role), can_edit=_can_edit(role),
     )
@@ -409,6 +412,9 @@ def meeting(project_id: int, meeting_id: int):
     order = [row["id"] for row in meeting_items(project_id, meeting_id)]
     return render_template(
         "meeting.html",
+        attachments=load_attachments(project_id, meeting_id),
+        attendee_orders=ATTENDEE_ORDERS,
+        attendee_order=normalise_attendee_order(project["attendee_order"]),
         first_id=order[0] if order else None, last_id=order[-1] if order else None,
         project=project, role=role, sheet=sheet, meeting=sheet["meeting"],
         items=sheet["items"], attendance=sheet["attendance"],
@@ -431,7 +437,99 @@ def meeting_word(project_id: int, meeting_id: int):
 
     stamp = (sheet["meeting"]["meeting_date"] or today()).replace("-", "")
     name = (sheet["meeting"]["ref"] or "minutes").replace("/", "-").replace(" ", "-")
-    return _download(minutes_document(project, sheet), f"{project['code']}-{name}-{stamp}.docx")
+    # Named in the document; the PDF is the one that carries them.
+    document = minutes_document(project, sheet, load_attachments(project_id, meeting_id))
+    return _download(document, f"{project['code']}-{name}-{stamp}.docx")
+
+
+@bp.get("/minutes/meetings/<int:meeting_id>.pdf")
+@login_required
+def meeting_pdf(project_id: int, meeting_id: int):
+    """The minutes as a PDF, with whatever is attached compiled onto the end."""
+    from ..minutes_doc import minutes_pdf
+    from ..pdf import PdfError
+
+    project, _role = load_project(project_id)
+    sheet = meeting_sheet(project_id, meeting_id, today())
+    if sheet is None:
+        abort(404)
+
+    try:
+        data = minutes_pdf(project, sheet,
+                           load_attachments(project_id, meeting_id, with_content=True))
+    except PdfError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("meetings.meeting", project_id=project_id,
+                                meeting_id=meeting_id))
+
+    stamp = (sheet["meeting"]["meeting_date"] or today()).replace("-", "")
+    name = (sheet["meeting"]["ref"] or "minutes").replace("/", "-").replace(" ", "-")
+    return send_file(io.BytesIO(data), mimetype="application/pdf", as_attachment=True,
+                     download_name=f"{project['code']}-{name}-{stamp}.pdf")
+
+
+@bp.post("/minutes/meetings/<int:meeting_id>/attachments")
+@login_required
+def add_meeting_attachment(project_id: int, meeting_id: int):
+    """A PDF kept with the minutes and compiled into the exported PDF."""
+    from ..service import AttachmentError, MAX_ATTACHMENT, add_attachment
+
+    _project, role = load_project(project_id, "member")
+    if load_meeting(project_id, meeting_id) is None:
+        abort(404)
+
+    upload = request.files.get("file")
+    data = upload.read(MAX_ATTACHMENT + 1) if upload else b""
+    try:
+        add_attachment(project_id, meeting_id, request.form.get("name") or "",
+                       (upload.filename if upload else ""), data, g.user["id"])
+        flash("Attached — it is compiled into the exported PDF", "success")
+    except AttachmentError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("meetings.meeting", project_id=project_id,
+                            meeting_id=meeting_id) + "#attachments")
+
+
+@bp.get("/minutes/attachments/<int:attachment_id>")
+@login_required
+def read_attachment(project_id: int, attachment_id: int):
+    from ..service import attachment as one_attachment
+
+    load_project(project_id)
+    found = one_attachment(project_id, attachment_id)
+    if found is None:
+        abort(404)
+    return send_file(io.BytesIO(found["content"]), mimetype="application/pdf",
+                     as_attachment=False,
+                     download_name=(found["filename"] or found["name"] or "attachment") + (
+                         "" if str(found["filename"] or "").lower().endswith(".pdf") else ".pdf"))
+
+
+@bp.post("/minutes/attachments/<int:attachment_id>/delete")
+@login_required
+def delete_attachment(project_id: int, attachment_id: int):
+    from ..service import attachment as one_attachment, remove_attachment
+
+    _project, role = load_project(project_id, "member")
+    found = one_attachment(project_id, attachment_id)
+    if found is None:
+        abort(404)
+    remove_attachment(project_id, attachment_id)
+    flash("Attachment removed", "success")
+    return redirect(url_for("meetings.meeting", project_id=project_id,
+                            meeting_id=found["meeting_id"]) + "#attachments")
+
+
+@bp.post("/minutes/attendee-order")
+@login_required
+def set_attendee_order(project_id: int):
+    """How the attendance table is ordered in every issued set of minutes."""
+    _project, role = load_project(project_id, "member")
+    execute("UPDATE projects SET attendee_order = ? WHERE id = ?",
+            (normalise_attendee_order(request.form.get("attendee_order")), project_id))
+    flash("The attendance order is set for every set of minutes on this project", "success")
+    return redirect(request.form.get("back")
+                    or url_for("meetings.index", project_id=project_id, kind="client"))
 
 
 @bp.post("/minutes/meetings")
@@ -704,7 +802,24 @@ def move(project_id: int, item_id: int):
         abort(404)
 
     direction = "up" if (request.form.get("direction") or "").strip().lower() == "up" else "down"
-    if not move_item(project_id, item_id, direction):
+    moved = move_item(project_id, item_id, direction)
+
+    # Answered as JSON when the page asks for it, so a row swaps where it stands
+    # rather than the whole page being fetched again to show two rows in the
+    # other order.
+    if request.headers.get("Accept", "").startswith("application/json"):
+        if not moved:
+            return jsonify({"ok": False,
+                            "error": f"That item is already "
+                                     f"{'first' if direction == 'up' else 'last'}"}), 400
+        rows = meeting_items(project_id, item["meeting_id"])
+        return jsonify({
+            "ok": True,
+            "moved": item_id,
+            "order": [{"id": row["id"], "ref": row["ref"]} for row in rows],
+        })
+
+    if not moved:
         flash(f"That item is already {'first' if direction == 'up' else 'last'}", "error")
     return _after_item(project_id, item["meeting_id"])
 

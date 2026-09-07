@@ -413,6 +413,80 @@
     {% endif %}
   </div>
 
+  {# --- the Word template the minutes are built from --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Minutes template</h2>
+        <p class="small muted" style="margin-top:2px">
+          Download it, change it in Word, upload it back — every set of minutes is built from it
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if minutes_template %}
+        <p class="small">
+          <strong>{{ minutes_template['filename'] or 'The uploaded template' }}</strong>
+          — {{ readable(minutes_template['bytes']) }}, uploaded
+          {{ short_date(minutes_template['added_at'][:10]) }}
+          {% if minutes_template['user_name'] %}by {{ minutes_template['user_name'] }}{% endif %}.
+          The Word export is built from it.
+        </p>
+      {% else %}
+        <p class="small muted">
+          Nothing uploaded, so the minutes use the built-in layout. Download it below to start
+          from what they look like today.
+        </p>
+      {% endif %}
+      <p class="small muted">
+        The PDF export is always drawn by the app on the built-in layout — a Word file cannot be
+        turned into a PDF without Word, and there is none on the server.
+      </p>
+
+      <div class="inline-form" style="margin-top:10px">
+        <a class="btn btn-ghost btn-sm"
+           href="{{ url_for('projects.minutes_template', project_id=pid) }}">
+          Download the template
+        </a>
+        {% if can_edit %}
+          <form method="post" enctype="multipart/form-data" class="inline-form"
+                action="{{ url_for('projects.upload_minutes_template', project_id=pid) }}">
+            <input type="file" name="file" accept=".docx" required
+                   aria-label="The Word template to use">
+            <button type="submit" class="btn btn-primary btn-sm">Upload</button>
+          </form>
+          {% if minutes_template %}
+            <form method="post"
+                  action="{{ url_for('projects.remove_minutes_template', project_id=pid) }}"
+                  data-confirm="Go back to the built-in layout?">
+              <button type="submit" class="btn btn-danger btn-sm">Use the built-in layout</button>
+            </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <details class="panel">
+      <summary class="card-foot">What you can put in it</summary>
+      <div class="card-body">
+        <p class="small muted">
+          Anywhere in the document, <code>{{ '{{name}}' }}</code> is replaced. A table row
+          carrying an <code>item.</code> or <code>attendee.</code> placeholder is written once
+          per item or per person, so one row in the template becomes the whole table. Keep a
+          placeholder in a cell or a paragraph of its own: Word splits a line into pieces as you
+          type, and a paragraph carrying a placeholder takes the formatting of its first piece.
+        </p>
+        {% for group, fields in template_fields.items() %}
+          <p class="field-label" style="margin-top:10px">{{ group }}</p>
+          <ul class="guide-list small">
+            {% for name, means in fields %}
+              <li><code>{{ '{{' ~ name ~ '}}' }}</code> — {{ means }}</li>
+            {% endfor %}
+          </ul>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
+
   {# --- sections --- #}
   <div class="card">
     <div class="card-head">

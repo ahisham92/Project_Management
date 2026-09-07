@@ -28,7 +28,7 @@ BOLD = "Helvetica-Bold"
 HEADING_FONT = BOLD
 HEADING_SIZE = 20
 
-DEFAULT_SIZE = 9
+DEFAULT_SIZE = 10
 LINE_SPACING = 1.18
 
 MARGIN_LEFT = 56
@@ -48,6 +48,7 @@ def _bits():
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.units import inch          # noqa: F401 - handy for callers
+        from reportlab.pdfgen.canvas import Canvas
         from reportlab.platypus import (BaseDocTemplate, Frame, KeepTogether,  # noqa: F401
                                         PageBreak, PageTemplate, Paragraph, Spacer, Table,
                                         TableStyle)
@@ -60,8 +61,38 @@ def _bits():
         "colors": colors, "A4": A4, "ParagraphStyle": ParagraphStyle,
         "BaseDocTemplate": BaseDocTemplate, "Frame": Frame, "PageBreak": PageBreak,
         "PageTemplate": PageTemplate, "Paragraph": Paragraph, "Spacer": Spacer,
-        "Table": Table, "TableStyle": TableStyle,
+        "Table": Table, "TableStyle": TableStyle, "Canvas": Canvas,
     }
+
+
+def _counting_canvas(kit, draw):
+    """A canvas that knows how many pages there turned out to be.
+
+    "Page 3 of 11" cannot be written while the document is still being laid
+    out, because nothing knows yet what 11 is. So each page is held back, and
+    the number is stamped on once they have all been made — rather than laying
+    the whole document out twice, which is slower and risks the two passes
+    disagreeing.
+    """
+
+    class Counted(kit["Canvas"]):
+        def __init__(self, *args, **kw):
+            super().__init__(*args, **kw)
+            self._pages: list[dict] = []
+
+        def showPage(self):                            # noqa: N802 - reportlab's name
+            self._pages.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._pages)
+            for state in self._pages:
+                self.__dict__.update(state)
+                draw(self, total)
+                super().showPage()
+            super().save()
+
+    return Counted
 
 
 def _escape(value: Any) -> str:
@@ -89,6 +120,7 @@ class Document:
         self.footer_code = footer_code
         self.landscape = landscape_page
         self._flow: list[Any] = []
+        self._total = 0                 # pages, filled in by the counting pass
         self._kit = _bits()
 
     # --- the pieces a caller adds -------------------------------------------
@@ -168,6 +200,11 @@ class Document:
                     leading=size * LINE_SPACING,
                     alignment={"LEFT": 0, "CENTER": 1, "RIGHT": 2}[align])
                 text = _escape(spec.get("text", ""))
+                # A bold first line with the rest under it — an item's subject
+                # above its discussion, as the Word writes it.
+                if spec.get("lead"):
+                    lead = f"<b>{_escape(spec['lead'])}</b>"
+                    text = f"{lead}<br/>{text}" if text else lead
                 if spec.get("underline"):
                     # A rule to sign on: the line is the cell's bottom border,
                     # drawn under the whole width rather than under the words,
@@ -228,17 +265,27 @@ class Document:
             except Exception:                          # noqa: BLE001 - a plainer page
                 pass
 
-        # The form code bottom left, the page number in the middle: where a
-        # reader looks for each of them.
+        # The form code bottom left, "Page 3 of 11" in the middle: where a
+        # reader looks for each of them. The total comes from a first pass,
+        # because a page count is not known until the document is laid out.
         canvas.setFont(FONT, DEFAULT_SIZE)
         canvas.setFillColorRGB(0, 0, 0)
         if self.footer_code:
             canvas.drawString(MARGIN_LEFT, 46, self.footer_code)
-        canvas.drawCentredString(width / 2, 46, str(canvas.getPageNumber()))
         if self.footer_note:
             canvas.setFont(FONT, 7)
             canvas.setFillColorRGB(0.53, 0.53, 0.53)
             canvas.drawString(MARGIN_LEFT, 34, self.footer_note)
+        canvas.restoreState()
+
+    def _page_number(self, canvas, total: int) -> None:
+        """"Page 3 of 11", centred at the foot, once the total is known."""
+        width, _height = self._size()
+        canvas.saveState()
+        canvas.setFont(FONT, DEFAULT_SIZE)
+        canvas.setFillColorRGB(0, 0, 0)
+        canvas.drawCentredString(width / 2, 46,
+                                 f"Page {canvas.getPageNumber()} of {total}")
         canvas.restoreState()
 
     def render(self) -> bytes:
@@ -254,7 +301,8 @@ class Document:
                              leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
         doc.addPageTemplates([kit["PageTemplate"](id="page", frames=[frame],
                                                   onPage=self._furniture)])
-        doc.build(self._flow or [kit["Spacer"](1, 1)])
+        doc.build(self._flow or [kit["Spacer"](1, 1)],
+                  canvasmaker=_counting_canvas(kit, self._page_number))
         return out.getvalue()
 
 

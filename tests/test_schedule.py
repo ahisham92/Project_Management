@@ -1854,3 +1854,23 @@ def test_the_tile_counts_the_run_rather_than_a_loose_set_of_lines(signed_in):
     link_two(signed_in, "2", "1")
     body = text(signed_in.get("/projects/1/schedule"))
     assert "sets the end date" in body
+
+
+def test_the_schedule_carries_where_each_line_has_got_to(signed_in):
+    """A step reached on any tab shows on the programme. The schedule used to
+    carry dates alone, so a line marked as issued on the Task List read there
+    as though nothing had happened."""
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert ">Progress<" in body, "the schedule needs a progress column"
+
+    signed_in.post("/projects/1/tasks/1/progress",
+                   data={"status_key": "idc", "data_date": "07/09/2026"})
+    body = text(signed_in.get("/projects/1/schedule"))
+    line = body[body.index('id="sprogress-1"'):][:900]
+    assert "40%" in line and "IDC" in line
+
+
+def test_progress_is_changed_on_the_schedule_where_it_stands(signed_in):
+    body = text(signed_in.get("/projects/1/schedule"))
+    assert 'id="cell-status"' in body and 'id="cell-percent"' in body
+    assert 'data-rows="s"' in body

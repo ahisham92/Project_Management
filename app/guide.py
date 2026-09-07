@@ -104,10 +104,12 @@ TABS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "budget",
-        "name": "Budget",
+        "name": "Finance",
         "endpoints": ("projects.budget",),
-        "what": "Hours: what was budgeted per trade, what has been booked, and what that says about cost.",
-        "start_here": "Compare booked hours against earned hours. The gap is the CPI.",
+        "what": "Hours: what was budgeted per trade, what has been booked against it, and what "
+                "that says about cost.",
+        "start_here": "Book hours at the bottom; compare booked against earned above. "
+                      "The gap is the CPI.",
         "steps": (
             "Read each trade's <strong>budget</strong>, <strong>booked</strong> and "
             "<strong>earned</strong> hours side by side.",
@@ -115,6 +117,10 @@ TABS: tuple[dict[str, Any], ...] = (
             "a project average that hides it.",
             "Look at the <strong>estimate at completion</strong>: the budget divided by the CPI, "
             "which is what the project costs if it carries on like this.",
+            "<strong>Book hours</strong> at the foot of the tab: the date, the trade, and the "
+            "deliverable where you can — that is what makes per-line cost possible later. Every "
+            "figure above is built from them.",
+            "Delete a wrong entry rather than booking a negative one.",
         ),
         "watch": (
             "Hours booked without a trade still count against the project total.",
@@ -137,20 +143,6 @@ TABS: tuple[dict[str, Any], ...] = (
         ),
         "watch": ("Progress is attributed to the date it was reported for, not the date it was typed in.",),
         "terms": ("data date", "earned progress", "planned progress", "variance"),
-    },
-    {
-        "key": "timesheet",
-        "name": "Timesheet",
-        "endpoints": ("projects.timesheet",),
-        "what": "Where booked hours come from. Book time against a trade and, where you can, a deliverable.",
-        "start_here": "Add hours at the bottom; they reach the Budget tab immediately.",
-        "steps": (
-            "Choose the <strong>date</strong>, the <strong>trade</strong> and the hours.",
-            "Name the deliverable where you can — that is what makes per-line cost possible later.",
-            "Delete a wrong entry rather than booking a negative one.",
-        ),
-        "watch": ("Hours with no trade are still counted, under Unallocated on the Budget tab.",),
-        "terms": ("booked hours", "trade", "deliverable"),
     },
     {
         "key": "minutes",
@@ -189,7 +181,7 @@ TABS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "internal",
-        "name": "Internal",
+        "name": "Task List",
         "endpoints": ("meetings.week",),
         "what": "This week: everything the project wants of us, compiled from the programme and both registers.",
         "start_here": "Work down the list. Every row is the real record — change it here and it changes everywhere.",

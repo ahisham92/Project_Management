@@ -497,9 +497,12 @@
             <thead>
               <tr><th>Name</th><th>Organisation</th><th>Role</th><th>Trade</th><th class="no-print"></th></tr>
             </thead>
-            <tbody>
+            {# The order here is the order an issued set of minutes lists people
+               in, so it is moved here rather than typed again on every export.
+               A row moves where it stands — nothing reloads. #}
+            <tbody data-live-list="person">
               {% for person in attendees %}
-                <tr class="{{ '' if person['active'] else 'muted' }}">
+                <tr id="person-{{ person['id'] }}" class="{{ '' if person['active'] else 'muted' }}">
                   <td>
                     {{ person['name'] }}
                     {% if not person['active'] %}<span class="small muted"> · off the project</span>{% endif %}
@@ -514,6 +517,18 @@
                   </td>
                   <td class="right nowrap no-print">
                     {% if can_report %}
+                      <form method="post" style="display:inline" data-live-move
+                            action="{{ url_for('meetings.move_attendee_row', project_id=project['id'], attendee_id=person['id']) }}">
+                        <input type="hidden" name="direction" value="up">
+                        <button type="submit" class="btn btn-ghost btn-sm" title="Move up"
+                                data-move="up" {{ 'disabled' if loop.first }}>▲</button>
+                      </form>
+                      <form method="post" style="display:inline" data-live-move
+                            action="{{ url_for('meetings.move_attendee_row', project_id=project['id'], attendee_id=person['id']) }}">
+                        <input type="hidden" name="direction" value="down">
+                        <button type="submit" class="btn btn-ghost btn-sm" title="Move down"
+                                data-move="down" {{ 'disabled' if loop.last }}>▼</button>
+                      </form>
                       <form method="post" style="display:inline"
                             data-confirm="Remove {{ person['name'] }} from the attendance list?"
                             action="{{ url_for('meetings.delete_attendee', project_id=project['id'], attendee_id=person['id']) }}">

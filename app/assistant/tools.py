@@ -673,11 +673,14 @@ VIEWS = {
     "dashboard": ("projects.dashboard", "the dashboard"),
     "progress": ("projects.tasks", "the progress tab"),
     "schedule": ("projects.schedule", "the schedule"),
-    "budget": ("projects.budget", "the budget"),
+    "budget": ("projects.budget", "finance"),
+    "finance": ("projects.budget", "finance"),
     "period": ("projects.period", "the period report"),
-    "timesheet": ("projects.timesheet", "the timesheet"),
+    # The hours live on Finance now; both names still take you there.
+    "timesheet": ("projects.budget", "the hours booked"),
     "minutes": ("meetings.index", "the client's minutes"),
-    "internal": ("meetings.week", "this week"),
+    "internal": ("meetings.week", "the task list"),
+    "tasklist": ("meetings.week", "the task list"),
     "setup": ("projects.setup", "the setup sheet"),
     "guide": ("projects.guide", "the how-to-use guide"),
 }

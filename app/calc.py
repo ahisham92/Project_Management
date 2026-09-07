@@ -153,6 +153,20 @@ def status_of(actual_pct: float) -> str:
     return "Not Started"
 
 
+def plain_status(actual_pct: float) -> str:
+    """What a line that does not run on the design workflow reads as.
+
+    There is no step to name it, so its own percentage does: 30% is under way,
+    whatever else is true of it. Reading "Not started" beside 30% is how people
+    stop believing the page.
+    """
+    if actual_pct >= 1 - 1e-9:
+        return "Complete"
+    if actual_pct > 1e-9:
+        return "In progress"
+    return "Not started"
+
+
 def budget_status(spent_hours: float, budget_hours: float, cpi: float | None) -> str:
     if not spent_hours:
         return "No spend booked"
@@ -245,7 +259,8 @@ def compute_project(
             planned_progress=planned_progress,
             variance=earned - planned_progress,
             status=status_of(actual),
-            status_name=(current or {}).get("name", "" if status_key else "Not started"),
+            status_name=((current or {}).get("name", "" if status_key else "Not started")
+                         if workflow else plain_status(actual)),
             status_key=status_key,
             revision=revision,
             uses_workflow=workflow,

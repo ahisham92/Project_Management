@@ -58,7 +58,7 @@ def minuted(app, signed_in):
         "ref": "MOM-01", "title": "Kickoff meeting", "meeting_date": "03/09/2026",
         "purpose": "Kick-Off Meeting", "prepared_by": "Ola Bou Ghannam",
         "reviewed_by": "Jihad Zuhairy", "issue_date": "07/09/2026",
-        "invited": ["1", "2", "3", "4"], "present": ["1", "2", "3"]})
+        "invited": ["1", "2", "3", "4"], "present": ["1", "2", "3", "4"]})
     return meeting_id
 
 
@@ -191,13 +191,32 @@ def test_the_word_names_the_attachment_but_does_not_carry_it(signed_in, minuted)
 
 # --- the Word, and the two of them agreeing ---------------------------------
 
-def test_the_word_carries_the_form_code_and_nine_point_text(signed_in, minuted):
+def test_the_word_carries_the_form_code_and_ten_point_text(signed_in, minuted):
     data = signed_in.get(f"/projects/1/minutes/meetings/{minuted}.docx").data
     with zipfile.ZipFile(io.BytesIO(data)) as book:
-        assert FORM_CODE in book.read("word/footer1.xml").decode("utf-8")
+        footer = book.read("word/footer1.xml").decode("utf-8")
+        assert FORM_CODE in footer
         styles = book.read("word/styles.xml").decode("utf-8")
-        # 18 half-points is 9pt, the size asked for on the issued minutes.
-        assert '<w:sz w:val="18"/>' in styles
+        # 20 half-points is 10pt, the size the issued minutes are set in.
+        assert '<w:sz w:val="20"/>' in styles
+
+
+def test_the_footer_counts_the_pages_and_names_no_project(signed_in, minuted):
+    """"Page 3 of 11" as two Word fields, so it follows the document. The
+    project is named on the first page; repeating it at the foot of every one
+    is a line nobody reads."""
+    data = signed_in.get(f"/projects/1/minutes/meetings/{minuted}.docx").data
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        footer = book.read("word/footer1.xml").decode("utf-8")
+    assert "PAGE" in footer and "NUMPAGES" in footer
+    assert "Page " in footer and " of " in footer
+    assert "SIBLINE" not in footer.upper()
+
+
+def test_the_pdf_footer_says_how_many_pages_there_are(signed_in, minuted):
+    words = " ".join(read(signed_in.get(f"/projects/1/minutes/meetings/{minuted}.pdf").data))
+    assert "Page 1 of " in words
+    assert FORM_CODE in words
 
 
 def test_the_word_breaks_the_page_after_the_attendance(signed_in, minuted):
@@ -205,8 +224,30 @@ def test_the_word_breaks_the_page_after_the_attendance(signed_in, minuted):
     with zipfile.ZipFile(io.BytesIO(data)) as book:
         document = book.read("word/document.xml").decode("utf-8")
     assert document.count('w:br w:type="page"') == 1
-    assert document.index("Present at this meeting") < document.index('w:br w:type="page"')
+    assert document.index("Organization") < document.index('w:br w:type="page"')
     assert document.index('w:br w:type="page"') < document.index("Items and Agreement")
+
+
+def test_somebody_who_did_not_come_is_left_off_the_attendance(signed_in, minuted):
+    """A set of minutes records a meeting, and somebody who did not come to it
+    did not say anything in it."""
+    signed_in.post(f"/projects/1/minutes/meetings/{minuted}", data={
+        "ref": "MOM-01", "title": "Kickoff meeting", "meeting_date": "03/09/2026",
+        "prepared_by": "Ola Bou Ghannam", "issue_date": "07/09/2026",
+        "invited": ["1", "2", "3", "4"], "present": ["1", "2", "3"]})
+    cover = read(signed_in.get(f"/projects/1/minutes/meetings/{minuted}.pdf").data)[0]
+    assert "Jihad Zuhairy" in cover
+    assert "R. Khoury" not in cover
+
+
+def test_minutes_typed_up_before_the_attendance_still_list_the_roster(signed_in, minuted):
+    """Nothing ticked is not the same as nobody there — an empty attendance
+    table would be worse than the whole roster with the marks it has."""
+    signed_in.post(f"/projects/1/minutes/meetings/{minuted}", data={
+        "ref": "MOM-01", "title": "Kickoff meeting", "meeting_date": "03/09/2026",
+        "invited": ["1", "2", "3", "4"]})
+    cover = read(signed_in.get(f"/projects/1/minutes/meetings/{minuted}.pdf").data)[0]
+    assert "R. Khoury" in cover and "Jihad Zuhairy" in cover
 
 
 def test_both_formats_say_the_same_things(signed_in, minuted):
@@ -268,3 +309,25 @@ def test_something_that_will_not_open_costs_that_file_and_not_the_minutes():
     good = a_pdf("The minutes")
     joined = join(good, b"%PDF-1.4 not really")
     assert "The minutes" in read(joined)[0]
+
+
+def test_an_item_leads_with_its_subject_in_bold(signed_in, minuted):
+    """Somebody skimming a page of minutes is looking for a subject, not a
+    paragraph, so the subject is the thing the eye lands on."""
+    data = signed_in.get(f"/projects/1/minutes/meetings/{minuted}.docx").data
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        document = book.read("word/document.xml").decode("utf-8")
+    where = document.index("Bathymetry survey")
+    run = document[max(0, where - 200):where]
+    assert "<w:b/>" in run, "the subject line is not bold"
+
+
+def test_the_issue_date_sits_under_the_signature_not_under_the_name(signed_in, minuted):
+    data = signed_in.get(f"/projects/1/minutes/meetings/{minuted}.docx").data
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        document = book.read("word/document.xml").decode("utf-8")
+    row = document[document.index("Issue date:"):]
+    row = row[:row.index("</w:tr>")]
+    # Nothing before it in its row: the two left-hand cells are empty, so it
+    # falls under the signature it dates.
+    assert row.count("<w:tc>") <= 2

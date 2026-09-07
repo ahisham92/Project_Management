@@ -667,12 +667,12 @@ def _reading(cell: str) -> str:
 
 
 def _this_week(page) -> None:
-    """The Internal tab opens on the week: what the programme and both
+    """The Task List tab opens on the week: what the programme and both
     registers want between Monday and Sunday, in one list, editable in place."""
-    page.click("nav.tabs a:has-text('Internal')")
+    page.click("nav.tabs a:has-text('Task List')")
     page.wait_for_selector("h1:has-text('This week')", timeout=8000)
     if not page.url.rstrip("/").endswith("/internal"):
-        raise AssertionError(f"the Internal tab should open on the week: {page.url}")
+        raise AssertionError(f"the Task List tab should open on the week: {page.url}")
 
     body = page.text_content("body")
     for expected in ("Wanted this week", "Already late", "The week is worth"):
@@ -747,7 +747,7 @@ def _how_to_use(page) -> None:
     # Every tab has one of its own.
     for path, expected in (("/", "How to use the Dashboard tab"),
                            ("/tasks", "How to use the Progress tab"),
-                           ("/internal", "How to use the Internal tab"),
+                           ("/internal", "How to use the Task List tab"),
                            ("/setup", "How to use the Setup tab")):
         page.goto(f"{BASE}/projects/1{path}", wait_until="networkidle")
         if expected not in page.text_content("body"):
@@ -1217,7 +1217,7 @@ def _save_all(page) -> None:
 def _print_to_pdf(page) -> None:
     """Each report tab offers a print button and carries a print-only header."""
     for tab, heading in [("Progress", "Progress update"), ("Schedule", "Schedule"),
-                         ("Budget", "Budget control"), ("Period", "Period report")]:
+                         ("Finance", "Finance"), ("Period", "Period report")]:
         page.click(f"a.tabs >> nth=0" if False else f"nav.tabs a:has-text('{tab}')")
         page.wait_for_selector(f"text={heading}", timeout=8000)
         if page.locator("[data-print]").count() == 0:
@@ -1525,28 +1525,29 @@ def _schedule_amend(page) -> None:
 
 
 def _budget(page) -> None:
-    page.click("a:has-text('Budget')")
-    page.wait_for_selector("text=Budget control >> visible=true", timeout=8000)
+    page.click("nav.tabs a:has-text('Finance')")
+    page.wait_for_selector("text=Hours against budget by trade >> visible=true", timeout=8000)
     page.wait_for_selector(".chart svg", timeout=8000)
     page.screenshot(path=str(SHOTS / "06-budget.png"), full_page=True)
 
 
 def _book_hours(page) -> None:
-    page.click("a:has-text('Timesheet')")
+    """The hours are booked on the same tab as the budget they are charged to:
+    reading a figure on one tab and going to another to see what made it is how
+    a number stops being checked."""
+    page.click("nav.tabs a:has-text('Finance')")
     page.wait_for_selector("text=Book hours >> visible=true", timeout=8000)
     page.select_option("select[name=trade_id]", label="Geotechnical")
     page.fill("input[name=hours]", "36")
     page.fill("input[name=description]", "Borehole data review")
     page.click("button:has-text('Book hours')")
     page.wait_for_selector("text=Booked 36 hours >> visible=true", timeout=8000)
-    if "Borehole data review" not in page.text_content("body"):
+    body = page.text_content("body")
+    if "Borehole data review" not in body:
         raise AssertionError("entry not listed")
+    if "36 h" not in body:
+        raise AssertionError("booked hours did not reach the budget figures on the same tab")
     page.screenshot(path=str(SHOTS / "07-timesheet.png"), full_page=True)
-
-    page.click("a:has-text('Budget')")
-    page.wait_for_selector("text=Budget control >> visible=true", timeout=8000)
-    if "36 h" not in page.text_content("body"):
-        raise AssertionError("booked hours did not reach budget control")
 
 
 def _period(page) -> None:

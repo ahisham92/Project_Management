@@ -57,9 +57,21 @@ def test_logout_ends_the_session(signed_in):
 # --- pages -----------------------------------------------------------------
 
 def test_every_project_page_renders(signed_in):
-    for path in ("", "tasks", "schedule", "budget", "period", "time", "setup"):
+    for path in ("", "tasks", "schedule", "budget", "period", "setup"):
         response = signed_in.get(f"/projects/1/{path}")
         assert response.status_code == 200, f"/projects/1/{path} returned {response.status_code}"
+
+
+def test_the_hours_sit_with_the_budget_they_are_charged_against(signed_in):
+    """Reading a booked figure on one tab and going to another to see what made
+    it is how a number stops being checked. An old timesheet link still lands
+    on them."""
+    body = text(signed_in.get("/projects/1/budget"))
+    assert "Finance" in body and "Book hours" in body and "Recent entries" in body
+
+    sent = signed_in.get("/projects/1/time")
+    assert sent.status_code == 302
+    assert sent.headers["Location"].endswith("/budget#hours")
 
 
 def test_the_dashboard_shows_the_expected_figures(signed_in):

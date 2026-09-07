@@ -150,6 +150,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_attachments(conn)
         _ensure_impacts(conn)
         _ensure_snapshots(conn)
+        _ensure_templates(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -268,6 +269,34 @@ def _ensure_attachments(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_meeting "
                  "ON meeting_attachments(meeting_id, sort_order)")
+
+
+def _ensure_templates(conn: sqlite3.Connection) -> None:
+    """The Word document a project's minutes are built from.
+
+    Kept in the database with everything else, so the nightly backup carries it
+    and a restore brings the practice's own layout back with the data. One per
+    project per kind, replaced rather than versioned: a template is the current
+    form, and the last one is not something anybody asks for.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_templates (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind        TEXT    NOT NULL DEFAULT 'minutes',
+            filename    TEXT    NOT NULL DEFAULT '',
+            bytes       INTEGER NOT NULL DEFAULT 0,
+            fields      TEXT    NOT NULL DEFAULT '',
+            content     BLOB    NOT NULL,
+            user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_name   TEXT    NOT NULL DEFAULT '',
+            added_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS templates_one_per_kind "
+                 "ON document_templates (project_id, kind)")
 
 
 def _ensure_snapshots(conn: sqlite3.Connection) -> None:

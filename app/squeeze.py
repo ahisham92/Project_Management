@@ -30,6 +30,12 @@ the date, that is reported rather than quietly missed.
 
 **Some lines do not squeeze at all.** A survey takes as long as it takes, and a
 meeting is a day. Those are excluded by hand and keep the length they have.
+
+**What is finished is left alone.** A deliverable already approved happened on
+the days it happened; squeezing it would be rewriting history to make the
+arithmetic come out. Finished lines are held automatically, and the ratio is
+solved over the open and not-started ones — which is where the time has to come
+from anyway.
 """
 
 from __future__ import annotations
@@ -48,6 +54,11 @@ TRIES = 8
 
 class SqueezeError(ValueError):
     """A squeeze that cannot be worked out, said in words."""
+
+
+def is_finished(task: Mapping[str, Any]) -> bool:
+    """Whether a line is done with. Its dates are history, not a plan."""
+    return float(task.get("actual_pct") or 0) >= 1 - 1e-9
 
 
 # --- what is in the run -----------------------------------------------------
@@ -179,10 +190,16 @@ def plan(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
 
     diary = _diaries(rows, calendars)
     shared = working((calendars or {}).get(None))
-    held = {int(i) for i in excluded if int(i) in set(scope)}
+    # What is already done is held whether or not anybody ticked it: those days
+    # have been worked, and the time has to come out of what is still to do.
+    done = {i for i in scope if is_finished(rows[i])}
+    held = {int(i) for i in excluded if int(i) in set(scope)} | done
     movable = [i for i in scope if i not in held]
     if not movable:
-        raise SqueezeError("Every line in that run is excluded, so there is nothing to squeeze")
+        raise SqueezeError(
+            "Every line in that run is finished, so there is nothing left to squeeze"
+            if done and held == done else
+            "Every line in that run is excluded, so there is nothing to squeeze")
 
     lengths = {i: max(1, duration_between(rows[i].get("start_date"),
                                           rows[i].get("submission_date"), diary[i]) or 1)
@@ -209,7 +226,7 @@ def plan(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
         wanted = dict(lengths)
         target_total = max(len(movable), int(round(movable_total * ratio)))
         wanted.update(share_out({i: lengths[i] for i in movable}, target_total))
-        laid = _lay_out(rows, links, scope, diary, wanted, want_start, first_id)
+        laid = _lay_out(rows, links, scope, diary, wanted, want_start, first_id, done)
         reached = _latest_of(laid, scope, offsets, diary)
         miss = shared.duration(reached, want_end) - 1 if reached <= want_end else -(
             shared.duration(want_end, reached) - 1)
@@ -235,6 +252,7 @@ def plan(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
             "was_start": row.get("start_date") or "", "start": iso(start),
             "was_submission": row.get("submission_date") or "", "submission": iso(finish),
             "held": task_id in held,
+            "done": task_id in done,
             "approval": iso(_finished(row, finish, offsets[task_id], diary[task_id])),
         }
         change["moved"] = (change["start"] != change["was_start"]
@@ -245,7 +263,7 @@ def plan(tasks: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
 
     return {
         "first_id": first_id, "last_id": last_id,
-        "scope": scope, "excluded": sorted(held),
+        "scope": scope, "excluded": sorted(held), "finished": sorted(done),
         "start": iso(want_start), "end": iso(want_end),
         "was_start": iso(began), "was_finish": iso(was_finish),
         "finish": iso(reached),
@@ -281,9 +299,15 @@ def _latest_of(laid: Mapping[int, tuple], scope: Sequence[int],
 
 def _lay_out(rows: Mapping[int, Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
              scope: Sequence[int], diary: Mapping[int, Any], lengths: Mapping[int, int],
-             began: Any, first_id: int) -> dict[int, tuple]:
-    """The run laid out from a start date, each line after its predecessors."""
+             began: Any, first_id: int, pinned: Iterable[int] = ()) -> dict[int, tuple]:
+    """The run laid out from a start date, each line after its predecessors.
+
+    A pinned line keeps the dates it already has — it is finished, and a
+    finished line was worked on the days it was worked. What follows it still
+    follows it, so the rest of the run reads from where the work really got to.
+    """
     inside = set(scope)
+    stays = {i for i in pinned if i in inside}
     coming: dict[int, list[tuple[int, float, str]]] = {}
     for a, b, lag, kind in edges_of(links):
         if a in inside and b in inside:
@@ -293,6 +317,12 @@ def _lay_out(rows: Mapping[int, Mapping[str, Any]], links: Sequence[Mapping[str,
     finishes: dict[int, Any] = {}
     for task_id in order(list(scope), links):
         length = lengths[task_id]
+        if task_id in stays:
+            was_start = parse(rows[task_id].get("start_date"))
+            was_finish = parse(rows[task_id].get("submission_date"))
+            if was_start and was_finish:
+                starts[task_id], finishes[task_id] = was_start, was_finish
+                continue
         earliest = None
         for before, lag, kind in coming.get(task_id, ()):
             if before not in starts:
@@ -345,7 +375,9 @@ def _pull_in(rows: Mapping[int, Mapping[str, Any]], links: Sequence[Mapping[str,
         guard += 1
         node = queue.pop(0)
         for second, _lag, _kind in successors.get(node, ()):
-            if second in inside:
+            # A finished line downstream is not moved either: it is already
+            # done, and pulling its dates in would be rewriting what happened.
+            if second in inside or is_finished(rows[second]):
                 continue
             earliest = None
             for before, lag, kind in predecessors.get(second, ()):

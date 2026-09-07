@@ -74,13 +74,12 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Dashboard** | For one project. An **overview** row first — when the programme starts and finishes, the contract date, how many working days of **float** are left against it, planned against earned, and earned hours — then earned vs planned progress, the S-curve, progress and budget by trade, and what needs attention. |
 | **Progress** | The full WBS. Move a deliverable to its next **status** — the status sets the percentage. Record client comments to raise a **revision**. Every update is kept as history. |
 | **Schedule** | The programme: every deliverable in WBS order with its **start, duration and finish**, a **Gantt** of the whole thing, **dependencies**, and the **critical path** traced from start to end. Dates are amended here, and the whole programme round-trips to **Excel**. |
-| **Budget** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion. |
+| **Finance** | Hours booked vs budget vs *earned* per trade, with CPI, forecast at completion and variance at completion — and, at the foot of the same tab, the **hours themselves**: book time against a trade and optionally a deliverable, and every figure above is built from them. |
 | **Period** | What moved between two dates, and which trades earned it. |
-| **Timesheet** | Book hours against a trade and optionally a deliverable. Feeds budget control directly. |
 | **Minutes** | Minutes of meeting: attendance ticked per meeting, what was agreed, who owns it, whether it bears on **time or cost**, open or closed. Filter, search, and export to **Word** or PDF. |
 | **Carmen** | The project assistant. Ask her anything — “what is late?”, “how did last month go?” — tell her what to change, type up a meeting and say *minute this*, or say *take me to the schedule*. Anything she would change is **staged for you to approve**. She sits in the corner of every other tab too. |
 | **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
-| **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
+| **Task List** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
 | **Setup** | Deliverables, weights, trade splits, sections, **which office each trade is handled by**, the design workflow, revision rules, **teams with their working weeks and holidays**, what a minuted item may affect, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
@@ -584,7 +583,7 @@ is defined, and that no two tabs claim the same page.
 
 ### This week: one page to run the week from
 
-The **Internal** tab opens on **This week** — everything the project wants of us between the
+The **Task List** tab opens on **This week** — everything the project wants of us between the
 start of the week and the end of it, gathered into one list:
 
 * **Going out** — packages due to be issued this week.
@@ -682,7 +681,7 @@ which is what goes into a monthly report or on a wall.
 5. Check the **design workflow** — the five steps and their offsets — and adjust it to how
    your submissions actually run.
 6. Set each deliverable's **trade split** — it must total 100%.
-7. Report progress on the **Progress** tab and book hours on the **Timesheet** tab.
+7. Report progress on the **Progress** tab and book hours at the foot of the **Finance** tab.
 
 For a large scope, step 4 is far quicker in Excel: **Export to Excel**, fill in the
 Deliverables sheet, and **Import from Excel**.

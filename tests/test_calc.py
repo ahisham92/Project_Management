@@ -381,3 +381,30 @@ def test_period_report_shows_rework_as_going_backwards():
     row = next(t for t in period["tasks"] if t["wbs"] == "2.3")
     assert row["period_status"] == "Went back — rework"
     assert row["delta_actual"] < 0
+
+
+def test_a_line_off_the_workflow_reads_its_own_percentage_not_not_started():
+    """30% is under way. A line with no workflow step has nothing else to name
+    it, so its percentage does — reading "Not started" beside 30% is how people
+    stop believing the page."""
+    tasks = [dict(t) for t in TASKS]
+    plain = next(t for t in tasks if t["tracking"] == "simple")
+    plain["actual_pct"] = 0.3
+    done = next(t for t in tasks if t["tracking"] == "simple" and t is not plain)
+    done["actual_pct"] = 1.0
+
+    rows = {r["id"]: r for r in
+            compute_project(PROJECT, tasks, TRADES, DATA_DATE, steps=STEPS)["tasks"]}
+    assert rows[plain["id"]]["status_name"] == "In progress"
+    assert rows[done["id"]]["status_name"] == "Complete"
+    assert next(r for r in rows.values()
+                if r["tracking"] == "simple" and r["actual_pct"] == 0)["status_name"] == "Not started"
+
+
+def test_a_workflow_line_is_still_named_by_the_step_it_reached():
+    tasks = [dict(t) for t in TASKS]
+    running = next(t for t in tasks if t["tracking"] == "workflow")
+    running["status_key"] = STEPS[1]["key"]
+    rows = {r["id"]: r for r in
+            compute_project(PROJECT, tasks, TRADES, DATA_DATE, steps=STEPS)["tasks"]}
+    assert rows[running["id"]]["status_name"] == STEPS[1]["name"]

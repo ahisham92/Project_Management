@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import zipfile
 from io import BytesIO
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from xml.sax.saxutils import escape
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -70,7 +70,7 @@ _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:docDefaults>
     <w:rPrDefault><w:rPr>
       <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
-      <w:sz w:val="18"/><w:szCs w:val="18"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
     </w:rPr></w:rPrDefault>
     <w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="252" w:lineRule="auto"/></w:pPr></w:pPrDefault>
   </w:docDefaults>
@@ -104,7 +104,7 @@ _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:style w:type="paragraph" w:styleId="Cell">
     <w:name w:val="Cell"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:spacing w:before="40" w:after="40" w:line="220" w:lineRule="atLeast"/></w:pPr>
-    <w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>
+    <w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>
   </w:style>
   <!-- The letterhead line across the top of every page. Verdana 20pt, as the
        template has it, so a document produced here and one typed by hand sit
@@ -151,7 +151,7 @@ _USABLE_TWIPS = {"portrait": 9638, "landscape": 15570}   # page width less margi
 # sits where a reader expects it rather than tight against the page edge.
 # The footer's text, in half-points — the same size as the body so a page
 # number does not read as an afterthought.
-FOOTER_HALF_POINTS = 18
+FOOTER_HALF_POINTS = 20
 
 
 def _header_part(heading: str) -> str:
@@ -208,16 +208,23 @@ def _footer_part(logo: tuple[int, int] | None, note: str = "", code: str = "") -
     # PAGE as a real field, so it follows the document rather than being a
     # number typed once and wrong by the second page.
     look = f'<w:rPr><w:sz w:val="{FOOTER_HALF_POINTS}"/><w:szCs w:val="{FOOTER_HALF_POINTS}"/></w:rPr>'
+
+    def field(name: str, shown: str) -> str:
+        """A Word field, so the number follows the document rather than being
+        typed once and wrong by the second page."""
+        return ('<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+                f'<w:r><w:instrText xml:space="preserve"> {name} </w:instrText></w:r>'
+                '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+                f'<w:r>{look}<w:t>{shown}</w:t></w:r>'
+                '<w:r><w:fldChar w:fldCharType="end"/></w:r>')
+
+    said = lambda words: f'<w:r>{look}<w:t xml:space="preserve">{words}</w:t></w:r>'
     line = (
         '<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr>'
         + (f'<w:r>{look}<w:t xml:space="preserve">{_text(code)}</w:t></w:r>' if code else "")
         + '<w:r><w:tab/></w:r>'
-        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-        '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
-        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-        f'<w:r>{look}<w:t>1</w:t></w:r>'
-        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
-        "</w:p>"
+        + said("Page ") + field("PAGE", "1") + said(" of ") + field("NUMPAGES", "1")
+        + "</w:p>"
     )
     small_print = (
         f'<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr>'
@@ -453,12 +460,28 @@ class Document:
                 f'<w:tc><w:tcPr><w:tcW w:w="{width}" w:type="dxa"/>{spanning}{shading}'
                 f'{edge}{valign}</w:tcPr>'
                 f'<w:p><w:pPr>{style}{align}</w:pPr>'
-                + _runs(spec.get("text", ""), bold=bool(spec.get("bold")),
-                        size=spec.get("size"), font=spec.get("font", ""))
+                + self._cell_runs(spec)
                 + "</w:p></w:tc>"
             )
         parts.append("</w:tr>")
         return "".join(parts)
+
+    @staticmethod
+    def _cell_runs(spec: Mapping[str, Any]) -> str:
+        """What goes in one cell.
+
+        ``lead`` is a first line set in bold with the rest under it in the
+        ordinary weight — an item's subject above its discussion, which is how
+        the template reads and how somebody skimming a page finds the item they
+        were looking for.
+        """
+        look = {"size": spec.get("size"), "font": spec.get("font", "")}
+        body = spec.get("text", "")
+        lead = str(spec.get("lead") or "")
+        if not lead:
+            return _runs(body, bold=bool(spec.get("bold")), **look)
+        return _runs(lead, bold=True, **look) + (
+            _runs("\n" + str(body), bold=bool(spec.get("bold")), **look) if body else "")
 
     def add_page_break(self) -> "Document":
         self._body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')

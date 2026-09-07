@@ -838,6 +838,62 @@ def add_attachment(project_id: int, meeting_id: int, name: str, filename: str,
     )
 
 
+# --- the Word template the minutes are built from ---------------------------
+
+# A Word document with a letterhead and a logo in it. Larger than this is a
+# document with something else inside it, not a template.
+MAX_TEMPLATE = 8 * 1024 * 1024
+
+
+def load_template(project_id: int, kind: str = "minutes",
+                  with_content: bool = True) -> dict[str, Any] | None:
+    """The template a project's documents of that kind are built from, if any."""
+    columns = "*" if with_content else ("id, project_id, kind, filename, bytes, fields, "
+                                        "user_name, added_at")
+    row = query_one(f"SELECT {columns} FROM document_templates "
+                    "WHERE project_id = ? AND kind = ?", (project_id, kind))
+    return dict(row) if row else None
+
+
+def save_template(project_id: int, data: bytes, filename: str = "",
+                  kind: str = "minutes", user: Any = None) -> dict[str, Any]:
+    """Keeps an uploaded template, replacing whatever was there.
+
+    Checked on the way in — a file that will not open in Word will not fill in
+    here either, and the time to say so is now rather than the first time
+    somebody exports a set of minutes for a client.
+    """
+    from .doctemplate import check, placeholders
+
+    if not data:
+        raise AttachmentError("Choose a file first")
+    if len(data) > MAX_TEMPLATE:
+        raise AttachmentError(
+            f"That file is {len(data) / 1024 / 1024:.1f} MB. A template is a form, not a "
+            f"folder — they stop at {MAX_TEMPLATE // 1024 // 1024} MB.")
+    check(data)
+
+    fields = sorted(placeholders(data))
+    who = ""
+    if isinstance(user, Mapping):
+        who = str(user.get("name") or user.get("email") or "")
+    execute("DELETE FROM document_templates WHERE project_id = ? AND kind = ?",
+            (project_id, kind))
+    insert(
+        "INSERT INTO document_templates (project_id, kind, filename, bytes, fields, "
+        "content, user_id, user_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, kind, str(filename or "")[:160], len(data), ", ".join(fields),
+         data, (user or {}).get("id") if isinstance(user, Mapping) else None, who),
+    )
+    return {"fields": fields, "bytes": len(data)}
+
+
+def remove_template(project_id: int, kind: str = "minutes") -> bool:
+    """Back to the built-in layout."""
+    return bool(execute("DELETE FROM document_templates WHERE project_id = ? AND kind = ?",
+                        (project_id, kind)))
+
+
 def remove_attachment(project_id: int, attachment_id: int) -> bool:
     return bool(execute("DELETE FROM meeting_attachments WHERE id = ? AND project_id = ?",
                         (attachment_id, project_id)))
@@ -894,6 +950,31 @@ def renumber_items(project_id: int, meeting_id: int | None) -> None:
                     "UPDATE meeting_items SET sort_order = ?, ref = ? WHERE id = ?",
                     (target["sort_order"], target["ref"], target["id"]),
                 )
+
+
+def move_attendee(project_id: int, attendee_id: int, direction: str) -> bool:
+    """Swaps a person with the one above or below them on the roster.
+
+    The roster's order is the order an issued set of minutes lists people in,
+    so this is the control for "the client goes first, then our director" when
+    the house rule does not fit the meeting.
+    """
+    from .minutes import moved
+
+    rows = load_attendees(project_id)
+    if not any(int(r["id"]) == int(attendee_id) for r in rows):
+        return False
+
+    order = moved(rows, int(attendee_id), "up" if direction == "up" else "down")
+    if [r["id"] for r in order] == [r["id"] for r in rows]:
+        return False
+
+    conn = get_db()
+    with conn:
+        for place, person in enumerate(order, start=1):
+            conn.execute("UPDATE attendees SET sort_order = ? WHERE id = ? AND project_id = ?",
+                         (place, person["id"], project_id))
+    return True
 
 
 def move_item(project_id: int, item_id: int, direction: str) -> bool:

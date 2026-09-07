@@ -407,7 +407,7 @@
                 <th>Affects</th><th class="right">Due</th><th class="right">Status</th>
                 <th class="right no-print">Order &amp; actions</th></tr>
           </thead>
-          <tbody data-items-table>
+          <tbody data-items-table data-live-list="item,edit">
             {% for item in items %}
               <tr id="item-{{ item['id'] }}">
                 <td class="tabular small muted nowrap" data-ref>{{ item['ref'] or '—' }}</td>

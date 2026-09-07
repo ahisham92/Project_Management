@@ -2,6 +2,7 @@
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import badge, date_field, empty, sort_th, print_header, print_button, print_chart_button %}
 {% from "partials/link_row.html" import link_row with context %}
+{% from "partials/progress_bits.html" import progress_cell with context %}
 {% block title %}Schedule — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -297,14 +298,19 @@
                 {% for line in squeeze['changes'] %}
                   <tr class="{{ 'ink2' if line['held'] }}">
                     <td class="right">
+                      {# A finished line is held whether or not anybody ticks
+                         it: those days were worked, and the time has to come
+                         out of what is still to do. #}
                       <input form="work-it-out" type="checkbox" name="hold" value="{{ line['id'] }}"
-                             {{ 'checked' if line['held'] }}
+                             {{ 'checked' if line['held'] }} {{ 'disabled' if line['done'] }}
                              aria-label="Hold {{ line['wbs'] }} out of the squeeze"
-                             title="Ticked: this line keeps the length it has">
+                             title="{{ 'Finished — its dates are what happened' if line['done']
+                                       else 'Ticked: this line keeps the length it has' }}">
                     </td>
                     <td class="tabular small muted nowrap">{{ line['wbs'] }}</td>
                     <td>{{ line['name'] }}
-                      {% if line['held'] %}<span class="small muted">— held</span>{% endif %}
+                      {% if line['done'] %}<span class="small muted">— finished, left alone</span>
+                      {% elif line['held'] %}<span class="small muted">— held</span>{% endif %}
                     </td>
                     <td class="right tabular">
                       <span class="muted">{{ line['was_days'] }}</span>
@@ -437,6 +443,7 @@
               {{ sort_th('wbs', 'WBS', sort, direction, params) }}
               {{ sort_th('name', 'Deliverable', sort, direction, params) }}
               {{ sort_th('section', 'Section', sort, direction, params) }}
+              {{ sort_th('actual', 'Progress', sort, direction, params) }}
               {{ sort_th('start', 'Start', sort, direction, params, 'right') }}
               <th class="right">Duration</th>
               {{ sort_th('submission', 'Finish', sort, direction, params, 'right') }}
@@ -464,6 +471,25 @@
                   {% endif %}
                 </td>
                 <td class="small muted">{{ task['section_name'] or '—' }}</td>
+                {# Where the line has actually got to. It is the same control
+                   the Progress tab uses, so a step set here, there or on the
+                   Task List reads the same on all three — the percentage and
+                   the step, not "late" and "behind plan", which are the
+                   Progress tab's business rather than the programme's. #}
+                <td style="min-width:150px">
+                  <span id="sprogress-{{ task['id'] }}" style="display:block">
+                    {% if can_report %}
+                      <a class="cell-open" style="display:block"
+                         data-cell="{{ 'status' if task['uses_workflow'] else 'percent' }}"
+                         data-item="{{ task['id'] }}" data-rows="s"
+                         data-value="{{ task['status_key'] if task['uses_workflow'] else (task['actual_pct'] * 100) | round | int }}"
+                         data-date="{{ date_input(data_date) }}"
+                         data-action="{{ url_for('projects.update_progress', project_id=project['id'], task_id=task['id']) }}"
+                         href="{{ url_for('projects.tasks', project_id=project['id'], edit=task['id']) }}#task-{{ task['id'] }}"
+                         title="Click to change — it saves onto the Progress tab too">{{ progress_cell(task) }}</a>
+                    {% else %}{{ progress_cell(task) }}{% endif %}
+                  </span>
+                </td>
                 <td class="right small ink2 nowrap" id="start-{{ task['id'] }}">
                   {{ plan_cell(task, 'start', short_date(task['start_date']), date_input(task['start_date'])) }}
                   {% if task['starts_late'] %}
@@ -675,6 +701,23 @@
     <select name="kind" class="cell-input" aria-label="How this deliverable waits">
       {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
     </select>
+  </template>
+{% endif %}
+
+{% if can_report %}
+  {# The progress column is edited with the same two controls the Progress tab
+     uses, so a step reached is recorded once wherever you happen to be. #}
+  <template id="cell-status">
+    <select name="status_key" class="cell-input" aria-label="Status reached">
+      <option value="">Not started — 0%</option>
+      {% for step in steps %}
+        <option value="{{ step['key'] }}">{{ step['name'] }} — {{ pct(step['percent'], 0) }}</option>
+      {% endfor %}
+    </select>
+  </template>
+  <template id="cell-percent">
+    <input type="number" name="actual_pct" class="cell-input right" min="0" max="100" step="1"
+           style="width:74px" aria-label="Percent complete">
   </template>
 {% endif %}
 {% endblock %}

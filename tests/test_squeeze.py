@@ -512,3 +512,42 @@ def test_the_chat_cannot_move_the_programme_without_manager_access(app):
             apply(1, [staged], user_id=1, is_manager=False)
 
     assert "manager access" in str(refused.value)
+
+
+# --- what is finished is left alone -----------------------------------------
+
+def test_a_finished_line_keeps_its_dates_and_the_rest_carry_the_squeeze():
+    """Work already done happened on the days it happened. Squeezing it would
+    be rewriting history to make the arithmetic come out."""
+    rows = _rows(("2026-01-01", "2026-01-30"), ("2026-02-02", "2026-03-31"))
+    rows[0]["actual_pct"] = 1.0
+    links = [_link(1, 2)]
+
+    answer = plan(rows, links, None, 1, 2, "2026-01-01", "2026-03-31", CODE_A)
+    done, open_line = answer["changes"]
+    assert done["done"] is True and done["held"] is True
+    assert done["start"] == "2026-01-01" and done["submission"] == "2026-01-30"
+    assert done["days"] == done["was_days"], "a finished line keeps its length"
+    assert answer["finished"] == [1]
+    assert open_line["done"] is False
+
+
+def test_the_ratio_is_solved_over_what_is_left_to_do():
+    """Half the run is finished, so the whole compression comes out of the
+    other half — which is where the time can come from anyway."""
+    rows = _rows(("2026-01-01", "2026-01-30"), ("2026-02-02", "2026-03-31"))
+    links = [_link(1, 2)]
+    loose = plan(rows, links, None, 1, 2, "2026-01-01", "2026-03-01", CODE_A)
+
+    rows[0]["actual_pct"] = 1.0
+    tighter = plan(rows, links, None, 1, 2, "2026-01-01", "2026-03-01", CODE_A)
+    assert tighter["changes"][1]["days"] < loose["changes"][1]["days"]
+
+
+def test_a_run_where_everything_is_finished_says_so():
+    rows = _rows(("2026-01-01", "2026-01-30"), ("2026-02-02", "2026-03-31"))
+    for row in rows:
+        row["actual_pct"] = 1.0
+    with pytest.raises(SqueezeError) as refused:
+        plan(rows, [_link(1, 2)], None, 1, 2, "2026-01-01", "2026-03-01", CODE_A)
+    assert "finished" in str(refused.value)

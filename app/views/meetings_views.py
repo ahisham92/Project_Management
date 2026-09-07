@@ -20,9 +20,8 @@ from ..minutes import (
 )
 from ..service import (
     impact_choices, load_attachments, load_attendees, load_items, load_meeting, load_meetings,
-    load_steps,
-    load_trades, meeting_items, meeting_sheet, move_item, next_sort_order, renumber_items,
-    set_attendance, set_item_trades, today,
+    load_steps, load_template, load_trades, meeting_items, meeting_sheet, move_item,
+    next_sort_order, renumber_items, set_attendance, set_item_trades, today,
 )
 from ..workflow import ordered as ordered_steps
 
@@ -442,8 +441,23 @@ def meeting_word(project_id: int, meeting_id: int):
 
     stamp = (sheet["meeting"]["meeting_date"] or today()).replace("-", "")
     name = (sheet["meeting"]["ref"] or "minutes").replace("/", "-").replace(" ", "-")
-    # Named in the document; the PDF is the one that carries them.
-    document = minutes_document(project, sheet, load_attachments(project_id, meeting_id))
+
+    # Where the practice has uploaded its own form on the Setup tab, the
+    # minutes are built by filling that in; otherwise the layout in the code.
+    # Attachments are named in the document either way; the PDF carries them.
+    attachments = load_attachments(project_id, meeting_id)
+    form = load_template(project_id, "minutes")
+    if form:
+        from ..doctemplate import TemplateError
+        from ..minutes_doc import minutes_from_template
+
+        try:
+            document = minutes_from_template(form["content"], project, sheet, attachments)
+        except TemplateError as exc:
+            flash(f"{exc} The built-in layout was used instead.", "error")
+            document = minutes_document(project, sheet, attachments)
+    else:
+        document = minutes_document(project, sheet, attachments)
     return _download(document, f"{project['code']}-{name}-{stamp}.docx")
 
 
@@ -535,6 +549,32 @@ def set_attendee_order(project_id: int):
     flash("The attendance order is set for every set of minutes on this project", "success")
     return redirect(request.form.get("back")
                     or url_for("meetings.index", project_id=project_id, kind="client"))
+
+
+@bp.post("/minutes/attendees/<int:attendee_id>/move")
+@login_required
+def move_attendee_row(project_id: int, attendee_id: int):
+    """Moves one person up or down the roster, which is the order the exported
+    attendance table lists them in."""
+    from ..service import move_attendee
+
+    _project, _role = load_project(project_id, "member")
+    direction = "up" if (request.form.get("direction") or "").strip().lower() == "up" else "down"
+    moved = move_attendee(project_id, attendee_id, direction)
+
+    # Answered as JSON when the page asks, so the row moves where it stands
+    # rather than the whole page coming back to show two rows swapped.
+    if request.headers.get("Accept", "").startswith("application/json"):
+        if not moved:
+            return jsonify({"ok": False,
+                            "error": f"That person is already "
+                                     f"{'first' if direction == 'up' else 'last'}"}), 400
+        return jsonify({"ok": True, "moved": attendee_id,
+                        "order": [{"id": p["id"]} for p in load_attendees(project_id)]})
+
+    if not moved:
+        flash(f"That person is already {'first' if direction == 'up' else 'last'}", "error")
+    return _back(project_id)
 
 
 @bp.post("/minutes/meetings")

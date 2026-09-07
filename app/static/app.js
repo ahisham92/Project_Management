@@ -1579,21 +1579,30 @@
     });
   })();
 
-  // --- reordering a minuted item -------------------------------------------
-  // The numbers come from the order, so moving a row renumbers everything under
-  // it. Doing that by loading the page again loses where you were reading; the
-  // row moves where it stands and the numbers follow it.
+  // --- moving a row up or down ---------------------------------------------
+  // Minuted items and the attendance roster both keep an order that means
+  // something — an item's number is its position, and the roster's order is the
+  // order the exported minutes list people in. Loading the page again to show
+  // two rows swapped loses where you were reading, so the row moves where it
+  // stands.
 
   (function () {
-    var table = document.querySelector('[data-items-table]');
+    function listOf(form) {
+      return form.closest('[data-live-list]');
+    }
 
-    function ends() {
+    function prefixes(list) {
+      // Every item row carries a hidden edit row behind it, so a list says
+      // which rows travel together rather than the code assuming one each.
+      return (list.getAttribute('data-live-list') || 'item').split(',');
+    }
+
+    function ends(list) {
       // ▲ on the first row and ▼ on the last have nothing to do, so they are
       // off. The page renders them that way — this only keeps it true after a
-      // move, when the rows have swapped and the server has not been asked for
-      // a new page.
-      if (!table) return;
-      var rows = table.querySelectorAll('tr[id^="item-"]');
+      // move, when the server has not been asked for a new page.
+      var lead = prefixes(list)[0];
+      var rows = list.querySelectorAll('tr[id^="' + lead + '-"]');
       rows.forEach(function (row, index) {
         var up = row.querySelector('[data-move="up"]');
         var down = row.querySelector('[data-move="down"]');
@@ -1602,23 +1611,26 @@
       });
     }
 
-    function reorder(order) {
+    function reorder(list, order) {
       // Laid out in the order the server gave back rather than by swapping two
-      // siblings: every item carries a hidden edit row behind it, so "the next
-      // row" is not the next item and a swap moves the wrong thing.
+      // siblings: the order and any numbers are positional, and guessing at
+      // them here is how a page ends up disagreeing with the database.
+      var carried = prefixes(list);
       order.forEach(function (line) {
-        ['item-', 'edit-'].forEach(function (prefix) {
-          var row = document.getElementById(prefix + line.id);
-          if (row) table.appendChild(row);
+        carried.forEach(function (prefix) {
+          var row = document.getElementById(prefix + '-' + line.id);
+          if (row) list.appendChild(row);
         });
-        var cell = document.querySelector('#item-' + line.id + ' [data-ref]');
-        if (cell) cell.textContent = line.ref || '—';
+        var cell = list.querySelector('#' + carried[0] + '-' + line.id + ' [data-ref]');
+        if (cell && line.ref !== undefined) cell.textContent = line.ref || '—';
       });
     }
 
     document.addEventListener('submit', function (event) {
       var form = event.target.closest('form[data-live-move]');
-      if (!form || !window.fetch || !table) return;
+      if (!form || !window.fetch) return;
+      var list = listOf(form);
+      if (!list) return;
 
       event.preventDefault();
       var row = form.closest('tr');
@@ -1631,17 +1643,14 @@
       }).then(function (r) { return r.json().then(function (body) { return [r.ok, body]; }); })
         .then(function (answer) {
           if (!answer[0]) {
-            say((answer[1] && answer[1].error) || 'That item did not move');
-            ends();
+            say((answer[1] && answer[1].error) || 'That row did not move');
+            ends(list);
             return;
           }
-          // The order and the numbers both come back from the server: they are
-          // positional, and guessing at them here is how a page ends up
-          // disagreeing with the database it is showing.
-          reorder(answer[1].order || []);
+          reorder(list, answer[1].order || []);
           row.classList.add('just-moved');
           window.setTimeout(function () { row.classList.remove('just-moved'); }, 700);
-          ends();
+          ends(list);
           window.dispatchEvent(new Event('pm:saved'));
         }).catch(function () { form.submit(); });
     });

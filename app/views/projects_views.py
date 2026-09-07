@@ -27,9 +27,10 @@ from ..service import (
     project_overview, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
-    load_impacts, load_snapshots, restore_schedule, set_allocations, set_status,
-    set_task_dates, squeeze_plan, apply_squeeze, today,
+    load_impacts, load_snapshots, load_template, restore_schedule, set_allocations,
+    set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
+from ..minutes_doc import TEMPLATE_FIELDS
 from ..calendars import parse_days
 from ..squeeze import SqueezeError
 from ..workflow import ordered as ordered_steps
@@ -409,7 +410,7 @@ def schedule(project_id: int):
         gantt=charts.gantt(rows, first, last, plan["data_date"]),
         network=charts.network(plan["tasks"], plan["links"], movable=_can_edit(role),
                               links_url=url_for("projects.add_dependency", project_id=project_id)),
-        kinds=KINDS, can_edit=_can_edit(role),
+        kinds=KINDS, can_edit=_can_edit(role), can_report=_can_report(role),
     )
 
 
@@ -866,38 +867,26 @@ def _plan_answer(project_id: int, task_id: int, moves: dict):
 @bp.get("/budget")
 @login_required
 def budget(project_id: int):
+    """Finance: the budget, and the hours booked against it.
+
+    One tab rather than two. Reading a booked figure here and going somewhere
+    else to see what made it is how a number stops being checked.
+    """
     project, role = load_project(project_id)
     data_date, horizon = _params()
     snapshot = project_snapshot(project, data_date, horizon)
+    entries, booked = _booked_hours(project_id)
     return render_template(
-        "budget.html",
+        "finance.html",
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         budget_chart=charts.budget_hours(snapshot["trades"]),
+        entries=entries, booked=booked, total_hours=sum(e["hours"] for e in entries),
+        today=today(), can_report=_can_report(role),
     )
 
 
-# --- period report ---------------------------------------------------------
-
-@bp.get("/period")
-@login_required
-def period(project_id: int):
-    project, role = load_project(project_id)
-    start = from_input_or(request.args.get("from"), project["ntp_date"])
-    end = from_input_or(request.args.get("to"), today())
-    report = project_period(project, start, end)
-    moved = [t for t in report["tasks"] if abs(t["earned_in_period"]) > 1e-9]
-    return render_template(
-        "period.html", project=project, role=role, report=report, moved=moved, start=start, end=end
-    )
-
-
-# --- timesheet -------------------------------------------------------------
-
-@bp.get("/time")
-@login_required
-def timesheet(project_id: int):
-    project, role = load_project(project_id)
-    snapshot = project_snapshot(project)
+def _booked_hours(project_id: int) -> tuple[list, dict]:
+    """The time entries, newest first, and the hours totalled by trade."""
     entries = query(
         """
         SELECT e.*, u.name AS user_name, tr.name AS trade_name, tr.color AS trade_color,
@@ -916,13 +905,34 @@ def timesheet(project_id: int):
     for entry in entries:
         key = entry["trade_id"] if entry["trade_id"] is not None else "none"
         booked[key] = booked.get(key, 0.0) + entry["hours"]
+    return list(entries), booked
 
+
+# --- period report ---------------------------------------------------------
+
+@bp.get("/period")
+@login_required
+def period(project_id: int):
+    project, role = load_project(project_id)
+    start = from_input_or(request.args.get("from"), project["ntp_date"])
+    end = from_input_or(request.args.get("to"), today())
+    report = project_period(project, start, end)
+    moved = [t for t in report["tasks"] if abs(t["earned_in_period"]) > 1e-9]
     return render_template(
-        "timesheet.html",
-        project=project, role=role, snapshot=snapshot, entries=entries, booked=booked,
-        total_hours=sum(e["hours"] for e in entries), today=today(),
-        can_report=_can_report(role),
+        "period.html", project=project, role=role, report=report, moved=moved, start=start, end=end
     )
+
+
+# --- timesheet -------------------------------------------------------------
+# The hours live on the Finance tab now, beside the budget they are charged
+# against. This is kept so a bookmark, a link in an old email or anything
+# pointing at the timesheet still lands somewhere useful.
+
+@bp.get("/time")
+@login_required
+def timesheet(project_id: int):
+    load_project(project_id)
+    return redirect(url_for("projects.budget", project_id=project_id) + "#hours")
 
 
 @bp.post("/time")
@@ -1035,6 +1045,8 @@ def setup(project_id: int):
         carmen_picture_uploaded=carmen_uploaded() is not None,
         members=members, owner=owner, series=SERIES_SLOTS, office_list=offices.OFFICES,
         impacts=load_impacts(project_id),
+        minutes_template=load_template(project_id, "minutes", with_content=False),
+        template_fields=TEMPLATE_FIELDS,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),
         editing=_to_int(request.args.get("split")),
@@ -1293,6 +1305,69 @@ def save_section(project_id: int, section_id: int):
                 ((request.form.get("code") or "").strip(), name, section_id, project_id),
             )
             flash("Section saved", "success")
+    return _back("projects.setup", project_id)
+
+
+# --- the Word template the minutes are built from ---------------------------
+
+@bp.get("/setup/minutes-template.docx")
+@login_required
+def minutes_template(project_id: int):
+    """The template to edit: whatever was uploaded, or the built-in layout with
+    its placeholders in it, so a first edit starts from what the minutes look
+    like today rather than a blank page."""
+    from flask import send_file
+
+    from ..minutes_doc import starter_template
+
+    project, _role = load_project(project_id)
+    form = load_template(project_id, "minutes")
+    data = form["content"] if form else starter_template()
+    return send_file(
+        io.BytesIO(data), as_attachment=True,
+        download_name=f"{project['code']}-minutes-template.docx",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@bp.post("/setup/minutes-template")
+@login_required
+def upload_minutes_template(project_id: int):
+    """Takes the practice's own form and builds every set of minutes from it."""
+    from ..service import AttachmentError, save_template
+    from ..doctemplate import TemplateError
+
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    sent = request.files.get("file")
+    try:
+        kept = save_template(project_id, sent.read() if sent else b"",
+                             getattr(sent, "filename", ""), "minutes", g.user)
+    except (AttachmentError, TemplateError) as exc:
+        flash(str(exc), "error")
+        return _back("projects.setup", project_id)
+
+    found = len(kept["fields"])
+    flash(f"Template saved — {found} placeholder{'' if found == 1 else 's'} found. "
+          "Every set of minutes is built from it from now on."
+          if found else
+          "Template saved, but it has no {{placeholders}} in it, so every set of minutes "
+          "will come out identical. Download the template to see what to put in.",
+          "success" if found else "error")
+    return _back("projects.setup", project_id)
+
+
+@bp.post("/setup/minutes-template/remove")
+@login_required
+def remove_minutes_template(project_id: int):
+    from ..service import remove_template
+
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+    remove_template(project_id, "minutes")
+    flash("Back to the built-in layout", "success")
     return _back("projects.setup", project_id)
 
 

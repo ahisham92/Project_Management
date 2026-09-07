@@ -328,13 +328,25 @@ def test_the_minutes_carry_the_project_number_and_name():
     assert "Minutes of Meeting" in made["word/header1.xml"]
 
 
-def test_the_minutes_show_who_attended_and_who_sent_apologies():
-    """The template marks who was there with an asterisk beside the number,
-    and says so in a legend under the table."""
+def test_the_minutes_list_who_was_there_and_nobody_else():
+    """A set of minutes records a meeting, and somebody who did not come to it
+    did not say anything in it."""
     document = parts(minutes_document(PROJECT, sheet()))["word/document.xml"]
+    assert "Ahmed" in document
+    assert "Client Rep" not in document
+    # Nothing to explain when everybody listed was there.
+    assert "Present at this meeting" not in document
+
+
+def test_minutes_typed_before_the_attendance_keep_the_roster_and_its_marks():
+    """Nothing ticked is not the same as nobody there: an empty attendance
+    table would be worse than the roster with the marks it has."""
+    nothing = sheet()
+    for person in nothing["attendance"]:
+        person["present"] = False
+    document = parts(minutes_document(PROJECT, nothing))["word/document.xml"]
+    assert "Ahmed" in document and "Client Rep" in document
     assert "Present at this meeting" in document
-    assert "1*" in document                      # the first attendee was there
-    assert "Client Rep" in document
 
 
 def test_the_minutes_carry_each_item_with_its_owner_impact_and_status():
@@ -1085,3 +1097,45 @@ def test_the_register_reads_as_values_not_as_controls(minuted):
     quay = next(part for part in rows if "Quay wall levels" in part)
     for value in ("MR", "Time", "10/09/2026", "Marine"):
         assert value in quay, value
+
+
+def test_a_person_moves_up_the_roster_and_the_export_follows(signed_in):
+    """The roster's order is the order an issued set of minutes lists people
+    in, so it is moved on the roster rather than typed again on every export."""
+    for name in ("Ola", "Jihad", "Ahmed"):
+        signed_in.post("/projects/1/minutes/attendees", data={"name": name})
+
+    before = _names(signed_in)
+    assert before[:3] == ["Ola", "Jihad", "Ahmed"]
+
+    second = _attendee_id(signed_in, "Jihad")
+    answer = signed_in.post(f"/projects/1/minutes/attendees/{second}/move",
+                            data={"direction": "up"},
+                            headers={"Accept": "application/json"})
+    assert answer.status_code == 200
+    assert [row["id"] for row in answer.get_json()["order"]][:2] == [second, _attendee_id(signed_in, "Ola")]
+    assert _names(signed_in)[:2] == ["Jihad", "Ola"]
+
+
+def test_the_first_person_cannot_move_up(signed_in):
+    signed_in.post("/projects/1/minutes/attendees", data={"name": "Ola"})
+    first = _attendee_id(signed_in, "Ola")
+    answer = signed_in.post(f"/projects/1/minutes/attendees/{first}/move",
+                            data={"direction": "up"},
+                            headers={"Accept": "application/json"})
+    assert answer.status_code == 400
+    assert "already first" in answer.get_json()["error"]
+
+
+def _names(client) -> list[str]:
+    from app.service import load_attendees
+
+    with client.application.app_context():
+        return [p["name"] for p in load_attendees(1)]
+
+
+def _attendee_id(client, name: str) -> int:
+    from app.service import load_attendees
+
+    with client.application.app_context():
+        return next(int(p["id"]) for p in load_attendees(1) if p["name"] == name)

@@ -2,7 +2,7 @@
 
    The client register and the internal week are two tabs on one blueprint, so
    each is marked active on which of them is actually open rather than on the
-   endpoint alone. Internal opens on the week; its register and agenda are
+   endpoint alone. The Task List opens on the week; its register and agenda are
    reached from inside it. #}
 <nav class="tabs">
   {% set here = request.view_args.get('kind') if request.view_args else none %}
@@ -12,9 +12,8 @@
     ('projects.dashboard', 'Dashboard', none),
     ('projects.tasks', 'Progress', none),
     ('projects.schedule', 'Schedule', none),
-    ('projects.budget', 'Budget', none),
+    ('projects.budget', 'Finance', none),
     ('projects.period', 'Period', none),
-    ('projects.timesheet', 'Timesheet', none),
     ('meetings.index', 'Minutes', 'client'),
     ('assistant.index', 'Carmen', none),
     ('projects.setup', 'Setup', none),
@@ -27,7 +26,7 @@
       {# The internal week sits beside the client register, where the eye
          expects the pair. #}
       <a href="{{ url_for('meetings.week', project_id=project['id']) }}"
-         class="{{ 'active' if internal }}">Internal</a>
+         class="{{ 'active' if internal }}">Task List</a>
     {% else %}
       <a href="{{ url_for(endpoint, project_id=project['id']) }}"
          class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>

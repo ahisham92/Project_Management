@@ -732,6 +732,34 @@
           everybody.
         </p>
       </div>
+
+      {# Her picture, on the same card and under the same rule: set once, seen
+         by every account. She comes with one, so this is a change rather than
+         something anybody has to do. #}
+      <div class="card-body" style="border-top:1px solid var(--border)">
+        <p class="field-label">Her picture</p>
+        <p class="small muted" style="margin:2px 0 10px">
+          What everybody sees in the corner of every page. Kept beside the database rather
+          than in the repository, and shared by every account on this installation.
+        </p>
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+          <img src="{{ url_for('assistant.face', project_id=pid) }}" alt="" width="64" height="64"
+               style="border-radius:50%;object-fit:cover;border:1px solid var(--border)">
+          <form method="post" enctype="multipart/form-data" class="inline-form flex1"
+                action="{{ url_for('assistant.set_face', project_id=pid) }}">
+            <input type="hidden" name="back" value="setup">
+            <label class="field flex1">
+              <span class="field-label">Upload a different one (JPEG, PNG or WebP, up to 3 MB)</span>
+              <input type="file" name="picture" accept="image/jpeg,image/png,image/webp" required>
+            </label>
+            <button type="submit" class="btn btn-primary">Use this</button>
+            {% if carmen_picture_uploaded %}
+              <button type="submit" name="remove" value="1" class="btn btn-ghost"
+                      data-confirm="Go back to the picture she came with?">Reset</button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
     </div>
   {% endif %}
 

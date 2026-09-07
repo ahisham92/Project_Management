@@ -412,6 +412,71 @@ def test_something_that_is_not_a_picture_is_refused(signed_in, app):
         assert avatar.saved() == avatar.BUNDLED
 
 
+def test_the_picture_is_set_on_setup_and_comes_back_there(signed_in, app):
+    """The upload lives with the key, on Setup, so both are set in one place."""
+    from io import BytesIO
+
+    page = text(signed_in.get("/projects/1/setup?password=2026"))
+    assert "/assistant/face" in page and 'name="picture"' in page
+    # No Reset offered while she is still the picture she came with.
+    assert 'name="remove"' not in page.split("Her picture", 1)[1]
+
+    png = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + b"IHDR" + b"\x00" * 40)
+    answer = signed_in.post("/projects/1/assistant/face",
+                            data={"picture": (BytesIO(png), "carmen.png"), "back": "setup"},
+                            content_type="multipart/form-data")
+    assert answer.status_code == 302
+    assert "/setup" in answer.headers["Location"]
+
+    page = text(signed_in.get("/projects/1/setup?password=2026"))
+    # Now there is one to go back from.
+    assert 'name="remove"' in page.split("Her picture", 1)[1]
+
+
+def test_the_picture_one_account_uploads_is_the_one_everybody_sees(signed_in, client, app):
+    """One installation, one Carmen: what an administrator sets is what the
+    rest of the office opens the site to."""
+    from io import BytesIO
+
+    from app.auth import hash_password
+    from app.db import execute, insert
+
+    png = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + b"IHDR" + b"\x00" * 40)
+    signed_in.post("/projects/1/assistant/face",
+                   data={"picture": (BytesIO(png), "carmen.png"), "back": "setup"},
+                   content_type="multipart/form-data")
+
+    with app.app_context():
+        user_id = insert("INSERT INTO users (email, name, password_hash, role) "
+                         "VALUES (?, ?, ?, 'user')",
+                         ("viewer@example.com", "Viewer", hash_password("password123")))
+        execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'viewer')",
+                (user_id,))
+    client.post("/login", data={"email": "viewer@example.com", "password": "password123"})
+
+    answer = client.get("/projects/1/assistant/face")
+    assert answer.status_code == 200
+    assert answer.mimetype == "image/png"
+
+
+def test_somebody_who_is_not_an_administrator_is_not_offered_the_upload(client, app):
+    """Nothing to click on that would only refuse them."""
+    from app.auth import hash_password
+    from app.db import execute, insert
+
+    with app.app_context():
+        user_id = insert("INSERT INTO users (email, name, password_hash, role) "
+                         "VALUES (?, ?, ?, 'user')",
+                         ("manager@example.com", "Manager", hash_password("password123")))
+        execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'manager')",
+                (user_id,))
+    client.post("/login", data={"email": "manager@example.com", "password": "password123"})
+
+    page = text(client.get("/projects/1/setup?password=2026"))
+    assert "Her picture" not in page
+    assert 'name="picture"' not in page
+
+
 def test_only_an_administrator_changes_her_picture(client, app):
     from io import BytesIO
 

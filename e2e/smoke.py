@@ -1040,6 +1040,13 @@ def _setup_lock(page) -> None:
                      "Rework days", "Export to Excel", "Import from Excel"):
         if expected not in body:
             raise AssertionError(f"setup is missing {expected!r}")
+
+    # Carmen's key and her picture are set here, once, for everybody.
+    for expected in ("Carmen's API key", "Her picture"):
+        if expected not in body:
+            raise AssertionError(f"setup is missing {expected!r}")
+    if page.locator("form[action$='/assistant/face'] input[type=file]").count() == 0:
+        raise AssertionError("her picture cannot be changed from setup")
     page.screenshot(path=str(SHOTS / "10-setup.png"), full_page=True)
 
 

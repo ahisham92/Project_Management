@@ -932,6 +932,7 @@ def setup(project_id: int):
     from ..calendars import WEEK_PATTERNS, week_days
     from ..claude import EFFORTS
     from ..vault import carmen
+    from .carmen_avatar import uploaded as carmen_uploaded
 
     return render_template(
         "setup.html",
@@ -943,6 +944,7 @@ def setup(project_id: int):
         # The keys live here now: one place, administrators only, and what is
         # set is set for everybody rather than per person.
         is_admin=g.user["role"] == "admin", carmen=carmen(), efforts=EFFORTS,
+        carmen_picture_uploaded=carmen_uploaded() is not None,
         members=members, owner=owner, series=SERIES_SLOTS,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),

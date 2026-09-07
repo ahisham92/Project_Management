@@ -209,29 +209,34 @@ def set_face(project_id: int):
     from . import carmen_avatar as avatar
 
     load_project(project_id)
+    # The picture is set on Setup with the key; the endpoint answers to either
+    # page so a form can live wherever it reads best.
+    where = ("projects.setup" if (request.form.get("back") or "") == "setup"
+             else "assistant.index")
+
     if g.user["role"] != "admin":
         flash("Only an administrator can change Carmen's picture", "error")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        return redirect(url_for(where, project_id=project_id))
 
     if request.form.get("remove"):
         avatar.forget()
-        flash("Carmen is back to her monogram", "success")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        flash("Carmen is back to the picture she came with", "success")
+        return redirect(url_for(where, project_id=project_id))
 
     upload = request.files.get("picture")
     data = upload.read(avatar.MAX_BYTES + 1) if upload else b""
     if not data:
         flash("Choose a picture first", "error")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        return redirect(url_for(where, project_id=project_id))
 
     try:
         avatar.store(data)
     except ValueError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("assistant.index", project_id=project_id))
+        return redirect(url_for(where, project_id=project_id))
 
-    flash("That is Carmen now", "success")
-    return redirect(url_for("assistant.index", project_id=project_id))
+    flash("That is Carmen now — everybody sees it", "success")
+    return redirect(url_for(where, project_id=project_id))
 
 
 @bp.get("/assistant/test")

@@ -77,6 +77,7 @@ SUGGESTIONS = (
     "Prepare a presentation of the work done in the last month",
     "Set 1.1 to 40% — the drawings went out today",
     "Move 2.1 to start on 15/10/2026",
+    "Squeeze 1.1 to 1.6 into 40 working days",
     "How are Beirut and Cairo doing against their scope?",
     "Put Utilities under Cairo and set its budget to 120 hours",
     "Print the schedule as a PDF",
@@ -144,7 +145,8 @@ def apply(project_id: int):
     _project, role = load_project(project_id, "member")
     # Changing the setup sheet takes what changing it takes on the Setup tab:
     # manager access, and the sheet unlocked in this person's own session.
-    setup_open = ROLE_RANK[role] >= ROLE_RANK["manager"] and setup_unlocked(project_id)
+    is_manager = ROLE_RANK[role] >= ROLE_RANK["manager"]
+    setup_open = is_manager and setup_unlocked(project_id)
 
     asked = _asked()
     actions = asked.get("actions") or []
@@ -156,7 +158,7 @@ def apply(project_id: int):
         return jsonify({"ok": False, "error": "That is too many changes at once"}), 400
 
     try:
-        done = apply_them(project_id, actions, g.user["id"], today(), setup_open)
+        done = apply_them(project_id, actions, g.user["id"], today(), setup_open, is_manager)
     except ApplyError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:                          # noqa: BLE001 - said, not swallowed

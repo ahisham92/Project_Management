@@ -1486,8 +1486,9 @@ def test_a_line_that_cannot_start_as_drawn_says_so_on_the_chart_too():
 
 def test_the_tables_are_folded_away_under_the_charts(signed_in):
     body = text(signed_in.get("/projects/1/schedule"))
-    assert body.count('<details class="panel"') == 2
-    assert body.count("For details click here") == 2
+    # The squeeze, the dates and the dependencies: three tables, all folded.
+    assert body.count('<details class="panel"') == 3
+    assert body.count("For details click here") == 3
     # The charts themselves are not folded, and the dates card comes first.
     assert body.index("Programme") < body.index("Dates and durations") < body.index("Dependencies")
 

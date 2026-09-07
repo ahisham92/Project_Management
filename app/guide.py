@@ -78,6 +78,10 @@ TABS: tuple[dict[str, Any], ...] = (
             "them there.",
             "Change a <strong>start</strong>, a <strong>duration</strong> or a <strong>team</strong> "
             "in the table and everything downstream moves with it, live.",
+            "<strong>Squeeze the programme</strong> when a run has to fit into fewer days: name "
+            "the line it starts on, the line it ends on and the days available, and every "
+            "duration in between comes down in proportion. Work it out first — nothing moves "
+            "until you press Squeeze it.",
             "On the diagram, <strong>drag from one box to another</strong> to create a dependency, "
             "and <strong>click a line</strong> to remove one.",
             "Press <strong>Simplify</strong> once the shape is settled — it re-lays the diagram with "
@@ -92,7 +96,7 @@ TABS: tuple[dict[str, Any], ...] = (
         ),
         "terms": ("start date", "duration", "submission date", "approval date", "dependency",
                   "fs", "ss", "ff", "sf", "lag", "float", "critical path", "path", "team",
-                  "working week", "holiday", "run-up holidays"),
+                  "working week", "holiday", "run-up holidays", "squeeze"),
     },
     {
         "key": "budget",
@@ -226,6 +230,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "“add a trade called Project Manager”, “add a team on Sunday to Thursday”, “add a "
             "deliverable to Marine Design”. Setup has to be unlocked for those to apply, the "
             "same as changing them by hand.",
+            "Say “<strong>squeeze 1.1 to 1.6 into 40 working days</strong>” and she works out "
+            "what every duration in that run becomes and what it saves, and stages it as one "
+            "change.",
             "Ask for a change across <strong>every deliverable</strong> at once — “give the "
             "Project Manager 10% of every deliverable” — and the trades already on each line are "
             "rescaled to fit what is left. It arrives as one proposal, not fifty-five.",
@@ -562,6 +569,16 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "Setup. A deliverable is worked by whichever offices its trades belong to, in the same "
      "proportions, so a line split 60/40 between a Beirut trade and a Cairo one counts as both.",
      "An office's progress = the earned progress of its trades ÷ the scope weight they carry."),
+
+    ("Squeeze", "programme",
+     "Fitting a run of deliverables — from one line to another along the dependencies — into "
+     "fewer working days. Every duration in the run comes down in proportion to what it "
+     "already is, and whatever waits on the run is pulled forward with it.",
+     "New duration = its current duration × (days available ÷ the days the run takes now), "
+     "in whole days. The leftover day goes to the shortest lines, because a day off a 3-day "
+     "job costs a third of it and a day off a 12-day job costs a twelfth. Nothing falls below "
+     "one day, and waiting between lines — a review, a curing time — is not work, so it does "
+     "not compress."),
 
     # --- setup and structure
     ("Section", "setup",

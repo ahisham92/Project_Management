@@ -27,9 +27,10 @@ from ..service import (
     set_task_calendar, project_overview, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
-    set_allocations, set_status, set_task_dates, today,
+    set_allocations, set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
 from ..calendars import parse_days
+from ..squeeze import SqueezeError
 from ..workflow import ordered as ordered_steps
 
 bp = Blueprint("projects", __name__, url_prefix="/projects/<int:project_id>")
@@ -376,10 +377,25 @@ def schedule(project_id: int):
     sort, direction = normalise_sort(requested or "wbs", request.args.get("dir"))
     rows = sort_tasks(plan["tasks"], sort, direction)
 
+    # Squeezing a stretch: worked out and shown, and nothing moves until the
+    # Squeeze button below it is pressed. A GET so the proposal can be read,
+    # argued with and re-run without anything having happened.
+    squeeze = squeeze_trouble = None
+    squeeze_from = _to_int(request.args.get("from_task"))
+    squeeze_to = _to_int(request.args.get("to_task"))
+    squeeze_days = _to_int(request.args.get("days"))
+    if squeeze_from and squeeze_to and squeeze_days:
+        try:
+            squeeze = squeeze_plan(project, squeeze_from, squeeze_to, squeeze_days)
+        except SqueezeError as exc:
+            squeeze_trouble = str(exc)
+
     first, last = plan["window"]
     return render_template(
         "schedule.html",
         project=project, role=role, plan=plan, tasks=rows, data_date=data_date,
+        squeeze=squeeze, squeeze_trouble=squeeze_trouble, squeeze_from=squeeze_from,
+        squeeze_to=squeeze_to, squeeze_days=squeeze_days,
         mode=normalise_mode(project["schedule_mode"]), modes=MODES,
         sort=sort, direction=direction,
         steps=ordered_steps(load_steps(project_id)),
@@ -388,6 +404,41 @@ def schedule(project_id: int):
                               links_url=url_for("projects.add_dependency", project_id=project_id)),
         kinds=KINDS, can_edit=_can_edit(role),
     )
+
+
+@bp.post("/schedule/squeeze")
+@login_required
+def squeeze_schedule(project_id: int):
+    """Carries out a squeeze the reader has looked at.
+
+    The proposal is worked out again here from the two ends and the number of
+    days rather than trusting dates posted back from a page — what comes back
+    from a form is a request, not an answer.
+    """
+    # Manager access, the same as moving a single line on this tab.
+    project, _role = load_project(project_id, "manager")
+
+    first = _to_int(request.form.get("from_task"))
+    last = _to_int(request.form.get("to_task"))
+    days = _to_int(request.form.get("days"))
+    if not (first and last and days):
+        flash("Say which line the run starts on, which it ends on, and how many days.", "error")
+        return _back("projects.schedule", project_id, panel="squeeze")
+
+    try:
+        proposal = squeeze_plan(project, first, last, days)
+    except SqueezeError as exc:
+        flash(str(exc), "error")
+        return _back("projects.schedule", project_id, panel="squeeze")
+
+    done = apply_squeeze(project_id, proposal)
+    flash(
+        f"Squeezed {done['squeezed']} deliverables into {proposal['days']} working days — "
+        f"the run now finishes {to_display(proposal['finish'])}"
+        + (f", {proposal['saved_days']} days earlier" if proposal["saved_days"] > 0 else "")
+        + (f", and {done['followed']} lines after it moved with it" if done["followed"] else ""),
+        "success")
+    return _back("projects.schedule", project_id, panel="dates")
 
 
 @bp.post("/schedule/mode")

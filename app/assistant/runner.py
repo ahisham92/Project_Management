@@ -263,15 +263,17 @@ def staged_summary(staged: Sequence[Mapping[str, Any]]) -> str:
 # --- doing what was staged --------------------------------------------------
 
 def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
-          data_date: str = "", setup_open: bool = True) -> list[dict[str, Any]]:
+          data_date: str = "", setup_open: bool = True,
+          is_manager: bool = True) -> list[dict[str, Any]]:
     """Carries out what the reader approved.
 
     Every one goes through the same service function the screens post to, so a
     change made here is a change made the ordinary way — the same validation,
     the same cascade, the same history. The caller has already checked that
-    this person may write to this project, and says in ``setup_open`` whether
-    they may also edit the setup sheet — which is its own guard on the screens
-    and stays its own guard here.
+    this person may write to this project, and says in ``setup_open`` and
+    ``is_manager`` whether they may also edit the setup sheet and the
+    programme — which are their own guards on the screens and stay their own
+    guards here.
     """
     from ..service import (add_holiday, add_link, load_steps, next_sort_order,
                            record_progress, remove_link, renumber_items, set_status,
@@ -284,6 +286,11 @@ def apply(project_id: int, actions: Sequence[Mapping[str, Any]], user_id: int,
     for action in actions:
         kind = str(action.get("kind") or "")
         says = str(action.get("says") or kind)
+
+        if kind in edits.PROGRAMME_KINDS and not is_manager:
+            raise ApplyError(
+                "Moving the programme takes manager access on this project, the same as "
+                "changing a date on the Schedule tab. Ask somebody who has it.")
 
         if kind in edits.SETUP_KINDS and not setup_open:
             raise ApplyError(

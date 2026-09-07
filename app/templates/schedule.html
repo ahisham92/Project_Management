@@ -166,6 +166,150 @@
   <div class="card-body">{{ gantt }}</div>
 </div>
 
+{% if can_edit %}
+  {# Squeezing a stretch: the one change nobody can make by hand on fifty lines
+     without losing track of which ones moved and why. #}
+  <div class="card" style="margin-top:16px" id="squeeze">
+    <div class="card-head">
+      <div>
+        <h2>Squeeze the programme</h2>
+        <p class="small muted" style="margin-top:2px">
+          Fit a run of deliverables into fewer days. Durations come down in proportion to
+          what they already are, in whole days, and everything after the run is pulled
+          forward with it.
+        </p>
+      </div>
+    </div>
+    <details class="panel" data-panel="schedule-squeeze"
+             {{ 'open data-keep-open' if panel == 'squeeze' or squeeze }}>
+      <summary class="panel-summary">
+        <span class="panel-open">For details click here</span>
+        <span class="panel-shut">Hide the details</span>
+        <span class="small muted">Nothing moves until you press Squeeze</span>
+      </summary>
+      <div class="card-body">
+        <form method="get" class="inline-form" action="{{ url_for('projects.schedule', project_id=project['id']) }}#squeeze">
+          <input type="hidden" name="panel" value="squeeze">
+          <label class="field flex1">
+            <span class="field-label">From</span>
+            <select name="from_task" required>
+              <option value="">Which line it starts on…</option>
+              {% for line in tasks %}
+                <option value="{{ line['id'] }}" {{ 'selected' if squeeze_from == line['id'] }}>
+                  {{ line['wbs'] }} {{ line['name'][:60] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field flex1">
+            <span class="field-label">To</span>
+            <select name="to_task" required>
+              <option value="">…and which line it ends on</option>
+              {% for line in tasks %}
+                <option value="{{ line['id'] }}" {{ 'selected' if squeeze_to == line['id'] }}>
+                  {{ line['wbs'] }} {{ line['name'][:60] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field w-sm">
+            <span class="field-label">Working days</span>
+            <input type="number" name="days" min="1" step="1" class="right"
+                   value="{{ squeeze_days or '' }}" required>
+          </label>
+          <button type="submit" class="btn btn-ghost">Work it out</button>
+        </form>
+
+        {% if squeeze_trouble %}
+          <p class="small bad-text" style="margin:12px 0 0">{{ squeeze_trouble }}</p>
+        {% endif %}
+
+        {% if squeeze %}
+          <div class="grid grid-4" style="margin-top:16px">
+            {{ tile('The run today', squeeze['was_days'] ~ ' days',
+                    short_date(squeeze['start']) ~ ' to ' ~ short_date(squeeze['was_finish'])) }}
+            {{ tile('Squeezed into', squeeze['days'] ~ ' days',
+                    (squeeze['changes'] | length) ~ ' deliverables') }}
+            {{ tile('Finishes', short_date(squeeze['finish']),
+                    state='good' if squeeze['saved_days'] > 0 else 'neutral',
+                    state_label=(squeeze['saved_days'] ~ ' days earlier') if squeeze['saved_days'] > 0
+                                else ((-squeeze['saved_days']) ~ ' days later') if squeeze['saved_days'] < 0
+                                else 'no change') }}
+            {{ tile('Pulled forward with it', (squeeze['after'] | length) ~ ' more',
+                    'lines that wait on the run') }}
+          </div>
+
+          {% if not squeeze['reaches_target'] %}
+            <p class="small muted" style="margin:10px 0 0">
+              The durations total {{ squeeze['days'] }} days. Waiting between lines — a review,
+              a curing time — is not work and does not compress, so the run itself still spans
+              {{ short_date(squeeze['start']) }} to {{ short_date(squeeze['finish']) }}.
+            </p>
+          {% endif %}
+
+          <div class="table-scroll" style="margin-top:12px">
+            <table>
+              <thead>
+                <tr>
+                  <th>WBS</th><th>Deliverable</th><th class="right">Days</th>
+                  <th class="right">Start</th><th class="right">Submission</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for line in squeeze['changes'] %}
+                  <tr>
+                    <td class="tabular small muted nowrap">{{ line['wbs'] }}</td>
+                    <td>{{ line['name'] }}</td>
+                    <td class="right tabular">
+                      <span class="muted">{{ line['was_days'] }}</span>
+                      <strong>&rarr; {{ line['days'] }}</strong>
+                    </td>
+                    <td class="right small nowrap">
+                      <span class="muted">{{ short_date(line['was_start']) }}</span>
+                      <strong style="display:block">{{ short_date(line['start']) }}</strong>
+                    </td>
+                    <td class="right small nowrap">
+                      <span class="muted">{{ short_date(line['was_submission']) }}</span>
+                      <strong style="display:block">{{ short_date(line['submission']) }}</strong>
+                    </td>
+                  </tr>
+                {% endfor %}
+                {% for line in squeeze['after'] %}
+                  <tr class="ink2">
+                    <td class="tabular small muted nowrap">{{ line['wbs'] }}</td>
+                    <td>{{ line['name'] }} <span class="small muted">— follows on</span></td>
+                    <td class="right tabular muted">{{ line['days'] }}</td>
+                    <td class="right small nowrap">
+                      <span class="muted">{{ short_date(line['was_start']) }}</span>
+                      <strong style="display:block">{{ short_date(line['start']) }}</strong>
+                    </td>
+                    <td class="right small nowrap">
+                      <span class="muted">{{ short_date(line['was_submission']) }}</span>
+                      <strong style="display:block">{{ short_date(line['submission']) }}</strong>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <form method="post" class="inline-form" style="margin-top:12px"
+                action="{{ url_for('projects.squeeze_schedule', project_id=project['id']) }}">
+            <input type="hidden" name="from_task" value="{{ squeeze['first_id'] }}">
+            <input type="hidden" name="to_task" value="{{ squeeze['last_id'] }}">
+            <input type="hidden" name="days" value="{{ squeeze['target_days'] }}">
+            <button type="submit" class="btn btn-primary"
+                    data-confirm="Squeeze {{ squeeze['changes'] | length }} deliverables into {{ squeeze['target_days'] }} working days?">
+              Squeeze it
+            </button>
+            <span class="small muted">
+              The hours do not change — the same work in fewer days needs more people in the week.
+            </span>
+          </form>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+{% endif %}
+
 <div class="card" style="margin-top:16px">
   <div class="card-head">
     <div>

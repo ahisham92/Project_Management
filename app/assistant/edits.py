@@ -23,6 +23,13 @@ from .common import ApplyError, ToolError, _date, _deliverable, _project
 
 # Changes that edit the setup sheet, and so need it unlocked. Named here rather
 # than guessed at from the tool name.
+# Changes to the programme itself. The Schedule tab takes manager access to
+# move a line, so a change staged here takes the same — Carmen is another way
+# in, not another set of rules.
+PROGRAMME_KINDS: frozenset[str] = frozenset((
+    "set_dates", "add_link", "remove_link", "add_holiday", "squeeze_schedule",
+))
+
 SETUP_KINDS: frozenset[str] = frozenset((
     "set_project_settings", "set_trade", "remove_trade", "set_section",
     "set_workflow_step", "remove_workflow_step", "set_team",
@@ -635,6 +642,56 @@ def share_across(project_id: int, trade: str = "", percent: Any = None, section:
     }
 
 
+# --- squeezing the programme ------------------------------------------------
+
+def squeeze_schedule(project_id: int, start_at: str = "", end_at: str = "", days: Any = None,
+                     **_ignored) -> dict[str, Any]:
+    """Fit a run of deliverables into fewer working days.
+
+    Worked out here rather than described: what comes back is the real proposal
+    — every line's new duration and dates, the new finish, and what it saves —
+    so what is staged is what will happen.
+    """
+    from ..service import squeeze_plan
+    from ..squeeze import SqueezeError
+
+    first = _deliverable(project_id, start_at)
+    last = _deliverable(project_id, end_at)
+    if days in (None, ""):
+        raise ToolError("Say how many working days the run has to fit into")
+    want = int(_number(days, "The stretch", low=1, high=3650))
+
+    try:
+        proposal = squeeze_plan(_project(project_id), first["id"], last["id"], want)
+    except SqueezeError as exc:
+        raise ToolError(str(exc)) from None
+
+    moved = len(proposal["changes"])
+    after = len(proposal["after"])
+    return {
+        "kind": "squeeze_schedule",
+        "first_id": first["id"], "last_id": last["id"], "days": want,
+        "says": (f"Squeeze {first['wbs']} → {last['wbs']} into {want} working days: "
+                 f"{moved} deliverable{'s' if moved != 1 else ''} come down from "
+                 f"{proposal['was_days']} days of work to {proposal['days']}, finishing "
+                 f"{to_display(proposal['finish'])}"
+                 + (f", {proposal['saved_days']} days earlier" if proposal["saved_days"] > 0
+                    else f", {-proposal['saved_days']} days later" if proposal["saved_days"] < 0
+                    else "")
+                 + (f", and {after} line{'s' if after != 1 else ''} after it move with it"
+                    if after else "")),
+        "note": {
+            "lines": [{"wbs": c["wbs"], "was_days": c["was_days"], "days": c["days"],
+                       "start": to_display(c["start"]),
+                       "submission": to_display(c["submission"])}
+                      for c in proposal["changes"][:25]],
+            "finish": to_display(proposal["finish"]),
+            "was_finish": to_display(proposal["was_finish"]),
+            "waiting_does_not_compress": not proposal["reaches_target"],
+        },
+    }
+
+
 # --- the timesheet and the rework ------------------------------------------
 
 def book_hours(project_id: int, date: str = "", hours: Any = None, trade: str = "",
@@ -797,6 +854,16 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
                     "description": "Limit it to these deliverables, by WBS or name"}},
           ["trade", "percent"]),
 
+    _tool("squeeze_schedule",
+          "Fit a run of deliverables — from one line to another along the dependencies — into "
+          "a given number of working days. Every line's duration comes down in proportion to "
+          "what it already is, in whole days with the leftover day going to the shorter lines, "
+          "and everything that waits on the run is pulled forward with it. Use this whenever "
+          "somebody wants the programme compressed rather than moving lines one at a time.",
+          {"start_at": {"type": "string", "description": "The line the run starts on, by WBS or name"},
+           "end_at": {"type": "string", "description": "The line it ends on, by WBS or name"},
+           "days": {"type": "number", "description": "Working days the whole run has to fit into"}},
+          ["start_at", "end_at", "days"]),
     _tool("book_hours", "Book hours to the timesheet.",
           {"date": {"type": "string", "description": "dd/mm/yyyy; omitted means today"},
            "hours": _NUMBER, "trade": _TEXT, "deliverable": _TEXT, "description": _TEXT},
@@ -833,6 +900,7 @@ RUNNERS: dict[str, Any] = {
     "remove_deliverable": remove_deliverable,
     "set_trade_split": set_trade_split,
     "share_across": share_across,
+    "squeeze_schedule": squeeze_schedule,
     "book_hours": book_hours,
     "return_comments": return_comments,
     "add_attendee": add_attendee,
@@ -1022,6 +1090,26 @@ def apply_one(project_id: int, action: Mapping[str, Any], user_id: int, stamp: s
         if not done:
             raise ApplyError("None of those deliverables has another trade to take the share out of")
         says = f"{says} — {done} done"
+
+    elif kind == "squeeze_schedule":
+        from ..service import apply_squeeze, squeeze_plan
+        from ..squeeze import SqueezeError
+
+        from ..db import query_one
+
+        project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+        if project is None:
+            raise ApplyError("That project is no longer there")
+        try:
+            # Worked out again from the two ends and the number of days rather
+            # than from dates that travelled to a page and back.
+            proposal = squeeze_plan(project, int(action["first_id"]), int(action["last_id"]),
+                                    int(action.get("days") or 0))
+        except SqueezeError as exc:
+            raise ApplyError(str(exc)) from exc
+        outcome = apply_squeeze(project_id, proposal)
+        says = (f"{says} — {outcome['squeezed']} squeezed"
+                + (f", {outcome['followed']} moved with them" if outcome["followed"] else ""))
 
     elif kind == "book_hours":
         from ..service import today

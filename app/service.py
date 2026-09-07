@@ -1533,6 +1533,36 @@ def replace_links(project_id: int, rows: Sequence[Mapping[str, Any]]) -> dict[st
     return {"added": len(wanted), "skipped": trouble}
 
 
+def squeeze_plan(project: Mapping[str, Any], first_id: int, last_id: int,
+                 target_days: Any) -> dict[str, Any]:
+    """What squeezing a stretch of the programme would do. Writes nothing."""
+    from .squeeze import plan
+
+    project = as_dict(project)
+    return plan(load_tasks(int(project["id"])), load_links(int(project["id"])),
+                calendars_for(project), int(first_id), int(last_id), target_days)
+
+
+def apply_squeeze(project_id: int, proposal: Mapping[str, Any]) -> dict[str, Any]:
+    """Puts a squeeze where the proposal says it goes.
+
+    Written in one transaction, and worked out again from the same function that
+    produced the preview rather than trusting dates that came back from a page —
+    a proposal is a description of a change, not the change itself.
+    """
+    conn = get_db()
+    lines = [*proposal.get("changes", ()), *proposal.get("after", ())]
+    with conn:
+        for line in lines:
+            conn.execute(
+                "UPDATE tasks SET start_date = ?, submission_date = ?, "
+                "updated_at = datetime('now') WHERE id = ? AND project_id = ?",
+                (line["start"], line["submission"], line["id"], project_id),
+            )
+    return {"squeezed": len(proposal.get("changes", ())),
+            "followed": len(proposal.get("after", ()))}
+
+
 def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str) -> dict[str, Any]:
     """Puts the project's dates where an imported sheet says they are.
 

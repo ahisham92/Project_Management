@@ -89,6 +89,7 @@ def main() -> int:
         step("filters to late deliverables", _filter_late)
         step("schedule draws the programme with its milestones", _schedule)
         step("schedule links two deliverables and shifts what follows", _schedule_links)
+        step("schedule squeezes a run into fewer days", _squeeze)
         step("schedule dates and durations are amended in the row", _schedule_amend)
         step("schedule dependencies are edited and dragged", _schedule_deps)
         step("schedule dates go out to Excel and come back", _schedule_excel)
@@ -276,11 +277,11 @@ def _schedule_reading(page) -> None:
     where each path ends and says how many there are."""
     page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
 
-    # The how-to-use helper is a panel too; the two being counted here are the
-    # tables folded under each chart.
+    # The how-to-use helper is a panel too; the three being counted here are the
+    # squeeze and the tables folded under each chart.
     panels = page.locator("details.panel:not(.guide-strip)")
-    if panels.count() != 2:
-        raise AssertionError(f"expected a panel under each chart, found {panels.count()}")
+    if panels.count() != 3:
+        raise AssertionError(f"expected three folded panels, found {panels.count()}")
     if panels.first.get_attribute("open") is not None:
         raise AssertionError("the page should open on the chart, not the table")
 
@@ -1172,6 +1173,52 @@ def _schedule_links(page) -> None:
     if page.locator("svg path[marker-end]").count() == 0:
         raise AssertionError("the dependency arrows are missing")
     page.screenshot(path=str(SHOTS / "22-network.png"), full_page=True)
+
+
+def _squeeze(page) -> None:
+    """A run of the programme fitted into fewer days: worked out first, applied
+    only when the button under the proposal is pressed."""
+    # Read the first row with the dates panel open — a row inside a folded
+    # panel has no text to compare, which is not the same as not having moved.
+    _schedule_page(page, "dates")
+    before = page.locator("tr[id^='task-']").first.inner_text()
+
+    _schedule_page(page, "squeeze")
+
+    # The two lines linked a couple of steps ago are the run.
+    options = page.locator("select[name=from_task] option")
+    if options.count() < 3:
+        raise AssertionError("the squeeze has no deliverables to choose from")
+    page.select_option("select[name=from_task]", index=1)
+    page.select_option("select[name=to_task]", index=2)
+    page.fill("input[name=days]", "15")
+    page.click("button:has-text('Work it out')")
+    page.wait_for_selector("text=Squeezed into >> visible=true", timeout=8000)
+
+    body = page.text_content("body")
+    if "15 days" not in body:
+        raise AssertionError("the proposal does not say what the run becomes")
+    if page.locator("form[action$='/schedule/squeeze'] button").count() == 0:
+        raise AssertionError("the proposal offers no way to apply it")
+    page.screenshot(path=str(SHOTS / "23-squeeze.png"), full_page=True)
+
+    # Nothing has moved while the proposal is still only a proposal.
+    _schedule_page(page, "dates")
+    if page.locator("tr[id^='task-']").first.inner_text() != before:
+        raise AssertionError("working it out must not move anything")
+
+    # Now apply it.
+    _schedule_page(page, "squeeze")
+    page.select_option("select[name=from_task]", index=1)
+    page.select_option("select[name=to_task]", index=2)
+    page.fill("input[name=days]", "15")
+    page.click("button:has-text('Work it out')")
+    page.wait_for_selector("text=Squeezed into >> visible=true", timeout=8000)
+    page.click("form[action$='/schedule/squeeze'] button")
+    page.wait_for_selector("text=working days >> visible=true", timeout=8000)
+    said = page.text_content(".flash")
+    if "Squeezed" not in said or "15 working days" not in said:
+        raise AssertionError(f"the squeeze did not report itself: {said!r}")
 
 
 def _schedule_deps(page) -> None:

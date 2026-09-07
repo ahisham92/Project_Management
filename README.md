@@ -8,8 +8,9 @@ It replaces the spreadsheet with something several people can use at once, from 
 across a whole **portfolio** of projects.
 
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
-is SQLite, which is part of Python itself. It needs four packages: Flask, Waitress,
-openpyxl (for the Excel round trip) and anthropic (for Carmen).
+is SQLite, which is part of Python itself. It needs six packages: Flask, Waitress,
+openpyxl (for the Excel round trip), reportlab and pypdf (for the PDFs and for compiling
+attachments into them) and anthropic (for Carmen).
 
 ---
 
@@ -80,7 +81,7 @@ Your data lives in one file: **`data/pm.sqlite`**. Copy it to back the whole sys
 | **Carmen** | The project assistant. Ask her anything — “what is late?”, “how did last month go?” — tell her what to change, type up a meeting and say *minute this*, or say *take me to the schedule*. Anything she would change is **staged for you to approve**. She sits in the corner of every other tab too. |
 | **How to use** | Every tab explained in the order you would use it, and every word in the app defined — 74 definitions, searchable. The same text drives the helper strip at the top of every other tab. |
 | **Internal** | Opens on **this week**: everything the project wants of us between Monday and Sunday, compiled from the programme and both registers. One button opens the weekly meeting. Behind it, the internal register — the same record as the Minutes, kept for us rather than the client. Either register reads **as at a past date**, which is what to show a client asking where things stood then. |
-| **Setup** | Deliverables, weights, trade splits, sections, the design workflow, revision rules, **teams with their working weeks and holidays**, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
+| **Setup** | Deliverables, weights, trade splits, sections, **which office each trade is handled by**, the design workflow, revision rules, **teams with their working weeks and holidays**, what a minuted item may affect, and who can see the project. Dates are amended on the Schedule. **Locked** by default, and round-trips to **Excel**. |
 
 ### Minutes of meeting
 
@@ -92,8 +93,10 @@ The **Minutes** tab keeps the meeting record and the action register in one plac
 - **A meeting** carries its reference, subject, date, time, location, who chaired it and when
   the next one is. Adding one invites everyone currently on the list.
 - **An item** carries the subject, the discussion, **what was agreed**, its **owner**, its
-  **trades**, whether it **affects time or cost** (or both, or neither), its action date, and
-  whether it is **open or closed**. Closing one stamps the date it closed. What was agreed
+  **trades**, **what it affects**, its action date, and whether it is **open or closed**. Time
+  and cost are offered out of the box; anything else the practice minutes — *Schedule*,
+  *Design progress*, *Dredging limits* — is added on the **Setup** tab and is on the list from
+  then on, without anybody touching the code. Closing one stamps the date it closed. What was agreed
   and what was discussed are full writing boxes, so a long agreement can be read back
   before it is saved.
 - **The owner is a party, not a person**: PM, Client, MR, ST, GE, WE, EL or PMC. People move
@@ -232,9 +235,11 @@ then reads as behind on the Monday. **Setup → Teams and their working days** f
 - A **team** is a working week plus its holidays. **Monday to Friday**, **Sunday to
   Thursday**, Monday to Saturday and every day are offered by name; any other week is set day
   by day with the seven tick boxes.
-- A **holiday** belongs to one team or to everybody. Each deliverable names the team it is
-  planned against — from the Setup sheet, from the Team column on the Schedule, or from its
-  own panel — and anything not given one follows the project's default team.
+- A **holiday** belongs to one team or to everybody. A team is kept by one **office**, and a
+  deliverable is planned against **whichever offices its trades belong to** — the split on the
+  line decides it, so a deliverable that is 60% Marine and 40% Geotechnical is worked by
+  whichever of Beirut and Cairo those trades sit in. Nothing is chosen line by line, and a
+  trade with no office named follows the project's default team.
 - **Durations, lags and the workflow step offsets are counted in that team's working days.**
   Five days from a Monday finishes on the Friday for Beirut and on the following Sunday for
   Cairo, and a holiday in the middle pushes both out by a day.
@@ -247,9 +252,31 @@ then reads as behind on the Monday. **Setup → Teams and their working days** f
   a day everybody is off is worth knowing about earlier than one only one team takes.
 
 Every project starts with a single **Every day** team, so nothing moves until somebody says a
-team keeps a shorter week. Assigning a team keeps a line's dates and re-reads its duration in
-the days that team actually works — a 30-day span becomes 22 working days, and it is that
-number the next edit works in.
+team keeps a shorter week. Moving a trade to another office keeps its lines' dates and
+re-reads their durations in the days that office actually works — a 30-day span becomes 22
+working days, and it is that number the next edit works in. Where two offices share a line and
+one of them is on holiday in the run-up to a submission, the Schedule says so on the line
+itself.
+
+### Squeezing a run of the programme
+
+Four months of work has to be done in three. **Schedule → Squeeze a run** takes the first and
+last deliverable of the run, the date it starts and the date it has to be finished by, and
+works out the single **ratio** every duration is multiplied by to land the last Code A on that
+date — the same proportion applied to everything, so a 43-day task becomes 32 rather than
+being crushed into 3 while a 5-day one is untouched.
+
+- **Whole days only.** The rounding gives its spare days to the shorter lines first, so
+  nothing disappears and the total still lands where it was asked to.
+- **Nothing moves until Apply.** The proposal lists every line, what it was and what it
+  becomes, and the run's new finish. Cancel leaves it alone.
+- **Lines can be held out.** Tick a line and it keeps its duration; the ratio is re-solved
+  around it, so the rest carry the whole compression.
+- **Recurring meetings follow the run.** Eight fortnightly meetings over four months become
+  six over three and twelve over six, renumbered from one with no gaps.
+- **It can be put back.** Every squeeze takes a snapshot first, listed underneath, so the
+  four-month programme is one press away — and asking for a *later* date extends the run by
+  the same arithmetic instead of compressing it.
 
 ### Nothing needs refreshing
 
@@ -400,8 +427,12 @@ runs on **Claude Opus 5**, through Anthropic's own Python SDK.
 **What she can do.** She reads where the project stands, any deliverable and what
 it waits on, what moved between two dates, what this week needs, either register
 (including as at a past date), and hours by trade. She changes progress, dates,
-dependencies, holidays and actions. She builds a **PowerPoint of the work done
-between two dates**, and Word minutes on the practice's template.
+dependencies, holidays and actions — and the **setup sheet** too: trades and
+their offices, sections, the workflow steps, teams, the deliverables themselves
+and their trade splits, including giving one trade a share of **every** line at
+once. She books hours, returns comments, and squeezes a run of the programme. She
+builds a **PowerPoint of the work done between two dates**, and Word minutes on
+the practice's template.
 
 **She minutes a meeting.** Type up what was said — a paragraph, however it comes
 out — and say *minute this*. She reads the prose and writes the register:
@@ -415,6 +446,20 @@ field and leaves the agreement somebody spent ten minutes wording alone.
 **She takes you places.** *"Take me to the schedule"* opens the schedule; *"print
 the budget as a PDF"* opens that tab's print dialog. That is the difference
 between an assistant and a search box.
+
+**Files go both ways.** Attach up to four — a client's letter, a drawing
+register, a programme, a photograph — and she answers from what is in them. A PDF
+or a picture goes to the model as it is; a Word, PowerPoint or spreadsheet is
+read here and its words go up, because the API takes neither. What you attach is
+kept with the conversation and can be opened again from it. The other way, *"send
+me the action register as a Word document"* hands back the file itself — minutes
+as Word or as the compiled PDF, the register, the agenda, the programme or the
+setup sheet as a spreadsheet, or a presentation.
+
+**She keeps the conversation.** Every thread is listed down the left, named after
+what was asked, and reopening one brings back what was said rather than an empty
+box — so a question picked up on Thursday does not start again from nothing.
+Renaming and deleting are on the thread itself.
 
 **She is on every page.** The button in the bottom-right corner of any project
 tab opens the same conversation in a smaller box — one initialiser in `app.js`

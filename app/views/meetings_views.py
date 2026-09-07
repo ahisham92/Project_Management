@@ -13,13 +13,14 @@ from ..auth import ROLE_RANK, load_project, login_required
 from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query_one
 from ..minutes import (
-    ATTENDEE_ORDERS, COLUMNS, DEFAULT_FILTER, FILTERS, IMPACTS, KIND_TITLES, KIND_WORDS,
+    ATTENDEE_ORDERS, COLUMNS, DEFAULT_FILTER, FILTERS, KIND_TITLES, KIND_WORDS,
     KINDS, OWNERS, STATUSES, filter_items, next_ref, normalise_attendee_order,
     normalise_impact, normalise_kind, normalise_owner, normalise_sort, normalise_status,
     progress_note, sort_items, summarise,
 )
 from ..service import (
-    load_attachments, load_attendees, load_items, load_meeting, load_meetings, load_steps,
+    impact_choices, load_attachments, load_attendees, load_items, load_meeting, load_meetings,
+    load_steps,
     load_trades, meeting_items, meeting_sheet, move_item, next_sort_order, renumber_items,
     set_attendance, set_item_trades, today,
 )
@@ -168,7 +169,7 @@ def index(project_id: int, kind: str):
         "minutes.html",
         project=project, role=role, items=rows, totals=summarise(everything),
         shown=len(rows), filters=filters, link_args=_link_args(filters),
-        chips=FILTERS, impacts=IMPACTS, owners=OWNERS, statuses=STATUSES, columns=COLUMNS,
+        chips=FILTERS, impacts=impact_choices(project_id), owners=OWNERS, statuses=STATUSES, columns=COLUMNS,
         kind=filters["kind"], kinds=KINDS, kind_title=KIND_TITLES[str(filters["kind"])],
         kind_word=KIND_WORDS[str(filters["kind"])],
         as_at=filters["as_at"],
@@ -241,7 +242,8 @@ def week(project_id: int):
         sources=weeks.SOURCES,
         meeting=weeks.in_week(meetings, start, end),
         suggested_ref=weeks.meeting_ref(start),
-        meetings=meetings, trades=plan["trades"], owners=OWNERS, impacts=IMPACTS,
+        meetings=meetings, trades=plan["trades"], owners=OWNERS,
+        impacts=impact_choices(project_id),
         steps=ordered_steps(load_steps(project_id)),
         limit=plan["max_revisions"],
         editing=_to_int(request.args.get("edit")),
@@ -337,7 +339,9 @@ def _describe(project_id: int, filters: dict[str, object]) -> list[str]:
         if row:
             parts.append(f"meeting {row['ref'] or row['title'] or filters['meeting']}")
     if filters["impact"]:
-        parts.append(f"affecting {dict(IMPACTS).get(str(filters['impact']), filters['impact']).lower()}")
+        parts.append("affecting "
+                     + dict(impact_choices(project_id)).get(str(filters["impact"]),
+                                                            str(filters["impact"])).lower())
     if filters["from"]:
         parts.append(f"raised from {to_display(filters['from'])}")
     if filters["to"]:
@@ -418,7 +422,8 @@ def meeting(project_id: int, meeting_id: int):
         first_id=order[0] if order else None, last_id=order[-1] if order else None,
         project=project, role=role, sheet=sheet, meeting=sheet["meeting"],
         items=sheet["items"], attendance=sheet["attendance"],
-        impacts=IMPACTS, owners=OWNERS, statuses=STATUSES, editing=editing,
+        impacts=impact_choices(project_id), owners=OWNERS, statuses=STATUSES,
+        editing=editing,
         attendees=load_attendees(project_id), trades=load_trades(project_id),
         suggested_ref=next_ref(sheet["items"], sheet["meeting"]["ref"]),
         today=today(), can_report=_can_report(role), can_edit=_can_edit(role),
@@ -638,7 +643,8 @@ def _item_fields(project_id: int) -> dict[str, object]:
     if "owner_code" in form:
         fields["owner_code"] = normalise_owner(form.get("owner_code"))
     if "impact" in form:
-        fields["impact"] = normalise_impact(form.get("impact"))
+        fields["impact"] = normalise_impact(
+            form.get("impact"), [key for key, _name in impact_choices(project_id)])
     if "raised_date" in form:
         fields["raised_date"] = from_input(form.get("raised_date")) or ""
     if "due_date" in form:

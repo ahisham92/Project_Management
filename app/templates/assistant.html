@@ -130,6 +130,13 @@
               {% if line['role'] != 'user' and line['used'] %}
                 <p class="small muted chat-used">Read: {{ line['used'] | join(', ') }}</p>
               {% endif %}
+              {% for file in line['files'] or [] %}
+                <a class="chat-file" target="_blank" rel="noopener"
+                   href="{{ url_for('assistant.chat_attachment', project_id=project['id'], file_id=file['id']) }}">
+                  <span aria-hidden="true">📎</span> {{ file['name'] }}
+                  <span class="muted">{{ readable(file['bytes']) }}</span>
+                </a>
+              {% endfor %}
             </div>
           {% endfor %}
         {% else %}
@@ -145,11 +152,24 @@
         {% endif %}
       </div>
 
-      <form id="chat-form" data-chat-form class="chat-composer no-print">
+      <form id="chat-form" data-chat-form class="chat-composer no-print"
+            enctype="multipart/form-data">
         <textarea name="question" rows="1" placeholder="Ask about {{ project['code'] }}, or tell me what to change…"
                   {{ 'disabled' if not ready }}></textarea>
+        <div class="chat-attached" data-attached hidden></div>
         <div class="chat-composer-foot">
-          <span class="small muted">Enter sends · Shift + Enter for a new line</span>
+          <span class="inline-form" style="gap:8px">
+            {# A drawing register, a client's letter, a programme — read and
+               answered from, and kept with the conversation. #}
+            <label class="btn btn-ghost btn-sm" style="margin:0"
+                   title="Attach a PDF, Word, PowerPoint, spreadsheet, picture or text file">
+              <span aria-hidden="true">📎</span> Attach
+              <input type="file" name="files" multiple hidden data-attach
+                     accept=".pdf,.docx,.pptx,.xlsx,.txt,.csv,.md,image/*"
+                     {{ 'disabled' if not ready }}>
+            </label>
+            <span class="small muted">Enter sends · Shift + Enter for a new line</span>
+          </span>
           <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not ready }}>Send</button>
         </div>
       </form>
@@ -181,6 +201,8 @@
         <li>Both registers, including as at a past date.</li>
         <li>The whole setup sheet — settings, trades and their offices, sections, workflow
           steps, teams and holidays — the trade split on any line, and the timesheet.</li>
+        <li><strong>A file you attach:</strong> a PDF or a picture as it is, and the words out
+          of a Word, PowerPoint or Excel file. It stays with the conversation.</li>
       </ul>
       <p class="field-label" style="margin-top:12px">She changes — after you approve</p>
       <ul class="guide-list">
@@ -196,9 +218,9 @@
         <li><strong>The setup sheet:</strong> project settings, trades (including which office
           carries each), sections, workflow steps, teams and their working weeks, and the
           deliverable list itself. Setup has to be unlocked for those to apply.</li>
-        <li><strong>Squeezes a run of the programme</strong> into fewer days — name the line it
-          starts on, the line it ends on and the days available, and every duration in between
-          comes down in proportion, with what follows pulled forward.</li>
+        <li><strong>Squeezes a run of the programme</strong> between two dates — every duration
+          in it changes by the same proportion, measured to the last Code A, with what follows
+          moved along and any line you name held at its length. A later date extends it.</li>
         <li><strong>A share of every deliverable</strong> for one trade — the project manager,
           typically — rescaling the trades already on each line to fit what is left. One
           proposal, however many lines it touches.</li>
@@ -206,7 +228,9 @@
       <p class="field-label" style="margin-top:12px">She produces</p>
       <ul class="guide-list">
         <li>A PowerPoint of the work done between any two dates.</li>
-        <li>Word minutes on the practice's template, header, footer and signature blocks.</li>
+        <li>Minutes on the practice's template — Word to edit, or the PDF with its attachments
+          compiled onto the end.</li>
+        <li>The register, the agenda, the programme or the setup sheet, as a file to download.</li>
       </ul>
       <p class="field-label" style="margin-top:12px">She takes you places</p>
       <ul class="guide-list">

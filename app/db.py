@@ -148,6 +148,8 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_backup_log(conn)
         _ensure_chat_log(conn)
         _ensure_attachments(conn)
+        _ensure_impacts(conn)
+        _ensure_snapshots(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -178,6 +180,9 @@ def _ensure_calendars(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_calendars_project ON calendars(project_id)")
+    # Which office a team works in. A deliverable's working week follows the
+    # trades carrying it, through this, rather than being set line by line.
+    _ensure_column(conn, "calendars", "office", "TEXT NOT NULL DEFAULT ''")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS holidays (
@@ -265,6 +270,56 @@ def _ensure_attachments(conn: sqlite3.Connection) -> None:
                  "ON meeting_attachments(meeting_id, sort_order)")
 
 
+def _ensure_snapshots(conn: sqlite3.Connection) -> None:
+    """Where every date stood before something moved a lot of them at once.
+
+    A squeeze changes fifty lines. "Put it back to four months" is then a real
+    question, and the only honest answer is the dates as they were rather than
+    the same arithmetic run backwards, which does not return where it started
+    once anything has rounded.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schedule_snapshots (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            made_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            user_id    INTEGER,
+            user_name  TEXT NOT NULL DEFAULT '',
+            note       TEXT NOT NULL DEFAULT '',
+            lines      INTEGER NOT NULL DEFAULT 0,
+            payload    TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS snapshots_project "
+                 "ON schedule_snapshots (project_id, made_at DESC)")
+
+
+def _ensure_impacts(conn: sqlite3.Connection) -> None:
+    """What a minuted item can be said to affect.
+
+    Started as four words in the code — none, time, cost, both — which is fine
+    until a project needs "Dredging Limits". Kept per project so the list is
+    something somebody edits on the Setup sheet rather than something that
+    needs a release.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS impact_options (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            key          TEXT    NOT NULL,
+            name         TEXT    NOT NULL,
+            affects_time INTEGER NOT NULL DEFAULT 0,
+            affects_cost INTEGER NOT NULL DEFAULT 0,
+            sort_order   INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (project_id, key)
+        )
+        """
+    )
+
+
 def _ensure_chat_log(conn: sqlite3.Connection) -> None:
     """What everybody has asked Carmen, and what she said back.
 
@@ -310,6 +365,27 @@ def _ensure_chat_log(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS chat_threads_project "
                  "ON chat_threads (project_id, last_at DESC)")
     _ensure_column(conn, "chat_log", "thread_id", "INTEGER")
+
+    # What was attached to a question. Kept in the database like everything
+    # else here, so a conversation reopened next week still has the drawing
+    # somebody was asking about.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_files (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER,
+            thread_id  INTEGER,
+            chat_id    INTEGER,
+            user_id    INTEGER,
+            name       TEXT NOT NULL DEFAULT '',
+            kind       TEXT NOT NULL DEFAULT '',
+            bytes      INTEGER NOT NULL DEFAULT 0,
+            content    BLOB NOT NULL,
+            added_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS chat_files_thread ON chat_files (thread_id, id)")
 
 
 def _migrate_months_to_dates(conn: sqlite3.Connection) -> None:

@@ -46,6 +46,8 @@ def _can_write(role: str) -> bool:
 def _asked() -> dict:
     if request.is_json:
         return dict(request.get_json(silent=True) or {})
+    # A question with a file attached arrives as a form, so the fields come
+    # back as strings — the thread id among them.
     return dict(request.form)
 
 
@@ -124,7 +126,8 @@ SUGGESTIONS = (
     "Prepare a presentation of the work done in the last month",
     "Set 1.1 to 40% — the drawings went out today",
     "Move 2.1 to start on 15/10/2026",
-    "Squeeze 1.1 to 1.6 into 40 working days",
+    "Squeeze 1.1 to 1.6 to finish by 30/06/2027",
+    "Give me the minutes of MOM-01 as a PDF",
     "How are Beirut and Cairo doing against their scope?",
     "Put Utilities under Cairo and set its budget to 120 hours",
     "Print the schedule as a PDF",
@@ -146,7 +149,9 @@ def ask(project_id: int):
                         "Carmen is not connected yet — an administrator adds an "
                         "Anthropic API key on her tab."}), 400
 
-    from ..service import load_thread, open_thread, thread_messages
+    from ..reading import ReadError, read as read_file
+    from ..service import (MAX_CHAT_FILES, keep_file, load_thread, name_files, open_thread,
+                           thread_messages)
 
     asked = _asked()
     question = str(asked.get("question") or "")[:MAX_QUESTION]
@@ -160,6 +165,27 @@ def ask(project_id: int):
     else:
         thread_id = thread["id"]
 
+    # What was attached to this question. Read here — a Word or PowerPoint file
+    # is unzipped and its words pulled out — and kept, so a conversation
+    # reopened next week still has the drawing somebody was asking about.
+    attachments: list[dict] = []
+    kept: list[int] = []
+    for upload in request.files.getlist("files")[:MAX_CHAT_FILES]:
+        raw = upload.read()
+        if not raw:
+            continue
+        try:
+            one = read_file(raw, upload.filename or "")
+        except ReadError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        attachments.append(one)
+        kept.append(keep_file(project_id, thread_id, g.user, one["name"], one["kind"], raw))
+
+    if not question and not attachments:
+        return jsonify({"ok": False, "error": "Ask it something"}), 400
+    if attachments and not question:
+        question = "What is in this?"
+
     # The thread on the server is the history, so a page reopened a week later
     # picks up exactly where the conversation was.
     history = [{"role": m["role"], "content": m["content"]}
@@ -167,7 +193,7 @@ def ask(project_id: int):
 
     try:
         answer = ask_it(project, question, held["key"], held["model"],
-                        history[-MAX_HISTORY:], today(), held["effort"])
+                        history[-MAX_HISTORY:], today(), held["effort"], attachments)
     except Exception as exc:                          # noqa: BLE001 - said, not swallowed
         # Never an HTML 500 here. The page can only show what it is given, and
         # "Carmen could not be reached" while the real reason sits in a server
@@ -187,6 +213,8 @@ def ask(project_id: int):
     # worth noticing, and it is invisible if only the answers are kept.
     said["chat_id"] = record_chat(project_id, g.user, question, answer, thread_id)
     said["thread_id"] = thread_id
+    name_files(said["chat_id"], kept)
+    said["files"] = [{"name": one["name"], "kind": one["kind"]} for one in attachments]
     return jsonify(said), (200 if not answer.trouble else 502)
 
 
@@ -252,6 +280,22 @@ def deck(project_id: int):
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         as_attachment=True, download_name=f"{stem}.pptx",
     )
+
+
+@bp.get("/assistant/files/<int:file_id>")
+@login_required
+def chat_attachment(project_id: int, file_id: int):
+    """Something somebody attached to a question, back out again."""
+    from ..reading import media_type
+    from ..service import chat_file
+
+    load_project(project_id)
+    found = chat_file(project_id, file_id)
+    if found is None:
+        abort(404)
+    data = bytes(found["content"])
+    return send_file(io.BytesIO(data), mimetype=media_type(data), as_attachment=True,
+                     download_name=found["name"] or "attachment")
 
 
 @bp.get("/assistant/face")

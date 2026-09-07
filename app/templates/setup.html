@@ -188,19 +188,19 @@
         <tbody>
           {% for step in steps %}
             <tr>
-              <td><input form="{{ F }}" name="step_{{ step['id'] }}_name" value="{{ step['name'] }}" {{ 'disabled' if not can_edit }}></td>
+              <td><input form="save-workflow" name="step_{{ step['id'] }}_name" value="{{ step['name'] }}" {{ 'disabled' if not can_edit }}></td>
               <td class="right">
-                <input form="{{ F }}" type="number" name="step_{{ step['id'] }}_percent" min="0" max="100" step="1"
+                <input form="save-workflow" type="number" name="step_{{ step['id'] }}_percent" min="0" max="100" step="1"
                        class="right w-sm" value="{{ (step['percent'] * 100) | round | int }}" {{ 'disabled' if not can_edit }}>
               </td>
               <td>
-                <select form="{{ F }}" name="step_{{ step['id'] }}_anchor" class="w-md" {{ 'disabled' if not can_edit }}>
+                <select form="save-workflow" name="step_{{ step['id'] }}_anchor" class="w-md" {{ 'disabled' if not can_edit }}>
                   <option value="start" {{ 'selected' if step['anchor'] == 'start' }}>Start date</option>
                   <option value="submission" {{ 'selected' if step['anchor'] == 'submission' }}>Submission date</option>
                 </select>
               </td>
               <td class="right">
-                <input form="{{ F }}" type="number" name="step_{{ step['id'] }}_offset" step="1" class="right w-sm"
+                <input form="save-workflow" type="number" name="step_{{ step['id'] }}_offset" step="1" class="right w-sm"
                        value="{{ step['offset_days'] | round | int }}" {{ 'disabled' if not can_edit }}>
               </td>
               <td class="small muted">
@@ -222,6 +222,17 @@
       </table>
     </div>
     {% if can_edit %}
+      {# Its own Save: a workflow change is not something to lose because a
+         trade split further down the sheet reads 101%. #}
+      <div class="card-foot" style="border-bottom:1px solid var(--border)">
+        <form method="post" action="{{ url_for('projects.save_steps', project_id=pid) }}"
+              class="inline-form" id="save-workflow">
+          <button type="submit" class="btn btn-primary btn-sm">Save the workflow</button>
+          <span class="small muted">
+            Percentages, anchors and offsets. Every planned date on the schedule follows them.
+          </span>
+        </form>
+      </div>
       <div class="card-foot">
         <form method="post" action="{{ url_for('projects.save_steps', project_id=pid) }}" class="inline-form">
           <input type="hidden" name="action" value="add">
@@ -325,6 +336,83 @@
     {% endif %}
   </div>
 
+  {# --- what a minuted item can affect --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Affects</h2>
+        <p class="small muted" style="margin-top:2px">
+          What a minuted item can be said to affect. Add whatever this project needs —
+          Schedule, Design Progress, Dredging Limits — and it appears on the Minutes tab.
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <form method="post" id="save-impacts"
+            action="{{ url_for('projects.save_impact_options', project_id=pid) }}"></form>
+      <table>
+        <thead>
+          <tr><th>Option</th><th class="right">Counts as time</th>
+              <th class="right">Counts as cost</th><th>Used by</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for option in impacts %}
+            <tr>
+              <td>
+                <input form="save-impacts" name="impact_{{ option['id'] }}_name"
+                       value="{{ option['name'] }}" {{ 'disabled' if not can_edit }}>
+              </td>
+              <td class="right">
+                <input form="save-impacts" type="checkbox" name="impact_{{ option['id'] }}_time"
+                       {{ 'checked' if option['affects_time'] }} {{ 'disabled' if not can_edit }}
+                       aria-label="{{ option['name'] }} counts as time">
+              </td>
+              <td class="right">
+                <input form="save-impacts" type="checkbox" name="impact_{{ option['id'] }}_cost"
+                       {{ 'checked' if option['affects_cost'] }} {{ 'disabled' if not can_edit }}
+                       aria-label="{{ option['name'] }} counts as cost">
+              </td>
+              <td class="small muted"><code>{{ option['key'] }}</code></td>
+              <td class="right">
+                {% if can_edit and option['key'] != 'none' %}
+                  <button form="save-impacts" type="submit" name="action"
+                          value="remove:{{ option['id'] }}" class="btn btn-danger btn-sm"
+                          data-confirm="Take “{{ option['name'] }}” off the Affects list?">Remove</button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if can_edit %}
+      <div class="card-foot" style="border-bottom:1px solid var(--border)">
+        <button form="save-impacts" type="submit" name="action" value="save"
+                class="btn btn-primary btn-sm">Save the list</button>
+        <span class="small muted" style="margin-left:8px">
+          “Counts as time” and “counts as cost” are what the register's tiles and filters read.
+        </span>
+      </div>
+      <div class="card-foot">
+        <form method="post" class="inline-form"
+              action="{{ url_for('projects.save_impact_options', project_id=pid) }}">
+          <input type="hidden" name="action" value="add">
+          <label class="field flex1">
+            <span class="field-label">New option</span>
+            <input name="name" placeholder="Dredging Limits" required>
+          </label>
+          <label class="field w-sm inline-form" style="gap:6px;align-items:center">
+            <input type="checkbox" name="affects_time"> <span class="small">Time</span>
+          </label>
+          <label class="field w-sm inline-form" style="gap:6px;align-items:center">
+            <input type="checkbox" name="affects_cost"> <span class="small">Cost</span>
+          </label>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
   {# --- sections --- #}
   <div class="card">
     <div class="card-head">
@@ -384,6 +472,16 @@
             <div class="inline-form">
               <input form="{{ F }}" name="calendar_{{ team['id'] }}_name" value="{{ team['name'] }}"
                      class="w-lg" aria-label="Team name" {{ 'disabled' if not can_edit }}>
+              {# Which office this team is. A trade set to Cairo puts its share
+                 of every deliverable on the Cairo team's week — the answer is
+                 given once here rather than on every line. #}
+              <select form="{{ F }}" name="calendar_{{ team['id'] }}_office" class="w-md"
+                      aria-label="Office this team works in" {{ 'disabled' if not can_edit }}>
+                <option value="">— no office —</option>
+                {% for key, name in office_list %}
+                  <option value="{{ key }}" {{ 'selected' if team['office'] == key }}>{{ name }}</option>
+                {% endfor %}
+              </select>
               <span class="small muted" style="min-width:11ch">{{ team['week_label'] }}</span>
               <span class="chips">
                 {% for day in week_days(team['workdays']) %}
@@ -445,6 +543,12 @@
           <label class="field w-lg"><span class="field-label">Working week</span>
             <select name="workdays">
               {% for key, label in week_patterns %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field w-md"><span class="field-label">Office</span>
+            <select name="office">
+              <option value="">— no office —</option>
+              {% for key, name in office_list %}<option value="{{ key }}">{{ name }}</option>{% endfor %}
             </select>
           </label>
           <button type="submit" class="btn btn-primary">Add team</button>
@@ -528,7 +632,8 @@
                 <th class="right">Weight</th>
                 <th class="right" title="Amended on the Schedule tab">Start</th>
                 <th class="right" title="Amended on the Schedule tab">Submission</th>
-                <th>Team</th><th>Tracked as</th><th></th>
+                <th title="From the trades carrying the line">Team</th>
+                <th>Tracked as</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -564,16 +669,8 @@
                     <a href="{{ url_for('projects.schedule', project_id=project['id']) }}#task-{{ task['id'] }}"
                        title="Dates are amended on the Schedule tab">{{ short_date(task['submission_date']) }}</a>
                   </td>
-                  <td>
-                    <select form="{{ F }}" name="task_{{ task['id'] }}_calendar" class="w-md"
-                            title="Whose working week and holidays this line is planned against"
-                            {{ 'disabled' if not can_edit }}>
-                      <option value="">— default team —</option>
-                      {% for team in teams %}
-                        <option value="{{ team['id'] }}" {{ 'selected' if task['calendar_id'] == team['id'] }}>
-                          {{ team['name'] }}</option>
-                      {% endfor %}
-                    </select>
+                  <td class="small muted">
+                    {{ (task['team_names'] | select | list | join(' + ')) or '—' }}
                   </td>
                   <td>
                     <select form="{{ F }}" name="task_{{ task['id'] }}_tracking" class="w-md" {{ 'disabled' if not can_edit }}>

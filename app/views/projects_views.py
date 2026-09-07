@@ -24,10 +24,11 @@ from ..service import (
     add_calendar, add_holiday, apply_schedule, calendar_of, calendars_for,
     clear_node_positions, delete_calendar, load_calendars, load_holidays,
     project_pulse, remove_holiday, save_calendar, set_default_calendar,
-    set_task_calendar, project_overview, project_s_curve, project_snapshot, record_comments,
+    project_overview, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
-    set_allocations, set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
+    load_impacts, load_snapshots, restore_schedule, set_allocations, set_status,
+    set_task_dates, squeeze_plan, apply_squeeze, today,
 )
 from ..calendars import parse_days
 from ..squeeze import SqueezeError
@@ -383,10 +384,15 @@ def schedule(project_id: int):
     squeeze = squeeze_trouble = None
     squeeze_from = _to_int(request.args.get("from_task"))
     squeeze_to = _to_int(request.args.get("to_task"))
-    squeeze_days = _to_int(request.args.get("days"))
-    if squeeze_from and squeeze_to and squeeze_days:
+    squeeze_start = from_input(request.args.get("starts")) or ""
+    squeeze_end = from_input(request.args.get("ends")) or ""
+    held = [i for i in (_to_int(v) for v in request.args.getlist("hold")) if i]
+    following = request.args.getlist("follow")
+    if squeeze_from and squeeze_to and squeeze_start and squeeze_end:
         try:
-            squeeze = squeeze_plan(project, squeeze_from, squeeze_to, squeeze_days)
+            squeeze = squeeze_plan(project, squeeze_from, squeeze_to, squeeze_start,
+                                   squeeze_end, held,
+                                   following if "checked" in request.args else True)
         except SqueezeError as exc:
             squeeze_trouble = str(exc)
 
@@ -395,7 +401,8 @@ def schedule(project_id: int):
         "schedule.html",
         project=project, role=role, plan=plan, tasks=rows, data_date=data_date,
         squeeze=squeeze, squeeze_trouble=squeeze_trouble, squeeze_from=squeeze_from,
-        squeeze_to=squeeze_to, squeeze_days=squeeze_days,
+        squeeze_to=squeeze_to, squeeze_start=squeeze_start, squeeze_end=squeeze_end,
+        held=held, snapshots=load_snapshots(project_id),
         mode=normalise_mode(project["schedule_mode"]), modes=MODES,
         sort=sort, direction=direction,
         steps=ordered_steps(load_steps(project_id)),
@@ -420,25 +427,57 @@ def squeeze_schedule(project_id: int):
 
     first = _to_int(request.form.get("from_task"))
     last = _to_int(request.form.get("to_task"))
-    days = _to_int(request.form.get("days"))
-    if not (first and last and days):
-        flash("Say which line the run starts on, which it ends on, and how many days.", "error")
+    starts = from_input(request.form.get("starts"))
+    ends = from_input(request.form.get("ends"))
+    held = [i for i in (_to_int(v) for v in request.form.getlist("hold")) if i]
+    following = request.form.getlist("follow")
+    if not (first and last and starts and ends):
+        flash("Say which line the run starts on, which it ends on, and the two dates.", "error")
         return _back("projects.schedule", project_id, panel="squeeze")
 
     try:
-        proposal = squeeze_plan(project, first, last, days)
+        proposal = squeeze_plan(project, first, last, starts, ends, held, following)
     except SqueezeError as exc:
         flash(str(exc), "error")
         return _back("projects.schedule", project_id, panel="squeeze")
 
-    done = apply_squeeze(project_id, proposal)
+    done = apply_squeeze(project_id, proposal, g.user)
+    meetings = ""
+    if done["meetings_added"] or done["meetings_removed"]:
+        parts = []
+        if done["meetings_added"]:
+            parts.append(f"{done['meetings_added']} meeting"
+                         f"{'s' if done['meetings_added'] != 1 else ''} added")
+        if done["meetings_removed"]:
+            parts.append(f"{done['meetings_removed']} removed")
+        meetings = ", " + " and ".join(parts)
     flash(
-        f"Squeezed {done['squeezed']} deliverables into {proposal['days']} working days — "
-        f"the run now finishes {to_display(proposal['finish'])}"
-        + (f", {proposal['saved_days']} days earlier" if proposal["saved_days"] > 0 else "")
-        + (f", and {done['followed']} lines after it moved with it" if done["followed"] else ""),
+        f"Squeezed {done['squeezed']} deliverables — the run now finishes "
+        f"{to_display(proposal['finish'])}"
+        + (f", {proposal['saved_days']} days earlier" if proposal["saved_days"] > 0
+           else f", {-proposal['saved_days']} days later" if proposal["saved_days"] < 0 else "")
+        + (f", and {done['followed']} lines after it moved with it" if done["followed"] else "")
+        + meetings
+        + ". Undo it from the Squeeze panel.",
         "success")
     return _back("projects.schedule", project_id, panel="dates")
+
+
+@bp.post("/schedule/restore/<int:snapshot_id>")
+@login_required
+def restore_squeeze(project_id: int, snapshot_id: int):
+    """Puts every date back to where it was before a squeeze.
+
+    Not the same arithmetic run backwards — that does not return where it
+    started once anything has rounded — but the dates as they actually were.
+    """
+    _project, _role = load_project(project_id, "manager")
+    put_back = restore_schedule(project_id, snapshot_id)
+    if not put_back:
+        flash("That saved state is no longer there", "error")
+    else:
+        flash(f"Put {put_back} deliverables back to where they were", "success")
+    return _back("projects.schedule", project_id, panel="squeeze")
 
 
 @bp.post("/schedule/mode")
@@ -514,31 +553,6 @@ def task_panel(project_id: int, task_id: int):
 
         return jsonify({"ok": True, "panel_html": body, "title": f"{task['wbs']} {task['name']}"})
     return render_template("task.html", project=project, role=role, task=task, panel=body)
-
-
-@bp.post("/schedule/<int:task_id>/team")
-@login_required
-def save_team(project_id: int, task_id: int):
-    """Which team's working week and holidays a line is planned on.
-
-    Changing it replans the line: the same duration in a different working week
-    lands on a different day, and a date on one of the new team's days off is
-    moved to the next day they are in.
-    """
-    project, _role = load_project(project_id, "manager")
-    wanted = _to_int(request.form.get("calendar_id"))
-    if not set_task_calendar(project_id, task_id, wanted):
-        abort(404)
-
-    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
-    mine = calendar_of(dict(task), calendars_for(project))
-    days = duration_between(task["start_date"], task["submission_date"], mine)
-    moves = set_task_dates(project_id, task_id, task["start_date"],
-                           finish_from(task["start_date"], days, mine))
-
-    if not _wants_json():
-        flash(f"Planned on {mine.name or 'the default team'}", "success")
-    return _plan_answer(project_id, task_id, moves)
 
 
 @bp.post("/schedule/links")
@@ -963,6 +977,22 @@ def _setup_editable(project_id: int, role: str) -> bool:
     return _can_edit(role) and setup_unlocked(project_id)
 
 
+# How far out a trade split may read before it is a mistake rather than a
+# rounding artefact. Two points is a line held in halves; sixty and sixty is
+# somebody typing the wrong number.
+NEAR_ENOUGH = 2.5
+
+
+def _to_a_hundred(supplied: dict[int, float]) -> dict[int, float]:
+    """A split nudged to total exactly 100, on the largest share."""
+    whole = {tid: round(pct) for tid, pct in supplied.items()}
+    drift = 100 - sum(whole.values())
+    if drift and whole:
+        biggest = max(whole, key=lambda tid: whole[tid])
+        whole[biggest] += drift
+    return {tid: float(pct) for tid, pct in whole.items()}
+
+
 def _require_setup_edit(project_id: int, role: str) -> bool:
     if not _can_edit(role):
         flash("You need manager access to change the project setup.", "error")
@@ -1004,6 +1034,7 @@ def setup(project_id: int):
         is_admin=g.user["role"] == "admin", carmen=carmen(), efforts=EFFORTS,
         carmen_picture_uploaded=carmen_uploaded() is not None,
         members=members, owner=owner, series=SERIES_SLOTS, office_list=offices.OFFICES,
+        impacts=load_impacts(project_id),
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),
         editing=_to_int(request.args.get("split")),
@@ -1018,8 +1049,12 @@ def add_calendar_team(project_id: int):
     if not _require_setup_edit(project_id, role):
         return _back("projects.setup", project_id)
 
-    add_calendar(project_id, request.form.get("name") or "", request.form.get("workdays") or "")
-    flash("Team added — put its deliverables on it in the list below", "success")
+    made = add_calendar(project_id, request.form.get("name") or "",
+                        request.form.get("workdays") or "")
+    execute("UPDATE calendars SET office = ? WHERE id = ? AND project_id = ?",
+            (offices.normalise(request.form.get("office")), made, project_id))
+    flash("Team added — set the office it works in, and the trades in that office follow it",
+          "success")
     return _back("projects.setup", project_id)
 
 
@@ -1136,23 +1171,35 @@ def save_steps(project_id: int):
         flash("Step removed", "success")
         return _back("projects.setup", project_id)
 
+    # The workflow saves on its own, under the same field names the Save-all
+    # form uses. It used to read names nothing sent any more, so it reported
+    # success and changed nothing — and being part of Save all meant a changed
+    # Code A offset could also be lost to a trade split reading 101% two cards
+    # down the sheet. A step's dates are worth their own button.
     saved = 0
     for step in load_steps(project_id):
         sid = step["id"]
-        if f"name_{sid}" not in request.form:
+        if f"step_{sid}_name" not in request.form:
             continue
         execute(
-            "UPDATE workflow_steps SET name = ?, percent = ?, anchor = ?, offset_days = ? WHERE id = ? AND project_id = ?",
+            "UPDATE workflow_steps SET name = ?, percent = ?, anchor = ?, offset_days = ? "
+            "WHERE id = ? AND project_id = ?",
             (
-                (request.form.get(f"name_{sid}") or step["name"]).strip(),
-                max(0.0, min(1.0, _to_float(request.form.get(f"percent_{sid}"), step["percent"] * 100) / 100)),
-                request.form.get(f"anchor_{sid}") or step["anchor"],
-                _to_float(request.form.get(f"offset_{sid}"), step["offset_days"]),
+                (request.form.get(f"step_{sid}_name") or step["name"]).strip(),
+                max(0.0, min(1.0, _to_float(request.form.get(f"step_{sid}_percent"),
+                                            step["percent"] * 100) / 100)),
+                request.form.get(f"step_{sid}_anchor") or step["anchor"],
+                _to_float(request.form.get(f"step_{sid}_offset"), step["offset_days"]),
                 sid, project_id,
             ),
         )
         saved += 1
-    flash(f"Workflow saved ({saved} step{'' if saved == 1 else 's'})", "success")
+
+    if not saved:
+        flash("Nothing to save on the workflow", "error")
+    else:
+        flash(f"Workflow saved — {saved} step{'' if saved == 1 else 's'}. "
+              "Every planned date on the schedule follows it.", "success")
     return _back("projects.setup", project_id)
 
 
@@ -1246,6 +1293,34 @@ def save_section(project_id: int, section_id: int):
                 ((request.form.get("code") or "").strip(), name, section_id, project_id),
             )
             flash("Section saved", "success")
+    return _back("projects.setup", project_id)
+
+
+# --- what a minuted item can affect -----------------------------------------
+
+@bp.post("/setup/impacts")
+@login_required
+def save_impact_options(project_id: int):
+    """The list behind "Affects" on the minutes: renamed, added or removed."""
+    from ..service import add_impact, remove_impact, save_impacts
+
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    action = (request.form.get("action") or "save").strip()
+    if action == "add":
+        trouble = add_impact(project_id, request.form.get("name") or "",
+                             bool(request.form.get("affects_time")),
+                             bool(request.form.get("affects_cost")))
+        flash(trouble or "Added — it is on the Affects list from now on",
+              "error" if trouble else "success")
+    elif action.startswith("remove:"):
+        trouble = remove_impact(project_id, _to_int(action.split(":", 1)[1]) or 0)
+        flash(trouble or "Removed from the Affects list", "error" if trouble else "success")
+    else:
+        saved = save_impacts(project_id, request.form)
+        flash(f"Saved {saved} option{'' if saved == 1 else 's'}", "success")
     return _back("projects.setup", project_id)
 
 
@@ -1453,6 +1528,7 @@ def save_all(project_id: int):
     # Trade splits are checked before anything is written, so an invalid one
     # cannot leave the rest of the sheet saved and that line untouched.
     splits: dict[int, dict[int, float]] = {}
+    tidied: list[str] = []
     for task in tasks:
         supplied = {
             trade["id"]: _to_float(form.get(f"task_{task['id']}_alloc_{trade['id']}"))
@@ -1462,6 +1538,14 @@ def save_all(project_id: int):
         if not supplied:
             continue
         total = sum(supplied.values())
+        # A line reading 101% is almost always a split held in fractions and
+        # shown rounded — refusing the whole sheet for it means a workflow edit
+        # three cards up is lost to a rounding artefact somebody cannot see.
+        # Anything within a couple of points is tidied to exactly 100 instead.
+        if 0.5 < abs(total - 100) <= NEAR_ENOUGH:
+            supplied = _to_a_hundred(supplied)
+            total = sum(supplied.values())
+            tidied.append(str(task["wbs"] or task["name"][:30]))
         if abs(total - 100) > 0.5:
             flash(
                 f"{task['wbs'] or task['name'][:40]}: the trade split totals {total:.0f}%, not 100%. "
@@ -1529,6 +1613,9 @@ def save_all(project_id: int):
                     team["id"], project_id,
                 ),
             )
+            conn.execute("UPDATE calendars SET office = ? WHERE id = ? AND project_id = ?",
+                         (offices.normalise(form.get(f"calendar_{team['id']}_office")),
+                          team["id"], project_id))
             changed["teams"] = changed.get("teams", 0) + 1
 
         for trade in trades:
@@ -1579,7 +1666,7 @@ def save_all(project_id: int):
                 """
                 UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
                        start_date = ?, submission_date = ?, tracking = ?, remarks = ?,
-                       calendar_id = ?, updated_at = datetime('now')
+                       updated_at = datetime('now')
                 WHERE id = ? AND project_id = ?
                 """,
                 (
@@ -1590,8 +1677,6 @@ def save_all(project_id: int):
                     start or task["start_date"], submission or task["submission_date"],
                     form.get(f"task_{task['id']}_tracking") or task["tracking"],
                     (form.get(f"task_{task['id']}_remarks") or "").strip(),
-                    (_to_int(form.get(f"task_{task['id']}_calendar"))
-                     if f"task_{task['id']}_calendar" in form else task["calendar_id"]),
                     task["id"], project_id,
                 ),
             )
@@ -1615,7 +1700,9 @@ def save_all(project_id: int):
                          (percentages.get(row["status_key"], 0.0), row["id"]))
 
     flash(
-        f"Saved — project settings, {changed['steps']} workflow steps, {changed['trades']} trades, "
+        (f"{len(tidied)} trade split{'' if len(tidied) == 1 else 's'} rounded to 100% "
+         f"({', '.join(tidied[:6])}). " if tidied else "") +
+        f"Saved — project settings, {changed['trades']} trades, "
         f"{changed.get('teams', 0)} teams, {changed['sections']} sections and "
         f"{changed['tasks']} deliverables",
         "success",

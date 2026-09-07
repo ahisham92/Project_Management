@@ -23,6 +23,22 @@ IMPACTS: tuple[tuple[str, str], ...] = (
 IMPACT_KEYS = tuple(key for key, _ in IMPACTS)
 IMPACT_NAMES = dict(IMPACTS)
 
+# What each of the built-in four counts as, for the filters and the tiles. A
+# project that adds "Dredging Limits" says for itself whether that is a time
+# matter, a cost one, both or neither.
+IMPACT_MEANS: dict[str, tuple[bool, bool]] = {
+    "none": (False, False),
+    "time": (True, False),
+    "cost": (False, True),
+    "both": (True, True),
+}
+
+
+def impact_key(name: Any) -> str:
+    """A key from a name somebody typed: lower case, underscores, no surprises."""
+    text = "".join(c if c.isalnum() else "_" for c in str(name or "").strip().lower())
+    return "_".join(part for part in text.split("_") if part)[:40]
+
 # Who owns an item: the party responsible, not a named person. People come and
 # go from a project while the responsibility stays where it is.
 OWNERS: tuple[str, ...] = ("PM", "Client", "MR", "ST", "GE", "WE", "EL", "PMC")
@@ -79,13 +95,26 @@ _NUMBER = re.compile(r"(\d+)")
 _IMPACT_MATCHES = {"time": ("time", "both"), "cost": ("cost", "both")}
 
 
-def impact_name(key: Any) -> str:
-    return IMPACT_NAMES.get(str(key or "none"), "No impact")
+def impact_name(key: Any, names: Mapping[str, str] | None = None) -> str:
+    """What an impact is called, on the project that set it."""
+    wanted = str(key or "none")
+    if names is not None and wanted in names:
+        return names[wanted]
+    return IMPACT_NAMES.get(wanted, "No impact")
 
 
-def normalise_impact(value: Any) -> str:
+def normalise_impact(value: Any, keys: Sequence[str] | None = None) -> str:
+    """An impact key, or "none" for anything the project does not offer.
+
+    Accepts the name as well as the key, because a person — and a model — says
+    "Dredging Limits" rather than "dredging_limits".
+    """
     text = str(value or "none").strip().lower()
-    return text if text in IMPACT_KEYS else "none"
+    allowed = tuple(keys) if keys is not None else IMPACT_KEYS
+    if text in allowed:
+        return text
+    made = impact_key(text)
+    return made if made in allowed else "none"
 
 
 def normalise_status(value: Any) -> str:
@@ -188,16 +217,22 @@ def trade_names(item: Mapping[str, Any]) -> str:
     return ", ".join(str(trade.get("name") or "") for trade in trades_of(item))
 
 
-def decorate(item: Mapping[str, Any], on_date: str) -> dict[str, Any]:
-    """One item with the reading the screens need: open, overdue, days left."""
+def decorate(item: Mapping[str, Any], on_date: str,
+             names: Mapping[str, str] | None = None,
+             meanings: Mapping[str, tuple[bool, bool]] | None = None) -> dict[str, Any]:
+    """One item with the reading the screens need: open, overdue, days left.
+
+    ``names`` and ``meanings`` come from the project's own list of what an item
+    can affect; without them the four the app ships with are used.
+    """
     row = dict(item)
     row["status"] = normalise_status(row.get("status"))
-    row["impact"] = normalise_impact(row.get("impact"))
+    row["impact"] = normalise_impact(row.get("impact"), tuple(names) if names else None)
     row["is_open"] = row["status"] == "open"
     row["status_name"] = STATUS_NAMES[row["status"]]
-    row["impact_name"] = impact_name(row["impact"])
-    row["affects_time"] = row["impact"] in ("time", "both")
-    row["affects_cost"] = row["impact"] in ("cost", "both")
+    row["impact_name"] = impact_name(row["impact"], names)
+    means = (meanings or {}).get(row["impact"]) or IMPACT_MEANS.get(row["impact"], (False, False))
+    row["affects_time"], row["affects_cost"] = bool(means[0]), bool(means[1])
     row["owner_label"] = owner_of(row)
     row["trade_ids"] = [int(trade["id"]) for trade in trades_of(row)]
     row["trade_names"] = trade_names(row)

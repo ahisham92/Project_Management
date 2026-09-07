@@ -74,6 +74,10 @@ def answer(messages: list) -> dict:
     if "40" in asked and "1.1" in asked:
         return _message("", [("set_progress", {"reference": "1.1", "percent": 40,
                                                "note": "asked for in the chat"})])
+    # A file to hand back rather than an answer.
+    if "document" in asked or "as a file" in asked:
+        return _message("", [("document", {"what": "register", "form": "word",
+                                           "register": "client"})])
     if "minute" in asked:
         return _message("", [("minute_meeting", {
             "register": "client", "ref": "MOM-09", "title": "Coordination call",

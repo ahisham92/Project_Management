@@ -361,24 +361,84 @@ def test_the_default_team_can_be_changed(signed_in):
         assert query_one("SELECT calendar_id FROM projects WHERE id = 1")["calendar_id"] == cairo
 
 
-def test_a_deliverable_is_put_on_a_team_from_the_setup_sheet(signed_in):
-    from app.db import query_one
-    from app.service import load_calendars
+def test_a_deliverable_takes_its_team_from_the_trades_carrying_it(signed_in):
+    """Not set line by line: a trade sits in an office, an office has a team,
+    and the line follows the trade with the largest share of it."""
+    from app.db import execute
+    from app.service import load_calendars, load_tasks, load_trades
 
     unlocked(signed_in)
-    signed_in.post("/projects/1/setup/teams", data={"name": "Cairo", "workdays": CAIRO})
+    signed_in.post("/projects/1/setup/teams",
+                   data={"name": "Cairo", "workdays": CAIRO, "office": "Cairo"})
     with signed_in.application.app_context():
-        cairo = load_calendars(1)[1]["id"]
-        task = query_one("SELECT * FROM tasks WHERE project_id = 1 ORDER BY id LIMIT 1")
+        cairo = next(c for c in load_calendars(1) if c["name"] == "Cairo")
+        assert cairo["office"] == "cairo"
 
-    signed_in.post("/projects/1/setup/save-all", data={
-        "code": "SIBLINE-PORT", "name": "Sibline Port",
-        f"task_{task['id']}_name": task["name"],
-        f"task_{task['id']}_calendar": str(cairo),
-    })
+        # Put every trade in Cairo, and every line follows.
+        for trade in load_trades(1):
+            execute("UPDATE trades SET office = 'cairo' WHERE id = ?", (trade["id"],))
+        line = load_tasks(1)[0]
+
+    assert line["calendar_id"] == cairo["id"]
+    assert line["teams"] == [cairo["id"]]
+
+
+def test_a_line_split_between_offices_is_worked_by_both(signed_in):
+    from app.db import execute
+    from app.service import load_calendars, load_tasks, load_trades
+
+    unlocked(signed_in)
+    signed_in.post("/projects/1/setup/teams",
+                   data={"name": "Cairo", "workdays": CAIRO, "office": "Cairo"})
+    signed_in.post("/projects/1/setup/teams",
+                   data={"name": "Beirut", "workdays": BEIRUT, "office": "Beirut"})
     with signed_in.application.app_context():
-        assert query_one("SELECT calendar_id FROM tasks WHERE id = ?",
-                         (task["id"],))["calendar_id"] == cairo
+        teams = {c["name"]: c["id"] for c in load_calendars(1)}
+        trades = load_trades(1)
+        execute("UPDATE trades SET office = 'beirut' WHERE id = ?", (trades[0]["id"],))
+        execute("UPDATE trades SET office = 'cairo' WHERE id = ?", (trades[1]["id"],))
+        line = next(t for t in load_tasks(1)
+                    if trades[0]["id"] in t["allocations"] and trades[1]["id"] in t["allocations"])
+
+    assert set(line["teams"]) == {teams["Beirut"], teams["Cairo"]}
+    # Planned against the office carrying the larger share of it.
+    beirut_share = line["allocations"].get(trades[0]["id"], 0)
+    cairo_share = line["allocations"].get(trades[1]["id"], 0)
+    wanted = teams["Beirut"] if beirut_share >= cairo_share else teams["Cairo"]
+    assert line["calendar_id"] == wanted
+
+
+def test_a_holiday_for_any_team_working_a_line_is_flagged(signed_in):
+    """A line worked by two offices is planned against one of them, so the
+    other's days off are invisible — and they are exactly the days somebody is
+    waiting for an answer that is not coming."""
+    from app.db import execute, query_one
+    from app.service import (add_holiday, as_dict, load_calendars, load_tasks,
+                             load_trades, project_plan)
+
+    unlocked(signed_in)
+    signed_in.post("/projects/1/setup/teams",
+                   data={"name": "Cairo", "workdays": CAIRO, "office": "Cairo"})
+    signed_in.post("/projects/1/setup/teams",
+                   data={"name": "Beirut", "workdays": BEIRUT, "office": "Beirut"})
+    with signed_in.application.app_context():
+        teams = {c["name"]: c["id"] for c in load_calendars(1)}
+        trades = load_trades(1)
+        execute("UPDATE trades SET office = 'beirut' WHERE id = ?", (trades[0]["id"],))
+        execute("UPDATE trades SET office = 'cairo' WHERE id = ?", (trades[1]["id"],))
+        line = next(t for t in load_tasks(1)
+                    if trades[0]["id"] in t["allocations"] and trades[1]["id"] in t["allocations"])
+        # A day off in the middle of that line, for whichever team it is not
+        # planned against.
+        other = next(t for t in line["teams"] if t != line["calendar_id"])
+        add_holiday(1, other, line["start_date"], "Office closed")
+
+        plan = project_plan(as_dict(query_one("SELECT * FROM projects WHERE id = 1")))
+        row = next(r for r in plan["tasks"] if r["id"] == line["id"])
+
+    assert row["clashes"], "the other team's day off should be flagged"
+    assert row["clashes"][0]["team_id"] == other
+    assert row["clashes"][0]["count"] == 1
 
 
 def test_a_team_s_working_days_are_saved_with_the_rest_of_the_sheet(signed_in):
@@ -582,48 +642,6 @@ def test_a_link_the_programme_will_not_take_says_so_rather_than_reloading(signed
                             headers={"Accept": "application/json"})
     assert answer.status_code == 400
     assert "itself" in answer.get_json()["error"]
-
-
-def test_the_team_a_line_is_planned_on_is_changed_from_the_schedule(signed_in):
-    from app.db import query_one
-    from app.service import load_calendars
-
-    unlocked(signed_in)
-    signed_in.post("/projects/1/setup/teams", data={"name": "Beirut", "workdays": BEIRUT})
-    with signed_in.application.app_context():
-        beirut = load_calendars(1)[1]["id"]
-        was = query_one("SELECT start_date, submission_date FROM tasks WHERE id = 1")
-
-    answer = signed_in.post("/projects/1/schedule/1/team",
-                            data={"calendar_id": str(beirut)},
-                            headers={"Accept": "application/json"}).get_json()
-    assert answer["ok"]
-    assert answer["moved"][0]["team"] == "Beirut"
-
-    with signed_in.application.app_context():
-        now = query_one("SELECT start_date, submission_date, calendar_id FROM tasks WHERE id = 1")
-    assert now["calendar_id"] == beirut
-    # Its dates are kept; what changes is that the duration now reads in the
-    # days the team is actually in.
-    assert now["submission_date"] == was["submission_date"]
-    assert answer["moved"][0]["duration"] < 30
-
-
-def test_only_a_manager_moves_a_line_between_teams(client, app):
-    client.post("/register", data={"name": "Member", "email": "m5@example.com",
-                                   "password": "longenough1"})
-    with app.app_context():
-        from app.db import connect
-
-        conn = connect(app.config["DATABASE"])
-        with conn:
-            user = conn.execute("SELECT id FROM users WHERE email = 'm5@example.com'").fetchone()
-            conn.execute("INSERT INTO project_members (project_id, user_id, role) VALUES (1, ?, 'member')",
-                         (user["id"],))
-        conn.close()
-
-    assert client.get("/projects/1/schedule/1").status_code == 200
-    assert client.post("/projects/1/schedule/1/team", data={"calendar_id": ""}).status_code == 403
 
 
 def test_every_deliverable_opens(signed_in):

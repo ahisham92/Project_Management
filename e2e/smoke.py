@@ -119,6 +119,7 @@ def main() -> int:
         step("a helper on every tab, and one page of definitions", _how_to_use)
         step("the dashboard overview shows dates, float, progress and earned", _overview)
         step("Carmen answers, stages a change, and applies it", _assistant)
+        step("Carmen reads what you attach and hands a document back", _carmen_files)
         step("Carmen changes the setup sheet and shares a trade across every line",
              _assistant_changes_the_setup)
         step("a presentation downloads as a PowerPoint", _deck)
@@ -453,9 +454,10 @@ def _teams(page) -> None:
     page.click("button:has-text('Unlock')")
     page.wait_for_timeout(700)
 
-    for name, week in (("Cairo", "1111001"), ("Beirut", "1111100")):
+    for name, week, office in (("Cairo", "1111001", "cairo"), ("Beirut", "1111100", "beirut")):
         page.fill("form[action$='/setup/teams'] input[name=name]", name)
         page.select_option("form[action$='/setup/teams'] select[name=workdays]", week)
+        page.select_option("form[action$='/setup/teams'] select[name=office]", office)
         page.click("form[action$='/setup/teams'] button")
         page.wait_for_timeout(900)
 
@@ -470,22 +472,21 @@ def _teams(page) -> None:
     page.wait_for_selector("text=Holiday added >> visible=true", timeout=8000)
     page.screenshot(path=str(SHOTS / "30-teams.png"), full_page=True)
 
-    # Put a line on Beirut, in the row, and watch its duration re-read.
-    _schedule_page(page, "dates")
-    was = page.locator("#duration-1").inner_text().strip()
-    page.locator("#team-1 .cell-open").click()
-    page.wait_for_selector("form.cell-form select[name=calendar_id]", timeout=6000)
-    options = page.locator("form.cell-form select[name=calendar_id] option")
-    beirut = next(options.nth(i).get_attribute("value") for i in range(options.count())
-                  if "Beirut" in (options.nth(i).inner_text() or ""))
-    page.select_option("form.cell-form select[name=calendar_id]", beirut)
-    page.wait_for_timeout(2200)
+    # A line's team is not set on the line: it comes from the trades carrying
+    # it, through the office each trade sits in. Put every trade in Cairo and
+    # every line follows.
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    offices = page.locator("select[name^='trade_'][name$='_office']")
+    for n in range(offices.count()):
+        offices.nth(n).select_option("cairo")
+    page.click("button:has-text('Save all changes')")
+    page.wait_for_selector("text=Saved — project settings >> visible=true", timeout=8000)
 
-    if "Beirut" not in page.locator("#team-1").inner_text():
-        raise AssertionError("the line was not moved to the other team")
-    now = page.locator("#duration-1").inner_text().strip()
-    if now == was:
-        raise AssertionError(f"a Monday-to-Friday week should shorten the duration: {was}")
+    _schedule_page(page, "dates")
+    if "Cairo" not in page.locator("#team-1").inner_text():
+        raise AssertionError("the line did not take its team from its trades")
+    if page.locator("#team-1 .cell-open").count():
+        raise AssertionError("the team is read from the trades, not chosen on the line")
 
     # And a holiday in the week before a submission is said out loud.
     if page.locator(".holiday-flag").count() == 0:
@@ -871,6 +872,57 @@ def _assistant(page) -> None:
     if "overview" not in said:
         raise AssertionError("reopening the conversation lost the answer")
     page.screenshot(path=str(SHOTS / "41-conversations.png"), full_page=True)
+
+
+def _carmen_files(page) -> None:
+    """A file goes up with the question, is kept with the conversation, and a
+    document comes back the other way when one is asked for."""
+    if not os.environ.get("CLAUDE_STAND_IN"):
+        return
+
+    page.goto(f"{BASE}/projects/1/assistant", wait_until="networkidle")
+    page.wait_for_selector("#chat-form textarea:not([disabled])", timeout=8000)
+
+    note = SHOTS / "client-letter.txt"
+    note.write_text("Sibline Port — the client asks for the bathymetry brief "
+                    "by 20/09/2026.\n", encoding="utf-8")
+
+    # Picked, and shown in the composer before it is sent.
+    page.set_input_files("#chat-form input[data-attach]", str(note))
+    page.wait_for_selector(".chat-attached:not([hidden])", timeout=8000)
+    if "client-letter.txt" not in page.text_content(".chat-attached"):
+        raise AssertionError("the attached file is not shown before it goes")
+
+    page.fill("#chat-form textarea[name=question]", "What does this letter ask for?")
+    page.click("#chat-form button[type=submit]")
+    page.wait_for_selector("#chat .chat-line.assistant:not(.thinking) .chat-used",
+                           timeout=25000)
+    if "client-letter.txt" not in page.locator("#chat .chat-line.you").last.inner_text():
+        raise AssertionError("the question does not carry what was attached")
+
+    # Kept: a reload lands back in the conversation with the file still on it,
+    # and pressing it gives the file back.
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("a.chat-file", timeout=8000)
+    where = page.locator("a.chat-file").last.get_attribute("href")
+    came = page.request.get(where if where.startswith("http") else BASE + where)
+    if not came.ok or b"bathymetry" not in came.body():
+        raise AssertionError("the attachment did not come back down")
+
+    # And a document the other way.
+    page.fill("#chat-form textarea[name=question]",
+              "Send me the action register as a Word document")
+    page.click("#chat-form button[type=submit]")
+    page.wait_for_selector("#chat .chat-line.assistant:not(.thinking) a[href*=register]",
+                           timeout=25000)
+    link = page.locator("#chat .chat-line.assistant a[href*=register]").last
+    if "Download" not in link.inner_text():
+        raise AssertionError(f"the document is not offered as a download: "
+                             f"{link.inner_text()!r}")
+    file = page.request.get(BASE + link.get_attribute("href"))
+    if not file.ok or file.body()[:2] != b"PK":
+        raise AssertionError("the register did not come back as a Word file")
+    page.screenshot(path=str(SHOTS / "44-carmen-files.png"), full_page=True)
 
 
 def _minutes_export(page) -> None:
@@ -1267,28 +1319,31 @@ def _schedule_links(page) -> None:
 
 
 def _squeeze(page) -> None:
-    """A run of the programme fitted into fewer days: worked out first, applied
-    only when the button under the proposal is pressed."""
+    """A run of the programme fitted between two dates: worked out first,
+    applied only when the button under the proposal is pressed, and put back."""
     # Read the first row with the dates panel open — a row inside a folded
     # panel has no text to compare, which is not the same as not having moved.
     _schedule_page(page, "dates")
     before = page.locator("tr[id^='task-']").first.inner_text()
 
-    _schedule_page(page, "squeeze")
+    def work_it_out() -> None:
+        _schedule_page(page, "squeeze")
+        if page.locator("select[name=from_task] option").count() < 3:
+            raise AssertionError("the squeeze has no deliverables to choose from")
+        page.select_option("select[name=from_task]", index=1)
+        page.select_option("select[name=to_task]", index=2)
+        page.fill("input[name=starts]", "31/08/2026")
+        page.fill("input[name=ends]", "30/11/2026")
+        page.click("button:has-text('Work it out')")
+        page.wait_for_selector("text=Every duration × >> visible=true", timeout=8000)
 
-    # The two lines linked a couple of steps ago are the run.
-    options = page.locator("select[name=from_task] option")
-    if options.count() < 3:
-        raise AssertionError("the squeeze has no deliverables to choose from")
-    page.select_option("select[name=from_task]", index=1)
-    page.select_option("select[name=to_task]", index=2)
-    page.fill("input[name=days]", "15")
-    page.click("button:has-text('Work it out')")
-    page.wait_for_selector("text=Squeezed into >> visible=true", timeout=8000)
-
+    work_it_out()
     body = page.text_content("body")
-    if "15 days" not in body:
-        raise AssertionError("the proposal does not say what the run becomes")
+    if "30/11/2026" not in body:
+        raise AssertionError("the proposal does not say when the run finishes")
+    # Every line can be held out of it, and every one shows what its Code A becomes.
+    if page.locator("input[name=hold]").count() < 2:
+        raise AssertionError("lines cannot be held out of the squeeze")
     if page.locator("form[action$='/schedule/squeeze'] button").count() == 0:
         raise AssertionError("the proposal offers no way to apply it")
     page.screenshot(path=str(SHOTS / "23-squeeze.png"), full_page=True)
@@ -1299,17 +1354,24 @@ def _squeeze(page) -> None:
         raise AssertionError("working it out must not move anything")
 
     # Now apply it.
-    _schedule_page(page, "squeeze")
-    page.select_option("select[name=from_task]", index=1)
-    page.select_option("select[name=to_task]", index=2)
-    page.fill("input[name=days]", "15")
-    page.click("button:has-text('Work it out')")
-    page.wait_for_selector("text=Squeezed into >> visible=true", timeout=8000)
+    work_it_out()
     page.click("form[action$='/schedule/squeeze'] button")
-    page.wait_for_selector("text=working days >> visible=true", timeout=8000)
+    page.wait_for_selector("text=the run now finishes >> visible=true", timeout=8000)
     said = page.text_content(".flash")
-    if "Squeezed" not in said or "15 working days" not in said:
+    if "Squeezed" not in said or "30/11/2026" not in said:
         raise AssertionError(f"the squeeze did not report itself: {said!r}")
+
+    _schedule_page(page, "dates")
+    if page.locator("tr[id^='task-']").first.inner_text() == before:
+        raise AssertionError("applying it should have moved the dates")
+
+    # And it can be put back exactly.
+    _schedule_page(page, "squeeze")
+    page.click("form[action*='/schedule/restore/'] button")
+    page.wait_for_selector("text=back to where they were >> visible=true", timeout=8000)
+    _schedule_page(page, "dates")
+    if page.locator("tr[id^='task-']").first.inner_text() != before:
+        raise AssertionError("putting it back should return the dates exactly")
 
 
 def _schedule_deps(page) -> None:
@@ -1621,7 +1683,12 @@ def _minutes_reorder(page) -> None:
         raise AssertionError("the last item should not be movable down")
 
     page.locator("button[title='Move down']").first.click()
-    page.wait_for_selector("text=Items and agreements >> visible=true", timeout=8000)
+    # The move happens where it stands, so what is waited for is the row
+    # changing rather than a page arriving.
+    page.wait_for_function(
+        "() => { const row = document.querySelector('tbody[data-items-table] tr[id^=item-]');"
+        " return row && row.innerText.includes('Additional bathymetric survey'); }",
+        timeout=8000)
     rows = page.locator("tbody tr:has(button[title='Move down'])")
     after = [rows.nth(i).text_content() for i in range(rows.count())]
     if "Additional bathymetric survey" not in after[0] or "1.1" not in after[0]:

@@ -62,6 +62,9 @@ How to work:
   rather than picking one.
 * A change that touches every deliverable — a trade taking a share of all of them, \
   say — is one call to share_across, not fifty calls to set_trade_split.
+* Somebody can attach a file to a question — a drawing register, a client\'s letter, \
+  a programme. Read what is in it and answer from it; where it says something that \
+  should be recorded on the project, stage the change rather than only describing it.
 
 About changing things: a tool that changes something does not change it \
 immediately — it is staged for the reader to approve, and the page shows them \
@@ -129,7 +132,7 @@ def _trim(history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
 def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
         history: Sequence[Mapping[str, Any]] = (), today: str = "",
-        effort: str = "") -> Answer:
+        effort: str = "", attachments: Sequence[Mapping[str, Any]] = ()) -> Answer:
     """One question, answered — with anything it wants to change staged."""
     from ..claude import (ClaudeError, DEFAULT_EFFORT, chat, refused, said, tool_calls)
     from ..service import as_dict, today as today_is
@@ -143,7 +146,13 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
 
     project_id = int(project["id"])
     system = _system(project, today or today_is())
-    messages: list[dict[str, Any]] = [*_trim(history), {"role": "user", "content": asked}]
+
+    # A PDF or a picture goes to the model as itself; the words out of a Word
+    # or PowerPoint file go in front of the question, said to be what they are.
+    from ..reading import as_content
+
+    content = as_content(asked, list(attachments))
+    messages: list[dict[str, Any]] = [*_trim(history), {"role": "user", "content": content}]
 
     catalogue = describe()
     for round_number in range(1, MAX_ROUNDS + 1):
@@ -215,7 +224,8 @@ def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, A
         return _result(call_id, {"error": f"That did not work: {exc}"}, True)
 
     if name in READ_ONLY:
-        if isinstance(outcome, dict) and outcome.get("kind") in ("open_view", "presentation"):
+        if isinstance(outcome, dict) and outcome.get("kind") in ("open_view", "presentation",
+                                                                 "document"):
             answer.links.append(outcome)
         return _result(call_id, outcome)
 

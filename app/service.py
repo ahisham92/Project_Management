@@ -20,8 +20,49 @@ def as_dict(row: Any) -> dict[str, Any]:
     return row if isinstance(row, dict) else dict(row)
 
 
+def teams_by_office(project_id: int) -> dict[str, int]:
+    """Which team works in which office, for the deliverables to inherit."""
+    from .offices import normalise
+
+    out: dict[str, int] = {}
+    for row in query("SELECT id, office FROM calendars WHERE project_id = ? "
+                     "ORDER BY sort_order, id", (project_id,)):
+        key = normalise(row["office"])
+        if key and key not in out:
+            out[key] = row["id"]
+    return out
+
+
+def teams_on(task: Mapping[str, Any], trades: Mapping[Any, Mapping[str, Any]],
+             by_office: Mapping[str, int]) -> list[int]:
+    """Every team working a deliverable, the largest share first.
+
+    A line is not one team's: it is split between trades, the trades sit in
+    offices and the offices keep different weeks. Which team it is *planned*
+    against is the first of these; which teams' holidays can disrupt it is all
+    of them.
+    """
+    from .offices import normalise
+
+    weight: dict[int, float] = {}
+    for trade_id, share in (task.get("allocations") or {}).items():
+        trade = trades.get(trade_id)
+        if not trade or not share:
+            continue
+        team = by_office.get(normalise(trade.get("office")))
+        if team:
+            weight[team] = weight.get(team, 0.0) + float(share)
+    return [team for team, _share in sorted(weight.items(), key=lambda kv: -kv[1])]
+
+
 def load_tasks(project_id: int) -> list[dict[str, Any]]:
-    """Deliverables for a project, each with its trade allocations by trade id."""
+    """Deliverables for a project, each with its trade allocations by trade id.
+
+    The working calendar is not stored on the line any more: it comes from the
+    trades carrying it, through the office each trade sits in. Setting a trade
+    to Cairo is what puts its share of the work on Cairo's week — one answer in
+    one place, rather than the same answer typed again on fifty rows.
+    """
     tasks = [
         dict(row)
         for row in query(
@@ -47,8 +88,17 @@ def load_tasks(project_id: int) -> list[dict[str, Any]]:
     by_task: dict[int, dict[int, float]] = {}
     for row in allocations:
         by_task.setdefault(row["task_id"], {})[row["trade_id"]] = row["pct"]
+
+    trades = {t["id"]: t for t in load_trades(project_id)}
+    by_office = teams_by_office(project_id)
     for task in tasks:
         task["allocations"] = by_task.get(task["id"], {})
+        teams = teams_on(task, trades, by_office)
+        task["teams"] = teams
+        # Everything downstream reads calendar_id, so it is answered here
+        # rather than in five places: the biggest share's team, or whatever the
+        # line was on before offices existed, or the project's default.
+        task["calendar_id"] = teams[0] if teams else task.get("calendar_id")
     return tasks
 
 
@@ -541,7 +591,104 @@ def load_items(project_id: int, on_date: str | None = None, kind: str | None = N
     if rewind_to:
         plain = rewind(plain, rewind_to)
     stamp = rewind_to or on_date or today()
-    return [decorate(row, stamp) for row in plain]
+    options = load_impacts(project_id)
+    names = {o["key"]: o["name"] for o in options}
+    meanings = {o["key"]: (bool(o["affects_time"]), bool(o["affects_cost"])) for o in options}
+    return [decorate(row, stamp, names, meanings) for row in plain]
+
+
+# --- what an item can be said to affect -------------------------------------
+
+def load_impacts(project_id: int) -> list[dict[str, Any]]:
+    """The project's list of what a minuted item can affect.
+
+    Seeded from the four the app ships with the first time it is asked for, so
+    every project has a working list and nobody has to build one before they
+    can minute anything.
+    """
+    from .minutes import IMPACTS, IMPACT_MEANS
+
+    rows = query("SELECT * FROM impact_options WHERE project_id = ? ORDER BY sort_order, id",
+                 (project_id,))
+    if rows:
+        return [dict(r) for r in rows]
+
+    conn = get_db()
+    with conn:
+        for order, (key, name) in enumerate(IMPACTS, start=1):
+            time_, cost = IMPACT_MEANS.get(key, (False, False))
+            conn.execute(
+                "INSERT OR IGNORE INTO impact_options (project_id, key, name, affects_time, "
+                "affects_cost, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_id, key, name, int(time_), int(cost), order),
+            )
+    return [dict(r) for r in query(
+        "SELECT * FROM impact_options WHERE project_id = ? ORDER BY sort_order, id",
+        (project_id,))]
+
+
+def impact_choices(project_id: int) -> list[tuple[str, str]]:
+    """The list as a dropdown wants it."""
+    return [(o["key"], o["name"]) for o in load_impacts(project_id)]
+
+
+def add_impact(project_id: int, name: str, affects_time: bool = False,
+               affects_cost: bool = False) -> str:
+    """Adds something an item can affect. Returns why not, or a blank string."""
+    from .minutes import impact_key
+
+    called = " ".join(str(name or "").split())[:60]
+    key = impact_key(called)
+    if not key:
+        return "Give it a name"
+    if query_one("SELECT 1 FROM impact_options WHERE project_id = ? AND key = ?",
+                 (project_id, key)):
+        return f"“{called}” is already on the list"
+    insert(
+        "INSERT INTO impact_options (project_id, key, name, affects_time, affects_cost, "
+        "sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, key, called, int(bool(affects_time)), int(bool(affects_cost)),
+         next_sort_order("impact_options", project_id)),
+    )
+    return ""
+
+
+def remove_impact(project_id: int, option_id: int) -> str:
+    """Takes one off the list, unless something is using it."""
+    row = query_one("SELECT * FROM impact_options WHERE id = ? AND project_id = ?",
+                    (option_id, project_id))
+    if row is None:
+        return "That is not on the list"
+    if row["key"] == "none":
+        return "“No impact” is what an item says when it affects nothing — it stays"
+    used = query_one("SELECT COUNT(*) AS n FROM meeting_items WHERE project_id = ? AND impact = ?",
+                     (project_id, row["key"]))
+    if used and used["n"]:
+        return (f"{used['n']} item{'s' if used['n'] != 1 else ''} still says “{row['name']}”. "
+                "Change those first.")
+    execute("DELETE FROM impact_options WHERE id = ?", (option_id,))
+    return ""
+
+
+def save_impacts(project_id: int, form: Mapping[str, Any]) -> int:
+    """Renames and re-flags the whole list in one go."""
+    saved = 0
+    conn = get_db()
+    with conn:
+        for option in load_impacts(project_id):
+            field = f"impact_{option['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                "UPDATE impact_options SET name = ?, affects_time = ?, affects_cost = ? "
+                "WHERE id = ? AND project_id = ?",
+                (" ".join(str(form.get(field) or option["name"]).split())[:60],
+                 1 if form.get(f"impact_{option['id']}_time") else 0,
+                 1 if form.get(f"impact_{option['id']}_cost") else 0,
+                 option["id"], project_id),
+            )
+            saved += 1
+    return saved
 
 
 def item_trades(project_id: int) -> dict[int, list[dict[str, Any]]]:
@@ -1154,11 +1301,16 @@ def project_plan(project: Mapping[str, Any], data_date: str | None = None) -> di
 
     # Holidays in the week before a submission are the ones that hurt: they eat
     # the days the package is being pulled together, and nobody plans for them.
+    team_names = {c["id"]: c["name"] for c in load_calendars(project["id"])}
     for row in rows:
         mine = calendar_of(row, diaries)
         row["team_name"] = mine.name
         row["team_week"] = mine.week
         row["run_up"] = run_up_holidays(row, mine, diaries)
+        # And days off, anywhere in the run, for any team working the line —
+        # including the one it is not planned against.
+        row["clashes"] = holiday_clashes(row, diaries, team_names)
+        row["team_names"] = [team_names.get(t, "") for t in (row.get("teams") or [])]
 
     # A line that cannot start where it is drawn says which link holds it back
     # and why — a finish → finish link moves a start without ever mentioning it,
@@ -1283,6 +1435,34 @@ def run_up_holidays(task: Mapping[str, Any], mine: Any,
         "from": opens.isoformat(),
         "to": submission.isoformat(),
     }
+
+
+def holiday_clashes(task: Mapping[str, Any], diaries: Mapping[Any, Any],
+                    names: Mapping[Any, str] | None = None) -> list[dict[str, Any]]:
+    """Days off, inside a deliverable's run, for a team actually working it.
+
+    A line split between Beirut and Cairo is worked to two different calendars.
+    It is planned against one of them, so the other's holidays are invisible —
+    and they are exactly the days somebody is waiting for an answer that is not
+    coming. Named here so the schedule can say so.
+    """
+    from .calendars import as_date
+
+    start, finish = as_date(task.get("start_date")), as_date(task.get("submission_date"))
+    if start is None or finish is None or finish < start:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for team_id in task.get("teams") or []:
+        diary = diaries.get(team_id)
+        if diary is None:
+            continue
+        days = [day.isoformat() for day in diary.holidays_between(start, finish)]
+        if days:
+            out.append({"team_id": team_id,
+                        "team": (names or {}).get(team_id) or getattr(diary, "name", "") or "team",
+                        "days": days, "count": len(days)})
+    return out
 
 
 def load_project_revisions(project_id: int) -> dict[int, list[dict[str, Any]]]:
@@ -1490,18 +1670,56 @@ def load_thread(project_id: Any, thread_id: Any) -> dict[str, Any] | None:
 def thread_messages(thread_id: Any) -> list[dict[str, Any]]:
     """One conversation, as the page draws it and the model reads it back."""
     rows = query(
-        "SELECT question, answer, tools_used, trouble, asked_at, user_name "
+        "SELECT id, question, answer, tools_used, trouble, asked_at, user_name "
         "FROM chat_log WHERE thread_id = ? ORDER BY id",
         (thread_id,),
     )
+    files: dict[Any, list[dict[str, Any]]] = {}
+    for one in thread_files(thread_id):
+        files.setdefault(one["chat_id"], []).append(one)
+
     out: list[dict[str, Any]] = []
     for row in rows:
         out.append({"role": "user", "content": row["question"], "who": row["user_name"],
-                    "at": row["asked_at"]})
+                    "at": row["asked_at"], "files": files.get(row["id"], [])})
         out.append({"role": "assistant", "content": row["answer"] or row["trouble"],
                     "used": [t for t in str(row["tools_used"] or "").split(", ") if t],
                     "failed": bool(row["trouble"]) and not row["answer"]})
     return out
+
+
+# A megabyte of prose is more than anybody means to attach to a question.
+MAX_CHAT_FILES = 4
+
+
+def keep_file(project_id: Any, thread_id: Any, user: Any, name: str, kind: str,
+              data: bytes) -> int:
+    """Keeps what somebody attached to a question."""
+    who = as_dict(user) if user is not None else {}
+    return insert(
+        "INSERT INTO chat_files (project_id, thread_id, user_id, name, kind, bytes, content) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_id, thread_id, who.get("id"), str(name)[:160], str(kind)[:20],
+         len(data), data),
+    )
+
+
+def name_files(chat_id: Any, file_ids: Sequence[int]) -> None:
+    """Ties the files to the exchange they were asked about."""
+    for one in file_ids:
+        execute("UPDATE chat_files SET chat_id = ? WHERE id = ?", (chat_id, one))
+
+
+def thread_files(thread_id: Any) -> list[dict[str, Any]]:
+    return [dict(r) for r in query(
+        "SELECT id, chat_id, name, kind, bytes, added_at FROM chat_files "
+        "WHERE thread_id = ? ORDER BY id", (thread_id,))]
+
+
+def chat_file(project_id: Any, file_id: int) -> dict[str, Any] | None:
+    row = query_one("SELECT * FROM chat_files WHERE id = ? AND project_id = ?",
+                    (file_id, project_id))
+    return dict(row) if row else None
 
 
 def rename_thread(project_id: Any, thread_id: Any, title: str) -> bool:
@@ -1712,22 +1930,100 @@ def replace_links(project_id: int, rows: Sequence[Mapping[str, Any]]) -> dict[st
 
 
 def squeeze_plan(project: Mapping[str, Any], first_id: int, last_id: int,
-                 target_days: Any) -> dict[str, Any]:
-    """What squeezing a stretch of the programme would do. Writes nothing."""
-    from .squeeze import plan
+                 starts: Any, ends: Any, excluded: Sequence[int] = (),
+                 with_meetings: Any = True) -> dict[str, Any]:
+    """What squeezing a run of the programme between two dates would do.
 
+    Writes nothing. The answer is the whole proposal, including what happens to
+    any series of recurring meetings inside the run — there are as many of those
+    as the programme is long, so a shorter programme has fewer of them.
+    """
+    from .dates import from_input
+    from .squeeze import meetings_for, plan
+
+    # Dates arrive as somebody typed them; everything below works in ISO.
+    starts, ends = (from_input(starts) or starts), (from_input(ends) or ends)
     project = as_dict(project)
-    return plan(load_tasks(int(project["id"])), load_links(int(project["id"])),
-                calendars_for(project), int(first_id), int(last_id), target_days)
+    project_id = int(project["id"])
+    tasks = load_tasks(project_id)
+    links = load_links(project_id)
+    diaries = calendars_for(project)
+
+    proposal = plan(tasks, links, diaries, int(first_id), int(last_id), starts, ends,
+                    load_steps(project_id), excluded)
+
+    # A series of recurring meetings inside the run is not work that compresses
+    # — each one is a day — but there are as many of them as the programme is
+    # long. What each would become is worked out and shown; which of them
+    # actually follow the span is somebody's decision, not a guess.
+    from .schedule import _diaries
+
+    inside = set(proposal["scope"])
+    rows = {int(t["id"]): dict(t) for t in tasks}
+    found = meetings_for([t for t in tasks if t["id"] in inside],
+                         proposal["start"], proposal["finish"], _diaries(rows, diaries))
+    wanted = None if with_meetings is True else set(with_meetings or ())
+    for run in found:
+        run["follow"] = run["is_meeting"] if wanted is None else (run["name"] in wanted)
+    proposal["meetings"] = found
+    return proposal
 
 
-def apply_squeeze(project_id: int, proposal: Mapping[str, Any]) -> dict[str, Any]:
+def snapshot_schedule(project_id: int, user: Any = None, note: str = "") -> int:
+    """Writes down where every date stands, so it can be put back."""
+    import json
+
+    who = as_dict(user) if user is not None else {}
+    rows = [{"id": r["id"], "start_date": r["start_date"],
+             "submission_date": r["submission_date"]}
+            for r in query("SELECT id, start_date, submission_date FROM tasks "
+                           "WHERE project_id = ?", (project_id,))]
+    return insert(
+        "INSERT INTO schedule_snapshots (project_id, user_id, user_name, note, lines, payload) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, who.get("id"), str(who.get("name") or "")[:120], str(note)[:200],
+         len(rows), json.dumps(rows)),
+    )
+
+
+def load_snapshots(project_id: int, limit: int = 10) -> list[dict[str, Any]]:
+    return [dict(r) for r in query(
+        "SELECT id, made_at, user_name, note, lines FROM schedule_snapshots "
+        "WHERE project_id = ? ORDER BY id DESC LIMIT ?", (project_id, limit))]
+
+
+def restore_schedule(project_id: int, snapshot_id: int) -> int:
+    """Puts every date back to where a snapshot says it was."""
+    import json
+
+    row = query_one("SELECT * FROM schedule_snapshots WHERE id = ? AND project_id = ?",
+                    (snapshot_id, project_id))
+    if row is None:
+        return 0
+    lines = json.loads(row["payload"] or "[]")
+    conn = get_db()
+    with conn:
+        for line in lines:
+            conn.execute(
+                "UPDATE tasks SET start_date = ?, submission_date = ?, "
+                "updated_at = datetime('now') WHERE id = ? AND project_id = ?",
+                (line["start_date"], line["submission_date"], line["id"], project_id),
+            )
+    return len(lines)
+
+
+def apply_squeeze(project_id: int, proposal: Mapping[str, Any],
+                  user: Any = None) -> dict[str, Any]:
     """Puts a squeeze where the proposal says it goes.
 
-    Written in one transaction, and worked out again from the same function that
-    produced the preview rather than trusting dates that came back from a page —
-    a proposal is a description of a change, not the change itself.
+    Where every date stood is written down first, so "put it back to four
+    months" is a button rather than an afternoon.
     """
+    from .dates import to_display
+
+    kept = snapshot_schedule(project_id, user,
+                             f"Before squeezing to {to_display(proposal.get('end'))}")
+
     conn = get_db()
     lines = [*proposal.get("changes", ()), *proposal.get("after", ())]
     with conn:
@@ -1737,8 +2033,58 @@ def apply_squeeze(project_id: int, proposal: Mapping[str, Any]) -> dict[str, Any
                 "updated_at = datetime('now') WHERE id = ? AND project_id = ?",
                 (line["start"], line["submission"], line["id"], project_id),
             )
+
+    following = [run for run in (proposal.get("meetings") or []) if run.get("follow")]
+    added, removed, moved = _fit_meetings(project_id, following)
+
     return {"squeezed": len(proposal.get("changes", ())),
-            "followed": len(proposal.get("after", ()))}
+            "followed": len(proposal.get("after", ())),
+            "meetings_added": added, "meetings_removed": removed,
+            "meetings_moved": moved, "snapshot": kept}
+
+
+def _fit_meetings(project_id: int, series: Sequence[Mapping[str, Any]]) -> tuple[int, int, int]:
+    """Adds, drops and renumbers a run of recurring meetings to fit the span."""
+    added = removed = moved = 0
+    conn = get_db()
+    with conn:
+        for run in series:
+            for line in run.get("moves") or []:
+                conn.execute(
+                    "UPDATE tasks SET name = ?, start_date = ?, submission_date = ?, "
+                    "updated_at = datetime('now') WHERE id = ? AND project_id = ?",
+                    (line["name"], line.get("start") or line["date"], line["date"],
+                     line["id"], project_id))
+                moved += 1
+            for line in run.get("remove") or []:
+                conn.execute("DELETE FROM tasks WHERE id = ? AND project_id = ?",
+                             (line["id"], project_id))
+                removed += 1
+
+    # Adding copies the last one in the series — its section, its weight and its
+    # trade split — because a meeting added by hand would be copied from it too.
+    for run in series:
+        for line in run.get("add") or []:
+            like = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?",
+                             (line.get("like"), project_id))
+            if like is None:
+                continue
+            made = insert(
+                """
+                INSERT INTO tasks (project_id, section_id, wbs, name, weight_points,
+                                   start_date, submission_date, tracking, remarks, sort_order)
+                VALUES (?, ?, '', ?, ?, ?, ?, ?, '', ?)
+                """,
+                (project_id, like["section_id"], line["name"], like["weight_points"],
+                 line.get("start") or line["date"], line["date"], like["tracking"],
+                 next_sort_order("tasks", project_id)),
+            )
+            split = {r["trade_id"]: r["pct"] for r in query(
+                "SELECT trade_id, pct FROM task_allocations WHERE task_id = ?", (like["id"],))}
+            if split:
+                set_allocations(made, project_id, split)
+            added += 1
+    return added, removed, moved
 
 
 def apply_schedule(project_id: int, rows: Sequence[Mapping[str, Any]], mode: str) -> dict[str, Any]:

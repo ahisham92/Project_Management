@@ -1364,8 +1364,9 @@
         var anchor = document.createElement('a');
         anchor.className = 'btn btn-ghost btn-sm';
         anchor.href = link.url;
-        anchor.textContent = link.kind === 'presentation'
-          ? 'Download the deck' : (link.says || 'Open');
+        if (link.kind === 'presentation') anchor.textContent = 'Download the deck';
+        else if (link.kind === 'document') anchor.textContent = link.says || 'Download';
+        else anchor.textContent = link.says || 'Open';
         box.appendChild(anchor);
       });
       row.appendChild(box);
@@ -1375,20 +1376,77 @@
       }
     }
 
+    // Files waiting to go up with the next question.
+    var attached = [];
+
+    function drawAttached() {
+      var tray = wrap.querySelector('[data-attached]');
+      if (!tray) return;
+      tray.innerHTML = '';
+      tray.hidden = attached.length === 0;
+      attached.forEach(function (file, index) {
+        var chip = document.createElement('span');
+        chip.textContent = '📎 ' + file.name;
+        var drop = document.createElement('button');
+        drop.type = 'button';
+        drop.setAttribute('aria-label', 'Remove ' + file.name);
+        drop.textContent = '✕';
+        drop.addEventListener('click', function () {
+          attached.splice(index, 1);
+          drawAttached();
+        });
+        chip.appendChild(drop);
+        tray.appendChild(chip);
+      });
+    }
+
+    var picker = wrap.querySelector('[data-attach]');
+    if (picker) {
+      picker.addEventListener('change', function () {
+        Array.prototype.slice.call(picker.files || []).forEach(function (file) {
+          if (attached.length < 4) attached.push(file);
+        });
+        picker.value = '';
+        drawAttached();
+      });
+    }
+
     function send(question) {
-      if (asking || !question) return;
+      if (asking || (!question && !attached.length)) return;
       asking = true;
-      line('you', words(question));
-      var waiting = line('assistant thinking', '<p class="muted">Reading the project…</p>');
+      var going = attached.slice();
+      attached = [];
+      drawAttached();
+      line('you', words(question) + going.map(function (file) {
+        var chip = document.createElement('span');
+        chip.className = 'chat-file';
+        chip.textContent = '📎 ' + file.name;
+        return chip.outerHTML;
+      }).join(''));
+      var waiting = line('assistant thinking', '<p class="muted">' +
+        (going.length ? 'Reading what you attached…' : 'Reading the project…') + '</p>');
+
+      // A question with a file goes up as a form; one without stays JSON.
+      var body, headers;
+      if (going.length) {
+        body = new FormData();
+        body.append('question', question);
+        if (chat.dataset.thread) body.append('thread_id', chat.dataset.thread);
+        going.forEach(function (file) { body.append('files', file); });
+        headers = { Accept: 'application/json' };
+      } else {
+        body = JSON.stringify({ question: question, thread_id: chat.dataset.thread || null });
+        headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+      }
 
       fetch(chat.dataset.ask, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: headers,
         // The conversation lives on the server now, so what goes up is which
         // thread this belongs to rather than a transcript the page has been
         // carrying around all afternoon.
-        body: JSON.stringify({ question: question, thread_id: chat.dataset.thread || null }),
+        body: body,
       }).then(function (response) {
         return response.json().then(function (result) { return [response.ok, result]; });
       }).then(function (pair) {
@@ -1437,7 +1495,7 @@
         event.preventDefault();
         var box = form.elements.question;
         var question = (box.value || '').trim();
-        if (!question || asking) return;
+        if ((!question && !attached.length) || asking) return;
         box.value = '';
         send(question);
       });

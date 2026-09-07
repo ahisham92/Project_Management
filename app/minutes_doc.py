@@ -84,7 +84,7 @@ def _item_rows(items: Sequence[Mapping[str, Any]]) -> list[list[str]]:
         str(item.get("agreement") or ""),
         _owner(item),
         trade_names(item) or "—",
-        impact_name(item.get("impact")),
+        item.get("impact_name") or impact_name(item.get("impact")),
         to_display(item.get("due_date")) or "—",
         _status(item),
     ] for item in items]
@@ -154,7 +154,8 @@ def _items_table(items: Sequence[Mapping[str, Any]]) -> list[list[Any]]:
             {"text": _subject(item), "size": 9, "valign": "top"},
             {"text": str(item.get("agreement") or ""), "size": 9, "valign": "top"},
             {"text": _owner(item), "size": 9, "valign": "top"},
-            {"text": impact_name(item.get("impact")), "size": 9, "valign": "top"},
+            {"text": item.get("impact_name") or impact_name(item.get("impact")),
+             "size": 9, "valign": "top"},
             {"text": to_display(item.get("due_date")) or "—", "size": 9, "valign": "top"},
             {"text": _status(item), "size": 9, "valign": "top"},
         ])

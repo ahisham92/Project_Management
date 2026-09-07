@@ -298,6 +298,19 @@ main { padding: 20px 0 48px; }
 }
 .chat-composer-foot {
   display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
+  gap: 12px; flex-wrap: wrap;
+}
+.chat-attached { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chat-attached span, .chat-file {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem;
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+}
+.chat-file { margin-top: 8px; text-decoration: none; color: inherit; }
+.chat-file:hover { border-color: var(--series-1); }
+.chat-attached button {
+  border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0;
+  font-size: 0.85rem; line-height: 1;
 }
 @media (max-width: 900px) {
   .chat-shell { grid-template-columns: 1fr; }

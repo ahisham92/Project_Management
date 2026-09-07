@@ -737,6 +737,60 @@ def presentation(project_id: int, start: str = "", end: str = "", title: str = "
     }
 
 
+DOCUMENTS = {
+    "minutes": ("the minutes of a meeting", ("word", "pdf")),
+    "register": ("the action register", ("word",)),
+    "agenda": ("the agenda of what is still open", ("word",)),
+    "schedule": ("the programme as a spreadsheet", ("excel",)),
+    "setup": ("the whole setup sheet as a spreadsheet", ("excel",)),
+    "presentation": ("a deck of the work done in a period", ("powerpoint",)),
+}
+
+
+def document(project_id: int, what: str = "", form: str = "", meeting: str = "",
+             register: str = "client", start: str = "", end: str = "",
+             **_ignored) -> dict[str, Any]:
+    """A document to download: minutes, the register, the agenda, a programme.
+
+    A link rather than a change, so it needs no approving — pressing it is what
+    builds the file, from the same route the tab's own button uses.
+    """
+    from flask import url_for
+
+    from ..minutes import normalise_kind
+
+    wanted = str(what or "").strip().lower()
+    if wanted not in DOCUMENTS:
+        raise ToolError(f"There is no {what!r} document. Choose one of: "
+                        + ", ".join(DOCUMENTS))
+    said, forms = DOCUMENTS[wanted]
+    shape = str(form or "").strip().lower() or forms[0]
+    if shape not in forms:
+        raise ToolError(f"{said.capitalize()} comes as {' or '.join(forms)}, not {form!r}")
+
+    kind = normalise_kind(register)
+    if wanted == "minutes":
+        found = _meeting(project_id, meeting)
+        url = url_for("meetings.meeting_pdf" if shape == "pdf" else "meetings.meeting_word",
+                      project_id=project_id, meeting_id=found["id"])
+        said = f"the minutes of {found.get('ref') or found.get('title') or 'that meeting'}"
+    elif wanted == "register":
+        url = url_for("meetings.register_word", project_id=project_id, kind=kind)
+    elif wanted == "agenda":
+        url = url_for("meetings.agenda_word", project_id=project_id, kind=kind)
+    elif wanted == "schedule":
+        url = url_for("projects.export_schedule", project_id=project_id)
+    elif wanted == "setup":
+        url = url_for("projects.export_setup", project_id=project_id)
+    else:
+        return presentation(project_id, start=start, end=end)
+
+    named = {"word": "Word", "pdf": "PDF", "excel": "Excel",
+             "powerpoint": "PowerPoint"}.get(shape, shape)
+    return {"kind": "document", "what": wanted, "form": shape, "url": url,
+            "says": f"Download {said} as {named}"}
+
+
 # --- the catalogue ----------------------------------------------------------
 
 def _tool(name: str, says: str, properties: dict[str, Any],
@@ -904,6 +958,19 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           {"start": dict(_TEXT, description="dd/mm/yyyy"),
            "end": dict(_TEXT, description="dd/mm/yyyy"),
            "title": dict(_TEXT, description="A title for the deck")}, ["start", "end"]),
+    _tool("document",
+          "Hand back a document to download: the minutes of a meeting (Word or PDF, the PDF "
+          "with its attachments compiled in), the action register, the agenda, the programme "
+          "or the setup sheet as a spreadsheet, or a presentation. Use this whenever somebody "
+          "asks for a file rather than an answer.",
+          {"what": {"type": "string", "enum": list(DOCUMENTS)},
+           "form": {"type": "string", "enum": ["word", "pdf", "excel", "powerpoint"],
+                    "description": "Omitted takes the usual one for that document"},
+           "meeting": dict(_TEXT, description="For the minutes: its reference, like MOM-04"),
+           "register": {"type": "string", "enum": ["client", "internal"]},
+           "start": dict(_TEXT, description="For a presentation, dd/mm/yyyy"),
+           "end": dict(_TEXT, description="For a presentation, dd/mm/yyyy")},
+          ["what"]),
     *edits.CATALOGUE,
 )
 
@@ -912,7 +979,7 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
 READ_ONLY: frozenset[str] = frozenset((
     "overview", "find_deliverables", "deliverable", "period_report", "schedule_summary",
     "week_ahead", "register", "budget_summary", "list_meetings",
-    "open_view", "presentation",
+    "open_view", "presentation", "document",
 )) | edits.READ_ONLY
 
 RUNNERS: dict[str, Callable[..., Any]] = {
@@ -938,6 +1005,7 @@ RUNNERS: dict[str, Callable[..., Any]] = {
     "issue_details": issue_details,
     "open_view": open_view,
     "presentation": presentation,
+    "document": document,
     # The setup sheet, the deliverable list, the trade split and the timesheet.
     **edits.RUNNERS,
 }

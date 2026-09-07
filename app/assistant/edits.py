@@ -644,9 +644,10 @@ def share_across(project_id: int, trade: str = "", percent: Any = None, section:
 
 # --- squeezing the programme ------------------------------------------------
 
-def squeeze_schedule(project_id: int, start_at: str = "", end_at: str = "", days: Any = None,
+def squeeze_schedule(project_id: int, start_at: str = "", end_at: str = "",
+                     starts: str = "", finished_by: str = "", hold: Any = None,
                      **_ignored) -> dict[str, Any]:
-    """Fit a run of deliverables into fewer working days.
+    """Fit a run of deliverables between two dates.
 
     Worked out here rather than described: what comes back is the real proposal
     — every line's new duration and dates, the new finish, and what it saves —
@@ -657,37 +658,54 @@ def squeeze_schedule(project_id: int, start_at: str = "", end_at: str = "", days
 
     first = _deliverable(project_id, start_at)
     last = _deliverable(project_id, end_at)
-    if days in (None, ""):
-        raise ToolError("Say how many working days the run has to fit into")
-    want = int(_number(days, "The stretch", low=1, high=3650))
+    if not finished_by:
+        raise ToolError("Say the day the run has to be finished, as dd/mm/yyyy")
+    began = _date(starts, "The day the run starts") if starts else str(first.get("start_date") or "")
+    ends = _date(finished_by, "The day it has to be finished")
+
+    held: list[int] = []
+    for one in (hold if isinstance(hold, (list, tuple)) else ([hold] if hold else [])):
+        held.append(_deliverable(project_id, one)["id"])
 
     try:
-        proposal = squeeze_plan(_project(project_id), first["id"], last["id"], want)
+        proposal = squeeze_plan(_project(project_id), first["id"], last["id"], began, ends, held)
     except SqueezeError as exc:
         raise ToolError(str(exc)) from None
 
     moved = len(proposal["changes"])
     after = len(proposal["after"])
+    series = [run for run in proposal["meetings"] if run["follow"] and run["change"]]
     return {
         "kind": "squeeze_schedule",
-        "first_id": first["id"], "last_id": last["id"], "days": want,
-        "says": (f"Squeeze {first['wbs']} → {last['wbs']} into {want} working days: "
-                 f"{moved} deliverable{'s' if moved != 1 else ''} come down from "
-                 f"{proposal['was_days']} days of work to {proposal['days']}, finishing "
-                 f"{to_display(proposal['finish'])}"
+        "first_id": first["id"], "last_id": last["id"],
+        "starts": proposal["start"], "ends": proposal["end"],
+        "hold": held,
+        "follow": [run["name"] for run in proposal["meetings"] if run["follow"]],
+        "says": (f"Squeeze {first['wbs']} → {last['wbs']} to finish "
+                 f"{to_display(proposal['end'])}: every duration × "
+                 f"{proposal['ratio']:.2f}, {moved} deliverable"
+                 f"{'s' if moved != 1 else ''} replanned"
+                 + (f" ({len(held)} held at their length)" if held else "")
+                 + (f", finishing {to_display(proposal['finish'])}"
+                    if not proposal["on_the_date"] else "")
                  + (f", {proposal['saved_days']} days earlier" if proposal["saved_days"] > 0
                     else f", {-proposal['saved_days']} days later" if proposal["saved_days"] < 0
                     else "")
                  + (f", and {after} line{'s' if after != 1 else ''} after it move with it"
-                    if after else "")),
+                    if after else "")
+                 + ("".join(f"; {run['name'][:40]} goes {run['had']} → {run['wants']}"
+                            for run in series))),
         "note": {
+            "ratio": proposal["ratio"],
             "lines": [{"wbs": c["wbs"], "was_days": c["was_days"], "days": c["days"],
                        "start": to_display(c["start"]),
-                       "submission": to_display(c["submission"])}
+                       "submission": to_display(c["submission"]),
+                       "code_a": to_display(c["approval"]), "held": c["held"]}
                       for c in proposal["changes"][:25]],
             "finish": to_display(proposal["finish"]),
             "was_finish": to_display(proposal["was_finish"]),
-            "waiting_does_not_compress": not proposal["reaches_target"],
+            "on_the_date": proposal["on_the_date"],
+            "days_out": proposal["days_out"],
         },
     }
 
@@ -855,15 +873,21 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           ["trade", "percent"]),
 
     _tool("squeeze_schedule",
-          "Fit a run of deliverables — from one line to another along the dependencies — into "
-          "a given number of working days. Every line's duration comes down in proportion to "
-          "what it already is, in whole days with the leftover day going to the shorter lines, "
-          "and everything that waits on the run is pulled forward with it. Use this whenever "
-          "somebody wants the programme compressed rather than moving lines one at a time.",
+          "Fit a run of deliverables — from one line to another along the dependencies — "
+          "between two dates. Every duration in the run changes by the same proportion: four "
+          "months into three is every line times 0.75. The run is measured to the last Code A, "
+          "because that is when it is finished, and everything waiting on it moves with it. "
+          "Give a later date to extend rather than compress. Use this whenever somebody wants "
+          "the programme compressed or stretched, rather than moving lines one at a time.",
           {"start_at": {"type": "string", "description": "The line the run starts on, by WBS or name"},
            "end_at": {"type": "string", "description": "The line it ends on, by WBS or name"},
-           "days": {"type": "number", "description": "Working days the whole run has to fit into"}},
-          ["start_at", "end_at", "days"]),
+           "starts": {"type": "string", "description":
+                      "dd/mm/yyyy the run starts; omitted keeps the first line's start"},
+           "finished_by": {"type": "string", "description":
+                           "dd/mm/yyyy the last Code A has to land on"},
+           "hold": {"type": "array", "items": {"type": "string"}, "description":
+                    "Deliverables that keep the length they have, by WBS or name"}},
+          ["start_at", "end_at", "finished_by"]),
     _tool("book_hours", "Book hours to the timesheet.",
           {"date": {"type": "string", "description": "dd/mm/yyyy; omitted means today"},
            "hours": _NUMBER, "trade": _TEXT, "deliverable": _TEXT, "description": _TEXT},
@@ -1101,10 +1125,13 @@ def apply_one(project_id: int, action: Mapping[str, Any], user_id: int, stamp: s
         if project is None:
             raise ApplyError("That project is no longer there")
         try:
-            # Worked out again from the two ends and the number of days rather
-            # than from dates that travelled to a page and back.
+            # Worked out again from the two ends and the two dates rather than
+            # from dates that travelled to a page and back.
             proposal = squeeze_plan(project, int(action["first_id"]), int(action["last_id"]),
-                                    int(action.get("days") or 0))
+                                    str(action.get("starts") or ""),
+                                    str(action.get("ends") or ""),
+                                    [int(i) for i in action.get("hold") or []],
+                                    list(action.get("follow") or []))
         except SqueezeError as exc:
             raise ApplyError(str(exc)) from exc
         outcome = apply_squeeze(project_id, proposal)

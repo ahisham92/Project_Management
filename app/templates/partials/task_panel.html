@@ -57,14 +57,18 @@
     <div>
       <dt>Team</dt>
       <dd id="panel-team-{{ task['id'] }}">
-        {% if can_edit and plan['teams'] | length > 1 %}
-          <a class="cell-open" data-cell="plan-team" data-item="{{ task['id'] }}"
-             data-value="{{ task['calendar_id'] or '' }}"
-             data-action="{{ url_for('projects.save_team', project_id=project['id'], task_id=task['id']) }}"
-             href="{{ url_for('projects.setup', project_id=project['id']) }}"
-             title="Click to change">{{ task['team_name'] or '—' }}</a>
-        {% else %}{{ task['team_name'] or '—' }}{% endif %}
-        <span class="small muted">{{ week_label(task['team_week']) }}</span>
+        {# From the trades carrying the line, through the office each sits in. #}
+        {% set on_it = task['team_names'] | select | list %}
+        {{ on_it | join(' + ') if on_it else (task['team_name'] or '—') }}
+        <span class="small muted">planned on {{ week_label(task['team_week']) }}</span>
+        {% for clash in task['clashes'] %}
+          <p class="small state-warning" style="margin-top:4px">
+            <span aria-hidden="true">▲</span>
+            {{ clash['team'] }} is off
+            {% for day in clash['days'] %}{{ short_date(day) }}{{ '' if loop.last else ', ' }}{% endfor %}
+            during this line
+          </p>
+        {% endfor %}
       </dd>
     </div>
     <div>

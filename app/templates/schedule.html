@@ -18,13 +18,18 @@
 {% endmacro %}
 
 {% macro team_cell(task) %}
-  {% if can_edit and plan['teams'] | length > 1 %}
-    <a class="cell-open" data-cell="plan-team" data-item="{{ task['id'] }}"
-       data-value="{{ task['calendar_id'] or '' }}"
-       data-action="{{ url_for('projects.save_team', project_id=project['id'], task_id=task['id']) }}"
-       href="{{ url_for('projects.setup', project_id=project['id']) }}"
-       title="Whose working week and holidays this line is planned on">{{ task['team_name'] or '—' }}</a>
-  {% else %}{{ task['team_name'] or '—' }}{% endif %}
+  {# Not a choice any more: a line's working week follows the trades carrying
+     it, through the office each trade sits in. What is worth saying here is
+     which teams those are, and whether any of them is off during the run. #}
+  {% set on_it = task['team_names'] | select | list %}
+  {{ on_it | join(' + ') if on_it else (task['team_name'] or '—') }}
+  {% if task['clashes'] %}
+    <span class="state-warning nowrap" style="display:block;font-size:0.72rem"
+          title="{% for clash in task['clashes'] %}{{ clash['team'] }} off {% for day in clash['days'] %}{{ short_date(day) }}{{ '' if loop.last else ', ' }}{% endfor %}{{ '' if loop.last else '; ' }}{% endfor %}">
+      <span aria-hidden="true">▲</span>
+      {{ task['clashes'] | sum(attribute='count') }} day{{ '' if task['clashes'] | sum(attribute='count') == 1 else 's' }} off in the run
+    </span>
+  {% endif %}
 {% endmacro %}
 
 {% block content %}
@@ -167,33 +172,36 @@
 </div>
 
 {% if can_edit %}
-  {# Squeezing a stretch: the one change nobody can make by hand on fifty lines
+  {# Squeezing a run: the one change nobody can make by hand on fifty lines
      without losing track of which ones moved and why. #}
   <div class="card" style="margin-top:16px" id="squeeze">
     <div class="card-head">
       <div>
         <h2>Squeeze the programme</h2>
         <p class="small muted" style="margin-top:2px">
-          Fit a run of deliverables into fewer days. Durations come down in proportion to
-          what they already are, in whole days, and everything after the run is pulled
-          forward with it.
+          Fit a run of deliverables between two dates. Every duration in it changes by the
+          same proportion — four months into three is every line times 0.75 — and the run is
+          measured to the last <strong>Code A</strong>, because that is when it is finished.
+          Extend it by giving a later date.
         </p>
       </div>
     </div>
     <details class="panel" data-panel="schedule-squeeze"
-             {{ 'open data-keep-open' if panel == 'squeeze' or squeeze }}>
+             {{ 'open data-keep-open' if panel == 'squeeze' or squeeze or squeeze_trouble }}>
       <summary class="panel-summary">
         <span class="panel-open">For details click here</span>
         <span class="panel-shut">Hide the details</span>
         <span class="small muted">Nothing moves until you press Squeeze</span>
       </summary>
       <div class="card-body">
-        <form method="get" class="inline-form" action="{{ url_for('projects.schedule', project_id=project['id']) }}#squeeze">
+        <form method="get" id="work-it-out" class="inline-form"
+              action="{{ url_for('projects.schedule', project_id=project['id']) }}#squeeze">
           <input type="hidden" name="panel" value="squeeze">
+          <input type="hidden" name="checked" value="1">
           <label class="field flex1">
             <span class="field-label">From</span>
             <select name="from_task" required>
-              <option value="">Which line it starts on…</option>
+              <option value="">Which line the run starts on…</option>
               {% for line in tasks %}
                 <option value="{{ line['id'] }}" {{ 'selected' if squeeze_from == line['id'] }}>
                   {{ line['wbs'] }} {{ line['name'][:60] }}</option>
@@ -210,11 +218,8 @@
               {% endfor %}
             </select>
           </label>
-          <label class="field w-sm">
-            <span class="field-label">Working days</span>
-            <input type="number" name="days" min="1" step="1" class="right"
-                   value="{{ squeeze_days or '' }}" required>
-          </label>
+          {{ date_field('starts', squeeze_start, 'Starts', 'w-sm', required=True) }}
+          {{ date_field('ends', squeeze_end, 'Finished by', 'w-sm', required=True) }}
           <button type="submit" class="btn btn-ghost">Work it out</button>
         </form>
 
@@ -224,40 +229,83 @@
 
         {% if squeeze %}
           <div class="grid grid-4" style="margin-top:16px">
-            {{ tile('The run today', squeeze['was_days'] ~ ' days',
-                    short_date(squeeze['start']) ~ ' to ' ~ short_date(squeeze['was_finish'])) }}
-            {{ tile('Squeezed into', squeeze['days'] ~ ' days',
-                    (squeeze['changes'] | length) ~ ' deliverables') }}
+            {{ tile('The run today', short_date(squeeze['was_finish']),
+                    squeeze['was_days'] ~ ' working days from ' ~ short_date(squeeze['was_start'])) }}
+            {{ tile('Every duration ×', squeeze['ratio'] | round(2),
+                    (squeeze['changes'] | rejectattr('held') | list | length) ~ ' lines change · '
+                    ~ (squeeze['excluded'] | length) ~ ' held') }}
             {{ tile('Finishes', short_date(squeeze['finish']),
-                    state='good' if squeeze['saved_days'] > 0 else 'neutral',
-                    state_label=(squeeze['saved_days'] ~ ' days earlier') if squeeze['saved_days'] > 0
-                                else ((-squeeze['saved_days']) ~ ' days later') if squeeze['saved_days'] < 0
-                                else 'no change') }}
-            {{ tile('Pulled forward with it', (squeeze['after'] | length) ~ ' more',
+                    state='good' if squeeze['on_the_date'] else 'warning',
+                    state_label=('on the date' if squeeze['on_the_date']
+                                 else ((squeeze['days_out'] | abs) ~ ' days '
+                                       ~ ('early' if squeeze['days_out'] > 0 else 'late')))) }}
+            {{ tile('Pulled with it', (squeeze['after'] | length) ~ ' more',
                     'lines that wait on the run') }}
           </div>
 
-          {% if not squeeze['reaches_target'] %}
+          {% if not squeeze['on_the_date'] %}
             <p class="small muted" style="margin:10px 0 0">
-              The durations total {{ squeeze['days'] }} days. Waiting between lines — a review,
-              a curing time — is not work and does not compress, so the run itself still spans
-              {{ short_date(squeeze['start']) }} to {{ short_date(squeeze['finish']) }}.
+              As near as it goes. Waiting between lines — a review, a curing time — is not work
+              and does not compress, and a line held out of the squeeze keeps its length. Hold
+              fewer lines, or move the date.
             </p>
+          {% endif %}
+
+          {% if squeeze['meetings'] %}
+            <div class="card" style="margin-top:14px">
+              <div class="card-head"><div>
+                <h2 style="font-size:0.95rem">Meetings that recur</h2>
+                <p class="small muted" style="margin-top:2px">
+                  There are as many of these as the programme is long. Tick a series to make it
+                  follow the new dates; the cadence is kept and the numbering follows.
+                </p></div></div>
+              <div class="card-body">
+                {% for run in squeeze['meetings'] %}
+                  <label class="inline-form" style="align-items:flex-start;margin-bottom:8px">
+                    <input form="work-it-out" type="checkbox" name="follow" value="{{ run['name'] }}"
+                           {{ 'checked' if run['follow'] }} style="margin-top:3px">
+                    <span class="flex1">
+                      <strong>{{ run['name'] }}</strong>
+                      <span class="small muted" style="display:block">
+                        every {{ run['every_days'] }} days ·
+                        {{ run['had'] }} → <strong>{{ run['wants'] }}</strong>
+                        {%- if run['change'] > 0 %} ({{ run['change'] }} added)
+                        {%- elif run['change'] < 0 %} ({{ -run['change'] }} removed){% endif %}
+                        {%- for line in run['remove'] %}<br>drops {{ line['name'][:60] }}{% endfor %}
+                      </span>
+                    </span>
+                  </label>
+                {% endfor %}
+                <p class="small muted" style="margin:0">
+                  Changing a tick re-runs <strong>Work it out</strong>.
+                </p>
+              </div>
+            </div>
           {% endif %}
 
           <div class="table-scroll" style="margin-top:12px">
             <table>
               <thead>
                 <tr>
+                  <th class="right" title="Untick a line to keep its length">Squeeze</th>
                   <th>WBS</th><th>Deliverable</th><th class="right">Days</th>
                   <th class="right">Start</th><th class="right">Submission</th>
+                  <th class="right">Code A</th>
                 </tr>
               </thead>
               <tbody>
                 {% for line in squeeze['changes'] %}
-                  <tr>
+                  <tr class="{{ 'ink2' if line['held'] }}">
+                    <td class="right">
+                      <input form="work-it-out" type="checkbox" name="hold" value="{{ line['id'] }}"
+                             {{ 'checked' if line['held'] }}
+                             aria-label="Hold {{ line['wbs'] }} out of the squeeze"
+                             title="Ticked: this line keeps the length it has">
+                    </td>
                     <td class="tabular small muted nowrap">{{ line['wbs'] }}</td>
-                    <td>{{ line['name'] }}</td>
+                    <td>{{ line['name'] }}
+                      {% if line['held'] %}<span class="small muted">— held</span>{% endif %}
+                    </td>
                     <td class="right tabular">
                       <span class="muted">{{ line['was_days'] }}</span>
                       <strong>&rarr; {{ line['days'] }}</strong>
@@ -270,10 +318,12 @@
                       <span class="muted">{{ short_date(line['was_submission']) }}</span>
                       <strong style="display:block">{{ short_date(line['submission']) }}</strong>
                     </td>
+                    <td class="right small nowrap muted">{{ short_date(line['approval']) }}</td>
                   </tr>
                 {% endfor %}
                 {% for line in squeeze['after'] %}
                   <tr class="ink2">
+                    <td></td>
                     <td class="tabular small muted nowrap">{{ line['wbs'] }}</td>
                     <td>{{ line['name'] }} <span class="small muted">— follows on</span></td>
                     <td class="right tabular muted">{{ line['days'] }}</td>
@@ -285,25 +335,59 @@
                       <span class="muted">{{ short_date(line['was_submission']) }}</span>
                       <strong style="display:block">{{ short_date(line['submission']) }}</strong>
                     </td>
+                    <td></td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
 
-          <form method="post" class="inline-form" style="margin-top:12px"
-                action="{{ url_for('projects.squeeze_schedule', project_id=project['id']) }}">
-            <input type="hidden" name="from_task" value="{{ squeeze['first_id'] }}">
-            <input type="hidden" name="to_task" value="{{ squeeze['last_id'] }}">
-            <input type="hidden" name="days" value="{{ squeeze['target_days'] }}">
-            <button type="submit" class="btn btn-primary"
-                    data-confirm="Squeeze {{ squeeze['changes'] | length }} deliverables into {{ squeeze['target_days'] }} working days?">
-              Squeeze it
-            </button>
+          <div class="inline-form" style="margin-top:12px">
+            <form method="post" class="inline-form"
+                  action="{{ url_for('projects.squeeze_schedule', project_id=project['id']) }}">
+              <input type="hidden" name="from_task" value="{{ squeeze['first_id'] }}">
+              <input type="hidden" name="to_task" value="{{ squeeze['last_id'] }}">
+              <input type="hidden" name="starts" value="{{ date_input(squeeze['start']) }}">
+              <input type="hidden" name="ends" value="{{ date_input(squeeze['end']) }}">
+              {% for id in squeeze['excluded'] %}
+                <input type="hidden" name="hold" value="{{ id }}">
+              {% endfor %}
+              {% for run in squeeze['meetings'] if run['follow'] %}
+                <input type="hidden" name="follow" value="{{ run['name'] }}">
+              {% endfor %}
+              <button type="submit" class="btn btn-primary"
+                      data-confirm="Squeeze {{ squeeze['changes'] | length }} deliverables to finish {{ short_date(squeeze['finish']) }}?">
+                Squeeze it
+              </button>
+            </form>
+            <a class="btn btn-ghost"
+               href="{{ url_for('projects.schedule', project_id=project['id'], panel='squeeze') }}#squeeze">Cancel</a>
             <span class="small muted">
               The hours do not change — the same work in fewer days needs more people in the week.
             </span>
-          </form>
+          </div>
+        {% endif %}
+
+        {% if snapshots %}
+          <div class="card-foot" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+            <p class="field-label" style="margin:0 0 6px">Put it back</p>
+            <ul class="list">
+              {% for saved in snapshots[:5] %}
+                <li class="inline-form" style="justify-content:space-between">
+                  <span class="small">
+                    {{ saved['note'] or 'Saved state' }}
+                    <span class="muted">· {{ saved['lines'] }} lines · {{ saved['made_at'] }}
+                      {%- if saved['user_name'] %} · {{ saved['user_name'] }}{% endif %}</span>
+                  </span>
+                  <form method="post"
+                        action="{{ url_for('projects.restore_squeeze', project_id=project['id'], snapshot_id=saved['id']) }}">
+                    <button type="submit" class="btn btn-ghost btn-sm"
+                            data-confirm="Put every date back to where it was here?">Restore</button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
         {% endif %}
       </div>
     </details>
@@ -584,14 +668,6 @@
     <select name="predecessor_id" class="cell-input" aria-label="Waits for">
       {% for task in plan['tasks'] %}
         <option value="{{ task['id'] }}">{{ task['wbs'] }} · {{ task['name'][:56] }}</option>
-      {% endfor %}
-    </select>
-  </template>
-  <template id="cell-plan-team">
-    <select name="calendar_id" class="cell-input" aria-label="Team">
-      <option value="">— default team —</option>
-      {% for team in plan['teams'] %}
-        <option value="{{ team['id'] }}">{{ team['name'] }} · {{ team['week_label'] }}</option>
       {% endfor %}
     </select>
   </template>

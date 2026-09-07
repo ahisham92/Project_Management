@@ -78,10 +78,13 @@ TABS: tuple[dict[str, Any], ...] = (
             "them there.",
             "Change a <strong>start</strong>, a <strong>duration</strong> or a <strong>team</strong> "
             "in the table and everything downstream moves with it, live.",
-            "<strong>Squeeze the programme</strong> when a run has to fit into fewer days: name "
-            "the line it starts on, the line it ends on and the days available, and every "
-            "duration in between comes down in proportion. Work it out first — nothing moves "
-            "until you press Squeeze it.",
+            "<strong>Squeeze the programme</strong> when a run has to fit between two dates: "
+            "name the line it starts on, the line it ends on, and the two dates. Every duration "
+            "in between changes by the same proportion — four months into three is every line "
+            "times 0.75 — and the run is measured to the last <strong>Code A</strong>. Untick "
+            "a line to hold it at the length it has; give a later date to extend instead. Work "
+            "it out first — nothing moves until you press Squeeze it, and <strong>Put it "
+            "back</strong> restores every date afterwards.",
             "On the diagram, <strong>drag from one box to another</strong> to create a dependency, "
             "and <strong>click a line</strong> to remove one.",
             "Press <strong>Simplify</strong> once the shape is settled — it re-lays the diagram with "
@@ -96,7 +99,8 @@ TABS: tuple[dict[str, Any], ...] = (
         ),
         "terms": ("start date", "duration", "submission date", "approval date", "dependency",
                   "fs", "ss", "ff", "sf", "lag", "float", "critical path", "path", "team",
-                  "working week", "holiday", "run-up holidays", "squeeze"),
+                  "working week", "holiday", "run-up holidays", "squeeze",
+                  "recurring meetings", "put it back"),
     },
     {
         "key": "budget",
@@ -240,6 +244,12 @@ TABS: tuple[dict[str, Any], ...] = (
             "“add a trade called Project Manager”, “add a team on Sunday to Thursday”, “add a "
             "deliverable to Marine Design”. Setup has to be unlocked for those to apply, the "
             "same as changing them by hand.",
+            "<strong>Attach a file</strong> to a question — a PDF, a Word or PowerPoint file, "
+            "a spreadsheet, a picture or plain text. She reads it and answers from it, and it "
+            "stays with the conversation.",
+            "Ask for a <strong>document</strong> — “give me the minutes as a PDF”, “the "
+            "register as Word”, “the programme as a spreadsheet” — and she hands back a link "
+            "to download it.",
             "Every conversation is <strong>kept down the left</strong>. Come back to one and "
             "carry on rather than starting from nothing; rename it, or start a new one. "
             "Whoever runs the project can read everybody’s.",
@@ -441,8 +451,12 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
 
     # --- working time
     ("Team", "time",
-     "A working calendar: the days of the week it works, and the holidays it takes. Every deliverable "
-     "is planned against one.", ""),
+     "A working calendar — the days of the week it works and the holidays it takes — given an "
+     "office. A deliverable is planned against the team of the trade carrying most of it, not "
+     "set line by line, so putting a trade in Cairo is what puts its share of the work on "
+     "Cairo\u2019s week.",
+     "A line split between offices is worked by both: it is planned on one of them, and a day "
+     "off for either is flagged on the schedule."),
     ("Working week", "time",
      "Which days a team works — Monday to Friday for Beirut, Sunday to Thursday for Cairo, or "
      "anything else.", ""),
@@ -600,14 +614,24 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "An office's progress = the earned progress of its trades ÷ the scope weight they carry."),
 
     ("Squeeze", "programme",
-     "Fitting a run of deliverables — from one line to another along the dependencies — into "
-     "fewer working days. Every duration in the run comes down in proportion to what it "
-     "already is, and whatever waits on the run is pulled forward with it.",
-     "New duration = its current duration × (days available ÷ the days the run takes now), "
-     "in whole days. The leftover day goes to the shortest lines, because a day off a 3-day "
-     "job costs a third of it and a day off a 12-day job costs a twelfth. Nothing falls below "
-     "one day, and waiting between lines — a review, a curing time — is not work, so it does "
-     "not compress."),
+     "Fitting a run of deliverables — from one line to another along the dependencies — "
+     "between two dates. Every duration in the run changes by the same proportion, and "
+     "whatever waits on the run moves with it. A later date extends rather than compresses.",
+     "New duration = its current duration × (the new span ÷ the span it takes now), in whole "
+     "days, where a span runs to the last Code A because that is when the work is finished. "
+     "The leftover day goes to the shortest lines. Nothing falls below one day; a line ticked "
+     "out keeps its length; and waiting between lines — a review, a curing time — is not work, "
+     "so it does not compress."),
+    ("Recurring meetings", "programme",
+     "A numbered run of the same meeting — “Bi-weekly progress meeting No. 1”, “No. 2” — "
+     "recognised by its name, its length and its cadence. There are as many of them as the "
+     "programme is long, so a squeeze can add or drop them.",
+     "The cadence is kept and the ones at the end are the ones added or dropped, because "
+     "renumbering from the middle would rename every set of minutes already written."),
+    ("Put it back", "programme",
+     "Where every date stood before a squeeze. Restoring returns the dates as they actually "
+     "were, rather than running the same arithmetic backwards — which does not return where "
+     "it started once anything has rounded.", ""),
 
     # --- setup and structure
     ("Section", "setup",

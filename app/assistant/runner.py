@@ -34,9 +34,21 @@ MAX_ROUNDS = 6
 # many changes is a conversation, not a request.
 MAX_STAGED = 12
 
-# How much of the conversation goes back each time. Long enough to follow a
-# thread, short enough not to send the afternoon back on every question.
-KEEP_TURNS = 12
+# How much of the conversation goes back each time.
+#
+# A chat that sends its whole history on every question costs more with every
+# question — the twentieth costs several times the first, for a conversation
+# nobody thinks of as long. So the recent turns go back word for word, and
+# everything before them goes as one short note listing what was asked. That
+# note is built here rather than by asking the model to write one, which would
+# cost a call of its own; it is a running index, not a précis.
+#
+# The effect is that a conversation costs about the same on its fiftieth
+# question as on its fourth.
+KEEP_TURNS = 6
+
+# How many earlier questions the note lists before it stops.
+KEEP_NOTED = 24
 
 
 SYSTEM = """You are Carmen, the assistant inside Project Control — a design-programme \
@@ -65,6 +77,10 @@ How to work:
 * Somebody can attach a file to a question — a drawing register, a client\'s letter, \
   a programme. Read what is in it and answer from it; where it says something that \
   should be recorded on the project, stage the change rather than only describing it.
+* An attached .xlsx is usually one of this project\'s own exports: the setup sheet, the \
+  programme\'s dates, or the dependencies. Use read_workbook to see what is in it, tell \
+  the reader what it holds and what importing it would change, then stage import_workbook. \
+  Importing the setup sheet replaces the deliverable list, so say so before you stage it.
 
 About changing things: a tool that changes something does not change it \
 immediately — it is staged for the reader to approve, and the page shows them \
@@ -93,6 +109,8 @@ class Answer:
     rounds: int = 0
     trouble: str = ""
     history: list[dict[str, Any]] = field(default_factory=list)
+    spent: dict[str, int] = field(default_factory=dict)
+    from_cache: bool = False
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -104,7 +122,14 @@ class Answer:
             "rounds": self.rounds,
             "error": self.trouble,
             "history": self.history,
+            "spent": self.spent,
+            "from_cache": self.from_cache,
         }
+
+    def add(self, spent: Mapping[str, int]) -> None:
+        """What one round of the loop cost, added to the rest."""
+        for name, count in (spent or {}).items():
+            self.spent[name] = self.spent.get(name, 0) + int(count or 0)
 
 
 def _system(project: Mapping[str, Any], today: str) -> str:
@@ -118,23 +143,45 @@ def _system(project: Mapping[str, Any], today: str) -> str:
 
 
 def _trim(history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """The recent conversation, without the tool traffic that produced it.
+    """The recent conversation, and a one-message note of what came before it.
 
-    Sending every tool result back on every question is how a chat gets slow
-    and expensive. What the assistant said and what the reader asked is enough
-    to follow a thread; anything it needs again it can look up again, which is
-    also how it stays current.
+    Sending every tool result back on every question is how a chat gets slow and
+    expensive; sending the whole transcript is how it gets steadily worse. What
+    the assistant said and what the reader asked in the last few turns is enough
+    to follow a thread, and anything else it needs it can look up again — which
+    is also how it stays current rather than answering from a stale copy.
     """
     kept = [dict(turn) for turn in history
             if turn.get("role") in ("user", "assistant") and turn.get("content")]
-    return kept[-KEEP_TURNS:]
+    if len(kept) <= KEEP_TURNS:
+        return kept
+
+    earlier, recent = kept[:-KEEP_TURNS], kept[-KEEP_TURNS:]
+    note = _note(earlier)
+    # The note is a user message because that is the only role a conversation
+    # may open with, and these are always the oldest turns.
+    return ([{"role": "user", "content": note}] if note else []) + recent
+
+
+def _note(earlier: Sequence[Mapping[str, Any]]) -> str:
+    """Earlier in this conversation, in a few lines rather than in full."""
+    asked = [" ".join(str(turn.get("content") or "").split())[:110]
+             for turn in earlier if turn.get("role") == "user"]
+    asked = [line for line in asked if line][-KEEP_NOTED:]
+    if not asked:
+        return ""
+    listed = "\n".join(f"- {line}" for line in asked)
+    return ("Earlier in this conversation I was asked, in order:\n" + listed +
+            "\n\n(The answers are not repeated here. If any of it matters to what "
+            "comes next, look it up again with a tool rather than remembering it.)")
 
 
 def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
         history: Sequence[Mapping[str, Any]] = (), today: str = "",
         effort: str = "", attachments: Sequence[Mapping[str, Any]] = ()) -> Answer:
     """One question, answered — with anything it wants to change staged."""
-    from ..claude import (ClaudeError, DEFAULT_EFFORT, chat, refused, said, tool_calls)
+    from ..claude import (ClaudeError, DEFAULT_EFFORT, chat, refused, said, spent,
+                          tool_calls)
     from ..service import as_dict, today as today_is
 
     project = as_dict(project)
@@ -146,6 +193,24 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
 
     project_id = int(project["id"])
     system = _system(project, today or today_is())
+
+    # Asked before, and nothing on the project has changed since? Then the
+    # answer has not changed either — the figures come from the project, and
+    # the project has not moved. Handed straight back, for nothing.
+    #
+    # Only where there is nothing else to carry: a question with a file on it,
+    # or one in the middle of a conversation, is answered properly.
+    if not attachments and not history:
+        from ..service import remembered_answer
+
+        kept = remembered_answer(project_id, asked)
+        if kept:
+            answer.text = str(kept["answer"])
+            answer.used = [w for w in str(kept["tools_used"] or "").split(", ") if w]
+            answer.from_cache = True
+            answer.history = [{"role": "user", "content": asked},
+                              {"role": "assistant", "content": answer.text}]
+            return answer
 
     # A PDF or a picture goes to the model as itself; the words out of a Word
     # or PowerPoint file go in front of the question, said to be what they are.
@@ -163,6 +228,8 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
         except ClaudeError as exc:
             answer.trouble = str(exc)
             return answer
+
+        answer.add(spent(reply))
 
         declined = refused(reply)
         if declined:
@@ -183,7 +250,8 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
         # across several quietly teaches the model to stop calling tools in
         # parallel, which makes every later answer slower for no reason.
         messages.append({"role": "user",
-                         "content": [_do(call, project_id, answer) for call in calls]})
+                         "content": [_do(call, project_id, answer, attachments)
+                                     for call in calls]})
 
     else:
         # Out of rounds with nothing said. Better to admit that than to leave
@@ -195,6 +263,15 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
     if not answer.text and not answer.staged:
         answer.text = "I have nothing to say about that."
 
+    # Worth keeping only where the answer is words about the project as it
+    # stands. Anything that staged a change, produced a link or went wrong is
+    # worked out again next time, because what those produce is not just words.
+    if answer.text and not answer.staged and not answer.links and not answer.trouble \
+            and not attachments and not history:
+        from ..service import remember_answer
+
+        remember_answer(project_id, asked, answer.text, answer.used)
+
     answer.history = [
         *_trim(history),
         {"role": "user", "content": asked},
@@ -203,7 +280,8 @@ def ask(project: Mapping[str, Any], question: str, key: str, model: str = "",
     return answer
 
 
-def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, Any]:
+def _do(call: Mapping[str, Any], project_id: int, answer: Answer,
+        attachments: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
     """One tool call: run it, or stage it, and say which."""
     name = str(call.get("name") or "")
     call_id = str(call.get("id") or name)
@@ -215,7 +293,7 @@ def _do(call: Mapping[str, Any], project_id: int, answer: Answer) -> dict[str, A
         answer.used.append(name)
 
     try:
-        outcome = run(name, project_id, arguments)
+        outcome = run(name, project_id, arguments, attachments)
     except ToolError as exc:
         # A wrong reference is something the model can correct on the next
         # round, so it is told rather than the whole answer failing.

@@ -124,9 +124,9 @@
         {% if messages %}
           {% for line in messages %}
             <div class="chat-line {{ 'you' if line['role'] == 'user' else 'assistant' }}">
-              {% for para in (line['content'] or '').split('\n') %}
-                {% if para.strip() %}<p>{{ para }}</p>{% endif %}
-              {% endfor %}
+              {# Drawn on the server so a table she wrote reads as a table here
+                 and in the answer that arrived live, rather than as pipes. #}
+              {{ chat_html(line['content']) }}
               {% if line['role'] != 'user' and line['used'] %}
                 <p class="small muted chat-used">Read: {{ line['used'] | join(', ') }}</p>
               {% endif %}
@@ -230,13 +230,54 @@
         <li>A PowerPoint of the work done between any two dates.</li>
         <li>Minutes on the practice's template — Word to edit, or the PDF with its attachments
           compiled onto the end.</li>
-        <li>The register, the agenda, the programme or the setup sheet, as a file to download.</li>
+        <li>The register, the agenda, the programme, the dependencies or the setup sheet,
+          as a file to download.</li>
+        <li>An <strong>Excel workbook</strong> either way: ask for one, edit it, attach it back
+          and she reads it and stages the import.</li>
       </ul>
       <p class="field-label" style="margin-top:12px">She takes you places</p>
       <ul class="guide-list">
         <li>“Take me to the schedule” opens the schedule.</li>
         <li>“Print the budget as a PDF” opens that tab's print dialog.</li>
       </ul>
+    </div>
+  </div>
+
+  {# What it is costing, and what is keeping that down. A figure somebody can
+     look at beats a feeling about whether this is expensive. #}
+  <div class="card">
+    <div class="card-head"><div>
+      <h2>What she costs</h2>
+      <p class="small muted" style="margin-top:2px">
+        The last {{ spend['days'] }} days on this project
+      </p></div></div>
+    <div class="card-body">
+      {% if not spend['asked'] %}
+        <p class="small muted" style="margin:0">Nothing asked yet.</p>
+      {% else %}
+        <p class="small" style="margin:0">
+          <strong>{{ num(spend['asked'], 0) }}</strong> question{{ '' if spend['asked'] == 1 else 's' }},
+          <strong>{{ num(spend['fresh'] + spend['cached'], 0) }}</strong> tokens in and
+          <strong>{{ num(spend['written'], 0) }}</strong> out.
+        </p>
+        <ul class="guide-list small" style="margin-top:8px">
+          <li><strong>{{ pct(spend['cached_share'], 0) }}</strong> of what went in was read back
+            out of the cache rather than sent again — charged at a tenth.</li>
+          {% if spend['answered_free'] %}
+            <li><strong>{{ spend['answered_free'] }}</strong>
+              question{{ '' if spend['answered_free'] == 1 else 's' }} were answered from what
+              she said last time, without asking at all: the same question, and nothing on the
+              project had changed since.</li>
+          {% endif %}
+          <li>A long conversation costs about what a short one does: the recent turns go back
+            word for word and everything before them as a short note of what was asked.</li>
+        </ul>
+        <form method="post" style="margin-top:10px"
+              action="{{ url_for('assistant.forget', project_id=project['id']) }}"
+              data-confirm="Throw away the kept answers and work each one out again?">
+          <button type="submit" class="btn btn-ghost btn-sm">Forget the kept answers</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 

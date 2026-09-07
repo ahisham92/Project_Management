@@ -394,6 +394,32 @@ def _ensure_chat_log(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS chat_threads_project "
                  "ON chat_threads (project_id, last_at DESC)")
     _ensure_column(conn, "chat_log", "thread_id", "INTEGER")
+    # What each answer cost, so "is this expensive" is a number rather than a
+    # feeling. Cache reads are counted apart because they are charged at a
+    # tenth of fresh input.
+    for column in ("tokens_in", "tokens_out", "tokens_cached", "tokens_written"):
+        _ensure_column(conn, "chat_log", column, "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "chat_log", "from_cache", "INTEGER NOT NULL DEFAULT 0")
+
+    # Answers worth not paying for twice. A question asked again while nothing
+    # on the project has changed has the same answer as last time, and the
+    # cheapest call to an API is the one that is not made.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_answers (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER NOT NULL,
+            question    TEXT NOT NULL,
+            pulse       TEXT NOT NULL DEFAULT '',
+            answer      TEXT NOT NULL DEFAULT '',
+            tools_used  TEXT NOT NULL DEFAULT '',
+            asked_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            used        INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS chat_answers_one "
+                 "ON chat_answers (project_id, question)")
 
     # What was attached to a question. Kept in the database like everything
     # else here, so a conversation reopened next week still has the drawing

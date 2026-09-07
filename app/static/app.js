@@ -1468,7 +1468,9 @@
           waiting.innerHTML = words(answer.error || 'That did not work');
           return;
         }
-        waiting.innerHTML = words(answer.text);
+        // Drawn on the server, so the answer that arrives live and the same
+        // answer read back out of the conversation tomorrow look the same.
+        waiting.innerHTML = answer.html || words(answer.text);
         if (answer.used && answer.used.length) {
           var used = document.createElement('p');
           used.className = 'small muted chat-used';

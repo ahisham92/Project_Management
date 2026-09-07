@@ -284,6 +284,26 @@ main { padding: 20px 0 48px; }
 }
 .chat-line.assistant { align-self: stretch; max-width: 100%; padding-left: 0; padding-right: 0; }
 
+/* A table she writes as pipes is drawn as a table: the whole point of one is
+   that the columns line up, which pipes and dashes on a screen never do. It
+   scrolls inside itself rather than pushing the conversation sideways. */
+.chat-table { margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; }
+.chat-table table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.chat-table th, .chat-table td {
+  padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.chat-table thead th {
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  font-weight: 600; white-space: nowrap;
+}
+.chat-table tbody tr:last-child td { border-bottom: 0; }
+.chat-line ol.guide-list, .chat-line ul.guide-list { margin: 8px 0; }
+.chat-line code {
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  padding: 1px 4px; border-radius: 4px; font-size: 0.86em;
+}
+
 /* The composer: one box that grows with what is typed, with the send button
    under it rather than beside it, so a long question has the whole width. */
 .chat-composer {

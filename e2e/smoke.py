@@ -114,6 +114,9 @@ def main() -> int:
         step("minutes: the agenda lists what is still open", _minutes_agenda)
         step("minutes: a PDF on the template with an attachment compiled in", _minutes_export)
         step("minutes: an item moves where it stands, without a reload", _minutes_live_move)
+        step("minutes: people move up the roster, live", _attendee_order)
+        step("minutes: the layout comes off a Word template you can edit",
+             _minutes_template)
         step("internal: a weekly list of its own, read as at a date", _internal_register)
         step("internal: the week compiles the programme and both registers", _this_week)
         step("a helper on every tab, and one page of definitions", _how_to_use)
@@ -966,6 +969,102 @@ def _minutes_export(page) -> None:
     if len(after) <= len(before):
         raise AssertionError("the attachment was not compiled into the export")
     page.screenshot(path=str(SHOTS / "42-minutes-export.png"), full_page=True)
+
+
+def _minutes_template(page) -> None:
+    """The issued layout comes off a Word document anybody can edit: download
+    it, change a word, upload it back, and the export follows."""
+    import io
+    import zipfile
+
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    _put_carmen_away(page)
+    if "Minutes template" not in page.text_content("body"):
+        raise AssertionError("Setup has no minutes template card")
+
+    got = page.request.get(f"{BASE}/projects/1/setup/minutes-template.docx")
+    if not got.ok:
+        raise AssertionError(f"the template came back {got.status}")
+    template = got.body()
+    if b"{{item.subject}}" not in template.replace(b"\x00", b""):
+        # The placeholders live inside the zip, so it is opened to look.
+        with zipfile.ZipFile(io.BytesIO(template)) as book:
+            body = book.read("word/document.xml").decode("utf-8")
+        if "{{item.subject}}" not in body:
+            raise AssertionError("the template carries no placeholders")
+
+    # Edited the way somebody would in Word, then uploaded back.
+    changed = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(template)) as src, \
+            zipfile.ZipFile(changed, "w") as made:
+        for name in src.namelist():
+            data = src.read(name)
+            if name == "word/document.xml":
+                data = data.decode("utf-8").replace(
+                    "Items and Agreement", "Points discussed").encode("utf-8")
+            made.writestr(name, data)
+
+    edited = SHOTS / "minutes-template.docx"
+    edited.write_bytes(changed.getvalue())
+    if page.locator("input[name=password]").count():
+        page.fill("input[name=password]", "2026")
+        page.click("button:has-text('Unlock')")
+        page.wait_for_selector("text=Setup sheet unlocked >> visible=true", timeout=8000)
+    page.set_input_files("form[action$='/setup/minutes-template'] input[type=file]", str(edited))
+    page.click("form[action$='/setup/minutes-template'] button[type=submit]")
+    page.wait_for_selector("text=placeholders found >> visible=true", timeout=8000)
+    page.screenshot(path=str(SHOTS / "45-minutes-template.png"), full_page=True)
+
+    page.goto(f"{BASE}/projects/1/minutes", wait_until="networkidle")
+    _put_carmen_away(page)
+    page.click("a[href*='/minutes/meetings/']")
+    where = page.url.split("?")[0]
+    made = page.request.get(where + ".docx").body()
+    with zipfile.ZipFile(io.BytesIO(made)) as book:
+        body = book.read("word/document.xml").decode("utf-8")
+    if "Points discussed" not in body:
+        raise AssertionError("the export is not built from the uploaded template")
+    if "{{" in body:
+        raise AssertionError("a placeholder was left unfilled")
+
+    # And back to the built-in layout, so the rest of the run is unaffected.
+    page.goto(f"{BASE}/projects/1/setup", wait_until="networkidle")
+    _put_carmen_away(page)
+    # The page already accepts every dialog; a second handler here would race
+    # the first for the same one.
+    page.click("form[action$='/setup/minutes-template/remove'] button")
+    page.wait_for_selector("text=built-in layout >> visible=true", timeout=8000)
+
+    # Left as it was found: a later step checks the sheet starts locked.
+    if page.locator("button:has-text('Lock again')").count():
+        page.click("button:has-text('Lock again')")
+        page.wait_for_selector("text=Unlock >> visible=true", timeout=8000)
+
+
+def _attendee_order(page) -> None:
+    """The roster's order is the order the export lists people in, and a person
+    moves up it where they stand."""
+    page.goto(f"{BASE}/projects/1/minutes", wait_until="networkidle")
+    _put_carmen_away(page)
+    rows = page.locator("tbody[data-live-list='person'] tr[id^=person-]")
+    if rows.count() < 2:
+        raise AssertionError("two people are needed to reorder them")
+
+    was = rows.first.inner_text().strip()
+    second = rows.nth(1).inner_text().strip()
+    page.evaluate("() => { window.__stayed = true; }")
+    rows.nth(1).locator("[data-move=up]").click()
+    page.wait_for_function(
+        "was => { const row = document.querySelector("
+        "'tbody[data-live-list=\"person\"] tr[id^=person-]');"
+        " return row && row.innerText.trim() !== was; }",
+        arg=was, timeout=8000)
+
+    if not page.evaluate("() => window.__stayed === true"):
+        raise AssertionError("the page reloaded — the move should happen where it stands")
+    if second.split("\n")[0] not in rows.first.inner_text():
+        raise AssertionError("the wrong row moved")
+    page.screenshot(path=str(SHOTS / "46-attendee-order.png"), full_page=True)
 
 
 def _minutes_live_move(page) -> None:

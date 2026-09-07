@@ -19,7 +19,7 @@ rules. Three things follow from that and are worth being explicit about:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from ..dates import from_input, to_display
 from . import edits
@@ -746,6 +746,7 @@ DOCUMENTS = {
     "agenda": ("the agenda of what is still open", ("word",)),
     "schedule": ("the programme as a spreadsheet", ("excel",)),
     "setup": ("the whole setup sheet as a spreadsheet", ("excel",)),
+    "dependencies": ("the dependencies as a spreadsheet", ("excel",)),
     "presentation": ("a deck of the work done in a period", ("powerpoint",)),
 }
 
@@ -785,6 +786,8 @@ def document(project_id: int, what: str = "", form: str = "", meeting: str = "",
         url = url_for("projects.export_schedule", project_id=project_id)
     elif wanted == "setup":
         url = url_for("projects.export_setup", project_id=project_id)
+    elif wanted == "dependencies":
+        url = url_for("projects.export_dependencies", project_id=project_id)
     else:
         return presentation(project_id, start=start, end=end)
 
@@ -963,9 +966,10 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "title": dict(_TEXT, description="A title for the deck")}, ["start", "end"]),
     _tool("document",
           "Hand back a document to download: the minutes of a meeting (Word or PDF, the PDF "
-          "with its attachments compiled in), the action register, the agenda, the programme "
-          "or the setup sheet as a spreadsheet, or a presentation. Use this whenever somebody "
-          "asks for a file rather than an answer.",
+          "with its attachments compiled in), the action register, the agenda, the programme, "
+          "the dependencies or the setup sheet as an Excel workbook, or a presentation. Use "
+          "this whenever somebody asks for a file rather than an answer. A workbook handed "
+          "back this way can be edited and attached to a later question to import it again.",
           {"what": {"type": "string", "enum": list(DOCUMENTS)},
            "form": {"type": "string", "enum": ["word", "pdf", "excel", "powerpoint"],
                     "description": "Omitted takes the usual one for that document"},
@@ -1021,15 +1025,25 @@ def describe() -> list[dict[str, Any]]:
     return [dict(tool) for tool in CATALOGUE]
 
 
-def run(name: str, project_id: int, arguments: Mapping[str, Any]) -> Any:
+# The tools that need to see what was attached to the question. Everything else
+# is answered from the project, and is handed no files at all.
+NEEDS_FILES: frozenset[str] = frozenset(("read_workbook", "import_workbook"))
+
+
+def run(name: str, project_id: int, arguments: Mapping[str, Any],
+        attachments: Sequence[Mapping[str, Any]] = ()) -> Any:
     """One tool, by name, scoped to one project.
 
     The project id comes from the URL rather than from the model, so no
-    phrasing can reach another project's data.
+    phrasing can reach another project's data. The attachments come from this
+    question rather than from the model either, so a tool cannot ask for
+    somebody else's file.
     """
     runner = RUNNERS.get(str(name))
     if runner is None:
         raise ToolError(f"There is no tool called {name!r}")
     clean = {str(key): value for key, value in dict(arguments or {}).items()
-             if key != "project_id"}
+             if key not in ("project_id", "attachments")}
+    if name in NEEDS_FILES:
+        clean["attachments"] = list(attachments or ())
     return runner(project_id, **clean)

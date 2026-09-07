@@ -205,10 +205,11 @@ def test_a_member_cannot_delete_somebody_else_s_conversation(client, app, talked
 
 # --- what it costs ----------------------------------------------------------
 
-def test_a_long_conversation_does_not_send_itself_back_without_limit(app, talked):
-    """Resuming costs input tokens, so the history that goes to the model is
-    trimmed the same way it always was — a thread that runs all afternoon does
-    not grow the bill without bound."""
+def test_a_long_conversation_costs_the_same_as_a_short_one(app, talked):
+    """A chat that sends its whole history on every question costs more with
+    every question. The recent turns go word for word and everything before
+    them goes as one short note, so the fiftieth question costs about what the
+    fourth did."""
     from app.assistant.runner import KEEP_TURNS, _trim
 
     with app.app_context():
@@ -219,5 +220,32 @@ def test_a_long_conversation_does_not_send_itself_back_without_limit(app, talked
         messages = thread_messages(talked)
 
     assert len(messages) > KEEP_TURNS
-    assert len(_trim([{"role": m["role"], "content": m["content"]} for m in messages])) \
-        == KEEP_TURNS
+    sent = _trim([{"role": m["role"], "content": m["content"]} for m in messages])
+    assert len(sent) == KEEP_TURNS + 1, "the recent turns, and one note before them"
+
+    note = sent[0]["content"]
+    assert "Earlier in this conversation" in note
+    assert "Question 3" in note, "the note says what was asked"
+    assert "Answer 3" not in note, "and not what came back"
+    assert sent[-1]["content"] == "Answer 19"
+
+    # Twice as long a conversation is not twice as much to send.
+    with app.app_context():
+        for n in range(20, 60):
+            _said(app, talked, f"Question {n}", f"Answer {n}")
+        longer = _trim([{"role": m["role"], "content": m["content"]}
+                        for m in thread_messages(talked)])
+    grew = len("".join(m["content"] for m in longer)) / len("".join(m["content"] for m in sent))
+    assert grew < 2, f"three times the conversation grew what is sent by {grew:.1f}x"
+
+
+def test_a_short_conversation_goes_back_whole(app, talked):
+    from app.assistant.runner import _trim
+
+    with app.app_context():
+        _said(app, talked, "Only question", "Only answer")
+        from app.service import thread_messages
+
+        sent = _trim([{"role": m["role"], "content": m["content"]}
+                      for m in thread_messages(talked)])
+    assert all("Earlier in this conversation" not in m["content"] for m in sent)

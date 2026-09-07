@@ -28,13 +28,14 @@ from .common import ApplyError, ToolError, _date, _deliverable, _project
 # in, not another set of rules.
 PROGRAMME_KINDS: frozenset[str] = frozenset((
     "set_dates", "add_link", "remove_link", "add_holiday", "squeeze_schedule",
+    "import_schedule", "import_dependencies",
 ))
 
 SETUP_KINDS: frozenset[str] = frozenset((
     "set_project_settings", "set_trade", "remove_trade", "set_section",
     "set_workflow_step", "remove_workflow_step", "set_team",
     "add_deliverable", "update_deliverable", "remove_deliverable",
-    "set_trade_split", "share_across",
+    "set_trade_split", "share_across", "import_setup",
 ))
 
 
@@ -788,6 +789,127 @@ def _tool(name: str, says: str, properties: dict[str, Any],
 _TEXT = {"type": "string"}
 _NUMBER = {"type": "number"}
 
+# --- a workbook somebody attached -------------------------------------------
+#
+# The setup sheet, the programme and the dependencies all round-trip to Excel
+# on their own tabs. Attaching one to a question is the same road in: she reads
+# what is in it and stages the import, so the reader sees what it would do
+# before fifty rows change.
+
+WORKBOOKS: dict[str, tuple[str, str]] = {
+    "setup": ("the setup sheet", "deliverables, trades, sections and workflow steps"),
+    "schedule": ("the programme", "start and submission dates"),
+    "dependencies": ("the dependencies", "which deliverable waits for which"),
+}
+
+
+def _spreadsheet(attachments: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The workbook attached to this question, or a refusal saying so."""
+    for one in attachments or ():
+        name = str(one.get("name") or "").lower()
+        if name.endswith((".xlsx", ".xlsm")):
+            return dict(one)
+    raise ToolError(
+        "There is no spreadsheet on this question. Ask the reader to attach the .xlsx "
+        "with the paperclip and say what to do with it.")
+
+
+def _read_it(data: bytes, which: str):
+    """One workbook, parsed by the reader for what it is meant to be."""
+    from ..excel import (ExcelUnavailable, ImportError_, read_links_workbook,
+                         read_schedule_workbook, read_workbook)
+
+    readers = {"setup": read_workbook, "schedule": read_schedule_workbook,
+               "dependencies": read_links_workbook}
+    try:
+        return readers[which](data)
+    except (ImportError_, ExcelUnavailable) as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _kind_of(book: Mapping[str, Any]) -> str:
+    """Which of the three workbooks this is, from its sheets."""
+    from ..excel import SHEET_LINKS, SHEET_SCHEDULE, SHEET_TASKS
+
+    sheets = {str(name).strip().lower() for name in (book.get("sheets") or ())}
+    if SHEET_LINKS.lower() in sheets:
+        return "dependencies"
+    if SHEET_TASKS.lower() in sheets:
+        return "setup"
+    if SHEET_SCHEDULE.lower() in sheets:
+        return "schedule"
+    return ""
+
+
+def _sheet_names(data: bytes) -> list[str]:
+    from ..excel import ExcelUnavailable, ImportError_, sheet_names
+
+    try:
+        return sheet_names(data)
+    except (ImportError_, ExcelUnavailable) as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def read_workbook_tool(project_id: int, what: str = "",
+                       attachments: Sequence[Mapping[str, Any]] = (),
+                       **_ignored) -> dict[str, Any]:
+    """What is in the spreadsheet somebody attached, without changing anything."""
+    found = _spreadsheet(attachments)
+    data = found.get("content") or b""
+    if not data:
+        raise ToolError("That spreadsheet came through empty")
+
+    sheets = _sheet_names(data)
+    which = str(what or "").strip().lower() or _kind_of({"sheets": sheets})
+    if which not in WORKBOOKS:
+        raise ToolError(
+            f"{found['name']} has the sheets: {', '.join(sheets) or 'none'}. That is not one "
+            "of the workbooks this project exports. Say which of setup, schedule or "
+            "dependencies it is meant to be, or export a fresh one from the tab first.")
+
+    parsed = _read_it(data, which)
+    if which == "setup":
+        return {"workbook": found["name"], "is": "setup", "sheets": sheets,
+                "project": parsed.get("project") or {},
+                "deliverables": len(parsed.get("tasks") or []),
+                "trades": [t.get("name") for t in parsed.get("trades") or []],
+                "sections": [s.get("name") for s in parsed.get("sections") or []],
+                "workflow_steps": [s.get("name") for s in parsed.get("steps") or []]}
+    if which == "schedule":
+        return {"workbook": found["name"], "is": "schedule", "sheets": sheets,
+                "lines": len(parsed),
+                "first": parsed[:8]}
+    return {"workbook": found["name"], "is": "dependencies", "sheets": sheets,
+            "links": len(parsed), "first": parsed[:8]}
+
+
+def import_workbook(project_id: int, what: str = "",
+                    attachments: Sequence[Mapping[str, Any]] = (),
+                    **_ignored) -> dict[str, Any]:
+    """Stage putting an attached workbook into the project."""
+    found = _spreadsheet(attachments)
+    data = found.get("content") or b""
+    file_id = found.get("file_id")
+    if not file_id:
+        raise ToolError("That file was not kept with the conversation, so it cannot be "
+                        "applied. Ask the reader to attach it again.")
+
+    which = str(what or "").strip().lower() or _kind_of({"sheets": _sheet_names(data)})
+    if which not in WORKBOOKS:
+        raise ToolError("Say which workbook it is: setup, schedule or dependencies")
+
+    # Parsed now, so a file that will not read is refused while somebody is
+    # still in the conversation rather than when they press Apply.
+    parsed = _read_it(data, which)
+    called, holds = WORKBOOKS[which]
+    counted = (len(parsed.get("tasks") or []) if which == "setup" else len(parsed))
+    kind = "import_setup" if which == "setup" else f"import_{which}"
+    return {"kind": kind, "file_id": int(file_id), "what": which,
+            "filename": found["name"], "lines": counted,
+            "says": f"Put {found['name']} into {called} — {counted} row"
+                    f"{'' if counted == 1 else 's'} of {holds}"}
+
+
 CATALOGUE: tuple[dict[str, Any], ...] = (
     _tool("setup_sheet",
           "Everything on the Setup tab: the project's settings, its trades and their offices, "
@@ -799,6 +921,18 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
     _tool("timesheet", "Hours booked in a period, totalled by trade and by person.",
           {"start": {"type": "string", "description": "dd/mm/yyyy; omitted means from the start"},
            "end": {"type": "string", "description": "dd/mm/yyyy; omitted means today"}}),
+    _tool("read_workbook",
+          "What is in the spreadsheet attached to this question — the setup sheet, the "
+          "programme or the dependencies, as this project exports them. Reads it; changes "
+          "nothing. Use this first whenever somebody attaches an .xlsx.",
+          {"what": {"type": "string", "enum": ["setup", "schedule", "dependencies"],
+                    "description": "Omitted works it out from the sheets in the file"}}),
+    _tool("import_workbook",
+          "Put the attached spreadsheet into the project: the whole setup sheet, the "
+          "programme's dates, or the dependencies. Read it first and tell the reader what "
+          "it holds. Importing the setup sheet REPLACES the deliverable list.",
+          {"what": {"type": "string", "enum": ["setup", "schedule", "dependencies"],
+                    "description": "Omitted works it out from the sheets in the file"}}),
 
     _tool("set_project_settings",
           "Change the project's own settings on the Setup sheet. Give only what changes.",
@@ -906,12 +1040,15 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           ["name"]),
 )
 
-READ_ONLY: frozenset[str] = frozenset(("setup_sheet", "trade_split", "timesheet"))
+READ_ONLY: frozenset[str] = frozenset(("setup_sheet", "trade_split", "timesheet",
+                                       "read_workbook"))
 
 RUNNERS: dict[str, Any] = {
     "setup_sheet": setup_sheet,
     "trade_split": trade_split,
     "timesheet": timesheet,
+    "read_workbook": read_workbook_tool,
+    "import_workbook": import_workbook,
     "set_project_settings": set_project_settings,
     "set_trade": set_trade,
     "remove_trade": remove_trade,
@@ -1171,7 +1308,52 @@ def apply_one(project_id: int, action: Mapping[str, Any], user_id: int, stamp: s
                 str(action.get("job_title") or "")[:120], str(action.get("email") or "")[:160],
                 next_sort_order("attendees", project_id)))
 
+    elif kind in ("import_setup", "import_schedule", "import_dependencies"):
+        says = _import_workbook(project_id, kind, action)
+
     else:
         raise KeyError(kind)
 
     return says
+
+
+def _import_workbook(project_id: int, kind: str, action: Mapping[str, Any]) -> str:
+    """One attached workbook, put into the project when the reader approves.
+
+    The file is read again here rather than trusted from the page: what is
+    applied is what somebody actually attached, not a list of rows that has been
+    to the browser and back.
+    """
+    from ..excel import (ExcelUnavailable, ImportError_, read_links_workbook,
+                         read_schedule_workbook, read_workbook)
+    from ..service import (apply_schedule, apply_setup_workbook, as_dict, chat_file,
+                           replace_links)
+
+    found = chat_file(project_id, int(action.get("file_id") or 0))
+    if not found or not found.get("content"):
+        raise ApplyError(
+            "That spreadsheet is no longer with the conversation. Attach it again and ask "
+            "me to import it.")
+
+    project = as_dict(_project(project_id))
+    try:
+        if kind == "import_setup":
+            summary = apply_setup_workbook(project, read_workbook(found["content"]))
+            return (f"Imported {summary['tasks']} deliverables, {summary['trades']} trades, "
+                    f"{summary['sections']} sections and {summary['steps']} workflow steps "
+                    f"from {found['name']}")
+        if kind == "import_schedule":
+            rows = read_schedule_workbook(found["content"])
+            result = apply_schedule(project_id, rows, str(project.get("schedule_mode") or ""))
+            skipped = len(result.get("skipped") or ())
+            return (f"{result['applied']} deliverable"
+                    f"{'' if result['applied'] == 1 else 's'} rescheduled from "
+                    f"{found['name']}" + (f" · {skipped} skipped" if skipped else ""))
+        links = read_links_workbook(found["content"])
+        result = replace_links(project_id, links)
+        skipped = len(result.get("skipped") or ())
+        return (f"{result['added']} dependenc"
+                f"{'y' if result['added'] == 1 else 'ies'} set from {found['name']}"
+                + (f" · {skipped} skipped" if skipped else ""))
+    except (ImportError_, ExcelUnavailable) as exc:
+        raise ApplyError(str(exc)) from exc

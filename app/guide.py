@@ -161,6 +161,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "them — the signatures themselves stay blank rules to sign on.",
             "<strong>Attach</strong> a PDF to a meeting: it is named at the end of the minutes "
             "and compiled onto the end of the exported PDF.",
+            "Move a person up or down the <strong>attendance roster</strong> with the arrows — "
+            "that is the order the exported table lists them in, and people who did not come "
+            "are left off it.",
             "<strong>Export PDF</strong> for the issued document — the letterhead, the grids and "
             "the signature blocks, with the attachments on the end. <strong>Export Word</strong> "
             "for the same thing to edit, or for the register exactly as you have filtered it.",
@@ -293,6 +296,10 @@ TABS: tuple[dict[str, Any], ...] = (
             "and the holidays each takes.",
             "Set each trade's <strong>office</strong> — Beirut or Cairo — and every tab that shows "
             "trades adds the figures up per office as well.",
+            "Add what a minuted item may <strong>affect</strong> — the list behind Affects on the "
+            "Minutes tab — rather than living with Time and Cost.",
+            "<strong>Minutes template</strong>: download the form as Word, change anything in it, "
+            "upload it back, and every Word export of a set of minutes is built from it.",
             "<strong>Export to Excel</strong>, edit in the sheet, and import it back.",
         ),
         "watch": (

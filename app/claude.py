@@ -172,6 +172,13 @@ def models(key: str) -> list[str]:
         raise ClaudeError(_why(exc)) from exc
 
 
+# The standing instruction and the tool catalogue are the same on every turn
+# and together they are most of what goes up. Marking the end of them lets the
+# API keep them and charge a tenth for reading them back, which is the single
+# largest saving available here and costs nothing on the screen.
+CACHE = {"type": "ephemeral"}
+
+
 def chat(key: str, system: str, messages: Sequence[Mapping[str, Any]],
          tools: Sequence[Mapping[str, Any]] | None = None,
          model: str = "", effort: str = DEFAULT_EFFORT) -> Any:
@@ -183,7 +190,9 @@ def chat(key: str, system: str, messages: Sequence[Mapping[str, Any]],
     body: dict[str, Any] = {
         "model": model or DEFAULT_MODEL,
         "max_tokens": MAX_TOKENS,
-        "system": system,
+        # A block rather than a string, so the end of it can be marked as the
+        # end of what is worth keeping between turns.
+        "system": [{"type": "text", "text": system, "cache_control": dict(CACHE)}],
         "messages": list(messages),
         # Adaptive: Claude decides how much to think, which is the right setting
         # for work that is sometimes "what is late" and sometimes "read these
@@ -192,13 +201,43 @@ def chat(key: str, system: str, messages: Sequence[Mapping[str, Any]],
         "output_config": {"effort": effort if effort in EFFORTS else DEFAULT_EFFORT},
     }
     if tools:
-        body["tools"] = list(tools)
+        # The mark goes on the last tool, which covers the whole catalogue
+        # before it. Copied rather than edited in place: the catalogue is built
+        # once and handed to every conversation.
+        catalogue = [dict(tool) for tool in tools]
+        catalogue[-1]["cache_control"] = dict(CACHE)
+        body["tools"] = catalogue
 
     try:
         return client(key).messages.create(**body)
     except Exception as exc:                          # noqa: BLE001 - said, not swallowed
         _log(exc)
         raise ClaudeError(_why(exc)) from exc
+
+
+def spent(answer: Any) -> dict[str, int]:
+    """What one turn cost, in tokens.
+
+    Cached reads are counted apart from fresh input because they are charged at
+    a tenth: a conversation whose numbers are nearly all cache reads is a
+    conversation that is costing almost nothing to carry.
+    """
+    usage = getattr(answer, "usage", None)
+    if usage is None:
+        return {}
+
+    def count(name: str) -> int:
+        try:
+            return int(getattr(usage, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "input": count("input_tokens"),
+        "output": count("output_tokens"),
+        "cache_written": count("cache_creation_input_tokens"),
+        "cache_read": count("cache_read_input_tokens"),
+    }
 
 
 def said(answer: Any) -> str:

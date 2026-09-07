@@ -447,5 +447,121 @@ def test_every_setup_change_is_named_in_the_guard():
         "set_project_settings", "set_trade", "remove_trade", "set_section",
         "set_workflow_step", "remove_workflow_step", "set_team", "add_deliverable",
         "update_deliverable", "remove_deliverable", "set_trade_split", "share_across",
+        # Importing a workbook replaces the deliverable list, which is the
+        # biggest setup change there is.
+        "import_setup",
     }
     assert edits.SETUP_KINDS == staged_by_setup_tools
+
+
+# --- a workbook attached to a question --------------------------------------
+
+def _attached(app, signed_in, url: str, name: str) -> list[dict]:
+    """One of the project's own exports, as somebody would attach it."""
+    data = signed_in.get(url).data
+    with app.app_context():
+        from app.db import query_one
+        from app.service import keep_file, open_thread
+
+        user = dict(query_one("SELECT * FROM users WHERE id = 1"))
+        thread = open_thread(1, user, "importing")
+        file_id = keep_file(1, thread, user, name, "spreadsheet", data)
+    return [{"name": name, "kind": "spreadsheet", "content": data, "file_id": file_id}]
+
+
+def test_she_reads_an_attached_workbook_and_says_what_is_in_it(app, signed_in):
+    from app.assistant import edits
+
+    attached = _attached(app, signed_in, "/projects/1/setup/export", "setup.xlsx")
+    with app.app_context():
+        read = edits.read_workbook_tool(1, attachments=attached)
+    assert read["is"] == "setup"
+    assert read["deliverables"] == 55
+    assert "Marine" in read["trades"]
+
+
+def test_which_workbook_it_is_comes_from_the_file_not_from_the_model(app, signed_in):
+    from app.assistant import edits
+
+    for url, name, expected in (
+        ("/projects/1/setup/export", "setup.xlsx", "setup"),
+        ("/projects/1/schedule.xlsx", "programme.xlsx", "schedule"),
+        ("/projects/1/schedule/links.xlsx", "links.xlsx", "dependencies"),
+    ):
+        attached = _attached(app, signed_in, url, name)
+        with app.app_context():
+            assert edits.read_workbook_tool(1, attachments=attached)["is"] == expected
+
+
+def test_importing_a_workbook_is_staged_and_not_done(app, signed_in):
+    from app.assistant import edits
+    from app.db import query_one
+
+    attached = _attached(app, signed_in, "/projects/1/schedule.xlsx", "programme.xlsx")
+    with app.app_context():
+        before = query_one("SELECT start_date FROM tasks WHERE project_id = 1 AND wbs = '1.1'")
+        staged = edits.import_workbook(1, attachments=attached)
+        after = query_one("SELECT start_date FROM tasks WHERE project_id = 1 AND wbs = '1.1'")
+
+    assert staged["kind"] == "import_schedule"
+    assert "programme.xlsx" in staged["says"]
+    assert before["start_date"] == after["start_date"], "staging must change nothing"
+
+
+def test_the_setup_import_is_refused_while_the_setup_sheet_is_locked(app, signed_in):
+    from app.assistant import edits
+
+    attached = _attached(app, signed_in, "/projects/1/setup/export", "setup.xlsx")
+    with app.app_context():
+        staged = edits.import_workbook(1, attachments=attached)
+        assert staged["kind"] == "import_setup"
+        with pytest.raises(ApplyError) as refused:
+            apply(1, [staged], user_id=1, setup_open=False)
+    assert "locked" in str(refused.value)
+
+
+def test_applying_reads_the_file_again_rather_than_trusting_the_page(app, signed_in):
+    """What is applied is what somebody actually attached, not a list of rows
+    that has been to the browser and back."""
+    from app.assistant import edits
+
+    attached = _attached(app, signed_in, "/projects/1/schedule.xlsx", "programme.xlsx")
+    with app.app_context():
+        staged = edits.import_workbook(1, attachments=attached)
+        staged["lines"] = 999999                  # the page saying something else
+        done = apply(1, [staged], user_id=1)
+    assert "55 deliverables rescheduled" in done[0]["says"]
+
+
+def test_a_question_with_no_spreadsheet_on_it_says_so(app):
+    from app.assistant import edits
+
+    with app.app_context():
+        with pytest.raises(ToolError) as refused:
+            edits.read_workbook_tool(1, attachments=[{"name": "letter.pdf", "kind": "pdf"}])
+    assert "attach" in str(refused.value)
+
+
+def test_a_workbook_that_is_none_of_the_three_is_refused_with_its_sheets(app, signed_in):
+    import io
+
+    import openpyxl
+
+    from app.assistant import edits
+
+    book = openpyxl.Workbook()
+    book.active.title = "Some other thing"
+    out = io.BytesIO()
+    book.save(out)
+
+    with app.app_context():
+        from app.db import query_one
+        from app.service import keep_file, open_thread
+
+        user = dict(query_one("SELECT * FROM users WHERE id = 1"))
+        thread = open_thread(1, user, "importing")
+        file_id = keep_file(1, thread, user, "other.xlsx", "spreadsheet", out.getvalue())
+        with pytest.raises(ToolError) as refused:
+            edits.read_workbook_tool(1, attachments=[
+                {"name": "other.xlsx", "content": out.getvalue(), "file_id": file_id}])
+    assert "Some other thing" in str(refused.value)

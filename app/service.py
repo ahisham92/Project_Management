@@ -838,6 +838,193 @@ def add_attachment(project_id: int, meeting_id: int, name: str, filename: str,
     )
 
 
+# --- an edited workbook, put back ------------------------------------------
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """A number out of a workbook cell, or what was there before."""
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def apply_setup_workbook(project: Mapping[str, Any],
+                         parsed: Mapping[str, Any]) -> dict[str, int]:
+    """Writes an imported workbook over the project's setup, in one transaction.
+
+    Progress is preserved: a deliverable keeps its reported status and revision
+    where the workbook supplies them.
+
+    Here rather than in the view because the Setup tab's Import button and
+    Carmen reading an attached workbook have to do exactly the same thing.
+    """
+    from .dates import from_input_or
+
+    project_id = project["id"]
+    conn = get_db()
+    with conn:
+        settings = parsed["project"]
+        if settings:
+            conn.execute(
+                """
+                UPDATE projects SET name = ?, client = ?, description = ?, ntp_date = ?,
+                       duration_months = ?, days_per_month = ?, hours_per_month = ?,
+                       elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
+                       revision_reset_step = ?, status = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (
+                    str(settings.get("name") or project["name"]).strip(),
+                    str(settings.get("client") or "").strip(),
+                    str(settings.get("description") or "").strip(),
+                    from_input_or(settings.get("ntp_date"), project["ntp_date"]),
+                    _as_float(settings.get("duration_months"), project["duration_months"]),
+                    _as_float(settings.get("days_per_month"), project["days_per_month"]),
+                    _as_float(settings.get("hours_per_month"), project["hours_per_month"]),
+                    _as_float(settings.get("elapsed_day_offset"), project["elapsed_day_offset"]),
+                    int(_as_float(settings.get("max_revisions"), project["max_revisions"])),
+                    _as_float(settings.get("rework_days"), project["rework_days"]),
+                    str(settings.get("revision_reset_step") or project["revision_reset_step"]).strip(),
+                    str(settings.get("status") or project["status"]).strip(),
+                    project_id,
+                ),
+            )
+
+        if parsed["steps"]:
+            # A step's key is what every deliverable's status points at, so keep
+            # the existing key whenever the name still matches — otherwise a
+            # re-import would silently detach every reported status.
+            existing_keys = {
+                row["name"].strip().lower(): row["key"]
+                for row in conn.execute("SELECT key, name FROM workflow_steps WHERE project_id = ?", (project_id,))
+            }
+            conn.execute("DELETE FROM workflow_steps WHERE project_id = ?", (project_id,))
+            for order, step in enumerate(parsed["steps"], start=1):
+                generated = "".join(c if c.isalnum() else "_" for c in step["name"].lower()).strip("_")
+                key = existing_keys.get(step["name"].strip().lower()) or generated or f"step_{order}"
+                conn.execute(
+                    """
+                    INSERT INTO workflow_steps (project_id, key, name, percent, anchor, offset_days, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (project_id, key, step["name"], step["percent"],
+                     step["anchor"], step["offset_days"], order),
+                )
+
+        # Trades and sections are matched by name so their ids — and therefore
+        # the hours already booked against them — survive the import.
+        trade_ids: dict[str, int] = {}
+        existing_trades = {r["name"].lower(): r for r in
+                           conn.execute("SELECT * FROM trades WHERE project_id = ?", (project_id,))}
+        for order, trade in enumerate(parsed["trades"], start=1):
+            found = existing_trades.pop(trade["name"].lower(), None)
+            if found:
+                conn.execute(
+                    "UPDATE trades SET name = ?, budget_hours = ?, color = ?, office = ?, "
+                    "sort_order = ? WHERE id = ?",
+                    (trade["name"], trade["budget_hours"], trade["color"],
+                     trade.get("office") or "", order, found["id"]),
+                )
+                trade_ids[trade["name"].lower()] = found["id"]
+            else:
+                key = "".join(c if c.isalnum() else "_" for c in trade["name"].lower()).strip("_")
+                cursor = conn.execute(
+                    "INSERT INTO trades (project_id, key, name, budget_hours, color, office, "
+                    "sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, key or f"trade_{order}", trade["name"], trade["budget_hours"],
+                     trade["color"], trade.get("office") or "", order),
+                )
+                trade_ids[trade["name"].lower()] = cursor.lastrowid
+        for leftover in existing_trades.values():
+            conn.execute("DELETE FROM trades WHERE id = ?", (leftover["id"],))
+
+        section_ids: dict[str, int] = {}
+        existing_sections = {r["name"].lower(): r for r in
+                             conn.execute("SELECT * FROM sections WHERE project_id = ?", (project_id,))}
+        for order, section in enumerate(parsed["sections"], start=1):
+            found = existing_sections.pop(section["name"].lower(), None)
+            if found:
+                conn.execute("UPDATE sections SET code = ?, sort_order = ? WHERE id = ?",
+                             (section["code"], order, found["id"]))
+                section_ids[section["name"].lower()] = found["id"]
+            else:
+                cursor = conn.execute(
+                    "INSERT INTO sections (project_id, code, name, sort_order) VALUES (?, ?, ?, ?)",
+                    (project_id, section["code"], section["name"], order),
+                )
+                section_ids[section["name"].lower()] = cursor.lastrowid
+        for leftover in existing_sections.values():
+            conn.execute("DELETE FROM sections WHERE id = ?", (leftover["id"],))
+
+        # Deliverables are matched on WBS so progress already reported against a
+        # line is kept when the workbook comes back.
+        existing_tasks = {}
+        for row in conn.execute("SELECT * FROM tasks WHERE project_id = ?", (project_id,)):
+            existing_tasks[(row["wbs"] or "").strip().lower() or f"#{row['id']}"] = row
+
+        seen: set[int] = set()
+        for order, task in enumerate(parsed["tasks"], start=1):
+            section_id = section_ids.get(task["section"].lower()) if task["section"] else None
+            tracking = "simple" if task["tracking"].startswith("simple") else "workflow"
+            key = task["wbs"].strip().lower()
+            found = existing_tasks.get(key) if key else None
+
+            # Status and revision are deliberately not taken from the workbook,
+            # so importing an older export cannot revert progress reported since.
+            values = (task["wbs"], task["name"], section_id, task["weight_points"],
+                      task["start_date"], task["submission_date"], tracking,
+                      task["remarks"], order)
+            if found:
+                conn.execute(
+                    """
+                    UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
+                           start_date = ?, submission_date = ?, tracking = ?,
+                           remarks = ?, sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    values + (found["id"],),
+                )
+                task_id = found["id"]
+            else:
+                task_id = conn.execute(
+                    """
+                    INSERT INTO tasks (project_id, wbs, name, section_id, weight_points,
+                                       start_date, submission_date, tracking, remarks, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (project_id,) + values,
+                ).lastrowid
+            seen.add(task_id)
+
+            conn.execute("DELETE FROM task_allocations WHERE task_id = ?", (task_id,))
+            for trade_name, share in task["allocations"].items():
+                trade_id = trade_ids.get(trade_name.lower())
+                if trade_id and share > 0:
+                    conn.execute(
+                        "INSERT INTO task_allocations (task_id, trade_id, pct) VALUES (?, ?, ?)",
+                        (task_id, trade_id, share),
+                    )
+
+        for row in conn.execute("SELECT id FROM tasks WHERE project_id = ?", (project_id,)).fetchall():
+            if row["id"] not in seen:
+                conn.execute("DELETE FROM tasks WHERE id = ?", (row["id"],))
+
+        # A step's percentage may have been edited in the workbook, so re-derive
+        # each deliverable's percent complete from the status it already holds.
+        steps = {r["key"]: r["percent"] for r in
+                 conn.execute("SELECT key, percent FROM workflow_steps WHERE project_id = ?", (project_id,))}
+        for row in conn.execute(
+            "SELECT id, tracking, status_key FROM tasks WHERE project_id = ?", (project_id,)
+        ).fetchall():
+            if row["tracking"] == "workflow":
+                conn.execute("UPDATE tasks SET actual_pct = ? WHERE id = ?",
+                             (steps.get(row["status_key"], 0.0), row["id"]))
+
+    return {
+        "tasks": len(parsed["tasks"]), "trades": len(parsed["trades"]),
+        "sections": len(parsed["sections"]), "steps": len(parsed["steps"]),
+    }
+
+
 # --- the Word template the minutes are built from ---------------------------
 
 # A Word document with a letterhead and a logo in it. Larger than this is a
@@ -1831,20 +2018,113 @@ def record_chat(project_id: Any, user: Any, question: str, answer: Any,
     building. The transcript goes to Drive once a day as plain text.
     """
     who = as_dict(user) if user is not None else {}
+    spent = dict(getattr(answer, "spent", {}) or {})
     written = insert(
         """
         INSERT INTO chat_log (asked_at, project_id, user_id, user_name, question, answer,
-                              tools_used, staged, trouble, thread_id)
-        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              tools_used, staged, trouble, thread_id, tokens_in, tokens_out,
+                              tokens_cached, tokens_written, from_cache)
+        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (project_id, who.get("id"), str(who.get("name") or "")[:120],
          str(question)[:4000], str(getattr(answer, "text", "") or "")[:8000],
          ", ".join(getattr(answer, "used", []) or [])[:400],
          len(getattr(answer, "staged", []) or []), str(getattr(answer, "trouble", "") or "")[:500],
-         thread_id),
+         thread_id, int(spent.get("input") or 0), int(spent.get("output") or 0),
+         int(spent.get("cache_read") or 0), int(spent.get("cache_written") or 0),
+         1 if getattr(answer, "from_cache", False) else 0),
     )
     touch_thread(thread_id, " ".join(str(question).split())[:TITLE_LENGTH])
     return written
+
+
+# --- answers worth not paying for twice -------------------------------------
+#
+# The cheapest call to an API is the one that is not made. A question asked
+# again while nothing on the project has changed has the same answer as last
+# time — the figures come from the project, and the project has not moved. So
+# the answer is kept against the project's own change counter, and a repeat
+# while that counter is unchanged is handed straight back.
+#
+# Only answers that read: anything that staged a change, produced a link or
+# went wrong is worked out again, because what those produce is not just words.
+
+
+def _asked_as(question: str) -> str:
+    """A question, in the form two people asking the same thing would share."""
+    words = " ".join(str(question or "").lower().split())
+    return words.strip(" .?!")[:400]
+
+
+def remembered_answer(project_id: int, question: str) -> dict[str, Any] | None:
+    """The last answer to this question, if the project has not moved since."""
+    asked = _asked_as(question)
+    if not asked:
+        return None
+    row = query_one("SELECT * FROM chat_answers WHERE project_id = ? AND question = ?",
+                    (project_id, asked))
+    if row is None or str(row["pulse"]) != project_pulse(project_id):
+        return None
+    execute("UPDATE chat_answers SET used = used + 1 WHERE id = ?", (row["id"],))
+    return dict(row)
+
+
+def remember_answer(project_id: int, question: str, text: str,
+                    used: Sequence[str] = ()) -> None:
+    """Keeps one answer against the project as it stands now."""
+    asked = _asked_as(question)
+    if not asked or not str(text or "").strip():
+        return
+    execute(
+        "INSERT INTO chat_answers (project_id, question, pulse, answer, tools_used) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT (project_id, question) DO UPDATE SET "
+        "pulse = excluded.pulse, answer = excluded.answer, "
+        "tools_used = excluded.tools_used, asked_at = datetime('now'), used = 0",
+        (project_id, asked, project_pulse(project_id), str(text)[:8000],
+         ", ".join(used)[:400]),
+    )
+
+
+def forget_answers(project_id: int) -> int:
+    """Throws the kept answers away, and says how many there were.
+
+    Nothing needs this — a kept answer falls out of use on its own the moment
+    anything on the project changes — but somebody who wants a fresh answer to
+    everything should be able to say so.
+    """
+    return int(execute("DELETE FROM chat_answers WHERE project_id = ?",
+                       (project_id,)).rowcount or 0)
+
+
+def chat_spend(project_id: int, days: int = 30) -> dict[str, Any]:
+    """What Carmen has cost on this project lately, in tokens.
+
+    Not money: the price per token depends on the model and changes, and a
+    figure in dollars that is quietly wrong is worse than a count that is not.
+    """
+    row = query_one(
+        """
+        SELECT COUNT(*) AS asked,
+               COALESCE(SUM(tokens_in), 0) AS fresh,
+               COALESCE(SUM(tokens_out), 0) AS written,
+               COALESCE(SUM(tokens_cached), 0) AS cached,
+               COALESCE(SUM(tokens_written), 0) AS kept,
+               COALESCE(SUM(from_cache), 0) AS answered_free
+        FROM chat_log
+        WHERE project_id = ? AND asked_at >= datetime('now', ?)
+        """,
+        (project_id, f"-{max(1, int(days))} days"),
+    )
+    found = dict(row) if row else {}
+    fresh, cached = int(found.get("fresh") or 0), int(found.get("cached") or 0)
+    return {
+        **{k: int(v or 0) for k, v in found.items()},
+        "days": int(days),
+        # What share of the input never had to be sent fresh. The two savings
+        # that show up here are the kept prompt and the shorter history.
+        "cached_share": (cached / (cached + fresh)) if (cached + fresh) else 0.0,
+    }
 
 
 def note_applied(chat_id: Any, how_many: int) -> None:

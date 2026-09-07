@@ -27,7 +27,8 @@ from ..service import (
     project_overview, project_s_curve, project_snapshot, record_comments,
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
-    load_impacts, load_snapshots, load_template, restore_schedule, set_allocations,
+    apply_setup_workbook, load_impacts, load_snapshots, load_template,
+    restore_schedule, set_allocations,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
 from ..minutes_doc import TEMPLATE_FIELDS
@@ -1894,187 +1895,13 @@ def import_setup(project_id: int):
         flash(str(exc), "error")
         return _back("projects.setup", project_id)
 
-    summary = _apply_setup(project, parsed)
+    summary = apply_setup_workbook(project, parsed)
     flash(
         f"Imported {summary['tasks']} deliverables, {summary['trades']} trades, "
         f"{summary['sections']} sections and {summary['steps']} workflow steps",
         "success",
     )
     return _back("projects.setup", project_id)
-
-
-def _apply_setup(project, parsed) -> dict[str, int]:
-    """Writes an imported workbook over the project's setup, in one transaction.
-
-    Progress is preserved: a deliverable keeps its reported status and revision
-    where the workbook supplies them.
-    """
-    from ..db import get_db
-
-    project_id = project["id"]
-    conn = get_db()
-    with conn:
-        settings = parsed["project"]
-        if settings:
-            conn.execute(
-                """
-                UPDATE projects SET name = ?, client = ?, description = ?, ntp_date = ?,
-                       duration_months = ?, days_per_month = ?, hours_per_month = ?,
-                       elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
-                       revision_reset_step = ?, status = ?, updated_at = datetime('now')
-                WHERE id = ?
-                """,
-                (
-                    str(settings.get("name") or project["name"]).strip(),
-                    str(settings.get("client") or "").strip(),
-                    str(settings.get("description") or "").strip(),
-                    from_input_or(settings.get("ntp_date"), project["ntp_date"]),
-                    _to_float(settings.get("duration_months"), project["duration_months"]),
-                    _to_float(settings.get("days_per_month"), project["days_per_month"]),
-                    _to_float(settings.get("hours_per_month"), project["hours_per_month"]),
-                    _to_float(settings.get("elapsed_day_offset"), project["elapsed_day_offset"]),
-                    int(_to_float(settings.get("max_revisions"), project["max_revisions"])),
-                    _to_float(settings.get("rework_days"), project["rework_days"]),
-                    str(settings.get("revision_reset_step") or project["revision_reset_step"]).strip(),
-                    str(settings.get("status") or project["status"]).strip(),
-                    project_id,
-                ),
-            )
-
-        if parsed["steps"]:
-            # A step's key is what every deliverable's status points at, so keep
-            # the existing key whenever the name still matches — otherwise a
-            # re-import would silently detach every reported status.
-            existing_keys = {
-                row["name"].strip().lower(): row["key"]
-                for row in conn.execute("SELECT key, name FROM workflow_steps WHERE project_id = ?", (project_id,))
-            }
-            conn.execute("DELETE FROM workflow_steps WHERE project_id = ?", (project_id,))
-            for order, step in enumerate(parsed["steps"], start=1):
-                generated = "".join(c if c.isalnum() else "_" for c in step["name"].lower()).strip("_")
-                key = existing_keys.get(step["name"].strip().lower()) or generated or f"step_{order}"
-                conn.execute(
-                    """
-                    INSERT INTO workflow_steps (project_id, key, name, percent, anchor, offset_days, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (project_id, key, step["name"], step["percent"],
-                     step["anchor"], step["offset_days"], order),
-                )
-
-        # Trades and sections are matched by name so their ids — and therefore
-        # the hours already booked against them — survive the import.
-        trade_ids: dict[str, int] = {}
-        existing_trades = {r["name"].lower(): r for r in
-                           conn.execute("SELECT * FROM trades WHERE project_id = ?", (project_id,))}
-        for order, trade in enumerate(parsed["trades"], start=1):
-            found = existing_trades.pop(trade["name"].lower(), None)
-            if found:
-                conn.execute(
-                    "UPDATE trades SET name = ?, budget_hours = ?, color = ?, office = ?, "
-                    "sort_order = ? WHERE id = ?",
-                    (trade["name"], trade["budget_hours"], trade["color"],
-                     trade.get("office") or "", order, found["id"]),
-                )
-                trade_ids[trade["name"].lower()] = found["id"]
-            else:
-                key = "".join(c if c.isalnum() else "_" for c in trade["name"].lower()).strip("_")
-                cursor = conn.execute(
-                    "INSERT INTO trades (project_id, key, name, budget_hours, color, office, "
-                    "sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (project_id, key or f"trade_{order}", trade["name"], trade["budget_hours"],
-                     trade["color"], trade.get("office") or "", order),
-                )
-                trade_ids[trade["name"].lower()] = cursor.lastrowid
-        for leftover in existing_trades.values():
-            conn.execute("DELETE FROM trades WHERE id = ?", (leftover["id"],))
-
-        section_ids: dict[str, int] = {}
-        existing_sections = {r["name"].lower(): r for r in
-                             conn.execute("SELECT * FROM sections WHERE project_id = ?", (project_id,))}
-        for order, section in enumerate(parsed["sections"], start=1):
-            found = existing_sections.pop(section["name"].lower(), None)
-            if found:
-                conn.execute("UPDATE sections SET code = ?, sort_order = ? WHERE id = ?",
-                             (section["code"], order, found["id"]))
-                section_ids[section["name"].lower()] = found["id"]
-            else:
-                cursor = conn.execute(
-                    "INSERT INTO sections (project_id, code, name, sort_order) VALUES (?, ?, ?, ?)",
-                    (project_id, section["code"], section["name"], order),
-                )
-                section_ids[section["name"].lower()] = cursor.lastrowid
-        for leftover in existing_sections.values():
-            conn.execute("DELETE FROM sections WHERE id = ?", (leftover["id"],))
-
-        # Deliverables are matched on WBS so progress already reported against a
-        # line is kept when the workbook comes back.
-        existing_tasks = {}
-        for row in conn.execute("SELECT * FROM tasks WHERE project_id = ?", (project_id,)):
-            existing_tasks[(row["wbs"] or "").strip().lower() or f"#{row['id']}"] = row
-
-        seen: set[int] = set()
-        for order, task in enumerate(parsed["tasks"], start=1):
-            section_id = section_ids.get(task["section"].lower()) if task["section"] else None
-            tracking = "simple" if task["tracking"].startswith("simple") else "workflow"
-            key = task["wbs"].strip().lower()
-            found = existing_tasks.get(key) if key else None
-
-            # Status and revision are deliberately not taken from the workbook,
-            # so importing an older export cannot revert progress reported since.
-            values = (task["wbs"], task["name"], section_id, task["weight_points"],
-                      task["start_date"], task["submission_date"], tracking,
-                      task["remarks"], order)
-            if found:
-                conn.execute(
-                    """
-                    UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
-                           start_date = ?, submission_date = ?, tracking = ?,
-                           remarks = ?, sort_order = ?, updated_at = datetime('now')
-                    WHERE id = ?
-                    """,
-                    values + (found["id"],),
-                )
-                task_id = found["id"]
-            else:
-                task_id = conn.execute(
-                    """
-                    INSERT INTO tasks (project_id, wbs, name, section_id, weight_points,
-                                       start_date, submission_date, tracking, remarks, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (project_id,) + values,
-                ).lastrowid
-            seen.add(task_id)
-
-            conn.execute("DELETE FROM task_allocations WHERE task_id = ?", (task_id,))
-            for trade_name, share in task["allocations"].items():
-                trade_id = trade_ids.get(trade_name.lower())
-                if trade_id and share > 0:
-                    conn.execute(
-                        "INSERT INTO task_allocations (task_id, trade_id, pct) VALUES (?, ?, ?)",
-                        (task_id, trade_id, share),
-                    )
-
-        for row in conn.execute("SELECT id FROM tasks WHERE project_id = ?", (project_id,)).fetchall():
-            if row["id"] not in seen:
-                conn.execute("DELETE FROM tasks WHERE id = ?", (row["id"],))
-
-        # A step's percentage may have been edited in the workbook, so re-derive
-        # each deliverable's percent complete from the status it already holds.
-        steps = {r["key"]: r["percent"] for r in
-                 conn.execute("SELECT key, percent FROM workflow_steps WHERE project_id = ?", (project_id,))}
-        for row in conn.execute(
-            "SELECT id, tracking, status_key FROM tasks WHERE project_id = ?", (project_id,)
-        ).fetchall():
-            if row["tracking"] == "workflow":
-                conn.execute("UPDATE tasks SET actual_pct = ? WHERE id = ?",
-                             (steps.get(row["status_key"], 0.0), row["id"]))
-
-    return {
-        "tasks": len(parsed["tasks"]), "trades": len(parsed["trades"]),
-        "sections": len(parsed["sections"]), "steps": len(parsed["steps"]),
-    }
 
 
 # --- team ------------------------------------------------------------------

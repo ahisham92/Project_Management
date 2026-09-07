@@ -11,6 +11,7 @@ from flask import (
 )
 
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
+from ..chatmarkup import to_html
 from ..dates import from_input, to_display
 from ..service import note_applied, record_chat, today
 
@@ -61,7 +62,7 @@ def index(project_id: int):
     used for" is a question they are meant to be able to answer.
     """
     from ..claude import DEFAULT_MODEL, EFFORTS
-    from ..service import load_thread, load_threads, thread_messages
+    from ..service import chat_spend, load_thread, load_threads, thread_messages
     from ..vault import carmen
 
     project, role = load_project(project_id)
@@ -84,8 +85,24 @@ def index(project_id: int):
         can_write=_can_write(role),
         can_see_everyone=ROLE_RANK[role] >= ROLE_RANK["manager"],
         everyone=everyone, threads=threads, thread=thread, messages=messages,
-        suggestions=SUGGESTIONS,
+        suggestions=SUGGESTIONS, spend=chat_spend(project_id),
     )
+
+
+@bp.post("/assistant/forget")
+@login_required
+def forget(project_id: int):
+    """Throws away the kept answers, so the next question of each is worked out
+    afresh. Nothing needs this — a kept answer falls out of use the moment
+    anything on the project changes — but somebody who does not trust it should
+    be able to say so."""
+    from ..service import forget_answers
+
+    _project, role = load_project(project_id, "member")
+    gone = forget_answers(project_id)
+    flash(f"{gone} kept answer{'' if gone == 1 else 's'} thrown away — the next time each "
+          "is asked it is worked out again", "success")
+    return redirect(url_for("assistant.index", project_id=project_id))
 
 
 @bp.post("/assistant/threads/<int:thread_id>/rename")
@@ -178,8 +195,14 @@ def ask(project_id: int):
             one = read_file(raw, upload.filename or "")
         except ReadError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
+        # The bytes and the row id travel with it: a tool that reads a
+        # spreadsheet needs the file, and a staged import needs to find it again
+        # when somebody presses Apply an hour later.
+        one["content"] = raw
+        one["file_id"] = keep_file(project_id, thread_id, g.user, one["name"],
+                                   one["kind"], raw)
         attachments.append(one)
-        kept.append(keep_file(project_id, thread_id, g.user, one["name"], one["kind"], raw))
+        kept.append(one["file_id"])
 
     if not question and not attachments:
         return jsonify({"ok": False, "error": "Ask it something"}), 400
@@ -209,6 +232,10 @@ def ask(project_id: int):
         answer.staged = []
 
     said = answer.as_json()
+    # Drawn on the way out rather than in the browser, so an answer read live
+    # and the same answer read back out of the conversation tomorrow look the
+    # same — a table she writes as pipes comes back as a table either way.
+    said["html"] = str(to_html(answer.text))
     # Written down whether it worked or not: a week of failures is the thing
     # worth noticing, and it is invisible if only the answers are kept.
     said["chat_id"] = record_chat(project_id, g.user, question, answer, thread_id)

@@ -181,6 +181,20 @@ def build_workbook(
 
 # --- import ----------------------------------------------------------------
 
+def sheet_names(data: bytes) -> list[str]:
+    """The sheets in a workbook, which is how you tell which one it is."""
+    import io
+
+    try:
+        book = _openpyxl().load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+    except Exception as exc:                          # noqa: BLE001 - said, not raised raw
+        raise ImportError_("That file will not open as a spreadsheet") from exc
+    try:
+        return list(book.sheetnames)
+    finally:
+        book.close()
+
+
 def _cell(value: Any) -> str:
     return "" if value is None else str(value).strip()
 

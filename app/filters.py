@@ -101,3 +101,10 @@ def register(app: Flask) -> None:
 
     app.jinja_env.globals["guide_for"] = for_endpoint
     app.jinja_env.globals["guide_terms"] = terms_for
+
+    # What Carmen wrote, drawn: the same conversion for an answer arriving live
+    # and one read back out of a saved conversation.
+    from .chatmarkup import to_html
+
+    app.jinja_env.globals["chat_html"] = to_html
+    app.jinja_env.filters["chat_html"] = to_html

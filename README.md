@@ -460,11 +460,58 @@ what was asked, and reopening one brings back what was said rather than an empty
 box — so a question picked up on Thursday does not start again from nothing.
 Renaming and deleting are on the thread itself.
 
+**A table she writes is drawn as a table.** She answers in plain text with a
+little Markdown in it, because that is what a model writes when asked for a list
+of deliverables and their dates; pipes and dashes on a screen are unreadable, and
+the whole point of a table is that the columns line up. The conversion happens
+once, on the server, so an answer read live and the same answer read back next
+week look the same.
+
+**Workbooks go both ways.** She hands back the programme, the dependencies or the
+setup sheet as Excel; edit one and attach it back, and she reads it, says what it
+holds and what importing it would change, and stages the import. Importing the
+setup sheet replaces the deliverable list, so she says that before she stages it —
+and it still takes an unlocked Setup tab to apply, the same as pressing Import
+there by hand.
+
+**What she costs stays flat.** Four things, none of which show on the screen
+except as a figure nobody has to act on:
+
+* The **standing prompt and the tool catalogue** are marked to be kept between
+  turns. They are the same every time and together they are most of what goes up,
+  so after the first question they are charged at a tenth.
+* **A long conversation costs what a short one does.** The recent turns go back
+  word for word; everything before them goes as one short note listing what was
+  asked. The note is built here rather than by asking the model to write one, and
+  the fiftieth question costs about what the fourth did.
+* **A question asked again is not asked again.** The figures come from the
+  project, so if nothing on the project has changed since — the same counter the
+  live refresh reads — she hands back what she said last time, instantly and for
+  nothing. Anything that staged a change, produced a file or went wrong is always
+  worked out afresh, and so is anything asked mid-conversation or with a file
+  attached. *Forget the kept answers* on her tab throws them away.
+* **And it is counted.** Her tab says how many questions, how many tokens in and
+  out, what share of the input was read back out of the cache rather than sent
+  again, and how many questions were answered for nothing. In tokens, not money:
+  the price per token depends on the model and changes, and a figure in dollars
+  that is quietly wrong is worse than a count that is not.
+
 **She is on every page.** The button in the bottom-right corner of any project
 tab opens the same conversation in a smaller box — one initialiser in `app.js`
 drives both, so there is no second chat to keep in step. Open it once and it
 stays open as you move around; the launcher hides itself while it is, so nothing
 underneath is ever covered by two things at once.
+
+**The minutes come off a template you can edit.** The issued layout is written in
+code, which is fine until the practice moves a column — and then it is a change
+to the software, made by somebody who is not in the room. So **Setup → Minutes
+template** hands you the form as a `.docx` with `{{placeholders}}` in it: change
+anything in Word — fonts, colours, the letterhead, the signature block — upload
+it back, and every Word export is built by filling it in. A table row carrying an
+`item.` or `attendee.` placeholder is written once per item or per person, so one
+row in the template becomes the whole table. The PDF is still drawn by the app on
+the built-in layout: turning a `.docx` into a PDF needs Word, and there is none
+on the server.
 
 **Her picture** ships with the app, so a fresh install has her on it rather than
 a placeholder. An installation that would rather use a different one puts a

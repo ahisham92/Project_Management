@@ -32,6 +32,7 @@ from ..service import (
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
 from ..minutes_doc import TEMPLATE_FIELDS
+from .handing_out import EXCEL, handed_out
 from ..calendars import parse_days
 from ..squeeze import SqueezeError
 from ..workflow import ordered as ordered_steps
@@ -700,12 +701,9 @@ def export_schedule(project_id: int):
         return _back("projects.schedule", project_id, panel="dates")
 
     stamp = today().replace("-", "")
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=f"{project['code']}-schedule-{stamp}.xlsx",
-    )
+    return handed_out(project_id, data, f"{project['code']}-schedule-{stamp}.xlsx",
+                      EXCEL, "schedule", "The programme",
+                      f"{len(plan['tasks'])} deliverables")
 
 
 @bp.post("/schedule/import")
@@ -754,12 +752,9 @@ def export_dependencies(project_id: int):
         return _back("projects.schedule", project_id, panel="links")
 
     stamp = today().replace("-", "")
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=f"{project['code']}-dependencies-{stamp}.xlsx",
-    )
+    return handed_out(project_id, data, f"{project['code']}-dependencies-{stamp}.xlsx",
+                      EXCEL, "dependencies", "The dependencies",
+                      f"{len(plan['links'])} links")
 
 
 @bp.post("/schedule/links/import")
@@ -1860,12 +1855,8 @@ def export_setup(project_id: int):
         return _back("projects.setup", project_id)
 
     stamp = today().replace("-", "")
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=f"{project['code']}-setup-{stamp}.xlsx",
-    )
+    return handed_out(project_id, data, f"{project['code']}-setup-{stamp}.xlsx",
+                      EXCEL, "setup", "The setup sheet")
 
 
 @bp.post("/setup/import")

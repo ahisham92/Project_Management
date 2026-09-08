@@ -628,8 +628,20 @@ def test_every_slide_the_presentation_lists_exists(app, project):
         assert rid in by_id and "slides/slide" in by_id[rid]
 
 
+def _deck_words(data: bytes) -> str:
+    """Everything the deck says, across all of its slides."""
+    import re
+
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        names = sorted((n for n in book.namelist()
+                        if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
+                       key=lambda n: int(re.findall(r"\d+", n)[-1]))
+        return " ".join(book.read(name).decode("utf-8") for name in names)
+
+
 def test_the_deck_says_what_the_period_says(app, project):
-    """A deck that disagrees with the Period tab is worse than no deck."""
+    """A deck that disagrees with the Summarized Progress tab is worse than no
+    deck."""
     from app.assistant.deck_of import build
 
     with app.app_context():
@@ -637,14 +649,52 @@ def test_the_deck_says_what_the_period_says(app, project):
     with app.test_request_context():
         data = build(project, "2026-08-01", "2026-09-06", title="Monthly report")
 
-    with zipfile.ZipFile(io.BytesIO(data)) as book:
-        words = " ".join(book.read(f"ppt/slides/slide{n}.xml").decode("utf-8")
-                         for n in range(1, 9))
-
+    words = _deck_words(data)
     assert "Monthly report" in words
     assert project["code"] in words
-    assert "What moved" in words
     assert "critical path" in words.lower()
+    assert "Where the project stands" in words
+    assert "The period" in words
+    assert "What needs attention" in words
+    assert "What happens next" in words
+
+
+def test_the_deck_is_drawn_rather_than_tabulated(app, project):
+    """A deck of nothing but tables is a report somebody has printed sideways.
+    The dial, the curve, the bars and the strip of dates are all shapes."""
+    from app.assistant.deck_of import build
+
+    with app.test_request_context():
+        data = build(project, "2026-08-01", "2026-09-06")
+
+    words = _deck_words(data)
+    assert "blockArc" in words, "the gauge"
+    assert "custGeom" in words, "the curve"
+    assert words.count("Bar ") >= 2, "the bars"
+    assert "Planned against earned" in words
+
+
+def test_the_deck_opens_dark_and_divides_itself(app, project):
+    """Dark, light, dark: the cover, the dividers and the closing are navy, and
+    everything between them is white. That sandwich is what makes a deck read
+    as a deck rather than as a run of pages."""
+    from app.assistant.deck_of import build
+    from app.deck import NAVY
+
+    with app.test_request_context():
+        data = build(project, "2026-08-01", "2026-09-06")
+
+    import re
+
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        names = sorted((n for n in book.namelist()
+                        if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
+                       key=lambda n: int(re.findall(r"\d+", n)[-1]))
+        dark = [n for n in names
+                if f'<p:bgPr><a:solidFill><a:srgbClr val="{NAVY}"' in
+                book.read(n).decode("utf-8")]
+    assert len(dark) >= 5, "a cover, four dividers and a closing"
+    assert names[0] in dark and names[-1] in dark
 
 
 # --- the web layer ----------------------------------------------------------
@@ -762,3 +812,33 @@ def test_the_deck_downloads_as_a_pptx(signed_in):
 def test_a_deck_with_no_dates_says_so_rather_than_guessing(signed_in):
     answer = signed_in.get("/projects/1/assistant/deck.pptx", follow_redirects=True)
     assert "needs a start and an end date" in text(answer)
+
+
+def test_nothing_on_a_slide_falls_off_it(app, project):
+    """The one check a generated deck actually needs: every shape inside the
+    slide, with a margin. A box half an inch off the right edge is text nobody
+    ever sees, and it is invisible in the XML."""
+    import re
+    from xml.dom.minidom import parseString
+
+    from app.assistant.deck_of import build
+    from app.deck import EMU, HEIGHT, WIDTH
+
+    with app.test_request_context():
+        data = build(project, "2026-08-01", "2026-09-06")
+
+    edge = int(0.35 * EMU)
+    with zipfile.ZipFile(io.BytesIO(data)) as book:
+        for name in sorted(n for n in book.namelist()
+                           if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)):
+            page = parseString(book.read(name))
+            for xfrm in page.getElementsByTagName("a:xfrm"):
+                off = xfrm.getElementsByTagName("a:off")[0]
+                ext = xfrm.getElementsByTagName("a:ext")[0]
+                x, y = int(off.getAttribute("x")), int(off.getAttribute("y"))
+                cx, cy = int(ext.getAttribute("cx")), int(ext.getAttribute("cy"))
+                if not cx and not cy:
+                    continue                     # the group's own empty frame
+                assert x >= edge and y >= edge, f"{name}: a shape starts at {x},{y}"
+                assert x + cx <= WIDTH - edge + 1, f"{name}: a shape runs past the right"
+                assert y + cy <= HEIGHT - edge + 1, f"{name}: a shape runs past the foot"

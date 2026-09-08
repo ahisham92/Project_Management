@@ -452,6 +452,19 @@ once. She books hours, returns comments, and squeezes a run of the programme. Sh
 builds a **PowerPoint of the work done between two dates**, and Word minutes on
 the practice's template.
 
+**The presentation.** Fourteen or so slides in three acts, with a dark cover, a
+dark divider in front of each act and a dark closing — where the project stands,
+what the period did, what needs attention, what happens next. Every slide carries
+something *drawn*: a half-ring dial of earned against planned, the **S-curve** of
+planned against earned with today marked on it, horizontal bars for the biggest
+movers and for what is late, and a strip of dated bars for the critical path. The
+charts are shapes rather than a native chart part — a native one needs an embedded
+workbook and a second schema to get wrong, and a line drawn as a path is the same
+picture, renders identically in PowerPoint, Keynote, Google Slides and
+LibreOffice, and cannot corrupt the file. Nothing about it is written by the
+model: she picks the two dates, and the deck is built from the same figures the
+tabs draw.
+
 **She minutes a meeting.** Type up what was said — a paragraph, however it comes
 out — and say *minute this*. She reads the prose and writes the register:
 the meeting, who was there, and the items, each with a subject, the discussion,
@@ -485,6 +498,14 @@ of deliverables and their dates; pipes and dashes on a screen are unreadable, an
 the whole point of a table is that the columns line up. The conversion happens
 once, on the server, so an answer read live and the same answer read back next
 week look the same.
+
+**Every document is kept.** A deck built last Tuesday is not the deck those
+dates build today — the project has moved — so *"let me see the presentation Ola
+sent the client"* can only be answered by keeping Ola's copy. Every export from
+every tab (minutes as Word or PDF, the register, the agenda, the programme, the
+dependencies, the setup sheet, a presentation) is kept **as the bytes that went
+out**, with who asked for it and when, listed on her tab and openable again by
+anybody who can see the project. The most recent sixty per project are kept.
 
 **Workbooks go both ways.** She hands back the programme, the dependencies or the
 setup sheet as Excel; edit one and attach it back, and she reads it, says what it

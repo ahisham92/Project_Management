@@ -251,8 +251,12 @@ TABS: tuple[dict[str, Any], ...] = (
             "a spreadsheet, a picture or plain text. She reads it and answers from it, and it "
             "stays with the conversation.",
             "Ask for a <strong>document</strong> — “give me the minutes as a PDF”, “the "
-            "register as Word”, “the programme as a spreadsheet” — and she hands back a link "
-            "to download it.",
+            "register as Word”, “the programme as a spreadsheet”, “a presentation of last "
+            "month” — and she hands back a link to download it.",
+            "Every file this project hands out is <strong>kept as it went out</strong>, with "
+            "who asked for it and when. A deck built last Tuesday is not the deck those dates "
+            "build today, so “let me see the presentation Ola sent” is a question about that "
+            "file — and it is on her tab, under Documents.",
             "Every conversation is <strong>kept down the left</strong>. Come back to one and "
             "carry on rather than starting from nothing; rename it, or start a new one. "
             "Whoever runs the project can read everybody’s.",

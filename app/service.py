@@ -1064,6 +1064,76 @@ def apply_setup_workbook(project: Mapping[str, Any],
     }
 
 
+# --- every document the app hands out ---------------------------------------
+#
+# A deck built on Tuesday is not the deck the same dates build today, because
+# the project has moved. So "let me see the presentation Ola sent the client"
+# can only be answered by keeping Ola's copy. Every export is kept as the bytes
+# that went out, with who asked for it and when.
+
+# How many to keep per project. A year of weekly reports and every set of
+# minutes twice over fits comfortably; past that the oldest go, because a
+# database is not an archive and the nightly backup carries all of it.
+KEEP_DOCUMENTS = 60
+
+# What each kind is called on the page, in the words somebody would use.
+DOCUMENT_KINDS: dict[str, str] = {
+    "deck": "Presentation",
+    "minutes": "Minutes of meeting",
+    "minutes_pdf": "Minutes of meeting (PDF)",
+    "register": "Action register",
+    "agenda": "Agenda",
+    "schedule": "Programme",
+    "dependencies": "Dependencies",
+    "setup": "Setup sheet",
+    "week": "The week",
+}
+
+
+def keep_document(project_id: int, kind: str, name: str, filename: str,
+                  mimetype: str, data: bytes, user: Any = None,
+                  note: str = "") -> int:
+    """Writes down one document the app has just handed somebody."""
+    if not data:
+        return 0
+    who = as_dict(user) if user is not None else {}
+    made = insert(
+        "INSERT INTO documents (project_id, kind, name, filename, mimetype, bytes, "
+        "content, note, user_id, user_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, str(kind or "")[:40], str(name or "")[:160],
+         str(filename or "")[:160], str(mimetype or "")[:120], len(data), data,
+         str(note or "")[:200], who.get("id"),
+         str(who.get("name") or who.get("email") or "")[:120]),
+    )
+    execute(
+        "DELETE FROM documents WHERE project_id = ? AND id NOT IN "
+        "(SELECT id FROM documents WHERE project_id = ? ORDER BY id DESC LIMIT ?)",
+        (project_id, project_id, KEEP_DOCUMENTS),
+    )
+    return made
+
+
+def load_documents(project_id: int, limit: int = 30) -> list[dict[str, Any]]:
+    """What has been handed out on this project, newest first, without the
+    bytes — a list of sixty decks is not something to read into memory to draw
+    a table of their names."""
+    return [
+        dict(row, kind_name=DOCUMENT_KINDS.get(row["kind"], row["kind"].title()))
+        for row in query(
+            "SELECT id, project_id, kind, name, filename, mimetype, bytes, note, "
+            "user_id, user_name, made_at FROM documents WHERE project_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (project_id, max(1, int(limit))),
+        )
+    ]
+
+
+def document(project_id: int, document_id: int) -> dict[str, Any] | None:
+    row = query_one("SELECT * FROM documents WHERE id = ? AND project_id = ?",
+                    (document_id, project_id))
+    return dict(row) if row else None
+
+
 # --- the Word template the minutes are built from ---------------------------
 
 # A Word document with a letterhead and a logo in it. Larger than this is a

@@ -24,6 +24,7 @@ from ..service import (
     next_sort_order, renumber_items, set_attendance, set_item_trades, today,
 )
 from ..workflow import ordered as ordered_steps
+from .handing_out import PDF, WORD, handed_out
 
 bp = Blueprint("meetings", __name__, url_prefix="/projects/<int:project_id>")
 
@@ -131,13 +132,17 @@ def _back(project_id: int, **extra):
     return redirect(url_for("meetings.index", project_id=project_id, **args))
 
 
-def _download(data: bytes, filename: str):
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        as_attachment=True,
-        download_name=filename,
-    )
+def _download(data: bytes, filename: str, project_id: int = 0, kind: str = "",
+              name: str = "", note: str = ""):
+    """One Word document, sent and kept.
+
+    Kept because "let me see the register Ola sent" is a question about the
+    file that went out, not about the one the same filter builds today.
+    """
+    if project_id and kind:
+        return handed_out(project_id, data, filename, WORD, kind, name, note)
+    return send_file(io.BytesIO(data), mimetype=WORD, as_attachment=True,
+                     download_name=filename)
 
 
 def _stamp() -> str:
@@ -314,7 +319,8 @@ def register_word(project_id: int, kind: str):
     title = KIND_TITLES[str(filters["kind"])] + " — action register"
     data = register_document(project, rows, title, note)
     stem = "internal" if filters["kind"] == "internal" else "actions"
-    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx")
+    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx",
+                     project_id, "register", title, note)
 
 
 def _describe(project_id: int, filters: dict[str, object]) -> list[str]:
@@ -398,7 +404,9 @@ def agenda_word(project_id: int, kind: str):
         f"Every item still open as at {to_display(today())}.",
     )
     stem = "internal-agenda" if kind == "internal" else "agenda"
-    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx")
+    return _download(data, f"{project['code']}-{stem}-{_stamp()}.docx",
+                     project_id, "agenda", f"{KIND_TITLES[kind]} — agenda",
+                     f"Open as at {to_display(today())}")
 
 
 # --- one meeting -----------------------------------------------------------
@@ -458,7 +466,11 @@ def meeting_word(project_id: int, meeting_id: int):
             document = minutes_document(project, sheet, attachments)
     else:
         document = minutes_document(project, sheet, attachments)
-    return _download(document, f"{project['code']}-{name}-{stamp}.docx")
+    said = str(sheet["meeting"].get("title") or "Minutes")
+    return _download(document, f"{project['code']}-{name}-{stamp}.docx",
+                     project_id, "minutes",
+                     f"{sheet['meeting'].get('ref') or 'Minutes'} — {said}",
+                     to_display(sheet["meeting"].get("meeting_date")))
 
 
 @bp.get("/minutes/meetings/<int:meeting_id>.pdf")
@@ -483,8 +495,11 @@ def meeting_pdf(project_id: int, meeting_id: int):
 
     stamp = (sheet["meeting"]["meeting_date"] or today()).replace("-", "")
     name = (sheet["meeting"]["ref"] or "minutes").replace("/", "-").replace(" ", "-")
-    return send_file(io.BytesIO(data), mimetype="application/pdf", as_attachment=True,
-                     download_name=f"{project['code']}-{name}-{stamp}.pdf")
+    said = str(sheet["meeting"].get("title") or "Minutes")
+    return handed_out(project_id, data, f"{project['code']}-{name}-{stamp}.pdf", PDF,
+                      "minutes_pdf",
+                      f"{sheet['meeting'].get('ref') or 'Minutes'} — {said}",
+                      to_display(sheet["meeting"].get("meeting_date")))
 
 
 @bp.post("/minutes/meetings/<int:meeting_id>/attachments")

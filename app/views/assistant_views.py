@@ -12,6 +12,7 @@ from flask import (
 
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..chatmarkup import to_html
+from .handing_out import DECK, handed_out
 from ..dates import from_input, to_display
 from ..service import note_applied, record_chat, today
 
@@ -62,7 +63,8 @@ def index(project_id: int):
     used for" is a question they are meant to be able to answer.
     """
     from ..claude import DEFAULT_MODEL, EFFORTS
-    from ..service import chat_spend, load_thread, load_threads, thread_messages
+    from ..service import (chat_spend, load_documents, load_thread, load_threads,
+                           thread_messages)
     from ..vault import carmen
 
     project, role = load_project(project_id)
@@ -86,6 +88,7 @@ def index(project_id: int):
         can_see_everyone=ROLE_RANK[role] >= ROLE_RANK["manager"],
         everyone=everyone, threads=threads, thread=thread, messages=messages,
         suggestions=SUGGESTIONS, spend=chat_spend(project_id),
+        documents=load_documents(project_id, 12),
     )
 
 
@@ -300,13 +303,46 @@ def deck(project_id: int):
     if end < start:
         start, end = end, start
 
-    data = build(project, start, end, (request.args.get("title") or "").strip()[:120])
+    title = (request.args.get("title") or "").strip()[:120]
+    data = build(project, start, end, title)
     stem = f"{project['code']}-progress-{start.replace('-', '')}-{end.replace('-', '')}"
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        as_attachment=True, download_name=f"{stem}.pptx",
-    )
+    # Kept as it goes out: the same dates a week from now build a different
+    # deck, because the project will have moved.
+    return handed_out(
+        project_id, data, f"{stem}.pptx", DECK, "deck",
+        title or f"Progress {to_display(start)} to {to_display(end)}",
+        note=f"{to_display(start)} to {to_display(end)}")
+
+
+@bp.get("/assistant/documents")
+@login_required
+def documents(project_id: int):
+    """Everything the app has handed out on this project, newest first."""
+    from ..service import load_documents
+
+    project, role = load_project(project_id)
+    return render_template("documents.html", project=project, role=role,
+                           documents=load_documents(project_id, 60))
+
+
+@bp.get("/assistant/documents/<int:document_id>")
+@login_required
+def download_document(project_id: int, document_id: int):
+    """One of them again, as the bytes that went out.
+
+    Not rebuilt: the project has moved since, and the point of keeping it is to
+    be able to see what somebody actually sent.
+    """
+    from ..service import document as one_document
+
+    load_project(project_id)
+    found = one_document(project_id, document_id)
+    if found is None:
+        abort(404)
+    return send_file(io.BytesIO(bytes(found["content"])),
+                     mimetype=found["mimetype"] or "application/octet-stream",
+                     as_attachment=True,
+                     download_name=found["filename"] or "document")
 
 
 @bp.get("/assistant/files/<int:file_id>")

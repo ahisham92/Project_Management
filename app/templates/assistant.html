@@ -243,6 +243,44 @@
     </div>
   </div>
 
+  {# Everything the project has handed out. "Let me see the presentation Ola
+     sent the client" is a question about the file that went out, and the same
+     dates build a different one today. #}
+  <div class="card">
+    <div class="card-head"><div>
+      <h2>Documents</h2>
+      <p class="small muted" style="margin-top:2px">
+        What has been exported, kept as it went out
+      </p></div>
+      <a class="btn btn-ghost btn-sm"
+         href="{{ url_for('assistant.documents', project_id=project['id']) }}">See all</a>
+    </div>
+    <div class="card-body flush">
+      {% if not documents %}
+        <p class="small muted" style="padding:14px;margin:0">
+          Nothing exported yet. A set of minutes, a programme or a presentation is kept
+          here the moment somebody downloads it.
+        </p>
+      {% else %}
+        <ul class="list">
+          {% for file in documents[:6] %}
+            <li class="inline-form">
+              <span class="flex1">
+                <a href="{{ url_for('assistant.download_document', project_id=project['id'], document_id=file['id']) }}">
+                  {{ file['name'] or file['filename'] }}</a>
+                <span class="small muted" style="display:block">
+                  {{ file['kind_name'] }} · {{ short_date(file['made_at'][:10]) }}
+                  {%- if file['user_name'] %} · {{ file['user_name'] }}{% endif %}
+                </span>
+              </span>
+              <span class="small muted nowrap">{{ readable(file['bytes']) }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  </div>
+
   {# What it is costing, and what is keeping that down. A figure somebody can
      look at beats a feeling about whether this is expensive. #}
   <div class="card">

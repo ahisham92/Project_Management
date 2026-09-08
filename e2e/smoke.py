@@ -1179,13 +1179,32 @@ def _deck(page) -> None:
     with zipfile.ZipFile(saved) as book:
         names = book.namelist()
         slides = [n for n in names if n.startswith("ppt/slides/slide")]
-        if len(slides) < 6:
+        if len(slides) < 10:
             raise AssertionError(f"the deck has {len(slides)} slides")
         if "ppt/presentation.xml" not in names or "ppt/theme/theme1.xml" not in names:
             raise AssertionError(f"the deck is missing parts: {names}")
         words = book.read("ppt/slides/slide1.xml").decode("utf-8")
         if "SIBLINE-PORT" not in words:
             raise AssertionError("the cover does not name the project")
+        # It is drawn, not tabulated: the dial, the curve and the bars are all
+        # shapes, and the cover and the dividers are dark.
+        everything = " ".join(book.read(n).decode("utf-8") for n in slides)
+        for drawn, what in (("blockArc", "the dial"), ("custGeom", "the S-curve"),
+                            ("13293D", "the dark slides")):
+            if drawn not in everything:
+                raise AssertionError(f"the deck has no {what}")
+
+    # And it is kept, so somebody else can see the one that went out.
+    page.goto(f"{BASE}/projects/1/assistant/documents", wait_until="networkidle")
+    _put_carmen_away(page)
+    body = page.text_content("body")
+    if "Presentation" not in body:
+        raise AssertionError("the deck was not kept with the project")
+    kept = page.locator("a:has-text('Open')").first.get_attribute("href")
+    again = page.request.get(BASE + kept)
+    if not again.ok or again.body() != answer.body():
+        raise AssertionError("the kept copy is not the file that went out")
+    page.screenshot(path=str(SHOTS / "48-documents.png"), full_page=True)
 
 
 def _carmen_everywhere(page) -> None:
@@ -1275,15 +1294,29 @@ def _carmen_everywhere(page) -> None:
 
 
 def _sorting(page) -> None:
+    """Sorting is checked as an ordering rather than against a named line: which
+    deliverable happens to be worst depends on everything the run did before
+    this step, and that is not what the column is for."""
     page.click("a:has-text('Progress')")
     page.wait_for_selector("text=Progress update >> visible=true", timeout=8000)
     page.click("th a:has-text('Variance')")
     page.wait_for_selector("text=All deliverables >> visible=true", timeout=8000)
-    first = page.locator("tbody tr").first.text_content()
-    if "1.6" not in first:
-        raise AssertionError(f"worst variance should sort first, got {first[:80]}")
+
+    shown = page.eval_on_selector_all(
+        "tbody tr td:nth-child(7)",
+        "els => els.map(e => parseFloat(e.textContent.replace('%','').replace('+','')))")
+    figures = [v for v in shown if v == v]                # drop anything unparsed
+    if len(figures) < 5:
+        raise AssertionError(f"no variance column to sort: {shown[:5]}")
+    if figures != sorted(figures):
+        raise AssertionError(f"worst variance should sort first: {figures[:6]}")
+
     page.click("th a:has-text('WBS')")
     page.wait_for_selector("text=Sec. 3.1 Marine Design >> visible=true", timeout=8000)
+    numbers = [t.strip() for t in page.locator(
+        "tbody tr td:nth-child(1)").all_inner_texts() if t.strip()]
+    if numbers[:3] != ["1.1", "1.2", "1.3"]:
+        raise AssertionError(f"WBS order is wrong: {numbers[:5]}")
     page.screenshot(path=str(SHOTS / "12-sorted.png"), full_page=True)
 
 

@@ -151,6 +151,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_impacts(conn)
         _ensure_snapshots(conn)
         _ensure_templates(conn)
+        _ensure_documents(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -269,6 +270,40 @@ def _ensure_attachments(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_meeting "
                  "ON meeting_attachments(meeting_id, sort_order)")
+
+
+def _ensure_documents(conn: sqlite3.Connection) -> None:
+    """Every document the app has handed out, as the bytes that were handed out.
+
+    A deck built on Tuesday is not the deck the same dates build today: the
+    project has moved. So "let me see the presentation Ola sent the client" can
+    only be answered by keeping Ola's copy, not by rebuilding one from the same
+    query string.
+
+    Kept in the database with everything else, so the nightly backup carries
+    them, and trimmed to the most recent few dozen per project so a year of
+    weekly reports does not quietly become the largest thing in the file.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS documents (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind        TEXT    NOT NULL DEFAULT '',
+            name        TEXT    NOT NULL DEFAULT '',
+            filename    TEXT    NOT NULL DEFAULT '',
+            mimetype    TEXT    NOT NULL DEFAULT '',
+            bytes       INTEGER NOT NULL DEFAULT 0,
+            content     BLOB    NOT NULL,
+            note        TEXT    NOT NULL DEFAULT '',
+            user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_name   TEXT    NOT NULL DEFAULT '',
+            made_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS documents_project "
+                 "ON documents (project_id, made_at DESC)")
 
 
 def _ensure_templates(conn: sqlite3.Connection) -> None:

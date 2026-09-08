@@ -106,6 +106,8 @@ def build_workbook(
          "Held back from every budget; resources are planned against the rest"),
         ("Hours per week", project["hours_per_week"],
          "One engineer's week — what turns planned hours into people"),
+        ("Comments reserve (%)", project["comments_reserve_pct"],
+         "Held on a workflow line for answering comments; released by a clean Code A"),
         ("Revision resets to", project["revision_reset_step"], "Workflow step key"),
         ("Status", project["status"], "active / on_hold / complete / archived"),
     ]
@@ -241,6 +243,7 @@ def read_workbook(data: bytes) -> dict[str, Any]:
             "hours per man-month": "hours_per_month", "count ntp day as elapsed": "elapsed_day_offset",
             "maximum revisions": "max_revisions", "rework days": "rework_days",
             "target margin (%)": "target_margin_pct", "hours per week": "hours_per_week",
+            "comments reserve (%)": "comments_reserve_pct",
             "revision resets to": "revision_reset_step", "status": "status",
         }
         for row in wb[SHEET_PROJECT].iter_rows(min_row=2, values_only=True):

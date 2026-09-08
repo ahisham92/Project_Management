@@ -406,23 +406,70 @@ curve this office works.
 
 **Hours become people** by dividing by **Hours per week** on Setup — one engineer's week, a
 setting rather than a constant, because a 40-hour week and a 45-hour week are different
-answers to "how many do I need". People are rounded up: three-quarters of a person is still a
-person you have to find. The unrounded figure is shown in brackets beside it.
+answers to "how many do I need". This is counted **trade by trade and then added up**, not
+worked out once from the week's total: three trades each wanting four tenths of a person is
+three people on the rota, because they are three different people from three different teams.
+
+**And the figure can be typed over.** Each cell starts where the arithmetic puts it. Set a
+week's Marine column to 2 and it saves as you type, with no reload — the total beside it moves
+with it, because the total is the sum of its trades. The **hours never move**: deciding to run
+a week with two people is a decision about who is available, not about what the work is worth,
+so what changes is what each of those two is carrying, which the cell says on hover. Clear the
+box to go back to the plan's own figure.
+
+### The comments reserve, and what finishing cleanly earns you
+
+The design workflow says a deliverable is 80% done when it is submitted and 100% when the Code
+A arrives, which reads as though the fortnight in between costs nothing. It does not: comments
+come back and somebody answers them. So **Comments reserve** on Setup — 15% to begin with — is
+held out of every workflow line's ceiling at the start, and only the rest is planned into the
+weeks. A line tracked as a plain percentage has no client review to answer, so it holds
+nothing.
+
+That reserve is settled when the client answers:
+
+- **Code A first time** — the line never needed it. The hours are **released**: a real saving,
+  earned by getting something out right first time.
+- **Code B or C** — the line did need it, and the reserve is what paid for the rework. Those
+  hours stay with the line that spent them.
+- **Finalised** — either way, the line is finished with. Nothing further is added to it and
+  nothing taken from it.
+
+Press **Redistribute the savings** and each trade's released hours go back into **that trade's
+own open deliverables**, in proportion to what each is already carrying. Never across trades:
+Marine finishing cleanly is Marine's slack, and handing it to Geotechnical would tell the team
+that did the careful work that it bought somebody else the room. The notes on the tab say
+which finished lines paid for it — so a bigger ceiling on next month's drawings can be traced
+back to the ones that went out right first time. Leave it off and the released hours simply
+read as a saving.
 
 What is on the tab:
 
 - **the ceiling** — the budget, the margin held back, and what is left to plan with;
+- **the reserve** — what is held for comments, what a clean Code A released, and what the
+  rework actually spent;
+- **savings from finishing cleanly** — which trade gained what, and which finished lines
+  earned it;
 - **planned hours against spent hours**, both cumulative, week by week, with the faint bars
   showing what each week itself wants and took. Booked running above planned is the early
   warning the CPI gives late. The same chart is on the **Dashboard**;
 - **engineers per week** — the plan in bodies, which is the one somebody builds a rota from;
-- **by trade** — budget, margin, ceiling, planned, booked, what is left, and the peak;
-- **week by week** — the rota itself: the hours, the people, and which trades they come from;
-- **ceiling per deliverable** — why a line is worth what it is worth.
+- **by trade** — budget, margin, ceiling, reserve, planned, booked, what is left, and the peak
+  and average headcount;
+- **week by week** — the rota itself, **a column per trade**: the hours it wants and the
+  engineers that is, each of them editable;
+- **ceiling per deliverable** — why a line is worth what it is worth, **a column per trade**,
+  with the reserve each line is holding, released or spent.
 
-Everything follows from the programme and two numbers on Setup, so changing the target margin
-or the working week moves every figure on the tab. Carmen can read the plan too — *"how many
-engineers do I need in the next four weeks?"* — and can set either number.
+**Every column on both tables sorts**, either way, including the trade columns — so "which
+week is Marine busiest" and "which lines is Geotechnical carrying" are one click each. The two
+tables sort independently.
+
+Everything follows from the programme and three numbers on Setup — the target margin, the
+comments reserve and the working week — so changing any of them moves every figure on the tab.
+Carmen can read the plan too, savings and all — *"how many engineers do I need in the next
+four weeks?"*, *"what did we save by finishing cleanly?"* — and can set any of the three, or
+turn redistribution on.
 
 ### Sorting
 
@@ -827,8 +874,8 @@ which is what goes into a monthly report or on a wall.
    your submissions actually run.
 6. Set each deliverable's **trade split** — it must total 100%.
 7. Report progress on the **Progress** tab and book hours at the foot of the **Finance** tab.
-8. Set the **target margin** and the **hours per engineer per week** on Setup, and read the
-   staffing plan those two numbers make on the **Resources** tab.
+8. Set the **target margin**, the **comments reserve** and the **hours per engineer per week**
+   on Setup, and read the staffing plan those three numbers make on the **Resources** tab.
 
 For a large scope, step 4 is far quicker in Excel: **Export to Excel**, fill in the
 Deliverables sheet, and **Import from Excel**.

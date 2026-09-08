@@ -1658,6 +1658,104 @@
     });
   })();
 
+  // --- staffing a week -----------------------------------------------------
+  //
+  // The number of engineers on a trade in a week is the one figure on the
+  // resources tab somebody sets rather than reads. It saves as it is typed —
+  // after a pause, so a three-key number is one save and not three — and the
+  // week's own total comes back with the answer, because the total is the sum
+  // of its trades and typing in one column moves it.
+  //
+  // The hours never change. Setting a week short is a decision about who is
+  // available, not about what the work is worth, so what moves is the load
+  // each of those engineers is carrying — which the box says on hover.
+
+  (function () {
+    var waiting = {};
+
+    function mark(box, state) {
+      ['saving', 'saved', 'trouble'].forEach(function (word) {
+        box.classList.toggle(word, word === state);
+      });
+      if (state === 'saved') {
+        window.setTimeout(function () { box.classList.remove('saved'); }, 1200);
+      }
+    }
+
+    function redraw(row, week) {
+      if (!row || !week) return;
+      var total = row.querySelector('[data-week-people]');
+      if (total) total.textContent = week.people;
+      var asked = row.querySelector('[data-week-wanted]');
+      if (asked) {
+        asked.textContent = 'of ' + week.wanted;
+        asked.hidden = !week.by_hand;
+      }
+      row.querySelectorAll('.heads').forEach(function (box) {
+        var cell = (week.trades || {})[box.dataset.trade];
+        if (!cell) return;
+        box.classList.toggle('by-hand', !!cell.by_hand);
+        box.dataset.wanted = cell.wanted;
+        box.title = cell.each_hours + ' h each — the plan asks for ' + cell.wanted;
+        // Only rewrite the value when it is not the box being typed in, or a
+        // number being edited would jump under the cursor.
+        if (document.activeElement !== box) box.value = cell.people;
+      });
+    }
+
+    function save(box) {
+      var row = box.closest('tr');
+      var body = new FormData();
+      body.append('week', box.dataset.week);
+      body.append('trade_id', box.dataset.trade);
+      body.append('engineers', box.value);
+      body.append('wanted', box.dataset.wanted || '');
+      mark(box, 'saving');
+
+      fetch(box.dataset.staff, {
+        method: 'POST', body: body,
+        headers: { Accept: 'application/json' }, credentials: 'same-origin',
+      }).then(function (r) { return r.json().then(function (data) { return [r.ok, data]; }); })
+        .then(function (answer) {
+          if (!answer[0] || !answer[1].ok) {
+            mark(box, 'trouble');
+            return;
+          }
+          mark(box, 'saved');
+          redraw(row, answer[1].week);
+          var peak = document.querySelector('[data-peak-people]');
+          if (peak) peak.textContent = answer[1].peak_people;
+          var mean = document.querySelector('[data-average-people]');
+          if (mean) mean.textContent = answer[1].average_people;
+          window.dispatchEvent(new Event('pm:saved'));
+        }).catch(function () { mark(box, 'trouble'); });
+    }
+
+    function later(box) {
+      var key = box.dataset.week + ':' + box.dataset.trade;
+      window.clearTimeout(waiting[key]);
+      waiting[key] = window.setTimeout(function () { save(box); }, 500);
+    }
+
+    document.addEventListener('input', function (event) {
+      if (event.target.classList && event.target.classList.contains('heads')) later(event.target);
+    });
+    // Leaving the box, or pressing Enter, saves at once rather than waiting out
+    // the pause — somebody who has moved on has finished with it.
+    document.addEventListener('change', function (event) {
+      if (!event.target.classList || !event.target.classList.contains('heads')) return;
+      var key = event.target.dataset.week + ':' + event.target.dataset.trade;
+      window.clearTimeout(waiting[key]);
+      save(event.target);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || !event.target.classList) return;
+      if (!event.target.classList.contains('heads')) return;
+      event.preventDefault();
+      event.target.blur();
+    });
+  })();
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

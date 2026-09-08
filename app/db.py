@@ -145,6 +145,11 @@ def init_db(path: Path | str | None = None) -> None:
             # and one engineer's week.
             ("projects", "target_margin_pct", "REAL NOT NULL DEFAULT 12"),
             ("projects", "hours_per_week", "REAL NOT NULL DEFAULT 40"),
+            # What is held back on a workflow line for answering comments, and
+            # whether the reserve a clean Code A releases is pushed back into
+            # that trade's open lines or simply left as a saving.
+            ("projects", "comments_reserve_pct", "REAL NOT NULL DEFAULT 15"),
+            ("projects", "redistribute_savings", "INTEGER NOT NULL DEFAULT 0"),
         ):
             _ensure_column(conn, table, column, definition)
 
@@ -156,6 +161,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_snapshots(conn)
         _ensure_templates(conn)
         _ensure_documents(conn)
+        _ensure_resource_weeks(conn)
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -362,6 +368,37 @@ def _ensure_snapshots(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS snapshots_project "
                  "ON schedule_snapshots (project_id, made_at DESC)")
+
+
+def _ensure_resource_weeks(conn: sqlite3.Connection) -> None:
+    """The headcounts somebody has set by hand, week by week and trade by trade.
+
+    The plan says what a week wants; a team leader knows who is actually
+    available. Only the number of people is kept — the hours that week is
+    allowed are worked out from the programme every time and are not somebody's
+    to type over, so a hand-set week shows what each of those engineers is
+    carrying rather than quietly shrinking the scope.
+
+    A row is only written when the figure differs from the plan's own, and
+    deleted when it goes back to it, so the table holds the decisions and
+    nothing else.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS resource_weeks (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            week       TEXT    NOT NULL,
+            trade_id   INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+            engineers  REAL    NOT NULL DEFAULT 0,
+            set_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+            user_id    INTEGER,
+            UNIQUE (project_id, week, trade_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS resource_weeks_project "
+                 "ON resource_weeks (project_id, week)")
 
 
 def _ensure_impacts(conn: sqlite3.Connection) -> None:

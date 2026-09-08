@@ -146,8 +146,12 @@ main { padding: 20px 0 48px; }
 .grid { display: grid; gap: 12px; }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 1000px) { .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .grid-4, .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1000px) {
+  .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-3 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) { .grid-4, .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); } }
 
 /* --- cards ---------------------------------------------------------------- */
 
@@ -553,6 +557,34 @@ input[type="checkbox"] { width: auto; }
 }
 .as-at-banner .small { color: var(--ink-2); }
 
+/* What each trade released by finishing a line cleanly, and where it went. */
+.savings { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.savings > li { border-left: 2px solid var(--good); padding-left: 12px; }
+
+/* The staffing grid: a column per trade, each one a number somebody can set.
+   The box is quiet until it is pointed at, because a table of forty framed
+   inputs reads as a form rather than as a plan. */
+.staffing .trade-col { min-width: 92px; }
+.heads {
+  width: 3.4em; margin-left: 6px; padding: 2px 4px; text-align: right;
+  font-size: 0.85rem; font-variant-numeric: tabular-nums;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: inherit; font-weight: 600;
+}
+.heads:hover { border-color: var(--border); }
+.heads:focus { border-color: var(--series-1); outline: none; background: var(--surface); }
+/* A figure somebody set by hand, so it does not read as arithmetic. */
+.heads.by-hand { color: var(--series-1); border-bottom: 2px solid var(--series-1); }
+.heads.saving { opacity: 0.5; }
+.heads.saved { background: var(--tint-good); }
+.heads.trouble { border-color: var(--critical); background: var(--tint-critical); }
+/* Spinners crowd a column of them; the keyboard still works. */
+.heads::-webkit-outer-spin-button, .heads::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+.heads { -moz-appearance: textfield; }
+@media print { .heads { border: 0; -webkit-appearance: none; appearance: none; } }
+
 /* The critical path, as a run you can read down: one line per activity, in
    the order the work happens, joined by a rule down the left. */
 .path { list-style: none; margin: 0; padding: 0; }
@@ -814,6 +846,7 @@ ul.list > li:first-child { border-top: none; }
 
   .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .tile { padding: 8px; break-inside: avoid; }
   .tile-value { font-size: 1.1rem; }
 

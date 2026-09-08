@@ -338,6 +338,8 @@ def resource_plan(project_id: int, weeks: int = 0, **_ignored) -> dict[str, Any]
         shown = every
     return {
         "target_margin_percent": round(made["target_pct"], 2),
+        "comments_reserve_percent": round(made["reserve_pct"], 2),
+        "redistributing_savings": made["redistributing"],
         "hours_per_engineer_per_week": made["hours_per_week"],
         "budget_hours": round(made["budget_hours"], 1),
         "margin_hours": round(made["margin_hours"], 1),
@@ -345,8 +347,20 @@ def resource_plan(project_id: int, weeks: int = 0, **_ignored) -> dict[str, Any]
         "planned_hours": round(made["planned_hours"], 1),
         "booked_hours": round(made["spent_hours"], 1),
         "ceiling_used_percent": round(made["used_pct"] * 100, 1),
-        "peak_engineers": round(made["peak_engineers"], 2),
+        "peak_engineers": made["peak_people"],
+        "average_engineers_per_week": round(made["average_people"], 1),
         "peak_week": made["peak_week"],
+        # The comments reserve: held while the client has it, released by a
+        # Code A first time, spent when it came back Code B or C.
+        "reserve_held_hours": round(made["held_hours"], 1),
+        "reserve_released_hours": round(made["released_hours"], 1),
+        "reserve_spent_hours": round(made["consumed_hours"], 1),
+        "savings_redistributed": [
+            {"trade": note["trade"], "hours": round(note["hours"], 1),
+             "over_open_deliverables": note["lines"],
+             "earned_by": [{"wbs": line["wbs"], "hours": round(line["hours"], 1)}
+                           for line in note["from"]]}
+            for note in made["notes"] if note["hours"] >= 0.5],
         "trades_budgeted_but_unplanned": made["unplanned"],
         "trades": [{"name": t["name"], "budget_hours": round(t["budget_hours"], 1),
                     "ceiling_hours": round(t["ceiling_hours"], 1),
@@ -357,11 +371,15 @@ def resource_plan(project_id: int, weeks: int = 0, **_ignored) -> dict[str, Any]
                    for t in made["trades"]],
         "weeks_shown": len(shown), "weeks_in_plan": len(every),
         "weeks": [{"week": w["week"], "hours": round(w["hours"], 1),
+                   # The sum of the trades below, not the hours divided once.
                    "engineers": w["people"],
-                   "engineers_exact": round(w["engineers"], 2),
+                   "set_by_hand": w["by_hand"],
+                   "engineers_the_plan_asks_for": w["wanted"],
                    "booked_hours": round(w["spent_hours"], 1),
                    "by_trade": [{"trade": r["trade"], "hours": round(r["hours"], 1),
-                                 "engineers": r["people"]}
+                                 "engineers": r["people"],
+                                 "set_by_hand": r["by_hand"],
+                                 "hours_each": round(r["each_hours"], 1)}
                                 for r in w["rows"] if r["hours"] > 0.05]}
                   for w in shown],
         "top_deliverables": [{"wbs": t["wbs"], "name": t["name"],
@@ -939,8 +957,10 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           "estimate at completion.", {}),
     _tool("resource_plan",
           "The resource plan: how many hours and how many engineers each week wants, per "
-          "trade, after the target margin is held back — and what has actually been booked "
-          "against it. Use this for “how many people do I need”, not budget_summary.",
+          "trade, after the target margin and the comments reserve are held back — and what "
+          "has actually been booked against it. Also says what the reserve released on the "
+          "lines that came back Code A first time, and where those savings went. Use this "
+          "for “how many people do I need”, not budget_summary.",
           {"weeks": dict(_NUMBER, description="How many weeks from today to return; "
                                               "omit for the whole plan")}),
 

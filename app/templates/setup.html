@@ -126,6 +126,14 @@
         <span class="field-hint">What turns a week's hours into a number of people on Resources.</span>
       </label>
       <label class="field">
+        <span class="field-label">Comments reserve (%)</span>
+        <input form="{{ F }}" type="number" name="comments_reserve_pct" min="0" max="90" step="0.5"
+               value="{{ project['comments_reserve_pct'] }}" {{ 'disabled' if not can_edit }}>
+        <span class="field-hint">Held on every workflow deliverable for answering comments.
+          A line that comes back Code A first time never needed it, and the hours are
+          released as a saving.</span>
+      </label>
+      <label class="field">
         <span class="field-label">Maximum revisions</span>
         <input form="{{ F }}" type="number" name="max_revisions" min="0" max="50" step="1"
                value="{{ project['max_revisions'] }}" {{ 'disabled' if not can_edit }}>

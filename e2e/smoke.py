@@ -106,6 +106,12 @@ def main() -> int:
         step("books hours and they reach budget control", _book_hours)
         step("resources plans the hours into weeks and people", _resources)
         step("a bigger target margin leaves less to plan with", _resources_margin)
+        step("a week's engineers are set by hand, live, without moving its hours",
+             _resources_staffing)
+        step("both resources tables sort on every column, trades included",
+             _resources_sorting)
+        step("a clean Code A releases its comments reserve, and it can be shared out",
+             _resources_reserve)
         step("summarized progress shows what moved, on the plan and in the minutes",
              _period)
         step("minutes: adds attendees, a meeting and its items", _minutes_capture)
@@ -1694,7 +1700,150 @@ def _resources(page) -> None:
     if " h" not in first:
         raise AssertionError(f"a week with no hours: {first!r}")
 
+    # A column per trade, on both tables, rather than a list crammed in a cell.
+    for card, table in (("Week by week", weeks),
+                        ("Ceiling per deliverable",
+                         page.locator(".card:has(h2:text-is('Ceiling per deliverable'))"))):
+        headings = table.locator("thead th").all_text_contents()
+        for trade in ("Marine", "Geotechnical", "Utilities"):
+            if not any(trade in head for head in headings):
+                raise AssertionError(f"{card} has no {trade} column: {headings}")
+
     page.screenshot(path=str(SHOTS / "35-resources.png"), full_page=True)
+
+
+def _resources_staffing(page) -> None:
+    """The one figure on the tab somebody sets rather than reads.
+
+    It saves as it is typed, the week's total follows it because the total is
+    the sum of its trades, and the hours the week is allowed do not move — that
+    last part is the whole point of letting somebody set it.
+    """
+    page.click("nav.tabs a:has-text('Resources')")
+    page.wait_for_selector("text=Resources planning >> visible=true", timeout=8000)
+    weeks = page.locator(".card:has(h2:text-is('Week by week'))")
+    if not weeks.locator("details[open]").count():
+        weeks.locator(".panel-summary").click()
+
+    row = page.locator("tr[data-week-row]").first
+    box = row.locator(".heads").first
+    box.scroll_into_view_if_needed()
+    hours_before = row.locator("td").nth(1).text_content().strip()
+    people_before = int(row.locator("[data-week-people]").inner_text())
+    was = int(box.input_value())
+
+    box.fill(str(was + 5))
+    page.wait_for_function(
+        "([row, want]) => row.querySelector('[data-week-people]').textContent.trim() === want",
+        arg=[row.element_handle(), str(people_before + 5)], timeout=8000)
+
+    if "by-hand" not in (box.get_attribute("class") or ""):
+        raise AssertionError("a hand-set figure should not read as arithmetic")
+    if row.locator("td").nth(1).text_content().strip() != hours_before:
+        raise AssertionError("setting the engineers must not move the hours")
+    if not row.locator("[data-week-wanted]").is_visible():
+        raise AssertionError("the figure the plan asked for should be shown beside it")
+
+    page.screenshot(path=str(SHOTS / "36-staffing.png"), full_page=True)
+
+    # Reload rather than trusting the page's own redraw: the point is that it
+    # was saved, not that the number changed on screen.
+    page.reload(wait_until="networkidle")
+    if not weeks.locator("details[open]").count():
+        weeks.locator(".panel-summary").click()
+    again = page.locator("tr[data-week-row]").first.locator(".heads").first
+    if int(again.input_value()) != was + 5:
+        raise AssertionError(f"not saved: {again.input_value()} rather than {was + 5}")
+
+    # Cleared, it goes back to what the plan asked for.
+    again.fill("")
+    page.wait_for_timeout(900)
+    page.reload(wait_until="networkidle")
+    if not weeks.locator("details[open]").count():
+        weeks.locator(".panel-summary").click()
+    back = page.locator("tr[data-week-row]").first.locator(".heads").first
+    if "by-hand" in (back.get_attribute("class") or ""):
+        raise AssertionError("clearing the box should hand the week back to the plan")
+
+
+def _resources_sorting(page) -> None:
+    """Both tables sort on every column, the trades included, and they sort
+    independently — ordering the weeks must not reorder the deliverables."""
+    page.goto(f"{BASE}/projects/1/resources", wait_until="networkidle")
+    lines = page.locator(".card:has(h2:text-is('Ceiling per deliverable'))")
+    if not lines.locator("details[open]").count():
+        lines.locator(".panel-summary").click()
+
+    def wbs_column() -> list:
+        return [cell.strip() for cell in
+                lines.locator("tbody tr td:first-child").all_text_contents()]
+
+    lines.locator("thead a.sort-link", has_text="WBS").first.click()
+    page.wait_for_selector("text=Ceiling per deliverable >> visible=true", timeout=8000)
+    if not lines.locator("details[open]").count():
+        lines.locator(".panel-summary").click()
+    climbing = wbs_column()
+
+    lines.locator("thead a.sort-link", has_text="WBS").first.click()
+    page.wait_for_selector("text=Ceiling per deliverable >> visible=true", timeout=8000)
+    if not lines.locator("details[open]").count():
+        lines.locator(".panel-summary").click()
+    falling = wbs_column()
+
+    if climbing != list(reversed(falling)):
+        raise AssertionError("WBS does not sort both ways")
+
+    # A trade's own column, on the weeks table, leaves the deliverables alone.
+    weeks = page.locator(".card:has(h2:text-is('Week by week'))")
+    weeks.locator("thead a.sort-link", has_text="Marine").first.click()
+    page.wait_for_selector("text=Week by week >> visible=true", timeout=8000)
+    if not lines.locator("details[open]").count():
+        lines.locator(".panel-summary").click()
+    if wbs_column() != falling:
+        raise AssertionError("sorting the weeks reordered the deliverables")
+
+
+def _resources_reserve(page) -> None:
+    """A deliverable that comes back Code A first time never needed its comments
+    reserve, and those hours are a saving that trade earned."""
+    page.goto(f"{BASE}/projects/1/resources", wait_until="networkidle")
+    _expect_all(page, ["Held for comments", "Released by a clean Code A",
+                       "Spent answering comments", "Savings from finishing cleanly"])
+
+    def released() -> str:
+        return page.locator(".tile:has-text('Released by a clean Code A') .tile-value"
+                            ).text_content().strip()
+
+    before = released()
+
+    # Take a line all the way to Code A on the Progress tab, without comments —
+    # the one thing that turns a held reserve into a saving.
+    page.goto(f"{BASE}/projects/1/tasks", wait_until="networkidle")
+    row = page.locator("tr", has_text="Review & consolidate available assessment").first
+    row.locator(".cell-open[data-cell]").first.click()
+    page.wait_for_selector("form.cell-form select[name=status_key]", timeout=8000)
+    page.select_option("form.cell-form select[name=status_key]", label="Code A received — 100%")
+    page.wait_for_timeout(1400)
+
+    page.goto(f"{BASE}/projects/1/resources", wait_until="networkidle")
+    if released() == before:
+        raise AssertionError(f"a clean Code A released nothing: still {before}")
+    # Named before the button is pressed as well as after: deciding whether to
+    # redistribute means seeing where the hours came from first.
+    body = page.text_content("body")
+    if "Code A first time, so the reserve was never needed" not in body:
+        raise AssertionError("the savings are not explained")
+    if "held as a saving" not in body:
+        raise AssertionError("a saving nobody has shared out should say so")
+
+    page.click("button:has-text('Redistribute the savings')")
+    page.wait_for_selector("text=Savings redistributed >> visible=true", timeout=8000)
+    body = page.text_content("body")
+    if "Stop redistributing" not in body:
+        raise AssertionError("redistribution did not stay on")
+    if "open deliverable" not in body:
+        raise AssertionError("the notes do not say where the savings went")
+    page.screenshot(path=str(SHOTS / "37-savings.png"), full_page=True)
 
 
 def _resources_margin(page) -> None:

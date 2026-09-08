@@ -145,20 +145,38 @@ TABS: tuple[dict[str, Any], ...] = (
             "week. Booked running above planned is the early warning the CPI gives late.",
             "Read <strong>engineers per week</strong>: the same plan in bodies. A few at the "
             "start of a deliverable, more as its submission comes up.",
-            "Open <strong>week by week</strong> for the rota itself: the hours each week wants, "
-            "the people that is, and which trades they come from.",
+            "Open <strong>week by week</strong> for the rota itself — a column per trade, with "
+            "the hours it wants and the engineers that is. <strong>Type over any of those "
+            "numbers</strong>: the hours a week is allowed never move, so what changes is what "
+            "each of those engineers is carrying. Clear the box to go back to the plan\u2019s "
+            "own figure.",
             "Open <strong>ceiling per deliverable</strong> to see why a line is worth what it is "
-            "worth — its weight in the project, times each trade's share of it.",
+            "worth — its weight in the project, times each trade's share of it, with a column "
+            "per trade. Every column on both tables sorts.",
+            "Watch the <strong>comments reserve</strong>: a share of every workflow line is held "
+            "back for answering comments. A line that comes back <strong>Code A first time "
+            "never needed it</strong> and the hours are released; one that came back Code B or "
+            "C spent it.",
+            "Press <strong>Redistribute the savings</strong> to put a trade's released hours "
+            "back into that trade's own open deliverables. The notes say which finished lines "
+            "paid for it.",
         ),
         "watch": (
             "Nothing after a submission earns hours: that stretch is the client reading it, not "
             "this office working.",
             "A trade with a budget but no share of any deliverable cannot be planned; the tab "
             "names it rather than quietly dropping its hours.",
-            "Engineers are rounded up, because three-quarters of a person is a person. The "
-            "bracketed figure beside them is the unrounded one.",
+            "A week's engineers are the sum of its trades, not its hours divided once — three "
+            "trades each wanting four tenths of a person is three people, because they are "
+            "three different people.",
+            "Savings never cross a trade. Marine finishing cleanly is Marine's slack; handing "
+            "it to Geotechnical would tell the team that did the careful work that it bought "
+            "somebody else the room.",
+            "A finalised deliverable is finished with: nothing is redistributed into it, and "
+            "its reserve is settled either way.",
         ),
-        "terms": ("target margin", "ceiling hours", "planned hours", "booked hours",
+        "terms": ("target margin", "comments reserve", "released hours", "redistribution",
+                  "ceiling hours", "planned hours", "booked hours",
                   "engineers per week", "peak week", "hours per week"),
     },
     {
@@ -671,13 +689,32 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "the working days, so the profile rises without asking for sixty percent of the work in "
      "the last five days."),
     ("Engineers per week", "money",
-     "A week's planned hours as a number of people, rounded up.",
-     "engineers = the week's planned hours ÷ the hours one engineer works in a week, set on "
-     "Setup."),
+     "A week's planned hours as a number of people. Counted trade by trade and added up, not "
+     "worked out once from the week's total: three trades each wanting four tenths of a person "
+     "is three people, because they are three different people. The figure starts where the "
+     "arithmetic puts it and can be typed over — the hours the week is allowed do not move.",
+     "A trade's engineers = its hours that week ÷ the hours one engineer works in a week, "
+     "rounded up. The week's = the sum of its trades'."),
     ("Hours per week", "money",
      "The hours one engineer works in a week, set on Setup. A billing month and a rota week "
      "are set by different people for different reasons, so this is its own number rather than "
      "the man-month divided by four.", ""),
+    ("Comments reserve", "money",
+     "The share of a workflow deliverable's ceiling held back at the start for answering the "
+     "client's comments. Set on Setup; 15% to begin with. Only workflow lines carry one — a "
+     "transmittal has no review to answer.",
+     "A line's reserve = its ceiling hours × the comments reserve. Only the rest is spread "
+     "over the weeks."),
+    ("Released hours", "money",
+     "A reserve the work never needed, because the deliverable came back Code A first time. "
+     "This is the saving, and the only thing redistribution has to give away. A line that came "
+     "back Code B or C spent its reserve instead: answering comments is what it was for.", ""),
+    ("Redistribution", "money",
+     "Putting a trade's released hours back into that trade's own open deliverables, in "
+     "proportion to what each is already carrying. Never across trades, and never into a line "
+     "already finalised. The notes on the Resources tab say which finished lines paid for it.",
+     "Each open line gains released hours × (its planned hours ÷ that trade's open planned "
+     "hours)."),
     ("Peak week", "money",
      "The week the plan wants the most people. What the resourcing conversation is actually "
      "about, because it is the week the office has to find them for.", ""),

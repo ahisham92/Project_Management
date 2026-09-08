@@ -909,7 +909,7 @@ def apply_setup_workbook(project: Mapping[str, Any],
                        duration_months = ?, days_per_month = ?, hours_per_month = ?,
                        elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
                        revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
-                       status = ?, updated_at = datetime('now')
+                       comments_reserve_pct = ?, status = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (
@@ -928,6 +928,8 @@ def apply_setup_workbook(project: Mapping[str, Any],
                                                  project["target_margin_pct"]))),
                     max(1.0, _as_float(settings.get("hours_per_week"),
                                        project["hours_per_week"])),
+                    min(90.0, max(0.0, _as_float(settings.get("comments_reserve_pct"),
+                                                 project["comments_reserve_pct"]))),
                     str(settings.get("status") or project["status"]).strip(),
                     project_id,
                 ),
@@ -1100,6 +1102,50 @@ def booked_by_week(project_id: int, first_day: int = 0) -> dict[tuple[str, int],
     return out
 
 
+def staffing_by_hand(project_id: int) -> dict[tuple[str, int], float]:
+    """The headcounts somebody has typed over, keyed (week, trade id)."""
+    return {(str(row["week"]), int(row["trade_id"])): float(row["engineers"])
+            for row in query(
+                "SELECT week, trade_id, engineers FROM resource_weeks WHERE project_id = ?",
+                (project_id,))}
+
+
+def set_staffing(project_id: int, week: str, trade_id: int, engineers: Any,
+                 wanted: int | None = None, user: Mapping[str, Any] | None = None) -> float | None:
+    """Set — or clear — the engineers on one week of one trade.
+
+    Back at what the plan itself asked for, or blank, and the row is deleted
+    rather than stored: the table is meant to hold the decisions somebody made,
+    and a row that agrees with the arithmetic is not one of them.
+    """
+    if engineers in (None, ""):
+        execute("DELETE FROM resource_weeks WHERE project_id = ? AND week = ? AND trade_id = ?",
+                (project_id, week, trade_id))
+        return None
+
+    try:
+        people = max(0, min(999, int(round(float(engineers)))))
+    except (TypeError, ValueError):
+        raise ValueError("Give the number of engineers as a whole number")
+
+    if wanted is not None and people == int(wanted):
+        execute("DELETE FROM resource_weeks WHERE project_id = ? AND week = ? AND trade_id = ?",
+                (project_id, week, trade_id))
+        return None
+
+    execute(
+        """
+        INSERT INTO resource_weeks (project_id, week, trade_id, engineers, user_id)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (project_id, week, trade_id)
+        DO UPDATE SET engineers = excluded.engineers, user_id = excluded.user_id,
+                      set_at = datetime('now')
+        """,
+        (project_id, week, trade_id, people, as_dict(user).get("id") if user else None),
+    )
+    return float(people)
+
+
 def resource_plan(project: Mapping[str, Any],
                   snapshot: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The whole resource plan for a project: ceilings, weeks and people.
@@ -1115,13 +1161,14 @@ def resource_plan(project: Mapping[str, Any],
     snapshot = snapshot or project_snapshot(project)
     diaries = calendars_for(project)
     opens = first_working_day(diaries[None].week)
+    trades = load_trades(project_id)
 
     made = resources.plan(
-        project, snapshot["tasks"], load_trades(project_id), load_steps(project_id),
+        project, snapshot["tasks"], trades, load_steps(project_id),
         diaries, booked_by_week(project_id, opens), opens,
+        staffing_by_hand(project_id),
     )
-    made["tasks"] = resources.task_rows(made, snapshot["tasks"],
-                                        load_trades(project_id))
+    made["tasks"] = resources.task_rows(made, snapshot["tasks"], trades)
     return made
 
 

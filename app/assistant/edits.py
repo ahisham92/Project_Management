@@ -253,6 +253,8 @@ FIELDS: dict[str, tuple[str, str]] = {
     # Resources planning: what is held back, and one engineer's week.
     "target_margin_pct": ("target_margin_pct", "share"),
     "hours_per_week": ("hours_per_week", "positive"),
+    "comments_reserve_pct": ("comments_reserve_pct", "share"),
+    "redistribute_savings": ("redistribute_savings", "switch"),
     "schedule_mode": ("schedule_mode", "mode"),
     "currency": ("currency", "text"),
 }
@@ -280,7 +282,12 @@ def set_project_settings(project_id: int, **asked) -> dict[str, Any]:
             said.append(f"{given.replace('_', ' ')} {fields[column]:g}")
         elif kind == "share":
             fields[column] = _number(value, given.replace("_", " "), low=0, high=95)
-            said.append(f"target margin {fields[column]:g}%")
+            said.append(f"{given.replace('_pct', '').replace('_', ' ')} {fields[column]:g}%")
+        elif kind == "switch":
+            fields[column] = 1 if str(value).strip().lower() in (
+                "1", "true", "on", "yes", "y") else 0
+            said.append("redistributing savings" if fields[column]
+                        else "savings left where they were earned")
         elif kind == "count":
             fields[column] = int(_number(value, given.replace("_", " "), low=0, high=99))
             said.append(f"{given.replace('_', ' ')} {fields[column]}")
@@ -950,6 +957,12 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "target_margin_pct": dict(_NUMBER, description="The margin held back from every "
                                                           "trade's budget, 0 to 95"),
            "hours_per_week": dict(_NUMBER, description="Hours one engineer works in a week"),
+           "comments_reserve_pct": dict(_NUMBER, description="What is held on a workflow "
+                                                             "deliverable for answering "
+                                                             "comments, 0 to 90"),
+           "redistribute_savings": {"type": "boolean",
+                                    "description": "Whether hours released by a clean Code A "
+                                                   "go back into that trade's open lines"},
            "schedule_mode": {"type": "string", "enum": ["duration", "dates"]},
            "currency": _TEXT}),
     _tool("set_trade",

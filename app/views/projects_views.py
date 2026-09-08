@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+from datetime import date as _date
+from typing import Any, Mapping
 
 from flask import (
     Blueprint, abort, current_app, flash, g, redirect, render_template, request, url_for,
@@ -28,9 +30,10 @@ from ..service import (
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
     apply_setup_workbook, load_impacts, load_snapshots, load_template,
-    resource_plan, restore_schedule, set_allocations,
+    resource_plan, restore_schedule, set_allocations, set_staffing,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
+from .. import resources as rs
 from ..resources import curve as resource_curve
 from ..minutes_doc import TEMPLATE_FIELDS
 from .handing_out import EXCEL, handed_out
@@ -927,14 +930,109 @@ def resources(project_id: int):
     data_date, horizon = _params()
     snapshot = project_snapshot(project, data_date, horizon)
     plan = resource_plan(project, snapshot)
+
+    # Two tables, each sorted on its own column, so ordering the weeks by the
+    # Marine column does not silently reorder the deliverables below it.
+    week_columns = rs.sortable(rs.WEEK_COLUMNS, plan["trade_order"])
+    task_columns = rs.sortable(rs.TASK_COLUMNS, plan["trade_order"])
+    week_sort, week_dir = rs.order_for(request.args.get("weeks"),
+                                       request.args.get("weeks_dir"), week_columns, "week")
+    task_sort, task_dir = rs.order_for(request.args.get("lines"),
+                                       request.args.get("lines_dir"), task_columns, "hours")
+
     return render_template(
         "resources.html",
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         plan=plan,
+        weeks=rs.sort_weeks(plan["weeks"], week_sort, week_dir),
+        lines=rs.sort_tasks(plan["tasks"], task_sort, task_dir),
+        week_columns=week_columns, task_columns=task_columns,
+        week_sort=week_sort, week_dir=week_dir,
+        task_sort=task_sort, task_dir=task_dir,
         hours_curve=charts.hours_curve(resource_curve(plan)),
         week_shape=charts.week_shape(plan["weeks"], plan["hours_per_week"]),
-        can_edit=_can_edit(role),
+        can_edit=_can_report(role),
     )
+
+
+@bp.post("/resources/staffing")
+@login_required
+def set_week_staffing(project_id: int):
+    """How many engineers one trade has on one week.
+
+    The hours that week is allowed do not move: the plan says what the work is
+    worth and that is not somebody's to type over. What a hand-set figure
+    changes is what each of those engineers is carrying, which is the number a
+    team leader is actually deciding about.
+    """
+    _project, role = load_project(project_id, "member")
+    week = (request.form.get("week") or "").strip()[:10]
+    trade_id = _to_int(request.form.get("trade_id"))
+    # The week is a key, not a label: anything but a real date would store a row
+    # no plan could ever read back.
+    try:
+        _date.fromisoformat(week)
+    except ValueError:
+        abort(400)
+    if not trade_id:
+        abort(400)
+    if not query_one("SELECT 1 FROM trades WHERE id = ? AND project_id = ?",
+                     (trade_id, project_id)):
+        abort(404)
+
+    try:
+        set_staffing(project_id, week, trade_id, request.form.get("engineers"),
+                     _to_int(request.form.get("wanted")), g.user)
+    except ValueError as exc:
+        if _wants_json():
+            return {"ok": False, "trouble": str(exc)}, 400
+        flash(str(exc), "error")
+        return _back("projects.resources", project_id)
+
+    if not _wants_json():
+        return _back("projects.resources", project_id)
+
+    # The whole week comes back rather than the one cell: the row's total is the
+    # sum of its trades, so a change in one column moves the total beside it.
+    project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    plan = resource_plan(project)
+    row = next((w for w in plan["weeks"] if w["week"] == week), None)
+    return {
+        "ok": True,
+        "week": _week_answer(row) if row else None,
+        "peak_people": plan["peak_people"],
+        "average_people": round(plan["average_people"], 1),
+    }
+
+
+def _week_answer(row: Mapping[str, Any]) -> dict:
+    """One week, in the shape the page redraws a row from."""
+    return {
+        "week": row["week"], "people": row["people"], "wanted": row["wanted"],
+        "by_hand": row["by_hand"],
+        "trades": {str(t["trade_id"]): {"people": t["people"], "wanted": t["wanted"],
+                                        "by_hand": t["by_hand"],
+                                        "each_hours": round(t["each_hours"])}
+                   for t in row["rows"]},
+    }
+
+
+@bp.post("/resources/redistribute")
+@login_required
+def redistribute_savings(project_id: int):
+    """Whether a clean Code A's released reserve goes back into the open lines.
+
+    Off, it reads as a saving and stays one. On, it is shared over the same
+    trade's remaining work — never another trade's, because the team that
+    finished cleanly is the team that earned the room.
+    """
+    _project, role = load_project(project_id, "manager")
+    on = 1 if (request.form.get("on") or "").strip() in ("1", "true", "on", "yes") else 0
+    execute("UPDATE projects SET redistribute_savings = ?, updated_at = datetime('now') "
+            "WHERE id = ?", (on, project_id))
+    flash("Savings redistributed over each trade's open deliverables" if on
+          else "Savings left where they were earned", "success")
+    return _back("projects.resources", project_id)
 
 
 # --- summarized progress ---------------------------------------------------
@@ -1264,7 +1362,7 @@ def save_settings(project_id: int):
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
                    revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
-                   status = ?, updated_at = datetime('now')
+                   comments_reserve_pct = ?, status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1284,6 +1382,8 @@ def save_settings(project_id: int):
                                              project["target_margin_pct"]))),
                 max(1.0, _to_float(request.form.get("hours_per_week"),
                                    project["hours_per_week"])),
+                min(90.0, max(0.0, _to_float(request.form.get("comments_reserve_pct"),
+                                             project["comments_reserve_pct"]))),
                 request.form.get("status") or "active", project_id,
             ),
         )
@@ -1678,7 +1778,7 @@ def save_all(project_id: int):
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
                    revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
-                   status = ?, updated_at = datetime('now')
+                   comments_reserve_pct = ?, status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1694,6 +1794,8 @@ def save_all(project_id: int):
                 min(95.0, max(0.0, _to_float(form.get("target_margin_pct"),
                                              project["target_margin_pct"]))),
                 max(1.0, _to_float(form.get("hours_per_week"), project["hours_per_week"])),
+                min(90.0, max(0.0, _to_float(form.get("comments_reserve_pct"),
+                                             project["comments_reserve_pct"]))),
                 form.get("status") or "active", project_id,
             ),
         )

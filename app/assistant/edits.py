@@ -250,6 +250,9 @@ FIELDS: dict[str, tuple[str, str]] = {
     "hours_per_month": ("hours_per_month", "positive"),
     "max_revisions": ("max_revisions", "count"),
     "rework_days": ("rework_days", "positive"),
+    # Resources planning: what is held back, and one engineer's week.
+    "target_margin_pct": ("target_margin_pct", "share"),
+    "hours_per_week": ("hours_per_week", "positive"),
     "schedule_mode": ("schedule_mode", "mode"),
     "currency": ("currency", "text"),
 }
@@ -275,6 +278,9 @@ def set_project_settings(project_id: int, **asked) -> dict[str, Any]:
         elif kind == "positive":
             fields[column] = _number(value, given.replace("_", " "), low=0.0001)
             said.append(f"{given.replace('_', ' ')} {fields[column]:g}")
+        elif kind == "share":
+            fields[column] = _number(value, given.replace("_", " "), low=0, high=95)
+            said.append(f"target margin {fields[column]:g}%")
         elif kind == "count":
             fields[column] = int(_number(value, given.replace("_", " "), low=0, high=99))
             said.append(f"{given.replace('_', ' ')} {fields[column]}")
@@ -941,6 +947,9 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "ntp_date": {"type": "string", "description": "Notice to proceed, dd/mm/yyyy"},
            "duration_months": _NUMBER, "days_per_month": _NUMBER, "hours_per_month": _NUMBER,
            "max_revisions": _NUMBER, "rework_days": _NUMBER,
+           "target_margin_pct": dict(_NUMBER, description="The margin held back from every "
+                                                          "trade's budget, 0 to 95"),
+           "hours_per_week": dict(_NUMBER, description="Hours one engineer works in a week"),
            "schedule_mode": {"type": "string", "enum": ["duration", "dates"]},
            "currency": _TEXT}),
     _tool("set_trade",

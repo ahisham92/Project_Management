@@ -130,6 +130,38 @@ TABS: tuple[dict[str, Any], ...] = (
                   "man-month"),
     },
     {
+        "key": "resources",
+        "name": "Resources",
+        "endpoints": ("projects.resources",),
+        "what": "How many engineers, on what, in which week — the budget turned into a rota, "
+                "and the hours booked read against it.",
+        "start_here": "Set the target margin and the working week on Setup; everything here "
+                      "follows from those two numbers and the programme.",
+        "steps": (
+            "Read the <strong>ceiling</strong>: the budget less the target margin. A margin of "
+            "12% means the plan is drawn against 88% of the budget, because planning to the "
+            "whole of it is planning to make nothing.",
+            "Read <strong>planned hours against spent hours</strong> — both cumulative, week by "
+            "week. Booked running above planned is the early warning the CPI gives late.",
+            "Read <strong>engineers per week</strong>: the same plan in bodies. A few at the "
+            "start of a deliverable, more as its submission comes up.",
+            "Open <strong>week by week</strong> for the rota itself: the hours each week wants, "
+            "the people that is, and which trades they come from.",
+            "Open <strong>ceiling per deliverable</strong> to see why a line is worth what it is "
+            "worth — its weight in the project, times each trade's share of it.",
+        ),
+        "watch": (
+            "Nothing after a submission earns hours: that stretch is the client reading it, not "
+            "this office working.",
+            "A trade with a budget but no share of any deliverable cannot be planned; the tab "
+            "names it rather than quietly dropping its hours.",
+            "Engineers are rounded up, because three-quarters of a person is a person. The "
+            "bracketed figure beside them is the unrounded one.",
+        ),
+        "terms": ("target margin", "ceiling hours", "planned hours", "booked hours",
+                  "engineers per week", "peak week", "hours per week"),
+    },
+    {
         "key": "period",
         "name": "Summarized Progress",
         "endpoints": ("projects.period",),
@@ -623,6 +655,32 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "Setup. A deliverable is worked by whichever offices its trades belong to, in the same "
      "proportions, so a line split 60/40 between a Beirut trade and a Cairo one counts as both.",
      "An office's progress = the earned progress of its trades ÷ the scope weight they carry."),
+
+    ("Target margin", "money",
+     "The share of every trade's budget held back rather than planned against. Set on Setup; "
+     "12% means the resource plan is drawn to 88% of the budget.", ""),
+    ("Ceiling hours", "money",
+     "What a trade may actually be planned to spend, and what each deliverable may take of it.",
+     "A trade's ceiling = its budget hours × (1 − the target margin). A deliverable's share of "
+     "that ceiling = the deliverable's weight × the trade's share of it, against the same for "
+     "every other deliverable the trade carries."),
+    ("Planned hours", "money",
+     "The ceiling spread over the weeks the work actually runs. Hours rise towards each "
+     "submission rather than sitting flat, and nothing after the submission earns any.",
+     "Part of each week's share follows the workflow's value curve and the rest is flat across "
+     "the working days, so the profile rises without asking for sixty percent of the work in "
+     "the last five days."),
+    ("Engineers per week", "money",
+     "A week's planned hours as a number of people, rounded up.",
+     "engineers = the week's planned hours ÷ the hours one engineer works in a week, set on "
+     "Setup."),
+    ("Hours per week", "money",
+     "The hours one engineer works in a week, set on Setup. A billing month and a rota week "
+     "are set by different people for different reasons, so this is its own number rather than "
+     "the man-month divided by four.", ""),
+    ("Peak week", "money",
+     "The week the plan wants the most people. What the resourcing conversation is actually "
+     "about, because it is the week the office has to find them for.", ""),
 
     ("Squeeze", "programme",
      "Fitting a run of deliverables — from one line to another along the dependencies — "

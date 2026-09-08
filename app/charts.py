@@ -203,6 +203,156 @@ def s_curve(points: Sequence[Mapping[str, Any]], data_date: str) -> Markup:
     return _chart("".join(parts), _legend([("Planned", PLANNED), ("Earned", EARNED)]), w, h)
 
 
+# --- the hours: planned against booked --------------------------------------
+
+def hours_curve(weeks: Sequence[Mapping[str, Any]]) -> Markup:
+    """The resource plan against the timesheet, week by week.
+
+    The bars are what each week wants and what it actually took; the two lines
+    are the same figures added up. A week that looks fine on its own and a
+    project that is four hundred hours over are the same fact seen at two
+    distances, so both are on one chart.
+    """
+    points = [p for p in weeks if p.get("date")]
+    if len(points) < 2:
+        return _empty("Not enough of a programme to plan resources against yet.")
+
+    w, h = 800, 300
+    left, right, top, bottom = 60, 16, 16, 40
+    plot_w, plot_h = w - left - right, h - top - bottom
+
+    n = len(points)
+    top_hours = max(
+        max((p["planned"] for p in points), default=0.0),
+        max((p["spent"] for p in points), default=0.0),
+    ) or 1.0
+    top_week = max(
+        max((p["planned_week"] for p in points), default=0.0),
+        max((p["spent_week"] for p in points), default=0.0),
+    ) or 1.0
+
+    x_of = lambda i: left + plot_w * i / (n - 1)              # noqa: E731
+    y_of = lambda v: top + plot_h * (1 - min(1.0, v / top_hours))   # noqa: E731
+
+    parts: list[str] = []
+    for frac in (0, 0.25, 0.5, 0.75, 1.0):
+        y = top + plot_h * (1 - frac)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{w - right}" y2="{y:.1f}" '
+                     f'stroke="{GRID}" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="tick">'
+                     f'{_fmt_hours(top_hours * frac)}</text>')
+
+    # The week's own hours, behind the cumulative lines: what it wants, and
+    # what it took, side by side so a heavy week is visible as a week.
+    band = plot_w / n
+    width = max(2.0, band * 0.34)
+    for index, point in enumerate(points):
+        middle = x_of(index)
+        for value, colour, offset in ((point["planned_week"], PLANNED, -width * 0.55),
+                                      (point["spent_week"], EARNED, width * 0.55)):
+            if value <= 0:
+                continue
+            height = plot_h * min(1.0, value / top_week) * 0.62
+            parts.append(
+                f'<rect x="{middle + offset - width / 2:.1f}" '
+                f'y="{top + plot_h - height:.1f}" width="{width:.1f}" '
+                f'height="{height:.1f}" fill="{colour}" opacity="0.22" rx="1"/>')
+
+    stride = max(1, (n - 1) // 5)
+    for index in range(0, n, stride):
+        anchor_at = "start" if index == 0 else ("end" if index >= n - stride else "middle")
+        parts.append(
+            f'<text x="{x_of(index):.1f}" y="{h - bottom + 18:.0f}" text-anchor="{anchor_at}" '
+            f'class="tick">{escape(_axis_label(points[index]["date"], True))}</text>')
+    parts.append(f'<line x1="{left}" y1="{top + plot_h:.1f}" x2="{w - right}" '
+                 f'y2="{top + plot_h:.1f}" stroke="{AXIS}" stroke-width="1"/>')
+
+    def line(key: str, colour: str, upto: int | None = None) -> str:
+        kept = points[:upto] if upto is not None else points
+        coords = [f"{x_of(i):.1f},{y_of(p[key]):.1f}" for i, p in enumerate(kept)]
+        if len(coords) < 2:
+            return ""
+        return (f'<polyline points="{" ".join(coords)}" fill="none" stroke="{colour}" '
+                f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>')
+
+    # Booked hours stop where the booking stops rather than running flat along
+    # the bottom of the rest of the programme, which would read as "we spent
+    # nothing for six months".
+    worked = [i for i, p in enumerate(points) if p["spent_week"] > 0]
+    parts.append(line("planned", PLANNED))
+    parts.append(line("spent", EARNED, (worked[-1] + 1) if worked else 0))
+
+    for index, point in enumerate(points):
+        rows = [{"label": "Planned to date", "color": PLANNED,
+                 "value": _fmt_hours(point["planned"])},
+                {"label": "This week", "color": PLANNED,
+                 "value": _fmt_hours(point["planned_week"])}]
+        if point["spent"] > 0:
+            rows.append({"label": "Booked to date", "color": EARNED,
+                         "value": _fmt_hours(point["spent"])})
+        parts.append(
+            f'<rect class="hit" x="{x_of(index) - band / 2:.1f}" y="{top}" '
+            f'width="{band:.1f}" height="{plot_h}" fill="transparent" '
+            f'data-x="{x_of(index):.1f}" '
+            f'data-tip="{_tip("Week of " + _short_date(point["date"]), rows)}"/>')
+
+    parts.append(f'<line class="crosshair" x1="0" y1="{top}" x2="0" y2="{top + plot_h:.1f}" '
+                 f'stroke="{AXIS}" stroke-width="1" visibility="hidden"/>')
+
+    return _chart("".join(parts),
+                  _legend([("Planned hours", PLANNED), ("Booked hours", EARNED)]), w, h)
+
+
+def week_shape(weeks: Sequence[Mapping[str, Any]], per_week: float) -> Markup:
+    """How many engineers each week wants — the staffing curve on its own.
+
+    Hours are the currency and people are the decision, so the same plan is
+    drawn twice: once in hours against what was booked, and once in bodies,
+    which is the one somebody acts on when they build a rota.
+    """
+    points = list(weeks)
+    if not points:
+        return _empty("Nothing to staff yet.")
+
+    w, h = 800, 220
+    left, right, top, bottom = 44, 16, 16, 40
+    plot_w, plot_h = w - left - right, h - top - bottom
+    tallest = max((p["engineers"] for p in points), default=0.0) or 1.0
+
+    band = plot_w / len(points)
+    width = max(2.0, band * 0.62)
+    parts: list[str] = []
+    for step in range(0, 5):
+        y = top + plot_h * (1 - step / 4)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{w - right}" y2="{y:.1f}" '
+                     f'stroke="{GRID}" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" '
+                     f'class="tick">{tallest * step / 4:.0f}</text>')
+
+    for index, point in enumerate(points):
+        height = plot_h * min(1.0, point["engineers"] / tallest)
+        x = left + band * index + (band - width) / 2
+        tip = _tip("Week of " + _short_date(point["week"]),
+                   [{"label": "Engineers", "color": PLANNED,
+                     "value": f"{point['people']:g}"},
+                    {"label": "Hours", "color": PLANNED,
+                     "value": _fmt_hours(point["hours"])}])
+        parts.append(
+            f'<rect class="mark" x="{x:.1f}" y="{top + plot_h - height:.1f}" '
+            f'width="{width:.1f}" height="{max(1.0, height):.1f}" fill="{PLANNED}" rx="2" '
+            f'data-tip="{tip}"/>')
+
+    stride = max(1, len(points) // 6)
+    for index in range(0, len(points), stride):
+        parts.append(
+            f'<text x="{left + band * index + band / 2:.1f}" y="{h - bottom + 18:.0f}" '
+            f'text-anchor="middle" class="tick">'
+            f'{escape(_axis_label(points[index]["week"], True))}</text>')
+    parts.append(f'<line x1="{left}" y1="{top + plot_h:.1f}" x2="{w - right}" '
+                 f'y2="{top + plot_h:.1f}" stroke="{AXIS}" stroke-width="1"/>')
+    return _chart("".join(parts), "", w, h)
+
+
 # --- grouped bars: planned vs earned per trade ------------------------------
 
 def trade_progress(trades: Sequence[Mapping[str, Any]]) -> Markup:

@@ -367,6 +367,63 @@ A project has a **maximum revisions** setting (default 10). A deliverable that r
 flagged for escalation on the schedule and cannot be pushed further without raising the
 limit — so a line stuck at Rev 10 is visible rather than quietly cycling.
 
+### Resources planning: how many engineers, in which week
+
+A budget in hours says what a trade may spend. It does not say *when*, and "when" is the only
+part anybody can act on — a team leader deciding on a Thursday whether to put two people or
+five on the marine drawings next week is not helped by a number for the whole project. The
+**Resources** tab turns the budget into a week-by-week plan, in four steps.
+
+**A target margin comes off the top.** Set **Target margin** to 12% on Setup and every trade
+is planned against 88% of its budget. The gap is what the project is trying to earn, and
+planning to the whole budget is planning to make nothing.
+
+**Each trade's ceiling is split across the deliverables it carries** — in proportion to how
+much of the project each one is and how much of it that trade holds:
+
+    a deliverable's share = its weight × the trade's share of it
+
+so a line that is 6% of the project and 60% yours is worth twice one that is 6% and 30%. A
+trade allocated to nothing keeps its hours rather than having them spread over lines it does
+not work on, and the tab names it rather than quietly dropping them.
+
+**The hours rise towards the submission.** This is the whole difference between a plan
+somebody can staff and a flat average. A deliverable on the design workflow earns 10% at the
+start, 40% by the IDC, 60% when comments are addressed, 80% at submission — bigger jumps over
+shorter stretches as the issue date approaches, which is the shape of the work: two people
+scoping in week one, six drawing in the fortnight before it goes out.
+
+But value earned is not effort spent, and a profile that follows the percentages alone puts
+sixty per cent of the hours into the last five days, which no team has ever worked. So the
+profile sits between the two: a little over half of it follows the value curve and the rest is
+flat across the working days. It rises, by two or three times from the first stretch to the
+last, without asking for the impossible. A line tracked as a plain percentage — a meeting, a
+milestone, a transmittal — has no steps, so it comes out flat, which is what actually happens.
+
+**Nothing after the submission earns hours.** The last 20% of a design workflow is the client
+reading it. That is their fortnight, not ours, so the effort is spread over the part of the
+curve this office works.
+
+**Hours become people** by dividing by **Hours per week** on Setup — one engineer's week, a
+setting rather than a constant, because a 40-hour week and a 45-hour week are different
+answers to "how many do I need". People are rounded up: three-quarters of a person is still a
+person you have to find. The unrounded figure is shown in brackets beside it.
+
+What is on the tab:
+
+- **the ceiling** — the budget, the margin held back, and what is left to plan with;
+- **planned hours against spent hours**, both cumulative, week by week, with the faint bars
+  showing what each week itself wants and took. Booked running above planned is the early
+  warning the CPI gives late. The same chart is on the **Dashboard**;
+- **engineers per week** — the plan in bodies, which is the one somebody builds a rota from;
+- **by trade** — budget, margin, ceiling, planned, booked, what is left, and the peak;
+- **week by week** — the rota itself: the hours, the people, and which trades they come from;
+- **ceiling per deliverable** — why a line is worth what it is worth.
+
+Everything follows from the programme and two numbers on Setup, so changing the target margin
+or the working week moves every figure on the tab. Carmen can read the plan too — *"how many
+engineers do I need in the next four weeks?"* — and can set either number.
+
 ### Sorting
 
 The progress and schedule tables sort on any column — WBS, deliverable, section, weight,
@@ -739,7 +796,8 @@ in January, and the register should say so.
 
 ### Printing and PDF for management
 
-**Progress**, **Schedule**, **Budget**, **Period** and **Minutes** each carry a **Print / PDF**
+**Progress**, **Schedule**, **Finance**, **Resources**, **Summarized Progress** and
+**Minutes** each carry a **Print / PDF**
 button. It
 opens your browser's print dialog, where "Save as PDF" is a destination on every current
 browser — so there is no PDF library to install and nothing to keep up to date.
@@ -769,6 +827,8 @@ which is what goes into a monthly report or on a wall.
    your submissions actually run.
 6. Set each deliverable's **trade split** — it must total 100%.
 7. Report progress on the **Progress** tab and book hours at the foot of the **Finance** tab.
+8. Set the **target margin** and the **hours per engineer per week** on Setup, and read the
+   staffing plan those two numbers make on the **Resources** tab.
 
 For a large scope, step 4 is far quicker in Excel: **Export to Excel**, fill in the
 Deliverables sheet, and **Import from Excel**.

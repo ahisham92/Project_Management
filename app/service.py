@@ -908,7 +908,8 @@ def apply_setup_workbook(project: Mapping[str, Any],
                 UPDATE projects SET name = ?, client = ?, description = ?, ntp_date = ?,
                        duration_months = ?, days_per_month = ?, hours_per_month = ?,
                        elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
-                       revision_reset_step = ?, status = ?, updated_at = datetime('now')
+                       revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
+                       status = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (
@@ -923,6 +924,10 @@ def apply_setup_workbook(project: Mapping[str, Any],
                     int(_as_float(settings.get("max_revisions"), project["max_revisions"])),
                     _as_float(settings.get("rework_days"), project["rework_days"]),
                     str(settings.get("revision_reset_step") or project["revision_reset_step"]).strip(),
+                    min(95.0, max(0.0, _as_float(settings.get("target_margin_pct"),
+                                                 project["target_margin_pct"]))),
+                    max(1.0, _as_float(settings.get("hours_per_week"),
+                                       project["hours_per_week"])),
                     str(settings.get("status") or project["status"]).strip(),
                     project_id,
                 ),
@@ -1062,6 +1067,62 @@ def apply_setup_workbook(project: Mapping[str, Any],
         "tasks": len(parsed["tasks"]), "trades": len(parsed["trades"]),
         "sections": len(parsed["sections"]), "steps": len(parsed["steps"]),
     }
+
+
+# --- resource planning ------------------------------------------------------
+
+def booked_by_week(project_id: int, first_day: int = 0) -> dict[tuple[str, int], float]:
+    """Hours booked, totalled by the week they were worked and the trade.
+
+    Keyed the way the planner wants them, so the plan and the timesheet can be
+    read against each other without either knowing how the other is stored.
+    """
+    from datetime import date as _date
+
+    from .resources import week_of
+
+    def to_date(value):
+        try:
+            return _date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+
+    out: dict[tuple[str, int], float] = {}
+    for row in query(
+        "SELECT entry_date, trade_id, hours FROM time_entries WHERE project_id = ?",
+        (project_id,),
+    ):
+        day = to_date(row["entry_date"])
+        if day is None or row["trade_id"] is None:
+            continue
+        key = (week_of(day, first_day).isoformat(), int(row["trade_id"]))
+        out[key] = out.get(key, 0.0) + float(row["hours"] or 0)
+    return out
+
+
+def resource_plan(project: Mapping[str, Any],
+                  snapshot: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The whole resource plan for a project: ceilings, weeks and people.
+
+    Built from the same snapshot the other tabs read, so the hours a week wants
+    and the progress it is meant to earn cannot disagree.
+    """
+    from . import resources
+    from .week import first_working_day
+
+    project = as_dict(project)
+    project_id = int(project["id"])
+    snapshot = snapshot or project_snapshot(project)
+    diaries = calendars_for(project)
+    opens = first_working_day(diaries[None].week)
+
+    made = resources.plan(
+        project, snapshot["tasks"], load_trades(project_id), load_steps(project_id),
+        diaries, booked_by_week(project_id, opens), opens,
+    )
+    made["tasks"] = resources.task_rows(made, snapshot["tasks"],
+                                        load_trades(project_id))
+    return made
 
 
 # --- every document the app hands out ---------------------------------------

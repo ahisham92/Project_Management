@@ -104,6 +104,8 @@ def main() -> int:
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
+        step("resources plans the hours into weeks and people", _resources)
+        step("a bigger target margin leaves less to plan with", _resources_margin)
         step("summarized progress shows what moved, on the plan and in the minutes",
              _period)
         step("minutes: adds attendees, a meeting and its items", _minutes_capture)
@@ -1352,6 +1354,7 @@ def _print_to_pdf(page) -> None:
     """Each report tab offers a print button and carries a print-only header."""
     for tab, heading in [("Progress", "Progress update"), ("Schedule", "Schedule"),
                          ("Finance", "Finance"),
+                         ("Resources", "Resources planning"),
                          ("Summarized Progress", "Summarized Progress")]:
         page.click(f"a.tabs >> nth=0" if False else f"nav.tabs a:has-text('{tab}')")
         page.wait_for_selector(f"text={heading}", timeout=8000)
@@ -1664,6 +1667,67 @@ def _budget(page) -> None:
     page.wait_for_selector("text=Hours against budget by trade >> visible=true", timeout=8000)
     page.wait_for_selector(".chart svg", timeout=8000)
     page.screenshot(path=str(SHOTS / "06-budget.png"), full_page=True)
+
+
+def _resources(page) -> None:
+    """The budget as a rota: a ceiling per trade, hours per week, and people.
+
+    Booked hours reach this tab too, so the step runs after the hours are
+    booked and checks the tab has seen them.
+    """
+    page.click("nav.tabs a:has-text('Resources')")
+    page.wait_for_selector("text=Resources planning >> visible=true", timeout=8000)
+    _expect_all(page, ["Held back as margin", "Engineers per week",
+                       "Ceiling per deliverable", "Week by week"])
+    if page.locator(".chart svg").count() < 2:
+        raise AssertionError("both charts should draw")
+
+    # The week table is the part somebody staffs from, so it has to have weeks
+    # in it and each of them a number of people.
+    weeks = page.locator(".card:has(h2:text-is('Week by week'))")
+    if not weeks.locator("details[open]").count():
+        weeks.locator(".panel-summary").click()
+    rows = weeks.locator("tbody tr")
+    if rows.count() < 4:
+        raise AssertionError(f"only {rows.count()} weeks planned")
+    first = rows.nth(0).text_content()
+    if " h" not in first:
+        raise AssertionError(f"a week with no hours: {first!r}")
+
+    page.screenshot(path=str(SHOTS / "35-resources.png"), full_page=True)
+
+
+def _resources_margin(page) -> None:
+    """Every figure on the tab hangs off two numbers in Setup, so moving one of
+    them has to move the tab — and moving it back has to put it back."""
+    def ceiling() -> float:
+        page.click("nav.tabs a:has-text('Resources')")
+        page.wait_for_selector("text=Held back as margin >> visible=true", timeout=8000)
+        words = page.locator(".tile:has-text('Held back as margin') .tile-value").text_content()
+        return float(words.replace(",", "").replace("h", "").strip())
+
+    held_at_12 = ceiling()
+
+    page.click("nav.tabs a:has-text('Setup')")
+    page.wait_for_selector("input[name=target_margin_pct]", timeout=8000)
+    if page.locator("input[name=password]").count():
+        page.fill("input[name=password]", "2026")
+        page.click("button:has-text('Unlock')")
+        page.wait_for_selector("input[name=target_margin_pct]:not([disabled])", timeout=8000)
+    page.fill("input[name=target_margin_pct]", "24")
+    page.click("button:has-text('Save all')")
+    page.wait_for_selector("text=Saved >> visible=true", timeout=8000)
+
+    held_at_24 = ceiling()
+    if not (1.9 < held_at_24 / max(held_at_12, 1e-9) < 2.1):
+        raise AssertionError(f"doubling the margin should double what is held back: "
+                             f"{held_at_12} then {held_at_24}")
+
+    page.click("nav.tabs a:has-text('Setup')")
+    page.wait_for_selector("input[name=target_margin_pct]", timeout=8000)
+    page.fill("input[name=target_margin_pct]", "12")
+    page.click("button:has-text('Save all')")
+    page.wait_for_selector("text=Saved >> visible=true", timeout=8000)
 
 
 def _book_hours(page) -> None:

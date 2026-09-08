@@ -123,6 +123,20 @@
   <div class="card-body">{{ s_curve }}</div>
 </div>
 
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Planned hours against spent hours</h2>
+      <p class="small muted" style="margin-top:2px">
+        What the resource plan wants each week, against what has been booked
+      </p>
+    </div>
+    <a class="btn btn-ghost btn-sm no-print"
+       href="{{ url_for('projects.resources', project_id=project['id']) }}">Resources</a>
+  </div>
+  <div class="card-body">{{ hours_curve }}</div>
+</div>
+
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
     <div class="card-head">

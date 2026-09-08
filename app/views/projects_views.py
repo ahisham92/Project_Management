@@ -28,9 +28,10 @@ from ..service import (
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
     apply_setup_workbook, load_impacts, load_snapshots, load_template,
-    restore_schedule, set_allocations,
+    resource_plan, restore_schedule, set_allocations,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
+from ..resources import curve as resource_curve
 from ..minutes_doc import TEMPLATE_FIELDS
 from .handing_out import EXCEL, handed_out
 from ..calendars import parse_days
@@ -136,6 +137,9 @@ def dashboard(project_id: int):
         s_curve=charts.s_curve(points, snapshot["data_date"]),
         trade_progress=charts.trade_progress(snapshot["trades"]),
         trade_weight=charts.trade_weight(snapshot["trades"]),
+        # Hours planned against hours booked: the same question as the S-curve,
+        # asked in the currency a team leader staffs with.
+        hours_curve=charts.hours_curve(resource_curve(resource_plan(project, snapshot))),
     )
 
 
@@ -907,6 +911,32 @@ def _booked_hours(project_id: int) -> tuple[list, dict]:
     return list(entries), booked
 
 
+# --- resources planning ----------------------------------------------------
+
+@bp.get("/resources")
+@login_required
+def resources(project_id: int):
+    """How many engineers, on what, in which week — and against what was booked.
+
+    The budget already says what a trade may spend. This tab is the part
+    somebody can act on: the ceiling after the margin, split across the
+    deliverables by weight, spread over the weeks with the hours rising towards
+    each submission, and divided into people.
+    """
+    project, role = load_project(project_id)
+    data_date, horizon = _params()
+    snapshot = project_snapshot(project, data_date, horizon)
+    plan = resource_plan(project, snapshot)
+    return render_template(
+        "resources.html",
+        project=project, role=role, snapshot=snapshot, data_date=data_date,
+        plan=plan,
+        hours_curve=charts.hours_curve(resource_curve(plan)),
+        week_shape=charts.week_shape(plan["weeks"], plan["hours_per_week"]),
+        can_edit=_can_edit(role),
+    )
+
+
 # --- summarized progress ---------------------------------------------------
 
 @bp.get("/period")
@@ -1233,7 +1263,8 @@ def save_settings(project_id: int):
             UPDATE projects SET code = ?, name = ?, client = ?, description = ?, ntp_date = ?,
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
-                   revision_reset_step = ?, status = ?, updated_at = datetime('now')
+                   revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
+                   status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1247,6 +1278,12 @@ def save_settings(project_id: int):
                 max(0, int(_to_float(request.form.get("max_revisions"), project["max_revisions"]))),
                 max(0.0, _to_float(request.form.get("rework_days"), project["rework_days"])),
                 request.form.get("revision_reset_step") or project["revision_reset_step"],
+                # The margin is held back from the plan, so it cannot be the
+                # whole budget or there is nothing left to staff.
+                min(95.0, max(0.0, _to_float(request.form.get("target_margin_pct"),
+                                             project["target_margin_pct"]))),
+                max(1.0, _to_float(request.form.get("hours_per_week"),
+                                   project["hours_per_week"])),
                 request.form.get("status") or "active", project_id,
             ),
         )
@@ -1640,7 +1677,8 @@ def save_all(project_id: int):
             UPDATE projects SET code = ?, name = ?, client = ?, description = ?, ntp_date = ?,
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
-                   revision_reset_step = ?, status = ?, updated_at = datetime('now')
+                   revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
+                   status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1653,6 +1691,9 @@ def save_all(project_id: int):
                 max(0, int(_to_float(form.get("max_revisions"), project["max_revisions"]))),
                 max(0.0, _to_float(form.get("rework_days"), project["rework_days"])),
                 form.get("revision_reset_step") or project["revision_reset_step"],
+                min(95.0, max(0.0, _to_float(form.get("target_margin_pct"),
+                                             project["target_margin_pct"]))),
+                max(1.0, _to_float(form.get("hours_per_week"), project["hours_per_week"])),
                 form.get("status") or "active", project_id,
             ),
         )

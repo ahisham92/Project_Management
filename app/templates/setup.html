@@ -113,6 +113,19 @@
                value="{{ project['hours_per_month'] }}" {{ 'disabled' if not can_edit }}>
       </label>
       <label class="field">
+        <span class="field-label">Target margin (%)</span>
+        <input form="{{ F }}" type="number" name="target_margin_pct" min="0" max="95" step="0.5"
+               value="{{ project['target_margin_pct'] }}" {{ 'disabled' if not can_edit }}>
+        <span class="field-hint">Held back from every trade's budget. Resources are planned
+          against what is left — 12% means planning to 88%.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Hours per engineer per week</span>
+        <input form="{{ F }}" type="number" name="hours_per_week" min="1" max="80" step="0.5"
+               value="{{ project['hours_per_week'] }}" {{ 'disabled' if not can_edit }}>
+        <span class="field-hint">What turns a week's hours into a number of people on Resources.</span>
+      </label>
+      <label class="field">
         <span class="field-label">Maximum revisions</span>
         <input form="{{ F }}" type="number" name="max_revisions" min="0" max="50" step="1"
                value="{{ project['max_revisions'] }}" {{ 'disabled' if not can_edit }}>

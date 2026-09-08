@@ -102,6 +102,10 @@ def build_workbook(
         ("Count NTP day as elapsed", int(project["elapsed_day_offset"]), "0 or 1"),
         ("Maximum revisions", project["max_revisions"], "Resubmissions before escalation"),
         ("Rework days", project["rework_days"], "Comments received to next submission"),
+        ("Target margin (%)", project["target_margin_pct"],
+         "Held back from every budget; resources are planned against the rest"),
+        ("Hours per week", project["hours_per_week"],
+         "One engineer's week — what turns planned hours into people"),
         ("Revision resets to", project["revision_reset_step"], "Workflow step key"),
         ("Status", project["status"], "active / on_hold / complete / archived"),
     ]
@@ -236,6 +240,7 @@ def read_workbook(data: bytes) -> dict[str, Any]:
             "duration (months)": "duration_months", "days per month": "days_per_month",
             "hours per man-month": "hours_per_month", "count ntp day as elapsed": "elapsed_day_offset",
             "maximum revisions": "max_revisions", "rework days": "rework_days",
+            "target margin (%)": "target_margin_pct", "hours per week": "hours_per_week",
             "revision resets to": "revision_reset_step", "status": "status",
         }
         for row in wb[SHEET_PROJECT].iter_rows(min_row=2, values_only=True):

@@ -141,6 +141,10 @@ def init_db(path: Path | str | None = None) -> None:
             # How the attendance table is ordered in an issued set of minutes:
             # as the roster lists them, or client first and down the seniority.
             ("projects", "attendee_order", "TEXT NOT NULL DEFAULT 'roster'"),
+            # Resource planning: the margin held back off every trade's budget,
+            # and one engineer's week.
+            ("projects", "target_margin_pct", "REAL NOT NULL DEFAULT 12"),
+            ("projects", "hours_per_week", "REAL NOT NULL DEFAULT 40"),
         ):
             _ensure_column(conn, table, column, definition)
 

@@ -317,6 +317,61 @@ def budget_summary(project_id: int, **_ignored) -> dict[str, Any]:
     }
 
 
+def resource_plan(project_id: int, weeks: int = 0, **_ignored) -> dict[str, Any]:
+    """The staffing plan: a ceiling per trade, and engineers per week.
+
+    Weeks are the long part of the answer, so the whole plan comes back only
+    when it is asked for; otherwise the ones around today, which is what
+    "how many people do I need" nearly always means.
+    """
+    from ..service import project_snapshot, resource_plan as make_plan, today
+
+    project = _project(project_id)
+    made = make_plan(project, project_snapshot(project, today()))
+    now = today()
+
+    every = made["weeks"]
+    if weeks and weeks > 0:
+        after = [w for w in every if w["ends"] >= now]
+        shown = (after or every)[:int(weeks)]
+    else:
+        shown = every
+    return {
+        "target_margin_percent": round(made["target_pct"], 2),
+        "hours_per_engineer_per_week": made["hours_per_week"],
+        "budget_hours": round(made["budget_hours"], 1),
+        "margin_hours": round(made["margin_hours"], 1),
+        "ceiling_hours": round(made["ceiling_hours"], 1),
+        "planned_hours": round(made["planned_hours"], 1),
+        "booked_hours": round(made["spent_hours"], 1),
+        "ceiling_used_percent": round(made["used_pct"] * 100, 1),
+        "peak_engineers": round(made["peak_engineers"], 2),
+        "peak_week": made["peak_week"],
+        "trades_budgeted_but_unplanned": made["unplanned"],
+        "trades": [{"name": t["name"], "budget_hours": round(t["budget_hours"], 1),
+                    "ceiling_hours": round(t["ceiling_hours"], 1),
+                    "planned_hours": round(t["planned_hours"], 1),
+                    "booked_hours": round(t["spent_hours"], 1),
+                    "hours_left": round(t["left_hours"], 1),
+                    "peak_engineers": round(t["peak_engineers"], 2)}
+                   for t in made["trades"]],
+        "weeks_shown": len(shown), "weeks_in_plan": len(every),
+        "weeks": [{"week": w["week"], "hours": round(w["hours"], 1),
+                   "engineers": w["people"],
+                   "engineers_exact": round(w["engineers"], 2),
+                   "booked_hours": round(w["spent_hours"], 1),
+                   "by_trade": [{"trade": r["trade"], "hours": round(r["hours"], 1),
+                                 "engineers": r["people"]}
+                                for r in w["rows"] if r["hours"] > 0.05]}
+                  for w in shown],
+        "top_deliverables": [{"wbs": t["wbs"], "name": t["name"],
+                              "hours": round(t["hours"], 1),
+                              "split": [{"trade": s["trade"], "hours": round(s["hours"], 1)}
+                                        for s in t["shares"]]}
+                             for t in (made.get("tasks") or [])[:12]],
+    }
+
+
 # --- changing things (staged, not done) -------------------------------------
 #
 # Each of these only *describes* what it would do. The runner collects them,
@@ -701,6 +756,8 @@ VIEWS = {
     "budget": ("projects.budget", "finance"),
     "finance": ("projects.budget", "finance"),
     "period": ("projects.period", "the period report"),
+    "resources": ("projects.resources", "resources planning"),
+    "resourcing": ("projects.resources", "resources planning"),
     # The hours live on Finance now; both names still take you there.
     "timesheet": ("projects.budget", "the hours booked"),
     "minutes": ("meetings.index", "the client's minutes"),
@@ -880,6 +937,12 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "as_at": dict(_TEXT, description="dd/mm/yyyy, to rewind the register")}),
     _tool("budget_summary", "Hours by trade: budgeted, booked, earned, CPI and the "
           "estimate at completion.", {}),
+    _tool("resource_plan",
+          "The resource plan: how many hours and how many engineers each week wants, per "
+          "trade, after the target margin is held back — and what has actually been booked "
+          "against it. Use this for “how many people do I need”, not budget_summary.",
+          {"weeks": dict(_NUMBER, description="How many weeks from today to return; "
+                                              "omit for the whole plan")}),
 
     _tool("set_progress",
           "Record progress on a deliverable — either a percentage or the workflow step it "
@@ -1011,7 +1074,7 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
 # `presentation` produce a link rather than a change, so they read as free too.
 READ_ONLY: frozenset[str] = frozenset((
     "overview", "find_deliverables", "deliverable", "period_report", "schedule_summary",
-    "week_ahead", "register", "budget_summary", "list_meetings",
+    "week_ahead", "register", "budget_summary", "resource_plan", "list_meetings",
     "open_view", "presentation", "document",
 )) | edits.READ_ONLY
 
@@ -1024,6 +1087,7 @@ RUNNERS: dict[str, Callable[..., Any]] = {
     "week_ahead": week_ahead,
     "register": register,
     "budget_summary": budget_summary,
+    "resource_plan": resource_plan,
     "set_progress": set_progress,
     "set_dates": set_dates,
     "link_deliverables": link_deliverables,

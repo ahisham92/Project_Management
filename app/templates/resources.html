@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty, progress, date_field, print_header, print_button %}
+{% block title %}Resources — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Resources planning</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ hours(plan['ceiling_hours']) }} to plan with after a {{ num(plan['target_pct'], 0) }}%
+      margin — {{ plan['weeks'] | length }} week{{ '' if plan['weeks'] | length == 1 else 's' }},
+      peaking at {{ num(plan['peak_engineers'], 1) }} engineers
+    </p>
+  </div>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
+</div>
+
+{{ print_header(project, 'Resources planning', data_date,
+                hours(plan['planned_hours']) ~ ' planned of ' ~ hours(plan['ceiling_hours'])) }}
+
+<div class="grid grid-4">
+  {{ tile('Budget', hours(plan['budget_hours']), 'every trade added up') }}
+  {{ tile('Held back as margin', hours(plan['margin_hours']),
+          num(plan['target_pct'], 0) ~ '% target', 'neutral',
+          hours(plan['ceiling_hours']) ~ ' left to plan') }}
+  {{ tile('Booked so far', hours(plan['spent_hours']),
+          'against the ' ~ hours(plan['ceiling_hours']) ~ ' ceiling',
+          usage_state(plan['used_pct']), pct(plan['used_pct'], 0) ~ ' of the ceiling') }}
+  {{ tile('Peak week', num(plan['peak_engineers'], 1) ~ ' engineers',
+          ('week of ' ~ short_date(plan['peak_week'])) if plan['peak_week'] else 'nothing scheduled',
+          'neutral', num(plan['hours_per_week'], 0) ~ ' h each per week') }}
+</div>
+
+{% if plan['unplanned'] %}
+  <div class="as-at-banner">
+    <p class="small" style="margin:0">
+      <strong>Budgeted but not planned:</strong>
+      {{ plan['unplanned'] | join(', ') }} — these trades hold hours but carry no share of any
+      deliverable, so nothing can be spread over the weeks. Give them a share on Setup.
+    </p>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Planned hours against spent hours</h2>
+      <p class="small muted" style="margin-top:2px">
+        Both cumulative, week by week; the faint bars are what each week itself wants and took
+      </p>
+    </div>
+  </div>
+  <div class="card-body">{{ hours_curve }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Engineers per week</h2>
+      <p class="small muted" style="margin-top:2px">
+        The same plan in bodies — a few at the start of a deliverable, more as its
+        submission comes up
+      </p>
+    </div>
+  </div>
+  <div class="card-body">{{ week_shape }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>By trade</h2>
+      <p class="small muted" style="margin-top:2px">
+        What each trade may spend after the margin, and what it has spent
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if not plan['trades'] %}
+      {{ empty('No trades yet', 'Add trades with budget hours on Setup and the plan follows.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Trade</th><th>Office</th>
+              <th class="right">Budget</th><th class="right">Margin</th>
+              <th class="right">Ceiling</th><th class="right">Planned</th>
+              <th class="right">Booked</th><th class="right">Left</th>
+              <th class="right">Peak</th><th>Used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for trade in plan['trades'] %}
+              <tr>
+                <td><strong>{{ trade['name'] }}</strong>
+                  <span class="small muted" style="display:block">
+                    {{ trade['deliverables'] }} deliverable{{ '' if trade['deliverables'] == 1 else 's' }}
+                  </span>
+                </td>
+                <td class="small ink2">{{ office_name(trade['office']) }}</td>
+                <td class="right ink2 tabular nowrap">{{ hours(trade['budget_hours']) }}</td>
+                <td class="right small muted tabular nowrap">{{ hours(trade['margin_hours']) }}</td>
+                <td class="right ink2 tabular nowrap">{{ hours(trade['ceiling_hours']) }}</td>
+                <td class="right ink2 tabular nowrap">{{ hours(trade['planned_hours']) }}</td>
+                <td class="right tabular nowrap"><strong>{{ hours(trade['spent_hours']) }}</strong></td>
+                <td class="right tabular nowrap {{ 'state-critical' if trade['left_hours'] < 0 }}">
+                  {{ hours(trade['left_hours']) }}
+                </td>
+                <td class="right small ink2 nowrap">{{ num(trade['peak_engineers'], 1) }}</td>
+                <td style="min-width:120px">{{ progress(trade['used_pct'], slim=True) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="2">Total</th>
+              <th class="right">{{ hours(plan['budget_hours']) }}</th>
+              <th class="right">{{ hours(plan['margin_hours']) }}</th>
+              <th class="right">{{ hours(plan['ceiling_hours']) }}</th>
+              <th class="right">{{ hours(plan['planned_hours']) }}</th>
+              <th class="right">{{ hours(plan['spent_hours']) }}</th>
+              <th class="right">{{ hours(plan['left_hours']) }}</th>
+              <th class="right">{{ num(plan['peak_engineers'], 1) }}</th>
+              <th>{{ pct(plan['used_pct'], 0) }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Week by week</h2>
+      <p class="small muted" style="margin-top:2px">
+        The hours each week wants, the people that is, and what was actually booked
+      </p>
+    </div>
+  </div>
+  <details class="panel" data-panel="resources-weeks" {{ 'open' if plan['weeks'] | length <= 14 }}>
+    <summary class="panel-summary">
+      <span class="panel-open">Show the weeks</span>
+      <span class="panel-shut">Hide the weeks</span>
+      <span class="small muted">{{ plan['weeks'] | length }} week{{ '' if plan['weeks'] | length == 1 else 's' }} of work</span>
+    </summary>
+  <div class="card-body flush">
+    {% if not plan['weeks'] %}
+      {{ empty('Nothing to staff yet',
+               'Give the deliverables dates and the trades a share, and the weeks fill in.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Week</th><th class="right">Hours</th><th class="right">Engineers</th>
+              <th class="right">Booked</th><th>Who</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for week in plan['weeks'] %}
+              <tr>
+                <td class="nowrap">{{ short_date(week['week']) }}
+                  <span class="small muted">to {{ short_date(week['ends']) }}</span>
+                </td>
+                <td class="right ink2 tabular nowrap">{{ hours(week['hours']) }}</td>
+                <td class="right"><strong>{{ week['people'] }}</strong>
+                  <span class="small muted">({{ num(week['engineers'], 1) }})</span>
+                </td>
+                <td class="right ink2 tabular nowrap">{{ hours(week['spent_hours']) }}</td>
+                <td class="small">
+                  {% for row in week['rows'] if row['hours'] > 0.05 %}
+                    <span class="nowrap">{{ row['trade'] }}
+                      <span class="muted">{{ hours(row['hours']) }} · {{ row['people'] }}</span></span>{{ '' if loop.last else ' · ' }}
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+  </details>
+  <div class="card-foot small muted">
+    Engineers are the hours divided by {{ num(plan['hours_per_week'], 0) }} a week and rounded up —
+    three-quarters of a person is still a person. The bracketed figure is the unrounded one.
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Ceiling per deliverable</h2>
+      <p class="small muted" style="margin-top:2px">
+        Why a line is worth what it is worth: its weight, times each trade's share of it
+      </p>
+    </div>
+  </div>
+  <details class="panel" data-panel="resources-tasks">
+    <summary class="panel-summary">
+      <span class="panel-open">Show the deliverables</span>
+      <span class="panel-shut">Hide the deliverables</span>
+      <span class="small muted">{{ plan['tasks'] | length }} planned</span>
+    </summary>
+  <div class="card-body flush">
+    {% if not plan['tasks'] %}
+      {{ empty('Nothing allocated yet', 'Give the trades a share of the deliverables on Setup.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>WBS</th><th>Deliverable</th><th class="right">Weight</th>
+              <th>Runs</th><th class="right">Hours</th><th>Split</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in plan['tasks'] %}
+              <tr>
+                <td class="nowrap ink2">{{ row['wbs'] }}</td>
+                <td>{{ row['name'] }}
+                  {% if row['flat'] %}
+                    <span class="small muted" style="display:block">flat — not on the workflow</span>
+                  {% endif %}
+                </td>
+                <td class="right ink2 tabular">{{ pct(row['weight_pct'], 2) }}</td>
+                <td class="small ink2 nowrap">{{ short_date(row['start_date']) }} →
+                  {{ short_date(row['submission_date']) }}</td>
+                <td class="right nowrap"><strong>{{ hours(row['hours']) }}</strong></td>
+                <td class="small">
+                  {% for share in row['shares'] %}
+                    <span class="nowrap">{{ share['trade'] }}
+                      <span class="muted">{{ hours(share['hours']) }}</span></span>{{ '' if loop.last else ' · ' }}
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+  </details>
+  <div class="card-foot small muted">
+    Hours rise towards each submission rather than sitting flat, and nothing after the
+    submission earns any — that stretch is the client reading it. Change the target margin or
+    the working week on Setup and every figure here moves with it.
+  </div>
+</div>
+{% endblock %}

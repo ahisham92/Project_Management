@@ -421,9 +421,22 @@ def document_register(project_id: int, wbs: str = "", kind: str = "",
         "hours_raised_as_documents": round(made["raised_hours"], 1),
         "hours_booked_to_a_document": round(made["spent_hours"], 1),
         "numbering_convention": project["document_format"] or DEFAULT_FORMAT,
-        "kinds": [k["name"] for k in made["kinds"]],
-        "default_mix": [{"kind": m["name"], "percent": round(m["percent"], 1)}
+        "kinds": [{"kind": k["name"], "hours_one_costs": round(float(k["standard_hours"] or 0), 1)}
+                  for k in made["kinds"]],
+        "default_mix": [{"kind": m["name"], "percent": round(m["percent"], 1),
+                         "how_many_in_a_package": round(float(m["quantity"] or 0), 1)}
                         for m in made["default_mix"]],
+        # How many of each to expect against how many are really there, and what
+        # one has really cost against what the setup sheet says it should.
+        "expected_against_issued": [
+            {"kind": made["kind_names"].get(row["kind_id"], "?"),
+             "expected": round(row["expected"], 1),
+             "raised": row["documents"], "issued": row["issued"],
+             "still_to_raise": round(row["left"], 1),
+             "hours_each_should_cost": round(row["hours_each_expected"], 1),
+             "hours_each_really_cost": round(row["hours_each_actual"], 1)
+                                       if (row["issued"] or row["documents"]) else None}
+            for row in made["expected"]],
         "shown": len(rows),
         "documents": [{"number": r["number"], "title": r["title"], "kind": r["kind_name"],
                        "wbs": r["task_wbs"], "deliverable": r["task_name"],
@@ -1013,9 +1026,12 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           "estimate at completion.", {}),
     _tool("document_register",
           "The register of everything the project issues — reports, drawings, specifications, "
-          "bills — with each document's number, what it is worth and what it has cost. Use "
-          "this for “what have we issued”, “what is this drawing worth” or “what is still to "
-          "go out”.",
+          "bills — with each document's number, what it is worth and what it has cost. Also "
+          "how many of each kind to expect (a drawing costs 35 hours on the setup sheet, so "
+          "350 hours of drawings is ten of them) against how many have really gone out and "
+          "what those really took. Use this for “what have we issued”, “what is this drawing "
+          "worth”, “how many drawings are still to go” or “are our drawings costing what we "
+          "said they would”.",
           {"wbs": dict(_TEXT, description="Only one deliverable's documents"),
            "kind": dict(_TEXT, description="Only one kind — drawings, report, specifications"),
            "issued": {"type": "boolean",

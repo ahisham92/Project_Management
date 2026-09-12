@@ -97,13 +97,16 @@ def test_the_year_and_the_wbs_are_available_to_a_convention():
 
 # --- what a deliverable is made of -------------------------------------------
 
+def shape(made: list[dict]) -> dict[int, float]:
+    """Just the weights, which is what most of these tests are about."""
+    return {int(row["kind_id"]): round(row["percent"], 4) for row in made}
+
+
 def test_a_deliverable_follows_the_project_until_it_says_otherwise():
-    assert reg.mix_for(1, {}, MIX) == [
-        {"kind_id": 1, "percent": 35}, {"kind_id": 2, "percent": 60},
-        {"kind_id": 3, "percent": 5}]
+    assert shape(reg.mix_for(1, {}, MIX)) == {1: 35, 2: 60, 3: 5}
 
     own = {1: [{"kind_id": 3, "percent": 100}]}
-    assert reg.mix_for(1, own, MIX) == [{"kind_id": 3, "percent": 100}]
+    assert shape(reg.mix_for(1, own, MIX)) == {3: 100}
 
 
 def test_a_mix_that_does_not_total_a_hundred_is_normalised():
@@ -116,6 +119,124 @@ def test_a_mix_that_does_not_total_a_hundred_is_normalised():
 
 def test_a_mix_of_nothing_is_no_mix_at_all():
     assert reg.mix_for(1, {}, []) == []
+
+
+# --- counting rather than typing ---------------------------------------------
+
+# What one of each costs: a report is 120 hours, a drawing 35, a specification 20.
+STANDARD = {1: 120.0, 2: 35.0, 3: 20.0}
+
+
+def test_counting_what_a_package_holds_works_its_weight_out():
+    """Six drawings at 35 against one report at 120: 210 hours of drawings to
+    120 of report, so 64% and 36% — and nobody had to do that sum by hand."""
+    counted = [{"kind_id": 1, "percent": 0, "quantity": 1},
+               {"kind_id": 2, "percent": 0, "quantity": 6}]
+    made = shape(reg.mix_for(1, {}, counted, STANDARD))
+
+    assert made[2] == pytest.approx(210 / 330 * 100, abs=0.01)
+    assert made[1] == pytest.approx(120 / 330 * 100, abs=0.01)
+    assert sum(made.values()) == pytest.approx(100)
+
+
+def test_a_counted_kind_says_so_and_carries_its_count():
+    counted = [{"kind_id": 2, "percent": 0, "quantity": 6}]
+    row = reg.mix_for(1, {}, counted, STANDARD)[0]
+    assert row["from_count"] is True
+    assert row["quantity"] == pytest.approx(6)
+
+
+def test_no_two_workflows_need_the_same_deliverables():
+    """One line is six drawings, the next is a report and two specifications.
+    Both are counted, and neither borrows the other's shape."""
+    own = {1: [{"kind_id": 2, "percent": 0, "quantity": 6}],
+           2: [{"kind_id": 1, "percent": 0, "quantity": 1},
+               {"kind_id": 3, "percent": 0, "quantity": 2}]}
+
+    assert shape(reg.mix_for(1, own, MIX, STANDARD)) == {2: 100}
+    second = shape(reg.mix_for(2, own, MIX, STANDARD))
+    assert second[1] == pytest.approx(120 / 160 * 100, abs=0.01)   # 120 h of report
+    assert second[3] == pytest.approx(40 / 160 * 100, abs=0.01)    # two specs at 20
+
+
+def test_a_count_with_nothing_to_weigh_it_falls_back_to_the_percentage():
+    """A kind nobody has priced cannot be weighed by counting, and dropping it
+    would be worse than using the number somebody typed."""
+    rows = [{"kind_id": 9, "percent": 40, "quantity": 3},
+            {"kind_id": 8, "percent": 60, "quantity": 0}]
+    assert shape(reg.mix_for(1, {}, rows, {})) == {9: 40, 8: 60}
+
+
+def test_a_typed_percentage_is_still_a_mix():
+    rows = [{"kind_id": 1, "percent": 35}, {"kind_id": 2, "percent": 65}]
+    made = reg.mix_for(1, {}, rows, STANDARD)
+    assert shape(made) == {1: 35, 2: 65}
+    assert all(row["from_count"] is False for row in made)
+
+
+# --- expected against what is really there ------------------------------------
+
+def test_the_expected_number_is_the_count_where_one_was_given():
+    tasks = [a_task(1, "3.1")]
+    own = {1: [{"kind_id": 2, "percent": 0, "quantity": 10}]}
+    made = reg.costing(tasks, [], own, MIX, {1: {7: 1000.0}}, {}, STANDARD)
+
+    drawings = next(c for c in made["lines"][0]["by_kind"] if c["kind_id"] == 2)
+    assert drawings["expected"] == pytest.approx(10)
+    assert drawings["issued"] == 0
+
+
+def test_without_a_count_the_hours_say_how_many_to_expect():
+    """350 hours of drawings at 35 hours each is ten drawings, whether or not
+    anybody counted them."""
+    tasks = [a_task(1, "3.1")]
+    mix = [{"kind_id": 2, "percent": 35}, {"kind_id": 1, "percent": 65}]
+    made = reg.costing(tasks, [], {}, mix, {1: {7: 1000.0}}, {}, STANDARD)
+
+    drawings = next(c for c in made["lines"][0]["by_kind"] if c["kind_id"] == 2)
+    assert drawings["expected"] == pytest.approx(10)
+    assert drawings["hours_each_expected"] == pytest.approx(35)
+
+
+def test_what_a_drawing_really_cost_is_measured_against_the_standard():
+    """Seven issued with 287 hours booked is 41 a drawing, six over standard."""
+    tasks = [a_task(1, "3.1")]
+    docs = [a_doc(10 + n, 1, 2, status="issued") for n in range(7)]
+    booked = {10 + n: {7: 41.0} for n in range(7)}
+    own = {1: [{"kind_id": 2, "percent": 0, "quantity": 10}]}
+    made = reg.costing(tasks, docs, own, MIX, {1: {7: 1000.0}}, booked, STANDARD)
+
+    drawings = next(c for c in made["lines"][0]["by_kind"] if c["kind_id"] == 2)
+    assert drawings["issued"] == 7
+    assert drawings["hours_each_actual"] == pytest.approx(41)
+    assert drawings["over_each"] == pytest.approx(6)
+
+
+def test_a_drawing_still_being_drawn_does_not_count_as_issued():
+    tasks = [a_task(1, "3.1")]
+    docs = [a_doc(10, 1, 2, status="issued"), a_doc(11, 1, 2, status="planned")]
+    booked = {10: {7: 40.0}, 11: {7: 5.0}}
+    made = reg.costing(tasks, docs, {}, MIX, {1: {7: 1000.0}}, booked, STANDARD)
+
+    drawings = next(c for c in made["lines"][0]["by_kind"] if c["kind_id"] == 2)
+    assert drawings["documents"] == 2
+    assert drawings["issued"] == 1
+    assert drawings["hours_each_actual"] == pytest.approx(45)   # both lots of hours, one issued
+
+
+def test_the_whole_project_is_totalled_kind_by_kind():
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2")]
+    own = {1: [{"kind_id": 2, "percent": 0, "quantity": 6}],
+           2: [{"kind_id": 2, "percent": 0, "quantity": 4}]}
+    docs = [a_doc(10, 1, 2, status="issued"), a_doc(11, 2, 2, status="planned")]
+    made = reg.costing(tasks, docs, own, MIX, {1: {7: 500.0}, 2: {7: 500.0}}, {}, STANDARD)
+
+    drawings = next(row for row in made["expected"] if row["kind_id"] == 2)
+    assert drawings["expected"] == pytest.approx(10)
+    assert drawings["documents"] == 2
+    assert drawings["issued"] == 1
+    assert drawings["left"] == pytest.approx(8)     # ten wanted, two already raised
+    assert drawings["standard_hours"] == pytest.approx(35)
 
 
 # --- costing ------------------------------------------------------------------
@@ -314,6 +435,45 @@ def test_a_line_can_be_made_of_something_else_and_handed_back(app):
 
         set_mix(1, {}, task["id"])
         assert task["id"] not in load_task_mixes(1)
+
+
+def test_counting_a_deliverable_through_the_page_works_its_weights_out(signed_in, app):
+    """Six drawings and one report typed into the form come back as the weights
+    that arithmetic says they are, with nobody having typed a percentage."""
+    from app.db import query_one
+    from app.service import load_kinds, load_task_mixes
+
+    with app.app_context():
+        task = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 ORDER BY wbs LIMIT 1"))
+        kinds = {k["key"]: k for k in load_kinds(1)}
+        drawings, report = kinds["drawings"], kinds["report"]
+
+    form = {"task_id": task["id"],
+            f"count_{drawings['id']}": 6, f"mix_{drawings['id']}": 0,
+            f"count_{report['id']}": 1, f"mix_{report['id']}": 0}
+    answer = signed_in.post("/projects/1/submittals/mix", data=form, follow_redirects=True)
+    assert answer.status_code == 200
+
+    with app.app_context():
+        made = {int(row["kind_id"]): row for row in load_task_mixes(1)[task["id"]]}
+        # Six at 35 against one at 120: 210 to 120.
+        assert made[drawings["id"]]["quantity"] == pytest.approx(6)
+        assert made[drawings["id"]]["percent"] == pytest.approx(210 / 330 * 100, abs=0.1)
+        assert made[report["id"]]["percent"] == pytest.approx(120 / 330 * 100, abs=0.1)
+
+
+def test_what_one_costs_is_seeded_and_can_be_changed_on_setup(signed_in, app):
+    from app.service import load_kinds, save_kinds
+
+    with app.app_context():
+        drawings = next(k for k in load_kinds(1) if k["key"] == "drawings")
+        assert drawings["standard_hours"] == pytest.approx(35)
+
+        save_kinds(1, {f"kind_{drawings['id']}_name": drawings["name"],
+                       f"kind_{drawings['id']}_code": drawings["code"],
+                       f"kind_{drawings['id']}_hours": "48"})
+        again = next(k for k in load_kinds(1) if k["key"] == "drawings")
+        assert again["standard_hours"] == pytest.approx(48)
 
 
 def test_the_number_is_previewed_before_anything_is_raised(signed_in, app):

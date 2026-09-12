@@ -376,6 +376,8 @@
         <p class="small muted" style="margin-top:2px">
           The kinds of document the register can hold, and the code each one puts in a
           number. “Many” marks the kinds that come as a set — one deliverable, forty drawings.
+          What one costs is the yardstick: a drawing is 35 hours, so a package worth 350 hours
+          of drawings is ten of them, and what they really took is measured against it.
         </p>
       </div>
     </div>
@@ -385,6 +387,7 @@
       <table>
         <thead>
           <tr><th>Kind</th><th class="w-sm">Code</th><th class="right">Many</th>
+              <th class="right w-sm">One costs (h)</th>
               <th class="right">In the register</th>
               {% if can_edit %}<th></th>{% endif %}</tr>
         </thead>
@@ -404,6 +407,13 @@
                 <input form="save-kinds" type="checkbox" name="kind_{{ kind['id'] }}_many" value="1"
                        {{ 'checked' if kind['many'] }} {{ 'disabled' if not can_edit }}
                        aria-label="{{ kind['name'] }} comes as a set">
+              </td>
+              <td class="right">
+                <input form="save-kinds" name="kind_{{ kind['id'] }}_hours" type="number"
+                       min="0" step="0.5" class="w-sm right tabular"
+                       value="{{ '%g'|format(kind['standard_hours'] or 0) }}"
+                       {{ 'disabled' if not can_edit }}
+                       aria-label="What one {{ kind['name'] }} costs, in hours">
               </td>
               <td class="right small ink2 tabular">{{ kind_counts.get(kind['id'], 0) }}</td>
               {% if can_edit %}

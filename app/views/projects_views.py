@@ -1081,9 +1081,14 @@ def submittals(project_id: int):
     # build a mapping, and a lookup is what the form needs.
     own = next((line for line in made["lines"] if line["task_id"] == task_id), None)
     editing = next((t for t in snapshot["tasks"] if int(t["id"]) == task_id), None) if task_id else None
-    mix_now = {int(row["kind_id"]): row["percent"]
-               for row in ((own or {}).get("mix") if own else made["default_mix"])}
+    shape = (own or {}).get("mix") if own else made["default_mix"]
+    mix_now = {int(row["kind_id"]): row["percent"] for row in shape}
+    count_now = {int(row["kind_id"]): row.get("quantity") or 0 for row in shape}
+    counted = {int(row["kind_id"]) for row in shape if row.get("from_count")}
     has_own = bool(task_id and load_task_mixes(project_id).get(task_id))
+    # What the deliverable on the page is expected to hold, against what is
+    # really in the register for it.
+    expected = (own or {}).get("by_kind") if own else made["expected"]
 
     columns = reg.sortable_columns(made["trades"])
     sort, direction = reg.order_for(request.args.get("sort"), request.args.get("dir"),
@@ -1095,7 +1100,8 @@ def submittals(project_id: int):
         made=made, rows=reg.sort_documents(rows, sort, direction),
         columns=columns, sort=sort, direction=direction,
         kind_id=kind_id, task_id=task_id, state=state,
-        mix_now=mix_now, editing=editing, has_own=has_own,
+        mix_now=mix_now, count_now=count_now, counted=counted, expected=expected,
+        editing=editing, has_own=has_own,
         tasks=snapshot["tasks"], statuses=reg.STATUSES,
         issued_states=ISSUED_STATES,
         can_edit=_can_report(role), is_manager=_can_edit(role),
@@ -1213,20 +1219,25 @@ def save_mix(project_id: int):
                                  (task_id, project_id)):
         abort(404)
 
-    supplied = {}
+    supplied, counts = {}, {}
     for kind in load_kinds(project_id):
         percent = _to_float(request.form.get(f"mix_{kind['id']}"), 0)
-        if percent > 0:
+        count = max(0.0, _to_float(request.form.get(f"count_{kind['id']}"), 0))
+        # A count on its own is enough to be part of the mix: what it is worth
+        # is arithmetic, and making somebody type the percentage too is asking
+        # them to do the sum the page was built to do.
+        if percent > 0 or count > 0:
             supplied[kind["id"]] = percent
+            counts[kind["id"]] = count
     if task_id and not supplied:
         # Nothing given back is a line handed back to the project's own shape,
         # rather than a line pinned to a copy of it.
         execute("DELETE FROM task_mix WHERE task_id = ?", (task_id,))
         flash("Back to the project's own mix", "success")
     elif not supplied:
-        flash("Give at least one kind a percentage", "error")
+        flash("Count at least one kind, or give it a percentage", "error")
     else:
-        set_mix(project_id, supplied, task_id)
+        set_mix(project_id, supplied, task_id, counts)
         flash("Saved what it is made of", "success")
     return _back("projects.submittals", project_id, **({"task": task_id} if task_id else {}))
 

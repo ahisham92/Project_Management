@@ -8,10 +8,23 @@ underneath it.
 
 **What a deliverable submits, and in what proportion.** A design package is not
 one document. It is typically a report, a specification and a set of drawings,
-and they are not worth the same: 5% of the work in the specification, 35% in the
-report, 60% in the drawings is a shape a design office recognises. That mix is
-set once for the project and any deliverable can say something different, which
-is what makes the costing below mean anything.
+and they are not worth the same. Two packages on the same programme are rarely
+the same shape either: a design basis is one report, a general arrangement
+package is forty drawings and nothing else. So the mix is set once for the
+project and any deliverable can say something different.
+
+There are two ways to say it, and the better one is counting. **Say how many** —
+six drawings, one report — and the weights work themselves out from what one of
+each costs: a drawing is 35 hours, a report is 120, and Setup holds those
+figures. Six drawings and a report is 210 against 120, so 64% drawings and 36%
+report, and nobody had to guess at a percentage. Leave the count blank and type
+a percentage instead, and the expected number is worked back the other way:
+35% of a 1,000-hour line is 350 hours of drawings, which is ten of them.
+
+Either way the register then has something to be measured against. Ten drawings
+expected at 35 hours each, seven issued, 290 hours booked — that is 41 hours a
+drawing against a standard of 35, and it is the earliest honest read on whether
+this package is going to land.
 
 **A kind's share divides across its documents.** One design basis is one report
 and all of it; a general arrangement package is forty drawings, and the share
@@ -47,13 +60,20 @@ from typing import Any, Iterable, Mapping, Sequence
 # shape of a design package rather than a rule — a deliverable that is all
 # drawings says so and the rest of them stay where they are.
 DEFAULT_KINDS: tuple[dict[str, Any], ...] = (
-    {"key": "report", "name": "Report", "code": "RPT", "share": 35.0, "many": 0},
-    {"key": "drawings", "name": "Drawings", "code": "DWG", "share": 60.0, "many": 1},
-    {"key": "specifications", "name": "Specifications", "code": "SPC", "share": 5.0, "many": 0},
-    {"key": "boq", "name": "Bill of quantities", "code": "BOQ", "share": 0.0, "many": 0},
-    {"key": "mom", "name": "Method of measurement", "code": "MOM", "share": 0.0, "many": 0},
-    {"key": "calculations", "name": "Calculations", "code": "CAL", "share": 0.0, "many": 1},
-    {"key": "document", "name": "Document", "code": "DOC", "share": 0.0, "many": 0},
+    {"key": "report", "name": "Report", "code": "RPT", "share": 35.0, "many": 0,
+     "hours": 120.0},
+    {"key": "drawings", "name": "Drawings", "code": "DWG", "share": 60.0, "many": 1,
+     "hours": 35.0},
+    {"key": "specifications", "name": "Specifications", "code": "SPC", "share": 5.0, "many": 0,
+     "hours": 20.0},
+    {"key": "boq", "name": "Bill of quantities", "code": "BOQ", "share": 0.0, "many": 0,
+     "hours": 40.0},
+    {"key": "mom", "name": "Method of measurement", "code": "MOM", "share": 0.0, "many": 0,
+     "hours": 24.0},
+    {"key": "calculations", "name": "Calculations", "code": "CAL", "share": 0.0, "many": 1,
+     "hours": 30.0},
+    {"key": "document", "name": "Document", "code": "DOC", "share": 0.0, "many": 0,
+     "hours": 16.0},
 )
 
 # Where a document is in its life. Planned and issued are the two that matter to
@@ -207,18 +227,48 @@ def number_for(project: Mapping[str, Any], taken: Iterable[str], **parts_of: Any
 # --- what a deliverable submits, and in what proportion ----------------------
 
 def mix_for(task_id: int, per_task: Mapping[int, Sequence[Mapping[str, Any]]],
-            default: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+            default: Sequence[Mapping[str, Any]],
+            standard: Mapping[int, float] | None = None) -> list[dict[str, Any]]:
     """The kinds one deliverable submits, normalised to total 100%.
 
     Its own mix if it has been given one, the project's otherwise — so a project
     where every package is the same is set up once, and the one deliverable that
     is only a bill of quantities says so on its own row.
+
+    Where a count has been given, the weight is worked out from it rather than
+    typed: six drawings at 35 hours against one report at 120 is 64% and 36%,
+    and that is a better answer than two numbers somebody guessed at. A kind
+    with a count but no standard cost cannot be weighed that way, so it falls
+    back to whatever percentage it was given.
+
+    Counting is all-or-nothing for a package. Once anything in it has been
+    counted the package is what was counted, and a kind left at nothing is not
+    part of it — there is no honest way to weigh six drawings against "35% of
+    something", and the form shows the uncounted weights falling to zero as it
+    is typed rather than springing it on anybody at save time.
     """
+    standard = {int(k): _num(v) for k, v in (standard or {}).items()}
     rows = list(per_task.get(int(task_id)) or ()) or list(default or ())
+
+    counted = [row for row in rows
+               if _num(row.get("quantity")) > 0 and standard.get(int(row["kind_id"]), 0) > 0]
+    if counted:
+        # Counting wins: it is the thing somebody actually knows about a package.
+        weighed = {int(row["kind_id"]): _num(row["quantity"]) * standard[int(row["kind_id"])]
+                   for row in counted}
+        whole = sum(weighed.values()) or 1.0
+        from_count = {int(row["kind_id"]) for row in counted}
+        return [{"kind_id": kind_id, "percent": hours / whole * 100,
+                 "quantity": next(_num(r["quantity"]) for r in counted
+                                  if int(r["kind_id"]) == kind_id),
+                 "from_count": kind_id in from_count}
+                for kind_id, hours in weighed.items()]
+
     whole = sum(_num(row.get("percent")) for row in rows)
     if whole <= 0:
         return []
-    return [{"kind_id": int(row["kind_id"]), "percent": _num(row["percent"]) / whole * 100}
+    return [{"kind_id": int(row["kind_id"]), "percent": _num(row["percent"]) / whole * 100,
+             "quantity": _num(row.get("quantity")), "from_count": False}
             for row in rows if _num(row.get("percent")) > 0]
 
 
@@ -227,6 +277,7 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
             default_mix: Sequence[Mapping[str, Any]],
             planned_by_task: Mapping[int, Mapping[int, float]],
             booked: Mapping[int, Mapping[int, float]] | None = None,
+            standard: Mapping[int, float] | None = None,
             ) -> dict[str, Any]:
     """Hours down to each document, and back up to each deliverable.
 
@@ -235,11 +286,17 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
     was actually charged to each document, so planned and actual sit beside each
     other at every level.
 
+    `standard` is what one of each kind costs — a drawing is 35 hours — which
+    turns a share of a deliverable into a number of drawings to expect, and
+    gives the hours actually booked to the ones issued something to be measured
+    against.
+
     A deliverable with no documents in the register yet is still returned, with
     its hours unspent: "nothing has been raised for this" is the most useful
     thing the register can tell somebody.
     """
     booked = booked or {}
+    standard = {int(k): _num(v) for k, v in (standard or {}).items()}
     by_task: dict[int, list[dict[str, Any]]] = {}
     for row in submittals:
         by_task.setdefault(int(row["task_id"]), []).append(dict(row))
@@ -250,7 +307,9 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
         task_id = int(task["id"])
         allowed = dict(planned_by_task.get(task_id) or {})
         total = sum(allowed.values())
-        mix = {row["kind_id"]: row["percent"] for row in mix_for(task_id, mixes, default_mix)}
+        shape = mix_for(task_id, mixes, default_mix, standard)
+        mix = {row["kind_id"]: row["percent"] for row in shape}
+        counts = {row["kind_id"]: row["quantity"] for row in shape}
         mine = by_task.get(task_id) or []
 
         # Each kind's share of the line, then each document's share of its kind.
@@ -304,9 +363,9 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
             "spent_hours": spent_here,
             "left_hours": total - spent_here,
             "used_pct": (spent_here / total) if total > 0 else 0.0,
-            "mix": [{"kind_id": kind_id, "percent": percent} for kind_id, percent in mix.items()],
+            "mix": [dict(row) for row in shape],
             "missing_kinds": missing,
-            "by_kind": _by_kind(raised, mix, total),
+            "by_kind": _by_kind(raised, mix, total, counts, standard),
         })
 
     return {
@@ -316,23 +375,86 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
         "raised_hours": sum(line["raised_hours"] for line in lines),
         "spent_hours": sum(line["spent_hours"] for line in lines),
         "unraised": [line for line in lines if line["missing_kinds"] or not line["documents"]],
+        "expected": _expected(lines, standard),
     }
 
 
-def _by_kind(raised: Sequence[Mapping[str, Any]], mix: Mapping[int, float],
-             total: float) -> list[dict[str, Any]]:
-    """One deliverable's documents gathered under the kind they belong to."""
-    out: dict[int, dict[str, Any]] = {}
-    for kind_id, percent in mix.items():
-        out[kind_id] = {"kind_id": kind_id, "percent": percent,
-                        "hours": total * percent / 100, "documents": 0, "spent_hours": 0.0}
+def _by_kind(raised: Sequence[Mapping[str, Any]], mix: Mapping[int, float], total: float,
+             counts: Mapping[int, float] | None = None,
+             standard: Mapping[int, float] | None = None) -> list[dict[str, Any]]:
+    """One deliverable's documents gathered under the kind they belong to.
+
+    Alongside what each kind is worth, how many of it to expect and how many
+    are really there. Where a count was given that is the number expected;
+    where it was not, the hours divided by what one costs says the same thing
+    in the other direction. Ten drawings expected, seven issued, 290 hours
+    charged to them: 41 hours a drawing against a standard of 35.
+    """
+    counts = {int(k): _num(v) for k, v in (counts or {}).items()}
+    standard = {int(k): _num(v) for k, v in (standard or {}).items()}
+
+    def blank(kind_id: int, percent: float) -> dict[str, Any]:
+        hours = total * percent / 100
+        each = standard.get(kind_id, 0.0)
+        expected = counts.get(kind_id) or (hours / each if each > 0 else 0.0)
+        return {"kind_id": kind_id, "percent": percent, "hours": hours,
+                "documents": 0, "spent_hours": 0.0, "issued": 0,
+                "standard_hours": each, "expected": expected,
+                "hours_each_expected": each or (hours / expected if expected > 0 else 0.0),
+                "hours_each_actual": 0.0, "over_each": 0.0}
+
+    out: dict[int, dict[str, Any]] = {kind_id: blank(kind_id, percent)
+                                      for kind_id, percent in mix.items()}
     for row in raised:
         kind_id = int(row["kind_id"])
-        cell = out.setdefault(kind_id, {"kind_id": kind_id, "percent": 0.0, "hours": 0.0,
-                                        "documents": 0, "spent_hours": 0.0})
+        cell = out.setdefault(kind_id, blank(kind_id, 0.0))
         cell["documents"] += 1
         cell["spent_hours"] += row["spent_hours"]
+        if str(row.get("status") or "") in ISSUED_STATES:
+            cell["issued"] += 1
+
+    for cell in out.values():
+        # Measured on what has gone out, because a drawing still being drawn
+        # has not finished costing what it is going to cost.
+        done = cell["issued"] or cell["documents"]
+        cell["hours_each_actual"] = cell["spent_hours"] / done if done > 0 else 0.0
+        cell["over_each"] = cell["hours_each_actual"] - cell["hours_each_expected"]
     return sorted(out.values(), key=lambda row: -row["percent"])
+
+
+def _expected(lines: Sequence[Mapping[str, Any]],
+              standard: Mapping[int, float]) -> list[dict[str, Any]]:
+    """The same comparison for the whole project, one row a kind.
+
+    What the setup sheet says to expect against what the register holds — the
+    answer to "we budgeted for forty drawings, where are we?".
+    """
+    out: dict[int, dict[str, Any]] = {}
+    for line in lines:
+        for cell in line.get("by_kind") or ():
+            kind_id = int(cell["kind_id"])
+            row = out.setdefault(kind_id, {
+                "kind_id": kind_id, "standard_hours": _num(standard.get(kind_id)),
+                "expected": 0.0, "documents": 0, "issued": 0,
+                "hours": 0.0, "spent_hours": 0.0,
+            })
+            row["expected"] += cell["expected"]
+            row["documents"] += cell["documents"]
+            row["issued"] += cell["issued"]
+            row["hours"] += cell["hours"]
+            row["spent_hours"] += cell["spent_hours"]
+
+    for row in out.values():
+        done = row["issued"] or row["documents"]
+        row["hours_each_actual"] = row["spent_hours"] / done if done > 0 else 0.0
+        row["hours_each_expected"] = (
+            row["standard_hours"]
+            or (row["hours"] / row["expected"] if row["expected"] > 0 else 0.0))
+        row["over_each"] = row["hours_each_actual"] - row["hours_each_expected"]
+        # What is still to exist at all, not what is still to go out: a drawing
+        # raised but not issued is already in the register.
+        row["left"] = max(0.0, row["expected"] - row["documents"])
+    return sorted(out.values(), key=lambda row: -row["expected"])
 
 
 def to_a_hundred(supplied: Mapping[Any, float]) -> dict[Any, float]:

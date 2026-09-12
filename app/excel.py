@@ -160,18 +160,24 @@ def build_workbook(
     # no share of the work is one this project does not really submit.
     if kinds:
         share = {int(row["kind_id"]): float(row["percent"] or 0) for row in mix}
+        count = {int(row["kind_id"]): float(row["quantity"] or 0) for row in mix}
         sheet(
             SHEET_KINDS,
-            ["Kind", "Code", "Comes as a set", "Share of a deliverable %"],
-            [[k["name"], k["code"], "yes" if k["many"] else "", share.get(int(k["id"]), 0)]
+            ["Kind", "Code", "Comes as a set", "What one costs (h)", "How many in a package",
+             "Share of a deliverable %"],
+            [[k["name"], k["code"], "yes" if k["many"] else "",
+              float(k["standard_hours"] or 0), count.get(int(k["id"]), 0),
+              share.get(int(k["id"]), 0)]
              for k in kinds],
-            widths=[26, 12, 18, 24],
+            widths=[26, 12, 18, 20, 22, 24],
         )
         ws = wb[SHEET_KINDS]
         ws.append([])
-        ws.append(["The shares are the project's default mix and should total 100 across the "
-                   "kinds it actually submits. A deliverable that is made of something else "
-                   "is set on the Submittals tab rather than here."])
+        ws.append(["Count what a package holds and the share works itself out: six drawings at "
+                   "35 hours against one report at 120 is 64% drawings, 36% report. The shares "
+                   "are the project's default mix and total 100 across the kinds it actually "
+                   "submits. A deliverable that is made of something else is set on the "
+                   "Submittals tab rather than here."])
         ws.cell(row=ws.max_row, column=1).font = note_font
 
     section_name = {s["id"]: s["name"] for s in sections}

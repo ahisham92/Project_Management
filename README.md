@@ -374,14 +374,37 @@ over is a report, a set of drawings, a specification, a bill of quantities — a
 carry numbers, go out on transmittals and come back with comments. The **Submittals** tab is
 that list.
 
-**What a deliverable is made of.** A design package is not one document, and its parts are not
-worth the same:
+**What a deliverable is made of.** A design package is not one document, its parts are not
+worth the same, and no two deliverables hand over the same things. So each one is defined for
+itself — and the best way to define it is to **count**:
 
-    specifications 5%    report 35%    drawings 60%
+    six drawings    one report    two specifications
 
-That mix is set once for the project on the Submittals tab, and any deliverable can say
-something different — the one line that is only a bill of quantities says so on its own row.
-The mix is what makes everything below it mean anything.
+What each is worth then works itself out. On Setup every kind carries **what one costs**: a
+drawing is 35 hours, a report 120, a specification 20. Six drawings is 210 hours against 120
+for the report and 40 for the specifications, so the mix is 57% drawings, 32% report, 11%
+specifications — arithmetic, not a number somebody argued into a cell.
+
+    weight of a kind = how many × what one costs, over the whole package
+
+Counting is the way in because it is the thing a lead actually knows. The percentage boxes are
+still there for a package nobody has counted yet — type them and they are scaled to 100 — but
+give a count and the percentage goes read-only, because there is no longer anything to type.
+
+A project-wide default covers every line that has not been given a shape of its own, and any
+deliverable overrides it: the one that is only a bill of quantities says so on its own row, and
+the general arrangement package next to it is forty drawings and nothing else.
+
+**Expected against issued.** The same standard that weighs a package says how many to expect.
+Ten drawings expected, seven issued, 290 hours booked to them:
+
+    41 hours a drawing, against a standard of 35
+
+Which is the number worth arguing about before the next package is priced. The tab shows it per
+kind for the project and for any single deliverable — expected, raised, issued, still to raise,
+what one should cost and what one really did. A deliverable still being drawn does not drag the
+figure down: the comparison is on what has gone out, because a drawing still in progress has
+not finished costing what it is going to cost.
 
 **A kind's share divides across its documents.** One design basis is one report and all of it.
 A general arrangement package is forty drawings, and the 60% splits between them — evenly by
@@ -419,8 +442,8 @@ picking the biggest share. Once a document is **issued its number stops being ou
 somebody else is holding it.
 
 The **kinds** themselves — report, drawings, specifications, bill of quantities, method of
-measurement, calculations — are a list on Setup, with the code each one puts in a number. Add
-whatever this office issues.
+measurement, calculations — are a list on Setup, with the code each one puts in a number and
+what one of them costs in hours. Add whatever this office issues.
 
 **And then the actual cost.** Book hours against a document on **Finance** rather than against
 the line, and a deliverable's cost stops being an estimate: it is the sum of what its documents
@@ -430,7 +453,8 @@ drawings raised is flagged, because those hours cannot be costed a drawing at a 
 drawings exist.
 
 Every column sorts, the register filters by kind, deliverable and whether it has gone out, and
-Carmen can read all of it — *"what have we issued on 3.1?"*, *"what is still to go out?"*
+Carmen can read all of it — *"what have we issued on 3.1?"*, *"how many drawings are still to
+go?"*, *"are our drawings costing what we said they would?"*
 
 ### Resources planning: how many engineers, in which week
 

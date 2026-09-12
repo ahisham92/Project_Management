@@ -1202,8 +1202,9 @@ def load_kinds(project_id: int) -> list[dict[str, Any]]:
         for order, kind in enumerate(DEFAULT_KINDS, start=1):
             conn.execute(
                 "INSERT OR IGNORE INTO document_kinds (project_id, key, name, code, many, "
-                "sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-                (project_id, kind["key"], kind["name"], kind["code"], kind["many"], order),
+                "standard_hours, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, kind["key"], kind["name"], kind["code"], kind["many"],
+                 kind["hours"], order),
             )
         # And the shape of a design package, so the costing means something
         # before anybody has opened Setup.
@@ -1211,6 +1212,10 @@ def load_kinds(project_id: int) -> list[dict[str, Any]]:
             "SELECT id, key FROM document_kinds WHERE project_id = ?", (project_id,))}
         for kind in DEFAULT_KINDS:
             if kind["share"] > 0 and kind["key"] in made:
+                # No count: a project nobody has opened yet has no idea how many
+                # drawings it holds, and inventing a fractional one would be
+                # worse than the percentage it already has. What one costs is
+                # enough to say how many to expect until somebody counts them.
                 conn.execute(
                     "INSERT OR IGNORE INTO project_mix (project_id, kind_id, percent) "
                     "VALUES (?, ?, ?)", (project_id, made[kind["key"]], kind["share"]))
@@ -1251,6 +1256,8 @@ def remove_kind(project_id: int, kind_id: int) -> str:
 
 def save_kinds(project_id: int, form: Mapping[str, Any]) -> int:
     """Renames and re-codes the whole list in one go, the Setup sheet's way."""
+    from .register import _num
+
     saved = 0
     conn = get_db()
     with conn:
@@ -1259,11 +1266,13 @@ def save_kinds(project_id: int, form: Mapping[str, Any]) -> int:
             if field not in form:
                 continue
             conn.execute(
-                "UPDATE document_kinds SET name = ?, code = ?, many = ? "
+                "UPDATE document_kinds SET name = ?, code = ?, many = ?, standard_hours = ? "
                 "WHERE id = ? AND project_id = ?",
                 (" ".join(str(form.get(field) or kind["name"]).split())[:60],
                  str(form.get(f"kind_{kind['id']}_code") or kind["code"]).strip()[:8].upper(),
                  1 if form.get(f"kind_{kind['id']}_many") else 0,
+                 max(0.0, _num(form.get(f"kind_{kind['id']}_hours"),
+                               kind["standard_hours"] or 0)),
                  kind["id"], project_id),
             )
             saved += 1
@@ -1275,7 +1284,8 @@ def load_mix(project_id: int) -> list[dict[str, Any]]:
     load_kinds(project_id)
     return [dict(r) for r in query(
         """
-        SELECT m.kind_id, m.percent, k.name, k.code, k.many
+        SELECT m.kind_id, m.percent, m.quantity, k.name, k.code, k.many,
+               k.standard_hours
         FROM project_mix m JOIN document_kinds k ON k.id = m.kind_id
         WHERE m.project_id = ? ORDER BY m.percent DESC, k.sort_order
         """,
@@ -1287,7 +1297,7 @@ def load_task_mixes(project_id: int) -> dict[int, list[dict[str, Any]]]:
     out: dict[int, list[dict[str, Any]]] = {}
     for row in query(
         """
-        SELECT m.task_id, m.kind_id, m.percent
+        SELECT m.task_id, m.kind_id, m.percent, m.quantity
         FROM task_mix m JOIN tasks t ON t.id = m.task_id
         WHERE t.project_id = ? ORDER BY m.percent DESC
         """,
@@ -1297,27 +1307,50 @@ def load_task_mixes(project_id: int) -> dict[int, list[dict[str, Any]]]:
     return out
 
 
-def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None = None) -> None:
+def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None = None,
+            counts: Mapping[Any, float] | None = None) -> None:
     """Set the mix, for the project or for one deliverable.
+
+    Two ways in. Count the things — six drawings, one report — and the weight
+    works itself out from what one of each costs, which is the way that holds
+    up when somebody asks where the number came from. Or type the percentages
+    and leave the counts empty, which is still there for a package nobody has
+    counted yet.
 
     A deliverable given nothing goes back to following the project, which is
     how a line is put back rather than pinned to a copy of today's shape.
     """
-    from .register import to_a_hundred
+    from .register import mix_for, to_a_hundred
 
-    whole = to_a_hundred({int(k): float(v) for k, v in supplied.items()})
+    counted = {int(k): max(0.0, float(v or 0)) for k, v in (counts or {}).items()}
+    standard = standard_hours(project_id)
+    rows = [{"kind_id": kind_id, "percent": float(percent or 0),
+             "quantity": counted.get(int(kind_id), 0.0)}
+            for kind_id, percent in ((int(k), v) for k, v in supplied.items())]
+    # Ask the same arithmetic the page reads with, so what is written down and
+    # what is shown can never drift apart.
+    weighed = mix_for(0, {}, rows, standard)
+    whole = to_a_hundred({int(row["kind_id"]): row["percent"] for row in weighed})
+
     conn = get_db()
     with conn:
         if task_id:
             conn.execute("DELETE FROM task_mix WHERE task_id = ?", (task_id,))
             for kind_id, percent in whole.items():
-                conn.execute("INSERT INTO task_mix (task_id, kind_id, percent) VALUES (?, ?, ?)",
-                             (task_id, kind_id, percent))
+                conn.execute("INSERT INTO task_mix (task_id, kind_id, percent, quantity) "
+                             "VALUES (?, ?, ?, ?)",
+                             (task_id, kind_id, percent, counted.get(kind_id, 0.0)))
         else:
             conn.execute("DELETE FROM project_mix WHERE project_id = ?", (project_id,))
             for kind_id, percent in whole.items():
-                conn.execute("INSERT INTO project_mix (project_id, kind_id, percent) "
-                             "VALUES (?, ?, ?)", (project_id, kind_id, percent))
+                conn.execute("INSERT INTO project_mix (project_id, kind_id, percent, quantity) "
+                             "VALUES (?, ?, ?, ?)",
+                             (project_id, kind_id, percent, counted.get(kind_id, 0.0)))
+
+
+def standard_hours(project_id: int) -> dict[int, float]:
+    """What one of each kind costs: the yardstick a count is weighed against."""
+    return {int(k["id"]): float(k["standard_hours"] or 0) for k in load_kinds(project_id)}
 
 
 def load_submittals(project_id: int, task_id: int | None = None) -> list[dict[str, Any]]:
@@ -1539,13 +1572,15 @@ def register(project: Mapping[str, Any], snapshot: Mapping[str, Any] | None = No
     plan = plan or resource_plan(project, snapshot)
 
     kinds = load_kinds(project_id)
+    standard = {int(k["id"]): float(k["standard_hours"] or 0) for k in kinds}
     made = reg.costing(
         snapshot["tasks"], load_submittals(project_id),
         load_task_mixes(project_id), load_mix(project_id),
-        plan.get("by_task") or {}, booked_by_submittal(project_id),
+        plan.get("by_task") or {}, booked_by_submittal(project_id), standard,
     )
     made["kinds"] = kinds
     made["kind_names"] = {int(k["id"]): k["name"] for k in kinds}
+    made["standard_hours"] = standard
     made["default_mix"] = load_mix(project_id)
     made["trades"] = load_trades(project_id)
     made["statuses"] = reg.STATUSES

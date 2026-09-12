@@ -140,8 +140,12 @@ TABS: tuple[dict[str, Any], ...] = (
                       "The number comes from the convention on Setup rather than from you.",
         "steps": (
             "Read <strong>what a deliverable is made of</strong>: a design package is not one "
-            "document. Specifications 5%, report 35%, drawings 60% is a shape a design office "
-            "recognises, and it is what splits a line's hours across the things it hands over.",
+            "document, and no two deliverables hand over the same things. Count what this one "
+            "submits — six drawings, one report — and what each is worth works itself out.",
+            "The arithmetic is <strong>what one costs, times how many</strong>. A drawing is 35 "
+            "hours on Setup and a report is 120, so six drawings against one report is 64% "
+            "drawings and 36% report, and nobody typed a percentage. Leave the count empty and "
+            "the percentage is yours to type, which is what a package nobody has counted needs.",
             "<strong>Raise a document</strong>: pick the deliverable and the kind, give it a "
             "title, and the number appears as you go — produced from the convention, not typed.",
             "Tick the <strong>trades issuing it</strong>. A design basis report is written by "
@@ -153,6 +157,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "it in the row. Marking one issued stamps the day it went out.",
             "Book hours against a document on <strong>Finance</strong>, and the deliverable's "
             "cost stops being an estimate.",
+            "Read <strong>expected against issued</strong>: ten drawings expected, seven out, "
+            "290 hours booked to them is 41 hours a drawing against a standard of 35. That is "
+            "the number worth arguing about before the next package is priced.",
         ),
         "watch": (
             "A document that has gone out keeps its number. Somebody else is holding that "
@@ -164,7 +171,7 @@ TABS: tuple[dict[str, Any], ...] = (
             "line's documents can never be worth more than the line.",
         ),
         "terms": ("document register", "submittal", "document kind", "numbering convention",
-                  "the mix", "weight", "issued"),
+                  "the mix", "what one costs", "weight", "issued"),
     },
     {
         "key": "resources",
@@ -753,10 +760,17 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "produced before submission rather than typed and checked.",
      "The running number counts what already exists under the same prefix, so a convention "
      "that groups by trade numbers each trade from one."),
+    ("What one costs", "money",
+     "The standard hours for a kind of document, set on Setup: a drawing is 35 hours, a report "
+     "120. It does two jobs — it turns a count of documents into a weight, and it gives the "
+     "hours really booked something to be measured against.",
+     "Ten drawings expected at 35 hours, seven issued with 290 booked, is 41 hours a drawing. "
+     "The standard is what makes that sentence sayable."),
     ("The mix", "money",
-     "What a deliverable is made of, in percent: specifications 5%, report 35%, drawings 60%. "
-     "Set once for the project, and overridden on any line that is made of something else. It "
-     "is what lets a single drawing be costed.",
+     "What a deliverable is made of: six drawings and a report, or specifications 5%, report "
+     "35%, drawings 60%. Set once for the project, and overridden on any line that is made of "
+     "something else — no two workflows submit the same things. Counting is the better way in, "
+     "because the weight then works itself out from what one of each costs.",
      "A document's hours = its deliverable's hours × its kind's share of the line × its own "
      "share of its kind × each trade's share of it."),
     ("Issued", "money",

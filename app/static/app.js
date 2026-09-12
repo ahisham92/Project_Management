@@ -1758,13 +1758,58 @@
 
   // --- the register --------------------------------------------------------
   //
-  // Two things: the number a document is about to be given, shown as the
-  // deliverable and the kind are chosen rather than after the fact, and the
-  // title and status edited where they are read.
+  // Three things: what a deliverable is made of, worked out as it is counted;
+  // the number a document is about to be given, shown as the deliverable and
+  // the kind are chosen rather than after the fact; and the title and status
+  // edited where they are read.
   //
   // Seeing the number before pressing the button is the whole point of having
   // a convention. A number produced by a rule nobody can watch working is just
-  // a number somebody has to check.
+  // a number somebody has to check — and the same goes for a weight.
+
+  // What a deliverable is made of, worked out as it is typed.
+  //
+  // The server does this same sum on save; doing it here too is what makes the
+  // form honest. Somebody typing six drawings should see 64% appear, not press
+  // Save and find out afterwards what the page decided they meant.
+
+  (function () {
+    var form = document.getElementById('the-mix');
+    if (!form) return;
+
+    var counts = Array.prototype.slice.call(form.querySelectorAll('input[data-count]'));
+    if (!counts.length) return;
+
+    function redo() {
+      // Counting wins where anything has been counted and priced. Where it has
+      // not, the boxes are somebody's own numbers and are left alone.
+      var weighed = counts.filter(function (box) {
+        return Number(box.value) > 0 && Number(box.dataset.hours) > 0;
+      });
+      var whole = weighed.reduce(function (sum, box) {
+        return sum + Number(box.value) * Number(box.dataset.hours);
+      }, 0);
+
+      counts.forEach(function (box) {
+        var weight = form.querySelector('[data-weight="' + box.dataset.count + '"]');
+        if (!weight) return;
+        var counted = whole > 0 && weighed.indexOf(box) !== -1;
+        if (counted) {
+          var hours = Number(box.value) * Number(box.dataset.hours);
+          weight.value = Math.round(hours / whole * 1000) / 10;
+        } else if (whole > 0) {
+          weight.value = 0;
+        }
+        weight.readOnly = whole > 0;
+        weight.title = counted ? 'Worked out from the count'
+                               : 'Typed — give a count and this works itself out';
+      });
+    }
+
+    form.addEventListener('input', function (event) {
+      if (event.target.matches('input[data-count]')) redo();
+    });
+  })();
 
   (function () {
     var form = document.getElementById('raise-document');

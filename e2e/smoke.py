@@ -107,6 +107,7 @@ def main() -> int:
         step("books hours and they reach budget control", _book_hours)
         step("the register numbers a document before it is raised", _register_raise)
         step("a deliverable is made of what it actually hands over", _register_mix)
+        step("counting what a deliverable submits weighs it", _register_counting)
         step("a document's title and status are changed in the row", _register_row)
         step("hours booked to a drawing cost its deliverable", _register_costing)
         step("resources plans the hours into weeks and people", _resources)
@@ -1747,6 +1748,59 @@ def _register_mix(page) -> None:
     kinds.locator("input[name^=mix_]").first.fill("35")
     kinds.locator("button:has-text('Save the project mix')").click()
     page.wait_for_selector("text=Saved what it is made of >> visible=true", timeout=8000)
+
+
+def _register_counting(page) -> None:
+    """Every workflow hands over something different, so each is defined for
+    itself — by counting what it submits. The weights appear as it is typed."""
+    page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
+
+    # One deliverable, given a shape of its own rather than the project's.
+    lines = page.locator(".card:has(h2:text-is('By deliverable'))")
+    lines.locator(".panel-summary").click()
+    lines.locator("a:has-text('Open')").first.click()
+    page.wait_for_selector("#the-mix", state="attached", timeout=8000)
+
+    mix = page.locator("#the-mix")
+    counts = mix.locator("input[data-count]")
+    first, second = counts.nth(0), counts.nth(1)
+    one = float(first.get_attribute("data-hours") or 0)
+    two = float(second.get_attribute("data-hours") or 0)
+    if not (one > 0 and two > 0):
+        raise AssertionError("a kind with no standard cost cannot be weighed by counting")
+
+    # Everything else cleared: this line is one of the first and six of the second.
+    for n in range(counts.count()):
+        counts.nth(n).fill("0")
+    first.fill("1")
+    second.fill("6")
+    page.wait_for_timeout(300)
+
+    weights = mix.locator("input[data-weight]")
+    got = float(weights.nth(1).input_value())
+    want = 6 * two / (one + 6 * two) * 100
+    if abs(got - want) > 0.2:
+        raise AssertionError(f"six of them should be worth {want:.1f}%, not {got}%")
+    if weights.nth(1).get_attribute("readonly") is None:
+        raise AssertionError("a weight worked out from a count is not one to type over")
+
+    mix.locator("button[type=submit]").click()
+    page.wait_for_selector("text=Saved what it is made of >> visible=true", timeout=8000)
+
+    # And this deliverable now expects exactly what was counted for it.
+    panel = page.locator("#expected")
+    numbers = [cell.inner_text().strip() for cell in panel.locator("tbody td").all()]
+    if "6" not in numbers or "35.0" not in numbers:
+        raise AssertionError(f"six at 35 hours were counted; the panel says {numbers[:8]}")
+    page.screenshot(path=str(SHOTS / "40-register-counted.png"), full_page=True)
+
+    # Hand the line back to the project's own shape for the steps after this.
+    for n in range(counts.count()):
+        counts.nth(n).fill("0")
+    for n in range(weights.count()):
+        weights.nth(n).fill("0")
+    mix.locator("button[type=submit]").click()
+    page.wait_for_selector("text=Back to the project", timeout=8000)
 
 
 def _register_row(page) -> None:

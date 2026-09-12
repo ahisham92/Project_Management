@@ -166,6 +166,12 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_documents(conn)
         _ensure_resource_weeks(conn)
         _ensure_register(conn)
+        for table, column, definition in (
+            ("document_kinds", "standard_hours", "REAL NOT NULL DEFAULT 0"),
+            ("project_mix", "quantity", "REAL NOT NULL DEFAULT 0"),
+            ("task_mix", "quantity", "REAL NOT NULL DEFAULT 0"),
+        ):
+            _ensure_column(conn, table, column, definition)
         # After the register's own tables, not with the other columns above:
         # foreign keys are on, and a column cannot point at a table that does
         # not exist yet.
@@ -434,6 +440,10 @@ def _ensure_register(conn: sqlite3.Connection) -> None:
             name       TEXT    NOT NULL,
             code       TEXT    NOT NULL DEFAULT '',
             many       INTEGER NOT NULL DEFAULT 0,
+            -- What one of these costs, as a rule of thumb: a drawing is 35
+            -- hours. It is what turns "six drawings and a report" into a
+            -- weight, and what the real thing is measured against.
+            standard_hours REAL NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             UNIQUE (project_id, key)
         )
@@ -446,6 +456,10 @@ def _ensure_register(conn: sqlite3.Connection) -> None:
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             kind_id    INTEGER NOT NULL REFERENCES document_kinds(id) ON DELETE CASCADE,
             percent    REAL    NOT NULL DEFAULT 0,
+            -- How many of this kind the package contains. Given one, the
+            -- weight works itself out; left at nothing, the percent above is
+            -- what somebody typed and the count is worked back from it.
+            quantity   REAL    NOT NULL DEFAULT 0,
             PRIMARY KEY (project_id, kind_id)
         )
         """
@@ -456,6 +470,7 @@ def _ensure_register(conn: sqlite3.Connection) -> None:
             task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
             kind_id INTEGER NOT NULL REFERENCES document_kinds(id) ON DELETE CASCADE,
             percent REAL    NOT NULL DEFAULT 0,
+            quantity REAL   NOT NULL DEFAULT 0,
             PRIMARY KEY (task_id, kind_id)
         )
         """

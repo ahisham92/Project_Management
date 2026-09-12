@@ -77,22 +77,47 @@
     <div>
       <h2>What a deliverable is made of</h2>
       <p class="small muted" style="margin-top:2px">
-        A design package is not one document. The mix is what splits a line's hours across
-        the things it actually hands over — and any deliverable can say something different.
+        A design package is not one document, and no two deliverables hand over the same
+        things. Count what this one submits — six drawings, one report — and what each is
+        worth works itself out from what one costs on Setup. Count anything and the package is
+        defined by counting: a kind left at nothing is not part of it. The percentages are
+        there for a package nobody has counted.
       </p>
     </div>
   </div>
   <div class="card-body">
     <form method="post" action="{{ url_for('projects.save_mix', project_id=project['id']) }}"
-          class="inline-form" style="align-items:flex-end;flex-wrap:wrap">
+          class="inline-form" id="the-mix" style="align-items:flex-end;flex-wrap:wrap">
       {% if editing %}<input type="hidden" name="task_id" value="{{ editing['id'] }}">{% endif %}
       {% for kind in made['kinds'] %}
-        <label class="field" style="max-width:130px">
-          <span class="field-label">{{ kind['name'] }}</span>
-          <input type="number" name="mix_{{ kind['id'] }}" min="0" max="100" step="0.5"
-                 value="{{ mix_now.get(kind['id'], 0) | round(1) }}"
-                 {{ 'disabled' if not is_manager }}>
-        </label>
+        <div class="field" style="max-width:168px">
+          <span class="field-label">
+            {{ kind['name'] }}
+            {% if kind['standard_hours'] %}
+              <span class="muted">· {{ '%g'|format(kind['standard_hours']) }} h each</span>
+            {% endif %}
+          </span>
+          <div class="inline-form" style="gap:6px;margin:0">
+            <input type="number" name="count_{{ kind['id'] }}" min="0" step="1"
+                   class="tabular right" style="width:64px"
+                   data-count="{{ kind['id'] }}"
+                   data-hours="{{ '%g'|format(kind['standard_hours'] or 0) }}"
+                   value="{{ '%g'|format(count_now.get(kind['id'], 0)) }}"
+                   placeholder="how many"
+                   aria-label="How many {{ kind['name'] }}"
+                   {{ 'disabled' if not is_manager }}>
+            <input type="number" name="mix_{{ kind['id'] }}" min="0" max="100" step="0.5"
+                   class="tabular right" style="width:72px"
+                   data-weight="{{ kind['id'] }}"
+                   value="{{ mix_now.get(kind['id'], 0) | round(1) }}"
+                   aria-label="{{ kind['name'] }} as a percentage"
+                   title="{{ 'Worked out from the count' if kind['id'] in counted
+                             else 'Typed — give a count and this works itself out' }}"
+                   {{ 'readonly' if kind['id'] in counted }}
+                   {{ 'disabled' if not is_manager }}>
+            <span class="small muted">%</span>
+          </div>
+        </div>
       {% endfor %}
       {% if is_manager %}
         <button type="submit" class="btn btn-primary">
@@ -108,7 +133,8 @@
         <a href="{{ url_for('projects.submittals', project_id=project['id']) }}">Back to the project mix</a>.
       {% else %}
         This is the project's shape, used by every deliverable that has not been given one of
-        its own. The percentages are nudged to total 100 on the largest of them.
+        its own. Where a count is given the percentage is worked out and shown read-only;
+        where it is not, the percentages are scaled to total 100.
         Pick a deliverable in the register below to give it a mix of its own.
       {% endif %}
     </p>
@@ -346,6 +372,76 @@
     A document's hours are its deliverable's, times its kind's share of the line, times its
     own share of its kind, times each trade's share of it. Book time against a document on
     Finance and the deliverable's cost stops being an estimate.
+  </div>
+</div>
+
+{# --- expected against what is really there -------------------------------- #}
+<div class="card" id="expected" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>{{ 'What ' ~ editing['wbs'] ~ ' should hold' if editing else 'Expected against issued' }}</h2>
+      <p class="small muted" style="margin-top:2px">
+        How many of each to expect — from the count, or from the hours divided by what one
+        costs — against how many have gone out and what they really took.
+      </p>
+    </div>
+  </div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Kind</th>
+          <th class="right">Expected</th><th class="right">Raised</th><th class="right">Issued</th>
+          <th class="right">Still to raise</th>
+          <th class="right">Should cost each</th><th class="right">Really cost each</th>
+          <th class="right">Against standard</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in expected %}
+          {# A count of documents reads as a whole number even when it came from
+             dividing hours: nobody issues four tenths of a drawing. #}
+          {% set want = row['expected'] | round | int %}
+          {# Against what is in the register at all, not against what has gone
+             out: a drawing raised but not issued still exists. #}
+          {% set left = want - row['documents'] %}
+          <tr>
+            <td>{{ made['kind_names'].get(row['kind_id'], 'Kind') }}</td>
+            <td class="right tabular">{{ want }}</td>
+            <td class="right tabular">{{ row['documents'] }}</td>
+            <td class="right tabular">{{ row['issued'] }}</td>
+            <td class="right tabular {{ 'ink2' if left <= 0 }}">
+              {{ left if left > 0 else 0 }}
+            </td>
+            <td class="right tabular">{{ row['hours_each_expected'] | round(1) }}</td>
+            {# Only once something has been charged: a drawing nobody has
+               booked an hour to is not under budget, it is unstarted. #}
+            <td class="right tabular">
+              {% if row['spent_hours'] > 0 %}{{ row['hours_each_actual'] | round(1) }}
+              {% else %}<span class="ink2">—</span>{% endif %}
+            </td>
+            <td class="right tabular">
+              {% if row['spent_hours'] > 0 %}
+                <span class="{{ 'bad-text' if row['over_each'] > 0.05 else 'good-text' }}">
+                  {{ '+' if row['over_each'] > 0 }}{{ row['over_each'] | round(1) }} h
+                </span>
+              {% else %}<span class="ink2">nothing booked yet</span>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8" class="small muted">
+            Nothing to expect yet — count what a deliverable submits above.
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">
+    <span class="small muted">
+      “Really cost each” is the hours booked to what has been issued, divided by how many
+      went out. A drawing standing at 41 hours against a standard of 35 is the number worth
+      arguing about before the next package is priced.
+    </span>
   </div>
 </div>
 

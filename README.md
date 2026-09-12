@@ -367,6 +367,71 @@ A project has a **maximum revisions** setting (default 10). A deliverable that r
 flagged for escalation on the schedule and cannot be pushed further without raising the
 limit — so a line stuck at Rev 10 is visible rather than quietly cycling.
 
+### The document register: what actually gets handed over
+
+A deliverable is a line on a programme. It is not a thing anybody hands over. What gets handed
+over is a report, a set of drawings, a specification, a bill of quantities — and those are what
+carry numbers, go out on transmittals and come back with comments. The **Submittals** tab is
+that list.
+
+**What a deliverable is made of.** A design package is not one document, and its parts are not
+worth the same:
+
+    specifications 5%    report 35%    drawings 60%
+
+That mix is set once for the project on the Submittals tab, and any deliverable can say
+something different — the one line that is only a bill of quantities says so on its own row.
+The mix is what makes everything below it mean anything.
+
+**A kind's share divides across its documents.** One design basis is one report and all of it.
+A general arrangement package is forty drawings, and the 60% splits between them — evenly by
+default, because forty drawings of unknown difficulty are best assumed equal. A drawing that is
+plainly bigger carries a **weight** and takes more.
+
+**A document's share divides across the trades issuing it.** This is the part a programme
+cannot tell you. A design basis report is written by every discipline at once — one document,
+four trades — while a dredging drawing is Marine's alone. Tick the trades on the document and
+give each a percentage; leave them all clear and it is split exactly the way its deliverable
+is, which is the usual answer.
+
+Multiply those three and every drawing in the register has hours against it:
+
+    a document's hours = its deliverable's hours
+                       × its kind's share of the line
+                       × its own share of its kind
+                       × each trade's share of it
+
+The register **spends what the resource plan allows** — it never invents more, so a line's
+documents can never be worth more than the line.
+
+**Numbers are produced, not typed.** Set a convention on Setup:
+
+    {project}-{trade}-{kind}-{seq:4}     →     L26100-MARINE-DWG-0001
+
+and the register fills it in as you choose the deliverable and the kind, *before* you press the
+button — which is the whole point of having a convention. The tokens are `{project}`,
+`{client}`, `{section}`, `{wbs}`, `{trade}`, `{kind}`, `{year}`, `{yy}`, `{rev}` and `{seq}`
+(write `{seq:4}` for `0001`). The running number counts what already exists **under the same
+prefix**, so a convention that groups by trade numbers each trade from one without anybody
+maintaining a counter, and changing the convention later does not renumber history. A document
+several trades share has no `{trade}` in its number — that is the honest answer rather than
+picking the biggest share. Once a document is **issued its number stops being ours to change**:
+somebody else is holding it.
+
+The **kinds** themselves — report, drawings, specifications, bill of quantities, method of
+measurement, calculations — are a list on Setup, with the code each one puts in a number. Add
+whatever this office issues.
+
+**And then the actual cost.** Book hours against a document on **Finance** rather than against
+the line, and a deliverable's cost stops being an estimate: it is the sum of what its documents
+took. The register shows, per document and per deliverable, what is allowed, what has been
+raised against it and what it has cost. A deliverable whose mix asks for drawings with no
+drawings raised is flagged, because those hours cannot be costed a drawing at a time until the
+drawings exist.
+
+Every column sorts, the register filters by kind, deliverable and whether it has gone out, and
+Carmen can read all of it — *"what have we issued on 3.1?"*, *"what is still to go out?"*
+
 ### Resources planning: how many engineers, in which week
 
 A budget in hours says what a trade may spend. It does not say *when*, and "when" is the only
@@ -843,8 +908,8 @@ in January, and the register should say so.
 
 ### Printing and PDF for management
 
-**Progress**, **Schedule**, **Finance**, **Resources**, **Summarized Progress** and
-**Minutes** each carry a **Print / PDF**
+**Progress**, **Schedule**, **Finance**, **Submittals**, **Resources**,
+**Summarized Progress** and **Minutes** each carry a **Print / PDF**
 button. It
 opens your browser's print dialog, where "Save as PDF" is a destination on every current
 browser — so there is no PDF library to install and nothing to keep up to date.
@@ -876,6 +941,8 @@ which is what goes into a monthly report or on a wall.
 7. Report progress on the **Progress** tab and book hours at the foot of the **Finance** tab.
 8. Set the **target margin**, the **comments reserve** and the **hours per engineer per week**
    on Setup, and read the staffing plan those three numbers make on the **Resources** tab.
+9. Set the **numbering convention** and the kinds of document you issue on Setup, then raise
+   the documents themselves on the **Submittals** tab.
 
 For a large scope, step 4 is far quicker in Excel: **Export to Excel**, fill in the
 Deliverables sheet, and **Import from Excel**.

@@ -1182,6 +1182,376 @@ def resource_plan(project: Mapping[str, Any],
 # How many to keep per project. A year of weekly reports and every set of
 # minutes twice over fits comfortably; past that the oldest go, because a
 # database is not an archive and the nightly backup carries all of it.
+# --- the register of what is issued ------------------------------------------
+
+def load_kinds(project_id: int) -> list[dict[str, Any]]:
+    """What this project issues, seeded from the usual list the first time.
+
+    Seeded rather than left empty, because a register nobody can add to until
+    they have built a taxonomy is a register nobody uses.
+    """
+    from .register import DEFAULT_KINDS
+
+    rows = query("SELECT * FROM document_kinds WHERE project_id = ? ORDER BY sort_order, id",
+                 (project_id,))
+    if rows:
+        return [dict(r) for r in rows]
+
+    conn = get_db()
+    with conn:
+        for order, kind in enumerate(DEFAULT_KINDS, start=1):
+            conn.execute(
+                "INSERT OR IGNORE INTO document_kinds (project_id, key, name, code, many, "
+                "sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_id, kind["key"], kind["name"], kind["code"], kind["many"], order),
+            )
+        # And the shape of a design package, so the costing means something
+        # before anybody has opened Setup.
+        made = {row["key"]: row["id"] for row in conn.execute(
+            "SELECT id, key FROM document_kinds WHERE project_id = ?", (project_id,))}
+        for kind in DEFAULT_KINDS:
+            if kind["share"] > 0 and kind["key"] in made:
+                conn.execute(
+                    "INSERT OR IGNORE INTO project_mix (project_id, kind_id, percent) "
+                    "VALUES (?, ?, ?)", (project_id, made[kind["key"]], kind["share"]))
+    return [dict(r) for r in query(
+        "SELECT * FROM document_kinds WHERE project_id = ? ORDER BY sort_order, id", (project_id,))]
+
+
+def add_kind(project_id: int, name: str, code: str = "", many: bool = False) -> str:
+    """A kind of document this office issues. Empty on success, or what is wrong."""
+    name = " ".join(str(name or "").split())[:60]
+    if not name:
+        return "Give the kind a name"
+    key = normalise_code(name) or f"kind{next_sort_order('document_kinds', project_id)}"
+    if query_one("SELECT 1 FROM document_kinds WHERE project_id = ? AND key = ?", (project_id, key)):
+        return f"“{name}” is already on the list"
+    insert(
+        "INSERT INTO document_kinds (project_id, key, name, code, many, sort_order) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, key, name, (str(code or name)[:8]).upper(), 1 if many else 0,
+         next_sort_order("document_kinds", project_id)),
+    )
+    return ""
+
+
+def remove_kind(project_id: int, kind_id: int) -> str:
+    """Takes a kind off the list, unless the register is still using it."""
+    row = query_one("SELECT * FROM document_kinds WHERE id = ? AND project_id = ?",
+                    (kind_id, project_id))
+    if row is None:
+        return "That is not on the list"
+    used = query_one("SELECT COUNT(*) AS n FROM submittals WHERE kind_id = ?", (kind_id,))
+    if used and used["n"]:
+        return (f"{used['n']} document{'s' if used['n'] != 1 else ''} in the register "
+                f"{'are' if used['n'] != 1 else 'is'} a {row['name']}. Remove those first.")
+    execute("DELETE FROM document_kinds WHERE id = ?", (kind_id,))
+    return ""
+
+
+def save_kinds(project_id: int, form: Mapping[str, Any]) -> int:
+    """Renames and re-codes the whole list in one go, the Setup sheet's way."""
+    saved = 0
+    conn = get_db()
+    with conn:
+        for kind in load_kinds(project_id):
+            field = f"kind_{kind['id']}_name"
+            if field not in form:
+                continue
+            conn.execute(
+                "UPDATE document_kinds SET name = ?, code = ?, many = ? "
+                "WHERE id = ? AND project_id = ?",
+                (" ".join(str(form.get(field) or kind["name"]).split())[:60],
+                 str(form.get(f"kind_{kind['id']}_code") or kind["code"]).strip()[:8].upper(),
+                 1 if form.get(f"kind_{kind['id']}_many") else 0,
+                 kind["id"], project_id),
+            )
+            saved += 1
+    return saved
+
+
+def load_mix(project_id: int) -> list[dict[str, Any]]:
+    """The project's default mix: what a deliverable is made of, in percent."""
+    load_kinds(project_id)
+    return [dict(r) for r in query(
+        """
+        SELECT m.kind_id, m.percent, k.name, k.code, k.many
+        FROM project_mix m JOIN document_kinds k ON k.id = m.kind_id
+        WHERE m.project_id = ? ORDER BY m.percent DESC, k.sort_order
+        """,
+        (project_id,))]
+
+
+def load_task_mixes(project_id: int) -> dict[int, list[dict[str, Any]]]:
+    """The deliverables that submit something other than the project's shape."""
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in query(
+        """
+        SELECT m.task_id, m.kind_id, m.percent
+        FROM task_mix m JOIN tasks t ON t.id = m.task_id
+        WHERE t.project_id = ? ORDER BY m.percent DESC
+        """,
+        (project_id,),
+    ):
+        out.setdefault(int(row["task_id"]), []).append(dict(row))
+    return out
+
+
+def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None = None) -> None:
+    """Set the mix, for the project or for one deliverable.
+
+    A deliverable given nothing goes back to following the project, which is
+    how a line is put back rather than pinned to a copy of today's shape.
+    """
+    from .register import to_a_hundred
+
+    whole = to_a_hundred({int(k): float(v) for k, v in supplied.items()})
+    conn = get_db()
+    with conn:
+        if task_id:
+            conn.execute("DELETE FROM task_mix WHERE task_id = ?", (task_id,))
+            for kind_id, percent in whole.items():
+                conn.execute("INSERT INTO task_mix (task_id, kind_id, percent) VALUES (?, ?, ?)",
+                             (task_id, kind_id, percent))
+        else:
+            conn.execute("DELETE FROM project_mix WHERE project_id = ?", (project_id,))
+            for kind_id, percent in whole.items():
+                conn.execute("INSERT INTO project_mix (project_id, kind_id, percent) "
+                             "VALUES (?, ?, ?)", (project_id, kind_id, percent))
+
+
+def load_submittals(project_id: int, task_id: int | None = None) -> list[dict[str, Any]]:
+    """The register, with each document's kind, deliverable and issuing trades."""
+    where = "s.project_id = ?" + (" AND s.task_id = ?" if task_id else "")
+    args: tuple = (project_id, task_id) if task_id else (project_id,)
+    rows = [dict(r) for r in query(
+        f"""
+        SELECT s.*, k.name AS kind_name, k.code AS kind_code, k.key AS kind_key,
+               t.wbs AS task_wbs, t.name AS task_name, t.submission_date AS task_due,
+               sec.name AS section_name
+        FROM submittals s
+        JOIN document_kinds k ON k.id = s.kind_id
+        JOIN tasks t ON t.id = s.task_id
+        LEFT JOIN sections sec ON sec.id = t.section_id
+        WHERE {where}
+        ORDER BY t.wbs, k.sort_order, s.sort_order, s.id
+        """,
+        args)]
+
+    mine: dict[int, list[dict[str, Any]]] = {}
+    for row in query(
+        """
+        SELECT st.submittal_id, st.trade_id, st.share, tr.name, tr.color
+        FROM submittal_trades st
+        JOIN submittals s ON s.id = st.submittal_id
+        JOIN trades tr ON tr.id = st.trade_id
+        WHERE s.project_id = ? ORDER BY st.share DESC, tr.name
+        """,
+        (project_id,),
+    ):
+        mine.setdefault(int(row["submittal_id"]), []).append(dict(row))
+    from .register import ISSUED_STATES, STATUS_NAMES
+
+    for row in rows:
+        row["trades"] = mine.get(int(row["id"]), [])
+        row["status_name"] = STATUS_NAMES.get(row["status"], row["status"])
+        row["issued"] = row["status"] in ISSUED_STATES
+    return rows
+
+
+def booked_by_submittal(project_id: int) -> dict[int, dict[int, float]]:
+    """Hours charged to each document, trade by trade."""
+    out: dict[int, dict[int, float]] = {}
+    for row in query(
+        "SELECT submittal_id, trade_id, SUM(hours) AS hours FROM time_entries "
+        "WHERE project_id = ? AND submittal_id IS NOT NULL GROUP BY submittal_id, trade_id",
+        (project_id,),
+    ):
+        out.setdefault(int(row["submittal_id"]), {})[
+            int(row["trade_id"]) if row["trade_id"] is not None else 0] = float(row["hours"] or 0)
+    return out
+
+
+def next_number(project: Mapping[str, Any], task: Mapping[str, Any],
+                kind: Mapping[str, Any], trade: Mapping[str, Any] | None = None,
+                revision: int = 0) -> str:
+    """What the register would call the next document of this kind on this line."""
+    from .register import number_for
+
+    project = as_dict(project)
+    project_id = int(project["id"])
+    section = query_one("SELECT * FROM sections WHERE id = ?", (task.get("section_id"),)) \
+        if task.get("section_id") else None
+    taken = [r["number"] for r in query(
+        "SELECT number FROM submittals WHERE project_id = ?", (project_id,))]
+    made, _prefix = number_for(
+        project, taken, task=as_dict(task), kind=as_dict(kind),
+        trade=as_dict(trade) if trade else None,
+        section=as_dict(section) if section else None,
+        year=(task.get("submission_date") or today())[:4], revision=revision)
+    return made
+
+
+def raise_submittal(project: Mapping[str, Any], task_id: int, kind_id: int, title: str,
+                    trade_shares: Mapping[Any, float] | None = None,
+                    weight: float = 1.0, planned_date: str = "",
+                    number: str = "") -> tuple[int, str]:
+    """Put a document in the register. Returns (id, trouble).
+
+    The number is produced rather than asked for, unless somebody supplies one —
+    a document that already went out under a number of its own keeps it.
+    """
+    project = as_dict(project)
+    project_id = int(project["id"])
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
+    kind = query_one("SELECT * FROM document_kinds WHERE id = ? AND project_id = ?",
+                     (kind_id, project_id))
+    if task is None:
+        return 0, "That deliverable does not belong to this project"
+    if kind is None:
+        return 0, "That kind of document is not on the project's list"
+
+    title = " ".join(str(title or "").split())[:200]
+    if not title:
+        return 0, "Give the document a title"
+
+    shares = {int(k): float(v) for k, v in (trade_shares or {}).items() if float(v or 0) > 0}
+    # A number belongs to a trade only where one trade owns the document. A
+    # report four disciplines write has no trade in its number, which is the
+    # honest answer rather than picking the biggest share.
+    only = query_one("SELECT * FROM trades WHERE id = ?", (next(iter(shares)),)) \
+        if len(shares) == 1 else None
+    number = str(number or "").strip()[:60] or next_number(project, dict(task), dict(kind), only)
+    if query_one("SELECT 1 FROM submittals WHERE project_id = ? AND number = ?",
+                 (project_id, number)):
+        return 0, f"{number} is already in the register"
+
+    made = insert(
+        """
+        INSERT INTO submittals (project_id, task_id, kind_id, number, title, weight,
+                                planned_date, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (project_id, task_id, kind_id, number, title, max(0.0, float(weight or 1)),
+         planned_date or "", next_sort_order("submittals", project_id)),
+    )
+    if shares:
+        set_submittal_trades(project_id, made, shares)
+    return made, ""
+
+
+def set_submittal_trades(project_id: int, submittal_id: int,
+                         shares: Mapping[Any, float]) -> None:
+    """Who is issuing a document and how much of it is theirs, to total 100."""
+    from .register import to_a_hundred
+
+    whole = to_a_hundred({int(k): float(v) for k, v in shares.items()})
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM submittal_trades WHERE submittal_id = ?", (submittal_id,))
+        for trade_id, share in whole.items():
+            if query_one("SELECT 1 FROM trades WHERE id = ? AND project_id = ?",
+                         (trade_id, project_id)):
+                conn.execute("INSERT INTO submittal_trades (submittal_id, trade_id, share) "
+                             "VALUES (?, ?, ?)", (submittal_id, trade_id, share))
+
+
+# What can be changed on a document once it is in the register, and how each
+# one is read. Keyed by the field, valued by the kind of thing it is.
+SUBMITTAL_FIELDS = {"title": "words", "weight": "amount", "status": "status",
+                    "revision": "count", "planned_date": "date", "issued_date": "date",
+                    "note": "words", "number": "number"}
+
+
+def update_submittal(project_id: int, submittal_id: int, field: str, value: Any) -> str:
+    """Change one thing about one document. Empty on success, or what is wrong."""
+    from .dates import from_input_or
+    from .register import ISSUED_STATES, STATUS_NAMES
+
+    row = query_one("SELECT * FROM submittals WHERE id = ? AND project_id = ?",
+                    (submittal_id, project_id))
+    if row is None:
+        return "That document is not in the register"
+    reads = SUBMITTAL_FIELDS.get(field)
+    if reads is None:
+        return "There is nothing by that name on a document"
+
+    if reads == "status":
+        value = str(value or "").strip()
+        if value not in STATUS_NAMES:
+            return f"A document is {', '.join(STATUS_NAMES.values())} — not {value!r}"
+        # Issuing it stamps the day, unless somebody already said which day.
+        if value in ISSUED_STATES and not row["issued_date"]:
+            execute("UPDATE submittals SET issued_date = ? WHERE id = ?", (today(), submittal_id))
+
+    elif reads == "number":
+        value = str(value or "").strip()[:60]
+        if not value:
+            return "A document in the register needs a number"
+        # Once it has gone out, somebody else is holding that number. Changing
+        # it here would leave the register and the transmittal disagreeing.
+        if row["status"] in ISSUED_STATES:
+            return "That one has gone out. Its number is not ours to change any more."
+        if query_one("SELECT 1 FROM submittals WHERE project_id = ? AND number = ? AND id != ?",
+                     (project_id, value, submittal_id)):
+            return f"{value} is already in the register"
+
+    elif reads == "words":
+        value = " ".join(str(value or "").split())[:200]
+    elif reads == "count":
+        value = max(0, min(99, int(_as_float(value, row[field]))))
+    elif reads == "amount":
+        value = max(0.0, _as_float(value, row[field]))
+    elif reads == "date":
+        value = from_input_or(value, "") if value not in (None, "") else ""
+
+    execute(f"UPDATE submittals SET {field} = ? WHERE id = ?", (value, submittal_id))
+    return ""
+
+
+def remove_submittal(project_id: int, submittal_id: int) -> str:
+    """Take a document off the register, unless hours are charged to it."""
+    row = query_one("SELECT * FROM submittals WHERE id = ? AND project_id = ?",
+                    (submittal_id, project_id))
+    if row is None:
+        return "That document is not in the register"
+    booked = query_one("SELECT COUNT(*) AS n FROM time_entries WHERE submittal_id = ?",
+                       (submittal_id,))
+    if booked and booked["n"]:
+        return (f"{booked['n']} time entr{'ies are' if booked['n'] != 1 else 'y is'} charged "
+                f"to {row['number']}. Move those first.")
+    execute("DELETE FROM submittals WHERE id = ?", (submittal_id,))
+    return ""
+
+
+def register(project: Mapping[str, Any], snapshot: Mapping[str, Any] | None = None,
+             plan: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The whole register, costed against the resource plan.
+
+    Read from the same plan the Resources tab draws, so what a drawing is worth
+    and what its deliverable is allowed cannot disagree.
+    """
+    from . import register as reg
+
+    project = as_dict(project)
+    project_id = int(project["id"])
+    snapshot = snapshot or project_snapshot(project)
+    plan = plan or resource_plan(project, snapshot)
+
+    kinds = load_kinds(project_id)
+    made = reg.costing(
+        snapshot["tasks"], load_submittals(project_id),
+        load_task_mixes(project_id), load_mix(project_id),
+        plan.get("by_task") or {}, booked_by_submittal(project_id),
+    )
+    made["kinds"] = kinds
+    made["kind_names"] = {int(k["id"]): k["name"] for k in kinds}
+    made["default_mix"] = load_mix(project_id)
+    made["trades"] = load_trades(project_id)
+    made["statuses"] = reg.STATUSES
+    return made
+
+
 KEEP_DOCUMENTS = 60
 
 # What each kind is called on the page, in the words somebody would use.

@@ -30,10 +30,17 @@ from ..service import (
     record_progress, remove_link, replace_links, set_node_position, simplify_layout,
     update_link,
     apply_setup_workbook, load_impacts, load_snapshots, load_template,
-    resource_plan, restore_schedule, set_allocations, set_staffing,
+    load_kinds, load_mix, load_submittals, load_task_mixes, next_number,
+    raise_submittal,
+    register,
+    remove_submittal,
+    resource_plan, restore_schedule, set_allocations, set_mix, set_staffing,
+    set_submittal_trades, update_submittal,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
+from .. import register as reg
 from .. import resources as rs
+from ..register import ISSUED_STATES
 from ..resources import curve as resource_curve
 from ..minutes_doc import TEMPLATE_FIELDS
 from .handing_out import EXCEL, handed_out
@@ -884,6 +891,9 @@ def budget(project_id: int):
     entries, booked = _booked_hours(project_id)
     return render_template(
         "finance.html",
+        # Hours can be charged to a drawing rather than a line, which is what
+        # lets the register cost a deliverable a document at a time.
+        register_documents=load_submittals(project_id),
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         budget_chart=charts.budget_hours(snapshot["trades"]),
         entries=entries, booked=booked, total_hours=sum(e["hours"] for e in entries),
@@ -896,11 +906,13 @@ def _booked_hours(project_id: int) -> tuple[list, dict]:
     entries = query(
         """
         SELECT e.*, u.name AS user_name, tr.name AS trade_name, tr.color AS trade_color,
-               t.wbs AS task_wbs, t.name AS task_name
+               t.wbs AS task_wbs, t.name AS task_name,
+               s.number AS submittal_number
         FROM time_entries e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN trades tr ON tr.id = e.trade_id
         LEFT JOIN tasks t ON t.id = e.task_id
+        LEFT JOIN submittals s ON s.id = e.submittal_id
         WHERE e.project_id = ?
         ORDER BY e.entry_date DESC, e.id DESC
         LIMIT 500
@@ -1035,6 +1047,190 @@ def redistribute_savings(project_id: int):
     return _back("projects.resources", project_id)
 
 
+# --- the register of what is issued ------------------------------------------
+
+@bp.get("/submittals")
+@login_required
+def submittals(project_id: int):
+    """The register: every report, drawing and specification this project issues.
+
+    A deliverable is a line on a programme and not a thing anybody hands over.
+    This is the list of things that are handed over, what each is worth, and
+    what each has actually cost.
+    """
+    project, role = load_project(project_id)
+    data_date, horizon = _params()
+    snapshot = project_snapshot(project, data_date, horizon)
+    made = register(project, snapshot)
+
+    kind_id = _to_int(request.args.get("kind"))
+    task_id = _to_int(request.args.get("task"))
+    state = (request.args.get("state") or "all").strip()
+    rows = made["documents"]
+    if kind_id:
+        rows = [r for r in rows if int(r["kind_id"]) == kind_id]
+    if task_id:
+        rows = [r for r in rows if int(r["task_id"]) == task_id]
+    if state == "issued":
+        rows = [r for r in rows if r["status"] in ISSUED_STATES]
+    elif state == "open":
+        rows = [r for r in rows if r["status"] not in ISSUED_STATES]
+
+    # The mix the form is editing: one line's own where a line is open, the
+    # project's shape otherwise. Worked out here because a template cannot
+    # build a mapping, and a lookup is what the form needs.
+    own = next((line for line in made["lines"] if line["task_id"] == task_id), None)
+    editing = next((t for t in snapshot["tasks"] if int(t["id"]) == task_id), None) if task_id else None
+    mix_now = {int(row["kind_id"]): row["percent"]
+               for row in ((own or {}).get("mix") if own else made["default_mix"])}
+    has_own = bool(task_id and load_task_mixes(project_id).get(task_id))
+
+    columns = reg.sortable_columns(made["trades"])
+    sort, direction = reg.order_for(request.args.get("sort"), request.args.get("dir"),
+                                   columns, "number")
+
+    return render_template(
+        "submittals.html",
+        project=project, role=role, snapshot=snapshot, data_date=data_date,
+        made=made, rows=reg.sort_documents(rows, sort, direction),
+        columns=columns, sort=sort, direction=direction,
+        kind_id=kind_id, task_id=task_id, state=state,
+        mix_now=mix_now, editing=editing, has_own=has_own,
+        tasks=snapshot["tasks"], statuses=reg.STATUSES,
+        issued_states=ISSUED_STATES,
+        can_edit=_can_report(role), is_manager=_can_edit(role),
+    )
+
+
+@bp.get("/submittals/number")
+@login_required
+def preview_number(project_id: int):
+    """What the register would call a document, before anybody raises it.
+
+    Asked as the deliverable and the kind are chosen, so the number appears in
+    the form rather than after the fact — the point of a convention is seeing
+    what it produces.
+    """
+    project, _role = load_project(project_id)
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?",
+                     (_to_int(request.args.get("task_id")), project_id))
+    kind = query_one("SELECT * FROM document_kinds WHERE id = ? AND project_id = ?",
+                     (_to_int(request.args.get("kind_id")), project_id))
+    if task is None or kind is None:
+        return {"ok": False, "number": ""}
+
+    chosen = [i for i in (_to_int(v) for v in request.args.getlist("trade_ids")) if i]
+    trade = query_one("SELECT * FROM trades WHERE id = ? AND project_id = ?",
+                      (chosen[0], project_id)) if len(chosen) == 1 else None
+    return {"ok": True, "number": next_number(project, dict(task), dict(kind), trade)}
+
+
+@bp.post("/submittals")
+@login_required
+def raise_document(project_id: int):
+    """Put a document in the register, with the number the convention makes."""
+    project, role = load_project(project_id, "member")
+    shares = {}
+    for trade in load_trades(project_id):
+        if f"trade_{trade['id']}" in request.form:
+            shares[trade["id"]] = _to_float(request.form.get(f"share_{trade['id']}"), 0) or 1
+
+    made, trouble = raise_submittal(
+        project, _to_int(request.form.get("task_id")) or 0,
+        _to_int(request.form.get("kind_id")) or 0,
+        request.form.get("title") or "", shares,
+        _to_float(request.form.get("weight"), 1),
+        from_input(request.form.get("planned_date")) or "",
+        request.form.get("number") or "",
+    )
+    if trouble:
+        flash(trouble, "error")
+    else:
+        row = query_one("SELECT number FROM submittals WHERE id = ?", (made,))
+        flash(f"Raised {row['number']}", "success")
+    return _back("projects.submittals", project_id)
+
+
+@bp.post("/submittals/<int:submittal_id>")
+@login_required
+def change_document(project_id: int, submittal_id: int):
+    """One thing about one document, saved where it is read."""
+    _project, role = load_project(project_id, "member")
+    field = (request.form.get("field") or "").strip()
+    trouble = update_submittal(project_id, submittal_id, field, request.form.get("value"))
+
+    if not _wants_json():
+        if trouble:
+            flash(trouble, "error")
+        return _back("projects.submittals", project_id)
+    if trouble:
+        return {"ok": False, "trouble": trouble}, 400
+
+    row = query_one(
+        "SELECT s.*, k.name AS kind_name FROM submittals s "
+        "JOIN document_kinds k ON k.id = s.kind_id WHERE s.id = ?", (submittal_id,))
+    return {"ok": True, "document": {
+        "id": submittal_id, "number": row["number"], "title": row["title"],
+        "status": row["status"], "status_name": reg.STATUS_NAMES.get(row["status"], ""),
+        "revision": row["revision"], "weight": row["weight"],
+        "issued": row["status"] in ISSUED_STATES,
+        "issued_date": to_display(row["issued_date"]) if row["issued_date"] else "",
+        "planned_date": to_display(row["planned_date"]) if row["planned_date"] else "",
+    }}
+
+
+@bp.post("/submittals/<int:submittal_id>/trades")
+@login_required
+def document_trades(project_id: int, submittal_id: int):
+    """Who is issuing a document, and how much of it is theirs."""
+    _project, role = load_project(project_id, "member")
+    shares = {}
+    for trade in load_trades(project_id):
+        if f"trade_{trade['id']}" in request.form:
+            shares[trade["id"]] = _to_float(request.form.get(f"share_{trade['id']}"), 0) or 1
+    set_submittal_trades(project_id, submittal_id, shares)
+    flash("Saved who is issuing it" if shares
+          else "Cleared — it follows the deliverable's own split again", "success")
+    return _back("projects.submittals", project_id)
+
+
+@bp.post("/submittals/<int:submittal_id>/delete")
+@login_required
+def drop_document(project_id: int, submittal_id: int):
+    _project, role = load_project(project_id, "manager")
+    trouble = remove_submittal(project_id, submittal_id)
+    flash(trouble or "Taken off the register", "error" if trouble else "success")
+    return _back("projects.submittals", project_id)
+
+
+@bp.post("/submittals/mix")
+@login_required
+def save_mix(project_id: int):
+    """What a deliverable is made of — the project's shape, or one line's own."""
+    _project, role = load_project(project_id, "manager")
+    task_id = _to_int(request.form.get("task_id"))
+    if task_id and not query_one("SELECT 1 FROM tasks WHERE id = ? AND project_id = ?",
+                                 (task_id, project_id)):
+        abort(404)
+
+    supplied = {}
+    for kind in load_kinds(project_id):
+        percent = _to_float(request.form.get(f"mix_{kind['id']}"), 0)
+        if percent > 0:
+            supplied[kind["id"]] = percent
+    if task_id and not supplied:
+        # Nothing given back is a line handed back to the project's own shape,
+        # rather than a line pinned to a copy of it.
+        execute("DELETE FROM task_mix WHERE task_id = ?", (task_id,))
+        flash("Back to the project's own mix", "success")
+    elif not supplied:
+        flash("Give at least one kind a percentage", "error")
+    else:
+        set_mix(project_id, supplied, task_id)
+        flash("Saved what it is made of", "success")
+    return _back("projects.submittals", project_id, **({"task": task_id} if task_id else {}))
+
+
 # --- summarized progress ---------------------------------------------------
 
 @bp.get("/period")
@@ -1070,7 +1266,15 @@ def add_time(project_id: int):
     hours = _to_float(request.form.get("hours"), 0)
     trade_id = _to_int(request.form.get("trade_id"))
     task_id = _to_int(request.form.get("task_id"))
+    submittal_id = _to_int(request.form.get("submittal_id"))
     entry_date = from_input_or(request.form.get("entry_date"), today())
+
+    # Hours booked to a document belong to that document's deliverable, whatever
+    # the form said: the two disagreeing is how a register stops adding up.
+    document = query_one("SELECT * FROM submittals WHERE id = ? AND project_id = ?",
+                         (submittal_id, project_id)) if submittal_id else None
+    if document is not None:
+        task_id = int(document["task_id"])
 
     if hours <= 0:
         flash("Enter the number of hours worked", "error")
@@ -1078,13 +1282,16 @@ def add_time(project_id: int):
         flash("That trade does not belong to this project", "error")
     elif task_id and not query_one("SELECT 1 FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id)):
         flash("That deliverable does not belong to this project", "error")
+    elif submittal_id and document is None:
+        flash("That document is not in this project's register", "error")
     else:
         insert(
             """
-            INSERT INTO time_entries (project_id, trade_id, task_id, user_id, entry_date, hours, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO time_entries (project_id, trade_id, task_id, submittal_id, user_id,
+                                      entry_date, hours, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (project_id, trade_id, task_id, g.user["id"], entry_date, hours,
+            (project_id, trade_id, task_id, submittal_id or None, g.user["id"], entry_date, hours,
              (request.form.get("description") or "").strip()),
         )
         flash(f"Booked {hours:g} hours", "success")
@@ -1173,12 +1380,82 @@ def setup(project_id: int):
         carmen_picture_uploaded=carmen_uploaded() is not None,
         members=members, owner=owner, series=SERIES_SLOTS, office_list=offices.OFFICES,
         impacts=load_impacts(project_id),
+        # The register's own vocabulary: what this project issues, and the
+        # convention that numbers it — shown with what it would produce next,
+        # because a format language nobody can see the output of is one nobody
+        # will touch.
+        kinds=load_kinds(project_id),
+        kind_counts=_kinds_in_use(project_id),
+        number_tokens=reg.TOKENS, default_format=reg.DEFAULT_FORMAT,
+        number_preview=_number_preview(project),
         minutes_template=load_template(project_id, "minutes", with_content=False),
         template_fields=TEMPLATE_FIELDS,
         can_edit=_setup_editable(project_id, role), is_manager=_can_edit(role),
         unlocked=setup_unlocked(project_id),
         editing=_to_int(request.args.get("split")),
     )
+
+
+def _good_format(supplied: Any, project: Mapping[str, Any]) -> str:
+    """A numbering convention, or the one that was already there.
+
+    A broken convention is refused with a word about why rather than saved and
+    left to produce nonsense on the next document somebody raises.
+    """
+    wanted = str(supplied if supplied is not None else project["document_format"]).strip()[:120]
+    if not wanted:
+        return ""
+    trouble = reg.check_format(wanted)
+    if trouble:
+        flash(f"Numbering left as it was — {trouble[0].lower()}{trouble[1:]}", "error")
+        return str(project["document_format"] or "")
+    return wanted
+
+
+def _kinds_in_use(project_id: int) -> dict[int, int]:
+    """How many documents each kind holds, so removing one is an informed choice."""
+    return {int(row["kind_id"]): int(row["n"]) for row in query(
+        "SELECT kind_id, COUNT(*) AS n FROM submittals WHERE project_id = ? GROUP BY kind_id",
+        (project_id,))}
+
+
+def _number_preview(project: Mapping[str, Any]) -> str:
+    """What the convention would produce for the next document, or what is wrong
+    with it — either way, something to read beside the box."""
+    trouble = reg.check_format(project["document_format"] or reg.DEFAULT_FORMAT)
+    if trouble:
+        return trouble
+    project_id = int(project["id"])
+    task = query_one("SELECT * FROM tasks WHERE project_id = ? ORDER BY wbs LIMIT 1", (project_id,))
+    kinds = load_kinds(project_id)
+    if task is None or not kinds:
+        return "—"
+    return next_number(project, dict(task), kinds[0])
+
+
+@bp.post("/setup/kinds")
+@login_required
+def save_document_kinds(project_id: int):
+    """The kinds of document this project issues: renamed, added or removed."""
+    from ..service import add_kind, remove_kind, save_kinds
+
+    _project, role = load_project(project_id, "manager")
+    if not _require_setup_edit(project_id, role):
+        return _back("projects.setup", project_id)
+
+    action = (request.form.get("action") or "save").strip()
+    if action == "add":
+        trouble = add_kind(project_id, request.form.get("name") or "",
+                           request.form.get("code") or "", bool(request.form.get("many")))
+        flash(trouble or "Added — the register can hold one from now on",
+              "error" if trouble else "success")
+    elif action.startswith("remove:"):
+        trouble = remove_kind(project_id, _to_int(action.split(":", 1)[1]) or 0)
+        flash(trouble or "Taken off the list", "error" if trouble else "success")
+    else:
+        saved = save_kinds(project_id, request.form)
+        flash(f"Saved {saved} kind{'' if saved == 1 else 's'}", "success")
+    return _back("projects.setup", project_id)
 
 
 @bp.post("/setup/teams")
@@ -1362,7 +1639,8 @@ def save_settings(project_id: int):
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
                    revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
-                   comments_reserve_pct = ?, status = ?, updated_at = datetime('now')
+                   comments_reserve_pct = ?, document_format = ?,
+                   status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1384,6 +1662,7 @@ def save_settings(project_id: int):
                                    project["hours_per_week"])),
                 min(90.0, max(0.0, _to_float(request.form.get("comments_reserve_pct"),
                                              project["comments_reserve_pct"]))),
+                _good_format(request.form.get("document_format"), project),
                 request.form.get("status") or "active", project_id,
             ),
         )
@@ -1778,7 +2057,8 @@ def save_all(project_id: int):
                    duration_months = ?, days_per_month = ?, hours_per_month = ?,
                    elapsed_day_offset = ?, max_revisions = ?, rework_days = ?,
                    revision_reset_step = ?, target_margin_pct = ?, hours_per_week = ?,
-                   comments_reserve_pct = ?, status = ?, updated_at = datetime('now')
+                   comments_reserve_pct = ?, document_format = ?,
+                   status = ?, updated_at = datetime('now')
             WHERE id = ?
             """,
             (
@@ -1796,6 +2076,7 @@ def save_all(project_id: int):
                 max(1.0, _to_float(form.get("hours_per_week"), project["hours_per_week"])),
                 min(90.0, max(0.0, _to_float(form.get("comments_reserve_pct"),
                                              project["comments_reserve_pct"]))),
+                _good_format(form.get("document_format"), project),
                 form.get("status") or "active", project_id,
             ),
         )
@@ -1992,6 +2273,7 @@ def export_setup(project_id: int):
         data = build_workbook(
             project, ordered_steps(load_steps(project_id)), load_trades(project_id),
             load_sections(project_id), load_tasks(project_id),
+            load_kinds(project_id), load_mix(project_id), load_submittals(project_id),
         )
     except ExcelUnavailable as exc:
         flash(str(exc), "error")

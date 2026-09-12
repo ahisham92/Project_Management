@@ -219,6 +219,19 @@
               </select>
             </label>
             <label class="field">
+              <span class="field-label">Document (optional)</span>
+              <select name="submittal_id">
+                <option value="">— the deliverable as a whole —</option>
+                {% for doc in register_documents %}
+                  <option value="{{ doc['id'] }}" data-task="{{ doc['task_id'] }}">
+                    {{ doc['number'] }} · {{ doc['title'][:44] }}
+                  </option>
+                {% endfor %}
+              </select>
+              <span class="field-hint">Book it to the drawing rather than the line and the
+                register can cost a deliverable a document at a time</span>
+            </label>
+            <label class="field">
               <span class="field-label">Hours</span>
               <input type="number" name="hours" min="0.25" step="0.25" placeholder="7.5" required>
             </label>
@@ -287,6 +300,9 @@
                       <td class="small ink2">
                         {% if e['task_wbs'] %}<span title="{{ e['task_name'] }}">{{ e['task_wbs'] }}</span>
                         {% else %}<span class="muted">—</span>{% endif %}
+                        {% if e['submittal_number'] %}
+                          <code class="muted" style="display:block">{{ e['submittal_number'] }}</code>
+                        {% endif %}
                         {% if e['description'] %}<span class="muted" style="display:block">{{ e['description'] }}</span>{% endif %}
                       </td>
                       <td class="small muted">{{ e['user_name'] or '—' }}</td>

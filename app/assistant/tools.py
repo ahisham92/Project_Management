@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Any, Callable, Mapping, Sequence
 
 from ..dates import from_input, to_display
+from ..register import DEFAULT_FORMAT
 from . import edits
 from ..offices import name_of as office_name
 from .common import ToolError, _date, _deliverable, _project
@@ -387,6 +388,59 @@ def resource_plan(project_id: int, weeks: int = 0, **_ignored) -> dict[str, Any]
                               "split": [{"trade": s["trade"], "hours": round(s["hours"], 1)}
                                         for s in t["shares"]]}
                              for t in (made.get("tasks") or [])[:12]],
+    }
+
+
+def document_register(project_id: int, wbs: str = "", kind: str = "",
+                      issued: Any = None, **_ignored) -> dict[str, Any]:
+    """The register: what has been issued, what it is worth, what it cost.
+
+    A deliverable is a line on a programme and not a thing anybody hands over.
+    This is the list of things that are — reports, drawings, specifications —
+    with the number each carries and the hours behind it.
+    """
+    from ..service import register as read_register
+
+    project = _project(project_id)
+    made = read_register(project)
+    wanted = " ".join(str(wbs or "").strip().lower().split())
+    kind_wanted = " ".join(str(kind or "").strip().lower().split())
+
+    rows = made["documents"]
+    if wanted:
+        rows = [r for r in rows if str(r["task_wbs"]).lower() == wanted
+                or wanted in str(r["task_name"]).lower()]
+    if kind_wanted:
+        rows = [r for r in rows if kind_wanted in str(r["kind_name"]).lower()]
+    if issued is not None:
+        rows = [r for r in rows if bool(r.get("issued")) == bool(issued)]
+
+    return {
+        "documents_in_register": len(made["documents"]),
+        "hours_the_plan_allows": round(made["planned_hours"], 1),
+        "hours_raised_as_documents": round(made["raised_hours"], 1),
+        "hours_booked_to_a_document": round(made["spent_hours"], 1),
+        "numbering_convention": project["document_format"] or DEFAULT_FORMAT,
+        "kinds": [k["name"] for k in made["kinds"]],
+        "default_mix": [{"kind": m["name"], "percent": round(m["percent"], 1)}
+                        for m in made["default_mix"]],
+        "shown": len(rows),
+        "documents": [{"number": r["number"], "title": r["title"], "kind": r["kind_name"],
+                       "wbs": r["task_wbs"], "deliverable": r["task_name"],
+                       "status": r["status_name"], "issued": bool(r.get("issued")),
+                       "issued_date": to_display(r["issued_date"]) if r["issued_date"] else "",
+                       "hours": round(r["hours"], 1),
+                       "booked_hours": round(r["spent_hours"], 1),
+                       "issued_by": [t["name"] for t in (r.get("trades") or ())]
+                                    or ["as the deliverable"]}
+                      for r in rows[:60]],
+        # The gap worth seeing: the mix says a line submits drawings and there
+        # are no drawings, so those hours cannot be costed a drawing at a time.
+        "deliverables_with_nothing_raised": [
+            {"wbs": line["wbs"], "name": line["name"],
+             "hours": round(line["planned_hours"], 1),
+             "missing": [made["kind_names"].get(k, "?") for k in line["missing_kinds"]]}
+            for line in made["unraised"][:20]],
     }
 
 
@@ -774,6 +828,8 @@ VIEWS = {
     "budget": ("projects.budget", "finance"),
     "finance": ("projects.budget", "finance"),
     "period": ("projects.period", "the period report"),
+    "submittals": ("projects.submittals", "the document register"),
+    "documents": ("projects.submittals", "the document register"),
     "resources": ("projects.resources", "resources planning"),
     "resourcing": ("projects.resources", "resources planning"),
     # The hours live on Finance now; both names still take you there.
@@ -955,6 +1011,15 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
            "as_at": dict(_TEXT, description="dd/mm/yyyy, to rewind the register")}),
     _tool("budget_summary", "Hours by trade: budgeted, booked, earned, CPI and the "
           "estimate at completion.", {}),
+    _tool("document_register",
+          "The register of everything the project issues — reports, drawings, specifications, "
+          "bills — with each document's number, what it is worth and what it has cost. Use "
+          "this for “what have we issued”, “what is this drawing worth” or “what is still to "
+          "go out”.",
+          {"wbs": dict(_TEXT, description="Only one deliverable's documents"),
+           "kind": dict(_TEXT, description="Only one kind — drawings, report, specifications"),
+           "issued": {"type": "boolean",
+                      "description": "true for what has gone out, false for what has not"}}),
     _tool("resource_plan",
           "The resource plan: how many hours and how many engineers each week wants, per "
           "trade, after the target margin and the comments reserve are held back — and what "
@@ -1094,7 +1159,8 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
 # `presentation` produce a link rather than a change, so they read as free too.
 READ_ONLY: frozenset[str] = frozenset((
     "overview", "find_deliverables", "deliverable", "period_report", "schedule_summary",
-    "week_ahead", "register", "budget_summary", "resource_plan", "list_meetings",
+    "week_ahead", "register", "budget_summary", "resource_plan", "document_register",
+    "list_meetings",
     "open_view", "presentation", "document",
 )) | edits.READ_ONLY
 
@@ -1108,6 +1174,7 @@ RUNNERS: dict[str, Callable[..., Any]] = {
     "register": register,
     "budget_summary": budget_summary,
     "resource_plan": resource_plan,
+    "document_register": document_register,
     "set_progress": set_progress,
     "set_dates": set_dates,
     "link_deliverables": link_deliverables,

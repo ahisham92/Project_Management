@@ -125,6 +125,17 @@
                value="{{ project['hours_per_week'] }}" {{ 'disabled' if not can_edit }}>
         <span class="field-hint">What turns a week's hours into a number of people on Resources.</span>
       </label>
+      <label class="field flex1" style="min-width:280px">
+        <span class="field-label">Document numbering</span>
+        <input form="{{ F }}" name="document_format" value="{{ project['document_format'] }}"
+               placeholder="{{ default_format }}" {{ 'disabled' if not can_edit }}>
+        <span class="field-hint">
+          What the register calls a document. Next one would be
+          <code>{{ number_preview }}</code>. Tokens:
+          {% for token, says in number_tokens %}<code
+            title="{{ says }}">{{ '{' ~ token ~ '}' }}</code>{{ '' if loop.last else ' ' }}{% endfor %}
+        </span>
+      </label>
       <label class="field">
         <span class="field-label">Comments reserve (%)</span>
         <input form="{{ F }}" type="number" name="comments_reserve_pct" min="0" max="90" step="0.5"
@@ -352,6 +363,88 @@
             <select name="color">{% for name, hex in series %}<option value="{{ hex }}">{{ name }}</option>{% endfor %}</select>
           </label>
           <button type="submit" class="btn btn-primary">Add trade</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {# --- what this project issues --- #}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>What this project issues</h2>
+        <p class="small muted" style="margin-top:2px">
+          The kinds of document the register can hold, and the code each one puts in a
+          number. “Many” marks the kinds that come as a set — one deliverable, forty drawings.
+        </p>
+      </div>
+    </div>
+    <div class="card-body flush table-scroll">
+      <form method="post" id="save-kinds"
+            action="{{ url_for('projects.save_document_kinds', project_id=pid) }}"></form>
+      <table>
+        <thead>
+          <tr><th>Kind</th><th class="w-sm">Code</th><th class="right">Many</th>
+              <th class="right">In the register</th>
+              {% if can_edit %}<th></th>{% endif %}</tr>
+        </thead>
+        <tbody>
+          {% for kind in kinds %}
+            <tr>
+              <td>
+                <input form="save-kinds" name="kind_{{ kind['id'] }}_name" value="{{ kind['name'] }}"
+                       maxlength="60" {{ 'disabled' if not can_edit }}>
+              </td>
+              <td>
+                <input form="save-kinds" name="kind_{{ kind['id'] }}_code" value="{{ kind['code'] }}"
+                       maxlength="8" class="w-sm" style="text-transform:uppercase"
+                       {{ 'disabled' if not can_edit }}>
+              </td>
+              <td class="right">
+                <input form="save-kinds" type="checkbox" name="kind_{{ kind['id'] }}_many" value="1"
+                       {{ 'checked' if kind['many'] }} {{ 'disabled' if not can_edit }}
+                       aria-label="{{ kind['name'] }} comes as a set">
+              </td>
+              <td class="right small ink2 tabular">{{ kind_counts.get(kind['id'], 0) }}</td>
+              {% if can_edit %}
+                <td class="right">
+                  <form method="post" style="display:inline"
+                        data-confirm="Take {{ kind['name'] }} off the list?"
+                        action="{{ url_for('projects.save_document_kinds', project_id=pid) }}">
+                    <button type="submit" name="action" value="remove:{{ kind['id'] }}"
+                            class="btn btn-ghost btn-sm">Remove</button>
+                  </form>
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if can_edit %}
+      <div class="card-foot" style="border-bottom:1px solid var(--border)">
+        <button form="save-kinds" type="submit" name="action" value="save"
+                class="btn btn-primary btn-sm">Save the list</button>
+        <span class="small muted" style="margin-left:8px">
+          The code is what <code>{kind}</code> puts in a document number.
+        </span>
+      </div>
+      <div class="card-foot">
+        <form method="post" class="inline-form"
+              action="{{ url_for('projects.save_document_kinds', project_id=pid) }}">
+          <input type="hidden" name="action" value="add">
+          <label class="field flex1">
+            <span class="field-label">New kind</span>
+            <input name="name" placeholder="Method statement" required>
+          </label>
+          <label class="field w-sm">
+            <span class="field-label">Code</span>
+            <input name="code" placeholder="MST" maxlength="8">
+          </label>
+          <label class="field w-sm inline-form" style="gap:6px;align-items:center">
+            <input type="checkbox" name="many"> <span class="small">Many</span>
+          </label>
+          <button type="submit" class="btn btn-primary">Add</button>
         </form>
       </div>
     {% endif %}

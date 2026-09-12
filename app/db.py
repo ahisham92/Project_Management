@@ -150,6 +150,9 @@ def init_db(path: Path | str | None = None) -> None:
             # that trade's open lines or simply left as a saving.
             ("projects", "comments_reserve_pct", "REAL NOT NULL DEFAULT 15"),
             ("projects", "redistribute_savings", "INTEGER NOT NULL DEFAULT 0"),
+            # How the register makes a document number. A convention rather than
+            # a counter, so the office's own numbering is what comes out.
+            ("projects", "document_format", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, table, column, definition)
 
@@ -162,6 +165,12 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_templates(conn)
         _ensure_documents(conn)
         _ensure_resource_weeks(conn)
+        _ensure_register(conn)
+        # After the register's own tables, not with the other columns above:
+        # foreign keys are on, and a column cannot point at a table that does
+        # not exist yet.
+        _ensure_column(conn, "time_entries", "submittal_id",
+                       "INTEGER REFERENCES submittals(id) ON DELETE SET NULL")
 
         _migrate_months_to_dates(conn)
         _ensure_workflow_steps(conn)
@@ -399,6 +408,94 @@ def _ensure_resource_weeks(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS resource_weeks_project "
                  "ON resource_weeks (project_id, week)")
+
+
+def _ensure_register(conn: sqlite3.Connection) -> None:
+    """The register of everything issued, and what a deliverable is made of.
+
+    A deliverable is a line on a programme; it is not a thing anybody hands
+    over. What gets handed over is a report, a set of drawings, a
+    specification — and those are what carry numbers, go out on transmittals and
+    come back with comments. Four tables:
+
+    `document_kinds` is what this office issues, with the code that goes in a
+    number. `project_mix` and `task_mix` say what a deliverable is made of and
+    in what proportion — the project's shape, and the one line that is different.
+    `submittals` is the register itself, and `submittal_trades` is who is
+    actually writing each one, which a programme cannot tell you: a design basis
+    is one document four disciplines write at once.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_kinds (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            key        TEXT    NOT NULL,
+            name       TEXT    NOT NULL,
+            code       TEXT    NOT NULL DEFAULT '',
+            many       INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (project_id, key)
+        )
+        """
+    )
+    # The project's default mix, and the deliverables that differ from it.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_mix (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind_id    INTEGER NOT NULL REFERENCES document_kinds(id) ON DELETE CASCADE,
+            percent    REAL    NOT NULL DEFAULT 0,
+            PRIMARY KEY (project_id, kind_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_mix (
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            kind_id INTEGER NOT NULL REFERENCES document_kinds(id) ON DELETE CASCADE,
+            percent REAL    NOT NULL DEFAULT 0,
+            PRIMARY KEY (task_id, kind_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS submittals (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            kind_id    INTEGER NOT NULL REFERENCES document_kinds(id) ON DELETE CASCADE,
+            number     TEXT    NOT NULL DEFAULT '',
+            title      TEXT    NOT NULL DEFAULT '',
+            weight     REAL    NOT NULL DEFAULT 1,
+            revision   INTEGER NOT NULL DEFAULT 0,
+            status     TEXT    NOT NULL DEFAULT 'planned',
+            planned_date TEXT  NOT NULL DEFAULT '',
+            issued_date  TEXT  NOT NULL DEFAULT '',
+            note       TEXT    NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS submittals_project "
+                 "ON submittals (project_id, task_id)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS submittals_number "
+                 "ON submittals (project_id, number) WHERE number != ''")
+    # Who is issuing it, and how much of it is theirs. Empty means the document
+    # is split the way its deliverable is, which is the usual answer.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS submittal_trades (
+            submittal_id INTEGER NOT NULL REFERENCES submittals(id) ON DELETE CASCADE,
+            trade_id     INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+            share        REAL    NOT NULL DEFAULT 0,
+            PRIMARY KEY (submittal_id, trade_id)
+        )
+        """
+    )
 
 
 def _ensure_impacts(conn: sqlite3.Connection) -> None:

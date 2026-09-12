@@ -20,6 +20,8 @@ SHEET_WORKFLOW = "Workflow"
 SHEET_TRADES = "Trades"
 SHEET_SECTIONS = "Sections"
 SHEET_TASKS = "Deliverables"
+SHEET_KINDS = "Document kinds"
+SHEET_REGISTER = "Register"
 
 HELP = (
     "Blue headings are read on import. Grey columns are for reference only and are "
@@ -55,6 +57,9 @@ def build_workbook(
     trades: Sequence[Mapping[str, Any]],
     sections: Sequence[Mapping[str, Any]],
     tasks: Sequence[Mapping[str, Any]],
+    kinds: Sequence[Mapping[str, Any]] = (),
+    mix: Sequence[Mapping[str, Any]] = (),
+    register: Sequence[Mapping[str, Any]] = (),
 ) -> bytes:
     """The whole setup as an .xlsx file."""
     openpyxl = _openpyxl()
@@ -150,6 +155,25 @@ def build_workbook(
         widths=[12, 52],
     )
 
+    # What this project issues, and the shape of a package. The mix is on the
+    # same sheet as the kinds because the two are read together — a kind with
+    # no share of the work is one this project does not really submit.
+    if kinds:
+        share = {int(row["kind_id"]): float(row["percent"] or 0) for row in mix}
+        sheet(
+            SHEET_KINDS,
+            ["Kind", "Code", "Comes as a set", "Share of a deliverable %"],
+            [[k["name"], k["code"], "yes" if k["many"] else "", share.get(int(k["id"]), 0)]
+             for k in kinds],
+            widths=[26, 12, 18, 24],
+        )
+        ws = wb[SHEET_KINDS]
+        ws.append([])
+        ws.append(["The shares are the project's default mix and should total 100 across the "
+                   "kinds it actually submits. A deliverable that is made of something else "
+                   "is set on the Submittals tab rather than here."])
+        ws.cell(row=ws.max_row, column=1).font = note_font
+
     section_name = {s["id"]: s["name"] for s in sections}
     trade_names = [t["name"] for t in trades]
     headers = (
@@ -179,6 +203,28 @@ def build_workbook(
         SHEET_TASKS, headers, rows, calculated=calculated,
         widths=[10, 26, 60, 14, 14, 16, 12, 20, 10, 30] + [14] * len(trade_names) + [14, 12],
     )
+
+    # The register goes out but does not come back: a document number that has
+    # been issued is somebody else's record, and a spreadsheet round-trip is no
+    # way to change one.
+    if register:
+        sheet(
+            SHEET_REGISTER,
+            ["Number", "Title", "Kind", "WBS", "Deliverable", "Issued by",
+             "Status", "Planned", "Issued", "Revision"],
+            [[r["number"], r["title"], r["kind_name"], r["task_wbs"], r["task_name"],
+              ", ".join(t["name"] for t in (r.get("trades") or ())) or "as the deliverable",
+              r.get("status_name") or r["status"], to_display(r["planned_date"]),
+              to_display(r["issued_date"]), r["revision"]]
+             for r in register],
+            widths=[26, 44, 18, 10, 40, 26, 16, 14, 14, 10],
+        )
+        ws = wb[SHEET_REGISTER]
+        ws.append([])
+        ws.append(["A record of what has been issued. Importing this sheet does nothing — a "
+                   "number that has gone out is somebody else's record, and it is changed in "
+                   "the register itself."])
+        ws.cell(row=ws.max_row, column=1).font = note_font
 
     stream = io.BytesIO()
     wb.save(stream)

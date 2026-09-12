@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -104,6 +105,10 @@ def main() -> int:
         step("dates read dd/mm/yyyy", _dates_read_dd_mm)
         step("budget page renders the hours chart", _budget)
         step("books hours and they reach budget control", _book_hours)
+        step("the register numbers a document before it is raised", _register_raise)
+        step("a deliverable is made of what it actually hands over", _register_mix)
+        step("a document's title and status are changed in the row", _register_row)
+        step("hours booked to a drawing cost its deliverable", _register_costing)
         step("resources plans the hours into weeks and people", _resources)
         step("a bigger target margin leaves less to plan with", _resources_margin)
         step("a week's engineers are set by hand, live, without moving its hours",
@@ -1358,16 +1363,24 @@ def _save_all(page) -> None:
 
 def _print_to_pdf(page) -> None:
     """Each report tab offers a print button and carries a print-only header."""
-    for tab, heading in [("Progress", "Progress update"), ("Schedule", "Schedule"),
+    # The name each tab prints under, which is the one in its print header —
+    # not necessarily the one at the top of the screen.
+    for tab, heading in [("Progress", "Progress"), ("Schedule", "Schedule"),
                          ("Finance", "Finance"),
+                         ("Submittals", "Document register"),
                          ("Resources", "Resources planning"),
                          ("Summarized Progress", "Summarized Progress")]:
-        page.click(f"a.tabs >> nth=0" if False else f"nav.tabs a:has-text('{tab}')")
-        page.wait_for_selector(f"text={heading}", timeout=8000)
+        page.click(f"nav.tabs a:has-text('{tab}')")
+        # The report's own name in its print header, rather than the words
+        # anywhere on the page: "Document register" is a heading and also a
+        # word in the glossary strip, and the strip is folded away.
+        # Attached, not visible: the print header is display:none on screen,
+        # which is the whole point of it.
+        page.wait_for_selector(".print-header", state="attached", timeout=8000)
+        if heading not in page.text_content(".print-header"):
+            raise AssertionError(f"{tab} does not print as {heading!r}")
         if page.locator("[data-print]").count() == 0:
             raise AssertionError(f"{tab} has no print button")
-        if page.locator(".print-header").count() == 0:
-            raise AssertionError(f"{tab} has no print header")
 
     # Render the page as the printer sees it, which is how a PDF comes out.
     page.emulate_media(media="print")
@@ -1675,6 +1688,123 @@ def _budget(page) -> None:
     page.screenshot(path=str(SHOTS / "06-budget.png"), full_page=True)
 
 
+def _register_raise(page) -> None:
+    """The number appears as the form is filled in, which is the whole point of
+    having a convention: a number produced by a rule nobody can watch working is
+    just a number somebody has to check."""
+    page.click("nav.tabs a:has-text('Submittals')")
+    page.wait_for_selector("text=Document register >> visible=true", timeout=8000)
+
+    page.select_option("#raise-document select[name=task_id]", index=1)
+    page.select_option("#raise-document select[name=kind_id]", label="Report")
+    page.wait_for_function(
+        "() => (document.getElementById('next-number').value || '').length > 0", timeout=8000)
+    offered = page.input_value("#next-number")
+    if not offered.endswith("RPT-0001"):
+        raise AssertionError(f"the convention produced {offered!r}")
+
+    page.fill("#raise-document input[name=title]", "Design basis report")
+    page.click("button:has-text('Raise it')")
+    page.wait_for_selector(f"text=Raised {offered} >> visible=true", timeout=8000)
+
+    # A document several trades share has no trade in its number; one that is
+    # Marine's alone does. Both are the honest answer.
+    page.select_option("#raise-document select[name=task_id]", index=1)
+    page.select_option("#raise-document select[name=kind_id]", label="Drawings")
+    page.check("#raise-document input[name^=trade_]")
+    page.wait_for_function(
+        "() => (document.getElementById('next-number').value || '').includes('DWG')", timeout=8000)
+    drawing = page.input_value("#next-number")
+    if "DWG" not in drawing or drawing == offered:
+        raise AssertionError(f"a drawing numbered {drawing!r}")
+
+    page.fill("#raise-document input[name=title]", "General arrangement sheet 1")
+    page.click("button:has-text('Raise it')")
+    page.wait_for_selector("text=Raised >> visible=true", timeout=8000)
+    page.screenshot(path=str(SHOTS / "38-register.png"), full_page=True)
+
+
+def _register_mix(page) -> None:
+    """A design package is not one document, and its parts are not worth the
+    same. Change the shape and every document's hours move with it."""
+    page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
+
+    def report_hours() -> float:
+        row = page.locator("tr", has_text="Design basis report").first
+        return float(row.locator("td").nth(5).inner_text().replace(",", "").replace("h", "").strip())
+
+    before = report_hours()
+    kinds = page.locator(".card:has(h2:text-is('What a deliverable is made of'))")
+    kinds.locator("input[name^=mix_]").first.fill("70")
+    kinds.locator("button:has-text('Save the project mix')").click()
+    page.wait_for_selector("text=Saved what it is made of >> visible=true", timeout=8000)
+
+    after = report_hours()
+    if not after > before:
+        raise AssertionError(f"a bigger share of the line should be worth more: {before} → {after}")
+
+    # Put it back, so the rest of the run reads the shape the app ships with.
+    kinds.locator("input[name^=mix_]").first.fill("35")
+    kinds.locator("button:has-text('Save the project mix')").click()
+    page.wait_for_selector("text=Saved what it is made of >> visible=true", timeout=8000)
+
+
+def _register_row(page) -> None:
+    """Title and status are changed where they are read, and issuing something
+    stamps the day it went out without anybody typing a date."""
+    page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
+    before = page.url
+
+    # Held by its id rather than its text: the text is the thing being changed.
+    found = page.locator("tr", has_text="General arrangement sheet 1").first
+    row = page.locator(f'tr[data-document="{found.get_attribute("data-document")}"]')
+
+    row.locator("a.cell-open[data-doc=title]").click()
+    row.locator("input[name=value]").fill("General arrangement — quay wall")
+    page.keyboard.press("Enter")
+    page.wait_for_selector("text=General arrangement — quay wall >> visible=true", timeout=8000)
+
+    row.locator("a.cell-open[data-doc=status]").click()
+    row.locator("select[name=value]").select_option("issued")
+    page.wait_for_timeout(1200)
+
+    if page.url != before:
+        raise AssertionError("changing a document should not reload the page")
+    text = row.text_content()
+    if "Issued" not in text:
+        raise AssertionError(f"status did not stick: {text[:160]}")
+    if "/" not in text.split("Issued")[-1]:
+        raise AssertionError("issuing it should stamp the day it went out")
+
+
+def _register_costing(page) -> None:
+    """Book hours against a drawing rather than a line, and the deliverable's
+    cost stops being an estimate."""
+    page.goto(f"{BASE}/projects/1/", wait_until="networkidle")
+    page.click("nav.tabs a:has-text('Finance')")
+    page.wait_for_selector("text=Book hours >> visible=true", timeout=8000)
+
+    page.select_option("select[name=trade_id]", index=1)
+    page.select_option("select[name=submittal_id]", index=1)
+    page.fill("input[name=hours]", "14")
+    page.fill("input[name=description]", "Quay wall sheet")
+    page.click("button:has-text('Book hours')")
+    page.wait_for_selector("text=Booked 14 hours >> visible=true", timeout=8000)
+
+    page.click("nav.tabs a:has-text('Submittals')")
+    page.wait_for_selector("text=Document register >> visible=true", timeout=8000)
+    booked = page.locator(".tile:has-text('Booked to a document') .tile-value").inner_text()
+    if booked.strip().startswith("0"):
+        raise AssertionError(f"the register did not see the hours: {booked!r}")
+
+    lines = page.locator(".card:has(h2:text-is('By deliverable'))")
+    lines.locator(".panel-summary").click()
+    page.wait_for_timeout(300)
+    if "14" not in lines.text_content():
+        raise AssertionError("the deliverable did not pick up what its document cost")
+    page.screenshot(path=str(SHOTS / "39-register-cost.png"), full_page=True)
+
+
 def _resources(page) -> None:
     """The budget as a rota: a ceiling per trade, hours per week, and people.
 
@@ -1979,9 +2109,14 @@ def _minutes_capture(page) -> None:
     if "Apologies" not in page.text_content("body"):
         raise AssertionError("the attendee who was unticked should show apologies")
 
+    # One item due well ahead and one already past, worked out from today rather
+    # than written down: a fixed date quietly becomes overdue as the clock moves
+    # past it, and the Overdue filter below then has nothing to narrow away.
+    ahead = (date.today() + timedelta(days=60)).strftime("%d/%m/%Y")
+    behind = (date.today() - timedelta(days=40)).strftime("%d/%m/%Y")
     for subject, agreement, impact, due, owner in [
-        ("Quay wall levels", "Marine to reissue the layout", "Time", "10/09/2026", "MR"),
-        ("Additional bathymetric survey", "Client to confirm the budget", "Cost", "01/08/2026", "Client"),
+        ("Quay wall levels", "Marine to reissue the layout", "Time", ahead, "MR"),
+        ("Additional bathymetric survey", "Client to confirm the budget", "Cost", behind, "Client"),
     ]:
         form = page.locator("form", has=page.locator("button:has-text('Add item')"))
         form.locator("input[name=subject]").fill(subject)

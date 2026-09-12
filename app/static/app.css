@@ -561,6 +561,28 @@ input[type="checkbox"] { width: auto; }
 .savings { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .savings > li { border-left: 2px solid var(--good); padding-left: 12px; }
 
+/* Who is issuing a document, changed where it is read. Shut it reads as the
+   answer; open it is the question. */
+.issuers > summary { cursor: pointer; list-style: none; }
+.issuers > summary::-webkit-details-marker { display: none; }
+.issuers > summary:hover { color: var(--series-1); }
+.issuer-form {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+}
+
+/* Ticking the trades issuing a document, each with the share that is theirs.
+   The share only appears once the trade is ticked, because an empty percentage
+   box beside an unticked name is a question nobody was asked. */
+.tick {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.85rem; cursor: pointer;
+}
+.tick:has(input[type=checkbox]:checked) { border-color: var(--series-1); color: var(--series-1); }
+.tick input[type=number] { display: none; width: 3.2em; }
+.tick:has(input[type=checkbox]:checked) input[type=number] { display: inline-block; }
+
 /* The staffing grid: a column per trade, each one a number somebody can set.
    The box is quiet until it is pointed at, because a table of forty framed
    inputs reads as a form rather than as a plan. */

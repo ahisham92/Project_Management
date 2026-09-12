@@ -1756,6 +1756,128 @@
     });
   })();
 
+  // --- the register --------------------------------------------------------
+  //
+  // Two things: the number a document is about to be given, shown as the
+  // deliverable and the kind are chosen rather than after the fact, and the
+  // title and status edited where they are read.
+  //
+  // Seeing the number before pressing the button is the whole point of having
+  // a convention. A number produced by a rule nobody can watch working is just
+  // a number somebody has to check.
+
+  (function () {
+    var form = document.getElementById('raise-document');
+    if (!form) return;
+    var box = document.getElementById('next-number');
+    if (!box) return;
+    var touched = false;
+    var asking = null;
+
+    // Somebody who types their own number has a reason — a document that
+    // already went out under one. Stop rewriting it from that point on.
+    box.addEventListener('input', function () { touched = true; });
+
+    function ask() {
+      if (touched) return;
+      var task = form.elements.task_id;
+      var kind = form.elements.kind_id;
+      if (!task || !kind || !task.value || !kind.value) { box.value = ''; return; }
+
+      var query = new URLSearchParams({ task_id: task.value, kind_id: kind.value });
+      form.querySelectorAll('input[type=checkbox][name^=trade_]:checked').forEach(function (tick) {
+        query.append('trade_ids', tick.name.slice('trade_'.length));
+      });
+
+      if (asking) asking.abort();
+      asking = new AbortController();
+      fetch(form.dataset.numbers + '?' + query.toString(),
+            { credentials: 'same-origin', signal: asking.signal })
+        .then(function (r) { return r.json(); })
+        .then(function (answer) { if (!touched) box.value = answer.number || ''; })
+        .catch(function () { /* the box simply stays empty until it is asked again */ });
+    }
+
+    form.addEventListener('change', function (event) {
+      if (event.target.matches('[data-number-part], input[name^=trade_]')) ask();
+    });
+    ask();
+  })();
+
+  // A document's title and status, edited in the row. The same shape as the
+  // progress cells: click, change, saved — with the number and the issue date
+  // coming back, because issuing something stamps the day it went out.
+  (function () {
+    function close(cell, html) { cell.innerHTML = html; }
+
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest('a.cell-open[data-doc]');
+      if (!link) return;
+      event.preventDefault();
+
+      var template = document.getElementById('doc-' + link.dataset.doc);
+      if (!template) return;
+      var cell = link.parentNode;
+      var was = cell.innerHTML;
+      var control = template.content.firstElementChild.cloneNode(true);
+      control.value = link.dataset.value || '';
+
+      cell.innerHTML = '';
+      cell.appendChild(control);
+      control.focus({ preventScroll: true });
+
+      function give_up() { close(cell, was); }
+
+      control.addEventListener('keydown', function (key) {
+        if (key.key === 'Escape') give_up();
+        if (key.key === 'Enter' && control.tagName !== 'SELECT') { key.preventDefault(); control.blur(); }
+      });
+
+      var saving = false;
+      function save() {
+        if (saving) return;
+        saving = true;
+        var body = new FormData();
+        body.append('field', link.dataset.doc);
+        body.append('value', control.value);
+        fetch(link.dataset.action, {
+          method: 'POST', body: body,
+          headers: { Accept: 'application/json' }, credentials: 'same-origin',
+        }).then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+          .then(function (answer) {
+            if (!answer[0] || !answer[1].ok) {
+              give_up();
+              if (answer[1] && answer[1].trouble) window.alert(answer[1].trouble);
+              return;
+            }
+            var row = cell.closest('tr');
+            var made = answer[1].document;
+            close(cell, was);
+            var again = cell.querySelector('[data-field], [data-status]');
+            if (again && link.dataset.doc === 'title') again.textContent = made.title;
+            if (again && link.dataset.doc === 'status') {
+              var pill = again.querySelector('.badge') || again;
+              pill.textContent = made.status_name;
+            }
+            var mark = cell.querySelector('a.cell-open');
+            if (mark) mark.dataset.value = link.dataset.doc === 'title' ? made.title : made.status;
+            // Issuing something stamps the day it went out, so the date beside
+            // it changes without anybody having typed a date.
+            var when = row && row.querySelector('[data-issued]');
+            if (when) when.textContent = made.issued_date || made.planned_date || '—';
+            cell.classList.add('cell-saved');
+            window.setTimeout(function () { cell.classList.remove('cell-saved'); }, 1400);
+            window.dispatchEvent(new Event('pm:saved'));
+          }).catch(function () { give_up(); });
+      }
+
+      control.addEventListener('change', save);
+      control.addEventListener('blur', function () {
+        if (!saving) window.setTimeout(save, 0);
+      });
+    });
+  })();
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

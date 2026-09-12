@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty, progress, date_field, print_header, print_button %}
+{% block title %}Submittals — {{ project['name'] }}{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% set STATE = {'planned': 'neutral', 'drafting': 'neutral', 'checking': 'warning',
+                'issued': 'good', 'code_a': 'good', 'code_b': 'warning',
+                'code_c': 'critical', 'superseded': 'neutral'} %}
+
+{% macro sort_th(key, label, klass='') %}
+  {% set on = sort == key %}
+  {% set next_dir = ('asc' if direction == 'desc' else 'desc') if on
+                    else ('desc' if columns[key][1] else 'asc') %}
+  <th class="{{ klass }}">
+    <a class="sort-link {{ 'active' if on }}"
+       href="{{ url_for('projects.submittals', project_id=project['id'],
+                        **dict(request.args.to_dict(), sort=key, dir=next_dir)) }}">
+      {{ label }}<span class="sort-arrow" aria-hidden="true">{{ '▲' if on and direction == 'asc' else ('▼' if on else '') }}</span>
+    </a>
+  </th>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Document register</h1>
+    <p class="small muted" style="margin-top:2px">
+      Every report, drawing, specification and bill this project issues — numbered by the
+      convention on Setup, costed from what its deliverable is allowed
+    </p>
+  </div>
+  <div class="inline-form">
+    <form method="get" class="inline-form">
+      {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+    {{ print_button() }}
+  </div>
+</div>
+
+{{ print_header(project, 'Document register', data_date,
+                (made['documents'] | length) ~ ' documents') }}
+
+<div class="grid grid-4">
+  {{ tile('In the register', made['documents'] | length,
+          'reports, drawings, specifications and the rest') }}
+  {{ tile('Issued', made['documents'] | selectattr('status', 'in', issued_states) | list | length,
+          'out of the door and numbered', 'good',
+          (made['documents'] | rejectattr('status', 'in', issued_states) | list | length) ~ ' still to go') }}
+  {{ tile('Hours raised', hours(made['raised_hours']),
+          'of ' ~ hours(made['planned_hours']) ~ ' the plan allows', 'neutral',
+          pct(made['raised_hours'] / made['planned_hours'], 0) if made['planned_hours'] else '—') }}
+  {{ tile('Booked to a document', hours(made['spent_hours']),
+          'charged to a drawing, not just a line',
+          usage_state(made['spent_hours'] / made['raised_hours']) if made['raised_hours'] else 'neutral',
+          'what the register can cost') }}
+</div>
+
+{% if made['unraised'] and is_manager %}
+  <div class="as-at-banner">
+    <p class="small" style="margin:0">
+      <strong>{{ made['unraised'] | length }} deliverable{{ '' if made['unraised'] | length == 1 else 's' }}
+      with nothing raised against {{ 'it' if made['unraised'] | length == 1 else 'them' }}</strong>
+      — the mix says what they submit, but the documents are not in the register yet, so
+      those hours cannot be costed a drawing at a time.
+      {% set first = made['unraised'] | first %}
+      <a href="{{ url_for('projects.submittals', project_id=project['id'], task=first['task_id']) }}">
+        Start with {{ first['wbs'] }}</a>.
+    </p>
+  </div>
+{% endif %}
+
+{# --- what a deliverable is made of ---------------------------------------- #}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>What a deliverable is made of</h2>
+      <p class="small muted" style="margin-top:2px">
+        A design package is not one document. The mix is what splits a line's hours across
+        the things it actually hands over — and any deliverable can say something different.
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('projects.save_mix', project_id=project['id']) }}"
+          class="inline-form" style="align-items:flex-end;flex-wrap:wrap">
+      {% if editing %}<input type="hidden" name="task_id" value="{{ editing['id'] }}">{% endif %}
+      {% for kind in made['kinds'] %}
+        <label class="field" style="max-width:130px">
+          <span class="field-label">{{ kind['name'] }}</span>
+          <input type="number" name="mix_{{ kind['id'] }}" min="0" max="100" step="0.5"
+                 value="{{ mix_now.get(kind['id'], 0) | round(1) }}"
+                 {{ 'disabled' if not is_manager }}>
+        </label>
+      {% endfor %}
+      {% if is_manager %}
+        <button type="submit" class="btn btn-primary">
+          {{ 'Save for ' ~ editing['wbs'] if editing else 'Save the project mix' }}
+        </button>
+      {% endif %}
+    </form>
+    <p class="small muted" style="margin:10px 0 0">
+      {% if editing %}
+        Editing <strong>{{ editing['wbs'] }} {{ editing['name'][:70] }}</strong> on its own
+        {%- if not has_own %}, starting from the project's shape{% endif %}.
+        Clear every box and save to hand it back to the project's mix.
+        <a href="{{ url_for('projects.submittals', project_id=project['id']) }}">Back to the project mix</a>.
+      {% else %}
+        This is the project's shape, used by every deliverable that has not been given one of
+        its own. The percentages are nudged to total 100 on the largest of them.
+        Pick a deliverable in the register below to give it a mix of its own.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{# --- raising a document --------------------------------------------------- #}
+{% if can_edit %}
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div>
+        <h2>Raise a document</h2>
+        <p class="small muted" style="margin-top:2px">
+          The number comes from the convention on Setup. Tick the trades issuing it — leave
+          them all clear and it is split the way its deliverable is.
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('projects.raise_document', project_id=project['id']) }}"
+            id="raise-document"
+            data-numbers="{{ url_for('projects.preview_number', project_id=project['id']) }}">
+        <div class="inline-form" style="align-items:flex-end;flex-wrap:wrap">
+          <label class="field flex1" style="min-width:260px">
+            <span class="field-label">Deliverable</span>
+            <select name="task_id" required data-number-part>
+              <option value="">Which line is it under…</option>
+              {% for task in tasks %}
+                <option value="{{ task['id'] }}" {{ 'selected' if task['id'] == task_id }}>
+                  {{ task['wbs'] }} — {{ task['name'][:70] }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field" style="min-width:150px">
+            <span class="field-label">Kind</span>
+            <select name="kind_id" required data-number-part>
+              {% for kind in made['kinds'] %}
+                <option value="{{ kind['id'] }}" {{ 'selected' if kind['id'] == kind_id }}>{{ kind['name'] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field flex1" style="min-width:240px">
+            <span class="field-label">Title</span>
+            <input name="title" required maxlength="200" placeholder="What the document is">
+          </label>
+          <label class="field" style="max-width:110px">
+            <span class="field-label">Weight</span>
+            <input type="number" name="weight" min="0" step="0.5" value="1">
+            <span class="field-hint">Its share of its kind</span>
+          </label>
+          {{ date_field('planned_date', '', 'Planned', 'w-md') }}
+        </div>
+
+        <div class="inline-form" style="margin-top:10px;flex-wrap:wrap;align-items:flex-end">
+          <span class="small muted" style="align-self:center">Issued by</span>
+          {% for trade in made['trades'] %}
+            <label class="tick">
+              <input type="checkbox" name="trade_{{ trade['id'] }}" value="1" data-number-part>
+              <span>{{ trade['name'] }}</span>
+              <input type="number" name="share_{{ trade['id'] }}" min="0" max="100" step="1"
+                     class="heads" placeholder="%" aria-label="{{ trade['name'] }} share">
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="inline-form" style="margin-top:12px;align-items:flex-end">
+          <label class="field" style="min-width:260px">
+            <span class="field-label">Number</span>
+            <input name="number" id="next-number" readonly
+                   placeholder="Chosen from the convention on Setup">
+            <span class="field-hint">Produced, not typed. Overwrite it only for a document
+              that already went out under a number of its own.</span>
+          </label>
+          <button type="submit" class="btn btn-primary">Raise it</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
+{# --- the register itself -------------------------------------------------- #}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>The register</h2>
+      <p class="small muted" style="margin-top:2px">
+        {{ rows | length }} of {{ made['documents'] | length }} shown
+      </p>
+    </div>
+    <form method="get" class="inline-form no-print">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
+      <select name="kind" onchange="this.form.submit()" aria-label="Kind">
+        <option value="">Every kind</option>
+        {% for kind in made['kinds'] %}
+          <option value="{{ kind['id'] }}" {{ 'selected' if kind['id'] == kind_id }}>{{ kind['name'] }}</option>
+        {% endfor %}
+      </select>
+      <select name="task" onchange="this.form.submit()" aria-label="Deliverable">
+        <option value="">Every deliverable</option>
+        {% for task in tasks %}
+          <option value="{{ task['id'] }}" {{ 'selected' if task['id'] == task_id }}>{{ task['wbs'] }}</option>
+        {% endfor %}
+      </select>
+      <select name="state" onchange="this.form.submit()" aria-label="State">
+        {% for value, label in [('all', 'Issued and not'), ('open', 'Still to go'), ('issued', 'Issued')] %}
+          <option value="{{ value }}" {{ 'selected' if state == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="card-body flush">
+    {% if not rows %}
+      {{ empty('Nothing in the register yet',
+               'Raise the first document above. Its number comes from the convention on Setup.') }}
+    {% else %}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              {{ sort_th('number', 'Number') }}
+              {{ sort_th('title', 'Title') }}
+              {{ sort_th('kind', 'Kind') }}
+              {{ sort_th('wbs', 'Deliverable') }}
+              <th>Issued by</th>
+              {{ sort_th('hours', 'Hours', 'right') }}
+              {{ sort_th('spent', 'Booked', 'right') }}
+              {{ sort_th('status', 'Status') }}
+              {{ sort_th('issued', 'Issued', 'right') }}
+              {% if is_manager %}<th class="no-print"></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr data-document="{{ row['id'] }}">
+                <td class="nowrap"><code data-number>{{ row['number'] }}</code>
+                  {% if row['revision'] %}
+                    <span class="small muted">Rev {{ row['revision'] }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if can_edit %}
+                    <a class="cell-open" data-doc="title" data-value="{{ row['title'] }}"
+                       data-action="{{ url_for('projects.change_document', project_id=project['id'], submittal_id=row['id']) }}"
+                       href="#" data-field>{{ row['title'] }}</a>
+                  {% else %}<span data-field>{{ row['title'] }}</span>{% endif %}
+                  {% if row['note'] %}
+                    <span class="small muted" style="display:block">{{ row['note'] }}</span>
+                  {% endif %}
+                </td>
+                <td class="small ink2 nowrap">{{ row['kind_name'] }}
+                  <span class="muted" style="display:block">
+                    {{ num(row['kind_share'], 0) }}% of the line
+                    {%- if row['weight_share'] < 99.5 %}, {{ num(row['weight_share'], 0) }}% of its kind{% endif %}
+                  </span>
+                </td>
+                <td class="small nowrap">
+                  <a href="{{ url_for('projects.submittals', project_id=project['id'], task=row['task_id']) }}">
+                    {{ row['task_wbs'] }}</a>
+                  <span class="muted" style="display:block">{{ row['task_name'][:34] }}</span>
+                </td>
+                <td class="small">
+                  {% if not can_edit %}
+                    {% if row['trades'] %}
+                      {% for t in row['trades'] %}
+                        <span class="nowrap">{{ t['name'] }}
+                          <span class="muted">{{ num(row['shares'][t['trade_id']], 0) }}%</span></span>{{ '' if loop.last else ' · ' }}
+                      {% endfor %}
+                    {% else %}<span class="muted">as the deliverable</span>{% endif %}
+                  {% else %}
+                    {# Who writes a document is the part a programme cannot tell you —
+                       a design basis is one document four disciplines write at once —
+                       so it is changed where it is read. #}
+                    <details class="issuers">
+                      <summary>
+                        {% if row['trades'] %}
+                          {% for t in row['trades'] %}
+                            <span class="nowrap">{{ t['name'] }}
+                              <span class="muted">{{ num(row['shares'][t['trade_id']], 0) }}%</span></span>{{ '' if loop.last else ' · ' }}
+                          {% endfor %}
+                        {% else %}<span class="muted">as the deliverable</span>{% endif %}
+                      </summary>
+                      <form method="post" class="issuer-form"
+                            action="{{ url_for('projects.document_trades', project_id=project['id'], submittal_id=row['id']) }}">
+                        {% for trade in made['trades'] %}
+                          <label class="tick">
+                            <input type="checkbox" name="trade_{{ trade['id'] }}" value="1"
+                                   {{ 'checked' if trade['id'] in row['shares'] }}>
+                            <span>{{ trade['name'] }}</span>
+                            <input type="number" name="share_{{ trade['id'] }}" min="0" max="100"
+                                   step="1" value="{{ row['shares'].get(trade['id'], 0) | round(0) | int or '' }}"
+                                   aria-label="{{ trade['name'] }} share of {{ row['number'] }}">
+                          </label>
+                        {% endfor %}
+                        <button type="submit" class="btn btn-ghost btn-sm">Save</button>
+                        <span class="small muted">Untick them all and it follows the deliverable</span>
+                      </form>
+                    </details>
+                  {% endif %}
+                </td>
+                <td class="right tabular nowrap">{{ hours(row['hours']) }}</td>
+                <td class="right tabular nowrap {{ 'state-critical' if row['spent_hours'] > row['hours'] + 0.5 }}">
+                  {{ hours(row['spent_hours']) if row['spent_hours'] else '—' }}
+                </td>
+                <td class="nowrap">
+                  {% if can_edit %}
+                    <a class="cell-open" data-doc="status" data-value="{{ row['status'] }}"
+                       data-action="{{ url_for('projects.change_document', project_id=project['id'], submittal_id=row['id']) }}"
+                       href="#" data-status>{{ badge(STATE.get(row['status'], 'neutral'), row['status_name']) }}</a>
+                  {% else %}
+                    <span data-status>{{ badge(STATE.get(row['status'], 'neutral'), row['status_name']) }}</span>
+                  {% endif %}
+                </td>
+                <td class="right small ink2 nowrap" data-issued>
+                  {{ short_date(row['issued_date']) if row['issued_date'] else short_date(row['planned_date']) }}
+                </td>
+                {% if is_manager %}
+                  <td class="right no-print">
+                    <form method="post" style="display:inline"
+                          data-confirm="Take {{ row['number'] }} off the register?"
+                          action="{{ url_for('projects.drop_document', project_id=project['id'], submittal_id=row['id']) }}">
+                      <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+                    </form>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+  <div class="card-foot small muted">
+    A document's hours are its deliverable's, times its kind's share of the line, times its
+    own share of its kind, times each trade's share of it. Book time against a document on
+    Finance and the deliverable's cost stops being an estimate.
+  </div>
+</div>
+
+{# --- the deliverables, and what is raised against them -------------------- #}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>By deliverable</h2>
+      <p class="small muted" style="margin-top:2px">
+        What each line is allowed, what has been raised against it, and what it has cost
+      </p>
+    </div>
+  </div>
+  <details class="panel" data-panel="register-lines">
+    <summary class="panel-summary">
+      <span class="panel-open">Show the deliverables</span>
+      <span class="panel-shut">Hide the deliverables</span>
+      <span class="small muted">{{ made['lines'] | length }} lines</span>
+    </summary>
+    <div class="card-body flush">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>WBS</th><th>Deliverable</th>
+              <th class="right">Allowed</th><th class="right">Raised</th>
+              <th class="right">Booked</th><th class="right">Documents</th>
+              <th>Made of</th><th class="no-print"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in made['lines'] if line['planned_hours'] > 0.05 %}
+              <tr>
+                <td class="nowrap ink2">{{ line['wbs'] }}</td>
+                <td>{{ line['name'][:60] }}</td>
+                <td class="right tabular nowrap ink2">{{ hours(line['planned_hours']) }}</td>
+                <td class="right tabular nowrap">{{ hours(line['raised_hours']) }}</td>
+                <td class="right tabular nowrap">{{ hours(line['spent_hours']) }}</td>
+                <td class="right tabular">{{ line['documents'] }}</td>
+                <td class="small">
+                  {% for cell in line['by_kind'] if cell['percent'] > 0 %}
+                    <span class="nowrap {{ 'state-warning' if cell['kind_id'] in line['missing_kinds'] }}">
+                      {{ made['kind_names'].get(cell['kind_id'], '?') }}
+                      <span class="muted">{{ num(cell['percent'], 0) }}%</span>
+                      {%- if cell['kind_id'] in line['missing_kinds'] %} — none raised{% endif %}
+                    </span>{{ '' if loop.last else ' · ' }}
+                  {% endfor %}
+                </td>
+                <td class="right no-print">
+                  <a class="btn btn-ghost btn-sm"
+                     href="{{ url_for('projects.submittals', project_id=project['id'], task=line['task_id']) }}">
+                    Open</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+</div>
+
+{% if can_edit %}
+  <template id="doc-title">
+    <input type="text" name="value" class="cell-input" maxlength="200" aria-label="Title">
+  </template>
+  <template id="doc-status">
+    <select name="value" class="cell-input" aria-label="Status">
+      {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+  </template>
+{% endif %}
+{% endblock %}

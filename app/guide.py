@@ -130,6 +130,43 @@ TABS: tuple[dict[str, Any], ...] = (
                   "man-month"),
     },
     {
+        "key": "submittals",
+        "name": "Submittals",
+        "endpoints": ("projects.submittals",),
+        "what": "The register of everything issued — reports, drawings, specifications, bills — "
+                "numbered by the project's own convention, and costed from the deliverable each "
+                "one belongs to.",
+        "start_here": "Set what a deliverable is made of, then raise the documents under it. "
+                      "The number comes from the convention on Setup rather than from you.",
+        "steps": (
+            "Read <strong>what a deliverable is made of</strong>: a design package is not one "
+            "document. Specifications 5%, report 35%, drawings 60% is a shape a design office "
+            "recognises, and it is what splits a line's hours across the things it hands over.",
+            "<strong>Raise a document</strong>: pick the deliverable and the kind, give it a "
+            "title, and the number appears as you go — produced from the convention, not typed.",
+            "Tick the <strong>trades issuing it</strong>. A design basis report is written by "
+            "every discipline at once; a dredging drawing is Marine's alone. Leave them all "
+            "clear and the document is split the way its deliverable is.",
+            "Give a set of drawings a <strong>weight</strong> each if one of them is plainly "
+            "bigger than the others. Left alone they share their kind's hours evenly.",
+            "Change a document's <strong>title</strong> or <strong>status</strong> by clicking "
+            "it in the row. Marking one issued stamps the day it went out.",
+            "Book hours against a document on <strong>Finance</strong>, and the deliverable's "
+            "cost stops being an estimate.",
+        ),
+        "watch": (
+            "A document that has gone out keeps its number. Somebody else is holding that "
+            "number, and changing it here would only make the register and the transmittal "
+            "disagree.",
+            "A deliverable whose mix asks for drawings with no drawings raised is flagged: "
+            "those hours cannot be costed a drawing at a time until they exist.",
+            "The register spends what the resource plan allows. It does not invent more, so a "
+            "line's documents can never be worth more than the line.",
+        ),
+        "terms": ("document register", "submittal", "document kind", "numbering convention",
+                  "the mix", "weight", "issued"),
+    },
+    {
         "key": "resources",
         "name": "Resources",
         "endpoints": ("projects.resources",),
@@ -699,6 +736,33 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "The hours one engineer works in a week, set on Setup. A billing month and a rota week "
      "are set by different people for different reasons, so this is its own number rather than "
      "the man-month divided by four.", ""),
+    ("Document register", "money",
+     "Everything the project issues, one row per document. A deliverable is a line on a "
+     "programme and not a thing anybody hands over; a report, a drawing or a specification is.",
+     ""),
+    ("Submittal", "money",
+     "One document in the register — a report, a drawing, a specification, a bill. It belongs "
+     "to a deliverable, carries a number, and has the trades issuing it against it.", ""),
+    ("Document kind", "money",
+     "What sort of thing a document is: report, drawings, specification, bill of quantities, "
+     "method of measurement. The list is the project's own, on Setup, and each one carries the "
+     "code that goes in a number.", ""),
+    ("Numbering convention", "money",
+     "How the register makes a document number, set on Setup — something like "
+     "<code>{project}-{trade}-{kind}-{seq:4}</code>. The register fills it in, so a number is "
+     "produced before submission rather than typed and checked.",
+     "The running number counts what already exists under the same prefix, so a convention "
+     "that groups by trade numbers each trade from one."),
+    ("The mix", "money",
+     "What a deliverable is made of, in percent: specifications 5%, report 35%, drawings 60%. "
+     "Set once for the project, and overridden on any line that is made of something else. It "
+     "is what lets a single drawing be costed.",
+     "A document's hours = its deliverable's hours × its kind's share of the line × its own "
+     "share of its kind × each trade's share of it."),
+    ("Issued", "money",
+     "A document that has gone out. From that moment somebody else is holding its number, so "
+     "the number stops being ours to change; the date it went is stamped when the status is "
+     "set rather than typed.", ""),
     ("Comments reserve", "money",
      "The share of a workflow deliverable's ceiling held back at the start for answering the "
      "client's comments. Set on Setup; 15% to begin with. Only workflow lines carry one — a "

@@ -1026,7 +1026,9 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           "estimate at completion.", {}),
     _tool("document_register",
           "The register of everything the project issues — reports, drawings, specifications, "
-          "bills — with each document's number, what it is worth and what it has cost. Also "
+          "bills — with each document's number, what it is worth and what it has cost. Covers "
+          "the deliverables tracked on the workflow only: a line on straight percent (a "
+          "meeting, a mobilisation) hands nothing over. Also "
           "how many of each kind to expect (a drawing costs 35 hours on the setup sheet, so "
           "350 hours of drawings is ten of them) against how many have really gone out and "
           "what those really took. Use this for “what have we issued”, “what is this drawing "

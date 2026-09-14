@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Mapping, Sequence
 
-from .calc import build_period_report, build_s_curve, compute_project, parse_date, to_iso
+from .calc import (build_period_report, build_s_curve, compute_project, parse_date, to_iso,
+                   uses_workflow)
 from .workflow import CODE_A, default_steps, is_submitted, percent_for, step_by_key
 from .db import execute, get_db, insert, query, query_one
 
@@ -1441,6 +1442,13 @@ def raise_submittal(project: Mapping[str, Any], task_id: int, kind_id: int, titl
                      (kind_id, project_id))
     if task is None:
         return 0, "That deliverable does not belong to this project"
+    if not uses_workflow(as_dict(task)):
+        # A line tracked on straight percent has no submission behind it. It is
+        # a meeting, a mobilisation, a stretch of coordination — real hours, but
+        # nothing that goes out on a transmittal.
+        return 0, (f"{task['wbs']} is not tracked on the workflow, so it does not submit "
+                   f"anything. Only deliverables that go through a submission can hold "
+                   f"documents.")
     if kind is None:
         return 0, "That kind of document is not on the project's list"
 

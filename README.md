@@ -406,10 +406,17 @@ what one should cost and what one really did. A deliverable still being drawn do
 figure down: the comparison is on what has gone out, because a drawing still in progress has
 not finished costing what it is going to cost.
 
+**Only the lines that actually submit something.** The register covers the deliverables
+tracked on the **workflow** and no others. A progress meeting, a mobilisation, a stretch of
+coordination — real lines with real hours against them, but nothing goes out on a transmittal
+at the end of one. Counting them would put dozens of phantom packages into every total, and a
+register whose totals nobody believes is a register nobody opens.
+
 **A kind's share divides across its documents.** One design basis is one report and all of it.
 A general arrangement package is forty drawings, and the 60% splits between them — evenly by
-default, because forty drawings of unknown difficulty are best assumed equal. A drawing that is
-plainly bigger carries a **weight** and takes more.
+default, because forty drawings of unknown difficulty are best assumed equal. Where one of a
+set is plainly more work than the rest, **how big** says so: every document sits at 1 and takes
+an equal share, and one at 2 takes twice what each of the others does.
 
 **A document's share divides across the trades issuing it.** This is the part a programme
 cannot tell you. A design basis report is written by every discipline at once — one document,

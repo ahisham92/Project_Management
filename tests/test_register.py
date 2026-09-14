@@ -13,9 +13,10 @@ import pytest
 from app import register as reg
 
 
-def a_task(task_id: int, wbs: str, points: float = 10.0, section: str = "") -> dict:
+def a_task(task_id: int, wbs: str, points: float = 10.0, section: str = "",
+           tracking: str = "workflow") -> dict:
     return {"id": task_id, "wbs": wbs, "name": f"Line {wbs}", "weight_points": points,
-            "section_id": None, "submission_date": "2026-06-30"}
+            "section_id": None, "submission_date": "2026-06-30", "tracking": tracking}
 
 
 def a_kind(kind_id: int, key: str, name: str, code: str) -> dict:
@@ -318,6 +319,30 @@ def test_booked_hours_reach_the_document_and_the_deliverable():
     assert made["lines"][0]["left_hours"] == pytest.approx(780)
 
 
+def test_a_line_that_submits_nothing_is_not_in_the_register():
+    """A progress meeting has real hours against it and hands nothing over.
+    Counting it would put a phantom package into every total on the tab."""
+    tasks = [a_task(1, "3.1"), a_task(2, "1.7", tracking="simple")]
+    made = reg.costing(tasks, [], {}, MIX, {1: {7: 1000.0}, 2: {7: 22.0}})
+
+    assert [line["wbs"] for line in made["lines"]] == ["3.1"]
+    assert made["planned_hours"] == pytest.approx(1000)   # not 1022
+    assert made["unraised"] == made["lines"]
+
+
+def test_the_expected_count_ignores_the_lines_that_submit_nothing():
+    """Fifty meetings at 22 hours would otherwise read as fifty more reports to
+    expect, which is the number that made the tab unbelievable."""
+    tasks = [a_task(1, "3.1")] + [a_task(n, f"1.{n}", tracking="simple")
+                                  for n in range(2, 20)]
+    allowed = {n: {7: 22.0} for n in range(2, 20)}
+    allowed[1] = {7: 1000.0}
+    made = reg.costing(tasks, [], {}, MIX, allowed, {}, STANDARD)
+
+    drawings = next(row for row in made["expected"] if row["kind_id"] == 2)
+    assert drawings["expected"] == pytest.approx(600 / 35, abs=0.01)   # the one real line
+
+
 def test_a_deliverable_with_nothing_raised_is_still_returned():
     """"Nothing has been raised for this" is the most useful thing the register
     can say about a line."""
@@ -435,6 +460,38 @@ def test_a_line_can_be_made_of_something_else_and_handed_back(app):
 
         set_mix(1, {}, task["id"])
         assert task["id"] not in load_task_mixes(1)
+
+
+def test_a_document_cannot_be_raised_against_a_meeting(app):
+    """Nothing goes out on a transmittal at the end of a progress meeting, and
+    the form not offering it is no defence against the route being posted to."""
+    from app.db import query_one
+    from app.service import load_kinds, raise_submittal
+
+    with app.app_context():
+        project = dict(query_one("SELECT * FROM projects WHERE id = 1"))
+        simple = query_one("SELECT * FROM tasks WHERE project_id = 1 AND tracking = 'simple' "
+                           "LIMIT 1")
+        assert simple is not None, "the seed should hold at least one line on straight percent"
+        kind = next(k for k in load_kinds(1) if k["key"] == "report")
+
+        made, trouble = raise_submittal(project, simple["id"], kind["id"], "Minutes of nothing")
+        assert made == 0
+        assert "not tracked on the workflow" in trouble
+
+
+def test_the_tab_offers_only_the_lines_that_submit_something(signed_in, app):
+    from app.db import query
+
+    answer = signed_in.get("/projects/1/submittals")
+    page = answer.get_data(as_text=True)
+    with app.app_context():
+        simple = [dict(r) for r in query(
+            "SELECT wbs, name FROM tasks WHERE project_id = 1 AND tracking = 'simple'")]
+
+    assert simple, "the seed should hold lines on straight percent"
+    for line in simple[:5]:
+        assert f'{line["wbs"]} — ' not in page, f"{line['wbs']} should not be raisable"
 
 
 def test_counting_a_deliverable_through_the_page_works_its_weights_out(signed_in, app):

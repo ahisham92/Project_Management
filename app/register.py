@@ -29,8 +29,16 @@ this package is going to land.
 **A kind's share divides across its documents.** One design basis is one report
 and all of it; a general arrangement package is forty drawings, and the share
 splits between them. By default evenly, because forty drawings of unknown
-difficulty are best assumed equal; a drawing that is plainly bigger than the
-others carries a weight and takes more.
+difficulty are best assumed equal. Where one of a set is plainly more work than
+the rest, "how big" says so: every document sits at 1 by default and takes an
+equal share, and one at 2 takes twice what each of the others does.
+
+**Only the lines that actually submit something.** A progress meeting, a
+mobilisation, a stretch of coordination — real lines on the programme with real
+hours against them, but nothing goes out on a transmittal at the end of one. The
+register covers the deliverables tracked on the workflow and no others, because
+a register that lists fifty phantom packages is a register whose totals nobody
+believes.
 
 **A document's share divides across the trades issuing it.** This is the part a
 programme cannot tell you. A design basis report is written by every discipline
@@ -54,6 +62,8 @@ from __future__ import annotations
 
 import re
 from typing import Any, Iterable, Mapping, Sequence
+
+from .calc import uses_workflow
 
 # What an engineering office issues, before anybody edits the list. `code` is
 # what goes in a document number; `share` is the default mix, which is the
@@ -304,6 +314,12 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
     documents: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
     for task in tasks:
+        # Only the lines that actually submit something. A progress meeting is
+        # a real line on the programme with real hours against it, but nobody
+        # hands a drawing over at the end of one — counting it here would put
+        # dozens of phantom deliverables into every total on the tab.
+        if not uses_workflow(task):
+            continue
         task_id = int(task["id"])
         allowed = dict(planned_by_task.get(task_id) or {})
         total = sum(allowed.values())

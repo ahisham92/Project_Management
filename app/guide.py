@@ -135,7 +135,8 @@ TABS: tuple[dict[str, Any], ...] = (
         "endpoints": ("projects.submittals",),
         "what": "The register of everything issued — reports, drawings, specifications, bills — "
                 "numbered by the project's own convention, and costed from the deliverable each "
-                "one belongs to.",
+                "one belongs to. Only the deliverables tracked on the workflow: a line on "
+                "straight percent is real work but nothing goes out at the end of it.",
         "start_here": "Set what a deliverable is made of, then raise the documents under it. "
                       "The number comes from the convention on Setup rather than from you.",
         "steps": (
@@ -151,8 +152,10 @@ TABS: tuple[dict[str, Any], ...] = (
             "Tick the <strong>trades issuing it</strong>. A design basis report is written by "
             "every discipline at once; a dredging drawing is Marine's alone. Leave them all "
             "clear and the document is split the way its deliverable is.",
-            "Give a set of drawings a <strong>weight</strong> each if one of them is plainly "
-            "bigger than the others. Left alone they share their kind's hours evenly.",
+            "<strong>How big</strong> on a raised document shares the hours among the documents "
+            "of the same kind on the same deliverable. Leave every one at 1 and six drawings "
+            "take a sixth each; put one at 2 and it takes twice what each of the others does. "
+            "It is only for when one of a set is plainly more work than the rest.",
             "Change a document's <strong>title</strong> or <strong>status</strong> by clicking "
             "it in the row. Marking one issued stamps the day it went out.",
             "Book hours against a document on <strong>Finance</strong>, and the deliverable's "
@@ -169,6 +172,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "those hours cannot be costed a drawing at a time until they exist.",
             "The register spends what the resource plan allows. It does not invent more, so a "
             "line's documents can never be worth more than the line.",
+            "Only <strong>workflow deliverables</strong> appear. A progress meeting or a "
+            "mobilisation is a real line with real hours, but nothing is handed over at the "
+            "end of one, so counting it would put phantom drawings into every total.",
         ),
         "terms": ("document register", "submittal", "document kind", "numbering convention",
                   "the mix", "what one costs", "weight", "issued"),

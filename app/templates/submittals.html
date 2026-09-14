@@ -27,7 +27,8 @@
     <h1>Document register</h1>
     <p class="small muted" style="margin-top:2px">
       Every report, drawing, specification and bill this project issues — numbered by the
-      convention on Setup, costed from what its deliverable is allowed
+      convention on Setup, costed from what its deliverable is allowed. Workflow deliverables
+      only: nothing is handed over at the end of a progress meeting.
     </p>
   </div>
   <div class="inline-form">
@@ -149,7 +150,11 @@
         <h2>Raise a document</h2>
         <p class="small muted" style="margin-top:2px">
           The number comes from the convention on Setup. Tick the trades issuing it — leave
-          them all clear and it is split the way its deliverable is.
+          them all clear and it is split the way its deliverable is. <strong>How big</strong>
+          shares the hours out among the documents of the same kind on the same deliverable:
+          leave every one at 1 and six drawings take a sixth each; put one at 2 and it takes
+          twice what each of the others does. It is only for when one of a set is plainly more
+          work than the rest.
         </p>
       </div>
     </div>
@@ -181,10 +186,10 @@
             <span class="field-label">Title</span>
             <input name="title" required maxlength="200" placeholder="What the document is">
           </label>
-          <label class="field" style="max-width:110px">
-            <span class="field-label">Weight</span>
+          <label class="field" style="max-width:130px">
+            <span class="field-label">How big</span>
             <input type="number" name="weight" min="0" step="0.5" value="1">
-            <span class="field-hint">Its share of its kind</span>
+            <span class="field-hint">1 is a normal one</span>
           </label>
           {{ date_field('planned_date', '', 'Planned', 'w-md') }}
         </div>

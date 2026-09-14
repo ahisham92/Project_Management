@@ -12,6 +12,7 @@ from flask import (
 
 from .. import charts, offices
 from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
+from ..calc import uses_workflow
 from ..charts import SERIES_SLOTS
 from ..dates import from_input, from_input_or, to_display
 from ..db import execute, insert, query, query_one
@@ -1102,7 +1103,7 @@ def submittals(project_id: int):
         kind_id=kind_id, task_id=task_id, state=state,
         mix_now=mix_now, count_now=count_now, counted=counted, expected=expected,
         editing=editing, has_own=has_own,
-        tasks=snapshot["tasks"], statuses=reg.STATUSES,
+        tasks=[t for t in snapshot["tasks"] if uses_workflow(t)], statuses=reg.STATUSES,
         issued_states=ISSUED_STATES,
         can_edit=_can_report(role), is_manager=_can_edit(role),
     )

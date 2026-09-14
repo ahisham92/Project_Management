@@ -352,6 +352,44 @@ def test_a_deliverable_with_nothing_raised_is_still_returned():
     assert made["unraised"]
 
 
+# --- one cell at a time, and always a hundred ---------------------------------
+
+def test_typing_one_share_scales_the_rest_into_what_is_left():
+    """Nobody typing 50 against the report was asked about the drawings, so what
+    the others hold between them keeps its proportions inside the 50 left."""
+    made = reg.with_percent(MIX, 1, 50)
+
+    assert sum(made.values()) == pytest.approx(100)
+    assert made[1] == pytest.approx(50)
+    # The untouched two, still in the same proportion to each other — give or
+    # take the hundredth of a percent the rounding sweeps into the largest.
+    assert made[2] / made[3] == pytest.approx(60 / 5, abs=0.05)
+
+
+def test_the_row_totals_a_hundred_whatever_is_typed():
+    for typed in (0, 1, 17.5, 50, 99, 100, 140, -20):
+        made = reg.with_percent(MIX, 2, typed)
+        if made:
+            assert sum(made.values()) == pytest.approx(100), f"{typed} did not come back to 100"
+
+
+def test_the_only_kind_with_anything_in_it_is_the_whole_package():
+    """A lonely 40% is not a mix, it is a line that submits one thing."""
+    assert reg.with_percent([{"kind_id": 2, "percent": 40}], 2, 40) == {2: 100.0}
+
+
+def test_zeroing_the_last_of_them_leaves_no_mix_at_all():
+    """Which is how a deliverable is handed back to the project's own shape."""
+    assert reg.with_percent([{"kind_id": 2, "percent": 40}], 2, 0) == {}
+
+
+def test_a_kind_the_line_did_not_submit_can_be_typed_into():
+    made = reg.with_percent(MIX, 9, 20)
+    assert made[9] == pytest.approx(20)
+    assert sum(made.values()) == pytest.approx(100)
+    assert made[1] / made[2] == pytest.approx(35 / 60)
+
+
 # --- through the app ----------------------------------------------------------
 
 def test_the_tab_reads(signed_in):
@@ -517,6 +555,69 @@ def test_counting_a_deliverable_through_the_page_works_its_weights_out(signed_in
         assert made[drawings["id"]]["quantity"] == pytest.approx(6)
         assert made[drawings["id"]]["percent"] == pytest.approx(210 / 330 * 100, abs=0.1)
         assert made[report["id"]]["percent"] == pytest.approx(120 / 330 * 100, abs=0.1)
+
+
+def test_a_cell_saves_itself_and_hands_the_whole_row_back(signed_in, app):
+    """The grid is edited a cell at a time, so the row has to come back: every
+    other figure in it moved when this one did."""
+    from app.db import query_one
+    from app.service import load_kinds
+
+    with app.app_context():
+        task = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 AND tracking = 'workflow' "
+                              "ORDER BY wbs LIMIT 1"))
+        report = next(k for k in load_kinds(1) if k["key"] == "report")
+
+    answer = signed_in.post(
+        "/projects/1/submittals/mix/cell",
+        data={"task_id": task["id"], "kind_id": report["id"], "percent": "50"},
+        headers={"Accept": "application/json"})
+    assert answer.status_code == 200
+
+    body = answer.get_json()
+    assert body["ok"] is True
+    assert body["percents"][str(report["id"])] == pytest.approx(50, abs=0.6)
+    assert body["total"] == pytest.approx(100, abs=0.2)
+    assert body["own"] is True
+
+
+def test_a_cell_is_refused_on_a_line_that_submits_nothing(signed_in, app):
+    from app.db import query_one
+    from app.service import load_kinds
+
+    with app.app_context():
+        simple = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 "
+                                "AND tracking = 'simple' LIMIT 1"))
+        report = next(k for k in load_kinds(1) if k["key"] == "report")
+
+    answer = signed_in.post(
+        "/projects/1/submittals/mix/cell",
+        data={"task_id": simple["id"], "kind_id": report["id"], "percent": "50"},
+        headers={"Accept": "application/json"})
+    assert answer.status_code == 400
+    assert "submits nothing" in answer.get_json()["trouble"]
+
+
+def test_typing_a_share_clears_the_count_it_would_argue_with(app):
+    """A count says six drawings; typing 20% against them says otherwise. One of
+    them has to go, and it is the one nobody just typed."""
+    from app.db import query_one
+    from app.service import load_kinds, load_task_mixes, set_mix, set_mix_cell
+
+    with app.app_context():
+        task = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 "
+                              "AND tracking = 'workflow' ORDER BY wbs LIMIT 1"))
+        kinds = {k["key"]: k for k in load_kinds(1)}
+        drawings, report = kinds["drawings"], kinds["report"]
+
+        set_mix(1, {drawings["id"]: 0, report["id"]: 0}, task["id"],
+                {drawings["id"]: 6, report["id"]: 1})
+        assert any(row["quantity"] for row in load_task_mixes(1)[task["id"]])
+
+        set_mix_cell(1, task["id"], report["id"], 20)
+        after = load_task_mixes(1)[task["id"]]
+        assert not any(row["quantity"] for row in after)
+        assert sum(row["percent"] for row in after) == pytest.approx(100, abs=0.2)
 
 
 def test_what_one_costs_is_seeded_and_can_be_changed_on_setup(signed_in, app):

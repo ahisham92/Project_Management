@@ -380,6 +380,9 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
             "left_hours": total - spent_here,
             "used_pct": (spent_here / total) if total > 0 else 0.0,
             "mix": [dict(row) for row in shape],
+            # Keyed as well as listed: the grid draws a column per kind and
+            # needs to look one up, not walk a list for every cell.
+            "percents": {int(row["kind_id"]): row["percent"] for row in shape},
             "missing_kinds": missing,
             "by_kind": _by_kind(raised, mix, total, counts, standard),
         })
@@ -471,6 +474,35 @@ def _expected(lines: Sequence[Mapping[str, Any]],
         # raised but not issued is already in the register.
         row["left"] = max(0.0, row["expected"] - row["documents"])
     return sorted(out.values(), key=lambda row: -row["expected"])
+
+
+def with_percent(shape: Sequence[Mapping[str, Any]], kind_id: int,
+                 percent: float) -> dict[int, float]:
+    """One kind set to a percentage, the rest scaled to fill what is left.
+
+    A mix that does not total 100 is not a mix, so typing 50 against the report
+    cannot simply leave the drawings where they were. What the other kinds hold
+    between them is scaled into the 50 that is left, which keeps their
+    proportions to each other — the thing the person typing was not asked about
+    — while honouring the one number they did type.
+
+    Typing into the only kind with anything in it means that kind is the whole
+    package, so it goes to 100 rather than sitting at some lonely fraction.
+    Zeroing the last of them returns nothing at all, which is how a deliverable
+    is handed back to the project's own shape.
+    """
+    kind_id = int(kind_id)
+    percent = min(100.0, max(0.0, _num(percent)))
+    current = {int(row["kind_id"]): _num(row["percent"]) for row in shape}
+    rest = sum(value for key, value in current.items() if key != kind_id)
+
+    if rest <= 0:
+        return {kind_id: 100.0} if percent > 0 else {}
+
+    scale = (100.0 - percent) / rest
+    out = {key: value * scale for key, value in current.items() if key != kind_id}
+    out[kind_id] = percent
+    return to_a_hundred({key: value for key, value in out.items() if value > 0.0005})
 
 
 def to_a_hundred(supplied: Mapping[Any, float]) -> dict[Any, float]:

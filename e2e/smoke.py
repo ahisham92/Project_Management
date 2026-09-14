@@ -108,6 +108,7 @@ def main() -> int:
         step("the register numbers a document before it is raised", _register_raise)
         step("a deliverable is made of what it actually hands over", _register_mix)
         step("counting what a deliverable submits weighs it", _register_counting)
+        step("a share typed in the grid keeps the line at a hundred", _register_grid)
         step("a document's title and status are changed in the row", _register_row)
         step("hours booked to a drawing cost its deliverable", _register_costing)
         step("resources plans the hours into weeks and people", _resources)
@@ -1755,10 +1756,12 @@ def _register_counting(page) -> None:
     itself — by counting what it submits. The weights appear as it is typed."""
     page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
 
-    # One deliverable, given a shape of its own rather than the project's.
-    lines = page.locator(".card:has(h2:text-is('By deliverable'))")
-    lines.locator(".panel-summary").click()
-    lines.locator("a:has-text('Open')").first.click()
+    # One deliverable, given a shape of its own rather than the project's. The
+    # panel is opened rather than clicked: it remembers whether it was left
+    # open, so a click is as likely to shut it as to open it.
+    page.eval_on_selector('details[data-panel="register-lines"]',
+                          "node => { node.open = true; }")
+    page.locator("tr[data-line] td a").first.click()
     page.wait_for_selector("#the-mix", state="attached", timeout=8000)
 
     mix = page.locator("#the-mix")
@@ -1801,6 +1804,47 @@ def _register_counting(page) -> None:
         weights.nth(n).fill("0")
     mix.locator("button[type=submit]").click()
     page.wait_for_selector("text=Back to the project", timeout=8000)
+
+
+def _register_grid(page) -> None:
+    """A mix totals 100, so no cell in the grid is independent: typing one
+    pushes the others into what is left, live, without a reload."""
+    page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
+    before = page.url
+
+    # Opened rather than clicked: the panel remembers whether it was left open,
+    # so a click is as likely to shut it as to open it.
+    page.eval_on_selector('details[data-panel="register-lines"]',
+                          "node => { node.open = true; }")
+    page.wait_for_timeout(300)
+
+    row = page.locator("tr[data-line]").first
+    cells = row.locator("input.mix")
+    if cells.count() < 2:
+        raise AssertionError("the grid should hold a column for every kind")
+
+    was = [c.input_value() for c in cells.all()]
+    cells.nth(0).fill("50")
+    page.wait_for_timeout(1800)
+    now = [c.input_value() for c in cells.all()]
+
+    if now == was:
+        raise AssertionError(f"nothing moved when a share was typed: {now}")
+    if float(now[0]) != 50:
+        raise AssertionError(f"the typed share should stand at 50, not {now[0]}")
+    if abs(sum(float(v or 0) for v in now) - 100) > 0.2:
+        raise AssertionError(f"the line should still total 100, not {sum(float(v or 0) for v in now)}")
+
+    total = row.locator("[data-line-total]").inner_text().strip()
+    if abs(float(total) - 100) > 0.2:
+        raise AssertionError(f"the total column reads {total!r}")
+    if page.url != before:
+        raise AssertionError("typing a share should not reload the page")
+    page.screenshot(path=str(SHOTS / "41-register-grid.png"), full_page=True)
+
+    # Put it back, so the steps after this read the shape the app ships with.
+    cells.nth(0).fill("35")
+    page.wait_for_timeout(1500)
 
 
 def _register_row(page) -> None:

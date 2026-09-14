@@ -1691,7 +1691,7 @@
         asked.textContent = 'of ' + week.wanted;
         asked.hidden = !week.by_hand;
       }
-      row.querySelectorAll('.heads').forEach(function (box) {
+      row.querySelectorAll('.heads[data-staff]').forEach(function (box) {
         var cell = (week.trades || {})[box.dataset.trade];
         if (!cell) return;
         box.classList.toggle('by-hand', !!cell.by_hand);
@@ -1738,19 +1738,19 @@
     }
 
     document.addEventListener('input', function (event) {
-      if (event.target.classList && event.target.classList.contains('heads')) later(event.target);
+      if (event.target.matches && event.target.matches('.heads[data-staff]')) later(event.target);
     });
     // Leaving the box, or pressing Enter, saves at once rather than waiting out
     // the pause — somebody who has moved on has finished with it.
     document.addEventListener('change', function (event) {
-      if (!event.target.classList || !event.target.classList.contains('heads')) return;
+      if (!event.target.matches || !event.target.matches('.heads[data-staff]')) return;
       var key = event.target.dataset.week + ':' + event.target.dataset.trade;
       window.clearTimeout(waiting[key]);
       save(event.target);
     });
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Enter' || !event.target.classList) return;
-      if (!event.target.classList.contains('heads')) return;
+      if (!event.target.matches('.heads[data-staff]')) return;
       event.preventDefault();
       event.target.blur();
     });
@@ -1766,6 +1766,99 @@
   // Seeing the number before pressing the button is the whole point of having
   // a convention. A number produced by a rule nobody can watch working is just
   // a number somebody has to check — and the same goes for a weight.
+
+  // The mix, edited a cell at a time in the grid.
+  //
+  // A mix totals 100, so no cell is independent: typing 50 against the report
+  // pushes the drawings and the specification into the 50 that is left. The
+  // server does that arithmetic and hands the whole row back, which is why the
+  // answer redraws every cell rather than the one that was typed.
+
+  (function () {
+    var waiting = {};
+
+    function mark(box, state) {
+      ['saving', 'saved', 'trouble'].forEach(function (word) {
+        box.classList.toggle(word, word === state);
+      });
+      if (state === 'saved') {
+        window.setTimeout(function () { box.classList.remove('saved'); }, 1200);
+      }
+    }
+
+    function redraw(row, answer) {
+      row.querySelectorAll('input.mix').forEach(function (box) {
+        var value = answer.percents[box.dataset.kind];
+        box.classList.toggle('none-raised', (answer.missing || []).indexOf(box.dataset.kind) >= 0);
+        // Never rewrite the box being typed in, or the number would jump out
+        // from under the cursor mid-keystroke.
+        if (document.activeElement !== box) box.value = value === undefined ? 0 : value;
+      });
+      var total = row.querySelector('[data-line-total]');
+      if (total) total.textContent = answer.total;
+      var raised = row.querySelector('[data-line-raised]');
+      if (raised && answer.raised_hours !== undefined) {
+        raised.textContent = answer.raised_hours + ' h';
+      }
+      // A line with a shape of its own is marked; zeroing the last of them
+      // hands it back to the project and the mark goes with it.
+      var wbs = row.querySelector('td');
+      var dot = wbs && wbs.querySelector('.own-mix');
+      if (answer.own && wbs && !dot) {
+        dot = document.createElement('span');
+        dot.className = 'own-mix';
+        dot.title = 'Has a mix of its own';
+        dot.textContent = '\u2022';
+        wbs.appendChild(dot);
+      } else if (!answer.own && dot) {
+        dot.remove();
+      }
+    }
+
+    function save(box) {
+      var row = box.closest('tr');
+      var body = new FormData();
+      body.append('task_id', box.dataset.task);
+      body.append('kind_id', box.dataset.kind);
+      body.append('percent', box.value);
+      mark(box, 'saving');
+
+      fetch(box.dataset.mix, {
+        method: 'POST', body: body,
+        headers: { Accept: 'application/json' }, credentials: 'same-origin',
+      }).then(function (r) { return r.json().then(function (data) { return [r.ok, data]; }); })
+        .then(function (answer) {
+          if (!answer[0] || !answer[1].ok) { mark(box, 'trouble'); return; }
+          mark(box, 'saved');
+          redraw(row, answer[1]);
+          window.dispatchEvent(new Event('pm:saved'));
+        })
+        .catch(function () { mark(box, 'trouble'); });
+    }
+
+    document.addEventListener('input', function (event) {
+      var box = event.target.closest && event.target.closest('input.mix');
+      if (!box) return;
+      // A pause rather than a keystroke: 100 is three keys and one save.
+      var key = box.dataset.task + ':' + box.dataset.kind;
+      window.clearTimeout(waiting[key]);
+      waiting[key] = window.setTimeout(function () { save(box); }, 600);
+    });
+
+    // Leaving the box saves it at once rather than waiting out the pause.
+    document.addEventListener('focusout', function (event) {
+      var box = event.target.closest && event.target.closest('input.mix');
+      if (!box) return;
+      var key = box.dataset.task + ':' + box.dataset.kind;
+      if (waiting[key]) { window.clearTimeout(waiting[key]); delete waiting[key]; save(box); }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      var box = event.target.closest && event.target.closest('input.mix');
+      if (box) { event.preventDefault(); box.blur(); }
+    });
+  })();
 
   // What a deliverable is made of, worked out as it is typed.
   //

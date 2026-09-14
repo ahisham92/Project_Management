@@ -35,7 +35,7 @@ from ..service import (
     raise_submittal,
     register,
     remove_submittal,
-    resource_plan, restore_schedule, set_allocations, set_mix, set_staffing,
+    resource_plan, restore_schedule, set_allocations, set_mix, set_mix_cell, set_staffing,
     set_submittal_trades, update_submittal,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
@@ -1086,7 +1086,9 @@ def submittals(project_id: int):
     mix_now = {int(row["kind_id"]): row["percent"] for row in shape}
     count_now = {int(row["kind_id"]): row.get("quantity") or 0 for row in shape}
     counted = {int(row["kind_id"]) for row in shape if row.get("from_count")}
-    has_own = bool(task_id and load_task_mixes(project_id).get(task_id))
+    mine = load_task_mixes(project_id)
+    has_own = bool(task_id and mine.get(task_id))
+    own_mix = set(mine)
     # What the deliverable on the page is expected to hold, against what is
     # really in the register for it.
     expected = (own or {}).get("by_kind") if own else made["expected"]
@@ -1102,7 +1104,7 @@ def submittals(project_id: int):
         columns=columns, sort=sort, direction=direction,
         kind_id=kind_id, task_id=task_id, state=state,
         mix_now=mix_now, count_now=count_now, counted=counted, expected=expected,
-        editing=editing, has_own=has_own,
+        editing=editing, has_own=has_own, own_mix=own_mix,
         tasks=[t for t in snapshot["tasks"] if uses_workflow(t)], statuses=reg.STATUSES,
         issued_states=ISSUED_STATES,
         can_edit=_can_report(role), is_manager=_can_edit(role),
@@ -1208,6 +1210,52 @@ def drop_document(project_id: int, submittal_id: int):
     trouble = remove_submittal(project_id, submittal_id)
     flash(trouble or "Taken off the register", "error" if trouble else "success")
     return _back("projects.submittals", project_id)
+
+
+@bp.post("/submittals/mix/cell")
+@login_required
+def save_mix_cell(project_id: int):
+    """One kind's share of one deliverable, typed straight into the grid.
+
+    The row comes back rather than the cell: a mix totals 100, so moving one
+    figure moves every other figure beside it, and the page has to be told all
+    of them or it would show a row that does not add up.
+    """
+    _project, role = load_project(project_id, "manager")
+    task_id = _to_int(request.form.get("task_id"))
+    kind_id = _to_int(request.form.get("kind_id"))
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
+    if task is None or not query_one(
+            "SELECT 1 FROM document_kinds WHERE id = ? AND project_id = ?", (kind_id, project_id)):
+        abort(404)
+    if not uses_workflow(dict(task)):
+        trouble = f"{task['wbs']} is not tracked on the workflow, so it submits nothing"
+        if _wants_json():
+            return {"ok": False, "trouble": trouble}, 400
+        flash(trouble, "error")
+        return _back("projects.submittals", project_id)
+
+    whole = set_mix_cell(project_id, task_id, kind_id, request.form.get("percent"))
+    if not _wants_json():
+        flash("Saved what it is made of", "success")
+        return _back("projects.submittals", project_id)
+
+    # Recosted rather than echoed: the hours behind each kind move with its
+    # share, and those are on the same row.
+    project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    made = register(project)
+    line = next((r for r in made["lines"] if r["task_id"] == task_id), None)
+    return {
+        "ok": True,
+        "own": bool(whole),
+        "percents": {str(k): round(v, 1) for k, v in whole.items()},
+        "total": round(sum(whole.values()), 1),
+        # Only worth flagging on a line that has raised something: on one with
+        # nothing at all, every kind is missing and the colour says nothing.
+        "missing": ([str(k) for k in line["missing_kinds"]]
+                    if line and line["documents"] else []),
+        "raised_hours": round((line or {}).get("raised_hours", 0.0), 1),
+    }
 
 
 @bp.post("/submittals/mix")

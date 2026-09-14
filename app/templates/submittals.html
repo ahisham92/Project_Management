@@ -456,7 +456,9 @@
     <div>
       <h2>By deliverable</h2>
       <p class="small muted" style="margin-top:2px">
-        What each line is allowed, what has been raised against it, and what it has cost
+        What each line is allowed, what has been raised against it, and what it has cost —
+        with what it submits in the columns on the right. Type a percentage and it saves
+        itself; the rest of the row scales so the line always totals 100.
       </p>
     </div>
   </div>
@@ -473,33 +475,52 @@
             <tr>
               <th>WBS</th><th>Deliverable</th>
               <th class="right">Allowed</th><th class="right">Raised</th>
-              <th class="right">Booked</th><th class="right">Documents</th>
-              <th>Made of</th><th class="no-print"></th>
+              <th class="right">Booked</th><th class="right">Docs</th>
+              {% for kind in made['kinds'] %}
+                <th class="right mix-head" title="{{ kind['name'] }}{% if kind['standard_hours'] %} — {{ '%g'|format(kind['standard_hours']) }} h each{% endif %}">
+                  {{ kind['code'] or kind['name'][:3] | upper }}
+                </th>
+              {% endfor %}
+              <th class="right">Total</th>
             </tr>
           </thead>
           <tbody>
             {% for line in made['lines'] if line['planned_hours'] > 0.05 %}
-              <tr>
-                <td class="nowrap ink2">{{ line['wbs'] }}</td>
+              {% set share = line['percents'] %}
+              <tr data-line="{{ line['task_id'] }}">
+                <td class="nowrap ink2">
+                  <a href="{{ url_for('projects.submittals', project_id=project['id'],
+                                      task=line['task_id']) }}"
+                     title="Count what {{ line['wbs'] }} submits, rather than typing percentages">
+                    {{ line['wbs'] }}</a>
+                  {%- if line['task_id'] in own_mix %}<span class="own-mix" title="Has a mix of its own">•</span>{% endif %}
+                </td>
                 <td>{{ line['name'][:60] }}</td>
                 <td class="right tabular nowrap ink2">{{ hours(line['planned_hours']) }}</td>
-                <td class="right tabular nowrap">{{ hours(line['raised_hours']) }}</td>
+                <td class="right tabular nowrap" data-line-raised>{{ hours(line['raised_hours']) }}</td>
                 <td class="right tabular nowrap">{{ hours(line['spent_hours']) }}</td>
                 <td class="right tabular">{{ line['documents'] }}</td>
-                <td class="small">
-                  {% for cell in line['by_kind'] if cell['percent'] > 0 %}
-                    <span class="nowrap {{ 'state-warning' if cell['kind_id'] in line['missing_kinds'] }}">
-                      {{ made['kind_names'].get(cell['kind_id'], '?') }}
-                      <span class="muted">{{ num(cell['percent'], 0) }}%</span>
-                      {%- if cell['kind_id'] in line['missing_kinds'] %} — none raised{% endif %}
-                    </span>{{ '' if loop.last else ' · ' }}
-                  {% endfor %}
-                </td>
-                <td class="right no-print">
-                  <a class="btn btn-ghost btn-sm"
-                     href="{{ url_for('projects.submittals', project_id=project['id'], task=line['task_id']) }}">
-                    Open</a>
-                </td>
+                {% for kind in made['kinds'] %}
+                  {% set pct = share.get(kind['id'], 0) %}
+                  {# Amber only on a line that has raised something and is still
+                     short of this kind. On a line with nothing raised at all
+                     every cell would be amber, which says nothing. #}
+                  {% set gap = line['documents'] > 0 and kind['id'] in line['missing_kinds'] %}
+                  <td class="right mix-cell">
+                    {% if is_manager %}
+                      <input class="heads mix {{ 'none-raised' if gap }}"
+                             type="number" min="0" max="100" step="0.5"
+                             value="{{ '%g'|format(pct | round(1)) }}"
+                             data-mix="{{ url_for('projects.save_mix_cell', project_id=project['id']) }}"
+                             data-task="{{ line['task_id'] }}" data-kind="{{ kind['id'] }}"
+                             aria-label="{{ kind['name'] }} on {{ line['wbs'] }}, in percent"
+                             title="{{ kind['name'] }}{% if gap %} — none raised yet{% endif %}">
+                    {% else %}
+                      <span class="tabular {{ 'ink2' if not pct }}">{{ '%g'|format(pct | round(1)) }}</span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+                <td class="right tabular ink2" data-line-total>{{ num(share.values() | sum, 0) }}</td>
               </tr>
             {% endfor %}
           </tbody>

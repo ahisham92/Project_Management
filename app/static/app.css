@@ -607,6 +607,20 @@ input[type="checkbox"] { width: auto; }
 .heads { -moz-appearance: textfield; }
 @media print { .heads { border: 0; -webkit-appearance: none; appearance: none; } }
 
+/* The mix grid: one column per kind of document, a percentage in each cell.
+   Narrower than a staffing box because there are seven of them in a row, and
+   the whole row has to stay readable beside the hours it is splitting. */
+.heads.mix { width: 3em; margin-left: 0; font-weight: 500; }
+/* A kind this line is supposed to submit with nothing raised against it yet.
+   Not an error — it is the gap the tab exists to show. */
+.heads.mix.none-raised { color: #8a5a00; }
+:root:not([data-theme="light"]) .heads.mix.none-raised { color: #d9a441; }
+:root[data-theme="dark"] .heads.mix.none-raised { color: #d9a441; }
+.mix-head { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.mix-cell { padding-left: 2px; padding-right: 2px; }
+/* A line carrying a shape of its own rather than following the project's. */
+.own-mix { color: var(--series-1); margin-left: 3px; font-weight: 700; }
+
 /* The critical path, as a run you can read down: one line per activity, in
    the order the work happens, joined by a rule down the left. */
 .path { list-style: none; margin: 0; padding: 0; }

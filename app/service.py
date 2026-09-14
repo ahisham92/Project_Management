@@ -1349,6 +1349,27 @@ def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None 
                              (project_id, kind_id, percent, counted.get(kind_id, 0.0)))
 
 
+def set_mix_cell(project_id: int, task_id: int, kind_id: int, percent: Any) -> dict[int, float]:
+    """One kind's share of one deliverable, with the rest scaled to fill 100.
+
+    The grid on the Submittals tab is edited a cell at a time, so the sum has to
+    be looked after here rather than left to whoever is typing. Returns the
+    deliverable's whole mix, because changing one cell moves every other cell in
+    its row.
+
+    A typed percentage clears that deliverable's counts: somebody who types 50
+    against the report is overriding the arithmetic, and leaving a count behind
+    that says otherwise would only have the page argue with itself.
+    """
+    from .register import mix_for, with_percent
+
+    shape = mix_for(task_id, load_task_mixes(project_id), load_mix(project_id),
+                    standard_hours(project_id))
+    whole = with_percent(shape, kind_id, percent)
+    set_mix(project_id, whole, task_id)
+    return whole
+
+
 def standard_hours(project_id: int) -> dict[int, float]:
     """What one of each kind costs: the yardstick a count is weighed against."""
     return {int(k["id"]): float(k["standard_hours"] or 0) for k in load_kinds(project_id)}

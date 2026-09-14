@@ -1769,10 +1769,11 @@
 
   // The mix, edited a cell at a time in the grid.
   //
-  // A mix totals 100, so no cell is independent: typing 50 against the report
-  // pushes the drawings and the specification into the 50 that is left. The
-  // server does that arithmetic and hands the whole row back, which is why the
-  // answer redraws every cell rather than the one that was typed.
+  // Only the cell being typed changes. Scaling the others to hold the row at
+  // 100 was tried and is worse than the problem it solves: correcting the
+  // drawings moved the report, so correcting the report moved the drawings
+  // back, and a row of three could never be settled. A row that does not add
+  // up is marked instead, and left to whoever knows which figure is wrong.
 
   (function () {
     var waiting = {};
@@ -1791,11 +1792,18 @@
         var value = answer.percents[box.dataset.kind];
         box.classList.toggle('none-raised', (answer.missing || []).indexOf(box.dataset.kind) >= 0);
         // Never rewrite the box being typed in, or the number would jump out
-        // from under the cursor mid-keystroke.
+        // from under the cursor mid-keystroke. The others only move when the
+        // server says they did, which now means when somebody else moved them.
         if (document.activeElement !== box) box.value = value === undefined ? 0 : value;
       });
       var total = row.querySelector('[data-line-total]');
-      if (total) total.textContent = answer.total;
+      if (total) {
+        total.textContent = answer.total;
+        total.classList.toggle('off-hundred', !answer.adds_up);
+        total.classList.toggle('ink2', !!answer.adds_up);
+        total.title = answer.adds_up ? 'The shares add up'
+                                     : 'These shares do not add up to 100';
+      }
       var raised = row.querySelector('[data-line-raised]');
       if (raised && answer.raised_hours !== undefined) {
         raised.textContent = answer.raised_hours + ' h';

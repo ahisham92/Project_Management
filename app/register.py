@@ -269,6 +269,7 @@ def mix_for(task_id: int, per_task: Mapping[int, Sequence[Mapping[str, Any]]],
         whole = sum(weighed.values()) or 1.0
         from_count = {int(row["kind_id"]) for row in counted}
         return [{"kind_id": kind_id, "percent": hours / whole * 100,
+                 "typed": hours / whole * 100,
                  "quantity": next(_num(r["quantity"]) for r in counted
                                   if int(r["kind_id"]) == kind_id),
                  "from_count": kind_id in from_count}
@@ -277,7 +278,12 @@ def mix_for(task_id: int, per_task: Mapping[int, Sequence[Mapping[str, Any]]],
     whole = sum(_num(row.get("percent")) for row in rows)
     if whole <= 0:
         return []
+    # `typed` is what somebody wrote down; `percent` is what it works out to as
+    # a share of the package. They differ exactly when a mix does not add up to
+    # 100, and keeping both is what lets the page say so instead of quietly
+    # rewriting the figures under whoever typed them.
     return [{"kind_id": int(row["kind_id"]), "percent": _num(row["percent"]) / whole * 100,
+             "typed": _num(row["percent"]),
              "quantity": _num(row.get("quantity")), "from_count": False}
             for row in rows if _num(row.get("percent")) > 0]
 
@@ -382,7 +388,7 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
             "mix": [dict(row) for row in shape],
             # Keyed as well as listed: the grid draws a column per kind and
             # needs to look one up, not walk a list for every cell.
-            "percents": {int(row["kind_id"]): row["percent"] for row in shape},
+            "percents": {int(row["kind_id"]): row["typed"] for row in shape},
             "missing_kinds": missing,
             "by_kind": _by_kind(raised, mix, total, counts, standard),
         })
@@ -478,31 +484,28 @@ def _expected(lines: Sequence[Mapping[str, Any]],
 
 def with_percent(shape: Sequence[Mapping[str, Any]], kind_id: int,
                  percent: float) -> dict[int, float]:
-    """One kind set to a percentage, the rest scaled to fill what is left.
+    """One kind set to a percentage. Every other kind is left exactly alone.
 
-    A mix that does not total 100 is not a mix, so typing 50 against the report
-    cannot simply leave the drawings where they were. What the other kinds hold
-    between them is scaled into the 50 that is left, which keeps their
-    proportions to each other — the thing the person typing was not asked about
-    — while honouring the one number they did type.
+    Scaling the others into what was left over was the obvious thing to do and
+    the wrong one: fixing the drawings moved the report, so fixing the report
+    moved the drawings back, and a row of three figures could not be settled
+    without chasing it round. Whoever is typing knows what the numbers should
+    be; the page's job is to keep what they typed and say plainly when the row
+    does not add up, not to argue with them a cell at a time.
 
-    Typing into the only kind with anything in it means that kind is the whole
-    package, so it goes to 100 rather than sitting at some lonely fraction.
     Zeroing the last of them returns nothing at all, which is how a deliverable
     is handed back to the project's own shape.
     """
     kind_id = int(kind_id)
-    percent = min(100.0, max(0.0, _num(percent)))
-    current = {int(row["kind_id"]): _num(row["percent"]) for row in shape}
-    rest = sum(value for key, value in current.items() if key != kind_id)
+    out = {int(row["kind_id"]): _num(row.get("typed", row["percent"])) for row in shape}
+    out[kind_id] = min(100.0, max(0.0, _num(percent)))
+    return {key: value for key, value in out.items() if value > 0.0005}
 
-    if rest <= 0:
-        return {kind_id: 100.0} if percent > 0 else {}
 
-    scale = (100.0 - percent) / rest
-    out = {key: value * scale for key, value in current.items() if key != kind_id}
-    out[kind_id] = percent
-    return to_a_hundred({key: value for key, value in out.items() if value > 0.0005})
+def adds_up(supplied: Mapping[Any, float], slack: float = 0.5) -> bool:
+    """Whether a mix totals 100, within the rounding a typed figure carries."""
+    whole = sum(_num(value) for value in supplied.values())
+    return whole <= 0 or abs(whole - 100.0) <= slack
 
 
 def to_a_hundred(supplied: Mapping[Any, float]) -> dict[Any, float]:

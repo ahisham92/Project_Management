@@ -1318,20 +1318,30 @@ def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None 
     and leave the counts empty, which is still there for a package nobody has
     counted yet.
 
+    Percentages are stored exactly as they are given. A mix that does not total
+    100 is almost always a typo, but it is the typist's to fix: rewriting the
+    figures to make them add up means fixing one moves another, and a row of
+    three can never be settled. The page marks a row that does not add up
+    instead, and the costing reads the figures as proportions either way.
+
     A deliverable given nothing goes back to following the project, which is
     how a line is put back rather than pinned to a copy of today's shape.
     """
-    from .register import mix_for, to_a_hundred
+    from .register import mix_for
 
     counted = {int(k): max(0.0, float(v or 0)) for k, v in (counts or {}).items()}
     standard = standard_hours(project_id)
     rows = [{"kind_id": kind_id, "percent": float(percent or 0),
              "quantity": counted.get(int(kind_id), 0.0)}
             for kind_id, percent in ((int(k), v) for k, v in supplied.items())]
-    # Ask the same arithmetic the page reads with, so what is written down and
-    # what is shown can never drift apart.
-    weighed = mix_for(0, {}, rows, standard)
-    whole = to_a_hundred({int(row["kind_id"]): row["percent"] for row in weighed})
+
+    if any(row["quantity"] > 0 and standard.get(row["kind_id"], 0) > 0 for row in rows):
+        # Counted, so the shares are arithmetic rather than anybody's typing and
+        # come out at 100 on their own.
+        whole = {int(row["kind_id"]): row["percent"]
+                 for row in mix_for(0, {}, rows, standard)}
+    else:
+        whole = {row["kind_id"]: row["percent"] for row in rows if row["percent"] > 0.0005}
 
     conn = get_db()
     with conn:
@@ -1350,12 +1360,13 @@ def set_mix(project_id: int, supplied: Mapping[Any, float], task_id: int | None 
 
 
 def set_mix_cell(project_id: int, task_id: int, kind_id: int, percent: Any) -> dict[int, float]:
-    """One kind's share of one deliverable, with the rest scaled to fill 100.
+    """One kind's share of one deliverable. Nothing else in the row moves.
 
-    The grid on the Submittals tab is edited a cell at a time, so the sum has to
-    be looked after here rather than left to whoever is typing. Returns the
-    deliverable's whole mix, because changing one cell moves every other cell in
-    its row.
+    Returns the deliverable's whole mix, so the page can say whether it adds up
+    — which is the page's job here rather than the arithmetic's. Scaling the
+    other cells to keep the row at 100 was tried and is worse than the problem:
+    correcting the drawings moved the report, so correcting the report moved
+    the drawings back.
 
     A typed percentage clears that deliverable's counts: somebody who types 50
     against the report is overriding the arithmetic, and leaving a count behind

@@ -148,9 +148,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "drawings and 36% report, and nobody typed a percentage. Leave the count empty and "
             "the percentage is yours to type, which is what a package nobody has counted needs.",
             "Or type the shares straight into the <strong>grid</strong> under By deliverable: a "
-            "column per kind, a percentage in each cell, saved as you type. Type one and the "
-            "rest of the row scales into what is left, so the line always totals 100 — the "
-            "Total column is there to be checked.",
+            "column per kind, a percentage in each cell, saved as you type. What you type "
+            "stands and nothing else in the row moves; the Total column turns red when the "
+            "row stops adding up to 100, and leaves the fixing to you.",
             "<strong>Raise a document</strong>: pick the deliverable and the kind, give it a "
             "title, and the number appears as you go — produced from the convention, not typed.",
             "Tick the <strong>trades issuing it</strong>. A design basis report is written by "
@@ -177,6 +177,9 @@ TABS: tuple[dict[str, Any], ...] = (
             "Typing a share in the grid clears that line's counts. Somebody typing 50 against "
             "the report is overriding the arithmetic, and a count left behind saying otherwise "
             "would only have the page argue with itself. Click the WBS to go back to counting.",
+            "A row marked red still costs correctly — the shares are read as proportions when "
+            "the hours are divided, so a typo never leaves part of a line uncosted. The red "
+            "says check this, not that anything is broken.",
             "The register spends what the resource plan allows. It does not invent more, so a "
             "line's documents can never be worth more than the line.",
             "Only <strong>workflow deliverables</strong> appear. A progress meeting or a "

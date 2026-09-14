@@ -352,30 +352,31 @@ def test_a_deliverable_with_nothing_raised_is_still_returned():
     assert made["unraised"]
 
 
-# --- one cell at a time, and always a hundred ---------------------------------
+# --- one cell at a time, and nothing else moves -------------------------------
 
-def test_typing_one_share_scales_the_rest_into_what_is_left():
-    """Nobody typing 50 against the report was asked about the drawings, so what
-    the others hold between them keeps its proportions inside the 50 left."""
+def test_typing_one_share_leaves_every_other_share_alone():
+    """Scaling the others was tried and is worse than the problem: correcting
+    the drawings moved the report, so correcting the report moved the drawings
+    back, and a row of three could never be settled."""
     made = reg.with_percent(MIX, 1, 50)
 
-    assert sum(made.values()) == pytest.approx(100)
     assert made[1] == pytest.approx(50)
-    # The untouched two, still in the same proportion to each other — give or
-    # take the hundredth of a percent the rounding sweeps into the largest.
-    assert made[2] / made[3] == pytest.approx(60 / 5, abs=0.05)
+    assert made[2] == pytest.approx(60)     # untouched
+    assert made[3] == pytest.approx(5)      # untouched
 
 
-def test_the_row_totals_a_hundred_whatever_is_typed():
-    for typed in (0, 1, 17.5, 50, 99, 100, 140, -20):
-        made = reg.with_percent(MIX, 2, typed)
-        if made:
-            assert sum(made.values()) == pytest.approx(100), f"{typed} did not come back to 100"
+def test_a_row_is_allowed_not_to_add_up():
+    """Because the alternative is the page arguing with whoever is typing."""
+    made = reg.with_percent(MIX, 1, 50)
+    assert sum(made.values()) == pytest.approx(115)
+    assert reg.adds_up(made) is False
 
 
-def test_the_only_kind_with_anything_in_it_is_the_whole_package():
-    """A lonely 40% is not a mix, it is a line that submits one thing."""
-    assert reg.with_percent([{"kind_id": 2, "percent": 40}], 2, 40) == {2: 100.0}
+def test_a_row_that_does_add_up_says_so():
+    assert reg.adds_up({1: 35, 2: 60, 3: 5}) is True
+    assert reg.adds_up({1: 35, 2: 60, 3: 5.4}) is True      # inside the rounding
+    assert reg.adds_up({1: 35, 2: 60, 3: 8}) is False
+    assert reg.adds_up({}) is True                           # nothing is not a mistake
 
 
 def test_zeroing_the_last_of_them_leaves_no_mix_at_all():
@@ -386,8 +387,29 @@ def test_zeroing_the_last_of_them_leaves_no_mix_at_all():
 def test_a_kind_the_line_did_not_submit_can_be_typed_into():
     made = reg.with_percent(MIX, 9, 20)
     assert made[9] == pytest.approx(20)
-    assert sum(made.values()) == pytest.approx(100)
-    assert made[1] / made[2] == pytest.approx(35 / 60)
+    assert made[1] == pytest.approx(35)
+    assert made[2] == pytest.approx(60)
+
+
+def test_what_was_typed_survives_being_read_back():
+    """A mix stored at 30/60/5 reads back at 30/60/5, not scaled to 100. What
+    it works out to as a share of the package is kept beside it, not instead."""
+    rough = [{"kind_id": 1, "percent": 30}, {"kind_id": 2, "percent": 60}]
+    shape = reg.mix_for(1, {}, rough)
+
+    assert {int(r["kind_id"]): r["typed"] for r in shape} == {1: 30, 2: 60}
+    assert sum(r["percent"] for r in shape) == pytest.approx(100)   # costing still divides fully
+
+
+def test_a_line_that_does_not_add_up_still_spends_its_whole_budget():
+    """The shares are proportions when it comes to hours, so a typo in the
+    percentages never quietly leaves part of a line uncosted."""
+    tasks = [a_task(1, "3.1")]
+    rough = [{"kind_id": 1, "percent": 30}, {"kind_id": 2, "percent": 60}]
+    docs = [a_doc(10, 1, 1), a_doc(11, 1, 2)]
+    made = reg.costing(tasks, docs, {}, rough, {1: {7: 900.0}})
+
+    assert sum(d["hours"] for d in made["documents"]) == pytest.approx(900)
 
 
 # --- through the app ----------------------------------------------------------
@@ -576,9 +598,12 @@ def test_a_cell_saves_itself_and_hands_the_whole_row_back(signed_in, app):
 
     body = answer.get_json()
     assert body["ok"] is True
-    assert body["percents"][str(report["id"])] == pytest.approx(50, abs=0.6)
-    assert body["total"] == pytest.approx(100, abs=0.2)
+    assert body["percents"][str(report["id"])] == pytest.approx(50)
     assert body["own"] is True
+    # 50 typed over a 35 that sat beside a 60 and a 5: the row now reads 115 and
+    # says so rather than quietly moving the other two.
+    assert body["total"] == pytest.approx(115)
+    assert body["adds_up"] is False
 
 
 def test_a_cell_is_refused_on_a_line_that_submits_nothing(signed_in, app):
@@ -615,9 +640,11 @@ def test_typing_a_share_clears_the_count_it_would_argue_with(app):
         assert any(row["quantity"] for row in load_task_mixes(1)[task["id"]])
 
         set_mix_cell(1, task["id"], report["id"], 20)
-        after = load_task_mixes(1)[task["id"]]
-        assert not any(row["quantity"] for row in after)
-        assert sum(row["percent"] for row in after) == pytest.approx(100, abs=0.2)
+        after = {int(row["kind_id"]): row for row in load_task_mixes(1)[task["id"]]}
+        assert not any(row["quantity"] for row in after.values())
+        assert after[report["id"]]["percent"] == pytest.approx(20)
+        # The drawings keep the share the count worked out for them, untouched.
+        assert after[drawings["id"]]["percent"] == pytest.approx(210 / 330 * 100, abs=0.1)
 
 
 def test_what_one_costs_is_seeded_and_can_be_changed_on_setup(signed_in, app):

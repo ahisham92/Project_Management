@@ -108,7 +108,7 @@ def main() -> int:
         step("the register numbers a document before it is raised", _register_raise)
         step("a deliverable is made of what it actually hands over", _register_mix)
         step("counting what a deliverable submits weighs it", _register_counting)
-        step("a share typed in the grid keeps the line at a hundred", _register_grid)
+        step("a share typed in the grid stands, and a row off 100 is marked", _register_grid)
         step("a document's title and status are changed in the row", _register_row)
         step("hours booked to a drawing cost its deliverable", _register_costing)
         step("resources plans the hours into weeks and people", _resources)
@@ -1807,8 +1807,8 @@ def _register_counting(page) -> None:
 
 
 def _register_grid(page) -> None:
-    """A mix totals 100, so no cell in the grid is independent: typing one
-    pushes the others into what is left, live, without a reload."""
+    """What is typed stands: the cell takes the figure and nothing else in the
+    row moves. A row that stops adding up to 100 is marked rather than fixed."""
     page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
     before = page.url
 
@@ -1828,23 +1828,25 @@ def _register_grid(page) -> None:
     page.wait_for_timeout(1800)
     now = [c.input_value() for c in cells.all()]
 
-    if now == was:
-        raise AssertionError(f"nothing moved when a share was typed: {now}")
     if float(now[0]) != 50:
         raise AssertionError(f"the typed share should stand at 50, not {now[0]}")
-    if abs(sum(float(v or 0) for v in now) - 100) > 0.2:
-        raise AssertionError(f"the line should still total 100, not {sum(float(v or 0) for v in now)}")
+    if now[1:] != was[1:]:
+        raise AssertionError(f"nothing else in the row should move: {was} → {now}")
 
-    total = row.locator("[data-line-total]").inner_text().strip()
-    if abs(float(total) - 100) > 0.2:
-        raise AssertionError(f"the total column reads {total!r}")
+    total = row.locator("[data-line-total]")
+    if abs(float(total.inner_text().strip()) - sum(float(v or 0) for v in now)) > 0.2:
+        raise AssertionError(f"the total should read the row: {total.inner_text()!r}")
+    if "off-hundred" not in (total.get_attribute("class") or ""):
+        raise AssertionError("a row that does not add up should be marked")
     if page.url != before:
         raise AssertionError("typing a share should not reload the page")
     page.screenshot(path=str(SHOTS / "41-register-grid.png"), full_page=True)
 
-    # Put it back, so the steps after this read the shape the app ships with.
-    cells.nth(0).fill("35")
+    # Back to the shape the app ships with, and the mark should go with it.
+    cells.nth(0).fill(was[0])
     page.wait_for_timeout(1500)
+    if "off-hundred" in (total.get_attribute("class") or ""):
+        raise AssertionError("a row put back to 100 should stop being marked")
 
 
 def _register_row(page) -> None:

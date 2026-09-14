@@ -396,18 +396,24 @@ deliverable overrides it: the one that is only a bill of quantities says so on i
 the general arrangement package next to it is forty drawings and nothing else.
 
 **The grid.** Under *By deliverable* every line has a column per kind — RPT, DWG, SPC, BOQ,
-MOM, CAL, DOC — with its share in the cell. Type one and it saves itself, no reload. Because a
-mix that does not total 100 is not a mix, no cell is independent: type 50 against the report and
-what the other kinds hold between them is scaled into the 50 that is left, keeping their
-proportions to each other — the thing you were not asked about — while honouring the one number
-you did type. The **Total** column is there to be checked, and it reads 100 on every row.
+MOM, CAL, DOC — with its share in the cell. Type one and it saves itself, no reload, and
+**nothing else in the row moves**. The **Total** column adds the row up and turns red when it is
+not 100.
 
-Two edges worth knowing. Typing into the only kind with anything in it means that kind is the
-whole package, so it goes to 100 rather than sitting at some lonely fraction. Zeroing the last
-of them leaves no mix at all, which is how a line is handed back to the project's shape. And a
-typed percentage clears that line's counts: somebody typing 50 against the report is overriding
-the arithmetic, and a count left behind saying otherwise would only have the page argue with
-itself. Click the WBS to go back to counting.
+Scaling the other cells to hold the row at 100 was tried first and is worse than the problem it
+solves: correcting the drawings moves the report, so correcting the report moves the drawings
+back, and a row of three figures can never be settled. Whoever is typing knows what the numbers
+should be. The page's job is to keep what they typed and say plainly when the row does not add
+up — not to argue with them a cell at a time.
+
+A row that is off 100 still costs correctly: the shares are read as proportions when hours are
+divided, so a typo never quietly leaves part of a line uncosted. The red is a "check this", not
+a broken calculation.
+
+Two more things. Zeroing the last of them leaves no mix at all, which is how a line is handed
+back to the project's shape. And a typed percentage clears that line's counts: somebody typing
+50 against the report is overriding the arithmetic, and a count left behind saying otherwise
+would only have the page argue with itself. Click the WBS to go back to counting.
 
 **Expected against issued.** The same standard that weighs a package says how many to expect.
 Ten drawings expected, seven issued, 290 hours booked to them:

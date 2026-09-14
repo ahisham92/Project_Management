@@ -135,7 +135,7 @@
       {% else %}
         This is the project's shape, used by every deliverable that has not been given one of
         its own. Where a count is given the percentage is worked out and shown read-only;
-        where it is not, the percentages are scaled to total 100.
+        where it is not, what you type is what is kept — check that it adds up to 100.
         Pick a deliverable in the register below to give it a mix of its own.
       {% endif %}
     </p>
@@ -458,7 +458,8 @@
       <p class="small muted" style="margin-top:2px">
         What each line is allowed, what has been raised against it, and what it has cost —
         with what it submits in the columns on the right. Type a percentage and it saves
-        itself; the rest of the row scales so the line always totals 100.
+        itself — only that cell, nothing else in the row moves. A row whose shares do not
+        add up to 100 is marked in the Total column.
       </p>
     </div>
   </div>
@@ -520,7 +521,11 @@
                     {% endif %}
                   </td>
                 {% endfor %}
-                <td class="right tabular ink2" data-line-total>{{ num(share.values() | sum, 0) }}</td>
+                {% set adds_up = share.values() | sum | round(1) == 100 or not share %}
+                <td class="right tabular {{ 'ink2' if adds_up else 'off-hundred' }}"
+                    data-line-total
+                    title="{{ 'The shares add up' if adds_up else 'These shares do not add up to 100' }}">
+                  {{ '%g'|format(share.values() | sum | round(1)) }}</td>
               </tr>
             {% endfor %}
           </tbody>

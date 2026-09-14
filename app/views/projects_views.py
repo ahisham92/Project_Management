@@ -1217,9 +1217,9 @@ def drop_document(project_id: int, submittal_id: int):
 def save_mix_cell(project_id: int):
     """One kind's share of one deliverable, typed straight into the grid.
 
-    The row comes back rather than the cell: a mix totals 100, so moving one
-    figure moves every other figure beside it, and the page has to be told all
-    of them or it would show a row that does not add up.
+    Only the cell that was typed changes. The row still comes back, because
+    whether it adds up is a fact about the row and not about the cell, and that
+    is the one thing the page has to be told.
     """
     _project, role = load_project(project_id, "manager")
     task_id = _to_int(request.form.get("task_id"))
@@ -1250,6 +1250,7 @@ def save_mix_cell(project_id: int):
         "own": bool(whole),
         "percents": {str(k): round(v, 1) for k, v in whole.items()},
         "total": round(sum(whole.values()), 1),
+        "adds_up": reg.adds_up(whole),
         # Only worth flagging on a line that has raised something: on one with
         # nothing at all, every kind is missing and the colour says nothing.
         "missing": ([str(k) for k in line["missing_kinds"]]

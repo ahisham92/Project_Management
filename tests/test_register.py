@@ -412,6 +412,134 @@ def test_a_line_that_does_not_add_up_still_spends_its_whole_budget():
     assert sum(d["hours"] for d in made["documents"]) == pytest.approx(900)
 
 
+# --- lines that feed rather than submit ---------------------------------------
+
+def a_link(before: int, after: int) -> dict:
+    return {"predecessor_id": before, "successor_id": after}
+
+
+def test_a_feeder_hands_its_hours_to_what_depends_on_it():
+    tasks = [a_task(1, "3.1", tracking="workflow"), a_task(2, "3.2")]
+    tasks[0]["submits"] = 0
+    flow = reg.flow_of_hours(tasks, [a_link(1, 2)])
+
+    assert flow == {1: {2: 1.0}}
+    assert reg.carried({1: {7: 100.0}, 2: {7: 200.0}}, flow) == {2: {7: 300.0}}
+
+
+def test_a_feeder_shared_between_two_is_split_by_their_weight():
+    """A survey interpretation feeding a big package and a small one is mostly
+    the big one's cost, not half of each."""
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2", points=30), a_task(3, "3.3", points=10)]
+    tasks[0]["submits"] = 0
+    flow = reg.flow_of_hours(tasks, [a_link(1, 2), a_link(1, 3)])
+
+    assert flow[1][2] == pytest.approx(0.75)
+    assert flow[1][3] == pytest.approx(0.25)
+
+
+def test_two_successors_nobody_weighted_are_half_each():
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2", points=0), a_task(3, "3.3", points=0)]
+    tasks[0]["submits"] = 0
+    flow = reg.flow_of_hours(tasks, [a_link(1, 2), a_link(1, 3)])
+
+    assert flow[1] == {2: pytest.approx(0.5), 3: pytest.approx(0.5)}
+
+
+def test_a_feeder_feeding_a_feeder_is_followed_through():
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2"), a_task(3, "3.3")]
+    tasks[0]["submits"] = 0
+    tasks[1]["submits"] = 0
+    flow = reg.flow_of_hours(tasks, [a_link(1, 2), a_link(2, 3)])
+
+    assert flow[1] == {3: pytest.approx(1.0)}
+    assert flow[2] == {3: pytest.approx(1.0)}
+
+
+def test_a_feeder_that_leads_nowhere_keeps_its_own_hours():
+    """Losing them would break the one property the expected counts rest on."""
+    tasks = [a_task(1, "3.1")]
+    tasks[0]["submits"] = 0
+    assert reg.flow_of_hours(tasks, []) == {}
+
+    made = reg.costing(tasks, [], {}, MIX, {1: {7: 400.0}})
+    assert made["feeders"] == []
+    assert made["lines"][0]["planned_hours"] == pytest.approx(400)
+    assert made["lines"][0]["stranded"] is True
+
+
+def test_a_ring_of_feeders_does_not_go_round_for_ever():
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2")]
+    tasks[0]["submits"] = 0
+    tasks[1]["submits"] = 0
+    flow = reg.flow_of_hours(tasks, [a_link(1, 2), a_link(2, 1)])
+    assert set(flow) <= {1, 2}
+
+
+def test_not_an_hour_is_lost_when_a_line_starts_feeding():
+    """The whole thing rests on this: every hour lands on some deliverable, so
+    the drawings it buys can be counted."""
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2", points=30), a_task(3, "3.3", points=10)]
+    budget = {1: {7: 100.0}, 2: {7: 200.0}, 3: {7: 60.0}}
+
+    whole = reg.costing(tasks, [], {}, MIX, budget, {}, STANDARD)["planned_hours"]
+    tasks[0]["submits"] = 0
+    after = reg.costing(tasks, [], {}, MIX, budget, {}, STANDARD,
+                        links=[a_link(1, 2), a_link(1, 3)])
+
+    assert after["planned_hours"] == pytest.approx(whole)
+    landed = {line["task_id"]: line["planned_hours"] for line in after["lines"]}
+    assert landed[2] == pytest.approx(200 + 75)
+    assert landed[3] == pytest.approx(60 + 25)
+
+
+def test_a_feeder_is_still_listed_so_it_can_be_switched_back():
+    tasks = [a_task(1, "3.1"), a_task(2, "3.2")]
+    tasks[0]["submits"] = 0
+    made = reg.costing(tasks, [], {}, MIX, {1: {7: 100.0}, 2: {7: 200.0}},
+                       links=[a_link(1, 2)])
+
+    assert [line["task_id"] for line in made["lines"]] == [2]
+    feeder = made["feeders"][0]
+    assert feeder["sent_hours"] == pytest.approx(100)
+    assert feeder["feeds"] == [{"task_id": 2, "wbs": "3.2", "share": 100.0, "hours": 100.0}]
+
+
+# --- the count comes off the whole budget -------------------------------------
+
+def test_the_expected_count_ignores_what_is_held_back():
+    """A project does not produce fewer drawings because part of the fee is
+    being kept as margin, so the count comes off the budget before anything is
+    taken out of it."""
+    tasks = [a_task(1, "3.1")]
+    mix = [{"kind_id": 2, "percent": 100}]
+    allowed = {1: {7: 880.0}}              # after a 12% margin
+    gross = {1: {7: 1000.0}}               # what the line is really worth
+
+    made = reg.costing(tasks, [], {}, mix, allowed, {}, STANDARD, gross_by_task=gross)
+    drawings = made["lines"][0]["by_kind"][0]
+
+    assert drawings["expected"] == pytest.approx(1000 / 35)     # not 880 / 35
+    assert drawings["hours"] == pytest.approx(880)              # what a document may spend
+
+
+def test_the_expected_count_splits_the_way_the_hours_do():
+    """Forty drawings across the project, of which Marine owes twelve — which is
+    the number somebody planning Marine's month actually needs."""
+    tasks = [a_task(1, "3.1")]
+    mix = [{"kind_id": 2, "percent": 100}]
+    gross = {1: {7: 700.0, 8: 300.0}}
+
+    made = reg.costing(tasks, [], {}, mix, {1: {7: 700.0, 8: 300.0}}, {}, STANDARD,
+                       gross_by_task=gross)
+    drawings = next(row for row in made["expected"] if row["kind_id"] == 2)
+
+    assert drawings["expected"] == pytest.approx(1000 / 35)
+    assert drawings["by_trade"][7] == pytest.approx(700 / 35)
+    assert drawings["by_trade"][8] == pytest.approx(300 / 35)
+    assert sum(drawings["by_trade"].values()) == pytest.approx(drawings["expected"])
+
+
 # --- through the app ----------------------------------------------------------
 
 def test_the_tab_reads(signed_in):
@@ -645,6 +773,71 @@ def test_typing_a_share_clears_the_count_it_would_argue_with(app):
         assert after[report["id"]]["percent"] == pytest.approx(20)
         # The drawings keep the share the count worked out for them, untouched.
         assert after[drawings["id"]]["percent"] == pytest.approx(210 / 330 * 100, abs=0.1)
+
+
+def test_a_line_can_be_set_to_feed_and_its_hours_move(signed_in, app):
+    from app.db import insert, query, query_one
+    from app.service import register
+
+    with app.app_context():
+        rows = [dict(r) for r in query(
+            "SELECT id, wbs FROM tasks WHERE project_id = 1 AND tracking = 'workflow' "
+            "ORDER BY sort_order LIMIT 2")]
+        feeder, downstream = rows
+        insert("INSERT INTO task_links (project_id, predecessor_id, successor_id, kind, lag_days) "
+               "VALUES (?, ?, ?, 'FS', 0)", (1, feeder["id"], downstream["id"]))
+
+        project = dict(query_one("SELECT * FROM projects WHERE id = 1"))
+        before = {r["task_id"]: r["planned_hours"] for r in register(project)["lines"]}
+
+    answer = signed_in.post("/projects/1/submittals/submits",
+                            data={"task_id": feeder["id"], "submits": "0"},
+                            headers={"Accept": "application/json"})
+    assert answer.status_code == 200
+    assert answer.get_json()["ok"] is True
+
+    with app.app_context():
+        made = register(project)
+        after = {r["task_id"]: r["planned_hours"] for r in made["lines"]}
+        assert feeder["id"] not in after
+        assert after[downstream["id"]] == pytest.approx(
+            before[downstream["id"]] + before[feeder["id"]], abs=0.01)
+        assert made["feeders"][0]["task_id"] == feeder["id"]
+
+
+def test_a_line_holding_documents_cannot_quietly_stop_submitting(signed_in, app):
+    """Its documents would be left costed against a line with no hours on it."""
+    from app.db import query_one
+    from app.service import load_kinds, raise_submittal
+
+    with app.app_context():
+        project = dict(query_one("SELECT * FROM projects WHERE id = 1"))
+        task = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 "
+                              "AND tracking = 'workflow' ORDER BY wbs LIMIT 1"))
+        kind = next(k for k in load_kinds(1) if k["key"] == "report")
+        made, trouble = raise_submittal(project, task["id"], kind["id"], "Design basis")
+        assert made and not trouble
+
+    answer = signed_in.post("/projects/1/submittals/submits",
+                            data={"task_id": task["id"], "submits": "0"},
+                            headers={"Accept": "application/json"})
+    assert answer.status_code == 400
+    assert "in the register" in answer.get_json()["trouble"]
+
+
+def test_the_expected_panel_reads_for_one_trade(signed_in, app):
+    from app.db import query_one
+
+    with app.app_context():
+        trade = dict(query_one("SELECT * FROM trades WHERE project_id = 1 LIMIT 1"))
+
+    everyone = signed_in.get("/projects/1/submittals").get_data(as_text=True)
+    one = signed_in.get(f"/projects/1/submittals?trade={trade['id']}").get_data(as_text=True)
+
+    assert "Expected against issued" in everyone
+    assert trade["name"] in one
+    # A single trade owes fewer of everything than the whole project does.
+    assert everyone != one
 
 
 def test_what_one_costs_is_seeded_and_can_be_changed_on_setup(signed_in, app):

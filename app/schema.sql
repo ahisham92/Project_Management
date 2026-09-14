@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   start_date      TEXT NOT NULL DEFAULT '',        -- YYYY-MM-DD, when design is planned to start
   submission_date TEXT NOT NULL DEFAULT '',        -- YYYY-MM-DD, the planned submission for the current revision
   tracking      TEXT NOT NULL DEFAULT 'workflow',  -- 'workflow' (status steps) | 'simple' (a percentage you type)
+  -- Whether anything is handed over at the end of this line. A line that feeds
+  -- another rather than submitting sets this to 0, and its hours flow to
+  -- whatever depends on it.
+  submits       INTEGER NOT NULL DEFAULT 1,
   status_key    TEXT NOT NULL DEFAULT '',          -- the workflow step reached; blank means not started
   revision      INTEGER NOT NULL DEFAULT 0,        -- 0 = first issue; raised each time comments come back
   actual_pct    REAL NOT NULL DEFAULT 0,           -- 0..1, set from the status on workflow lines

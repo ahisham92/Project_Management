@@ -62,6 +62,16 @@ def test_the_kinds_sheet_carries_what_one_costs(workbook):
     assert "How many in a package" in header
 
 
+def test_a_feeding_line_survives_the_round_trip(workbook):
+    """Whether a line hands anything over travels with the workbook, or a team
+    editing offline would quietly turn every feeder back into a deliverable."""
+    ws = workbook["Deliverables"]
+    header = [c.value for c in ws[1]]
+    assert header[-1] == "Submits"
+    assert all(r[len(header) - 1] == "yes"
+               for r in ws.iter_rows(min_row=2, values_only=True) if r[2])
+
+
 def test_the_export_writes_dates_as_day_month_year(workbook):
     ws = workbook["Deliverables"]
     header = [c.value for c in ws[1]]

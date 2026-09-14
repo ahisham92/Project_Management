@@ -695,14 +695,14 @@ def order_for(column: str | None, direction: str | None,
 def sort_tasks(rows: Sequence[Mapping[str, Any]], column: str,
                direction: str = "asc") -> list[dict[str, Any]]:
     """The ceiling table in one column's order, WBS breaking every tie."""
-    from .sorting import _wbs_key
+    from .sorting import wbs_key
 
     trade_id = _trade_column(column)
     if trade_id is not None:
         key = lambda row: _num((row.get("by_trade") or {}).get(trade_id))   # noqa: E731
     else:
         keys = {
-            "wbs": lambda row: _wbs_key(row.get("wbs")),
+            "wbs": lambda row: wbs_key(row.get("wbs")),
             "name": lambda row: str(row.get("name") or "").lower(),
             "weight": lambda row: _num(row.get("weight_pct")),
             "start": lambda row: str(row.get("start_date") or ""),
@@ -714,7 +714,7 @@ def sort_tasks(rows: Sequence[Mapping[str, Any]], column: str,
 
     # WBS second, so two lines worth the same hours still read in a fixed order
     # rather than swapping places every time the page is drawn.
-    ordered = sorted(rows, key=lambda row: (key(row), _wbs_key(row.get("wbs"))))
+    ordered = sorted(rows, key=lambda row: (key(row), wbs_key(row.get("wbs"))))
     return list(reversed(ordered)) if direction == "desc" else list(ordered)
 
 

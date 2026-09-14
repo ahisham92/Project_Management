@@ -109,6 +109,7 @@ def main() -> int:
         step("a deliverable is made of what it actually hands over", _register_mix)
         step("counting what a deliverable submits weighs it", _register_counting)
         step("a share typed in the grid stands, and a row off 100 is marked", _register_grid)
+        step("a line set to feed hands its hours to what depends on it", _register_feeds)
         step("a document's title and status are changed in the row", _register_row)
         step("hours booked to a drawing cost its deliverable", _register_costing)
         step("resources plans the hours into weeks and people", _resources)
@@ -1847,6 +1848,90 @@ def _register_grid(page) -> None:
     page.wait_for_timeout(1500)
     if "off-hundred" in (total.get_attribute("class") or ""):
         raise AssertionError("a row put back to 100 should stop being marked")
+
+
+def _register_feeds(page) -> None:
+    """Not every workflow line hands something over. One that feeds another
+    gives it the hours, so the package that does go out carries the whole cost
+    of getting there — and not an hour goes missing on the way."""
+    page.goto(f"{BASE}/projects/1/schedule", wait_until="networkidle")
+    page.goto(f"{BASE}/projects/1/submittals", wait_until="networkidle")
+    page.eval_on_selector('details[data-panel="register-lines"]',
+                          "node => { node.open = true; }")
+    page.wait_for_timeout(300)
+
+    read = """() => {
+      const rows = [...document.querySelectorAll('tr[data-line]')];
+      let held = 0, out = 0;
+      for (const r of rows) {
+        const t = r.children[2].textContent.trim();
+        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
+        if (t.includes('out')) out += n; else held += n;
+      }
+      return {held: Math.round(held), out: Math.round(out)};
+    }"""
+
+    # A line with nothing raised against it yet: one that already holds
+    # documents cannot stop being a deliverable, which is checked below.
+    pick = """(want) => {
+      for (const r of document.querySelectorAll('tr[data-line]')) {
+        if (!r.querySelector('select.submits')) continue;
+        const docs = parseInt(r.children[5].textContent.trim(), 10);
+        if (want === 'free' ? docs === 0 : docs > 0) return r.dataset.line;
+      }
+      return null;
+    }"""
+    free_id = page.evaluate(pick, "free")
+    if not free_id:
+        raise AssertionError("no deliverable without documents to switch")
+    row = page.locator(f'tr[data-line="{free_id}"]')
+    wbs = row.locator("td").first.inner_text().strip()
+    before = page.evaluate(read)
+
+    row.locator("select.submits").select_option("0")
+    page.wait_for_timeout(2200)
+    after = page.evaluate(read)
+
+    # Whatever happens, no hour may go missing: the counts below rest on every
+    # hour in the budget landing on some deliverable.
+    if after["held"] + after["out"] < before["held"] - 2:
+        raise AssertionError(f"hours went missing: {before} → {after}")
+
+    note = row.locator("[data-line-feeds]").inner_text().strip()
+    total = row.locator("[data-line-total]").inner_text()
+    if not note:
+        raise AssertionError(f"{wbs} should say what became of its hours")
+
+    if "nothing depends on it" in note:
+        # Nothing depends on it, so the hours stay and it is a deliverable still.
+        if after["held"] < before["held"] - 2:
+            raise AssertionError(f"a line feeding nothing should keep its hours: {after}")
+    else:
+        # It feeds something, so its hours left and it holds no mix.
+        if after["out"] <= 0:
+            raise AssertionError(f"{wbs} says {note!r} but handed nothing over")
+        if "—" not in total:
+            raise AssertionError("a feeding line holds no mix, so it has no total")
+    page.screenshot(path=str(SHOTS / "42-register-feeds.png"), full_page=True)
+
+    row.locator("select.submits").select_option("1")
+    page.wait_for_timeout(2200)
+    back = page.evaluate(read)
+    if abs(back["held"] - before["held"]) > 2 or back["out"] != 0:
+        raise AssertionError(f"switching back should restore the hours: {before} → {back}")
+
+    # And a line that already holds documents cannot quietly stop submitting:
+    # they would be left costed against a line with no hours on it.
+    held_id = page.evaluate(pick, "held")
+    if held_id:
+        line = page.locator(f'tr[data-line="{held_id}"]')
+        box = line.locator("select.submits")
+        box.select_option("0")
+        page.wait_for_timeout(1800)
+        if box.input_value() != "1":
+            raise AssertionError("a refused switch should spring back to submitting")
+        if "in the register" not in line.locator("[data-line-feeds]").inner_text():
+            raise AssertionError("a refused switch should say why, beside the line")
 
 
 def _register_row(page) -> None:

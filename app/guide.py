@@ -151,6 +151,13 @@ TABS: tuple[dict[str, Any], ...] = (
             "column per kind, a percentage in each cell, saved as you type. What you type "
             "stands and nothing else in the row moves; the Total column turns red when the "
             "row stops adding up to 100, and leaves the fixing to you.",
+            "A line that hands nothing over — a survey interpretation, calculations that end "
+            "up inside somebody else's report — is set to <strong>feeds</strong> in the same "
+            "grid. Its hours go to whatever depends on it, split by weight where it feeds more "
+            "than one, so the package that does go out carries the whole cost of getting there.",
+            "Read <strong>expected against issued</strong> for one discipline with the "
+            "<strong>trade</strong> filter: forty drawings across the project, of which Marine "
+            "owes twelve. The count splits the way the hours behind it do.",
             "<strong>Raise a document</strong>: pick the deliverable and the kind, give it a "
             "title, and the number appears as you go — produced from the convention, not typed.",
             "Tick the <strong>trades issuing it</strong>. A design basis report is written by "
@@ -185,6 +192,13 @@ TABS: tuple[dict[str, Any], ...] = (
             "Only <strong>workflow deliverables</strong> appear. A progress meeting or a "
             "mobilisation is a real line with real hours, but nothing is handed over at the "
             "end of one, so counting it would put phantom drawings into every total.",
+            "The expected counts come off the <strong>whole budget</strong> — before the "
+            "margin, before the comments reserve. A project does not produce fewer drawings "
+            "because part of the fee is being held back. What a document is allowed to spend "
+            "still comes off the plan.",
+            "A line set to feed with nothing depending on it says so and keeps its own hours. "
+            "Dropping them would break the thing the counts rest on: every hour in the budget "
+            "lands on some deliverable, so the drawings it buys can be counted.",
         ),
         "terms": ("document register", "submittal", "document kind", "numbering convention",
                   "the mix", "what one costs", "weight", "issued"),
@@ -776,6 +790,12 @@ TERMS: tuple[tuple[str, str, str, str], ...] = (
      "produced before submission rather than typed and checked.",
      "The running number counts what already exists under the same prefix, so a convention "
      "that groups by trade numbers each trade from one."),
+    ("Feeds", "money",
+     "A workflow line that hands nothing over and exists to feed the one that does — a survey "
+     "interpretation, calculations that end up inside somebody else's report. Its hours go to "
+     "whatever depends on it rather than staying on a line that submits nothing.",
+     "Split by the successors' weight where it feeds more than one, followed through where it "
+     "feeds another feeder, and kept where it feeds nothing at all."),
     ("What one costs", "money",
      "The standard hours for a kind of document, set on Setup: a drawing is 35 hours, a report "
      "120. It does two jobs — it turns a count of documents into a weight, and it gives the "

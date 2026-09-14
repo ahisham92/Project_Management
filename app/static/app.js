@@ -1767,6 +1767,97 @@
   // a convention. A number produced by a rule nobody can watch working is just
   // a number somebody has to check — and the same goes for a weight.
 
+  // Whether a line hands anything over, or only feeds the one that does.
+  //
+  // Switching one moves hours onto or off the lines around it, so the answer is
+  // the whole table rather than the row that was touched: a feeder's hours land
+  // on its successors, and those are other rows on this same page.
+
+  (function () {
+    function redraw(table, rows) {
+      rows.forEach(function (line) {
+        var row = table.querySelector('tr[data-line="' + line.task_id + '"]');
+        if (!row) return;
+        // Feeding is doing, not intending: a line set to feed with nothing
+        // depending on it keeps its hours and stays a deliverable.
+        var feeds = line.feeding;
+        row.classList.toggle('feeder', feeds);
+
+        var cells = row.querySelectorAll('td');
+        // The hours arrive already formatted, so a row redrawn after a switch
+        // reads exactly like the forty around it that were not.
+        if (cells[2]) {
+          cells[2].textContent = feeds ? line.sent_hours + ' out' : line.planned_hours;
+        }
+        if (cells[3]) cells[3].textContent = feeds ? '—' : line.raised_hours;
+        if (cells[4]) cells[4].textContent = feeds ? '—' : line.spent_hours;
+        if (cells[5]) cells[5].textContent = feeds ? '—' : line.documents;
+
+        row.querySelectorAll('input.mix').forEach(function (box) {
+          box.disabled = feeds;
+          // Blank rather than zero while it feeds: it has no mix, which is a
+          // different thing from a mix of nothing.
+          var value = feeds ? '' : line.percents[box.dataset.kind];
+          if (document.activeElement !== box) box.value = value === undefined ? 0 : value;
+        });
+        var total = row.querySelector('[data-line-total]');
+        if (total) {
+          total.textContent = feeds ? '—' : line.total;
+          total.classList.toggle('off-hundred', !feeds && !line.adds_up);
+        }
+        var says = row.querySelector('[data-line-feeds]');
+        if (says) {
+          says.classList.remove('bad-text');
+          if (feeds) {
+            says.textContent = line.sent_hours + ' to ' + line.feeds.join(', ');
+          } else if (line.stranded) {
+            says.textContent = 'set to feed, but nothing depends on it — its hours stay here';
+          }
+          says.hidden = !(feeds || line.stranded);
+        }
+      });
+    }
+
+    document.addEventListener('change', function (event) {
+      var box = event.target.closest && event.target.closest('select.submits');
+      if (!box) return;
+      var table = box.closest('table');
+      var body = new FormData();
+      body.append('task_id', box.dataset.task);
+      body.append('submits', box.value);
+      box.disabled = true;
+
+      fetch(box.dataset.submits, {
+        method: 'POST', body: body,
+        headers: { Accept: 'application/json' }, credentials: 'same-origin',
+      }).then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+        .then(function (answer) {
+          box.disabled = false;
+          if (!answer[0] || !answer[1].ok) {
+            // Put the box back and say why, in the row rather than in a dialog:
+            // a line with documents against it cannot quietly stop being a
+            // deliverable, and the reason belongs beside the line it is about.
+            box.value = box.value === '1' ? '0' : '1';
+            var row = box.closest('tr');
+            var says = row && row.querySelector('[data-line-feeds]');
+            if (says && answer[1] && answer[1].trouble) {
+              says.textContent = answer[1].trouble;
+              says.classList.add('bad-text');
+              says.hidden = false;
+              window.setTimeout(function () {
+                says.classList.remove('bad-text');
+                says.hidden = true;
+              }, 6000);
+            }
+            return;
+          }
+          redraw(table, answer[1].lines || []);
+          window.dispatchEvent(new Event('pm:saved'));
+        })
+        .catch(function () { box.disabled = false; });
+    });
+  })();
+
   // The mix, edited a cell at a time in the grid.
   //
   // Only the cell being typed changes. Scaling the others to hold the row at

@@ -40,6 +40,21 @@ register covers the deliverables tracked on the workflow and no others, because
 a register that lists fifty phantom packages is a register whose totals nobody
 believes.
 
+**And not every workflow line submits either.** A survey interpretation, a set
+of calculations that ends up inside somebody else's report: real design work
+that feeds a package rather than being one. Such a line is marked as feeding,
+and its hours go to whatever depends on it — split by weight where it feeds more
+than one, followed through where it feeds another feeder. Nothing is lost on the
+way, and a feeder that leads nowhere keeps its own hours rather than dropping
+them, because the counts below rest on every hour landing somewhere.
+
+**The counts come off the whole budget.** Not the ceiling after the margin, not
+what is left after the comments reserve — the fee as it was won. A project does
+not produce fewer drawings because part of the money is being held back, so the
+number to expect is worked out before anything is taken out. What a document is
+*allowed* to spend still comes off the plan; the two are different questions and
+are answered from different numbers.
+
 **A document's share divides across the trades issuing it.** This is the part a
 programme cannot tell you. A design basis report is written by every discipline
 at once — one document, four trades — while a dredging drawing is Marine's
@@ -288,12 +303,110 @@ def mix_for(task_id: int, per_task: Mapping[int, Sequence[Mapping[str, Any]]],
             for row in rows if _num(row.get("percent")) > 0]
 
 
+def submits(task: Mapping[str, Any]) -> bool:
+    """Whether anything is handed over at the end of this line.
+
+    A line that feeds another rather than submitting — a survey interpretation,
+    a set of calculations that ends up inside somebody else's report — says so,
+    and its hours go to whatever depends on it.
+    """
+    if not uses_workflow(task):
+        return False
+    value = task.get("submits")
+    return True if value is None else bool(int(_num(value, 1)))
+
+
+def flow_of_hours(tasks: Sequence[Mapping[str, Any]],
+                  links: Sequence[Mapping[str, Any]]) -> dict[int, dict[int, float]]:
+    """Where each feeding line's hours end up: ``{feeder: {deliverable: share}}``.
+
+    A line that submits nothing is still work, and the work is for something. It
+    goes to whatever depends on it — split by weight where it feeds more than
+    one, because a feeder shared between a big package and a small one is mostly
+    the big one's cost. A feeder that only feeds another feeder is followed
+    through until the hours reach something that actually goes out.
+
+    A feeder that leads nowhere keeps its own hours. Losing them would break the
+    one property the expected counts rest on: every hour in the budget lands on
+    some deliverable, so the drawings and reports it buys can be counted.
+    """
+    by_id = {int(t["id"]): t for t in tasks}
+    points = {task_id: max(_num(t.get("weight_points")), 0.0) for task_id, t in by_id.items()}
+    after: dict[int, list[int]] = {}
+    for link in links:
+        before_id, next_id = int(link["predecessor_id"]), int(link["successor_id"])
+        if before_id in by_id and next_id in by_id:
+            after.setdefault(before_id, []).append(next_id)
+
+    def onwards(task_id: int, seen: frozenset[int]) -> dict[int, float]:
+        """The deliverables one line's hours reach, and what share of them each takes."""
+        nexts = [n for n in after.get(task_id, ()) if n not in seen and uses_workflow(by_id[n])]
+        if not nexts:
+            return {}
+        # By weight where there is weight to go on, evenly where there is not:
+        # two successors that nobody has weighted are a half each, not nothing.
+        weights = {n: points.get(n, 0.0) for n in nexts}
+        whole = sum(weights.values())
+        if whole <= 0:
+            weights = {n: 1.0 for n in nexts}
+            whole = float(len(nexts))
+
+        out: dict[int, float] = {}
+        for next_id, weight in weights.items():
+            share = weight / whole
+            if submits(by_id[next_id]):
+                out[next_id] = out.get(next_id, 0.0) + share
+                continue
+            # A feeder feeding a feeder: follow it through.
+            onward = onwards(next_id, seen | {next_id})
+            if not onward:
+                # It leads nowhere either, so the hours stop here rather than
+                # evaporating on the way.
+                out[next_id] = out.get(next_id, 0.0) + share
+                continue
+            for end_id, part in onward.items():
+                out[end_id] = out.get(end_id, 0.0) + share * part
+        return out
+
+    # Only the feeders that actually reach something. One that leads nowhere is
+    # left out, so its hours stay on it: losing them would break the property
+    # the expected counts rest on — every hour in the budget lands on some
+    # deliverable, so the drawings it buys can be counted.
+    found = {task_id: onwards(task_id, frozenset({task_id}))
+             for task_id, task in by_id.items()
+             if uses_workflow(task) and not submits(task)}
+    return {task_id: targets for task_id, targets in found.items() if targets}
+
+
+def carried(by_task: Mapping[int, Mapping[int, float]],
+            flow: Mapping[int, Mapping[int, float]]) -> dict[int, dict[int, float]]:
+    """Hours per deliverable once the lines that feed it have handed theirs over.
+
+    Trade by trade, because who does the feeding work is who is paying for the
+    thing it feeds: a survey interpretation done by Marine lands on the marine
+    package as marine hours, not as somebody else's.
+    """
+    out: dict[int, dict[int, float]] = {
+        int(task_id): dict(trades) for task_id, trades in by_task.items()
+        if int(task_id) not in flow
+    }
+    for feeder, targets in flow.items():
+        mine = by_task.get(feeder) or {}
+        for task_id, share in targets.items():
+            landed = out.setdefault(int(task_id), {})
+            for trade_id, hours in mine.items():
+                landed[int(trade_id)] = landed.get(int(trade_id), 0.0) + hours * share
+    return out
+
+
 def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str, Any]],
             mixes: Mapping[int, Sequence[Mapping[str, Any]]],
             default_mix: Sequence[Mapping[str, Any]],
             planned_by_task: Mapping[int, Mapping[int, float]],
             booked: Mapping[int, Mapping[int, float]] | None = None,
             standard: Mapping[int, float] | None = None,
+            gross_by_task: Mapping[int, Mapping[int, float]] | None = None,
+            links: Sequence[Mapping[str, Any]] = (),
             ) -> dict[str, Any]:
     """Hours down to each document, and back up to each deliverable.
 
@@ -307,6 +420,16 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
     gives the hours actually booked to the ones issued something to be measured
     against.
 
+    `gross_by_task` is the budget before anything is held back — no margin, no
+    comments reserve. The expected counts are worked out from it, because the
+    question they answer is how many drawings this project produces, and that
+    number does not shrink because some of the fee is being kept aside. The
+    hours a document is *allowed* still come off the plan.
+
+    `links` are the dependencies. A line that submits nothing hands its hours to
+    whatever depends on it, so the package that goes out carries the whole cost
+    of getting it there and the drawings it buys are counted where they belong.
+
     A deliverable with no documents in the register yet is still returned, with
     its hours unspent: "nothing has been raised for this" is the most useful
     thing the register can tell somebody.
@@ -317,8 +440,15 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
     for row in submittals:
         by_task.setdefault(int(row["task_id"]), []).append(dict(row))
 
+    # What feeds what, and the hours once the feeding lines have handed over.
+    flow = flow_of_hours(tasks, links)
+    allowance = carried(planned_by_task, flow)
+    whole_of = carried(gross_by_task if gross_by_task is not None else planned_by_task, flow)
+    names = {int(t["id"]): str(t.get("wbs") or "") for t in tasks}
+
     documents: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
+    feeders: list[dict[str, Any]] = []
     for task in tasks:
         # Only the lines that actually submit something. A progress meeting is
         # a real line on the programme with real hours against it, but nobody
@@ -327,7 +457,28 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
         if not uses_workflow(task):
             continue
         task_id = int(task["id"])
-        allowed = dict(planned_by_task.get(task_id) or {})
+
+        if task_id in flow:
+            # A feeder that reaches something. Listed so it can be seen and
+            # switched back, but it holds no mix and no documents: its hours
+            # are on the lines it feeds.
+            sent = sum((planned_by_task.get(task_id) or {}).values())
+            feeders.append({
+                "task_id": task_id, "wbs": task.get("wbs") or "",
+                "name": task.get("name") or "", "submits": False,
+                "feeding": True, "stranded": False,
+                "sent_hours": sent, "planned_hours": 0.0, "raised_hours": 0.0,
+                "spent_hours": 0.0, "documents": 0, "mix": [], "percents": {},
+                "missing_kinds": [], "by_kind": [],
+                "feeds": [{"task_id": end, "wbs": names.get(end, "?"),
+                           "share": share * 100, "hours": sent * share}
+                          for end, share in sorted(flow[task_id].items())],
+            })
+            continue
+
+        allowed = dict(allowance.get(task_id) or {})
+        gross = dict(whole_of.get(task_id) or {})
+        own = sum((planned_by_task.get(task_id) or {}).values())
         total = sum(allowed.values())
         shape = mix_for(task_id, mixes, default_mix, standard)
         mix = {row["kind_id"]: row["percent"] for row in shape}
@@ -380,6 +531,18 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
         lines.append({
             "task_id": task_id, "wbs": task.get("wbs") or "", "name": task.get("name") or "",
             "planned_hours": total,
+            # Marked as a deliverable because that is what it is doing, whatever
+            # the flag says. A line set to feed with nothing depending on it has
+            # nowhere to send its hours, so they stay and it submits after all —
+            # said plainly on the page rather than silently losing the hours.
+            "submits": True,
+            "feeding": False,
+            "stranded": not submits(task),
+            # Its own, and what the lines feeding it handed over — the second is
+            # why a package with no hours of its own can still be worth drawings.
+            "own_hours": own,
+            "received_hours": max(0.0, total - own),
+            "gross_hours": sum(gross.values()),
             "documents": len(raised),
             "raised_hours": sum(row["hours"] for row in raised),
             "spent_hours": spent_here,
@@ -390,13 +553,15 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
             # needs to look one up, not walk a list for every cell.
             "percents": {int(row["kind_id"]): row["typed"] for row in shape},
             "missing_kinds": missing,
-            "by_kind": _by_kind(raised, mix, total, counts, standard),
+            "by_kind": _by_kind(raised, mix, total, counts, standard, gross),
         })
 
     return {
         "documents": documents,
         "lines": lines,
+        "feeders": feeders,
         "planned_hours": sum(line["planned_hours"] for line in lines),
+        "gross_hours": sum(line["gross_hours"] for line in lines),
         "raised_hours": sum(line["raised_hours"] for line in lines),
         "spent_hours": sum(line["spent_hours"] for line in lines),
         "unraised": [line for line in lines if line["missing_kinds"] or not line["documents"]],
@@ -406,7 +571,8 @@ def costing(tasks: Sequence[Mapping[str, Any]], submittals: Sequence[Mapping[str
 
 def _by_kind(raised: Sequence[Mapping[str, Any]], mix: Mapping[int, float], total: float,
              counts: Mapping[int, float] | None = None,
-             standard: Mapping[int, float] | None = None) -> list[dict[str, Any]]:
+             standard: Mapping[int, float] | None = None,
+             gross: Mapping[int, float] | None = None) -> list[dict[str, Any]]:
     """One deliverable's documents gathered under the kind they belong to.
 
     Alongside what each kind is worth, how many of it to expect and how many
@@ -414,18 +580,38 @@ def _by_kind(raised: Sequence[Mapping[str, Any]], mix: Mapping[int, float], tota
     where it was not, the hours divided by what one costs says the same thing
     in the other direction. Ten drawings expected, seven issued, 290 hours
     charged to them: 41 hours a drawing against a standard of 35.
+
+    The count comes off `gross` — the budget with nothing held back — while the
+    hours a document is allowed come off `total`. A project does not produce
+    fewer drawings because part of the fee is being kept as margin.
+
+    `gross` is per trade, so the expected count is too: a drawings column that
+    can be read for Marine alone is the one somebody planning Marine's month
+    actually needs.
     """
     counts = {int(k): _num(v) for k, v in (counts or {}).items()}
     standard = {int(k): _num(v) for k, v in (standard or {}).items()}
+    gross = {int(k): _num(v) for k, v in (gross or {}).items()}
+    whole_gross = sum(gross.values()) or total
 
     def blank(kind_id: int, percent: float) -> dict[str, Any]:
         hours = total * percent / 100
+        worth = whole_gross * percent / 100
         each = standard.get(kind_id, 0.0)
-        expected = counts.get(kind_id) or (hours / each if each > 0 else 0.0)
+        counted = counts.get(kind_id) or 0.0
+        expected = counted or (worth / each if each > 0 else 0.0)
+        # Split the same way the hours behind it are: a count belongs to the
+        # trades paying for it, in the proportion they are paying.
+        share = (lambda hrs: (hrs / whole_gross) if whole_gross > 0 else 0.0)
         return {"kind_id": kind_id, "percent": percent, "hours": hours,
+                "gross_hours": worth,
                 "documents": 0, "spent_hours": 0.0, "issued": 0,
                 "standard_hours": each, "expected": expected,
-                "hours_each_expected": each or (hours / expected if expected > 0 else 0.0),
+                "by_trade": {trade_id: expected * share(hrs)
+                             for trade_id, hrs in gross.items()},
+                "gross_by_trade": {trade_id: hrs * percent / 100
+                                   for trade_id, hrs in gross.items()},
+                "hours_each_expected": each or (worth / expected if expected > 0 else 0.0),
                 "hours_each_actual": 0.0, "over_each": 0.0}
 
     out: dict[int, dict[str, Any]] = {kind_id: blank(kind_id, percent)
@@ -452,7 +638,9 @@ def _expected(lines: Sequence[Mapping[str, Any]],
     """The same comparison for the whole project, one row a kind.
 
     What the setup sheet says to expect against what the register holds — the
-    answer to "we budgeted for forty drawings, where are we?".
+    answer to "we budgeted for forty drawings, where are we?". Each row also
+    carries the count split by trade, so the same question can be asked of one
+    discipline: forty drawings across the project, of which Marine owes twelve.
     """
     out: dict[int, dict[str, Any]] = {}
     for line in lines:
@@ -461,20 +649,26 @@ def _expected(lines: Sequence[Mapping[str, Any]],
             row = out.setdefault(kind_id, {
                 "kind_id": kind_id, "standard_hours": _num(standard.get(kind_id)),
                 "expected": 0.0, "documents": 0, "issued": 0,
-                "hours": 0.0, "spent_hours": 0.0,
+                "hours": 0.0, "gross_hours": 0.0, "spent_hours": 0.0,
+                "by_trade": {}, "gross_by_trade": {},
             })
             row["expected"] += cell["expected"]
             row["documents"] += cell["documents"]
             row["issued"] += cell["issued"]
             row["hours"] += cell["hours"]
+            row["gross_hours"] += cell.get("gross_hours", cell["hours"])
             row["spent_hours"] += cell["spent_hours"]
+            for trade_id, count in (cell.get("by_trade") or {}).items():
+                row["by_trade"][trade_id] = row["by_trade"].get(trade_id, 0.0) + count
+            for trade_id, hrs in (cell.get("gross_by_trade") or {}).items():
+                row["gross_by_trade"][trade_id] = row["gross_by_trade"].get(trade_id, 0.0) + hrs
 
     for row in out.values():
         done = row["issued"] or row["documents"]
         row["hours_each_actual"] = row["spent_hours"] / done if done > 0 else 0.0
         row["hours_each_expected"] = (
             row["standard_hours"]
-            or (row["hours"] / row["expected"] if row["expected"] > 0 else 0.0))
+            or (row["gross_hours"] / row["expected"] if row["expected"] > 0 else 0.0))
         row["over_each"] = row["hours_each_actual"] - row["hours_each_expected"]
         # What is still to exist at all, not what is still to go out: a drawing
         # raised but not issued is already in the register.
@@ -566,7 +760,7 @@ def order_for(column: str | None, direction: str | None,
 def sort_documents(rows: Sequence[Mapping[str, Any]], column: str,
                    direction: str = "asc") -> list[dict[str, Any]]:
     """The register in one column's order, the number breaking every tie."""
-    from .sorting import _wbs_key
+    from .sorting import wbs_key
 
     if str(column).startswith("trade:"):
         try:
@@ -577,9 +771,9 @@ def sort_documents(rows: Sequence[Mapping[str, Any]], column: str,
     else:
         order = {key: n for n, (key, _name) in enumerate(STATUSES)}
         keys = {
-            "number": lambda row: _wbs_key(row.get("number")),
+            "number": lambda row: wbs_key(row.get("number")),
             "title": lambda row: str(row.get("title") or "").lower(),
-            "wbs": lambda row: _wbs_key(row.get("task_wbs")),
+            "wbs": lambda row: wbs_key(row.get("task_wbs")),
             "kind": lambda row: str(row.get("kind_name") or "").lower(),
             "status": lambda row: order.get(str(row.get("status")), 99),
             "planned": lambda row: str(row.get("planned_date") or ""),
@@ -589,6 +783,6 @@ def sort_documents(rows: Sequence[Mapping[str, Any]], column: str,
         }
         key = keys.get(column, keys["number"])
 
-    ordered = sorted(rows, key=lambda row: (key(row), _wbs_key(row.get("number"))))
+    ordered = sorted(rows, key=lambda row: (key(row), wbs_key(row.get("number"))))
     return list(reversed(ordered)) if direction == "desc" else list(ordered)
 

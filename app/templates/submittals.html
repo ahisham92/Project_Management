@@ -386,10 +386,29 @@
     <div>
       <h2>{{ 'What ' ~ editing['wbs'] ~ ' should hold' if editing else 'Expected against issued' }}</h2>
       <p class="small muted" style="margin-top:2px">
-        How many of each to expect — from the count, or from the hours divided by what one
-        costs — against how many have gone out and what they really took.
+        How many of each to expect — from the count, or from the whole budget divided by what
+        one costs, with nothing held back — against how many have gone out and what they
+        really took.
       </p>
     </div>
+    {% if not editing %}
+      <form method="get" class="inline-form no-print">
+        {% for key, value in request.args.items() if key != 'trade' %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        <label class="field w-md">
+          <span class="field-label">Trade</span>
+          <select name="trade" onchange="this.form.submit()">
+            <option value="">Every trade</option>
+            {% for trade in made['trades'] %}
+              <option value="{{ trade['id'] }}" {{ 'selected' if trade['id'] == trade_id }}>
+                {{ trade['name'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <noscript><button type="submit" class="btn btn-ghost btn-sm">Show</button></noscript>
+      </form>
+    {% endif %}
   </div>
   <div class="card-body flush table-scroll">
     <table>
@@ -446,6 +465,8 @@
       “Really cost each” is the hours booked to what has been issued, divided by how many
       went out. A drawing standing at 41 hours against a standard of 35 is the number worth
       arguing about before the next package is priced.
+      {%- if trade_id %} Counted for one trade only: its share of each package, at the same
+      proportion it is paying for it.{% endif %}
     </span>
   </div>
 </div>
@@ -486,32 +507,69 @@
             </tr>
           </thead>
           <tbody>
-            {% for line in made['lines'] if line['planned_hours'] > 0.05 %}
+            {% for line in grid_lines %}
               {% set share = line['percents'] %}
-              <tr data-line="{{ line['task_id'] }}">
+              {# Feeding is doing, not intending: a line set to feed with nothing
+                 depending on it keeps its hours and is a deliverable after all. #}
+              {% set feeds = line.get('feeding', False) %}
+              {% set stranded = line.get('stranded', False) %}
+              <tr data-line="{{ line['task_id'] }}" class="{{ 'feeder' if feeds }}">
                 <td class="nowrap ink2">
                   <a href="{{ url_for('projects.submittals', project_id=project['id'],
                                       task=line['task_id']) }}"
                      title="Count what {{ line['wbs'] }} submits, rather than typing percentages">
                     {{ line['wbs'] }}</a>
-                  {%- if line['task_id'] in own_mix %}<span class="own-mix" title="Has a mix of its own">•</span>{% endif %}
+                  {%- if line['task_id'] in own_mix and not feeds %}<span class="own-mix" title="Has a mix of its own">•</span>{% endif %}
                 </td>
-                <td>{{ line['name'][:60] }}</td>
-                <td class="right tabular nowrap ink2">{{ hours(line['planned_hours']) }}</td>
-                <td class="right tabular nowrap" data-line-raised>{{ hours(line['raised_hours']) }}</td>
-                <td class="right tabular nowrap">{{ hours(line['spent_hours']) }}</td>
-                <td class="right tabular">{{ line['documents'] }}</td>
+                <td>
+                  {{ line['name'][:60] }}
+                  {% if is_manager %}
+                    <select class="submits" data-submits="{{ url_for('projects.set_line_submits', project_id=project['id']) }}"
+                            data-task="{{ line['task_id'] }}"
+                            aria-label="Whether {{ line['wbs'] }} hands anything over">
+                      <option value="1" {{ 'selected' if not feeds }}>submits</option>
+                      <option value="0" {{ 'selected' if feeds }}>feeds</option>
+                    </select>
+                  {% elif feeds %}
+                    <span class="small muted">· feeds</span>
+                  {% endif %}
+                  {# Always present, hidden while the line submits: it is where
+                     a refused switch says why, as well as where the feeding goes. #}
+                  <span class="small muted line-note" data-line-feeds
+                        {{ '' if feeds or stranded else 'hidden' }}>
+                    {%- if feeds %}
+                      {{ line['sent_hours'] | round | int }} h to
+                      {% for f in line['feeds'] %}{{ f['wbs'] }} ({{ f['share'] | round | int }}%){{ '' if loop.last else ', ' }}{% endfor %}
+                    {%- elif stranded %}
+                      set to feed, but nothing depends on it — its hours stay here
+                    {%- endif %}
+                  </span>
+                </td>
+                <td class="right tabular nowrap ink2" title="{{ ('Its own ' ~ hours(line['own_hours']) ~ ', and ' ~ hours(line['received_hours']) ~ ' from what feeds it') if line.get('received_hours') else '' }}">
+                  {%- if feeds %}<span class="ink2">{{ hours(line['sent_hours']) }} out</span>
+                  {%- else %}{{ hours(line['planned_hours']) }}
+                    {%- if line.get('received_hours') %}<span class="fed-in" title="Came from the lines feeding it">+</span>{% endif %}
+                  {%- endif %}
+                </td>
+                <td class="right tabular nowrap" data-line-raised>{{ '—' if feeds else hours(line['raised_hours']) }}</td>
+                <td class="right tabular nowrap">{{ '—' if feeds else hours(line['spent_hours']) }}</td>
+                <td class="right tabular">{{ '—' if feeds else line['documents'] }}</td>
                 {% for kind in made['kinds'] %}
                   {% set pct = share.get(kind['id'], 0) %}
+
                   {# Amber only on a line that has raised something and is still
                      short of this kind. On a line with nothing raised at all
                      every cell would be amber, which says nothing. #}
                   {% set gap = line['documents'] > 0 and kind['id'] in line['missing_kinds'] %}
                   <td class="right mix-cell">
                     {% if is_manager %}
+                      {# A feeding line's boxes are left blank rather than zeroed:
+                         it has no mix, which is a different thing from a mix of
+                         nothing. #}
                       <input class="heads mix {{ 'none-raised' if gap }}"
                              type="number" min="0" max="100" step="0.5"
-                             value="{{ '%g'|format(pct | round(1)) }}"
+                             value="{{ '' if feeds else '%g'|format(pct | round(1)) }}"
+                             {{ 'disabled' if feeds }}
                              data-mix="{{ url_for('projects.save_mix_cell', project_id=project['id']) }}"
                              data-task="{{ line['task_id'] }}" data-kind="{{ kind['id'] }}"
                              aria-label="{{ kind['name'] }} on {{ line['wbs'] }}, in percent"
@@ -522,10 +580,10 @@
                   </td>
                 {% endfor %}
                 {% set adds_up = share.values() | sum | round(1) == 100 or not share %}
-                <td class="right tabular {{ 'ink2' if adds_up else 'off-hundred' }}"
+                <td class="right tabular {{ 'ink2' if adds_up or feeds else 'off-hundred' }}"
                     data-line-total
                     title="{{ 'The shares add up' if adds_up else 'These shares do not add up to 100' }}">
-                  {{ '%g'|format(share.values() | sum | round(1)) }}</td>
+                  {{ '—' if feeds else '%g'|format(share.values() | sum | round(1)) }}</td>
               </tr>
             {% endfor %}
           </tbody>

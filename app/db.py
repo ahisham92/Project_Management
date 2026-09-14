@@ -167,6 +167,10 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_resource_weeks(conn)
         _ensure_register(conn)
         for table, column, definition in (
+            # A workflow line that hands nothing over. Its hours are not lost:
+            # they flow to whatever it feeds, so the deliverable that does go
+            # out carries the whole cost of getting it there.
+            ("tasks", "submits", "INTEGER NOT NULL DEFAULT 1"),
             ("document_kinds", "standard_hours", "REAL NOT NULL DEFAULT 0"),
             ("project_mix", "quantity", "REAL NOT NULL DEFAULT 0"),
             ("task_mix", "quantity", "REAL NOT NULL DEFAULT 0"),

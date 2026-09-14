@@ -432,6 +432,24 @@ coordination — real lines with real hours against them, but nothing goes out o
 at the end of one. Counting them would put dozens of phantom packages into every total, and a
 register whose totals nobody believes is a register nobody opens.
 
+**And not every workflow line submits either.** A survey interpretation, a set of calculations
+that ends up inside somebody else's report: real design work that feeds a package rather than
+being one. Set the line to **feeds** in the grid and its hours go to whatever depends on it:
+
+    1.1 feeds 1.2 and 1.3  →  45 h out, 44% to 1.2, 56% to 1.3
+
+Split by the successors' weight where it feeds more than one, evenly where nobody weighted
+them, and followed through where it feeds another feeder. Nothing goes missing on the way, and
+a line set to feed with nothing depending on it says so and keeps its own hours — because the
+counts below rest on every hour in the budget landing on some deliverable.
+
+**The counts come off the whole budget.** Not the ceiling after the 12% margin, not what is
+left after the comments reserve — the fee as it was won. A project does not produce fewer
+drawings because part of the money is being held back. What a document is *allowed* to spend
+still comes off the plan: those are different questions and they are answered from different
+numbers. And the expected counts **filter by trade**, because the count splits the way the
+hours behind it do — forty drawings across the project, of which Marine owes twelve.
+
 **A kind's share divides across its documents.** One design basis is one report and all of it.
 A general arrangement package is forty drawings, and the 60% splits between them — evenly by
 default, because forty drawings of unknown difficulty are best assumed equal. Where one of a

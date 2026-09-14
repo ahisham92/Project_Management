@@ -15,10 +15,12 @@ from ..auth import ROLE_RANK, load_project, login_required, setup_unlocked
 from ..calc import uses_workflow
 from ..charts import SERIES_SLOTS
 from ..dates import from_input, from_input_or, to_display
+from ..filters import hours
 from ..db import execute, insert, query, query_one
 from ..sorting import COLUMNS as SORT_COLUMNS
 from ..sorting import normalise as normalise_sort
 from ..sorting import sort_tasks
+from ..sorting import wbs_key
 from ..schedule import KINDS, MODES, duration_between, finish_from, normalise_mode
 from .portfolio_views import guide_page
 from ..service import (
@@ -36,6 +38,7 @@ from ..service import (
     register,
     remove_submittal,
     resource_plan, restore_schedule, set_allocations, set_mix, set_mix_cell, set_staffing,
+    set_submits,
     set_submittal_trades, update_submittal,
     set_status, set_task_dates, squeeze_plan, apply_squeeze, today,
 )
@@ -1092,6 +1095,21 @@ def submittals(project_id: int):
     # What the deliverable on the page is expected to hold, against what is
     # really in the register for it.
     expected = (own or {}).get("by_kind") if own else made["expected"]
+    # Read for one discipline: forty drawings across the project, of which
+    # Marine owes twelve. The count is per trade because the hours behind it
+    # are, so the filter is arithmetic rather than a guess.
+    trade_id = _to_int(request.args.get("trade"))
+    if trade_id:
+        expected = [dict(row, expected=(row.get("by_trade") or {}).get(trade_id, 0.0),
+                         gross_hours=(row.get("gross_by_trade") or {}).get(trade_id, 0.0))
+                    for row in expected]
+        expected = [row for row in expected if row["expected"] > 0.005]
+
+    # Feeders sit in the same table as the deliverables so they can be seen and
+    # switched back, in programme order rather than in two blocks.
+    grid_lines = sorted(
+        [line for line in made["lines"] if line["planned_hours"] > 0.05] + made["feeders"],
+        key=lambda line: wbs_key(line["wbs"]))
 
     columns = reg.sortable_columns(made["trades"])
     sort, direction = reg.order_for(request.args.get("sort"), request.args.get("dir"),
@@ -1104,6 +1122,7 @@ def submittals(project_id: int):
         columns=columns, sort=sort, direction=direction,
         kind_id=kind_id, task_id=task_id, state=state,
         mix_now=mix_now, count_now=count_now, counted=counted, expected=expected,
+        grid_lines=grid_lines, trade_id=trade_id,
         editing=editing, has_own=has_own, own_mix=own_mix,
         tasks=[t for t in snapshot["tasks"] if uses_workflow(t)], statuses=reg.STATUSES,
         issued_states=ISSUED_STATES,
@@ -1212,9 +1231,65 @@ def drop_document(project_id: int, submittal_id: int):
     return _back("projects.submittals", project_id)
 
 
+def _register_rows(made: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Every row of the deliverables grid, as the page draws it.
+
+    Moving one line between submitting and feeding moves hours onto or off the
+    lines around it, so the answer is the whole table rather than one row.
+    """
+    rows = []
+    for line in list(made["lines"]) + list(made["feeders"]):
+        share = line.get("percents") or {}
+        rows.append({
+            "task_id": line["task_id"],
+            "submits": bool(line.get("submits", True)),
+            "feeding": bool(line.get("feeding", False)),
+            "stranded": bool(line.get("stranded", False)),
+            # Formatted here rather than in the page, so a row redrawn after a
+            # switch reads exactly like the forty around it that were not.
+            "planned_hours": hours(line.get("planned_hours", 0.0)),
+            "sent_hours": hours(line.get("sent_hours", 0.0)),
+            "received_hours": hours(line.get("received_hours", 0.0)),
+            "raised_hours": hours(line.get("raised_hours", 0.0)),
+            "spent_hours": hours(line.get("spent_hours", 0.0)),
+            "documents": line.get("documents", 0),
+            "percents": {str(k): round(v, 1) for k, v in share.items()},
+            "total": round(sum(share.values()), 1),
+            "adds_up": reg.adds_up(share),
+            "feeds": [f"{f['wbs']} ({f['share']:.0f}%)" for f in (line.get("feeds") or ())],
+        })
+    return rows
+
+
+@bp.post("/submittals/submits")
+@login_required
+def set_line_submits(project_id: int):
+    """Whether a line hands anything over, or only feeds the one that does."""
+    _project, role = load_project(project_id, "manager")
+    task_id = _to_int(request.form.get("task_id"))
+    wanted = str(request.form.get("submits") or "").strip() in {"1", "yes", "true", "on"}
+
+    trouble = set_submits(project_id, task_id, wanted)
+    if trouble:
+        if _wants_json():
+            return {"ok": False, "trouble": trouble}, 400
+        flash(trouble, "error")
+        return _back("projects.submittals", project_id)
+
+    if not _wants_json():
+        flash("Saved — a feeding line's hours go to what it feeds", "success")
+        return _back("projects.submittals", project_id)
+
+    # The whole tab is recosted: hours that stopped landing here landed
+    # somewhere else, and that somewhere is another row on the same page.
+    project = query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    made = register(project)
+    return {"ok": True, "submits": wanted, "lines": _register_rows(made)}
+
+
 @bp.post("/submittals/mix/cell")
 @login_required
-def save_mix_cell(project_id: int):
+def save_mix_cell(project_id: int):  # noqa: D401 - the docstring below says it
     """One kind's share of one deliverable, typed straight into the grid.
 
     Only the cell that was typed changes. The row still comes back, because

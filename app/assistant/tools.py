@@ -403,6 +403,7 @@ def document_register(project_id: int, wbs: str = "", kind: str = "",
 
     project = _project(project_id)
     made = read_register(project)
+    trade_names = {int(t["id"]): t["name"] for t in made["trades"]}
     wanted = " ".join(str(wbs or "").strip().lower().split())
     kind_wanted = " ".join(str(kind or "").strip().lower().split())
 
@@ -428,6 +429,15 @@ def document_register(project_id: int, wbs: str = "", kind: str = "",
                         for m in made["default_mix"]],
         # How many of each to expect against how many are really there, and what
         # one has really cost against what the setup sheet says it should.
+        "hours_in_the_whole_budget": round(made["gross_hours"], 1),
+        # A line that hands nothing over and feeds the one that does. Its hours
+        # are on its successors, which is why they can be worth more drawings
+        # than their own budget would buy.
+        "lines_that_feed_rather_than_submit": [
+            {"wbs": row["wbs"], "name": row["name"],
+             "hours_handed_over": round(row["sent_hours"], 1),
+             "goes_to": [f"{f['wbs']} ({f['share']:.0f}%)" for f in row["feeds"]]}
+            for row in made["feeders"]],
         "expected_against_issued": [
             {"kind": made["kind_names"].get(row["kind_id"], "?"),
              "expected": round(row["expected"], 1),
@@ -435,7 +445,9 @@ def document_register(project_id: int, wbs: str = "", kind: str = "",
              "still_to_raise": round(row["left"], 1),
              "hours_each_should_cost": round(row["hours_each_expected"], 1),
              "hours_each_really_cost": round(row["hours_each_actual"], 1)
-                                       if (row["issued"] or row["documents"]) else None}
+                                       if (row["issued"] or row["documents"]) else None,
+             "by_trade": {trade_names.get(int(t), str(t)): round(n, 1)
+                          for t, n in (row.get("by_trade") or {}).items() if n > 0.05}}
             for row in made["expected"]],
         "shown": len(rows),
         "documents": [{"number": r["number"], "title": r["title"], "kind": r["kind_name"],
@@ -1031,9 +1043,10 @@ CATALOGUE: tuple[dict[str, Any], ...] = (
           "meeting, a mobilisation) hands nothing over. Also "
           "how many of each kind to expect (a drawing costs 35 hours on the setup sheet, so "
           "350 hours of drawings is ten of them) against how many have really gone out and "
-          "what those really took. Use this for “what have we issued”, “what is this drawing "
-          "worth”, “how many drawings are still to go” or “are our drawings costing what we "
-          "said they would”.",
+          "what those really took — counted off the whole budget, before the margin and the "
+          "comments reserve, and broken down by trade. Use this for “what have we issued”, "
+          "“what is this drawing worth”, “how many drawings does Marine still owe” or “are "
+          "our drawings costing what we said they would”.",
           {"wbs": dict(_TEXT, description="Only one deliverable's documents"),
            "kind": dict(_TEXT, description="Only one kind — drawings, report, specifications"),
            "issued": {"type": "boolean",

@@ -620,6 +620,19 @@ input[type="checkbox"] { width: auto; }
 .mix-cell { padding-left: 2px; padding-right: 2px; }
 /* A line carrying a shape of its own rather than following the project's. */
 .own-mix { color: var(--series-1); margin-left: 3px; font-weight: 700; }
+/* A line that hands nothing over and feeds the one that does. Set back rather
+   than struck through: it is real work, just not a submission. */
+tr.feeder > td { background: var(--surface-2, rgba(127, 127, 127, 0.06)); opacity: 0.82; }
+select.submits {
+  margin-left: 6px; padding: 0 2px; font-size: 0.8rem;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--ink-2);
+}
+select.submits:hover, select.submits:focus { border-color: var(--border); outline: none; }
+.line-note { display: block; }
+/* Hours that arrived from the lines feeding this one. */
+.fed-in { color: var(--series-1); font-weight: 700; margin-left: 2px; }
+
 /* A row whose shares do not add up. Not corrected, because correcting one cell
    would move another and the row could never be settled — said plainly instead
    so whoever typed it can fix the one that is wrong. */

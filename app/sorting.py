@@ -26,7 +26,7 @@ DEFAULT = "wbs"
 _NUMBER = re.compile(r"(\d+)")
 
 
-def _wbs_key(value: Any) -> tuple:
+def wbs_key(value: Any) -> tuple:
     """1.2 before 1.10: compare the numeric parts as numbers, not text."""
     parts = _NUMBER.split(str(value or ""))
     return tuple((int(p), "") if p.isdigit() else (10**9, p.lower()) for p in parts if p)
@@ -34,9 +34,9 @@ def _wbs_key(value: Any) -> tuple:
 
 def _key_for(column: str):
     getters = {
-        "wbs": lambda t: _wbs_key(t.get("wbs")),
+        "wbs": lambda t: wbs_key(t.get("wbs")),
         "name": lambda t: str(t.get("name") or "").lower(),
-        "section": lambda t: (str(t.get("section_name") or "").lower(), _wbs_key(t.get("wbs"))),
+        "section": lambda t: (str(t.get("section_name") or "").lower(), wbs_key(t.get("wbs"))),
         "weight": lambda t: float(t.get("weight_pct") or 0),
         "start": lambda t: str(t.get("start_date") or ""),
         "submission": lambda t: str(t.get("submission_date") or ""),
@@ -63,7 +63,7 @@ def sort_tasks(tasks: Sequence[Mapping[str, Any]], column: str, direction: str) 
     """Rows in the requested order, always breaking ties on WBS so the result
     is stable rather than depending on the order rows arrived in."""
     key = _key_for(column)
-    ordered = sorted(tasks, key=lambda t: _wbs_key(t.get("wbs")))
+    ordered = sorted(tasks, key=lambda t: wbs_key(t.get("wbs")))
     return sorted(ordered, key=key, reverse=(direction == "desc"))
 
 

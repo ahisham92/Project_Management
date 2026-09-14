@@ -186,12 +186,13 @@ def build_workbook(
         ["WBS", "Section", "Deliverable", "Weight points", "Start date", "Submission date",
          "Tracking", "Status", "Revision", "Remarks"]
         + [f"{name} %" for name in trade_names]
-        + ["Split total %", "Weight %"]
+        + ["Split total %", "Weight %", "Submits"]
     )
     # Status and Revision are shown for reference but are never read back: progress
     # is reported in the app, and a workbook edited offline would otherwise revert
-    # anything reported since it was exported.
-    calculated = {7, 8, len(headers) - 2, len(headers) - 1}
+    # anything reported since it was exported. Submits is last and editable: it is
+    # read back by the name of its column, not by where it sits.
+    calculated = {7, 8, len(headers) - 3, len(headers) - 2}
 
     rows = []
     total_points = sum(float(t["weight_points"] or 0) for t in tasks) or 1.0
@@ -203,11 +204,12 @@ def build_workbook(
              task["weight_points"], to_display(task["start_date"]), to_display(task["submission_date"]),
              task["tracking"], task["status_key"], task["revision"], task["remarks"]]
             + shares
-            + [round(sum(shares), 4), round(float(task["weight_points"] or 0) / total_points * 100, 4)]
+            + [round(sum(shares), 4), round(float(task["weight_points"] or 0) / total_points * 100, 4),
+               "no" if str(dict(task).get("submits", 1)) in ("0", "False") else "yes"]
         )
     sheet(
         SHEET_TASKS, headers, rows, calculated=calculated,
-        widths=[10, 26, 60, 14, 14, 16, 12, 20, 10, 30] + [14] * len(trade_names) + [14, 12],
+        widths=[10, 26, 60, 14, 14, 16, 12, 20, 10, 30] + [14] * len(trade_names) + [14, 12, 10],
     )
 
     # The register goes out but does not come back: a document number that has
@@ -339,6 +341,9 @@ def read_workbook(data: bytes) -> dict[str, Any]:
     for index, title in enumerate(header):
         if title.endswith(" %") and title[:-2] not in ("Split total", "Weight"):
             trade_columns[title[:-2]] = index
+    # By name rather than by position: it sits at the end, and a workbook from
+    # before it existed simply has no such column.
+    submits_at = header.index("Submits") if "Submits" in header else None
 
     for number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         name = _cell(row[2]) if len(row) > 2 else ""
@@ -369,6 +374,10 @@ def read_workbook(data: bytes) -> dict[str, Any]:
                 "start_date": start or submission,
                 "submission_date": submission or start,
                 "tracking": (_cell(row[6]) or "workflow").lower(),
+                "submits": (0 if submits_at is not None and submits_at < len(row)
+                            and _cell(row[submits_at]).strip().lower() in ("no", "n", "0",
+                                                                           "feeds", "false")
+                            else 1),
                 # Status and Revision are exported for reference only.
                 "remarks": _cell(row[9]) if len(row) > 9 else "",
                 "allocations": allocations,

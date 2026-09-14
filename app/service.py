@@ -1019,13 +1019,14 @@ def apply_setup_workbook(project: Mapping[str, Any],
             # so importing an older export cannot revert progress reported since.
             values = (task["wbs"], task["name"], section_id, task["weight_points"],
                       task["start_date"], task["submission_date"], tracking,
-                      task["remarks"], order)
+                      task["remarks"], int(task.get("submits", 1)), order)
             if found:
                 conn.execute(
                     """
                     UPDATE tasks SET wbs = ?, name = ?, section_id = ?, weight_points = ?,
                            start_date = ?, submission_date = ?, tracking = ?,
-                           remarks = ?, sort_order = ?, updated_at = datetime('now')
+                           remarks = ?, submits = ?, sort_order = ?,
+                           updated_at = datetime('now')
                     WHERE id = ?
                     """,
                     values + (found["id"],),
@@ -1035,8 +1036,9 @@ def apply_setup_workbook(project: Mapping[str, Any],
                 task_id = conn.execute(
                     """
                     INSERT INTO tasks (project_id, wbs, name, section_id, weight_points,
-                                       start_date, submission_date, tracking, remarks, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       start_date, submission_date, tracking, remarks,
+                                       submits, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (project_id,) + values,
                 ).lastrowid
@@ -1381,6 +1383,29 @@ def set_mix_cell(project_id: int, task_id: int, kind_id: int, percent: Any) -> d
     return whole
 
 
+def set_submits(project_id: int, task_id: int, submits: bool) -> str:
+    """Whether a line hands anything over, or only feeds the one that does.
+
+    Empty on success, or what is wrong. A line that stops submitting keeps its
+    own mix in the database rather than losing it: switching it back should put
+    it back the way it was, not make somebody type the shape again.
+    """
+    task = query_one("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project_id))
+    if task is None:
+        return "That deliverable does not belong to this project"
+    if not uses_workflow(as_dict(task)):
+        return f"{task['wbs']} is not tracked on the workflow, so it submits nothing already"
+    if not submits:
+        held = query_one("SELECT COUNT(*) AS n FROM submittals WHERE task_id = ?", (task_id,))
+        if held and held["n"]:
+            return (f"{held['n']} document{'s are' if held['n'] != 1 else ' is'} in the register "
+                    f"against {task['wbs']}. Move or remove {'them' if held['n'] != 1 else 'it'} "
+                    f"first.")
+    execute("UPDATE tasks SET submits = ? WHERE id = ? AND project_id = ?",
+            (1 if submits else 0, task_id, project_id))
+    return ""
+
+
 def standard_hours(project_id: int) -> dict[int, float]:
     """What one of each kind costs: the yardstick a count is weighed against."""
     return {int(k["id"]): float(k["standard_hours"] or 0) for k in load_kinds(project_id)}
@@ -1605,6 +1630,7 @@ def register(project: Mapping[str, Any], snapshot: Mapping[str, Any] | None = No
     and what its deliverable is allowed cannot disagree.
     """
     from . import register as reg
+    from . import resources
 
     project = as_dict(project)
     project_id = int(project["id"])
@@ -1613,10 +1639,20 @@ def register(project: Mapping[str, Any], snapshot: Mapping[str, Any] | None = No
 
     kinds = load_kinds(project_id)
     standard = {int(k["id"]): float(k["standard_hours"] or 0) for k in kinds}
+    # The budget with nothing held back, which is what the expected counts are
+    # worked out from: a project does not produce fewer drawings because part
+    # of the fee is being kept as margin or held against comments.
+    whole = resources.ceilings(snapshot["tasks"], snapshot["trades"], 0.0)
+    gross: dict[int, dict[int, float]] = {}
+    for trade_id, per_task in whole.items():
+        for task_id, hours in per_task.items():
+            gross.setdefault(int(task_id), {})[int(trade_id)] = hours
+
     made = reg.costing(
         snapshot["tasks"], load_submittals(project_id),
         load_task_mixes(project_id), load_mix(project_id),
         plan.get("by_task") or {}, booked_by_submittal(project_id), standard,
+        gross_by_task=gross, links=load_links(project_id),
     )
     made["kinds"] = kinds
     made["kind_names"] = {int(k["id"]): k["name"] for k in kinds}

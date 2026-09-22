@@ -166,6 +166,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_documents(conn)
         _ensure_resource_weeks(conn)
         _ensure_register(conn)
+        _ensure_crs(conn)
         for table, column, definition in (
             # A workflow line that hands nothing over. Its hours are not lost:
             # they flow to whatever it feeds, so the deliverable that does go
@@ -418,6 +419,125 @@ def _ensure_resource_weeks(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS resource_weeks_project "
                  "ON resource_weeks (project_id, week)")
+
+
+def _ensure_crs(conn: sqlite3.Connection) -> None:
+    """The comment response sheets.
+
+    A sheet is a client's comments on one submission, so it hangs off the
+    document in the register that went out — the same drawing or report the
+    programme costed and the register numbered. That is the whole point of it
+    living in this database rather than in a browser: a comment is against a
+    real document, raised by a real person, and owed by a real trade.
+
+    A sheet may also stand on its own, for comments that arrive before anybody
+    has raised the document they are about, or for a submission from before the
+    register existed. Hence the nullable submittal.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crs_sheets (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            -- The document in the register these comments are about, where
+            -- there is one. Set null rather than cascading: losing the sheet
+            -- because somebody tidied the register would be worse.
+            submittal_id INTEGER REFERENCES submittals(id) ON DELETE SET NULL,
+            task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+            title        TEXT    NOT NULL DEFAULT '',
+            revision     TEXT    NOT NULL DEFAULT '',
+            -- What the client's own header says. Kept as given, because a
+            -- transmittal quotes it back and it has to match.
+            report_no    TEXT    NOT NULL DEFAULT '',
+            report_date  TEXT    NOT NULL DEFAULT '',
+            contract_no  TEXT    NOT NULL DEFAULT '',
+            drf_ref      TEXT    NOT NULL DEFAULT '',
+            drf_rev      TEXT    NOT NULL DEFAULT '',
+            drf_date     TEXT    NOT NULL DEFAULT '',
+            stage        TEXT    NOT NULL DEFAULT '',
+            engineer     TEXT    NOT NULL DEFAULT '',
+            contractor   TEXT    NOT NULL DEFAULT '',
+            -- How long a comment has to be answered, when nobody says.
+            due_days     INTEGER NOT NULL DEFAULT 14,
+            received_on  TEXT    NOT NULL DEFAULT '',
+            closed_on    TEXT    NOT NULL DEFAULT '',
+            note         TEXT    NOT NULL DEFAULT '',
+            created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS crs_sheets_project "
+                 "ON crs_sheets (project_id, submittal_id)")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crs_comments (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            sheet_id      INTEGER NOT NULL REFERENCES crs_sheets(id) ON DELETE CASCADE,
+            -- The client's own numbering, kept as text: "12", "12a" and "3.4"
+            -- are all things a comment register has called a row.
+            sn            TEXT    NOT NULL DEFAULT '',
+            reviewer      TEXT    NOT NULL DEFAULT '',
+            source        TEXT    NOT NULL DEFAULT '',
+            observation   TEXT    NOT NULL DEFAULT '',
+            reference     TEXT    NOT NULL DEFAULT '',
+            -- Which of our trades owes the answer. The discipline the client
+            -- wrote is kept beside it, because the two do not always agree and
+            -- theirs is what their sheet says.
+            trade_id      INTEGER REFERENCES trades(id) ON DELETE SET NULL,
+            discipline    TEXT    NOT NULL DEFAULT '',
+            returned_code TEXT    NOT NULL DEFAULT '',
+            response      TEXT    NOT NULL DEFAULT '',
+            signoff       TEXT    NOT NULL DEFAULT 'open',
+            due_date      TEXT    NOT NULL DEFAULT '',
+            closed_on     TEXT    NOT NULL DEFAULT '',
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS crs_comments_sheet "
+                 "ON crs_comments (sheet_id, sort_order, id)")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crs_messages (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER NOT NULL REFERENCES crs_comments(id) ON DELETE CASCADE,
+            user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            author     TEXT    NOT NULL DEFAULT '',
+            role       TEXT    NOT NULL DEFAULT '',
+            body       TEXT    NOT NULL DEFAULT '',
+            -- Held back until the sheet goes out, so a half-written answer is
+            -- not something the client can read.
+            published  INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS crs_messages_comment "
+                 "ON crs_messages (comment_id, id)")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crs_files (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER REFERENCES crs_comments(id) ON DELETE CASCADE,
+            message_id INTEGER REFERENCES crs_messages(id) ON DELETE CASCADE,
+            sheet_id   INTEGER REFERENCES crs_sheets(id) ON DELETE CASCADE,
+            name       TEXT    NOT NULL DEFAULT '',
+            mimetype   TEXT    NOT NULL DEFAULT '',
+            bytes      INTEGER NOT NULL DEFAULT 0,
+            content    BLOB    NOT NULL,
+            user_name  TEXT    NOT NULL DEFAULT '',
+            made_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS crs_files_comment ON crs_files (comment_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS crs_files_message ON crs_files (message_id)")
 
 
 def _ensure_register(conn: sqlite3.Connection) -> None:

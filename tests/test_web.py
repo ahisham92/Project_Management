@@ -26,11 +26,14 @@ def test_login_rejects_a_wrong_password(client):
 
 
 def test_login_accepts_the_seeded_account(client):
+    """Signing in lands on the choice of applications, and the portfolio is one
+    door along from there."""
     response = client.post(
         "/login", data={"email": "admin@example.com", "password": "changeme123"}, follow_redirects=True
     )
     assert response.status_code == 200
-    assert "SIBLINE-PORT" in text(response)
+    assert "Which one today?" in text(response)
+    assert "SIBLINE-PORT" in text(client.get("/projects"))
 
 
 def test_registration_rejects_a_short_password(client):

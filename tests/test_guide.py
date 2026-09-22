@@ -138,7 +138,7 @@ def test_each_tab_carries_its_own_helper(signed_in):
         ("/projects/1/internal", "How to use the Task List tab"),
         ("/projects/1/setup", "How to use the Setup tab"),
         ("/backups", "How to use the Backups tab"),
-        ("/", "How to use the Portfolio tab"),
+        ("/projects", "How to use the Portfolio tab"),
     ):
         assert expected in text(signed_in.get(url)), f"{url} has no helper"
 

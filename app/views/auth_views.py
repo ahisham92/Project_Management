@@ -16,13 +16,13 @@ def _safe_next(target: str | None) -> str:
     """Only follow same-site redirects, so ?next= cannot bounce elsewhere."""
     if target and target.startswith("/") and not target.startswith("//"):
         return target
-    return url_for("portfolio.index")
+    return url_for("home.chooser")
 
 
 @bp.route("/login", methods=("GET", "POST"))
 def login():
     if g.user:
-        return redirect(url_for("portfolio.index"))
+        return redirect(url_for("home.chooser"))
 
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
@@ -39,7 +39,7 @@ def login():
 @bp.route("/register", methods=("GET", "POST"))
 def register():
     if g.user:
-        return redirect(url_for("portfolio.index"))
+        return redirect(url_for("home.chooser"))
 
     first_user = query_one("SELECT COUNT(*) AS n FROM users")["n"] == 0
     if not first_user and not signup_allowed():
@@ -63,7 +63,7 @@ def register():
                 (email, name or email.split("@")[0], hash_password(password), "admin" if first_user else "user"),
             )
             sign_in(query_one("SELECT * FROM users WHERE id = ?", (user_id,)))
-            return redirect(url_for("portfolio.index"))
+            return redirect(url_for("home.chooser"))
 
     return render_template("login.html", mode="register", signup_open=True)
 

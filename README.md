@@ -7,6 +7,25 @@ deliverables carry **weights**, progress is reported against a **planned curve**
 It replaces the spreadsheet with something several people can use at once, from anywhere,
 across a whole **portfolio** of projects.
 
+## Two applications, one address
+
+The site opens on a choice rather than dropping everybody into one application:
+
+| Door | What is behind it | Where |
+|---|---|---|
+| **Project Management** | Everything described in this README — programme, progress, budget, the register, the resource plan, the minutes. | `/projects` |
+| **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
+
+They are **separate applications with separate data**, joined at the WSGI layer rather than
+inside Flask: the CRS is mounted in front of `/crs` as an application of its own, so it keeps
+its own routes, templates and database and neither has to know how the other works. One sign-in
+covers both, and one web app on the host serves the pair.
+
+**The CRS is optional.** Nothing here depends on it. With no CRS installed the door is still
+offered, marked *not installed*, and leads to a page saying how to add one — so the front door
+can be deployed before the thing behind it exists. See
+[Adding the comment response sheet](#adding-the-comment-response-sheet).
+
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
 is SQLite, which is part of Python itself. It needs six packages: Flask, Waitress,
 openpyxl (for the Excel round trip), reportlab and pypdf (for the PDFs and for compiling
@@ -1132,6 +1151,62 @@ from wsgi import application  # noqa: E402
 ```
 
 **5. Tick "Force HTTPS"**, then **Reload**.
+
+### Updating a site that is already running
+
+Nothing above needs doing again. In a **Bash** console:
+
+```bash
+cd ~/Project_Management
+git pull
+.venv/bin/pip install -r requirements.txt   # only when requirements.txt changed
+```
+
+then **Web** tab → **Reload**. That is the whole update. Your data is in
+`~/project-data`, outside the repository, so a pull never touches it, and new database
+columns are added on the first request after the reload.
+
+After this particular update the site opens on the **choice of two applications** instead of
+going straight to the portfolio. Project management moved from `/` to `/projects`; every link
+inside the app already points at the new address, but a bookmark straight to `/` now lands on
+the door rather than the portfolio, which is the intended change.
+
+### Adding the comment response sheet
+
+The CRS is a separate application mounted in front of `/crs`. To install one, put a package
+called `crs` beside `app`, with a `create_app()` that returns a Flask application:
+
+```
+~/Project_Management/
+  app/            ← project management
+  crs/
+    __init__.py   ← def create_app(): ... returns a Flask app
+  wsgi.py
+```
+
+That is the whole contract — `wsgi.py` looks for it on the way up and mounts whatever it
+finds. Nothing else changes: no new web app, no second domain, no edit to the WSGI file.
+**Reload** and the door opens.
+
+If the CRS lives in its own git repository, clone it into place rather than copying files:
+
+```bash
+cd ~/Project_Management
+git clone https://github.com/<you>/<crs-repo>.git crs
+.venv/bin/pip install -r crs/requirements.txt   # if it has its own
+```
+
+Two environment variables adjust where the door leads. Add either to the WSGI file, above the
+`from wsgi import application` line:
+
+| Variable | What it does |
+|---|---|
+| `CRS_APP` | Mount a factory that is not `crs:create_app` — for example `mypackage.factory:build`. |
+| `CRS_URL` | Make the door a plain link instead, for a CRS deployed on its own: `https://crs.example.com/`. |
+
+**A broken CRS never takes the site down.** If the package is there but will not import,
+project management keeps serving and `/crs` shows what went wrong. One application failing to
+start is not a reason for the other to stop answering.
 
 **6. Open `https://<username>.pythonanywhere.com/register`** and create your account — the
 first one is the administrator. There is no need to run `seed` unless you also want the demo

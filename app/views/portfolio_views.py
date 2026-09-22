@@ -15,7 +15,7 @@ from ..service import install_default_steps, portfolio, today
 bp = Blueprint("portfolio", __name__)
 
 
-@bp.get("/")
+@bp.get("/projects")
 @login_required
 def index():
     data_date = from_input_or(request.args.get("data_date"), today())

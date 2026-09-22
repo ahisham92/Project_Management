@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ crs['name'] }} — not installed{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ crs['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {% if crs['trouble'] %}The application is there, but it will not start.
+      {% else %}The door is here, but there is nothing behind it yet.{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-ghost" href="{{ url_for('home.chooser') }}">Back to the choice</a>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    {% if crs['trouble'] %}
+      <p class="off-hundred" style="margin-top:0;padding:10px 12px;display:block">
+        {{ crs['trouble'] }}
+      </p>
+      <p class="small" style="margin:0 0 16px">
+        Project control is unaffected and still serving — one application failing to start is
+        not a reason for the other to stop answering.
+      </p>
+    {% endif %}
+    <p style="margin-top:0">
+      This address is reserved for the comment response sheet application. It is mounted as an
+      application of its own rather than built into this one, so it keeps its own data and its
+      own pages and neither has to know how the other works.
+    </p>
+
+    <h2 style="font-size:1rem;margin:18px 0 6px">To install it</h2>
+    <p class="small" style="margin:0 0 10px">
+      Put a package called <code>crs</code> beside <code>app</code>, with a
+      <code>create_app()</code> that returns a Flask application:
+    </p>
+    <pre class="code-block"><code>Project_Management/
+  app/            ← this application
+  crs/
+    __init__.py   ← def create_app(): ... returns a Flask app
+  wsgi.py</code></pre>
+    <p class="small" style="margin:10px 0 0">
+      That is the whole contract. Nothing here needs changing: this page stops appearing the
+      moment the package is importable, because <code>wsgi.py</code> mounts whatever it finds
+      in front of this address.
+    </p>
+
+    <h2 style="font-size:1rem;margin:18px 0 6px">If it lives somewhere else</h2>
+    <p class="small" style="margin:0">
+      Set <code>CRS_APP</code> to <code>yourmodule:your_factory</code> to mount an application
+      that is not in a package called <code>crs</code>. Set <code>CRS_URL</code> to a full web
+      address to make this door a link instead — for a comment response sheet that is deployed
+      on its own and only wants pointing at.
+    </p>
+    <p class="small muted" style="margin:10px 0 0">
+      Looking for <code>{{ crs['how'] }}</code>.
+    </p>
+  </div>
+</div>
+{% endblock %}

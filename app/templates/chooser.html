@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Choose an application{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Which one today?</h1>
+    <p class="small muted" style="margin-top:2px">
+      Two applications live here. They keep their own data and their own records; one sign-in
+      covers both.
+    </p>
+  </div>
+</div>
+
+<div class="doors">
+  <a class="door" href="{{ url_for('portfolio.index') }}">
+    <span class="door-mark" aria-hidden="true">PC</span>
+    <span class="door-name">Project Management</span>
+    <span class="door-what">
+      Programme, progress and budget: the schedule and its critical path, what each deliverable
+      has earned, the hours booked against it, the document register, the resource plan, and the
+      minutes of every meeting.
+    </span>
+    <span class="door-go">Open Project Management →</span>
+  </a>
+
+  <a class="door {{ 'door-shut' if not crs['ready'] }}"
+     href="{{ crs['href'] }}"{% if crs['external'] %} rel="noopener"{% endif %}>
+    <span class="door-mark door-mark-crs" aria-hidden="true">CRS</span>
+    <span class="door-name">
+      {{ crs['name'] }}
+      {% if not crs['ready'] %}<span class="door-tag">not installed</span>{% endif %}
+    </span>
+    <span class="door-what">
+      The sheet that answers a client's comments on a submission: every comment, who it is for,
+      what was done about it, and whether it is closed.
+    </span>
+    <span class="door-go">
+      {% if crs['ready'] %}Open the {{ crs['name'] }} →{% else %}What to do about it →{% endif %}
+    </span>
+  </a>
+</div>
+{% endblock %}

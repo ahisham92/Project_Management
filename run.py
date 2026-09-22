@@ -28,12 +28,24 @@ from threading import Timer
 
 def _serve(args: argparse.Namespace) -> int:
     from app import create_app
+    from app.crs import MOUNT, NAME, load as load_crs
     from app.db import database_path
 
     app = create_app()
     url = f"http://{'localhost' if args.host in ('0.0.0.0', '127.0.0.1') else args.host}:{args.port}"
 
+    # The comment response sheet, when one is installed, is a second
+    # application mounted in front of /crs — the same arrangement the host
+    # serves, so what runs on a laptop is what runs in front of the team.
+    crs = load_crs()
+    served = app
+    if crs is not None:
+        from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+        served = DispatcherMiddleware(app, {MOUNT: crs})
+
     print(f"Project Control is running at {url}")
+    print(f"{NAME}: {url}{MOUNT}" if crs is not None else f"{NAME}: not installed")
     print(f"Database: {database_path()}")
     print("Press Ctrl+C to stop.\n")
 
@@ -41,13 +53,15 @@ def _serve(args: argparse.Namespace) -> int:
         Timer(1.0, lambda: webbrowser.open(url)).start()
 
     if args.debug:
+        # Flask's reloader wants the Flask app, so debugging runs the root
+        # application on its own; /crs then answers with the page that says so.
         app.run(host=args.host, port=args.port, debug=True)
     else:
         # Waitress is a production-quality pure-Python server, so the same
         # command works on a laptop and on a shared machine.
         from waitress import serve
 
-        serve(app, host=args.host, port=args.port, threads=args.threads)
+        serve(served, host=args.host, port=args.port, threads=args.threads)
     return 0
 
 

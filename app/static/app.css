@@ -620,6 +620,44 @@ input[type="checkbox"] { width: auto; }
 .mix-cell { padding-left: 2px; padding-right: 2px; }
 /* A line carrying a shape of its own rather than following the project's. */
 .own-mix { color: var(--series-1); margin-left: 3px; font-weight: 700; }
+/* The front door: one card per application. Wide targets rather than a menu,
+   because this is a choice made once a session and then not thought about. */
+.doors {
+  display: grid; gap: 16px; margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.door {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 22px; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.door:hover, .door:focus-visible {
+  border-color: var(--series-1); transform: translateY(-2px); outline: none;
+}
+.door-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; border-radius: 10px;
+  background: #2a78d6; color: #fff; font-weight: 700; letter-spacing: 0.02em;
+}
+.door-mark-crs { background: #1f9d76; font-size: 0.82rem; }
+.door-name { font-size: 1.15rem; font-weight: 650; }
+.door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
+.door-go { margin-top: 4px; color: var(--series-1); font-size: 0.9rem; font-weight: 600; }
+/* A door with nothing behind it yet. Still a door — it explains itself. */
+.door-shut .door-mark-crs { background: var(--ink-2); }
+.door-tag {
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--ink-2); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.code-block {
+  margin: 0; padding: 12px 14px; overflow-x: auto;
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 0.82rem; line-height: 1.5;
+}
+
 /* A line that hands nothing over and feeds the one that does. Set back rather
    than struck through: it is real work, just not a submission. */
 tr.feeder > td { background: var(--surface-2, rgba(127, 127, 127, 0.06)); opacity: 0.82; }

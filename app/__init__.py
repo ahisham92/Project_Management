@@ -56,11 +56,13 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
 
     from .views.assistant_views import bp as assistant_bp
     from .views.auth_views import bp as auth_bp
+    from .views.home_views import bp as home_bp
     from .views.meetings_views import bp as meetings_bp
     from .views.portfolio_views import bp as portfolio_bp
     from .views.projects_views import bp as projects_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(home_bp)
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(meetings_bp)

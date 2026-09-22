@@ -66,17 +66,28 @@ def main() -> int:
             p.wait_for_selector("text=Incorrect email or password >> visible=true", timeout=5000),
         ))
 
-        step("signs in", lambda p: (
+        step("signs in and lands on the choice of applications", lambda p: (
             p.fill("input[name=email]", EMAIL),
             p.fill("input[name=password]", PASSWORD),
             p.click("button[type=submit]"),
-            p.wait_for_selector("text=Portfolio >> visible=true", timeout=8000),
-            p.wait_for_selector("text=SIBLINE-PORT >> visible=true"),
+            p.wait_for_selector("text=Which one today? >> visible=true", timeout=8000),
+            shot("00-doors"),
+        ))
+
+        step("both doors are offered, and the CRS says it is not installed", _doors)
+
+        step("the project management door opens the portfolio", lambda p: (
+            p.goto(f"{BASE}/", wait_until="networkidle"),
+            p.click(".door:has-text('Project Management')"),
+            p.wait_for_selector("text=SIBLINE-PORT >> visible=true", timeout=8000),
             shot("02-portfolio"),
         ))
 
-        step("portfolio shows the project and its status", lambda p: _expect_all(
-            p, ["Sibline Port", "1 late", "Hours booked"]
+        # How many lines are late moves with the calendar, so the check is that
+        # the portfolio counts them at all rather than what today's count is.
+        step("portfolio shows the project and its status", lambda p: (
+            _expect_all(p, ["Sibline Port", "Hours booked"]),
+            _expect_pattern(p, r"\d+ late"),
         ))
 
         step("dashboard draws the S-curve with both series", _dashboard)
@@ -1848,6 +1859,48 @@ def _register_grid(page) -> None:
     page.wait_for_timeout(1500)
     if "off-hundred" in (total.get_attribute("class") or ""):
         raise AssertionError("a row put back to 100 should stop being marked")
+
+
+def _expect_pattern(page, pattern: str) -> None:
+    """Something matching, rather than a figure that drifts with the clock."""
+    import re
+
+    if not re.search(pattern, page.locator("body").inner_text()):
+        raise AssertionError(f"nothing matching {pattern!r} on {page.url}")
+
+
+def _doors(page) -> None:
+    """Two applications live behind one address, and the door for the one that
+    is not installed yet still explains itself rather than 404ing."""
+    page.goto(f"{BASE}/", wait_until="networkidle")
+
+    doors = page.locator(".door")
+    if doors.count() != 2:
+        raise AssertionError(f"the front page should offer two doors, not {doors.count()}")
+
+    words = page.locator(".doors").inner_text()
+    for wanted in ("Project Management", "Comment Response Sheet"):
+        if wanted not in words:
+            raise AssertionError(f"the front page does not offer {wanted}")
+
+    crs = page.locator(".door", has_text="Comment Response Sheet")
+    if "door-shut" not in (crs.get_attribute("class") or ""):
+        # Something is mounted, so it should open rather than explain itself.
+        crs.click()
+        page.wait_for_load_state("networkidle")
+        if page.url.rstrip("/").endswith("/crs") is False:
+            raise AssertionError(f"the CRS door went to {page.url}")
+        return
+
+    if "not installed" not in words:
+        raise AssertionError("a door with nothing behind it should say so")
+    crs.click()
+    page.wait_for_load_state("networkidle")
+
+    said = page.locator("main").inner_text()
+    if "create_app" not in said:
+        raise AssertionError("the page should say how to install one")
+    page.screenshot(path=str(SHOTS / "01-crs-door.png"), full_page=True)
 
 
 def _register_feeds(page) -> None:

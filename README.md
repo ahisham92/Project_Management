@@ -22,9 +22,25 @@ its own routes, templates and database and neither has to know how the other wor
 covers both, and one web app on the host serves the pair.
 
 **The CRS is optional.** Nothing here depends on it. With no CRS installed the door is still
-offered, marked *not installed*, and leads to a page saying how to add one — so the front door
-can be deployed before the thing behind it exists. See
+offered, marked *not installed*, and leads to a page saying how to add one. See
 [Adding the comment response sheet](#adding-the-comment-response-sheet).
+
+### About the comment response sheet
+
+It is one HTML file — markup, styles, and a good deal of JavaScript including its own reader
+and writer for `.xlsx` workbooks. It takes a submission's comment register in, gives each
+comment a response, a trade, a due date and a thread, carries photographs, and writes the
+workbook back out. `crs/__init__.py` does nothing but hand the file over, after checking that
+whoever asked has signed in to project control — one sign-in for the pair.
+
+**It keeps its work in each browser, not on the server.** That is how it was written, and it is
+the thing to know before handing the address round: everyone gets their own copy, two people do
+not see each other's sheets, and clearing a browser's data clears the sheets with it. The app
+says as much on its own sign-in page. It is a real limit rather than a setting — moving the
+work to a shared database is a change to the application, not to how it is served.
+
+Its sign-in is its own, separate from project control's: the project control one decides
+whether the page is served at all, and the CRS one decides what the page shows once it loads.
 
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
 is SQLite, which is part of Python itself. It needs six packages: Flask, Waitress,
@@ -1172,6 +1188,9 @@ inside the app already points at the new address, but a bookmark straight to `/`
 the door rather than the portfolio, which is the intended change.
 
 ### Adding the comment response sheet
+
+**One is already installed** — `crs/` in this repository, served at `/crs`. Nothing below needs
+doing unless you are replacing it with a different one.
 
 The CRS is a separate application mounted in front of `/crs`. To install one, put a package
 called `crs` beside `app`, with a `create_app()` that returns a Flask application:

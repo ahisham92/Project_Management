@@ -51,7 +51,50 @@ def test_project_management_is_where_it_always_was(signed_in):
 
 # --- what is plugged in -------------------------------------------------------
 
-def test_with_nothing_installed_the_door_says_so(signed_in):
+def test_the_comment_response_sheet_is_installed(signed_in, monkeypatch):
+    """It is a package beside this one, found by its factory rather than wired
+    in by hand."""
+    monkeypatch.delenv("CRS_URL", raising=False)
+    monkeypatch.delenv("CRS_APP", raising=False)
+
+    said = mount.state()
+    assert said["state"] == mount.MOUNTED
+    assert said["ready"] is True
+    assert said["href"] == "/crs"
+    # And the door on the front page is open rather than marked shut.
+    assert "door-shut" not in text(signed_in.get("/"))
+
+
+def test_the_sheet_is_served_to_somebody_signed_in(signed_in):
+    from crs import create_app
+
+    page = create_app(secret="test").test_client()
+    with page.session_transaction() as kept:
+        kept["user_id"] = 1
+
+    answer = page.get("/")
+    assert answer.status_code == 200
+    body = answer.get_data(as_text=True)
+    assert "CRS Review" in body
+    assert "crs-review-v3" in body            # its own storage, untouched
+    assert answer.headers["Cache-Control"] == "no-store"
+
+
+def test_the_sheet_is_not_served_to_a_stranger():
+    """One sign-in for the pair is what the front door promises, and a second
+    application on the same address should not be the way around it."""
+    from crs import create_app
+
+    answer = create_app(secret="test").test_client().get("/")
+    assert answer.status_code in (301, 302)
+    assert "/login" in answer.headers["Location"]
+
+
+def test_with_nothing_installed_the_door_says_so(signed_in, monkeypatch):
+    """The state this shipped in, before the sheet was dropped beside it."""
+    monkeypatch.setenv("CRS_APP", "nothing_of_that_name:create_app")
+    monkeypatch.delenv("CRS_URL", raising=False)
+
     answer = signed_in.get("/crs")
     page = text(answer)
 
@@ -61,9 +104,6 @@ def test_with_nothing_installed_the_door_says_so(signed_in):
     assert answer.status_code == 200
     assert "not installed" in page
     assert "crs" in page
-
-
-def test_the_door_is_marked_shut_while_nothing_is_behind_it(signed_in):
     assert "door-shut" in text(signed_in.get("/"))
 
 
@@ -130,7 +170,7 @@ def test_a_crs_that_is_present_but_broken_says_so_and_does_not_take_the_site_dow
 def test_a_missing_package_is_not_reported_as_broken(monkeypatch):
     """Before one is installed is the ordinary case, not a fault."""
     monkeypatch.delenv("CRS_URL", raising=False)
-    monkeypatch.delenv("CRS_APP", raising=False)
+    monkeypatch.setenv("CRS_APP", "nothing_of_that_name:create_app")
 
     said = mount.state()
     assert said["state"] == mount.MISSING
@@ -156,8 +196,11 @@ def test_the_wsgi_entry_point_serves_both(monkeypatch):
     import wsgi
 
     monkeypatch.delenv("CRS_URL", raising=False)
+    monkeypatch.delenv("CRS_APP", raising=False)
     again = importlib.reload(wsgi)
+
     assert again.application is again.app
-    # Nothing installed here, so the root application answers everything —
-    # including /crs, with the page that explains itself.
-    assert again.application.__class__.__name__ == "Flask"
+    # The sheet is installed, so the two are joined above Flask: project
+    # control at the root, the sheet in front of /crs.
+    assert again.application.__class__.__name__ == "DispatcherMiddleware"
+    assert mount.MOUNT in again.application.mounts

@@ -37,6 +37,10 @@ def main() -> int:
         page.on("console", lambda m: failures.append(f"console: {m.text}")
                 if m.type == "error" and "400 (BAD REQUEST)" not in m.text else None)
         page.on("pageerror", lambda e: failures.append(f"pageerror: {e}"))
+        # The browser's own console says only "404 (NOT FOUND)", with no clue
+        # which address it asked for. Naming it here saves the hunt.
+        page.on("response", lambda r: failures.append(f"{r.status} on {r.url}")
+                if r.status >= 500 or r.status == 404 else None)
         # Every confirm in the app is one the test means to accept. One handler
         # for the run, rather than a `once` per step — two of those left over
         # race for the same dialog and one of them throws.

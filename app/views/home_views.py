@@ -12,12 +12,29 @@ itself to a stranger.
 
 from __future__ import annotations
 
-from flask import Blueprint, render_template
+from flask import Blueprint, Response, render_template
 
 from ..auth import login_required
 from ..crs import describe as describe_crs
 
 bp = Blueprint("home", __name__)
+
+# Every page here declares its own icon inline, so nothing asks for this — until
+# a page that does not sits under the same domain. A browser with no icon to go
+# on asks the root of the origin for one, whatever address the page itself is
+# at, so the comment response sheet's request lands here.
+MARK = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect width='32' height='32' rx='7' fill='#2a78d6'/>"
+    "<text x='16' y='22' font-family='system-ui' font-size='14' font-weight='700'"
+    " fill='white' text-anchor='middle'>PC</text></svg>"
+)
+
+
+@bp.get("/favicon.ico")
+def favicon():
+    return Response(MARK, mimetype="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @bp.get("/")

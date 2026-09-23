@@ -1,10 +1,16 @@
-"""Where the comment response sheet application is plugged in.
+"""Where the older, browser-kept comment sheet is plugged in.
 
-The CRS is a separate application with its own data, not a tab of this one. It
-is mounted in front of ``/crs`` as a WSGI application of its own, so it keeps
-its own routes, templates and database and this app never has to know how it
-works. Everything either of them shares — the host, the domain, the one web app
-on PythonAnywhere — they share by sitting side by side under one address.
+The comment response sheets themselves are part of this application now: they
+are in this database, against real documents and real trades, and they are
+drawn by :mod:`app.views.crs_views` at ``/crs``. What this module mounts is the
+one that came before — a single HTML file that keeps its work in each person's
+browser — so that nobody's sheets vanish the day the real one arrives. It sits
+at ``/crs/classic``, where it can be opened and its work exported.
+
+It is a separate application with its own storage, mounted as a WSGI
+application of its own, so this one never has to know how it works. Everything
+they share — the host, the domain, the one web app on PythonAnywhere — they
+share by sitting side by side under one address.
 
 **To install one**, put a package called ``crs`` beside ``app`` with a
 ``create_app()`` that returns a WSGI application (a Flask app is one)::
@@ -35,12 +41,12 @@ import os
 from typing import Any, Callable
 
 # Where the door goes, and what it is called on the way there.
-MOUNT = "/crs"
-NAME = "Comment Response Sheet"
+MOUNT = "/crs/classic"
+NAME = "the sheet kept in your browser"
 
 DEFAULT_FACTORY = "crs:create_app"
 
-# What the door can be: nothing installed, something broken, something mounted
+# What this can be: nothing installed, something broken, something mounted
 # here, or something deployed elsewhere that only wants linking to.
 MISSING, BROKEN, MOUNTED, AWAY = "missing", "broken", "mounted", "away"
 

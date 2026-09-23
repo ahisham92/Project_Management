@@ -6,8 +6,8 @@
   <div>
     <h1>Which one today?</h1>
     <p class="small muted" style="margin-top:2px">
-      Two applications live here. They keep their own data and their own records; one sign-in
-      covers both.
+      Two jobs, one database and one sign-in: the programme on one side, the client's comments
+      on the other, and a comment is against a document the programme costed.
     </p>
   </div>
 </div>
@@ -24,20 +24,24 @@
     <span class="door-go">Open Project Management →</span>
   </a>
 
-  <a class="door {{ 'door-shut' if not crs['ready'] }}"
-     href="{{ crs['href'] }}"{% if crs['external'] %} rel="noopener"{% endif %}>
+  <a class="door" href="{{ url_for('crs.index') }}">
     <span class="door-mark door-mark-crs" aria-hidden="true">CRS</span>
-    <span class="door-name">
-      {{ crs['name'] }}
-      {% if not crs['ready'] %}<span class="door-tag">not installed</span>{% endif %}
-    </span>
+    <span class="door-name">Comment Response Sheet</span>
     <span class="door-what">
       The sheet that answers a client's comments on a submission: every comment, who it is for,
-      what was done about it, and whether it is closed.
+      what was done about it, and whether it is closed — against the document in the register
+      that went out, and the trade that owes the work.
     </span>
-    <span class="door-go">
-      {% if crs['ready'] %}Open the {{ crs['name'] }} →{% else %}What to do about it →{% endif %}
-    </span>
+    <span class="door-go">Open the Comment Response Sheet →</span>
   </a>
 </div>
+
+{% if classic and classic['ready'] %}
+  <p class="small muted" style="margin-top:12px">
+    The comment sheet that kept its work in your own browser is still there, at
+    <a href="{{ classic['href'] }}">{{ classic['href'] }}</a>, so anything left in it can be
+    opened and exported. Nothing in it is shared with anybody else — that is what moving the
+    sheets into the database above fixed.
+  </p>
+{% endif %}
 {% endblock %}

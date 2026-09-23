@@ -45,6 +45,10 @@ from .crs_sheet import CODES, normalise_code
 # the client's own document either way.
 BLANK = Path(__file__).resolve().parent / "forms" / "review-response.xlsx"
 
+# What a browser and a host should call one of these.
+MIMETYPE = ("application/vnd.openxmlformats-officedocument"
+            ".spreadsheetml.sheet")
+
 # The columns of the comment table, by what the heading says rather than where
 # it sits. First match wins, so the more particular wording goes first.
 COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -485,5 +489,5 @@ def keep_as_blank(data: bytes, where: Path = BLANK) -> None:
     where.write_bytes(data)
 
 
-__all__ = ["read", "write", "blank_form", "keep_as_blank", "SheetError",
+__all__ = ["read", "write", "blank_form", "keep_as_blank", "SheetError", "MIMETYPE",
            "COLUMNS", "INFO", "MINE"]

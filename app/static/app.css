@@ -989,3 +989,35 @@ tr.just-moved > td { animation: settle 0.7s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   tr.just-moved > td { animation: none; }
 }
+
+/* --- a comment response sheet ------------------------------------------- */
+/* The client's words on the left and ours on the right, with every cell on
+   the right editable where it stands. Wide rows: a comment is a paragraph and
+   an answer is a paragraph, and neither reads in a 90-pixel column. */
+
+.crs-table td { vertical-align: top; }
+.crs-table select, .crs-table input { max-width: 100%; }
+.crs-table textarea {
+  width: 100%; min-height: 66px; resize: vertical; font: inherit;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink);
+}
+.crs-table textarea:focus, .crs-table select:focus, .crs-table input:focus {
+  border-color: var(--series-1); outline: none; background: var(--surface);
+}
+.crs-table [data-crs-cell].saving { opacity: 0.55; }
+.crs-table [data-crs-cell].saved { background: var(--tint-good); }
+.crs-table [data-crs-cell].trouble {
+  border-color: var(--critical); background: var(--tint-critical);
+}
+.crs-table tr.is-late > td:first-child { box-shadow: inset 3px 0 0 var(--critical); }
+.crs-table tr.is-closed { opacity: 0.72; }
+.crs-table tr.is-closed.is-late { opacity: 1; }
+.crs-late { display: inline-block; margin-top: 4px; }
+.crs-table details > summary { cursor: pointer; color: var(--muted); }
+@media print {
+  .crs-table textarea, .crs-table select, .crs-table input {
+    border: 0; background: none; -webkit-appearance: none; appearance: none;
+  }
+  .crs-table details { display: none; }
+}

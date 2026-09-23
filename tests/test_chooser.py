@@ -1,9 +1,10 @@
-"""The front door, and the place the second application is plugged in.
+"""The front door, and the place the older sheet is plugged in.
 
-Two applications live behind one address now. What is worth pinning down is the
-joinery: the door offers both, project control is where it always was, and the
-comment response sheet is mounted rather than built in — so it can be absent
-without anything breaking, and present without anything here changing.
+Two jobs live behind one address. What is worth pinning down is the joinery:
+the door offers both, project control is where it always was, and the comment
+response sheets are part of this application now — while the one that kept its
+work in each person's browser is still mounted at ``/crs/classic``, so nothing
+left in anybody's browser is stranded.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ def test_the_site_opens_on_a_choice(signed_in):
     assert "Project Management" in page
     assert "Comment Response Sheet" in page
     assert 'href="/projects"' in page
-    assert 'href="/crs"' in page
+    assert 'href="/crs/"' in page
 
 
 def test_the_door_is_not_open_to_a_stranger(client):
@@ -51,18 +52,27 @@ def test_project_management_is_where_it_always_was(signed_in):
 
 # --- what is plugged in -------------------------------------------------------
 
-def test_the_comment_response_sheet_is_installed(signed_in, monkeypatch):
+def test_the_older_sheet_is_still_mounted(signed_in, monkeypatch):
     """It is a package beside this one, found by its factory rather than wired
-    in by hand."""
+    in by hand — and it is out of the way at /crs/classic, because /crs is the
+    real one now."""
     monkeypatch.delenv("CRS_URL", raising=False)
     monkeypatch.delenv("CRS_APP", raising=False)
 
     said = mount.state()
     assert said["state"] == mount.MOUNTED
     assert said["ready"] is True
-    assert said["href"] == "/crs"
+    assert said["href"] == "/crs/classic"
     # And the door on the front page is open rather than marked shut.
     assert "door-shut" not in text(signed_in.get("/"))
+
+
+def test_the_comment_response_sheets_are_part_of_this_application(signed_in):
+    """Not mounted, not a second database: a blueprint on the same app, so a
+    sheet is against a document the register numbered."""
+    page = signed_in.get("/crs/")
+    assert page.status_code == 200
+    assert "Comment response sheets" in text(page)
 
 
 def test_the_sheet_is_served_to_somebody_signed_in(signed_in):
@@ -90,21 +100,16 @@ def test_the_sheet_is_not_served_to_a_stranger():
     assert "/login" in answer.headers["Location"]
 
 
-def test_with_nothing_installed_the_door_says_so(signed_in, monkeypatch):
-    """The state this shipped in, before the sheet was dropped beside it."""
+def test_the_door_still_opens_with_the_older_sheet_gone(signed_in, monkeypatch):
+    """Nothing about the front door depends on it any more. The sheets are
+    here; that one is a link for whoever still has work in their browser."""
     monkeypatch.setenv("CRS_APP", "nothing_of_that_name:create_app")
     monkeypatch.delenv("CRS_URL", raising=False)
 
-    answer = signed_in.get("/crs")
-    page = text(answer)
-
-    # Not a 404: the front page offers this door, so it owes an explanation.
-    # And not a 500 either — a door that is not wired up yet is a state rather
-    # than a fault, and monitoring should not be shouting about it.
-    assert answer.status_code == 200
-    assert "not installed" in page
-    assert "crs" in page
-    assert "door-shut" in text(signed_in.get("/"))
+    page = text(signed_in.get("/"))
+    assert "Comment Response Sheet" in page
+    assert "/crs/classic" not in page
+    assert signed_in.get("/crs/").status_code == 200
 
 
 def test_a_crs_somewhere_else_is_linked_rather_than_mounted(monkeypatch):
@@ -204,3 +209,4 @@ def test_the_wsgi_entry_point_serves_both(monkeypatch):
     # control at the root, the sheet in front of /crs.
     assert again.application.__class__.__name__ == "DispatcherMiddleware"
     assert mount.MOUNT in again.application.mounts
+    assert mount.MOUNT == "/crs/classic", "the real sheets answer at /crs"

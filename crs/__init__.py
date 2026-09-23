@@ -1,4 +1,4 @@
-"""The comment response sheet, mounted in front of ``/crs``.
+"""The comment response sheet as it was, mounted in front of ``/crs/classic``.
 
 The application itself is one HTML file: markup, styles and a good deal of
 JavaScript, including its own reader and writer for ``.xlsx`` workbooks. It
@@ -11,11 +11,11 @@ the pair, which is what the front door promises. Beyond that it does not touch
 the sheet or know anything about what is in it.
 
 **The work is kept in each browser.** That is how the application was written,
-and it is worth being plain about what it means once several people share an
-address: everyone gets their own copy. Two people do not see one another's
-sheets, and clearing a browser's data clears the sheets with it. The way out is
-to give it a database and an upload of its own, which is a change to the
-application rather than to how it is served.
+and it is why it is no longer the one at ``/crs``: everyone gets their own copy,
+two people do not see one another's sheets, and clearing a browser's data clears
+the sheets with it. The sheets that are shared live in the database with
+everything else now. This is kept mounted so that whatever is still in
+somebody's browser can be opened and exported rather than lost.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def create_app(secret: str | None = None) -> Flask:
         if not session.get("user_id"):
             # Back to the front door, which knows how to ask for a sign-in and
             # will send them here again once they have.
-            return redirect("/login?next=/crs")
+            return redirect("/login?next=/crs/classic")
         # No caching: the file is replaced by a git pull, and a stale copy in
         # somebody's browser is a bug report nobody can reproduce.
         answer = send_from_directory(HERE / "static", PAGE)

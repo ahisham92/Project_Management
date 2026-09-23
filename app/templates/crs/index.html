@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty, date_field, progress %}
+{% block title %}Comment response sheets{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Comment response sheets</h1>
+    <p class="small muted" style="margin-top:2px">
+      A client reads a submission and sends back a register of comments. Each one is owed an
+      answer by a date, by somebody. This is where they are answered — against the document in
+      the register that actually went out, and the trade that owes the work.
+    </p>
+  </div>
+  {% if projects | length > 1 %}
+    <form method="get" class="inline-form">
+      <label class="field w-md">
+        <span class="field-label">Project</span>
+        <select name="project" onchange="this.form.submit()">
+          {% for one in projects %}
+            <option value="{{ one['id'] }}" {{ 'selected' if project and one['id'] == project['id'] }}>
+              {{ one['code'] }} — {{ one['name'] }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-ghost">Show</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if not project %}
+  {{ empty('No projects yet',
+           'A comment sheet belongs to a project, so there has to be one first.') }}
+{% else %}
+
+<div class="grid grid-4">
+  {{ tile('Sheets', counted['sheets'], 'registers of comments on this project') }}
+  {{ tile('Comments', counted['comments'], 'raised across every sheet') }}
+  {{ tile('Still open', counted['open'],
+          'answered ' ~ counted['answered'] ~ ' of them',
+          'warning' if counted['open'] else 'good',
+          'nothing owed' if not counted['open'] else 'owed') }}
+  {{ tile('Late', counted['late'], 'past the date they were owed',
+          'critical' if counted['late'] else 'good',
+          'overdue' if counted['late'] else 'on time') }}
+</div>
+
+{% if role in ('owner', 'manager') %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Start a sheet</h2>
+      <p class="small muted" style="margin-top:2px">
+        Upload the client's own review response form and it is read whole — the header, every
+        comment and the discipline each one is against, matched to the trade that owes it.
+        Or raise an empty one and type the comments in. Either way what goes back out is the
+        client's form, with their letterhead on it.
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('crs.new_sheet', project_id=project['id']) }}"
+          enctype="multipart/form-data" class="inline-form" style="align-items:flex-end;flex-wrap:wrap">
+      <label class="field w-lg">
+        <span class="field-label">The client's form (.xlsx)</span>
+        <input type="file" name="workbook" accept=".xlsx">
+      </label>
+      <label class="field w-md">
+        <span class="field-label">Or a title, for an empty one</span>
+        <input type="text" name="title" placeholder="What the comments are about">
+      </label>
+      <label class="field w-md">
+        <span class="field-label">Against which document</span>
+        <select name="submittal_id">
+          <option value="">Not one in the register</option>
+          {% for one in submittals %}
+            <option value="{{ one['id'] }}">{{ one['number'] }} — {{ one['title'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {{ date_field('received_on', '', 'Received', 'w-sm') }}
+      <button type="submit" class="btn btn-primary">Create the sheet</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Sheets</h2></div></div>
+  <div class="card-body">
+    {% if not sheets %}
+      {{ empty('Nothing yet', 'Upload a review response form and its comments come with it.') }}
+    {% else %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Reference</th>
+            <th>Document</th>
+            <th>Received</th>
+            <th class="right">Comments</th>
+            <th class="right">Open</th>
+            <th class="right">Late</th>
+            <th style="width:140px">Answered</th>
+            <th>Code</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for one in sheets %}
+            <tr>
+              <td>
+                <a href="{{ url_for('crs.sheet', project_id=project['id'], sheet_id=one['id']) }}">
+                  <strong>{{ one['drf_ref'] or one['report_no'] or one['title'] or 'Sheet ' ~ one['id'] }}</strong></a>
+                {% if one['drf_rev'] %}<span class="small muted">rev {{ one['drf_rev'] }}</span>{% endif %}
+                {% if one['title'] and (one['drf_ref'] or one['report_no']) %}
+                  <div class="small muted">{{ one['title'] }}</div>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if one['submittal_number'] %}
+                  {{ one['submittal_number'] }}
+                  <div class="muted">{{ one['submittal_title'] }}</div>
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="small">{{ short_date(one['received_on']) if one['received_on'] else '—' }}</td>
+              <td class="right tabular">{{ one['comments'] }}</td>
+              <td class="right tabular">{{ one['open'] }}</td>
+              <td class="right tabular">
+                {% if one['late'] %}<span class="state-critical">{{ one['late'] }}</span>
+                {% else %}0{% endif %}
+              </td>
+              <td>{{ progress(one['done_pct'] / 100, slim=True) }}
+                <span class="small muted">{{ one['done_pct'] | round(0) | int }}%</span></td>
+              <td>
+                {% if one['code'] %}
+                  {{ badge('good' if one['code'] in ('A', 'B') else 'critical',
+                           'Code ' ~ one['code'], one['code_said']) }}
+                {% else %}<span class="muted small">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if late %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Owed now</h2>
+      <p class="small muted" style="margin-top:2px">
+        Every comment on the project past the date it was owed an answer, oldest first.
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Sheet</th><th>S/N</th><th>Comment</th><th>Trade</th><th class="right">Days</th></tr></thead>
+        <tbody>
+          {% for one in late %}
+            <tr>
+              <td class="small">
+                <a href="{{ url_for('crs.sheet', project_id=project['id'], sheet_id=one['sheet']) }}">
+                  {{ one['sheet_title'] or 'Sheet ' ~ one['sheet'] }}</a>
+              </td>
+              <td class="small tabular">{{ one['sn'] }}</td>
+              <td class="small">{{ one['observation'] | truncate(110) }}</td>
+              <td class="small">{{ one['trade_name'] or 'Nobody yet' }}</td>
+              <td class="right tabular state-critical">{{ one['overdue'] }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

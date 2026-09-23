@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import badge, empty, date_field, progress %}
+{% block title %}{{ sheet['drf_ref'] or sheet['title'] or 'Comment sheet' }} — comments{% endblock %}
+
+{% macro code_cell(comment) %}
+  <select data-crs-cell="returned_code" data-comment="{{ comment['id'] }}"
+          aria-label="Returned code" {{ 'disabled' if not can_edit }}>
+    <option value="">—</option>
+    {% for letter, said in codes.items() %}
+      <option value="{{ letter }}" {{ 'selected' if comment['returned_code'] == letter }}
+              title="{{ said }}">{{ letter }}</option>
+    {% endfor %}
+  </select>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted" style="margin:0">
+      <a href="{{ url_for('crs.index', project=project['id']) }}">Comment response sheets</a>
+      · {{ project['code'] }}
+    </p>
+    <h1>{{ sheet['drf_ref'] or sheet['report_no'] or sheet['title'] or 'Comment sheet' }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ sheet['title'] }}
+      {% if sheet['submittal_number'] %}
+        · against <a href="{{ url_for('projects.submittals', project_id=project['id']) }}">{{ sheet['submittal_number'] }}</a>
+      {% endif %}
+      {% if sheet['drf_rev'] %} · rev {{ sheet['drf_rev'] }}{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost"
+       href="{{ url_for('crs.download', project_id=project['id'], sheet_id=sheet['id']) }}">
+      Download the answered form
+    </a>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Comments', counted['comments'], 'on this sheet') }}
+  {{ tile('Answered', counted['answered'],
+          counted['unanswered'] ~ ' with nothing written yet',
+          'good' if not counted['unanswered'] else 'warning',
+          'all answered' if not counted['unanswered'] else 'in hand') }}
+  {{ tile('Signed off', counted['closed'],
+          (counted['done_pct'] | round(0) | int) ~ '% of the sheet',
+          'good' if counted['all_closed'] else 'neutral',
+          'sheet closed' if counted['all_closed'] else 'still open') }}
+  {{ tile('Comes back as', 'Code ' ~ code if code else '—',
+          codes.get(code, 'no code given yet'),
+          'critical' if code in ('C', 'D') else ('good' if code else 'neutral'),
+          'resubmission' if code in ('C', 'D') else ('accepted' if code else '')) }}
+</div>
+
+{% if counted['late'] %}
+  <div class="as-at-banner">
+    <p class="small" style="margin:0">
+      <strong>{{ counted['late'] }} comment{{ '' if counted['late'] == 1 else 's' }} past the date
+      {{ 'it was' if counted['late'] == 1 else 'they were' }} owed an answer.</strong>
+      A comment signed off is never late however long it took — this is only work still owed.
+    </p>
+  </div>
+{% endif %}
+
+{# --- who owes what ------------------------------------------------------- #}
+{% if owed | length > 1 or (owed and owed[0]['trade_id']) %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Owed by trade</h2>
+      <p class="small muted" style="margin-top:2px">
+        The client writes a discipline in their own words; it is matched to the project's trades
+        on the way in. One that matches two is left matched to neither — wrongly owing a trade a
+        comment is worse than plainly owing nobody.
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Trade</th><th class="right">Comments</th><th class="right">Open</th>
+                   <th class="right">Late</th><th style="width:160px">Signed off</th></tr></thead>
+        <tbody>
+          {% for row in owed %}
+            <tr>
+              <td>{{ row['name'] }}</td>
+              <td class="right tabular">{{ row['comments'] }}</td>
+              <td class="right tabular">{{ row['open'] }}</td>
+              <td class="right tabular">
+                {% if row['late'] %}<span class="state-critical">{{ row['late'] }}</span>{% else %}0{% endif %}
+              </td>
+              <td>{{ progress(row['done_pct'] / 100, slim=True) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# --- the comments -------------------------------------------------------- #}
+<div class="card" style="margin-top:16px" data-crs-sheet="{{ sheet['id'] }}"
+     data-crs-url="{{ url_for('crs.save_comment', project_id=project['id'], comment_id=0) }}">
+  <div class="card-head">
+    <div>
+      <h2>The comments</h2>
+      <p class="small muted" style="margin-top:2px">
+        The client's words on the left, ours on the right. What you type is saved as you type
+        it — there is no Save button and nothing to lose to a closed laptop. Their columns are
+        theirs: answering a comment by editing it is not answering it.
+      </p>
+      <p class="small muted" style="margin-top:4px">
+        <span data-crs-count="closed">{{ counted['closed'] }}</span> of
+        <span data-crs-count="comments">{{ counted['comments'] }}</span> signed off ·
+        <span data-crs-count="open">{{ counted['open'] }}</span> still open ·
+        <span data-crs-count="late">{{ counted['late'] }}</span> late ·
+        <span data-crs-count="answered">{{ counted['answered'] }}</span> answered
+      </p>
+    </div>
+    {% if can_edit %}
+      <form method="post" class="inline-form"
+            action="{{ url_for('crs.close_answered', project_id=project['id'], sheet_id=sheet['id']) }}">
+        <button type="submit" class="btn btn-ghost btn-sm">Sign off everything answered</button>
+      </form>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if not comments %}
+      {{ empty('No comments on this sheet yet',
+               'Upload the client’s form below, or add them one at a time.') }}
+    {% else %}
+    <div class="table-wrap">
+      <table class="table crs-table">
+        <thead>
+          <tr>
+            <th style="width:48px">S/N</th>
+            <th>The client's comment</th>
+            <th style="width:150px">Trade</th>
+            <th style="width:280px">Our response</th>
+            <th style="width:88px">Code</th>
+            <th style="width:128px">Sign-off</th>
+            <th style="width:136px">Owed by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for comment in comments %}
+            <tr id="c{{ comment['id'] }}" data-crs-row="{{ comment['id'] }}"
+                class="{{ 'is-late' if comment['late'] }}">
+              <td class="tabular small">{{ comment['sn'] }}</td>
+              <td>
+                <div>{{ comment['observation'] }}</div>
+                <p class="small muted" style="margin:4px 0 0">
+                  {% if comment['source'] %}{{ comment['source'] }}{% endif %}
+                  {% if comment['reference'] %} · {{ comment['reference'] }}{% endif %}
+                  {% if comment['discipline'] %} · {{ comment['discipline'] }}{% endif %}
+                  {% if comment['reviewer'] %} · {{ comment['reviewer'] }}{% endif %}
+                </p>
+                <details class="small" style="margin-top:6px">
+                  <summary>
+                    Thread{% if comment['replies'] %} ({{ comment['replies'] }}){% endif %}
+                    {%- if comment['files'] %} · {{ comment['files'] }} file{{ '' if comment['files'] == 1 else 's' }}{% endif %}
+                  </summary>
+                  <div style="margin-top:6px">
+                    {% for said in threads.get(comment['id'], []) %}
+                      <p style="margin:0 0 6px">
+                        <strong>{{ said['author'] or 'Somebody' }}</strong>
+                        <span class="muted">{{ said['created_at'][:10] }}</span><br>
+                        {{ said['body'] }}
+                      </p>
+                    {% endfor %}
+                    {% for held in files if held['comment_id'] == comment['id'] %}
+                      <p style="margin:0 0 4px">
+                        <a href="{{ url_for('crs.read_file', project_id=project['id'], file_id=held['id']) }}">
+                          {{ held['name'] }}</a>
+                        <span class="muted">{{ (held['bytes'] / 1024) | round(0) | int }} KB</span>
+                      </p>
+                    {% endfor %}
+                    <form method="post" class="inline-form" style="margin-top:6px"
+                          action="{{ url_for('crs.add_message', project_id=project['id'], comment_id=comment['id']) }}">
+                      <input type="text" name="body" placeholder="Say something about this one"
+                             style="min-width:220px">
+                      <button type="submit" class="btn btn-ghost btn-sm">Add</button>
+                    </form>
+                    {% if can_edit %}
+                      <form method="post" class="inline-form" enctype="multipart/form-data"
+                            style="margin-top:4px"
+                            action="{{ url_for('crs.attach_file', project_id=project['id'], comment_id=comment['id']) }}">
+                        <input type="file" name="file">
+                        <button type="submit" class="btn btn-ghost btn-sm">Attach</button>
+                      </form>
+                      <form method="post" style="margin-top:4px"
+                            action="{{ url_for('crs.delete_comment', project_id=project['id'], comment_id=comment['id']) }}">
+                        <button type="submit" class="btn btn-ghost btn-sm">Delete this comment</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </details>
+              </td>
+              <td>
+                <select data-crs-cell="trade_id" data-comment="{{ comment['id'] }}"
+                        aria-label="Which trade owes this" {{ 'disabled' if not can_edit }}>
+                  <option value="">Nobody yet</option>
+                  {% for trade in trades %}
+                    <option value="{{ trade['id'] }}" {{ 'selected' if comment['trade_id'] == trade['id'] }}>
+                      {{ trade['name'] }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <textarea data-crs-cell="response" data-comment="{{ comment['id'] }}" rows="3"
+                          placeholder="What was done about it"
+                          aria-label="Our response" {{ 'disabled' if not can_edit }}
+                          >{{ comment['response'] }}</textarea>
+              </td>
+              <td>{{ code_cell(comment) }}</td>
+              <td>
+                <select data-crs-cell="signoff" data-comment="{{ comment['id'] }}"
+                        aria-label="Open or closed" {{ 'disabled' if not can_edit }}>
+                  {% for key, said in signoffs.items() %}
+                    <option value="{{ key }}" {{ 'selected' if comment['signoff'] == key }}>{{ said }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="small">
+                <input type="text" data-crs-cell="due_date" data-comment="{{ comment['id'] }}"
+                       data-datepicker value="{{ date_input(comment['due_date']) }}"
+                       placeholder="{{ DATE_FORMAT }}" style="width:110px"
+                       aria-label="Owed by" {{ 'disabled' if not can_edit }}>
+                <span class="crs-late" data-crs-overdue>
+                  {% if comment['late'] %}{{ badge('critical', comment['overdue'] ~ 'd late') }}{% endif %}
+                </span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if can_edit %}
+      <form method="post" class="inline-form" style="margin-top:12px;flex-wrap:wrap;align-items:flex-end"
+            action="{{ url_for('crs.add_comment', project_id=project['id'], sheet_id=sheet['id']) }}">
+        <label class="field w-sm">
+          <span class="field-label">S/N</span>
+          <input type="text" name="sn" placeholder="next">
+        </label>
+        <label class="field w-lg">
+          <span class="field-label">The comment</span>
+          <input type="text" name="observation" required placeholder="What the client said">
+        </label>
+        <label class="field w-sm">
+          <span class="field-label">Discipline</span>
+          <input type="text" name="discipline">
+        </label>
+        <label class="field w-sm">
+          <span class="field-label">Trade</span>
+          <select name="trade_id">
+            <option value="">Nobody yet</option>
+            {% for trade in trades %}<option value="{{ trade['id'] }}">{{ trade['name'] }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary">Add a comment</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{# --- the sheet's own header ---------------------------------------------- #}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>What the form says</h2>
+      <p class="small muted" style="margin-top:2px">
+        The client's header, kept as they wrote it — a transmittal quotes it back and it has to
+        match. {% if original %}This sheet arrived on their own workbook, and that is the file
+        the answers are written back into.{% else %}This sheet was raised here, so it goes out
+        on the blank review response form.{% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="post" class="inline-form" style="flex-wrap:wrap;align-items:flex-end"
+          action="{{ url_for('crs.save_sheet', project_id=project['id'], sheet_id=sheet['id']) }}">
+      <label class="field w-md"><span class="field-label">Title</span>
+        <input type="text" name="title" value="{{ sheet['title'] }}"></label>
+      <label class="field w-sm"><span class="field-label">DRF reference</span>
+        <input type="text" name="drf_ref" value="{{ sheet['drf_ref'] }}"></label>
+      <label class="field w-sm"><span class="field-label">DRF revision</span>
+        <input type="text" name="drf_rev" value="{{ sheet['drf_rev'] }}"></label>
+      <label class="field w-sm"><span class="field-label">Report no.</span>
+        <input type="text" name="report_no" value="{{ sheet['report_no'] }}"></label>
+      <label class="field w-sm"><span class="field-label">Contract no.</span>
+        <input type="text" name="contract_no" value="{{ sheet['contract_no'] }}"></label>
+      <label class="field w-sm"><span class="field-label">Stage</span>
+        <input type="text" name="stage" value="{{ sheet['stage'] }}"></label>
+      <label class="field w-sm"><span class="field-label">Engineer</span>
+        <input type="text" name="engineer" value="{{ sheet['engineer'] }}"></label>
+      <label class="field w-sm"><span class="field-label">Contractor</span>
+        <input type="text" name="contractor" value="{{ sheet['contractor'] }}"></label>
+      {{ date_field('received_on', sheet['received_on'], 'Received', 'w-sm') }}
+      <label class="field w-sm"><span class="field-label">Days to answer</span>
+        <input type="number" name="due_days" min="0" step="1" value="{{ sheet['due_days'] }}"></label>
+      <label class="field w-md"><span class="field-label">Against which document</span>
+        <select name="submittal_id">
+          <option value="">Not one in the register</option>
+          {% for one in submittals %}
+            <option value="{{ one['id'] }}" {{ 'selected' if sheet['submittal_id'] == one['id'] }}>
+              {{ one['number'] }} — {{ one['title'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary" {{ 'disabled' if not can_edit }}>Save</button>
+    </form>
+
+    {% if can_edit %}
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
+      <div class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <form method="post" enctype="multipart/form-data" class="inline-form"
+              action="{{ url_for('crs.upload_onto', project_id=project['id'], sheet_id=sheet['id']) }}">
+          <label class="field w-lg">
+            <span class="field-label">A newer copy of the client's form</span>
+            <input type="file" name="workbook" accept=".xlsx">
+          </label>
+          <button type="submit" class="btn btn-ghost">Read it in</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('crs.delete_sheet', project_id=project['id'], sheet_id=sheet['id']) }}">
+          <button type="submit" class="btn btn-ghost">Delete this sheet</button>
+        </form>
+      </div>
+      <p class="small muted" style="margin-top:6px">
+        Reading a newer copy in replaces the comments with the register as the client now holds
+        it. Answers already written here are kept against the comment they answer, matched on
+        the client's own numbering.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

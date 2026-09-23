@@ -2115,6 +2115,91 @@
     });
   })();
 
+  // --- a comment sheet, saved as it is typed -------------------------------
+  //
+  // Forty comments, each with an answer, a code and a sign-off. Nobody is
+  // going to press Save forty times, and a page that reloads on every cell
+  // loses where you were reading. So each cell saves itself: a select the
+  // moment it changes, a typed answer after a pause, and the sheet's own
+  // counts come back with the answer because closing one comment moves them.
+
+  (function () {
+    var card = document.querySelector('[data-crs-sheet]');
+    if (!card || !window.fetch) return;
+
+    var pattern = card.getAttribute('data-crs-url') || '';
+    var waiting = {};
+
+    function mark(cell, state) {
+      ['saving', 'saved', 'trouble'].forEach(function (word) {
+        cell.classList.toggle(word, word === state);
+      });
+      if (state === 'saved') {
+        window.setTimeout(function () { cell.classList.remove('saved'); }, 1200);
+      }
+    }
+
+    function counts(said) {
+      // The heading figures, so signing a comment off moves the tiles without
+      // the page being asked for again.
+      var tiles = document.querySelectorAll('[data-crs-count]');
+      tiles.forEach(function (box) {
+        var name = box.getAttribute('data-crs-count');
+        if (said[name] !== undefined) box.textContent = said[name];
+      });
+    }
+
+    function save(cell) {
+      var id = cell.getAttribute('data-comment');
+      var field = cell.getAttribute('data-crs-cell');
+      var body = new FormData();
+      body.append(field, cell.value);
+      mark(cell, 'saving');
+
+      fetch(pattern.replace(/\/0$/, '/' + id), {
+        method: 'POST', body: body, credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }).then(function (r) { return r.json().then(function (had) { return [r.ok, had]; }); })
+        .then(function (answer) {
+          if (!answer[0] || !answer[1].ok) {
+            mark(cell, 'trouble');
+            say((answer[1] && answer[1].error) || 'That did not save');
+            return;
+          }
+          mark(cell, 'saved');
+          var row = cell.closest('tr');
+          var said = answer[1].comment;
+          if (row) {
+            row.classList.toggle('is-late', !!said.late);
+            row.classList.toggle('is-closed', !!said.closed);
+            var badge = row.querySelector('[data-crs-overdue]');
+            if (badge) {
+              badge.innerHTML = said.late
+                ? '<span class="badge critical"><span aria-hidden="true">\u25a0</span> '
+                  + said.overdue + 'd late</span>'
+                : '';
+            }
+          }
+          counts(answer[1].sheet || {});
+          window.dispatchEvent(new Event('pm:saved'));
+        }).catch(function () { mark(cell, 'trouble'); });
+    }
+
+    card.addEventListener('change', function (event) {
+      var cell = event.target.closest('[data-crs-cell]');
+      if (cell) save(cell);
+    });
+
+    card.addEventListener('input', function (event) {
+      var cell = event.target.closest('textarea[data-crs-cell]');
+      if (!cell) return;
+      // After a pause: a sentence typed out is one save, not thirty.
+      var id = cell.getAttribute('data-comment') + cell.getAttribute('data-crs-cell');
+      window.clearTimeout(waiting[id]);
+      waiting[id] = window.setTimeout(function () { save(cell); }, 700);
+    });
+  })();
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

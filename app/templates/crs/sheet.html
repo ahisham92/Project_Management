@@ -268,6 +268,54 @@
   </div>
 </div>
 
+{# --- what the programme should feel -------------------------------------- #}
+{% if rework['sends_it_back'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>This one goes round again</h2>
+      <p class="small muted" style="margin-top:2px">
+        Code {{ rework['code'] }} — {{ rework['said'] }}. That is the programme's business and
+        not just the sheet's: the deliverable takes another revision, drops back to the step the
+        project nominates, and is rescheduled around a new submission date.
+      </p>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if deliverable %}
+      <p class="small" style="margin-top:0">
+        Against <strong>{{ deliverable['wbs'] }} {{ deliverable['name'] }}</strong>,
+        now on revision {{ deliverable['revision'] }}.
+      </p>
+      {% if can_edit %}
+        <form method="post" class="inline-form" style="align-items:flex-end;flex-wrap:wrap"
+              action="{{ url_for('crs.record_rework', project_id=project['id'], sheet_id=sheet['id']) }}"
+              data-confirm="This raises a revision on {{ deliverable['wbs'] }} and moves its dates. Go ahead?">
+          {{ date_field('comments_date', sheet['received_on'], 'Comments received', 'w-sm') }}
+          {{ date_field('new_submission_date', '', 'Resubmitting', 'w-sm') }}
+          <label class="field w-lg">
+            <span class="field-label">Note on the revision</span>
+            <input type="text" name="note"
+                   placeholder="{{ rework['comments'] }} comments on {{ sheet['drf_ref'] or sheet['title'] }}">
+          </label>
+          <button type="submit" class="btn btn-primary">Record it against the deliverable</button>
+        </form>
+        <p class="small muted" style="margin-top:6px">
+          Leave the resubmission date empty and the project's own rework allowance sets it.
+          This is the same thing the Progress tab does when comments are recorded there — done
+          from here so that reading the sheet and moving the programme are one action.
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="small muted" style="margin-top:0">
+        This sheet is not against a document in the register, so there is no deliverable for it
+        to move. Point it at one below and the rework can be recorded from here.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {# --- the sheet's own header ---------------------------------------------- #}
 <div class="card" style="margin-top:16px">
   <div class="card-head">

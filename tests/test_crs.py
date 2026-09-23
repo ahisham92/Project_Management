@@ -311,3 +311,38 @@ def test_a_code_c_sheet_says_the_submission_goes_round_again(signed_in, app, upl
     assert said["code"] == "C"
     assert said["sends_it_back"] is True
     assert said["comments"] == 5
+
+
+def test_a_code_c_sheet_moves_the_deliverable_it_is_about(signed_in, app, uploaded):
+    """Reading the sheet and moving the programme are one action: the
+    deliverable takes another revision and a new submission date."""
+    from app.db import query_one
+
+    with app.app_context():
+        from app.db import execute, insert
+
+        task = dict(query_one("SELECT * FROM tasks WHERE project_id = 1 ORDER BY id LIMIT 1"))
+        # Put the deliverable where a client's comments can land on it: nothing
+        # can come back that has not gone out.
+        execute("UPDATE tasks SET status_key = 'submitted' WHERE id = ?", (task["id"],))
+        # And hang a document off it for the sheet to be against.
+        kind = insert("INSERT INTO document_kinds (project_id, key, name, code) "
+                      "VALUES (1, 'dwg', 'Drawings', 'DWG')")
+        doc = insert("INSERT INTO submittals (project_id, task_id, kind_id, number, title) "
+                     "VALUES (1, ?, ?, 'D-001', 'A drawing')", (task["id"], kind))
+
+    signed_in.post(f"/crs/1/sheets/{uploaded}", data={"submittal_id": doc})
+    answer = signed_in.post(f"/crs/1/sheets/{uploaded}/rework",
+                            data={"comments_date": "01/09/2026"}, follow_redirects=True)
+
+    with app.app_context():
+        after = dict(query_one("SELECT * FROM tasks WHERE id = ?", (task["id"],)))
+    assert after["revision"] == int(task["revision"] or 0) + 1
+    assert after["status_key"] != "submitted", "back to where the rework starts"
+    assert "Code C" in text(answer)
+
+
+def test_a_sheet_against_nothing_has_no_deliverable_to_move(signed_in, app, uploaded):
+    """Better to say so than to guess at which line on the programme it meant."""
+    answer = signed_in.post(f"/crs/1/sheets/{uploaded}/rework", follow_redirects=True)
+    assert "not against a deliverable" in text(answer)

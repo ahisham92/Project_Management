@@ -22,7 +22,9 @@ from .. import crs_store as store
 from ..auth import ROLE_RANK, load_project, login_required, require_edit, visible_project_ids
 from ..crs_excel import MIMETYPE
 from ..crs_sheet import CODES, SIGNOFFS, is_late, overdue_days, tally, by_trade, worst_code
+from ..dates import from_input, from_input_or, to_display
 from ..db import query, query_one
+from ..service import WorkflowError, load_steps, record_comments, today
 
 bp = Blueprint("crs", __name__, url_prefix="/crs")
 
@@ -50,6 +52,24 @@ def _sheet_or_404(project_id: int, sheet_id: int) -> dict:
     if row is None:
         abort(404)
     return row
+
+
+def _deliverable(sheet: dict) -> dict | None:
+    """The line on the programme this sheet's comments land on.
+
+    Either the sheet says which one, or the document it is against does. A
+    sheet against nothing in the register lands on nothing, and says so rather
+    than guessing at a deliverable.
+    """
+    task_id = sheet.get("task_id")
+    if not task_id and sheet.get("submittal_id"):
+        row = query_one("SELECT task_id FROM submittals WHERE id = ?",
+                        (sheet["submittal_id"],))
+        task_id = row["task_id"] if row else None
+    if not task_id:
+        return None
+    row = query_one("SELECT * FROM tasks WHERE id = ?", (int(task_id),))
+    return dict(row) if row else None
 
 
 def _comment_or_404(project_id: int, comment_id: int) -> dict:
@@ -138,6 +158,7 @@ def sheet(project_id: int, sheet_id: int):
         submittals=store.submittals_of(project_id),
         can_edit=ROLE_RANK[role] >= ROLE_RANK["manager"],
         original=store.original(sheet_id) is not None,
+        rework=store.sheet_is_rework(sheet_id), deliverable=_deliverable(row),
     )
 
 
@@ -356,3 +377,55 @@ def read_file(project_id: int, file_id: int):
                     mimetype=held["mimetype"] or "application/octet-stream",
                     headers={"Content-Disposition":
                              f'inline; filename="{held["name"]}"'})
+
+
+# --- what the programme feels ------------------------------------------------
+
+@bp.post("/<int:project_id>/sheets/<int:sheet_id>/rework")
+@login_required
+def record_rework(project_id: int, sheet_id: int):
+    """A Code C or D is the programme's business, not just the sheet's.
+
+    The submission goes round again: the deliverable takes another revision,
+    drops back to the step the project nominates and is rescheduled around a new
+    submission date. That is the same thing the Progress tab does when somebody
+    records comments there — done from here so that reading the sheet and
+    moving the programme are one action rather than two, and so the note on the
+    revision says which sheet it came from.
+    """
+    project, role = load_project(project_id, "member")
+    sheet = _sheet_or_404(project_id, sheet_id)
+    if not require_edit(role):
+        return redirect(url_for("crs.sheet", project_id=project_id, sheet_id=sheet_id))
+
+    task = _deliverable(sheet)
+    if task is None:
+        flash("This sheet is not against a deliverable, so there is nothing to move. "
+              "Point it at a document in the register first.", "error")
+        return redirect(url_for("crs.sheet", project_id=project_id, sheet_id=sheet_id))
+
+    said = store.sheet_is_rework(sheet_id)
+    if not said["code"]:
+        flash("No returned code on this sheet yet — nothing says the submission "
+              "comes back.", "error")
+        return redirect(url_for("crs.sheet", project_id=project_id, sheet_id=sheet_id))
+
+    name = sheet["drf_ref"] or sheet["report_no"] or sheet["title"] or f"sheet {sheet_id}"
+    try:
+        made = record_comments(
+            task, project, load_steps(project_id),
+            from_input_or(request.form.get("comments_date"),
+                          sheet["received_on"] or today()),
+            from_input(request.form.get("new_submission_date")) or "",
+            (request.form.get("note") or
+             f"{said['comments']} comments on {name}").strip(),
+            dict(g.user)["id"], code=said["code"])
+    except WorkflowError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("crs.sheet", project_id=project_id, sheet_id=sheet_id))
+
+    store.update_sheet(sheet_id, task_id=task["id"])
+    flash(f"{task['wbs'] or task['name'][:40]} — Code {made['code']}, moved to revision "
+          f"{made['revision']}, back to \u201c{made['reset_to']}\u201d and resubmitting "
+          f"{to_display(made['submission_date'])}.", "success")
+    return redirect(url_for("crs.sheet", project_id=project_id, sheet_id=sheet_id))

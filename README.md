@@ -7,7 +7,7 @@ deliverables carry **weights**, progress is reported against a **planned curve**
 It replaces the spreadsheet with something several people can use at once, from anywhere,
 across a whole **portfolio** of projects.
 
-## Two applications, one address
+## Two doors, one address
 
 The site opens on a choice rather than dropping everybody into one application:
 
@@ -16,31 +16,34 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Project Management** | Everything described in this README — programme, progress, budget, the register, the resource plan, the minutes. | `/projects` |
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
 
-They are **separate applications with separate data**, joined at the WSGI layer rather than
-inside Flask: the CRS is mounted in front of `/crs` as an application of its own, so it keeps
-its own routes, templates and database and neither has to know how the other works. One sign-in
-covers both, and one web app on the host serves the pair.
-
-**The CRS is optional.** Nothing here depends on it. With no CRS installed the door is still
-offered, marked *not installed*, and leads to a page saying how to add one. See
-[Adding the comment response sheet](#adding-the-comment-response-sheet).
+They are **two jobs in one application and one database**. One sign-in covers both, one web app
+on the host serves the pair, and — because it is one database — a comment is against a document
+the register numbered, owed by one of the project's own trades, and answered by a real account.
 
 ### About the comment response sheet
 
-It is one HTML file — markup, styles, and a good deal of JavaScript including its own reader
-and writer for `.xlsx` workbooks. It takes a submission's comment register in, gives each
-comment a response, a trade, a due date and a thread, carries photographs, and writes the
-workbook back out. `crs/__init__.py` does nothing but hand the file over, after checking that
-whoever asked has signed in to project control — one sign-in for the pair.
+A client reads a submission and sends back a register of comments. Upload their own review
+response form and it is read whole: the header, every comment, and the discipline each one is
+against, matched to the trade that owes it. Or raise an empty sheet and type the comments in.
 
-**It keeps its work in each browser, not on the server.** That is how it was written, and it is
-the thing to know before handing the address round: everyone gets their own copy, two people do
-not see each other's sheets, and clearing a browser's data clears the sheets with it. The app
-says as much on its own sign-in page. It is a real limit rather than a setting — moving the
-work to a shared database is a change to the application, not to how it is served.
+Then answer it. The client's words down the left, ours down the right, and every cell on the
+right saves itself as it is typed — the response, the returned code, the sign-off, the trade
+and the date it is owed by. Their columns are not editable from those cells: answering a
+comment by editing it is not answering it. Each comment carries a thread and whatever files
+belong to it — a marked-up PDF, a photograph.
 
-Its sign-in is its own, separate from project control's: the project control one decides
-whether the page is served at all, and the CRS one decides what the page shows once it loads.
+**What goes back out is the client's own workbook**, patched rather than rebuilt, so their
+letterhead, their drawings and their printer settings come back exactly as they arrived. A
+sheet raised here goes out on the blank form in `app/forms/`.
+
+A **Code C or D** is the programme's business too: from the sheet, record it against the
+deliverable and that line takes another revision, drops back to the step the project nominates,
+and is rescheduled around a new submission date.
+
+**The sheet that kept its work in your browser** is still mounted, at `/crs/classic`. Nothing
+shared lives in it any more — everyone had their own copy and two people never saw the same
+sheet — but whatever is still in somebody's browser can be opened and exported from there. See
+[The older, browser-kept sheet](#the-older-browser-kept-sheet).
 
 **Python only.** No Node.js, no npm, no build step, and nothing to compile. The database
 is SQLite, which is part of Python itself. It needs six packages: Flask, Waitress,
@@ -1182,50 +1185,50 @@ then **Web** tab → **Reload**. That is the whole update. Your data is in
 `~/project-data`, outside the repository, so a pull never touches it, and new database
 columns are added on the first request after the reload.
 
-After this particular update the site opens on the **choice of two applications** instead of
-going straight to the portfolio. Project management moved from `/` to `/projects`; every link
-inside the app already points at the new address, but a bookmark straight to `/` now lands on
-the door rather than the portfolio, which is the intended change.
+After this particular update the site opens on the **choice of two doors** instead of going
+straight to the portfolio. Project management moved from `/` to `/projects`; every link inside
+the app already points at the new address, but a bookmark straight to `/` now lands on the door
+rather than the portfolio, which is the intended change. The comment response sheets are at
+`/crs` and are part of this application and this database — the four tables they need are
+created on the first request after the reload, so there is nothing to run. The sheet that kept
+its work in each browser moved to `/crs/classic`; anything left in somebody's browser is still
+there and can be exported from it.
 
-### Adding the comment response sheet
+### The older, browser-kept sheet
 
-**One is already installed** — `crs/` in this repository, served at `/crs`. Nothing below needs
-doing unless you are replacing it with a different one.
+The comment response sheets live in this application and this database now, at `/crs`. Nothing
+below needs doing to use them — a `git pull` and a **Reload** is the whole of it.
 
-The CRS is a separate application mounted in front of `/crs`. To install one, put a package
-called `crs` beside `app`, with a `create_app()` that returns a Flask application:
+What the rest of this section is about is the sheet that came before: one HTML file that kept
+its work in each person's browser. It is still mounted, out of the way at `/crs/classic`, so
+that anything left in somebody's browser can be opened and exported rather than lost. It is
+`crs/` in this repository and it is optional — delete the folder and the site is unaffected.
+
+It is mounted as an application of its own. To mount a different one, put a package called
+`crs` beside `app`, with a `create_app()` that returns a Flask application:
 
 ```
 ~/Project_Management/
-  app/            ← project management
+  app/            ← everything, including the comment response sheets at /crs
   crs/
-    __init__.py   ← def create_app(): ... returns a Flask app
+    __init__.py   ← def create_app(): ... returns a Flask app, served at /crs/classic
   wsgi.py
 ```
 
 That is the whole contract — `wsgi.py` looks for it on the way up and mounts whatever it
 finds. Nothing else changes: no new web app, no second domain, no edit to the WSGI file.
-**Reload** and the door opens.
 
-If the CRS lives in its own git repository, clone it into place rather than copying files:
-
-```bash
-cd ~/Project_Management
-git clone https://github.com/<you>/<crs-repo>.git crs
-.venv/bin/pip install -r crs/requirements.txt   # if it has its own
-```
-
-Two environment variables adjust where the door leads. Add either to the WSGI file, above the
+Two environment variables adjust it. Add either to the WSGI file, above the
 `from wsgi import application` line:
 
 | Variable | What it does |
 |---|---|
 | `CRS_APP` | Mount a factory that is not `crs:create_app` — for example `mypackage.factory:build`. |
-| `CRS_URL` | Make the door a plain link instead, for a CRS deployed on its own: `https://crs.example.com/`. |
+| `CRS_URL` | Point the link at something deployed on its own instead: `https://crs.example.com/`. |
 
-**A broken CRS never takes the site down.** If the package is there but will not import,
-project management keeps serving and `/crs` shows what went wrong. One application failing to
-start is not a reason for the other to stop answering.
+**A broken one never takes the site down.** If the package is there but will not import,
+everything else keeps serving. One application failing to start is not a reason for the other
+to stop answering.
 
 **6. Open `https://<username>.pythonanywhere.com/register`** and create your account — the
 first one is the administrator. There is no need to run `seed` unless you also want the demo

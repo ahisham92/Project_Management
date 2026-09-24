@@ -55,6 +55,7 @@ from .circular import ConcreteLaw, SteelLaw
 from .crack import autogenous_shrinkage, crack_width, restraint_crack, restraint_factor
 from .governing import pick_sets
 from .rect import Bars, RectSection
+from .tension import beam_tension
 from .truss import check_truss, spacing_from_supports
 
 BEAM_TYPES = (ElementType.FRONT_BEAM, ElementType.REAR_BEAM, ElementType.TRANSVERSE_BEAM)
@@ -415,6 +416,27 @@ def cage_bars(g: Geometry, cage: Cage, dg: float, torsion: float = 0.0) -> Bars:
             col = Bars.column(cage.side.count, cage.side.phi, u, half_h)
             groups.append(Bars(col.u, col.v + mid, col.area * left(cage.side, "side")))
     return Bars.join(*groups)
+
+
+def adsec_lines(g: Geometry, cage: Cage, dg: float) -> list[dict]:
+    """The cage as bar lines for AdSec: {phi, count, a: [u, v], b: [u, v]} in mm, u across, v up."""
+    out = []
+    for face, up in ((cage.top, 1), (cage.bottom, -1)):
+        half_w = g.b / 2 - g.inner(face.phi)
+        for k in range(face.layers):
+            v = up * (g.h / 2 - g.inner(face.phi) - k * g.layer_gap(face.phi, dg))
+            ends = (-half_w, half_w) if face.count > 1 else (0.0, 0.0)
+            out.append({"phi": face.phi, "count": face.count, "a": [ends[0], v], "b": [ends[1], v]})
+    if cage.side.count:
+        col = Bars.column(cage.side.count, cage.side.phi, 0.0, 1.0)
+        v_top = g.h / 2 - g.inner(cage.top.phi)
+        v_bot = -(g.h / 2 - g.inner(cage.bottom.phi))
+        half_h, mid = (v_top - v_bot) / 2, (v_top + v_bot) / 2
+        lo, hi = float(col.v.min()) * half_h + mid, float(col.v.max()) * half_h + mid
+        for side in (-1, 1):
+            u = side * (g.b / 2 - g.inner(cage.side.phi))
+            out.append({"phi": cage.side.phi, "count": cage.side.count, "a": [u, hi], "b": [u, lo]})
+    return [{**d, "a": [round(x, 1) for x in d["a"]], "b": [round(x, 1) for x in d["b"]]} for d in out]
 
 
 def _laws(beam: BeamInput, settings: DesignSettings) -> tuple[ConcreteLaw, SteelLaw]:
@@ -1206,6 +1228,7 @@ def design_beam(
                 for u, v, a in zip(sec.bars.u, sec.bars.v, sec.bars.area, strict=True)
             ],
             "link_diameter_mm": g.link,
+            "lines": adsec_lines(g, cage, dg),
         },
         "utilisation": round(max(finite), 3) if finite else None,
         "passed": bool(passed),
@@ -1218,6 +1241,7 @@ def design_beam(
         "truss": truss,
         "steel": steel,
         "bands": bands,
+        "tension": beam_tension([mom, qp_all], lay.start, BAND, lambda i: _band_at(lay, i), g.b, g.h),
         "profile": _profile(mom, u),
         "governing_sets": sets,
     }
@@ -1234,6 +1258,12 @@ def _profile(mom: pd.DataFrame, u: np.ndarray) -> list[dict]:
         }
         for s, r in f.iterrows()
     ]
+
+
+def _band_at(lay: Layout, i: int) -> list[float]:
+    s = lay.start + (i + 0.5) * BAND
+    x, y = (lay.centre, s) if lay.along == "Y" else (s, lay.centre)
+    return [round(x, 3), round(y, 3), round(lay.level, 2)]
 
 
 def beam_bands(lay: Layout, frame: pd.DataFrame) -> list[list[float]]:

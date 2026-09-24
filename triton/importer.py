@@ -51,6 +51,7 @@ class SheetData:
     blank_rows: int = 0
     duplicate_rows: int = 0
     empty: bool = False
+    duplicates: pd.DataFrame | None = None  # the repeated rows, kept until their removal is accepted
 
     @property
     def action_columns(self) -> list[str]:
@@ -92,7 +93,7 @@ def _is_blank(row: Row) -> bool:
     return all(_is_empty_cell(v) for v in row)
 
 
-def _is_header(row: Row) -> bool:
+def is_header(row: Row) -> bool:
     cells = {str(v).strip().lower() for v in row if isinstance(v, str)}
     return "node" in cells and any(c.startswith("x") and "[" in c for c in cells)
 
@@ -129,7 +130,7 @@ def clean_sheet(name: str, rows: list[Row]) -> SheetData:
         issue(Severity.INFO, "empty_sheet", "Sheet is empty and was ignored.")
         return SheetData(name, parsed, pd.DataFrame(), issues=issues, raw_rows=len(rows), empty=True)
 
-    header_idx = [i for i in non_blank if _is_header(rows[i])]
+    header_idx = [i for i in non_blank if is_header(rows[i])]
     if not header_idx:
         issue(
             Severity.ERROR,
@@ -293,14 +294,17 @@ def _design_columns(sheet: SheetData) -> list[str]:
 def _drop_duplicates(sheet: SheetData, issue) -> None:
     f = sheet.frame
     before = len(f)
-    f = f.drop_duplicates(subset=_design_columns(sheet), keep="first").reset_index(drop=True)
+    repeated = f.duplicated(subset=_design_columns(sheet), keep="first")
+    sheet.duplicates = f[repeated].reset_index(drop=True) if repeated.any() else None
+    f = f[~repeated].reset_index(drop=True)
     sheet.duplicate_rows = before - len(f)
     sheet.frame = f
     if sheet.duplicate_rows:
         issue(
             Severity.INFO,
             "duplicate_rows_removed",
-            f"Removed {sheet.duplicate_rows} repeated row(s) (same node, same forces).",
+            f"{sheet.duplicate_rows} repeated row(s) (same node, same forces).",
+            sheet.duplicates[EXCEL_ROW].astype(int).tolist(),
         )
 
 

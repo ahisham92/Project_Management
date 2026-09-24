@@ -19,11 +19,10 @@ reportlab>=4.0,<6.0
 pypdf>=4.0,<7.0
 
 # Triton, the quay element designer mounted at /triton (the triton folder). It is
-# a FastAPI application, run inside this WSGI site through a2wsgi; pandas and
+# a FastAPI application, run inside this WSGI site by triton/wsgi.py; pandas and
 # numpy read the Plaxis workbooks, pyxlsb the binary .xlsb ones, python-docx
 # writes the Word reports and Pillow draws their figures. All are wheels on
 # PythonAnywhere — nothing to compile. Kept in step with Triton's pyproject.toml.
-a2wsgi>=1.10
 fastapi>=0.110
 numpy>=1.26
 pandas>=2.1

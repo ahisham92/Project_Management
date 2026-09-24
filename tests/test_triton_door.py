@@ -7,6 +7,9 @@ without project control's sign-in, and that its files land beside the database.
 
 from __future__ import annotations
 
+import os
+import signal
+
 import pytest
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.test import Client
@@ -123,3 +126,17 @@ def test_the_wsgi_entry_point_mounts_triton(monkeypatch):
 
     again = importlib.reload(wsgi)
     assert "/triton" in again.application.mounts
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="needs fork")
+def test_triton_answers_in_a_forked_worker(site):
+    """PythonAnywhere's server loads the site and then forks its workers. Triton has to answer in
+    the fork, where no thread started at import survives."""
+    sign_in(site)
+    pid = os.fork()
+    if pid == 0:  # the worker
+        signal.alarm(20)
+        ok = site.get("/triton/").status_code == 200 and site.get("/triton/api/projects").status_code == 200
+        os._exit(0 if ok else 1)
+    _, code = os.waitpid(pid, 0)
+    assert os.WIFEXITED(code) and os.WEXITSTATUS(code) == 0

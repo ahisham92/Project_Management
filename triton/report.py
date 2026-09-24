@@ -12,7 +12,7 @@ from typing import Any
 
 from . import clock
 from .alignment import named_parts
-from .figures import slab_stations
+from .figures import deflected_shape, slab_stations
 from .materials import STEEL_DENSITY
 from .project import DesignSettings, Project, Section
 
@@ -141,6 +141,7 @@ def build_report(project: Project, section: Section, results: dict, detail: str 
     for a in results.get("approach_slabs", []):
         _approach_summary(r, a)
     _construction_joints(r, results)
+    _deflections(r, results.get("deflections"))
     if detail == "detailed":
         r.h(1, "Appendix A. Calculations of each element")
         for p in results.get("piles", []):
@@ -1101,6 +1102,62 @@ def _joint_calcs(r: Report, d: dict) -> None:
             r.note(w)
 
 
+TOE_WORDS = {
+    "fixed": "fixed at the toe (no displacement and no rotation), the member being deeply embedded",
+    "firm_soil": "held at the toe and at the firm soil level (no displacement at either), the toe rotating",
+}
+
+
+def _deflections(r: Report, est: dict | None) -> None:
+    """3.8: the displacements estimated from the straining actions (not a Plaxis displacement run)."""
+    if not est or not (est.get("elements") or est.get("skipped")):
+        return
+    ds = est.get("settings") or {}
+    stiffness = (
+        "cracked where the moment passes the cracking moment (EN 1992-1-1 7.4.3 for the piles, 0.6 Ecm·Ic for "
+        "the combi wall infill, EN 1994-1-1 6.7.3.3)"
+        if ds.get("stiffness") == "cracked"
+        else "gross (uncracked)"
+    )
+    r.h(2, "3.8 Estimated displacements from the straining actions")
+    r.p(
+        "ESTIMATE, not a Plaxis displacement result. Each member's curvature M / EI, from the moments in the "
+        f"workbook, is integrated twice along it; piles and walls are {TOE_WORDS.get(ds.get('toe'), '')}, with "
+        f"{stiffness} E·I{' and long-term concrete Ec,eff = Ecm / (1 + φ)' if ds.get('long_term') else ''}. "
+        "Slabs and beams are a simple strip estimate relative to their supports. The estimate is the members' own "
+        "bending: it leaves out the soil springs, the toe moving in the ground, axial shortening and "
+        "second-order effects, and it is only as good as the Plaxis moments. Signs follow each member's local "
+        "axes; the size and the shape are what it gives."
+    )
+    rows = [
+        [
+            e["element"],
+            e["combination"],
+            e["max_direction"],
+            "–" if e.get("head_mm") is None else e["head_mm"],
+            e["max_mm"],
+            f"{e['max_at']:g} m {'level' if e.get('axis') == 'level' else 'along'}",
+        ]
+        for e in est.get("elements") or []
+    ]
+    if rows:
+        r.caption("Table 3-10: Estimated displacements (from the straining actions)")
+        r.table(["Element", "Combination", "Direction", "Head / top (mm)", "Largest (mm)", "At"], rows)
+    r.bullets(
+        [
+            f"{e['element']}: {e['at']}. {e['boundary']} {e['stiffness']} Combination {e['combination']}: "
+            f"{e['combination_note']}."
+            for e in est.get("elements") or []
+        ]
+    )
+    r.bullets(est.get("skipped") or [])
+    n = 0
+    for e in est.get("elements") or []:
+        if e.get("axis") == "level":
+            n += 1
+            r.image(deflected_shape(e), f"Figure 3-{n + 1}: {e['element']}, estimated deflected shape")
+
+
 def _sets(r: Report, sets: list[dict], title: str) -> None:
     for st in sets or []:
         head = f"{title}, {st.get('top', '')} to {st.get('bottom', '')} m, {st.get('cage', '')}"
@@ -1535,6 +1592,49 @@ def _beam(r: Report, b: dict) -> None:
                 ("Result", _ok(bo.get("passed"))),
             ]
         )
+        bb = bo.get("beam_bars")
+        if bb:
+            r.h(3, "Extra bars in the front beam for the bollard")
+            r.table(
+                ["For", "Needs", "Bars"],
+                [[x["what"], x["need"], x["bars"]] for x in bb["rows"]]
+                + [["Top, in all", f"{bb['top_total_mm2']} mm²", bb["top_bars"]]],
+            )
+            r.kv(
+                [
+                    ("Torsion", f"T = {_fmt(bb['T_kNm'])} kNm, {_fmt(bb['T_Ed_kNm'])} kNm each side"),
+                    ("Thin-walled section", f"tef {bb['tef_mm']} mm, Ak {bb['Ak_m2']} m², uk {bb['uk_m']} m"),
+                    ("Struts", f"TRd,max {_fmt(bb['T_Rd_max_kNm'])} kNm, utilisation {bb['utilisation']}"),
+                    (
+                        "Uplift",
+                        f"P {_fmt(bb['uplift_kN'])} kN over {bb['span_m']:g} m: M {_fmt(bb['M_uplift_kNm'])} kNm",
+                    ),
+                ]
+            )
+            r.note(bb["note"])
+        th = bo.get("thickening")
+        if th:
+            r.h(3, "Thickened slab at the bollard to the slab")
+            r.kv(
+                [
+                    (
+                        "Step",
+                        f"{th['thickening_mm']:g} mm to {th['slab_mm']:g} mm, {th['width_m']:g} m wide, {th['length_m']:g} m from the beam",
+                    ),
+                    (
+                        "Tension at the step",
+                        f"N {_fmt(th['N_kN'])} kN at e {th['e_mm']} mm: M {_fmt(th['M_kNm'])} kNm, z {th['z_mm']} mm",
+                    ),
+                    (
+                        "Bottom",
+                        f"needs {th['bottom']['need_mm2']} mm², ties give {th['bottom']['ties_mm2']} mm² (utilisation {th['bottom']['utilisation']})",
+                    ),
+                    ("Top", f"needs {th['top']['need_mm2']} mm², mesh {th['top']['mesh_mm2']} mm²"),
+                    ("Shear", f"V {_fmt(th['V_kN'])} kN: {th['links_note']}"),
+                    ("Bars past the step", f"{th['lap_past_step_mm']} mm (lap, EN 1992-1-1 8.7.3)"),
+                    ("Result", _ok(th["passed"])),
+                ]
+            )
     tr = b.get("truss")
     if tr and tr.get("cases"):
         r.h(3, "Truss model between king piles")

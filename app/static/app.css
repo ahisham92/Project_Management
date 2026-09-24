@@ -641,11 +641,12 @@ input[type="checkbox"] { width: auto; }
   background: #2a78d6; color: #fff; font-weight: 700; letter-spacing: 0.02em;
 }
 .door-mark-crs { background: #1f9d76; font-size: 0.82rem; }
+.door-mark-triton { background: #0f4c81; }
 .door-name { font-size: 1.15rem; font-weight: 650; }
 .door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
 .door-go { margin-top: 4px; color: var(--series-1); font-size: 0.9rem; font-weight: 600; }
 /* A door with nothing behind it yet. Still a door — it explains itself. */
-.door-shut .door-mark-crs { background: var(--ink-2); }
+.door-shut .door-mark-crs, .door-shut .door-mark-triton { background: var(--ink-2); }
 .door-tag {
   margin-left: 6px; padding: 1px 7px; border-radius: 999px;
   background: var(--surface-2, rgba(127, 127, 127, 0.12));

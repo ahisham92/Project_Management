@@ -29,6 +29,7 @@ from threading import Timer
 def _serve(args: argparse.Namespace) -> int:
     from app import create_app
     from app.crs import MOUNT, NAME, load as load_crs
+    from app.triton_door import MOUNT as TRITON, describe as describe_triton, mounts as triton_mounts
     from app.db import database_path
 
     app = create_app()
@@ -38,14 +39,21 @@ def _serve(args: argparse.Namespace) -> int:
     # application mounted in front of /crs — the same arrangement the host
     # serves, so what runs on a laptop is what runs in front of the team.
     crs = load_crs()
+    mounted = {MOUNT: crs} if crs is not None else {}
+    triton = triton_mounts(app)
+    mounted.update(triton)
     served = app
-    if crs is not None:
+    if mounted:
         from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
-        served = DispatcherMiddleware(app, {MOUNT: crs})
+        served = DispatcherMiddleware(app, mounted)
 
     print(f"Project Control is running at {url}")
     print(f"{NAME}: {url}{MOUNT}" if crs is not None else f"{NAME}: not installed")
+    if triton:
+        print(f"Triton: {url}{TRITON}/")
+    else:
+        print(f"Triton: not installed ({describe_triton()['trouble'] or 'no triton package'})")
     print(f"Database: {database_path()}")
     print("Press Ctrl+C to stop.\n")
 
@@ -54,7 +62,7 @@ def _serve(args: argparse.Namespace) -> int:
 
     if args.debug:
         # Flask's reloader wants the Flask app, so debugging runs the root
-        # application on its own; /crs then answers with the page that says so.
+        # application on its own; /crs/classic and /triton are not served then.
         app.run(host=args.host, port=args.port, debug=True)
     else:
         # Waitress is a production-quality pure-Python server, so the same

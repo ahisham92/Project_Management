@@ -6,8 +6,8 @@
   <div>
     <h1>Which one today?</h1>
     <p class="small muted" style="margin-top:2px">
-      Two jobs, one database and one sign-in: the programme on one side, the client's comments
-      on the other, and a comment is against a document the programme costed.
+      One sign-in for all three: the programme, the client's comments on what it hands over, and
+      the design of the quay itself.
     </p>
   </div>
 </div>
@@ -33,6 +33,17 @@
       that went out, and the trade that owes the work.
     </span>
     <span class="door-go">Open the Comment Response Sheet →</span>
+  </a>
+
+  <a class="door{% if not triton['ready'] %} door-shut{% endif %}" href="{{ triton['href'] }}">
+    <span class="door-mark door-mark-triton" aria-hidden="true">T</span>
+    <span class="door-name">Triton{% if not triton['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      Quay element design from the geotechnical team's Plaxis workbook: piles, combi and sheet
+      pile walls, slab and beams to Eurocode with BS 6349 — reinforcement, utilisation ratios,
+      calculation reports and the AdSec force sets.
+    </span>
+    <span class="door-go">Open Triton →</span>
   </a>
 </div>
 

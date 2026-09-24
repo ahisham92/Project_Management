@@ -1194,6 +1194,38 @@ created on the first request after the reload, so there is nothing to run. The s
 its work in each browser moved to `/crs/classic`; anything left in somebody's browser is still
 there and can be exported from it.
 
+### Triton, the quay element designer
+
+Triton is the third door on the front page, and the **Triton** link in the top bar. It reads
+the geotechnical team's Plaxis workbook and designs the quay's piles, combi and sheet pile
+walls, slab and beams from it. It is an application of its own (FastAPI rather than Flask),
+mounted in front of `/triton` by `wsgi.py` and behind the same sign-in as everything else:
+nobody reaches a page or an API call of it without being signed in here.
+
+**Installing it on a site that is already running** is the update above, with the new
+requirements. In a **Bash** console:
+
+```bash
+cd ~/Project_Management
+git pull
+rm -rf ~/.cache/pip                                          # frees disk on the free plan
+.venv/bin/pip install --no-cache-dir -r requirements.txt     # adds pandas, numpy, FastAPI…
+```
+
+then **Web** tab → **Reload**. Nothing changes in the WSGI file.
+
+- **The code** is the `triton` folder, a copy of https://github.com/ahisham92/triton
+  (`src/triton`); `triton/SOURCE.txt` names the commit. Change Triton in its own repository and
+  copy it here again — a newer Triton then arrives with a `git pull` like everything else.
+- **Its files** — projects, uploaded workbooks and designs — go in `triton` inside the data
+  directory (`~/project-data/triton`), beside the database, so a pull never touches them. Set
+  `TRITON_DATA_DIR` in the WSGI file to put them elsewhere.
+- **Disk.** Triton's requirements add about 140 MB to the virtualenv (pandas and numpy are most
+  of it), and each section with its workbook and design keeps about 8 MB. On the free plan's
+  512 MB, `--no-cache-dir` matters: without it pip keeps a second copy of every download.
+- **If it will not start** — a requirement missing, most likely — the rest of the site keeps
+  serving, the Triton door is marked *not installed*, and `/triton/` says what went wrong.
+
 ### The older, browser-kept sheet
 
 The comment response sheets live in this application and this database now, at `/crs`. Nothing

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Triton is not installed{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Triton is not running here yet</h1>
+    <p class="small muted" style="margin-top:2px">
+      The rest of the site is unaffected. Triton is mounted in front of this address when it can
+      be imported, and this time it could not.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width:720px">
+  {% if triton['trouble'] %}
+    <p><strong>What went wrong:</strong> {{ triton['trouble'] }}</p>
+  {% else %}
+    <p>There is no <code>triton</code> folder beside <code>app</code> in this copy of the site.</p>
+  {% endif %}
+  <p>In a <strong>Bash</strong> console on the server:</p>
+  <pre class="code-block">cd ~/Project_Management
+git pull
+.venv/bin/pip install --no-cache-dir -r requirements.txt</pre>
+  <p>then <strong>Web</strong> tab → <strong>Reload</strong>.</p>
+</div>
+{% endblock %}

@@ -843,21 +843,18 @@ class SlabVoids(_Model):
         "spacing. Empty: from the spacing.",
         json_schema_extra={"unit": "m"},
     )
+    at_piles: Literal["stop", "leave_out"] = Field(
+        "stop",
+        title="Where a pile passes",
+        description="Stop: the voids stop short of every pile and start again beyond it, so the slab is "
+        "solid over the piles and punching is checked on the solid slab. Leave out: a void that would "
+        "come near a pile is left out along its whole length.",
+    )
     clear_to_piles: float = _mm(
         "Clear to the pile faces",
         150.0,
         ge=0,
-        description="A void that would come closer than this to a pile is left out (the slab stays solid "
-        "along that line of piles).",
-    )
-    solid_round_piles: float | None = _m(
-        "Solid round each pile",
-        None,
-        ge=0,
-        description="The voids stop this far from each pile's face and start again beyond it (a solid zone "
-        "round the pile head, e.g. 2d to keep them out of the punching perimeter u1); no void is then left "
-        "out along the lines of piles. Empty: the voids run through, and those that would hit a pile are "
-        "left out.",
+        description="Solid concrete kept between a pile's face and the nearest void.",
     )
 
 
@@ -1030,8 +1027,8 @@ class SlabInput(_ConcreteSection):
         None,
         title="Circular voids (PVC pipes)",
         description="Voids cast in the slab between the beams: bending on the voided section, shear on the "
-        "webs between the voids with links in the webs only, punching with the control perimeter over "
-        "the voids left out.",
+        "webs between the voids with links in the webs only; the voids stop short of the piles, so the slab "
+        "is solid over them.",
     )
 
 
@@ -1543,6 +1540,46 @@ DEFAULT_COMBINATIONS = [
 ]
 
 
+class Alignment(_Model):
+    """The quay's line in plan, for berths that are not one straight line (a corner)."""
+
+    mode: Literal["auto", "straight", "manual"] = Field(
+        "auto",
+        title="Berth alignment",
+        description="Automatic: the straight and inclined parts are found from the front beam's nodes. "
+        "Straight: the whole section is one straight berth. By hand: the corner points below.",
+    )
+    points: list[list[float]] = Field(
+        default_factory=list,
+        title="Alignment points (X, Y)",
+        description="By hand: the start, every corner and the end of the quay's line (the front beam's "
+        "centre line), in plan, m. Each run between two points is a part.",
+    )
+    min_angle: float = Field(
+        2.0,
+        title="Least turn for a corner",
+        gt=0,
+        le=45,
+        json_schema_extra={"unit": "°"},
+        description="Parts that turn by less than this are designed as they are (straight).",
+    )
+    own_axes: list[int] = Field(
+        default_factory=list,
+        title="Parts with results in their own axes",
+        description="Part numbers whose plate results Plaxis gives in the part's own axes (a plate drawn "
+        "along the inclined part): they are turned in plan only. Others are in global X/Y and are "
+        "transformed (M11, M22, M12 together, likewise N and Q).",
+    )
+
+    @field_validator("points")
+    @classmethod
+    def _points(cls, v: list[list[float]]) -> list[list[float]]:
+        for q in v:
+            if len(q) != 2:
+                raise ValueError("Each alignment point is X, Y.")
+        return v
+
+
 class Section(_Model):
     """One part of the structure with its own Plaxis workbook, e.g. Section 01a."""
 
@@ -1576,6 +1613,7 @@ class Section(_Model):
         default_factory=dict, title="Sheet mapping", description="Sheets assigned by hand, by sheet name."
     )
     costing: SectionCosting = Field(default_factory=SectionCosting, title="Costing")
+    alignment: Alignment = Field(default_factory=Alignment, title="Berth alignment")
     user_cages: dict[str, UserCage] = Field(
         default_factory=dict,
         title="Cages set by the user",

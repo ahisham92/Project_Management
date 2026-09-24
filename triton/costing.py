@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .alignment import combine_parts
 from .materials import STEEL_DENSITY
 from .project import CombiWallInput, ElementCosting, PileInput, Prices, Project, Section, SheetPileInput
 
@@ -141,7 +142,7 @@ def slab_links(slab: dict[str, Any]) -> dict[str, float]:
         phi, asw = z.get("phi"), z.get("asw_mm2_per_m2")
         if not phi or not asw or not z.get("x") or not z.get("y"):
             continue
-        area = abs(z["x"][1] - z["x"][0]) * abs(z["y"][1] - z["y"][0])
+        area = z.get("area_m2") or abs(z["x"][1] - z["x"][0]) * abs(z["y"][1] - z["y"][0])
         shear += asw * area * (inside + 20 * phi) / 1e3 * STEEL_DENSITY / 1e6
     punching = 0.0
     for q in slab.get("punching") or []:
@@ -162,6 +163,7 @@ def cost_section(
 ) -> dict[str, Any]:
     """``length``: the length of berth the model covers, when ``results`` do not hold the beams it is
     taken from; ``berth``: a berth length to use when the section has none (a trial costed per metre)."""
+    results = combine_parts(results)  # a corner berth's parts: one row per element
     prices = project.prices
     L = length or model_length(section, results)
     berth = section.costing.berth_length or berth

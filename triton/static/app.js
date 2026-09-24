@@ -2462,7 +2462,7 @@ function alerts(res) {
     }
     const where = (q) => `${q.pile} (X ${fmt(q.x, 1)}, Y ${fmt(q.y, 1)})`;
     for (const q of d.punching || []) {
-      if (!q.passed) add("unsafe", d.element, `punching at ${where(q)}: crushes at the pile face`);
+      if (!q.passed) add("unsafe", d.element, `punching at ${where(q)}: ${q.vEd_face_MPa > q.vRd_max_MPa ? "crushes at the pile face" : `needs more than links can give (${fmt(q.kmax_ratio, 2)} × 1.5·vRd,c)`}${punchFix(q) ? `. Fix: ${punchFix(q)}` : ""}`);
     }
     const links = (d.punching || []).filter((q) => q.passed && q.needs_reinforcement);
     if (links.length === 1) add("limit", d.element, `punching links needed at ${where(links[0])}, ${links[0].perimeters} perimeters`);
@@ -3128,7 +3128,7 @@ function slabCard(d) {
       ${punch.map((q, i) => `<tr class="link" data-punch="${i}"><td>${esc(q.pile)}</td><td>${fmt(q.x, 1)}, ${fmt(q.y, 1)}</td>
         <td><input type="number" step="any" data-depth="${i}" value="${q.thickness_mm}" style="width:80px" title="${esc(q.thickness_from)}"> mm</td><td>${fmt(q.V_kN)} kN, ${esc(q.direction)}<br><span class="status">${esc(q.combination)}</span></td><td>${fmt(q.beta, 2)}</td>
         <td>${fmt(q.vEd_MPa, 3)} / ${fmt(q.vRd_c_MPa, 3)}</td><td>${fmt(q.vEd_face_MPa, 2)} / ${fmt(q.vRd_max_MPa, 2)}</td>
-        <td>${q.needs_reinforcement ? (q.perimeters ? `${q.perimeters} perimeters @ ${fmt(q.radial_spacing_mm)} mm, ${fmt(q.asw_mm2_per_perimeter)} mm² each, to ${fmt(q.reinforced_to_mm)} mm from the face` : "–") : "none"}</td><td>${ok(q.passed)}</td></tr>`).join("")}
+        <td>${q.needs_reinforcement ? (q.perimeters ? `${q.perimeters} perimeters @ ${fmt(q.radial_spacing_mm)} mm, ${fmt(q.asw_mm2_per_perimeter)} mm² each, to ${fmt(q.reinforced_to_mm)} mm from the face` : q.fix ? `Links alone cannot: ${esc(punchFix(q))}` : "–") : "none"}</td><td>${ok(q.passed)}</td></tr>`).join("")}
     </table></div><div class="charts" data-kind="punch"></div>
     <p class="status">EN 1992-1-1 6.4: checked from the pile face (u0, v<sub>Rd,max</sub>) out to u1 at 2d, u1 = π(D + 4d); nothing inside the pile. β = 1 + 0.6π·e/(D + 4d) with the pile moment at the slab soffit, as in the pile design; ρl of the face in tension over the pile. One-way shear starts at 2d from the pile faces. Piles under a beam are left to the beam.</p>` : '<p class="status">No piles under the slab.</p>'}
     <h3 style="margin-top:18px">Shear per metre ${ok(sh.passed !== false)}</h3>
@@ -3512,6 +3512,17 @@ function alongChart(el, rows, title, yLabel, val, limit = null, supports = null,
 
 // The office king pile sheet: one column per corrosion zone, rows grouped as the sheet, checks green
 // when they pass and red when they fail.
+// What makes a failing pile head pass, in words (from the design's punching fix).
+function punchFix(q) {
+  const f = q.fix;
+  if (!f) return "";
+  const ways = [];
+  if (f.rho_l_with_links != null) ways.push(`ρl of the ${q.direction === "pile pulls down" ? "bottom" : "top"} bars over the pile ≥ ${fmt(f.rho_l_with_links * 100, 2)}% (now ${fmt(q.rho_l * 100, 2)}%; about ${fmt(f.as_mm2_per_m_with_links)} mm²/m each way), with links`);
+  if (f.thickness_mm_with_links) ways.push(`${fmt(f.thickness_mm_with_links)} mm thick at the pile with links`);
+  if (f.thickness_mm_without_links) ways.push(`${fmt(f.thickness_mm_without_links)} mm without links`);
+  return ways.join("; or ");
+}
+
 function officeSheet(sh) {
   if (!sh?.columns?.length) return "";
   const cell = (v, r) => {
@@ -3749,6 +3760,7 @@ function pileCard(p) {
     ${p.shear ? shearBlock(p.shear, p.head_name || "the slab") : ""}
     ${casingBlock(p.casing)}
     ${connectionBlock(p.connection)}
+    ${levelSketch(p)}
     ${pileCrackBlock(p.cracks)}
     ${crackPicturesHtml(pileCrackItems(p))}
     <div class="charts"><div class="chart" data-kind="nm"></div><div class="chart" data-kind="profile"></div></div>
@@ -3819,6 +3831,47 @@ function slabCrackItems(d) {
       forces: `${q.combination}: M = ${fmt(q.M_kNm_per_m)} kNm/m, N = ${fmt(q.N_kN_per_m)} kN/m (compression +), strip averaged, with ${r.bars}`,
     }))
   );
+}
+
+// The levels at the pile head, not to scale: slab soffit (pile top), design top, casing, worst crack.
+function levelSketch(p) {
+  const s = p.section || {};
+  if (s.soffit_m == null && !s.casing_m) return "";
+  const z = (v) => Math.round(v * 100) / 100;
+  const marks = [];
+  const add = (v, text) => v != null && marks.push({ v: z(v), text });
+  if (s.results_to_m != null && s.results_to_m > s.soffit_m + 1e-6)
+    add(s.results_to_m, `Results used up to (soffit + ${fmt((s.results_to_m - s.soffit_m) * 100)} cm)`);
+  if (s.head_level_m != null && s.soffit_m != null && s.head_level_m > s.soffit_m + 1e-6)
+    add(s.head_level_m, "Design top (highest result used)");
+  add(s.soffit_m, "Slab soffit = pile top");
+  if (s.casing_m) {
+    add(s.casing_m[1], "Casing top");
+    add(s.casing_m[0], "Casing bottom");
+    if (s.no_crack_m && s.no_crack_m[1] > s.casing_m[1] + 1e-6) add(s.no_crack_m[1], "no crack check to here");
+  }
+  const g = p.cracks?.governing;
+  if (g) add(g.z, `Worst QP crack (${fmt(p.cracks.wk_mm, 2)} mm)`);
+  const levels = [...new Set(marks.map((m) => m.v))].sort((a, b) => b - a);
+  const rows = levels.map((v) => ({ v, text: marks.filter((m) => m.v === v).map((m) => m.text).join(", ") }));
+  const top = 30, gap = 38, h = top + gap * (rows.length - 1) + 40;
+  const y = (v) => top + gap * levels.indexOf(z(v));
+  const soffitY = s.soffit_m != null ? y(s.soffit_m) : top;
+  const pileTop = [s.results_to_m, s.head_level_m].find((v) => v != null && levels.includes(z(v)));
+  const pileY = pileTop != null ? y(pileTop) : soffitY;
+  const band = s.no_crack_m || s.casing_m;
+  const cas = s.casing_m ? `<rect x="58" y="${y(s.casing_m[1])}" width="4" height="${y(s.casing_m[0]) - y(s.casing_m[1])}" fill="var(--accent)"/><rect x="118" y="${y(s.casing_m[1])}" width="4" height="${y(s.casing_m[0]) - y(s.casing_m[1])}" fill="var(--accent)"/>` : "";
+  const nc = band ? `<rect x="62" y="${y(band[1])}" width="56" height="${y(band[0]) - y(band[1])}" fill="var(--accent-bg)"/>` : "";
+  const lines = rows.map((r) => `<line x1="40" x2="150" y1="${y(r.v)}" y2="${y(r.v)}" stroke="var(--muted)" stroke-dasharray="3 3"/>
+    <text x="158" y="${y(r.v) + 4}" font-size="12" fill="var(--text)">${fmt(r.v, 2)} m  ${esc(r.text)}</text>`).join("");
+  return `<h3>Levels at the pile head</h3>
+    <svg class="level-sketch" viewBox="0 0 680 ${h}" width="100%" style="max-width:680px" role="img" aria-label="Pile head levels">
+      <rect x="20" y="4" width="140" height="${soffitY - 4}" fill="var(--miss-bg)" stroke="var(--line)"/>
+      <text x="26" y="18" font-size="11" fill="var(--muted)">slab</text>
+      <rect x="62" y="${pileY}" width="56" height="${h - pileY}" fill="var(--panel)" stroke="var(--muted)"/>
+      ${nc}${cas}${lines}
+    </svg>
+    <p class="status">Not to scale. Shaded: no crack width check${s.casing_m ? " (inside the casing)" : ""}. The pile is designed up to the design top; results above it are inside the slab and ignored.</p>`;
 }
 
 function pileCrackBlock(c) {

@@ -61,11 +61,11 @@ async function projectsPage() {
     return;
   }
   el.innerHTML =
-    `<table><tr><th>Name</th><th>Number</th><th>Sections</th><th>Elements</th><th>Last saved</th></tr>` +
+    `<table><tr><th>Name</th><th>Number</th><th>Sections</th><th>Elements</th><th>Last saved (Cairo)</th></tr>` +
     list
       .map(
         (p) => `<tr class="link" data-id="${esc(p.id)}"><td>${esc(p.name)}</td><td>${esc(p.number)}</td>
-        <td>${p.sections}</td><td>${p.elements}</td><td>${esc(p.updated_at.replace("T", " ").slice(0, 16))}</td></tr>`
+        <td>${p.sections}</td><td>${p.elements}</td><td>${esc(when(p.updated_at))}</td></tr>`
       )
       .join("") +
     `</table>`;
@@ -103,6 +103,7 @@ async function projectPage(id, tab, sectionId) {
     ["workbook", "Workbook"],
     ["design", "Design"],
     ["view3d", "3D view"],
+    ["costing", "Costing"],
   ];
   const picker = SECTION_TABS.has(tab)
     ? `<div class="row section-pick"><label for="section-pick">Section</label>
@@ -133,13 +134,17 @@ async function projectPage(id, tab, sectionId) {
     location.hash = "#/";
   };
   const host = document.getElementById("tab");
-  if (tab === "info") host.append(renderObject(SCHEMA.properties.info, p.info, "info", "Project"));
+  if (tab === "info") {
+    host.append(renderObject(SCHEMA.properties.info, p.info, "info", "Project"));
+    host.append(renderObject(SCHEMA.properties.prices, p.prices, "prices", "Prices (for the Costing tab)"));
+  }
   else if (tab === "settings") host.append(renderObject(SCHEMA.properties.design, p.design, "design", "Design settings"));
   else if (tab === "design") renderDesignTab(host);
   else if (tab === "sections") renderSections(host);
   else if (tab === "elements") renderElements(host);
   else if (tab === "workbook") renderWorkbookTab(host);
   else if (tab === "view3d") renderView3dTab(host);
+  else if (tab === "costing") renderCostingTab(host);
   showSaveState();
   showErrors();
 }
@@ -289,11 +294,17 @@ function renderField(obj, key, prop, inner, nullable, path) {
         .map(([k, c]) => `<th>${esc(c.title || pretty(k))}${c.unit ? ` (${esc(c.unit)})` : ""}</th>`)
         .join("")}<th></th></tr>${rows
         .map((r, i) => `<tr>${cols
-          .map(([k]) => `<td><input type="number" step="any" data-i="${i}" data-k="${esc(k)}" value="${r[k] ?? ""}"></td>`)
+          .map(([k, c]) => {
+            const t = resolve(c);
+            if (t.enum)
+              return `<td><select data-i="${i}" data-k="${esc(k)}">${t.enum.map((o) => `<option ${r[k] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></td>`;
+            const text = t.type === "string";
+            return `<td><input type="${text ? "text" : "number"}" ${text ? "" : 'step="any"'} data-i="${i}" data-k="${esc(k)}" data-text="${text ? 1 : ""}" value="${esc(r[k] ?? "")}"></td>`;
+          })
           .join("")}<td><button type="button" class="quiet" data-del="${i}">Remove</button></td></tr>`)
         .join("")}</table></div><button type="button" class="quiet" data-add style="margin-top:6px">Add a row</button>`;
-      f.querySelectorAll("input[data-i]").forEach((inp) => (inp.oninput = () => {
-        const v = inp.value === "" ? null : Number(inp.value);
+      f.querySelectorAll("[data-i]").forEach((inp) => (inp.oninput = inp.onchange = () => {
+        const v = inp.tagName === "SELECT" || inp.dataset.text ? inp.value : inp.value === "" ? null : Number(inp.value);
         obj[key][Number(inp.dataset.i)][inp.dataset.k] = v;
         markDirty();
       }));
@@ -535,6 +546,11 @@ async function addElements(names) {
 function checkerHtml() {
   return `<div class="panel row">
       <input type="file" id="file" accept=".xlsb,.xlsx,.xlsm">
+      <select id="upload-mode" hidden title="What to do with the workbook this section already has">
+        <option value="replace">Replace the whole workbook</option>
+        <option value="update">Replace matching tabs, add new ones</option>
+        <option value="add">Add new tabs only</option>
+      </select>
       <button id="run" disabled>Check workbook</button>
       <span class="status" id="status"></span>
       <button class="quiet" id="stop" hidden>Stop</button></div>
@@ -672,14 +688,16 @@ function wireChecker(onReport, url = ROOT + "/api/workbooks/check") {
       const stop = watchProgress(id, (text) => (job.stopped ? null : (status.textContent = text)));
       let data;
       try {
-        data = await api(`${url}/${id}`, { method: "POST" });
+        const mode = document.getElementById("upload-mode");
+        const how = mode && !mode.hidden ? `?mode=${mode.value}` : "";
+        data = await api(`${url}/${id}${how}`, { method: "POST" });
       } finally {
         stop();
         hideStop();
       }
       renderReport(data);
       onReport?.(data);
-      document.getElementById("status").textContent = `Checked ${data.file}`;
+      document.getElementById("status").textContent = data.merged ? mergedText(data.merged) : `Checked ${data.file}`;
     } catch (e) {
       hideStop();
       status.textContent = job.stopped ? "Stopped. Nothing was kept from this upload." : `Failed: ${e.message}`;
@@ -687,6 +705,17 @@ function wireChecker(onReport, url = ROOT + "/api/workbooks/check") {
       run.disabled = false;
     }
   };
+}
+
+// What a second upload into a section did to its workbook.
+function mergedText(m) {
+  const list = (xs) => (xs.length > 4 ? `${xs.slice(0, 4).join(", ")} and ${xs.length - 4} more` : xs.join(", "));
+  const parts = [];
+  if (m.replaced.length) parts.push(`replaced ${m.replaced.length} tab(s): ${list(m.replaced)}`);
+  if (m.added.length) parts.push(`added ${m.added.length} tab(s): ${list(m.added)}`);
+  if (m.skipped.length) parts.push(`left out ${m.skipped.length} tab(s) already in the section: ${list(m.skipped)}`);
+  const text = parts.join("; ") || "nothing new in that file";
+  return text[0].toUpperCase() + text.slice(1) + ". Map any new tabs below if they are not recognised.";
 }
 
 function checkPage() {
@@ -701,7 +730,8 @@ async function renderWorkbookTab(host) {
     the section so its elements can be designed without uploading it again.</p>` + checkerHtml();
   const onReport = (data) => {
     document.getElementById("wb-note").textContent =
-      `Workbook in use: ${data.file}, uploaded ${String(data.uploaded_at || "").replace("T", " ").slice(0, 16)}. Upload again to replace it.`;
+      `Workbook in use: ${data.file}, uploaded ${when(data.uploaded_at)} (Cairo time). Upload another file to replace it, replace some of its tabs or add tabs to it.`;
+    document.getElementById("upload-mode").hidden = false;
     renderFactors(data);
     renderMapping(data, async () => {
       const fresh = await api(`${url}/workbook`);
@@ -959,6 +989,22 @@ function renderReport(d) {
 }
 
 // ---------------------------------------------------------------- design tab
+// The main bars' volume over the element's concrete in %, not the heaviest section's ratio.
+function overallRatio(st) {
+  if (!st) return null;
+  if (st.ratio_pct != null) return st.ratio_pct;
+  if (st.longitudinal_kg && st.concrete_m3) return (100 * st.longitudinal_kg) / 7850 / st.concrete_m3;
+  if (st.kg_per_m3 != null && st.links_kg_per_m == null && st.longitudinal_kg_per_m == null) return (100 * st.kg_per_m3) / 7850;
+  return null;
+}
+
+// Results designed before their inputs changed say so, naming what changed.
+function staleHtml(res) {
+  if (!res?.changed?.length) return "";
+  return `<div class="stale"><strong>Inputs updated since this design:</strong> ${esc(res.changed.join(", "))}.
+    These results are out of date. Press <em>Design the elements</em> to redesign.</div>`;
+}
+
 const DESIGNED = new Set(["pile", "combi_wall", "front_beam", "rear_beam", "transverse_beam", "slab"]);
 
 async function renderDesignTab(host) {
@@ -1006,6 +1052,16 @@ async function renderDesignTab(host) {
   }
 }
 
+// Every time is shown in Cairo, whatever the browser's own zone; stamps carry their offset.
+const CAIRO = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const when = (iso) => {
+  if (!iso) return "";
+  const text = String(iso);
+  const d = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(text) ? text : text + "Z");
+  if (isNaN(d)) return text.replace("T", " ").slice(0, 16);
+  const p = Object.fromEntries(CAIRO.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+};
 const fmt = (v, d = 0) => (v == null || !isFinite(v) ? "–" : (Math.abs(v) < 0.5 * 10 ** -d ? 0 : Number(v)).toLocaleString("en-GB", { maximumFractionDigits: d, minimumFractionDigits: d }));
 
 // The results of the elements picked in the "Show" row (all by default); the exports always cover
@@ -1076,21 +1132,21 @@ function drawResults(res, full = res) {
         <td>${sh ? esc(sh.zones[0].link) : "–"}</td>
         <td class="cell ${sh ? (sh.passed ? "ok" : "error") : ""}">${sh ? fmt(sh.utilisation, 2) : "–"}</td>
         <td class="cell ${p.cracks?.wk_mm == null ? "" : p.cracks.passed ? "ok" : "error"}">${p.cracks?.wk_mm == null ? "–" : `${fmt(p.cracks.wk_mm, 2)} / ${fmt(p.cracks.limit_mm, 2)}`}</td>
-        <td>${fmt(p.reinforcement_ratio_pct, 2)}%</td><td>${fmt(kg)}</td></tr>`;
+        <td>${fmt(overallRatio(p.steel), 2)}%</td><td class="muted">${fmt(p.reinforcement_ratio_pct, 2)}%</td><td>${fmt(kg)}</td></tr>`;
     })
     .join("");
-  out.innerHTML = `<p class="status">Designed ${esc(res.run_at.replace("T", " ").slice(0, 16))}.</p>
+  out.innerHTML = `${staleHtml(full)}<p class="status">Designed ${esc(when(res.run_at))} (Cairo time).</p>
     ${res.skipped.map((s) => `<p class="status">${esc(s)}</p>`).join("")}
     ${(() => {
       const list = alerts(res).filter((a) => a.level !== "safe");
       return list.length ? `<div class="panel"><h3 style="margin-top:0">To look at</h3>${alertsHtml(list)}</div>` : "";
     })()}
-    ${res.piles.length ? `<h2>Piles</h2><div class="panel scroll"><table><tr><th>Element</th><th>Bars at head</th><th>N–M</th><th>Links at head</th><th>Shear</th><th>Crack mm</th><th>ρ at head</th><th>kg/m³ incl. links</th></tr>${rows}</table></div>` : ""}
+    ${res.piles.length ? `<h2>Piles</h2><div class="panel scroll"><table><tr><th>Element</th><th>Bars at head</th><th>N–M</th><th>Links at head</th><th>Shear</th><th>Crack mm</th><th title="Main bars over the whole pile, laps included">ρ overall</th><th>ρ at head</th><th>kg/m³ incl. links</th></tr>${rows}</table></div>` : ""}
     <div id="pile-cards"></div><div id="combi-cards"></div>
-    ${beams.length ? `<h2>Beams</h2><div class="panel scroll"><table><tr><th>Element</th><th>b × h</th><th>Longitudinal bars</th><th>Links</th><th>Transverse bars (top / bottom)</th><th>Max util.</th><th>kg/m³</th></tr>
+    ${beams.length ? `<h2>Beams</h2><div class="panel scroll"><table><tr><th>Element</th><th>b × h</th><th>Longitudinal bars</th><th>Links</th><th>Transverse bars (top / bottom)</th><th>Max util.</th><th>ρ overall</th><th>kg/m³</th></tr>
       ${beams.map((b) => `<tr><td>${esc(b.element)}</td><td>${fmt(b.width_mm)} × ${fmt(b.depth_mm)}</td><td>${b.cage ? esc(b.cage.label) : "–"}</td>
         <td>${b.shear?.link ? esc(b.shear.link.label) : "–"}</td><td>${b.transverse ? `${esc(b.transverse.top.label)} / ${esc(b.transverse.bottom.label)}` : "–"}</td>
-        <td class="cell ${b.passed ? "ok" : "error"}">${fmt(b.utilisation, 2)}</td><td>${fmt(b.steel?.kg_per_m3)}</td></tr>`).join("")}</table></div>` : ""}
+        <td class="cell ${b.passed ? "ok" : "error"}">${fmt(b.utilisation, 2)}</td><td>${fmt(overallRatio(b.steel), 2)}%</td><td>${fmt(b.steel?.kg_per_m3)}</td></tr>`).join("")}</table></div>` : ""}
     <div id="beam-cards"></div>
     ${slabs.length ? "<h2>Slab</h2>" : ""}<div id="slab-cards"></div>
     ${spws.length ? `<h2>Sheet pile wall</h2>${spws.map((w) => `<div class="panel"><h3>${esc(w.element)}</h3><p class="status">Designed in the sheet pile program; these are its straining actions.</p>${steelSetsBlock(w.governing_sets, "kN/m, kNm/m", true)}</div>`).join("")}` : ""}`;
@@ -1236,6 +1292,117 @@ function alertsHtml(list) {
   return `<ul class="alerts">${list.map((a) => `<li><span class="sev ${sevClass[a.level]}">${label[a.level]}</span> <b>${esc(a.name)}</b>: ${esc(a.text)}</li>`).join("")}</ul>`;
 }
 
+// ---------------------------------------------------------------- costing tab
+// Quantities and cost of each designed section along its berth, and the sections side by side.
+// The inputs (berth length, spacing or number of each element, lengths) are saved with each section;
+// the unit prices are on the Project tab.
+async function renderCostingTab(host) {
+  let p = state.project;
+  const cur = p.prices.currency || "";
+  const money = (v) => (v == null ? "–" : `${fmt(v)}`);
+  host.innerHTML = `<p class="sub">Quantities and cost along the berth, from each section's latest design. Unit prices are on the
+      <a href="${tabHash("info")}">Project tab</a>; the numbers below change with them and with the inputs here.</p>
+    <div class="panel row"><button id="cost-run">Work out the costs</button><span class="status" id="cost-status"></span></div>
+    <div id="cost-out"></div>`;
+  const out = document.getElementById("cost-out");
+  const status = document.getElementById("cost-status");
+  const steelNames = p.prices.steel_elements.map((x) => x.name).filter(Boolean);
+
+  const input = (obj, key, placeholder, attrs = "") =>
+    `<input type="number" step="any" min="0" ${attrs} data-obj="${esc(obj)}" data-key="${esc(key)}" placeholder="${esc(placeholder ?? "")}">`;
+  const pick = (obj, key, value, none) =>
+    `<select data-obj="${esc(obj)}" data-key="${esc(key)}"><option value="">${esc(none)}</option>${steelNames
+      .map((n) => `<option ${n === value ? "selected" : ""}>${esc(n)}</option>`)
+      .join("")}</select>`;
+
+  const draw = (data) => {
+    const sections = data.sections;
+    const costed = sections.filter((x) => x.totals);
+    const cards = sections
+      .map((c) => {
+        const section = p.sections.find((x) => x.id === c.section_id);
+        const cs = section.costing;
+        const head = `<h2>${esc(c.section)}</h2>${staleHtml(c)}`;
+        if (!c.rows.length && !c.totals)
+          return `${head}<div class="panel"><p class="status">${esc(c.notes.join(" "))}</p>
+            ${c.notes[0] === "Not designed yet." ? "" : `<div class="row"><label>Berth length (m) ${input(`${c.section_id}`, "berth_length", "")}</label></div>`}</div>`;
+        const rows = c.rows
+          .map((r) => {
+            const key = `${c.section_id}|${r.element}`;
+            const spaced = ["pile", "combi_wall"].includes(r.kind) || (r.kind === "beam" && r.count != null);
+            const steel = r.kind === "combi_wall" || r.kind === "sheet_pile_wall";
+            const e = cs.elements[r.element] || {};
+            return `<tr><td>${esc(r.element)}</td>
+              <td>${spaced ? input(key, "spacing", r.spacing_m != null ? fmt(r.spacing_m, 2) : "") : "–"}</td>
+              <td>${spaced ? input(key, "count", r.count ?? "", 'step="1"') : "–"}</td>
+              <td>${input(key, "length", r.length_m != null ? fmt(r.length_m, 1) : "")}</td>
+              <td>${steel ? pick(key, "steel_element", e.steel_element, r.kind === "sheet_pile_wall" ? "Its section, else the first AZ" : "Structural steel price") : "–"}${r.kind === "combi_wall" ? `<div class="hint">Intermediate sheets</div>${pick(key, "intermediate_element", e.intermediate_element, "None")}` : ""}</td>
+              <td class="basis">${esc(r.basis)}${r.flags.map((f) => `<div class="${/above/.test(f) ? "flag-bad" : "flag-ok"}">${esc(f)}</div>`).join("")}${r.missing.length ? `<div class="flag-bad">Missing: ${esc(r.missing.join(", "))}</div>` : ""}</td>
+              <td>${fmt(r.concrete_m3, 1)}</td><td>${fmt(r.rebar_t, 1)}</td><td>${fmt(r.steel_t, 1)}</td>
+              <td>${money(r.cost)}</td><td>${money(r.cost_per_m)}</td></tr>`;
+          })
+          .join("");
+        const t = c.totals;
+        return `${head}<div class="panel">
+          <div class="row">
+            <label>Berth length (m) ${input(c.section_id, "berth_length", fmt(c.berth_length_m, 1))}</label>
+            <label>Length the model covers (m) ${input(c.section_id, "model_length", c.model_length_m != null ? fmt(c.model_length_m, 1) : "")}</label>
+          </div>
+          <p class="status">Empty boxes use the value shown in grey, from the design. A number overrides the spacing.</p>
+          <div class="scroll"><table class="cost"><tr><th>Element</th><th>Spacing (m)</th><th>Number</th><th>Length (m)</th><th>Steel price</th><th>Basis</th>
+            <th>Concrete m³</th><th>Rebar t</th><th>Steel t</th><th>Cost (${esc(cur)})</th><th>Per m</th></tr>${rows}
+            <tr class="total"><td>Total</td><td colspan="5">${fmt(c.berth_length_m, 1)} m of berth${t.complete ? "" : " (incomplete: prices missing)"}</td>
+              <td>${fmt(t.concrete_m3, 1)}</td><td>${fmt(t.rebar_t, 1)}</td><td>${fmt(t.steel_t, 1)}</td><td>${money(t.cost)}</td><td>${money(c.per_m.cost)}</td></tr></table></div>
+          ${c.notes.map((n) => `<p class="status">${esc(n)}</p>`).join("")}</div>`;
+      })
+      .join("");
+    const best = costed.filter((c) => c.totals.complete).sort((a, b) => a.per_m.cost - b.per_m.cost)[0];
+    const line = (label, f) => `<tr><th>${label}</th>${costed.map((c) => `<td class="${c === best && label.startsWith("Cost per m") ? "cell ok" : ""}">${f(c)}</td>`).join("")}${costed.length > 1 ? `<td>${f(null)}</td>` : ""}</tr>`;
+    const T = data.total;
+    const compare = costed.length
+      ? `<h2>Sections side by side</h2><div class="panel scroll"><table class="compare"><tr><th></th>${costed.map((c) => `<th>${esc(c.section)}</th>`).join("")}${costed.length > 1 ? "<th>All sections</th>" : ""}</tr>
+        ${line("Berth length (m)", (c) => fmt(c ? c.berth_length_m : T.berth_length_m, 1))}
+        ${line(`Cost (${esc(cur)})`, (c) => money(c ? c.totals.cost : T.cost))}
+        ${line(`Cost per m (${esc(cur)}/m)`, (c) => money(c ? c.per_m.cost : T.berth_length_m ? T.cost / T.berth_length_m : null))}
+        ${line("Concrete (m³/m)", (c) => fmt(c ? c.per_m.concrete_m3 : T.berth_length_m ? T.concrete_m3 / T.berth_length_m : null, 2))}
+        ${line("Reinforcement (t/m)", (c) => fmt(c ? c.per_m.rebar_t : T.berth_length_m ? T.rebar_t / T.berth_length_m : null, 3))}
+        ${line("Structural steel (t/m)", (c) => fmt(c ? c.per_m.steel_t : T.berth_length_m ? T.steel_t / T.berth_length_m : null, 3))}
+        ${line("Prices complete", (c) => ((c ? c.totals.complete : T.complete) ? "Yes" : "No"))}
+        </table></div>${best && costed.length > 1 ? `<p class="status">Lowest cost per metre: ${esc(best.section)}.</p>` : ""}`
+      : "";
+    out.innerHTML = compare + cards;
+    // Fill the inputs from the saved costing and write edits back to it.
+    out.querySelectorAll("[data-obj]").forEach((el) => {
+      const [sid, name] = el.dataset.obj.split("|");
+      const section = p.sections.find((x) => x.id === sid);
+      const target = () => (name ? (section.costing.elements[name] ??= {}) : section.costing);
+      const now = name ? section.costing.elements[name]?.[el.dataset.key] : section.costing[el.dataset.key];
+      if (el.tagName === "INPUT") el.value = now ?? "";
+      el.onchange = () => {
+        const v = el.tagName === "SELECT" ? el.value : el.value === "" ? null : Number(el.value);
+        target()[el.dataset.key] = el.dataset.key === "count" && v != null ? Math.round(v) : v;
+        markDirty();
+        status.textContent = "Changed: press Work out the costs.";
+      };
+    });
+  };
+
+  const run = async () => {
+    if (state.dirty) await save();
+    if (state.errors?.length) return;
+    p = state.project; // saving replaces it
+    status.textContent = "Working out…";
+    try {
+      draw(await api(`${ROOT}/api/projects/${p.id}/costing`));
+      status.textContent = "";
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  };
+  document.getElementById("cost-run").onclick = run;
+  run();
+}
+
 async function renderView3dTab(host) {
   host.innerHTML = `<div class="v3d-layout"><div><div class="panel" id="v3d-main"></div>${legendHtml()}</div>
     <div class="panel v3d-side" id="v3d-side"><p class="status">Loading…</p></div></div>`;
@@ -1267,7 +1434,7 @@ async function renderView3dTab(host) {
   };
   const side = document.getElementById("v3d-side");
   const list = alerts(res || {});
-  side.innerHTML = `<h3 style="margin-top:0">Alerts</h3>
+  side.innerHTML = `${staleHtml(res)}<h3 style="margin-top:0">Alerts</h3>
     ${res ? "" : '<p class="status">Not designed yet: run the design on the Design tab to colour the elements.</p>'}
     ${list.length ? alertsHtml(list) : res ? '<p class="status">Nothing unsafe or close to the limit.</p>' : ""}
     <h3>Elements</h3><p class="status">Pick one to see it alone with the directions of its actions.</p>
@@ -1309,6 +1476,7 @@ function slabCard(d) {
     <div class="counts" style="margin-top:0">
       <div class="count"><b>${fmt(d.utilisation, 2)}</b>max utilisation</div>
       <div class="count"><b>${fmt(st.kg_per_m3)}</b>kg/m³ (${fmt(st.kg_per_m2, 1)} kg/m², links not included)</div>
+      <div class="count"><b>${fmt(overallRatio(st), 2)}%</b>overall ρ</div>
       <div class="count"><b>${fmt(st.total_t, 1)} t</b>bars over ${fmt(st.area_m2)} m²</div>
       <div class="count"><b>${needs.length} of ${punch.length}</b>piles need punching links</div>
       <div class="count"><b>${sh.cells_needing_links ?? 0}</b>${fmt(d.zone_size_m, 1)} m cells need shear links</div>

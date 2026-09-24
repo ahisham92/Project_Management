@@ -162,3 +162,12 @@ table.punch tr.on td { background: var(--accent-bg); }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid var(--line);
         border-radius: 999px; font-size: 13px; cursor: pointer; }
 .chip:has(input:checked) { background: var(--accent-bg); border-color: var(--accent); }
+
+.stale { border: 1px solid var(--warn); background: var(--warn-bg); color: var(--text);
+         border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+td.muted { color: var(--muted); }
+table.cost input, table.cost select { width: 5em; }
+table.cost td.basis { min-width: 13em; font-size: 13px; color: var(--muted); }
+table.cost tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+.flag-bad { color: var(--err); }
+.flag-ok { color: var(--ok); }

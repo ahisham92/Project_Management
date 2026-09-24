@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import clock
 from .durability import bs6349_corrosion, bs6349_covers
 from .elements import ElementType, parse_sheet_name
 from .materials import (
@@ -980,7 +980,119 @@ def default_element(name: str) -> ElementInput | None:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return clock.stamp()
+
+
+# --- Costing -------------------------------------------------------------------
+
+
+class SteelPrice(_Model):
+    """A priced steel element: a sheet pile section, a tube, a casing and so on."""
+
+    name: str = Field("AZ 26-700", title="Steel element", description="e.g. AZ 26-700, tube 1626 × 18")
+    unit: Literal["t", "m²", "m"] = Field("t", title="Priced per")
+    price: float | None = Field(None, title="Price", ge=0)
+    mass: float | None = Field(
+        None,
+        title="Mass per m² or per m",
+        ge=0,
+        description="For the tonnage when priced per m² (kg/m²) or per m (kg/m).",
+        json_schema_extra={"unit": "kg"},
+    )
+
+
+class PilePrice(_Model):
+    """Bored piles are priced per linear metre with an allowance of reinforcement included."""
+
+    diameter: float = _mm("Pile diameter", 1200.0, gt=0)
+    price_per_m: float | None = Field(None, title="Price per linear metre", ge=0)
+    rebar_included: float = Field(
+        150.0,
+        title="Reinforcement included",
+        ge=0,
+        description="What the price per metre allows for; designed reinforcement above it is added at the "
+        "reinforcement price.",
+        json_schema_extra={"unit": "kg/m"},
+    )
+
+
+def _office_steel_prices() -> list[SteelPrice]:
+    return [SteelPrice(name="AZ 26-700", unit="t", mass=155.2), SteelPrice(name="King pile tube", unit="t")]
+
+
+class Prices(_Model):
+    """Unit prices for the Costing tab. They do not change any design."""
+
+    currency: str = Field("EGP", title="Currency")
+    concrete_slab: float | None = Field(
+        None, title="Concrete, slab", ge=0, json_schema_extra={"unit": "per m³"}
+    )
+    concrete_beams: float | None = Field(
+        None, title="Concrete, beams", ge=0, json_schema_extra={"unit": "per m³"}
+    )
+    concrete_infill: float | None = Field(
+        None,
+        title="Concrete, combi wall infill",
+        ge=0,
+        description="Empty: the beam concrete price.",
+        json_schema_extra={"unit": "per m³"},
+    )
+    rebar: float | None = Field(
+        None,
+        title="Reinforcement",
+        ge=0,
+        description="Slab, beams, combi infill, and pile reinforcement above what the pile price includes.",
+        json_schema_extra={"unit": "per t"},
+    )
+    steel: float | None = Field(
+        None,
+        title="Structural steel",
+        ge=0,
+        description="For steel elements with no price of their own below.",
+        json_schema_extra={"unit": "per t"},
+    )
+    steel_elements: list[SteelPrice] = Field(
+        default_factory=_office_steel_prices, title="Steel elements (AZ sheet piles, tubes, …)"
+    )
+    piles: list[PilePrice] = Field(
+        default_factory=lambda: [PilePrice()], title="Bored piles, per linear metre with reinforcement"
+    )
+
+
+class ElementCosting(_Model):
+    """How many of an element the berth needs, when not as in the design model."""
+
+    spacing: float | None = _m(
+        "Spacing along the berth", None, gt=0, description="Empty: as in the model (its length / count)."
+    )
+    count: int | None = Field(
+        None, title="Number along the berth", ge=0, description="Overrides the spacing."
+    )
+    length: float | None = _m(
+        "Length",
+        None,
+        gt=0,
+        description="Pile or tube length, sheet pile length, or slab width across the quay. Empty: from "
+        "the design.",
+    )
+    steel_element: str = Field("", title="Steel element price", description="A name from the price list.")
+    intermediate_element: str = Field(
+        "", title="Combi wall intermediate sheets", description="A name from the price list, e.g. AZ 26-700."
+    )
+    intermediate_length: float | None = _m("Intermediate sheet length", None, gt=0)
+
+
+class SectionCosting(_Model):
+    berth_length: float | None = _m(
+        "Berth length of this section", None, gt=0, description="Empty: the length of the model."
+    )
+    model_length: float | None = _m(
+        "Length of berth the model covers",
+        None,
+        gt=0,
+        description="Empty: the front or rear beam's length, else the slab's extent along the berth.",
+    )
+    elements: dict[str, ElementCosting] = Field(default_factory=dict)
 
 
 class LoadFactor(_Model):
@@ -1053,6 +1165,7 @@ class Section(_Model):
     sheet_map: dict[str, SheetMapping] = Field(
         default_factory=dict, title="Sheet mapping", description="Sheets assigned by hand, by sheet name."
     )
+    costing: SectionCosting = Field(default_factory=SectionCosting, title="Costing")
 
     @model_validator(mode="after")
     def _zone(self) -> Section:
@@ -1145,6 +1258,7 @@ class Project(_Model):
     updated_at: str = Field(default_factory=_now)
     info: ProjectInfo = Field(default_factory=ProjectInfo, title="Project")
     design: DesignSettings = Field(default_factory=DesignSettings, title="Design settings")
+    prices: Prices = Field(default_factory=Prices, title="Prices")
     sections: list[Section] = Field(default_factory=lambda: [Section()], title="Sections", min_length=1)
 
     @model_validator(mode="before")

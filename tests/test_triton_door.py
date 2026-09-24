@@ -75,7 +75,7 @@ def test_signed_in_the_whole_of_triton_answers(site, tmp_path):
     body = text(page)
     assert "<title>Triton</title>" in body
     # Its files are asked for relative to /triton/, and there is a way back.
-    assert 'href="static/style.css"' in body
+    assert 'href="static/style.css?v=' in body
     assert '<a class="home" href="/">&larr; Project Control</a>' in body
     assert site.get("/triton/static/app.js").status_code == 200
 

@@ -20,7 +20,8 @@ pypdf>=4.0,<7.0
 
 # Triton, the quay element designer mounted at /triton (the triton folder). It is
 # a FastAPI application, run inside this WSGI site by triton/wsgi.py; pandas and
-# numpy read the Plaxis workbooks, pyxlsb the binary .xlsb ones, python-docx
+# numpy read the Plaxis workbooks, python-calamine (fast) and pyxlsb the binary
+# .xlsb ones, python-docx
 # writes the Word reports and Pillow draws their figures. All are wheels on
 # PythonAnywhere — nothing to compile. Kept in step with Triton's pyproject.toml.
 fastapi>=0.110
@@ -29,4 +30,5 @@ pandas>=2.1
 pillow>=10.1
 python-docx>=1.1
 python-multipart>=0.0.9
+python-calamine>=0.4
 pyxlsb>=1.0.10

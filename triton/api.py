@@ -21,7 +21,21 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import adsec, checker, clash_report, drawings, durability, dxf, fresh, method, package, revit, trials
+from . import (
+    adsec,
+    bbs,
+    checker,
+    clash_report,
+    drawings,
+    durability,
+    dxf,
+    fresh,
+    method,
+    package,
+    revisions,
+    revit,
+    trials,
+)
 from .alignment import plan_geometry
 from .clashes import Clashes, _clean, assumptions, find_clashes
 from .costing import cost_project
@@ -36,6 +50,7 @@ from .materials import catalogue
 from .project import (
     CombiWallInput,
     DesignSettings,
+    ElementCheck,
     PileInput,
     Project,
     ProjectInfo,
@@ -256,6 +271,43 @@ def open_project(upload_id: str, body: OpenProject) -> dict:
     return {"id": project.id, "name": project.info.name, "notes": notes, "replaced": old is not None}
 
 
+class IssueRevision(BaseModel):
+    description: str = ""
+
+
+@app.post("/api/projects/{project_id}/revisions")
+def issue_revision(project_id: str, body: IssueRevision) -> Project:
+    """Issue the revision in work: keep a copy of the project as it is, then move the revision on."""
+    try:
+        return revisions.issue(store(), _get(project_id), body.description.strip())
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/projects/{project_id}/revisions/{rev}/project.trt")
+def revision_copy(project_id: str, rev: str) -> Response:
+    """The project as it was issued under ``rev``, as a project file."""
+    project = _get(project_id)
+    path = revisions.snapshot_path(store(), project, rev)
+    if path is None:
+        raise HTTPException(404, f"The copy of revision {rev} is not on this server.")
+    name = package.file_name(project)[: -len(package.SUFFIX)]
+    return Response(
+        path.read_bytes(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name} rev {revisions.safe(rev)}.trt"'},
+    )
+
+
+@app.get("/api/projects/{project_id}/revisions/{rev}/changes")
+def revision_changes(project_id: str, rev: str) -> dict:
+    """What changed since revision ``rev`` was issued: inputs, and each element's bars and results."""
+    try:
+        return revisions.changes(store(), _get(project_id), rev)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+
+
 @app.get("/api/projects/{project_id}/method")
 def project_method(project_id: str) -> dict:
     """The Method tab: how each kind of element in the project is designed, and the options in use."""
@@ -267,9 +319,13 @@ LOCKED = "The model is locked since it was designed. Press Unlock to edit first.
 
 def _model(p: Project) -> dict:
     """What the lock protects: everything the design depends on (not prices, costing or drawing names)."""
-    d = p.model_dump(mode="json", exclude={"locked", "created_at", "updated_at", "prices", "drawings"})
+    d = p.model_dump(
+        mode="json", exclude={"locked", "created_at", "updated_at", "prices", "drawings", "revisions"}
+    )
+    d["info"] = {k: v for k, v in d["info"].items() if k in ("name", "number", "client", "location")}
     for s in d["sections"]:
         s.pop("costing", None)
+        s.pop("checks", None)  # the checker's status is not a design input
         s.pop("user_cages", None)  # set on the Design tab, then checked
         s.pop("beam_cages", None)
         s.pop("slab_strips", None)
@@ -296,10 +352,11 @@ def update_project(project_id: str, body: Project) -> Project:
     body.created_at = existing.created_at
     _stamp_multipliers(existing, body)
     # The Clashes tab saves its own settings and what-ifs; a page holding older ones never undoes them.
-    clash = {s.id: s.clashes for s in existing.sections}
+    clash = {s.id: (s.clashes, s.checks) for s in existing.sections}
     for s in body.sections:
         if s.id in clash:
-            s.clashes = clash[s.id]
+            s.clashes, s.checks = clash[s.id]
+    body.revisions = existing.revisions  # issued on their own (Issue revision), never by a page
     saved = store().save(body)
     kept = {s.id for s in saved.sections}
     for s in existing.sections:
@@ -641,6 +698,30 @@ def check_uploaded_workbook(upload_id: str) -> dict:
 
 
 SECTION = "/api/projects/{project_id}/sections/{section_id}"
+
+
+class CheckUpdate(BaseModel):
+    status: Literal["designed", "comments", "checked", "approved"]
+    by: str = ""
+    comment: str = ""
+
+
+@app.put(SECTION + "/checks/{element}")
+def set_check(project_id: str, section_id: str, element: str, body: CheckUpdate) -> Project:
+    """The checker's status for one element (open while the model is locked: it is not a design input)."""
+    project = _get(project_id)
+    section = _section(project, section_id)
+    if element not in section.elements:
+        raise HTTPException(404, f"No element named {element} in {section.name}.")
+    results = store().load_results(project_id, section_id) or {}
+    section.checks[element] = ElementCheck(
+        status=body.status,
+        by=body.by.strip(),
+        comment=body.comment.strip(),
+        at=_now(),
+        design_run_at=results.get("run_at"),
+    )
+    return store().save(project)
 
 
 def _keeper(project_id: str, section_id: str, mode: str) -> Callable[[str, ImportResult], dict]:
@@ -1253,6 +1334,26 @@ def revit_script() -> Response:
         revit.script(),
         media_type="text/x-python",
         headers={"Content-Disposition": 'attachment; filename="triton_revit.py"'},
+    )
+
+
+@app.get(SECTION + "/design/bar-schedule.xlsx")
+def bar_schedule(project_id: str, section_id: str, elements: str | None = None) -> Response:
+    """Bar bending schedule (BS 8666 shape codes, bar marks, cut lengths, weights) of the designed bars."""
+    project = _get(project_id)
+    section = _section(project, section_id)
+    results = store().load_results(project_id, section_id)
+    if results is None:
+        raise HTTPException(404, "This section has not been designed yet.")
+    _, results, suffix = _picked(section, results, elements)
+    rows = bbs.schedule(project, results, section.name)
+    if not rows:
+        raise HTTPException(404, "No designed pile, combi wall infill, beam or slab bars to schedule.")
+    name = _file_name(project.info.name, section.name + suffix)
+    return Response(
+        bbs.workbook(project, section.name, rows),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}-bar-schedule.xlsx"'},
     )
 
 

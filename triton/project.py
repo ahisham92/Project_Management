@@ -420,6 +420,43 @@ class ExpansionJoints(_Model):
     )
 
 
+class ConstructionJointRules(_Model):
+    """How the construction joints set on the elements are checked (EN 1992-1-1 6.2.5). The defaults
+    follow the office's Final Design Report (Appendix 18, shear check at construction joint)."""
+
+    lever_arm: float = Field(
+        0.8,
+        title="Lever arm z / d",
+        gt=0.5,
+        le=0.95,
+        description="z = 0.8 d in the office report; 0.9 d is the usual EN 1992-1-1 value.",
+    )
+    effective_depth: Literal["cover", "bars"] = Field(
+        "cover",
+        title="Effective depth d",
+        description="cover: d = h − cover (office report, 700 − 50 = 650). bars: to the centroid of the "
+        "tension bars.",
+    )
+    sigma_n_area: Literal["d", "h"] = Field(
+        "d",
+        title="σn = N / (b × …)",
+        description="d: N over b d (office report). h: N over the whole joint b h.",
+    )
+    actions: Literal["peak", "strip_mean"] = Field(
+        "peak",
+        title="Slab actions along the joint",
+        description="peak: the largest shear at the joint (office report). strip_mean: the mean over the "
+        "strip width, as the slab design.",
+    )
+    tension: Literal["separate", "add"] = Field(
+        "separate",
+        title="Tension across the joint",
+        description="separate: the joint bars are the shear-friction steel alone, N counted through σn and "
+        "bending checked in the element design (office report). add: the tension steel for N with M is added "
+        "on top (more conservative).",
+    )
+
+
 class DesignSettings(_Model):
     code: Literal["EN 1992 / EN 1993 + BS 6349"] = Field("EN 1992 / EN 1993 + BS 6349", title="Design code")
     design_life_years: int = Field(50, title="Design life", ge=1, json_schema_extra={"unit": "years"})
@@ -464,6 +501,9 @@ class DesignSettings(_Model):
         "peaks inside the connection and are ignored.",
     )
     joints: ExpansionJoints = Field(default_factory=ExpansionJoints, title="Expansion joints")
+    construction_joints: ConstructionJointRules = Field(
+        default_factory=ConstructionJointRules, title="Construction joints"
+    )
 
 
 # --- Element inputs ----------------------------------------------------------
@@ -533,9 +573,10 @@ class Casing(_Model):
 
 Surface = Literal["very smooth", "smooth", "rough", "indented"]
 _SURFACE = (
-    "EN 1992-1-1 6.2.5(2): very smooth (cast against steel or timber), smooth (slipformed, or left without "
-    "treatment after vibration), rough (at least 3 mm roughness at about 40 mm spacing, e.g. raked or "
-    "exposed aggregate) or indented (shear keys)."
+    "Indented (keyed, e.g. Stremaform, μ 0.9) as the office report. EN 1992-1-1 6.2.5(2): very smooth "
+    "(cast against steel or timber), smooth (slipformed, or left without treatment after vibration), "
+    "rough (at least 3 mm roughness at about 40 mm spacing, e.g. raked or exposed aggregate) or "
+    "indented (shear keys)."
 )
 
 
@@ -546,7 +587,7 @@ class PileJoint(_Model):
     level: float = _m(
         "Joint level Z", 0.0, description="e.g. the pile top level for the joint into the slab."
     )
-    surface: Surface = Field("rough", title="Joint surface", description=_SURFACE)
+    surface: Surface = Field("indented", title="Joint surface", description=_SURFACE)
     note: str = Field("", title="Note", description="e.g. Pile to slab, pour break.")
 
 
@@ -561,7 +602,7 @@ class BeamJoint(_Model):
         "along it).",
     )
     at: float = _m("Level Z, or position along the beam", 0.0)
-    surface: Surface = Field("rough", title="Joint surface", description=_SURFACE)
+    surface: Surface = Field("indented", title="Joint surface", description=_SURFACE)
     note: str = Field("", title="Note", description="e.g. Slab soffit, first lift.")
 
 
@@ -579,7 +620,7 @@ class SlabJoint(_Model):
     beam: str = Field("", title="Beam (beam face)", description="e.g. Front Beam.")
     start: float | None = _m("From (along the line)", None, description="Empty: the whole slab.")
     end: float | None = _m("To (along the line)", None)
-    surface: Surface = Field("rough", title="Joint surface", description=_SURFACE)
+    surface: Surface = Field("indented", title="Joint surface", description=_SURFACE)
     note: str = Field("", title="Note", description="e.g. Pour 1 / pour 2.")
 
 
@@ -2121,6 +2162,13 @@ class ClashSettings(_Model):
         "EC2: bars closer than EN 1992-1-1 8.2(2) allows, max(Ø, dg + 5, 20 mm), even if they do not touch.",
     )
     fixing_tolerance: float = _mm("Fixing tolerance", 10.0, ge=0, le=50)
+    beam_bars: Literal["straight", "l"] = Field(
+        "straight",
+        title="Pile bars into a beam",
+        description="Straight: they stop under the beam's top bars, as the office details them "
+        "(drawing SC-401). L: they turn outwards under the top bars for the rest of their "
+        "anchorage, as into a slab.",
+    )
     plate_level: Literal["mid", "top"] = Field(
         "mid",
         title="Plaxis plates are at the element's",
@@ -2228,6 +2276,18 @@ class WaterLevel(_Model):
     level: float = _m("Level", 0.0)
 
 
+# The project's tidal bar (Ahmed, 2026-09-25): its only water levels.
+TIDES = [
+    ("MHWS", 0.945),
+    ("MHWN", 0.701),
+    ("MSL", 0.380),
+    ("MLWN", 0.213),
+    ("MLWS", 0.091),
+    ("LAT", 0.0),
+]
+_ASSUMED_WATER = [{"name": "Water level", "level": 0.0}]
+
+
 class SiteView(_Model):
     """The site round the structure in the 3D views: seabed, water, soil, quay furniture and the STS
     crane. Only what is drawn: it never changes the design, so it is open while the model is locked."""
@@ -2238,10 +2298,10 @@ class SiteView(_Model):
         description="The dredged level at the quay face.",
     )
     water_levels: list[WaterLevel] = Field(
-        default_factory=lambda: [WaterLevel()],
+        default_factory=lambda: [WaterLevel(name=n, level=v) for n, v in TIDES],
         title="Water levels",
         description="Each drawn as its own see-through plane on the sea side, switched on and off in the 3D "
-        "view. Assumed one level at 0.0 m until the levels are set.",
+        "view. By default the project's tidal bar (MHWS to LAT).",
     )
     soil_level: float | None = _m(
         "Soil level behind the front wall",
@@ -2266,14 +2326,18 @@ class SiteView(_Model):
     @model_validator(mode="before")
     @classmethod
     def _one_water_level(cls, data: Any) -> Any:
-        """Saved with one water level (the first version): it becomes the list. The seabed's first
-        assumed default (-16.0) becomes this project's dredge level, -16.12 m."""
+        """Saved with one water level (the first version): it becomes the list, and the assumed 0.0 m
+        the tidal bar. The seabed's first assumed default (-16.0) becomes this project's dredge level,
+        -16.12 m."""
         if not isinstance(data, dict):
             return data
         data = dict(data)
         if "water_level" in data:
             level = data.pop("water_level")
             data.setdefault("water_levels", [{"name": "Water level", "level": level}])
+        if data.get("water_levels") == _ASSUMED_WATER:
+            # The level assumed before the tidal bar came: the tidal bar's levels.
+            data.pop("water_levels")
         if data.get("seabed_level") == -16.0:
             data["seabed_level"] = -16.12
         return data

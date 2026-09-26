@@ -1,2 +1,2 @@
-Copied from https://github.com/ahisham92/triton (src/triton) at commit 87b8f0e.
+Copied from https://github.com/ahisham92/triton (src/triton) at commit 8c4c8ff.
 Do not edit here: change Triton in its own repository and copy it again.

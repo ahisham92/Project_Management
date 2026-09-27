@@ -702,7 +702,24 @@ function applyLock() {
           "elements you don't touch stay. Files you already downloaded are not affected.",
       );
       if (!ok) return;
-      for (const s of held) s.locked = false;
+      if (state.dirty) await save();
+      if (state.errors?.length) return;
+      // The project as saved now, with what was saved on the server since this page last saved (checks,
+      // clash settings). A section designed in another window meanwhile: reload first, since Unlock
+      // would unlock it too (the server refuses that save).
+      const ids = new Set(held.map((s) => s.id));
+      const lockedIds = (p) => p.sections.filter((s) => s.locked).map((s) => s.id).join();
+      try {
+        const now = await api(`${ROOT}/api/projects/${state.project.id}`);
+        if (lockedIds(now) !== lockedIds(state.project)) throw new Error(STALE);
+        mergeInto(state.project, now);
+      } catch (e) {
+        state.errors = [{ loc: [], msg: e.message }];
+        showSaveState();
+        showErrors();
+        return;
+      }
+      for (const s of state.project.sections) if (ids.has(s.id)) s.locked = false;
       syncLock();
       state.dirty = true;
       await save();
@@ -723,6 +740,11 @@ function applyLock() {
   host._lockWatch.observe(host, { childList: true, subtree: true });
 }
 
+// The server refuses a save from a page older than the project when it would unlock a section designed
+// in another window since (api.py, _refuse_stale).
+const STALE = "This project changed in another window or tab since this page loaded it (a section was designed there). Reload the page to see it, then make your change again.";
+const stale = () => (state.errors || []).some((e) => /Reload the page/.test(e.msg || ""));
+
 // Every change saves itself a moment later; the bar at the bottom says whether it has.
 let saveTimer = null;
 let saving = null;
@@ -738,7 +760,7 @@ function showSaveState(text) {
   if (!s) return;
   const bad = state.errors?.length;
   s.className = `save-state ${text === "Saving…" || (!bad && state.dirty) ? "saving" : bad ? "unsaved" : "saved"}`;
-  s.textContent = text || (bad ? "Not saved: fix the fields below" : state.dirty ? "Saving…" : "All changes saved");
+  s.textContent = text || (bad ? (stale() ? "Not saved: reload the page" : "Not saved: fix the fields below") : state.dirty ? "Saving…" : "All changes saved");
 }
 
 // Copies the saved project into the one the forms are bound to, keeping its objects.
@@ -1344,7 +1366,7 @@ function jointsEditor(p, s) {
       longest segment of its part of the berth as its length between movement joints.</div>
     <div class="row" style="gap:10px;align-items:flex-start;flex-wrap:wrap">
       <select data-j="mode"><option value="auto">Placed by the rules</option><option value="manual">Only the joints set by hand</option></select>
-      <label class="hint" style="margin:0" title="${esc(def.runs.description)}">Straight runs, m <input data-j="runs" placeholder="berth length" style="width:150px"></label>
+      <label class="hint" style="margin:0" title="${esc(def.runs.description)}">Straight runs, m <input data-j="runs" placeholder="e.g. 300, 150" style="width:150px"></label>
       <label class="hint" style="margin:0" title="${esc(def.pile_spacing.description)}">Pile row spacing <input type="number" step="any" min="0" data-j="pile_spacing" placeholder="from the model" style="width:110px"> m</label>
       <label class="hint" style="margin:0" title="${esc(def.first_row.description)}">First row from each run's start <input type="number" step="any" min="0" data-j="first_row" placeholder="half a bay" style="width:100px"> m</label>
       <label class="hint" style="margin:0" title="${esc(def.fixed.description)}">Joints set by hand at <input data-j="fixed" placeholder="e.g. 120, 250" style="width:130px"> m</label>
@@ -4522,7 +4544,8 @@ async function renderCostingTab(host) {
             <div class="field"><label>Length the model covers</label>${input(c.section_id, "model_length", c.model_length_m != null ? fmt(c.model_length_m, 1) : "", "", "m")}</div>
           </div>
           <p class="status">Empty boxes use the value shown in grey, from the design. The number follows the berth length and spacing
-            as you type them; a number you give yourself stays until you press Use automatic.</p>
+            as you type them; a number you give yourself stays until you press Use automatic. The berth length is for
+            costing only: the expansion joints, and so the beams' and slabs' restraint length, come from the runs on the Sections tab.</p>
           <div class="scroll"><table class="cost"><tr><th>Element</th><th>Spacing</th><th>Number</th><th>Length</th><th>Steel price</th><th>Basis</th>
             <th>Concrete m³</th><th>Rebar t</th><th>Steel t</th><th>Cost (${esc(cur)})</th><th>Per m</th></tr>${rows}
             <tr class="total"><td>Total</td><td colspan="5">${fmt(c.berth_length_m, 1)} m of berth${t.complete ? "" : " (incomplete: prices missing)"}</td>
@@ -5406,10 +5429,10 @@ function slabCard(d) {
       </table></div><div class="charts" data-kind="punch"></div>
       <details style="margin-top:8px"><summary>Each pile head's own check (${punch.length} heads)</summary>
       <p class="status">For checking only: what each head would need on its own. Change a head's thickness for a slope, then save and design again.</p>
-      <div class="scroll"><table class="punch"><tr><th>Pile</th><th>X, Y</th><th>Thickness</th><th>V<sub>Ed</sub></th><th>β</th><th>v<sub>Ed</sub> / v<sub>Rd,c</sub> (MPa)</th><th>At the face / v<sub>Rd,max</sub></th><th>Utilisation</th><th>Links on its own</th></tr>
+      <div class="scroll"><table class="punch"><tr><th>Pile</th><th>X, Y</th><th>Thickness</th><th>V<sub>Ed</sub></th><th>β</th><th>v<sub>Ed</sub> / v<sub>Rd,c</sub> (MPa)</th><th>At the face / v<sub>Rd,max</sub></th><th>Utilisation (with links where needed)</th><th>Links on its own</th></tr>
       ${punch.map((q, i) => { const o = q.own || q; return `<tr><td>${esc(q.pile)}${q.governing ? " <b>(worst)</b>" : ""}</td><td>${fmt(q.plan_x ?? q.x, 1)}, ${fmt(q.plan_y ?? q.y, 1)}</td>
         <td><input type="number" step="any" data-depth="${i}" value="${q.thickness_mm}" style="width:80px" title="${esc(q.thickness_from)}"> mm</td><td>${fmt(o.V_kN)} kN<br><span class="status">${esc(o.combination)}</span></td><td>${fmt(o.beta, 2)}</td>
-        <td>${fmt(o.vEd_MPa, 3)} / ${fmt(o.vRd_c_MPa, 3)}</td><td>${fmt(o.vEd_face_MPa, 2)} / ${fmt(o.vRd_max_MPa, 2)}</td><td>${fmt(o.utilisation, 2)}</td>
+        <td>${fmt(o.vEd_MPa, 3)} / ${fmt(o.vRd_c_MPa, 3)}</td><td>${fmt(o.vEd_face_MPa, 2)} / ${fmt(o.vRd_max_MPa, 2)}</td><td>${fmt(o.utilisation, 2)}${o.utilisation_no_links != null && o.utilisation_no_links !== o.utilisation ? `<br><span class="status">${fmt(o.utilisation_no_links, 2)} without links</span>` : ""}</td>
         <td>${o.needs_reinforcement ? (o.perimeters ? `${o.perimeters} perimeters, ${fmt(o.asw_mm2_per_perimeter)} mm² each` : o.passed ? "–" : "fails") : "none"}</td></tr>`; }).join("")}
       </table></div></details>
     ${punchBarsNote(d)}

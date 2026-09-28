@@ -21,6 +21,7 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 from app import create_app
 from app.crs import MOUNT, load as load_crs
+from app.programs import guard
 from app.triton_door import mounts as triton_mounts
 
 control = create_app()
@@ -29,7 +30,8 @@ control = create_app()
 # itself, with a page saying what to do about it. That is better than a 404 on a
 # door the front page offers, and it means this file is the same before and after.
 crs = load_crs()
-mounted = {MOUNT: crs} if crs else {}
+# The older sheet answers only accounts the administrator gave the comment sheet.
+mounted = {MOUNT: guard(control, crs, "crs")} if crs else {}
 mounted.update(triton_mounts(control))
 application = DispatcherMiddleware(control, mounted) if mounted else control
 

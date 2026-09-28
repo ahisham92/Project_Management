@@ -175,11 +175,18 @@ def init_db(path: Path | str | None = None) -> None:
             ("document_kinds", "standard_hours", "REAL NOT NULL DEFAULT 0"),
             ("project_mix", "quantity", "REAL NOT NULL DEFAULT 0"),
             ("task_mix", "quantity", "REAL NOT NULL DEFAULT 0"),
+            # A sign-in name the administrator gives an account, beside its email.
+            ("users", "username", "TEXT"),
+            # Which programs an account may open, comma-separated. NULL is every
+            # program, which is what accounts made before the choice existed keep.
+            ("users", "programs", "TEXT"),
         ):
             _ensure_column(conn, table, column, definition)
         # After the register's own tables, not with the other columns above:
         # foreign keys are on, and a column cannot point at a table that does
         # not exist yet.
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username"
+                     " ON users(username COLLATE NOCASE) WHERE username IS NOT NULL")
         _ensure_column(conn, "time_entries", "submittal_id",
                        "INTEGER REFERENCES submittals(id) ON DELETE SET NULL")
 

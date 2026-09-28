@@ -34,9 +34,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-from flask import Flask, session
+from flask import Flask
 
-from .db import data_dir, query_one
+from .db import data_dir
+from .programs import account_in, may_open
 
 MOUNT = "/triton"
 NAME = "Triton"
@@ -71,11 +72,12 @@ def describe() -> dict[str, Any]:
 
 def signed_in(control: Flask, environ: dict[str, Any]) -> bool:
     """Whether the request carries project control's session for a real user."""
-    with control.request_context(environ):
-        user_id = session.get("user_id")
-        if not user_id:
-            return False
-        return query_one("SELECT id FROM users WHERE id = ?", (user_id,)) is not None
+    return account_in(control, environ) is not None
+
+
+def let_in(control: Flask, environ: dict[str, Any]) -> bool:
+    """Whether the signed-in account has been given Triton by the administrator."""
+    return may_open(account_in(control, environ), "triton")
 
 
 def load(control: Flask) -> Callable | None:
@@ -103,7 +105,14 @@ def load(control: Flask) -> Callable | None:
             start_response("301 Moved Permanently", [("Location", mount + "/")])
             return [b""]
         if signed_in(control, environ):
-            return triton(environ, start_response)
+            if let_in(control, environ):
+                return triton(environ, start_response)
+            if path.startswith("/api/"):
+                body = json.dumps({"detail": "Your account has not been given Triton."}).encode()
+                start_response("403 Forbidden", [("Content-Type", "application/json")])
+                return [body]
+            start_response("302 Found", [("Location", "/?not=triton")])
+            return [b""]
         if path.startswith("/api/"):
             body = json.dumps({"detail": "Sign in to use Triton."}).encode()
             start_response("401 Unauthorized", [("Content-Type", "application/json")])

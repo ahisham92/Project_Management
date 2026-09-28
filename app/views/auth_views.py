@@ -25,13 +25,15 @@ def login():
         return redirect(url_for("home.chooser"))
 
     if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
+        # One box for either: the username the administrator gave, or the email.
+        name = (request.form.get("email") or request.form.get("username") or "").strip().lower()
         password = request.form.get("password") or ""
-        user = query_one("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (email,))
+        user = (query_one("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (name,))
+                or query_one("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (name,)))
         if user and verify_password(password, user["password_hash"]):
             sign_in(user)
             return redirect(_safe_next(request.args.get("next")))
-        flash("Incorrect email or password", "error")
+        flash("Incorrect username or password", "error")
 
     return render_template("login.html", mode="login", signup_open=signup_allowed())
 

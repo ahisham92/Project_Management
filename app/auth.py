@@ -53,7 +53,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def signup_allowed() -> bool:
-    if os.environ.get("ALLOW_SIGNUP", "true").lower() == "false":
+    # Accounts are made by the administrator in the admin panel. ALLOW_SIGNUP=true
+    # opens the public "Create account" page again.
+    if os.environ.get("ALLOW_SIGNUP", "false").lower() != "true":
         # The very first account is always allowed, or nobody could ever sign in.
         return query_one("SELECT COUNT(*) AS n FROM users")["n"] == 0
     return True

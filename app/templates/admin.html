@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge %}
+{% block title %}Admin — Project Control{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Admin</h1>
+    <p class="small muted" style="margin-top:2px">
+      Only administrators see this page. Nobody can sign themselves up: make each account here
+      and choose which programs it sees.
+    </p>
+  </div>
+</div>
+
+<div class="chips" style="max-width:420px;margin-bottom:16px">
+  <a href="{{ url_for('admin.index') }}" class="{{ 'active' if tab != 'new' }}" style="flex:1;text-align:center">Users ({{ accounts | length }})</a>
+  <a href="{{ url_for('admin.index', tab='new') }}" class="{{ 'active' if tab == 'new' }}" style="flex:1;text-align:center">Create user</a>
+</div>
+
+{% if tab == 'new' %}
+<div class="card" style="max-width:520px">
+  <div class="card-head"><h2>Create a user</h2></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('admin.create_user') }}" class="stack" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Username</span>
+        <input name="username" required pattern="[A-Za-z0-9._\-]{3,40}" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <span class="field-hint">What they type to sign in. Letters, digits, dots, dashes.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Password</span>
+        <input name="password" type="text" minlength="8" required autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <span class="field-hint">At least 8 characters. They can change it later under their name.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Full name <span class="muted">(optional)</span></span>
+        <input name="name">
+      </label>
+      <label class="field">
+        <span class="field-label">Email <span class="muted">(optional)</span></span>
+        <input name="email" type="email" autocapitalize="none">
+      </label>
+      <fieldset class="field" style="border:0;padding:0;margin:0">
+        <span class="field-label">Programs they can see</span>
+        {% for key, label in programs %}
+          <label style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <input type="checkbox" name="programs" value="{{ key }}"> {{ label }}
+          </label>
+        {% endfor %}
+      </fieldset>
+      <label style="display:flex;gap:8px;align-items:center">
+        <input type="checkbox" name="role" value="admin"> Administrator (sees every program and this page)
+      </label>
+      <div><button type="submit" class="btn btn-primary">Create user</button></div>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-head"><h2>Users</h2><p class="small muted" style="margin-top:2px">Tap a name to change its programs or password.</p></div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>User</th><th>Programs</th><th>Signed up</th></tr>
+      </thead>
+      <tbody>
+        {% for a in accounts %}
+          <tr>
+            <td>
+              <a href="{{ url_for('admin.edit_user', user_id=a['id']) }}"><strong>{{ a['name'] }}</strong></a>
+              {% if a['role'] == 'admin' %}{{ badge('good', 'Admin') }}{% endif %}
+              <div class="small muted">{{ a['username'] or a['email'] }}{% if a['username'] and '@' in a['email'] %} · {{ a['email'] }}{% endif %}</div>
+            </td>
+            <td>
+              {% if a['can_open'] %}
+                {% for key, label in programs if key in a['can_open'] %}{{ label }}{% if not loop.last %}, {% endif %}{% endfor %}
+              {% else %}<span class="muted">None</span>{% endif %}
+            </td>
+            <td>{{ short_date(a['created_at'][:10]) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -3,7 +3,7 @@
 {% block content %}
 <div style="max-width:480px">
   <h1>Your account</h1>
-  <p class="small muted" style="margin-top:4px">{{ current_user['name'] }} · {{ current_user['email'] }}</p>
+  <p class="small muted" style="margin-top:4px">{{ current_user['name'] }} · {{ current_user['username'] or current_user['email'] }}</p>
 
   <div class="card" style="margin-top:16px">
     <div class="card-head"><h2>Change password</h2></div>

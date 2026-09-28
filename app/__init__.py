@@ -10,11 +10,12 @@ import time
 from datetime import timedelta
 from threading import Lock, Thread
 
-from flask import Flask, g, render_template
+from flask import Flask, abort, g, render_template, request
 
 from . import filters
 from .auth import load_user, secret_key
 from .db import close_db, database_path, init_db
+from .programs import BLUEPRINTS, allowed, may_open
 
 __version__ = "2.0.0"
 
@@ -40,10 +41,16 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     def _before():
         load_user()
         _nightly(app)
+        # A program the administrator has not given this account is refused by
+        # address too, not only left off the front page.
+        program = BLUEPRINTS.get(request.blueprint or "")
+        if program and g.user is not None and not may_open(g.user, program):
+            abort(403)
 
     @app.context_processor
     def _context():
-        return {"current_user": g.get("user"), "app_version": __version__}
+        return {"current_user": g.get("user"), "app_version": __version__,
+                "my_programs": allowed(g.get("user"))}
 
     if not os.environ.get("SECRET_KEY"):
         # The key is generated and kept in the data directory. That is fine on a
@@ -56,6 +63,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
 
     from .views.assistant_views import bp as assistant_bp
     from .views.crs_views import bp as crs_bp
+    from .views.admin_views import bp as admin_bp
     from .views.auth_views import bp as auth_bp
     from .views.home_views import bp as home_bp
     from .views.meetings_views import bp as meetings_bp
@@ -63,6 +71,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     from .views.projects_views import bp as projects_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
     app.register_blueprint(home_bp)
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(projects_bp)

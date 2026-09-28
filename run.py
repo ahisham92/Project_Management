@@ -39,7 +39,9 @@ def _serve(args: argparse.Namespace) -> int:
     # application mounted in front of /crs — the same arrangement the host
     # serves, so what runs on a laptop is what runs in front of the team.
     crs = load_crs()
-    mounted = {MOUNT: crs} if crs is not None else {}
+    from app.programs import guard
+
+    mounted = {MOUNT: guard(app, crs, "crs")} if crs is not None else {}
     triton = triton_mounts(app)
     mounted.update(triton)
     served = app

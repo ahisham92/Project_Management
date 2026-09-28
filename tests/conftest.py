@@ -13,6 +13,9 @@ import pytest
 _TMP = tempfile.mkdtemp(prefix="pm-tests-")
 os.environ.setdefault("DATA_DIR", _TMP)
 os.environ.setdefault("SECRET_KEY", "test-secret")
+# Many older tests make their second account through the public sign-up page,
+# which the site itself now keeps closed (the admin panel makes accounts).
+os.environ.setdefault("ALLOW_SIGNUP", "true")
 
 from app import create_app  # noqa: E402
 from app.seed import seed as seed_database  # noqa: E402

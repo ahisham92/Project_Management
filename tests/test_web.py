@@ -22,7 +22,7 @@ def test_signed_out_visitors_are_sent_to_the_login_page(client):
 
 def test_login_rejects_a_wrong_password(client):
     response = client.post("/login", data={"email": "admin@example.com", "password": "nope"}, follow_redirects=True)
-    assert "Incorrect email or password" in text(response)
+    assert "Incorrect username or password" in text(response)
 
 
 def test_login_accepts_the_seeded_account(client):

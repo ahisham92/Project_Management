@@ -12,7 +12,17 @@
   </div>
 </div>
 
+{% if request.args.get('not') == 'triton' %}
+  <div class="flashes"><div class="flash error">Your account has not been given Triton. Ask the administrator.</div></div>
+{% endif %}
+{% if not my_programs %}
+  <div class="card"><div class="card-body">
+    Your account has not been given any programs yet. Ask the administrator to choose which ones you can see.
+  </div></div>
+{% endif %}
+
 <div class="doors">
+  {% if 'pm' in my_programs %}
   <a class="door" href="{{ url_for('portfolio.index') }}">
     <span class="door-mark" aria-hidden="true">PC</span>
     <span class="door-name">Project Management</span>
@@ -23,7 +33,9 @@
     </span>
     <span class="door-go">Open Project Management →</span>
   </a>
+  {% endif %}
 
+  {% if 'crs' in my_programs %}
   <a class="door" href="{{ url_for('crs.index') }}">
     <span class="door-mark door-mark-crs" aria-hidden="true">CRS</span>
     <span class="door-name">Comment Response Sheet</span>
@@ -34,7 +46,9 @@
     </span>
     <span class="door-go">Open the Comment Response Sheet →</span>
   </a>
+  {% endif %}
 
+  {% if 'triton' in my_programs %}
   <a class="door{% if not triton['ready'] %} door-shut{% endif %}" href="{{ triton['href'] }}">
     <span class="door-mark door-mark-triton" aria-hidden="true">T</span>
     <span class="door-name">Triton{% if not triton['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
@@ -45,9 +59,10 @@
     </span>
     <span class="door-go">Open Triton →</span>
   </a>
+  {% endif %}
 </div>
 
-{% if classic and classic['ready'] %}
+{% if classic and classic['ready'] and 'crs' in my_programs %}
   <p class="small muted" style="margin-top:12px">
     The comment sheet that kept its work in your own browser is still there, at
     <a href="{{ classic['href'] }}">{{ classic['href'] }}</a>, so anything left in it can be

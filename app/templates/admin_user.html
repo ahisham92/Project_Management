@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ account['name'] }} — Admin{% endblock %}
+
+{% block content %}
+{% set me = account['id'] == current_user['id'] %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('admin.index') }}">← All users</a></p>
+    <h1>{{ account['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">Signed up {{ short_date(account['created_at'][:10]) }}</p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-head"><h2>Account and programs</h2></div>
+    <div class="card-body">
+      <form method="post" class="stack" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Username</span>
+          <input name="username" value="{{ account['username'] or '' }}" pattern="[A-Za-z0-9._\-]{3,40}" autocapitalize="none" autocorrect="off" spellcheck="false">
+        </label>
+        <label class="field">
+          <span class="field-label">Full name</span>
+          <input name="name" value="{{ account['name'] }}">
+        </label>
+        <label class="field">
+          <span class="field-label">Email</span>
+          <input name="email" type="email" value="{{ account['email'] if '@' in account['email'] else '' }}" autocapitalize="none">
+        </label>
+        <fieldset class="field" style="border:0;padding:0;margin:0">
+          <span class="field-label">Programs they can see</span>
+          {% for key, label in programs %}
+            <label style="display:flex;gap:8px;align-items:center;margin-top:6px">
+              <input type="checkbox" name="programs" value="{{ key }}" {% if key in can_open %}checked{% endif %}> {{ label }}
+            </label>
+          {% endfor %}
+          {% if account['role'] == 'admin' %}<span class="field-hint">Administrators see every program whatever is ticked.</span>{% endif %}
+        </fieldset>
+        <label style="display:flex;gap:8px;align-items:center">
+          <input type="checkbox" name="role" value="admin" {% if account['role'] == 'admin' %}checked{% endif %} {% if me %}disabled{% endif %}>
+          Administrator{% if me %} (you){% endif %}
+        </label>
+        <div><button type="submit" class="btn btn-primary">Save</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Set a new password</h2></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('admin.reset_password', user_id=account['id']) }}" class="stack" autocomplete="off">
+          <label class="field">
+            <span class="field-label">New password</span>
+            <input name="password" type="text" minlength="8" required autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false">
+          </label>
+          <div><button type="submit" class="btn">Set password</button></div>
+        </form>
+      </div>
+    </div>
+    {% if not me %}
+    <div class="card">
+      <div class="card-head"><h2>Delete account</h2></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('admin.delete_user', user_id=account['id']) }}"
+              onsubmit="return confirm('Delete this account? This cannot be undone.')">
+          <button type="submit" class="btn btn-danger">Delete account</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

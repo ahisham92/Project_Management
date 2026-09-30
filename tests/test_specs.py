@@ -212,7 +212,7 @@ def test_a_house_template_without_the_styles_is_refused():
 # --- the pages ------------------------------------------------------------------
 
 def test_the_door_and_the_pages(signed_in):
-    assert "Open the Specs Writer" in text(signed_in.get("/"))
+    assert "Open THEMIS" in text(signed_in.get("/"))
     assert signed_in.get("/specs/").status_code == 200
 
 
@@ -292,4 +292,4 @@ def test_an_account_without_the_program_is_kept_out(app, signed_in):
     omar = app.test_client()
     omar.post("/login", data={"email": "omar", "password": "longenough1"})
     assert omar.get("/specs/").status_code == 403
-    assert "Open the Specs Writer" not in text(omar.get("/"))
+    assert "Open THEMIS" not in text(omar.get("/"))

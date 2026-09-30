@@ -1,0 +1,9 @@
+{#- THEMIS, the structural specifications app: its brick-pyramid mark, drawn inline so it
+    follows the light and dark themes (navy bricks turn white in the dark, the top stays gold). -#}
+{% macro mark(cls='themis-mark', label='THEMIS') -%}
+<svg class="{{ cls }}" viewBox="0 0 276 199" xmlns="http://www.w3.org/2000/svg"{% if label %} role="img" aria-label="{{ label }}"{% else %} aria-hidden="true"{% endif %}><rect x="114" y="0" width="48" height="31" rx="4" fill="var(--themis-gold)"/><rect x="85.5" y="42" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="142.5" y="42" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="57" y="84" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="114" y="84" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="171" y="84" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="28.5" y="126" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="85.5" y="126" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="142.5" y="126" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="199.5" y="126" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="0" y="168" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="57" y="168" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="114" y="168" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="171" y="168" width="48" height="31" rx="4" fill="var(--themis-ink)"/><rect x="228" y="168" width="48" height="31" rx="4" fill="var(--themis-ink)"/></svg>
+{%- endmacro %}
+
+{% macro lockup(tagline=true) -%}
+<span class="themis-lockup">{{ mark(label='') }}<span class="themis-words"><span class="themis-name">THEMIS</span>{% if tagline %}<span class="themis-tagline">Structural Specifications</span>{% endif %}</span></span>
+{%- endmacro %}

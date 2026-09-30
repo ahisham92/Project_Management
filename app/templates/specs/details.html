@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
-{% block title %}Details · {{ spec['name'] }} · Specs Writer{% endblock %}
+{% block title %}Details · {{ spec['name'] }} · THEMIS{% endblock %}
 
 {% macro controls(name, q, current, answered, allow_same=false) %}
   {%- set seen = picked(q, current, answered, allow_same) -%}
@@ -63,7 +63,7 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>Details</h1>
     <p class="small muted" style="margin-top:2px">The questions this project's sections ask, with the master's own answers to pick from. Each answer is written into every clause it belongs to.</p>
   </div>

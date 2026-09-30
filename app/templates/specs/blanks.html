@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
-{% block title %}Blanks to fill · {{ spec['name'] }} · Specs Writer{% endblock %}
+{% block title %}Blanks to fill · {{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>Blanks to fill</h1>
     <p class="small muted" style="margin-top:2px">The master leaves choices in [square brackets] and places to type in &lt;Insert ...&gt;. Pick or type the answer for each: it is written into this project's text in place of the blank, and shows as an amendment to the master.</p>
   </div>

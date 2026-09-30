@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
-{% block title %}Specs Writer{% endblock %}
+{% import "partials/themis.html" as themis %}
+{% block title %}THEMIS · Structural Specifications{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Specs Writer</h1>
+    <div class="themis-hero">{{ themis.mark(label='') }}<div><h1>THEMIS</h1><span class="themis-tagline">Structural Specifications</span></div></div>
     <p class="small muted" style="margin-top:2px">
       One master text of every section, kept in the library. Each project takes a copy, fills in
       its own details and choices, amends what it has to, and issues every section in the same

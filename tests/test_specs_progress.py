@@ -184,7 +184,7 @@ def test_a_stale_load_is_cleared_by_the_next_and_a_bad_one_is_refused(app, signe
     bad = signed_in.post("/specs/library/file/begin", data={"library": (io.BytesIO(b"nope"), "x.zip")},
                          content_type="multipart/form-data", headers=PROGRESS).get_json()
     assert set(bad) == {"go"}
-    assert "not a Specs Writer library file" in text(signed_in.get(bad["go"]))
+    assert "not a THEMIS library file" in text(signed_in.get(bad["go"]))
     assert pending(app) == before
 
 

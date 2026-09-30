@@ -1,4 +1,5 @@
 <!doctype html>
+{% import "partials/themis.html" as themis %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -9,7 +10,14 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
   {% endif %}
+  {% if request.blueprint == 'specs' %}
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themis/icon.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='themis/apple-touch-icon.png') }}">
+  <meta name="apple-mobile-web-app-title" content="THEMIS">
+  <meta name="theme-color" content="#1f2a40">
+  {% else %}
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><text x='16' y='22' font-family='system-ui' font-size='14' font-weight='700' fill='white' text-anchor='middle'>PC</text></svg>">
+  {% endif %}
   <script>
     // Applied before first paint so the page never flashes the wrong theme.
     // Marks the page as scripted, which hides the controls that only exist
@@ -27,10 +35,17 @@
   <header class="topbar">
     <div class="wrap">
       <div class="topbar-inner">
+        {% if request.blueprint == 'specs' %}
+        <a class="brand" href="{{ url_for('specs.index') }}" aria-label="THEMIS, Structural Specifications">
+          {{ themis.lockup() }}
+        </a>
+        <a href="{{ url_for('home.chooser') }}" class="small" style="text-decoration:none;color:var(--muted)">All apps</a>
+        {% else %}
         <a class="brand" href="{{ url_for('home.chooser') }}">
           <span class="brand-mark" aria-hidden="true">PC</span>
           <span>Project Control</span>
         </a>
+        {% endif %}
         {% if 'pm' in my_programs %}
           <a href="{{ url_for('portfolio.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Portfolio</a>
         {% endif %}
@@ -38,7 +53,7 @@
           <a href="/triton/" class="small" style="text-decoration:none;color:var(--muted)">Triton</a>
         {% endif %}
         {% if 'specs' in my_programs %}
-          <a href="{{ url_for('specs.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Specs</a>
+          <a href="{{ url_for('specs.index') }}" class="small" style="text-decoration:none;color:var(--muted)">THEMIS</a>
         {% endif %}
         {% if 'pm' in my_programs %}
           <a href="{{ url_for('portfolio.guide') }}" class="small"

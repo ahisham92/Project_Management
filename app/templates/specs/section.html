@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "specs/_paragraph.html" import paragraph %}
-{% block title %}{{ section['number'] }} {{ section['title'] }} · Specs Writer{% endblock %}
+{% block title %}{{ section['number'] }} {{ section['title'] }} · THEMIS{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
     <p class="small">
-      <a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+      <a href="{{ url_for('specs.index') }}">THEMIS</a> ·
       {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
       {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}
     </p>

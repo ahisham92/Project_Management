@@ -823,7 +823,7 @@ def details(set_id: int):
     return render_template(
         "specs/details.html", spec=row, groups=groups, group=groups[here] if groups else None,
         here=here, total=sum(len(g["questions"]) for g in groups),
-        open_n=sum(g["open"] for g in groups), element_labels=labels,
+        open_n=sum(g["open"] for g in groups), need_n=sum(g["need"] for g in groups), element_labels=labels,
         FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
 

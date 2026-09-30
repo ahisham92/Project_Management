@@ -145,6 +145,8 @@ def _balanced(text: str) -> str:
         text = text.strip("()").strip()
         if text.count("(") != text.count(")"):
             text = text.replace("(", "").replace(")", "")
+    if text.startswith("(") and text.endswith(")") and "(" not in text[1:-1] and ")" not in text[1:-1]:
+        text = text[1:-1].strip()
     return text
 
 
@@ -276,10 +278,11 @@ def save_switches(set_id: int, given: Mapping[str, str | None]) -> None:
 def grouped(questions: list[dict]) -> list[dict]:
     groups: "OrderedDict[str, dict]" = OrderedDict()
     for q in questions:
-        g = groups.setdefault(q["group"], {"name": q["group"], "questions": [], "open": 0,
+        g = groups.setdefault(q["group"], {"name": q["group"], "questions": [], "open": 0, "need": 0,
                                            "slug": re.sub(r"[^a-z0-9]+", "-", q["group"].lower()).strip("-")})
         g["questions"].append(q)
         g["open"] += not q["answered"]
+        g["need"] += not q["answered"] and q.get("suggested") is None
     return list(groups.values())
 
 

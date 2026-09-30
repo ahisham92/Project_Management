@@ -1218,6 +1218,8 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-pill input[type=radio], .spec-pill input[type=checkbox] { width: auto; margin: 0; accent-color: var(--series-1); }
 .spec-pill:has(input:checked) { border-color: var(--series-1); background: var(--tint-good); box-shadow: 0 0 0 1px var(--series-1) inset; }
 .spec-pill-free input[type=text] { width: min(240px, 55vw); padding: 3px 8px; border-radius: 12px; }
+.spec-pill-free:first-child { flex: 1 1 320px; max-width: 640px; }
+.spec-pill-free:first-child input[type=text] { flex: 1; width: auto; min-width: 0; }
 .spec-pill-none, .spec-pill-same { color: var(--ink-2); }
 .spec-suggested { font-size: 0.7rem; color: var(--good-ink); border: 1px solid currentColor; border-radius: 8px; padding: 0 5px; }
 .spec-q-split { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 0.85rem; }

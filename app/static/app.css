@@ -1282,3 +1282,4 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-explain-places { padding-left: 18px; }
 .spec-explain-admin { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
 @media (min-width: 1100px) { body.spec-explain-on main { margin-right: 460px; } }
+.spec-explain-add label.spec-explain-check { display: flex; gap: 6px; align-items: center; }

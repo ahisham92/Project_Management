@@ -98,6 +98,10 @@
       <form method="post" action="{{ url_for('specs.save_explanation', key=q['key']) }}">
         <input type="hidden" name="set_id" value="{{ spec['id'] }}"><input type="hidden" name="group" value="{{ group }}">
         <label>What it means<textarea name="definition" rows="4">{{ q['definition'] }}</textarea></label>
+        {% if spec['family'] %}
+        <input type="hidden" name="kind" value="{{ spec['family'] }}">
+        <label class="spec-explain-check"><input type="checkbox" name="only_kind" value="1"{% if q['own_definition'] %} checked{% endif %}> This wording is only for {{ spec['family'] }} projects</label>
+        {% endif %}
         <label>Drawing
           <select name="picture">
             <option value="">None</option>

@@ -574,6 +574,8 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "spec_questions", "definition", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "spec_questions", "picture", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "spec_questions", "refs", "TEXT NOT NULL DEFAULT '[]'")
+    # A kind's own wording of the definition where its codes differ ({"03A": "..."}).
+    _ensure_column(conn, "spec_questions", "definition_kinds", "TEXT NOT NULL DEFAULT '{}'")
     # Screenshots of the codes' own clauses (and pictures) an administrator adds
     # to a question; code '' is a picture of the question itself.
     conn.execute(

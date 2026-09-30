@@ -43,7 +43,7 @@ GROUPS = [
 OTHER = "Other details"
 FIELDS = ("key", "label", "grp", "help", "suggested", "per_element", "many", "optional", "position")
 # What explains a question: a file that lacks them never clears them.
-EXPLAINED = ("definition", "picture", "refs")
+EXPLAINED = ("definition", "picture", "refs", "definition_kinds")
 # Which questions a project answers per element rather than once for all.
 SPLIT = "__split__"
 FREE, NONE, SAME = "__free__", "__none__", "__same__"
@@ -71,7 +71,8 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
     count = 0
     columns = FIELDS + EXPLAINED
     keep = {f: f"COALESCE(NULLIF(excluded.{f}, {empty!r}), spec_questions.{f})"
-            for f, empty in (("definition", ""), ("picture", ""), ("refs", "[]"))}
+            for f, empty in (("definition", ""), ("picture", ""), ("refs", "[]"),
+                             ("definition_kinds", "{}"))}
     update = ", ".join(f"{f} = {keep.get(f, 'excluded.' + f)}" for f in columns[1:])
     with conn:
         for i, r in enumerate(rows):
@@ -84,7 +85,8 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
                       1 if r.get("per_element") else 0, 1 if r.get("many") else 0,
                       1 if r.get("optional") else 0, int(r.get("position", r.get("order", i)) or 0),
                       str(r.get("definition") or "").strip(), _slug(r.get("picture")),
-                      json.dumps(clean_refs(r.get("refs")), ensure_ascii=False))
+                      json.dumps(clean_refs(r.get("refs")), ensure_ascii=False),
+                      json.dumps(clean_kinds(r.get("definition_kinds")), ensure_ascii=False))
             conn.execute(
                 f"INSERT INTO spec_questions ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))}) "
                 "ON CONFLICT(key) DO " + ("NOTHING" if mode == "add" else "UPDATE SET " + update),
@@ -95,7 +97,8 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
 
 def packed() -> list[dict]:
     return [{**{k: d[k] for k in FIELDS}, "definition": d.get("definition") or "",
-             "picture": d.get("picture") or "", "refs": refs_of(d)}
+             "picture": d.get("picture") or "", "refs": refs_of(d),
+             "definition_kinds": clean_kinds(d.get("definition_kinds"))}
             for d in definitions().values()]
 
 
@@ -130,6 +133,23 @@ def clean_refs(refs: Any) -> list[dict]:
         out.append({**{f: str(r.get(f) or "").strip()[:600] for f in REF_FIELDS},
                     "kinds": [k.strip().upper() for k in kinds if k and k.strip()]})
     return out
+
+
+def clean_kinds(given: Any) -> dict[str, str]:
+    """A definition worded for one kind of project, by kind ("03A")."""
+    if isinstance(given, str):
+        try:
+            given = json.loads(given or "{}")
+        except ValueError:
+            given = {}
+    if not isinstance(given, Mapping):
+        return {}
+    return {str(k).strip().upper(): str(v).strip() for k, v in given.items()
+            if str(k).strip() and str(v or "").strip()}
+
+
+def definition_for(d: Mapping[str, Any], family: str = "") -> str:
+    return clean_kinds(d.get("definition_kinds")).get((family or "").upper()) or d.get("definition") or ""
 
 
 def refs_of(d: Mapping[str, Any]) -> list[dict]:
@@ -168,9 +188,21 @@ def drawings() -> list[str]:
     return sorted(p.stem for p in DRAWINGS.glob("*.svg")) if DRAWINGS.is_dir() else []
 
 
-def save_explanation(key: str, definition: str, picture: str, refs: list[dict]) -> None:
-    get_db().execute("UPDATE spec_questions SET definition = ?, picture = ?, refs = ? WHERE key = ?",
-                     ((definition or "").strip(), _slug(picture),
+def save_explanation(key: str, definition: str, picture: str, refs: list[dict],
+                     family: str = "") -> None:
+    """An administrator's wording; with a kind, it is that kind's own definition
+    (an empty one goes back to the shared wording)."""
+    d = definitions().get(key) or {}
+    kinds = clean_kinds(d.get("definition_kinds"))
+    shared = d.get("definition") or ""
+    if family:
+        kinds[family.upper()] = (definition or "").strip()
+        kinds = clean_kinds(kinds)
+    else:
+        shared = (definition or "").strip()
+    get_db().execute("UPDATE spec_questions SET definition = ?, definition_kinds = ?, picture = ?, "
+                     "refs = ? WHERE key = ?",
+                     (shared, json.dumps(kinds, ensure_ascii=False), _slug(picture),
                       json.dumps(clean_refs(refs), ensure_ascii=False), key))
     get_db().commit()
 
@@ -238,7 +270,8 @@ def explained(key: str, family: str = "") -> dict | None:
                      "images": [i for i in shots if i["code"].lower() == r["code"].lower()
                                 and i["clause"].lower() == r["clause"].lower()]})
     placed = {(i["code"].lower(), i["clause"].lower()) for r in refs for i in r["images"]}
-    return {**d, "drawing": drawing(d.get("picture") or ""),
+    return {**d, "definition": definition_for(d, family), "drawing": drawing(d.get("picture") or ""),
+            "own_definition": family in clean_kinds(d.get("definition_kinds")),
             "refs": [r for r in refs if r["mine"]], "other_refs": [r for r in refs if not r["mine"]],
             "pictures": [i for i in shots if not i["code"]],
             "loose": [i for i in shots if i["code"] and (i["code"].lower(), i["clause"].lower()) not in placed]}

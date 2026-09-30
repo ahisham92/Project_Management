@@ -859,7 +859,8 @@ def save_explanation(key: str):
     if _admin_only() and key in specs_questions.definitions():
         specs_questions.save_explanation(
             key, request.form.get("definition", ""), request.form.get("picture", ""),
-            specs_questions.refs_from_lines(request.form.get("refs", "")))
+            specs_questions.refs_from_lines(request.form.get("refs", "")),
+            request.form.get("kind", "") if request.form.get("only_kind") else "")
         flash("Saved the explanation. Every project sees it.", "success")
     return _back_to_panel(key)
 

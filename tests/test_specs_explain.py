@@ -97,3 +97,24 @@ def test_an_administrator_edits_the_explanation(app, signed_in):
                                               "title": "Strength", "says": "Same as ACI.",
                                               "kinds": ["16A"]}]
         assert specs_questions.drawing("../x") == ""
+
+
+def test_a_kind_can_word_the_definition_its_own_way(app, signed_in):
+    from app import specs_questions
+
+    set_id = _project(app, signed_in)
+    with app.app_context():
+        specs_questions.save_definitions([{
+            "key": "conc_strength", "label": "Strength", "definition": "Specified f'c at 28 days.",
+            "definition_kinds": {"03a": "Strength class, cylinder/cube, as BS 8500."}}])
+        d = specs_questions.definitions()["conc_strength"]
+        assert specs_questions.definition_for(d, "03A").startswith("Strength class")
+        assert specs_questions.definition_for(d, "15A") == "Specified f'c at 28 days."
+    assert "Specified f&#39;c at 28 days." in text(signed_in.get(f"/specs/sets/{set_id}/explain/conc_strength"))
+    signed_in.post("/specs/questions/conc_strength/explain", data={
+        "set_id": str(set_id), "definition": "Only for 15A.", "kind": "15A", "only_kind": "1"})
+    with app.app_context():
+        d = specs_questions.definitions()["conc_strength"]
+        assert d["definition"] == "Specified f'c at 28 days."
+        assert specs_questions.definition_for(d, "15A") == "Only for 15A."
+        assert specs_questions.definition_for(d, "03A").startswith("Strength class")

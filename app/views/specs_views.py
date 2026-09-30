@@ -19,7 +19,7 @@ from flask import (
 )
 from markupsafe import Markup, escape
 
-from .. import specs
+from .. import specs, specs_check
 from .. import specs_store as store
 from ..auth import login_required
 
@@ -32,11 +32,32 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 @bp.app_template_filter("spectext")
-def spectext(text: str, values: dict | None = None) -> Markup:
-    """A paragraph as it reads for the project, each filled-in word marked."""
+def spectext(text: str, values: dict | None = None, reader=None, here: str = "") -> Markup:
+    """A paragraph as it reads for the project: each filled-in word marked,
+    each cross-reference written out as it stands now, and — given a reader
+    that knows the project's basis — each standard on that basis."""
     values = values or {}
+    text = text or ""
     out, last = [], 0
-    for match in specs.VARIABLE.finditer(text or ""):
+    for match in specs_check.REF.finditer(text):
+        out.append(_words(text[last:match.start()], values, reader))
+        if reader is None:
+            out.append(Markup('<span class="spec-ref">%s</span>') % match.group(0))
+        else:
+            shown, problem = reader.ref(match.group(1), here)
+            out.append(Markup('<span class="spec-ref%s" title="%s">%s</span>')
+                       % (" spec-bad" if problem else "",
+                          problem or f"{match.group(0)}: kept up to date", shown))
+        last = match.end()
+    out.append(_words(text[last:], values, reader))
+    return Markup("").join(out)
+
+
+def _words(text: str, values: dict, reader) -> Markup:
+    if reader is not None:
+        text = reader.standards(text)
+    out, last = [], 0
+    for match in specs.VARIABLE.finditer(text):
         out.append(escape(text[last:match.start()]))
         name = match.group(1)
         if values.get(name):
@@ -46,7 +67,7 @@ def spectext(text: str, values: dict | None = None) -> Markup:
             out.append(Markup('<span class="spec-var" title="No value yet">%s</span>')
                        % match.group(0))
         last = match.end()
-    out.append(escape((text or "")[last:]))
+    out.append(escape(text[last:]))
     return Markup("").join(out)
 
 
@@ -152,18 +173,30 @@ def spec_set(set_id: int):
         for name in specs.unfilled(specs.loads(s["body"]), values):
             if name not in missing:
                 missing.append(name)
+    chosen = store.chosen_for(row)
+    report = store.check_set(set_id) if sections else None
     return render_template(
-        "specs/set.html", spec=row, sections=sections, options=store.options(),
-        chosen=store.chosen_for(row), variables=store.variables(), values=values,
+        "specs/set.html", spec=row, sections=sections, groups=_grouped(store.options()),
+        chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
+        variables=store.variables(), values=values,
         available=[s for s in store.library() if s["id"] not in have],
-        missing=missing, is_admin=_is_admin())
+        missing=missing, is_admin=_is_admin(), report=report)
+
+
+def _grouped(options: list[dict]) -> list[tuple[str, list[dict]]]:
+    """The questions under their headings, in the order they were set out."""
+    groups: dict[str, list[dict]] = {}
+    for o in options:
+        groups.setdefault(o.get("grp") or "Other", []).append(o)
+    return list(groups.items())
 
 
 @bp.post("/sets/<int:set_id>")
 @login_required
 def save_set(set_id: int):
     _set_or_404(set_id)
-    chosen = {o["key"]: request.form.get(f"opt_{o['key']}", "") for o in store.options()}
+    chosen = {o["key"]: "|".join(request.form.getlist(f"opt_{o['key']}")) if o["kind"] == "many"
+              else request.form.get(f"opt_{o['key']}", "") for o in store.options()}
     values = {v["key"]: request.form.get(f"var_{v['key']}", "") for v in store.variables()}
     try:
         store.update_set(set_id, request.form, chosen, values)
@@ -237,10 +270,12 @@ def export_set(set_id: int):
         flash("There are no sections in this specification to issue yet.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
     chosen, values, template = store.chosen_for(row), store.values_for(row), store.template_bytes()
+    reader = store.reader(store.set_whole(set_id), chosen)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
         for s in sections:
-            data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, values, template)
+            data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, values, template,
+                                    resolve=reader.issued(s["number"]))
             bundle.writestr(specs.file_name(row["file_pattern"], s), data)
     name = "".join(c if c.isalnum() or c in "-_ " else "-" for c in (row["code"] or row["name"]))
     return Response(buffer.getvalue(), mimetype="application/zip",
@@ -281,6 +316,7 @@ def set_section(set_id: int, row_id: int):
         "specs/section.html", spec=row, section=s, rows=_rows(nodes, chosen, base),
         compared=base is not None, values=store.values_for(row), is_admin=_is_admin(),
         options=store.options(), chosen=chosen,
+        reader=store.reader(store.set_whole(set_id), chosen),
         master=store.section(s["section_id"]) if s["section_id"] else None)
 
 
@@ -337,8 +373,10 @@ def set_section_action(set_id: int, row_id: int, action: str):
 def set_section_docx(set_id: int, row_id: int):
     row = _set_or_404(set_id)
     s = _set_section_or_404(set_id, row_id)
-    data = specs.write_docx(s, specs.loads(s["body"]), row, store.chosen_for(row),
-                            store.values_for(row), store.template_bytes())
+    chosen = store.chosen_for(row)
+    reader = store.reader(store.set_whole(set_id), chosen)
+    data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, store.values_for(row),
+                            store.template_bytes(), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name(row["file_pattern"], s))
 
 
@@ -409,8 +447,14 @@ def library_section(section_id: int):
     return render_template(
         "specs/section.html", spec=None, section=s, rows=rows, compared=False,
         values={v["key"]: v["default_value"] for v in store.variables()}, chosen={},
+        reader=store.reader(store.library_whole(), _every_choice(), standards=False),
         options=store.options(), versions=store.versions(section_id), version=version,
         is_admin=_is_admin(), master=None)
+
+
+def _every_choice() -> dict[str, str]:
+    """Every answer to every question at once: the master read whole."""
+    return {o["key"]: "|".join(o["choice_list"]) for o in store.options()}
 
 
 def _number_all(nodes):
@@ -461,9 +505,10 @@ def delete_library_section(section_id: int):
 def library_docx(section_id: int):
     s = _library_or_404(section_id)
     chosen = store.chosen_for(None)
+    reader = store.reader(store.library_whole(), chosen, standards=False)
     data = specs.write_docx(s, specs.loads(s["body"]), {"revision": ""}, chosen,
                             {v["key"]: v["default_value"] for v in store.variables()},
-                            store.template_bytes())
+                            store.template_bytes(), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name("SPC-{number}", s))
 
 
@@ -476,10 +521,12 @@ def options():
         if not _admin_only():
             return redirect(url_for("specs.options"))
         form = request.form
-        store.save_options({"key": k, "label": l, "choices": c, "default_value": d}
-                           for k, l, c, d in zip(form.getlist("opt_key"), form.getlist("opt_label"),
-                                                 form.getlist("opt_choices"),
-                                                 form.getlist("opt_default")))
+        store.save_options({"key": k, "label": l, "choices": c, "default_value": d, "grp": gr,
+                            "kind": kd}
+                           for k, l, c, d, gr, kd in zip(
+                               form.getlist("opt_key"), form.getlist("opt_label"),
+                               form.getlist("opt_choices"), form.getlist("opt_default"),
+                               form.getlist("opt_grp"), form.getlist("opt_kind")))
         store.save_variables({"key": k, "label": l, "default_value": d}
                              for k, l, d in zip(form.getlist("var_key"), form.getlist("var_label"),
                                                 form.getlist("var_default")))
@@ -521,3 +568,128 @@ def download_template():
     row = store.template_row()
     data = store.template_bytes() or specs.TEMPLATE.read_bytes()
     return _docx_response(data, row["filename"] if row else "spec-template.docx")
+
+
+@bp.post("/options/suggested")
+@login_required
+def add_suggested():
+    if _admin_only():
+        added = store.add_suggested()
+        flash(f"Added {added} question{'s' if added != 1 else ''}, choices and words from the "
+              "starting list." if added else "Everything on the starting list is already here.",
+              "success")
+    return redirect(url_for("specs.options"))
+
+
+# --- standards ------------------------------------------------------------------------
+
+@bp.route("/standards", methods=["GET", "POST"])
+@login_required
+def standards():
+    if request.method == "POST":
+        if not _admin_only():
+            return redirect(url_for("specs.standards"))
+        form = request.form
+        store.save_standards(
+            ({"topic": t, "bs": b, "us": u} for t, b, u in
+             zip(form.getlist("eq_topic"), form.getlist("eq_bs"), form.getlist("eq_us"))),
+            ({"old": o, "new": n, "note": t} for o, n, t in
+             zip(form.getlist("wd_old"), form.getlist("wd_new"), form.getlist("wd_note"))))
+        flash("Saved. Every specification now reads its standards from this.", "success")
+        return redirect(url_for("specs.standards"))
+    return render_template("specs/standards.html", pairs=store.equivalents(),
+                           gone=store.withdrawn(), is_admin=_is_admin())
+
+
+# --- the checker ----------------------------------------------------------------------
+
+CHECKS = [
+    ("references", "Cross-references",
+     "References to sections, articles and paragraphs that are not there, or not issued."),
+    ("outdated", "Outdated standards", "Standards cited that have been withdrawn or superseded."),
+    ("standards", "Standards off the project's basis",
+     "Citations the project's basis cannot convert, because no equivalent is recorded."),
+    ("discrepancies", "Discrepancies",
+     "The same property given different values, sections cited under the wrong title, "
+     "a standard cited in two editions."),
+    ("repeated", "Repeated", "Values written out many times, and paragraphs said more than once."),
+    ("setup", "Set-up", "Conditions naming questions or answers that do not exist, and words "
+                        "with no value."),
+]
+
+
+@bp.get("/sets/<int:set_id>/check")
+@login_required
+def check_set(set_id: int):
+    row = _set_or_404(set_id)
+    return render_template("specs/check.html", spec=row, report=store.check_set(set_id),
+                           checks=CHECKS, chosen=store.chosen_for(row), is_admin=_is_admin())
+
+
+@bp.post("/sets/<int:set_id>/fix")
+@login_required
+def fix_set(set_id: int):
+    _set_or_404(set_id)
+    how = {k: request.form.get(k, "") for k in ("old", "new", "name", "value", "property", "row_id")}
+    try:
+        count = store.fix_set(set_id, request.form.get("action", ""), **how)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    else:
+        flash(_fixed(count), "success" if count else "error")
+    return redirect(url_for("specs.check_set", set_id=set_id))
+
+
+@bp.get("/library/check")
+@login_required
+def check_library():
+    return render_template("specs/check.html", spec=None, report=store.check_library(),
+                           checks=CHECKS, chosen={}, is_admin=_is_admin())
+
+
+@bp.post("/library/fix")
+@login_required
+def fix_library():
+    if not _admin_only():
+        return redirect(url_for("specs.check_library"))
+    how = {k: request.form.get(k, "") for k in ("old", "new", "name", "value", "property")}
+    try:
+        count = store.fix_library(request.form.get("action", ""), **how)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    else:
+        flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
+              "success" if count else "error")
+    return redirect(url_for("specs.check_library"))
+
+
+def _fixed(count: int) -> str:
+    return (f"Changed {count} place{'s' if count != 1 else ''}." if count
+            else "Nothing needed changing.")
+
+
+# --- the library as one file -------------------------------------------------------------
+
+@bp.get("/library/file")
+@login_required
+def library_file():
+    return Response(store.pack(), mimetype="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="specs-library.zip"'})
+
+
+@bp.post("/library/file")
+@login_required
+def load_library_file():
+    if not _admin_only():
+        return redirect(url_for("specs.library"))
+    files = _uploads("library")
+    if files:
+        filename, data = files[0]
+        try:
+            counted = store.unpack(data)
+        except specs.SpecError as exc:
+            flash(f"{filename}: {exc}", "error")
+        else:
+            flash(f"Read {filename}: {counted['sections']} sections, {counted['options']} questions, "
+                  f"{counted['variables']} words and {counted['standards']} standards.", "success")
+    return redirect(url_for("specs.library"))

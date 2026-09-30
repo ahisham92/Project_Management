@@ -85,6 +85,34 @@ The text editor uses one line per paragraph: `#` a PART, `##` an article, `-` to
 paragraphs under it, `//` an editor's note that is never issued, `| a | b |` a table row, and
 `{if leed=v4.1}` at the start of the text for a paragraph that only some projects get.
 
+**Reading a specification whole.** What goes wrong in a set of forty sections is where they
+meet, so the Specs Writer reads across them:
+
+- **Live cross-references.** Text refers to a section as `{ref:033000}`, to an article by its
+  title as `{ref:CURING}` or `{ref:033000/CURING}`, and to any paragraph as `{ref:#id}` (the ¶
+  beside a paragraph copies it). They are written out — `Section 033000 "Cast-in-Place
+  Concrete"`, `Article 3.7`, `Paragraph 2.4.B` — from the numbers as they stand for the project,
+  on the page and in the issued `.docx`. Add, drop or switch off a paragraph and every reference
+  to it moves; point at something taken out and the checker says so instead of issuing it. The
+  checker can turn references typed as numbers into live ones.
+- **One basis of standards.** The project's *Standards* choice is BS EN, ACI/ASTM or both. The
+  **Standards** page keeps the equivalents (ASTM C150 = BS EN 197-1 and so on) and the withdrawn
+  and superseded ones; every citation is put on the basis when shown and issued, and on *both*
+  each is cited with its equivalent. The master text is never changed by it.
+- **The checker** (*Check* on a project, and on the library) lists references that point
+  nowhere; standards that are out of date, with a one-click replacement; citations the basis
+  cannot convert; discrepancies (the same property — cover, slump, w/c ratio, cement content and
+  so on — given different values, a section cited under the wrong title, a standard in two
+  editions); values written out many times, with a one-click change into a project word; the
+  same paragraph said in several places; and conditions or words that are not set up.
+- **Choices** are grouped under headings, and a question can take several answers (tick all
+  that apply); a condition holds when any of them matches. *Add the suggested questions* on the
+  options page fills in the starting list without changing anything already there.
+- **The library file** (*Download this library* / *Load it* on the library page) carries every
+  section, question, word, standard and the house template in one `.zip` — a backup, a way to
+  move a library between sites, and how a library starts with the office's own sections without
+  them being kept in this repository.
+
 The Specs Writer is a program like the others: the administrator gives it to each account on
 the Admin page. Only administrators change the library, the options and the house template;
 anybody given the program writes project specifications.
@@ -1236,7 +1264,11 @@ there and can be exported from it.
 After the update that adds the **Specs Writer**, its tables are created on the first request
 after the reload too. Administrators see its door straight away; for everybody else, tick
 *Specs Writer* against their account on the Admin page. Then open **Specs Writer → Master
-library** and read the master sections in from Word.
+library** and read the master sections in from Word, or load a library file.
+
+After the update that adds the checker and the standards basis, the options gain their
+headings and the fuller starting list of questions on the first request, keeping every answer
+and wording already there; the standards tables are created and filled then too.
 
 ### Triton, the quay element designer
 

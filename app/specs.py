@@ -43,7 +43,7 @@ import secrets
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -111,6 +111,9 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
     conditions joined with ``&`` must all hold. Nothing is a condition that
     always holds. A key the project has not answered never holds, so a
     paragraph for a particular choice is left out until somebody makes it.
+
+    A question that takes several answers stores them joined by ``|``, and a
+    condition holds when any of them is one it names.
     """
     when = (when or "").strip()
     if not when:
@@ -121,9 +124,9 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
             continue
         negate = "!=" in part
         key, _, wanted = part.partition("!=" if negate else "=")
-        have = _norm(chosen.get(key.strip()))
+        have = {_norm(v) for v in str(chosen.get(key.strip()) or "").split("|")} - {""}
         options = {_norm(v) for v in wanted.split("|")}
-        hit = bool(have) and have in options
+        hit = bool(have & options)
         if hit == negate:
             return False
     return True
@@ -177,6 +180,7 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
     """
     chosen = chosen or {}
     counters = [0] * len(LEVELS)
+    marks = [""] * len(LEVELS)                     # each level's own mark: "2.4", "B", "1" ...
     out: list[dict] = []
     cut_at: int | None = None                      # depth of the paragraph that was cut
     for n in nodes:
@@ -187,7 +191,7 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
         included = cut_at is None and applies(n.get("when", ""), chosen)
         if depth is not None and cut_at is None and not included:
             cut_at = depth
-        label = ""
+        label, path = "", ""
         if depth is not None and included:
             counters[depth] += 1
             for deeper in range(depth + 1, len(LEVELS)):
@@ -201,7 +205,12 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
                 "PR3": f"{_letter(c, False)}.",
                 "PR4": f"{c})",
             }[level]
-        out.append({**n, "label": label, "included": included,
+            marks[depth] = label.rstrip(".)").replace("PART ", "").rstrip(" -")
+            for deeper in range(depth + 1, len(LEVELS)):
+                marks[deeper] = ""
+            # How a cross-reference names it: Article 2.4, Paragraph 2.4.B.1.
+            path = ".".join(m for m in marks[1:depth + 1] if m) if depth >= 1 else marks[0]
+        out.append({**n, "label": label, "included": included, "path": path,
                     "indent": _indent(out, n)})
     return out
 
@@ -779,13 +788,17 @@ def _targets(z: zipfile.ZipFile, document: str) -> tuple[str | None, str | None]
 
 def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
                project: Mapping[str, Any], chosen: Mapping[str, str],
-               values: Mapping[str, str], template: bytes | None = None) -> bytes:
+               values: Mapping[str, str], template: bytes | None = None,
+               resolve: Callable[[str], str] | None = None) -> bytes:
     """One section as a Word document in the house template.
 
     ``section`` carries ``number``, ``title`` and ``doc_code``; ``project``
     the header lines and revision. What is written is what applies to this
     project, variables filled in, notes left out, numbered by Word's own list
     so the numbers stay right when somebody edits the issued file.
+    ``resolve`` turns the text as kept into the text as issued — the
+    cross-references written out and the standards put on the project's
+    basis — before the variables are filled.
     """
     data = template or TEMPLATE.read_bytes()
     info = template_info(data)
@@ -803,7 +816,7 @@ def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
     for n in number(nodes, chosen):
         if not n["included"] or n["level"] == NOTE:
             continue
-        text = fill(n["text"], values)
+        text = fill(resolve(n["text"]) if resolve else n["text"], values)
         if n["level"] == TABLE:
             body.append(_table(text, 576 * (n["indent"] + 1), room))
             continue

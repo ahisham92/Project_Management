@@ -13,6 +13,10 @@
     </p>
   </div>
   <div class="inline-form">
+    {% if report %}
+      {% set found = report['counts']['references'] + report['counts']['outdated'] + report['counts']['standards'] + report['counts']['discrepancies'] + report['counts']['repeated'] + report['counts']['setup'] %}
+      <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Check{% if found %} ({{ found }}){% endif %}</a>
+    {% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
     <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Issue all (.zip of .docx)</a>
   </div>
@@ -67,13 +71,29 @@
       </div>
     </div>
     <div class="card-body" style="display:grid;gap:10px">
-      {% for o in options %}
-        <label class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
-          <select name="opt_{{ o['key'] }}">
-            {% for c in o['choice_list'] %}
-              <option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>
-            {% endfor %}
-          </select></label>
+      {% for group, questions in groups %}
+        <div class="spec-group">
+        <h3>{{ group }}</h3>
+        {% for o in questions %}
+          {% if o['kind'] == 'many' %}
+          <div class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span> <span class="muted">· tick all that apply</span></span>
+            <div class="spec-choices">
+              {% for c in o['choice_list'] %}
+                <label class="check"><input type="checkbox" name="opt_{{ o['key'] }}" value="{{ c }}" {{ 'checked' if c in picked[o['key']] }}> {{ c }}</label>
+              {% endfor %}
+            </div></div>
+          {% else %}
+          <label class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
+            <select name="opt_{{ o['key'] }}">
+              {% for c in o['choice_list'] %}
+                <option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+            {% if o['key'] == 'standards' %}<span class="field-hint">Every standard cited is put on this basis when the sections are shown and issued. Both cites each with its equivalent.</span>{% endif %}
+          </label>
+          {% endif %}
+        {% endfor %}
+        </div>
       {% else %}
         <p class="small muted">No options are set up yet.</p>
       {% endfor %}

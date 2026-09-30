@@ -635,6 +635,8 @@ def pack() -> bytes:
         "variables": [{k: v[k] for k in ("key", "label", "default_value")} for v in variables()],
         "standards": [{k: r[k] for k in ("topic", "bs", "us")} for r in equivalents()],
         "withdrawn": [{k: r[k] for k in ("old", "new", "note")} for r in withdrawn()],
+        "wording": [{k: r[k] for k in ("find", "replace", "note", "cond", "unless_next")}
+                    for r in wording()],
     }
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -703,6 +705,14 @@ def unpack(data: bytes) -> dict:
                     conn.execute("INSERT INTO spec_withdrawn (old, new, note, position) VALUES (?, ?, ?, 999)",
                                  (r["old"], r.get("new", ""), r.get("note", "")))
                     counted["standards"] += 1
+        if loaded.get("wording") is not None:
+            have = {r["find"].lower() for r in conn.execute("SELECT find FROM spec_wording")}
+            for r in loaded["wording"]:
+                if (r.get("find") or "").lower() not in have:
+                    conn.execute("INSERT INTO spec_wording (find, replace, note, cond, unless_next, "
+                                 "position) VALUES (?, ?, ?, ?, ?, 999)",
+                                 (r["find"], r.get("replace", ""), r.get("note", ""),
+                                  r.get("cond", ""), r.get("unless_next", "")))
     if "template.docx" in z.namelist() and template_bytes() is None:
         save_template("house-template.docx", z.read("template.docx"))
     return counted
@@ -713,3 +723,101 @@ def _same_ids(have: Mapping[str, Any], nodes: list[dict]) -> bool:
     (it came from here), in which case they are kept as they are."""
     mine = {n["id"] for n in specs.loads(have["body"])}
     return bool(mine & {n["id"] for n in nodes})
+
+
+# --- language and wording ------------------------------------------------------------
+
+def wording() -> list[dict]:
+    return [dict(r) for r in query("SELECT * FROM spec_wording ORDER BY position, id")]
+
+
+def save_wording(rows: Iterable[Mapping[str, str]]) -> None:
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM spec_wording")
+        for i, row in enumerate(rows, start=1):
+            if (row.get("find") or "").strip():
+                conn.execute(
+                    "INSERT INTO spec_wording (find, replace, note, cond, unless_next, position) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (row["find"].strip(), (row.get("replace") or "").strip(),
+                     (row.get("note") or "").strip(), (row.get("cond") or "").strip(),
+                     (row.get("unless_next") or "").strip(), i))
+
+
+def ignored(scope: int) -> list[str]:
+    return [r["words"] for r in query("SELECT words FROM spec_ignored WHERE scope = ?", (scope,))]
+
+
+def ignore(scope: int, words: str) -> None:
+    if words.strip():
+        execute("INSERT OR IGNORE INTO spec_ignored (scope, words) VALUES (?, ?)",
+                (scope, words.strip().lower()))
+
+
+def _rules() -> list[dict]:
+    return [dict(r, when=r["cond"]) for r in wording()]
+
+
+def language_set(set_id: int) -> list[dict]:
+    from . import specs_language
+
+    chosen = chosen_for(spec_set(set_id))
+    return specs_language.findings(set_whole(set_id), chosen, chosen.get("english", ""),
+                                   _rules(), ignored(set_id))
+
+
+def language_library() -> list[dict]:
+    from . import specs_language
+
+    defaults = chosen_for(None)
+    everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
+    # The library is read with every paragraph on, in the office's own English,
+    # and without the project scope's rewording, which belongs to projects.
+    rules = [r for r in _rules() if not r["cond"]]
+    return specs_language.findings(library_whole(), everything, defaults.get("english", ""),
+                                   rules, ignored(0))
+
+
+def accept_language(rows: list[dict], how: Mapping[str, str]) -> int:
+    """A suggestion taken in the paragraph it was made for, or — asked for —
+    the same words changed in every paragraph."""
+    from . import specs_language
+
+    old, new = how.get("old", ""), how.get("new", "")
+    if not old:
+        raise specs.SpecError("There is nothing there to change; edit the paragraph itself.")
+    if how.get("everywhere"):
+        return _rewrite(rows, lambda text, s: specs_language.accept_everywhere(text, old, new))
+    node_id, row_id = how.get("node_id", ""), int(how.get("row_id") or 0)
+    at = int(how["at"]) if str(how.get("at", "")).isdigit() else None
+    for s in rows:
+        if s["id"] != row_id:
+            continue
+        for n in s["nodes"]:
+            if n["id"] == node_id:
+                n["text"], count = specs_language.accept(n["text"], old, new, at)
+                if count:
+                    s["changed"] = count
+                return count
+    return 0
+
+
+def accept_set(set_id: int, how: Mapping[str, str]) -> int:
+    rows = set_whole(set_id)
+    count = accept_language(rows, how)
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    return count
+
+
+def accept_library(how: Mapping[str, str]) -> int:
+    rows = library_whole()
+    count = accept_language(rows, how)
+    for s in rows:
+        if s.get("changed"):
+            master = section(s["id"])
+            save_section(master["number"], master["title"], s["nodes"],
+                         note=f"\"{how.get('old')}\" made \"{how.get('new')}\"", section_id=s["id"])
+    return count

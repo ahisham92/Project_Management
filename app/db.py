@@ -525,18 +525,21 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         );
         """
     )
-    upgrading = not fresh and "grp" not in {
-        row["name"] for row in conn.execute("PRAGMA table_info(spec_options)")}
+    conn.execute("CREATE TABLE IF NOT EXISTS spec_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    seeded = conn.execute("SELECT value FROM spec_meta WHERE key = 'seed'").fetchone()
+    upgrading = not fresh and int(seeded[0] if seeded else 0) < SPEC_SEED_VERSION
     for column, definition in (("grp", "TEXT NOT NULL DEFAULT ''"),
                                ("kind", "TEXT NOT NULL DEFAULT 'one'")):
         _ensure_column(conn, "spec_options", column, definition)
 
-    from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN
+    from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
     if upgrading:
-        # A library started before the questions were grouped gets the fuller
-        # set of starting questions; its own answers and wording are kept.
+        # A library started on an earlier starting list gets what the newer
+        # one adds; its own answers and wording are kept.
         merge_spec_seed(conn)
+    conn.execute("INSERT OR REPLACE INTO spec_meta (key, value) VALUES ('seed', ?)",
+                 (str(SPEC_SEED_VERSION),))
 
     if fresh:
         # A start, to be changed: the questions every project answers, and
@@ -571,11 +574,43 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    # The office's words, and words the project's scope rewords; and the
+    # suggestions somebody chose to leave as they are.
+    new_wording = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                               "AND name = 'spec_wording'").fetchone() is None
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_wording (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            find        TEXT NOT NULL DEFAULT '',
+            replace     TEXT NOT NULL DEFAULT '',
+            note        TEXT NOT NULL DEFAULT '',
+            cond        TEXT NOT NULL DEFAULT '',
+            unless_next TEXT NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0
+        );
+        -- scope 0 is the library; otherwise the specification's id.
+        CREATE TABLE IF NOT EXISTS spec_ignored (
+            scope   INTEGER NOT NULL DEFAULT 0,
+            words   TEXT    NOT NULL,
+            UNIQUE (scope, words)
+        );
+        """
+    )
+    if new_wording:
+        conn.executemany("INSERT INTO spec_wording (find, replace, note, cond, unless_next, position) "
+                         "VALUES (?, ?, ?, ?, ?, ?)",
+                         [(*row, i) for i, row in enumerate(WORDING, start=1)])
     if new_tables:
         conn.executemany("INSERT INTO spec_standards (topic, bs, us, position) VALUES (?, ?, ?, ?)",
                          [(*row, i) for i, row in enumerate(EQUIVALENTS, start=1)])
         conn.executemany("INSERT INTO spec_withdrawn (old, new, note, position) VALUES (?, ?, ?, ?)",
                          [(*row, i) for i, row in enumerate(WITHDRAWN, start=1)])
+
+
+# Raised whenever the starting list of questions and words gains something an
+# existing library should be offered.
+SPEC_SEED_VERSION = 2
 
 
 def merge_spec_seed(conn: sqlite3.Connection) -> int:

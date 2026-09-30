@@ -13,6 +13,7 @@ from __future__ import annotations
 OPTIONS: list[tuple[str, str, str, str, str, str]] = [
     ("standards", "Standards the specification is written to", "BS EN|ACI/ASTM|Both", "BS EN",
      "Basis", "one"),
+    ("english", "English", "UK|UK with -ize|US", "UK", "Basis", "one"),
     ("stage", "Design stage", "Concept|Preliminary|Final Design|Tender|Issued for Construction",
      "Final Design", "Basis", "one"),
     ("contract", "Form of contract", "FIDIC Red Book|FIDIC Yellow Book|FIDIC Silver Book|Other",
@@ -21,6 +22,9 @@ OPTIONS: list[tuple[str, str, str, str, str, str]] = [
     ("leed", "LEED certification", "None|v4|v4.1", "None", "Sustainability and compliance", "one"),
     ("conformity", "Certificates of conformity", "None|SASO SABER|Other national scheme", "None",
      "Sustainability and compliance", "one"),
+    ("structures", "What the project builds", "Marine structures|Buildings", "Marine structures|Buildings",
+     "Scope", "many"),
+    ("cranes", "Crane rails and cranes", "No|Yes", "No", "Scope", "one"),
     ("exposure", "Exposure", "General|Marine|Aggressive ground", "General", "Environment", "one"),
     ("climate", "Climate at placing", "Hot|Temperate|Cold", "Hot", "Environment", "one"),
     ("cement", "Cementitious system", "CEM I|CEM I + GGBS|CEM I + fly ash|CEM I + silica fume|CEM III",
@@ -209,4 +213,25 @@ WITHDRAWN: list[tuple[str, str, str]] = [
     ("BS EN 10219-1:1997", "BS EN 10219-1", "superseded edition"),
     ("BS EN 10164:1993", "BS EN 10164", "superseded edition"),
     ("BS EN 14399:2002", "BS EN 14399", "superseded edition"),
+]
+
+# find, suggest instead, why, only when (a condition on the project's choices),
+# unless the next word is one of these. Suggestions only: nothing is changed
+# until somebody accepts it.
+WORDING: list[tuple[str, str, str, str, str]] = [
+    ("building", "structure", "the project has no buildings", "structures!=Buildings",
+     "product,products,code,codes,regulations,authority,and,construction,structural,information"),
+    ("buildings", "structures", "the project has no buildings", "structures!=Buildings",
+     "and,regulations"),
+    ("and/or", "or", "\"or\" already allows both; say \"and\" where both are meant", "", ""),
+    ("in accordance to", "in accordance with", "", "", ""),
+    ("comply to", "comply with", "", "", ""),
+    ("compliance to", "compliance with", "", "", ""),
+    ("prior to", "before", "plainer", "", ""),
+    ("in order to", "to", "plainer", "", ""),
+    ("utilize", "use", "plainer", "", ""),
+    ("utilise", "use", "plainer", "", ""),
+    ("must", "shall", "a specification says \"shall\" for what is required", "", ""),
+    ("etc.", "", "list what is meant: \"etc.\" cannot be priced or enforced", "", ""),
+    ("as necessary", "", "say what is necessary, or who decides", "", ""),
 ]

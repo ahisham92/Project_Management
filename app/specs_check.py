@@ -335,6 +335,8 @@ class Reader:
 TYPED_SECTION = re.compile(
     r"\bSection\s+(?P<number>\d{6}|\d{5}|[A-Z]\d{2})"
     r"(?:\s*[-–,]?\s*[\"“”'](?P<title>[^\"“”']{3,80})[\"“”'],?)?", re.I)
+SECTION_LIST = re.compile(
+    r"\bSections\s+((?:\d{5,6}|[A-Z]\d{2})(?:\s*(?:,|and|&|or)\s*(?:\d{5,6}|[A-Z]\d{2}))*)")
 TYPED_ARTICLE = re.compile(
     r"\b(?:Article|article|Section|section|clause|Clause)\s+(?P<path>\d\.\d{1,2})(?![.\d])")
 TYPED_PARAGRAPH = re.compile(r"\b(?:Paragraph|paragraph)\s+(?P<path>\d\.\d{1,2}\.[A-Z](?:\.\d{1,2})?)\b")
@@ -548,6 +550,12 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                 report["discrepancies"].append(_item(
                     s, n, f"cites Section {number} as \"{m.group('title').strip()}\"; it is "
                           f"\"{title_case(target['title'])}\"", fix={"action": "link"}))
+        for m in SECTION_LIST.finditer(plain):
+            for number in re.findall(r"\d{5,6}|[A-Z]\d{2}", m.group(1)):
+                if _section_key(number) not in where:
+                    report["references"].append(_item(
+                        s, n, f"refers to Section {number}, which is not in this specification",
+                        severity="warning"))
         mine = where.get(_section_key(s["number"]))
         for m in TYPED_ARTICLE.finditer(plain):
             if mine and not any(h["path"] == m.group("path") for h in mine["articles"].values()):

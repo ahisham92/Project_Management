@@ -62,7 +62,7 @@ text** of each section and makes every project's copy of it **known**.
   sections in from `.docx` — several at once — and edits them as plain text. Every save is kept
   as a version. A section typed in Normal or List Paragraph is read from its typed numbers and
   its list levels, so it comes in at the right levels even though it was not drafted in the
-  house styles; check it reads right. An old `.doc` has to be saved as `.docx` in Word first.
+  house styles; check it reads right. Old `.doc` files are read as they are.
 - **A project specification** has the project's header lines, document code, revision and file
   naming, its **choices** (options such as LEED version or standards basis that switch the
   master's conditional paragraphs in and out) and its **words** (variables such as
@@ -108,6 +108,22 @@ meet, so the Specs Writer reads across them:
 - **Choices** are grouped under headings, and a question can take several answers (tick all
   that apply); a condition holds when any of them matches. *Add the suggested questions* on the
   options page fills in the starting list without changing anything already there.
+- **Nothing is issued that refers to what is not in it.** *Issue all* stops at the checker when
+  a reference points at a section the specification does not include, or at a paragraph its
+  choices switch off, and says which; it can still be issued anyway from there.
+- **Language.** The *English* choice (UK, UK with -ize, or US) and the checker's language list
+  suggest one spelling throughout (colour, aluminium, centre, metre as a length but not a cover
+  meter), common spelling mistakes, grammar (the same word twice, "a" or "an", "shall conforms",
+  "shall be provide", stray spaces, brackets that do not pair) and the office's wording
+  (*Standards and wording* page). Each is only a suggestion: the engineer accepts it, types
+  something else and accepts that, or leaves it — and a left one is not suggested again.
+  Quoted titles, references and variables are never touched, and nothing leaves the server.
+- **Scope.** *What the project builds* (marine structures, buildings, or both) and *Crane rails
+  and cranes* are questions like the others: a paragraph can be only for one of them
+  (`{if structures=Buildings}`, `{if cranes=Yes}`), and a project with no buildings is offered
+  "structure" wherever the text says "building" (not in "building products" and the like).
+- **Old Word files.** Sections can be read in from Word 97–2003 `.doc` files as they are, with
+  the same styles, list levels and tables as a `.docx`.
 - **The library file** (*Download this library* / *Load it* on the library page) carries every
   section, question, word, standard and the house template in one `.zip` — a backup, a way to
   move a library between sites, and how a library starts with the office's own sections without

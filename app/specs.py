@@ -40,6 +40,7 @@ import difflib
 import json
 import re
 import secrets
+import struct
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -524,12 +525,20 @@ def read_docx(data: bytes) -> dict:
     from where Word's own numbering put it. The numbers themselves are dropped
     — they are worked out again on the way out.
     """
+    from . import specs_doc
+
+    if specs_doc.is_doc(data):
+        # An old Word 97-2003 file: read into the parts of a .docx first.
+        try:
+            data = specs_doc.to_docx(data)
+        except (specs_doc.DocError, struct.error, IndexError, KeyError) as exc:
+            raise SpecError(f"That .doc could not be read ({exc}). Save it as .docx in Word "
+                            "and read that in instead.") from exc
     try:
         z = zipfile.ZipFile(BytesIO(data))
         root = ET.fromstring(z.read("word/document.xml"))
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
-        raise SpecError("That is not a Word document (.docx) this can read. "
-                        "An older .doc has to be saved as .docx first.") from exc
+        raise SpecError("That is not a Word document (.doc or .docx) this can read.") from exc
     style_names = _styles(z)
     body = root.find(W + "body")
     if body is None:

@@ -37,7 +37,7 @@ MASTER_TEXT = """\
 
 # EXECUTION
 ## INSTALLATION
-- Accurately position, support, and secure reinforcement against displacement.
+- Hold the reinforcement in place.
 """
 
 
@@ -53,7 +53,7 @@ def docx_of(nodes, number="032000", title="CONCRETE REINFORCING", project=None, 
             values=None) -> bytes:
     return specs.write_docx({"number": number, "title": title}, nodes,
                             project or {"header_left": "Port Works\nPhase 2",
-                                        "header_right": "Final Design\nApapa",
+                                        "header_right": "Final Design\nHarbour",
                                         "doc_code": "N1-SPC-01", "revision": "0"},
                             chosen or {"leed": "v4.1"}, values or {"engineer": "Engineer"})
 
@@ -146,13 +146,13 @@ def test_a_newer_master_comes_in_without_losing_the_projects_amendments():
         specs.to_text(base).replace("- Section Includes:", "- Section Includes (project):")
         .replace("-- Welded-wire reinforcement.\n", "-- Welded-wire reinforcement.\n-- Project dowels.\n")))
     newer = specs.align(base, specs.from_text(
-        specs.to_text(base).replace("against displacement.", "against displacement (v2).")
+        specs.to_text(base).replace("in place.", "in place (v2).")
         .replace("## INSTALLATION\n", "## INSTALLATION\n- Clean reinforcement first.\n")
         .replace("-- Steel reinforcement bars.\n", "")))
     merged = specs.to_text(specs.merge(base, newer, ours))
     assert "Section Includes (project):" in merged           # the project's rewording kept
     assert "-- Project dowels." in merged                     # the project's addition kept
-    assert "against displacement (v2)." in merged             # the master's rewording taken
+    assert "in place (v2)." in merged             # the master's rewording taken
     assert "- Clean reinforcement first." in merged           # the master's addition taken
     assert "Steel reinforcement bars." not in merged          # the master's deletion taken
     assert merged.index("Clean reinforcement first") < merged.index("(v2)")
@@ -171,7 +171,7 @@ def test_a_section_is_written_in_the_house_styles_with_its_header_and_footer():
     assert "approved by the Engineer" in document                   # variables filled in
     assert "<w:tbl>" in document and "500 MPa" in document
     header = part(data, "word/header1.xml")
-    assert "Port Works" in header and "Final Design" in header and "Apapa" in header
+    assert "Port Works" in header and "Final Design" in header and "Harbour" in header
     footer = part(data, "word/footer1.xml")
     assert "CONCRETE REINFORCING" in footer and "032000 - Page " in footer
     assert "NUMPAGES" in footer and "N1-SPC-01 REV 0" in footer
@@ -222,10 +222,10 @@ def test_the_whole_round(app, signed_in):
     assert answer.status_code == 302
     assert "CONCRETE REINFORCING" in text(signed_in.get("/specs/library"))
 
-    answer = signed_in.post("/specs/sets", data={"name": "Apapa Port", "code": "N25185"})
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works", "code": "HW-001"})
     set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
     signed_in.post(f"/specs/sets/{set_id}", data={
-        "name": "Apapa Port", "code": "N25185", "header_left": "Port Works", "doc_code": "N1",
+        "name": "Harbour Works", "code": "HW-001", "header_left": "Port Works", "doc_code": "N1",
         "revision": "1", "file_pattern": "SPC-FD-{number}-ST", "opt_leed": "v4.1"})
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
@@ -252,11 +252,11 @@ def test_the_whole_round(app, signed_in):
     master_text = html.unescape(re.search(r'<textarea name="text"[^>]*>(.*?)</textarea>', library, re.S).group(1))
     signed_in.post("/specs/library/1/edit", data={
         "number": "032000", "title": "CONCRETE REINFORCING", "note": "v2",
-        "text": master_text.replace("against displacement.", "against displacement, v2.")})
+        "text": master_text.replace("in place.", "in place, v2.")})
     assert "Master is now v2" in text(signed_in.get(f"/specs/sets/{set_id}"))
     signed_in.post(f"/specs/sets/{set_id}/sections/1/update")
     docx = part(signed_in.get(f"/specs/sets/{set_id}/sections/1/docx").data, "word/document.xml")
-    assert "against displacement, v2." in docx and "Section Includes the following" in docx
+    assert "in place, v2." in docx and "Section Includes the following" in docx
 
 
 def test_an_old_project_file_shows_up_as_amendments(signed_in):

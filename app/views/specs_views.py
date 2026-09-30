@@ -269,6 +269,13 @@ def export_set(set_id: int):
     if not sections:
         flash("There are no sections in this specification to issue yet.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
+    missing = _not_issued(store.check_set(set_id))
+    if missing and not request.args.get("anyway"):
+        flash(f"Not issued yet: {len(missing)} reference{'s' if len(missing) != 1 else ''} point at "
+              "sections or paragraphs this specification does not issue. Add the sections, or "
+              "correct the references, then issue — or issue anyway from the top of this page.",
+              "error")
+        return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
     chosen, values, template = store.chosen_for(row), store.values_for(row), store.template_bytes()
     reader = store.reader(store.set_whole(set_id), chosen)
     buffer = io.BytesIO()
@@ -282,6 +289,12 @@ def export_set(set_id: int):
                     headers={"Content-Disposition":
                              f'attachment; filename="{name.strip() or "specification"} - '
                              f'specification REV {row["revision"]}.zip"'})
+
+
+def _not_issued(report: dict) -> list[dict]:
+    """References that would go out pointing at nothing this issue contains."""
+    return [i for i in report["references"] if "not in this specification" in i["message"]
+            or i["severity"] == "error"]
 
 
 @bp.get("/sets/<int:set_id>/amendments")
@@ -595,10 +608,14 @@ def standards():
              zip(form.getlist("eq_topic"), form.getlist("eq_bs"), form.getlist("eq_us"))),
             ({"old": o, "new": n, "note": t} for o, n, t in
              zip(form.getlist("wd_old"), form.getlist("wd_new"), form.getlist("wd_note"))))
+        store.save_wording(
+            {"find": f, "replace": r, "note": t, "cond": c, "unless_next": u} for f, r, t, c, u in
+            zip(form.getlist("wo_find"), form.getlist("wo_replace"), form.getlist("wo_note"),
+                form.getlist("wo_cond"), form.getlist("wo_unless")))
         flash("Saved. Every specification now reads its standards from this.", "success")
         return redirect(url_for("specs.standards"))
     return render_template("specs/standards.html", pairs=store.equivalents(),
-                           gone=store.withdrawn(), is_admin=_is_admin())
+                           gone=store.withdrawn(), words=store.wording(), is_admin=_is_admin())
 
 
 # --- the checker ----------------------------------------------------------------------
@@ -622,8 +639,11 @@ CHECKS = [
 @login_required
 def check_set(set_id: int):
     row = _set_or_404(set_id)
-    return render_template("specs/check.html", spec=row, report=store.check_set(set_id),
-                           checks=CHECKS, chosen=store.chosen_for(row), is_admin=_is_admin())
+    report = store.check_set(set_id)
+    return render_template("specs/check.html", spec=row, report=report, checks=CHECKS,
+                           chosen=store.chosen_for(row), is_admin=_is_admin(),
+                           issuing=request.args.get("issuing"), blocking=_not_issued(report),
+                           language=_language(store.language_set(set_id)), kinds=KINDS)
 
 
 @bp.post("/sets/<int:set_id>/fix")
@@ -644,7 +664,8 @@ def fix_set(set_id: int):
 @login_required
 def check_library():
     return render_template("specs/check.html", spec=None, report=store.check_library(),
-                           checks=CHECKS, chosen={}, is_admin=_is_admin())
+                           checks=CHECKS, chosen=store.chosen_for(None), is_admin=_is_admin(),
+                           language=_language(store.language_library()), kinds=KINDS)
 
 
 @bp.post("/library/fix")
@@ -661,6 +682,70 @@ def fix_library():
         flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
               "success" if count else "error")
     return redirect(url_for("specs.check_library"))
+
+
+KINDS = [
+    ("spelling", "Spelling", True),
+    ("grammar", "Grammar", False),
+    ("english", "UK or US English", True),
+    ("scope", "Wording for the project's scope", True),
+    ("wording", "The office's wording", True),
+]
+
+
+def _language(found: list[dict]) -> dict[str, list[dict]]:
+    """Suggestions under their kind, the same change in several places as one."""
+    grouped: dict[str, dict[tuple, dict]] = {k: {} for k, _t, _a in KINDS}
+    for f in found:
+        if not f["old"]:
+            key: tuple = (id(f),)
+        elif f["kind"] == "grammar":
+            key = (f["old"], f["new"], f["message"])
+        else:                                           # "Fiber" and "fiber" are one change
+            key = (f["old"].lower(), f["new"].lower())
+        one = grouped[f["kind"]].setdefault(key, {"old": f["old"], "new": f["new"],
+                                                   "message": f["message"], "places": []})
+        one["places"].append(f)
+    return {k: list(v.values()) for k, v in grouped.items()}
+
+
+@bp.post("/sets/<int:set_id>/language")
+@login_required
+def language_set(set_id: int):
+    _set_or_404(set_id)
+    back = url_for("specs.check_set", set_id=set_id) + "#language"
+    if request.form.get("action") == "leave":
+        store.ignore(set_id, request.form.get("old", ""))
+        flash(f"\"{request.form.get('old')}\" is left as it is in this specification.", "success")
+        return redirect(back)
+    try:
+        count = store.accept_set(set_id, request.form)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    else:
+        flash(_fixed(count) if count else "That text has changed since; nothing was changed.",
+              "success" if count else "error")
+    return redirect(back)
+
+
+@bp.post("/library/language")
+@login_required
+def language_library():
+    back = url_for("specs.check_library") + "#language"
+    if not _admin_only():
+        return redirect(back)
+    if request.form.get("action") == "leave":
+        store.ignore(0, request.form.get("old", ""))
+        flash(f"\"{request.form.get('old')}\" is left as it is in the library.", "success")
+        return redirect(back)
+    try:
+        count = store.accept_library(request.form)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    else:
+        flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
+              "success" if count else "error")
+    return redirect(back)
 
 
 def _fixed(count: int) -> str:

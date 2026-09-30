@@ -50,7 +50,7 @@
       </div>
       <div class="inline-form">
         <label class="field flex1"><span class="field-label">Document code in the footer</span>
-          <input type="text" name="doc_code" value="{{ spec['doc_code'] }}" placeholder="e.g. N25185-0100D-FD-APA-00-SPC-15A-ST-01">
+          <input type="text" name="doc_code" value="{{ spec['doc_code'] }}" placeholder="e.g. P1234-0100-FD-00-SPC-ST-01">
           <span class="field-hint">A section can have its own, on its edit page.</span></label>
         <label class="field w-sm"><span class="field-label">Revision</span>
           <input type="text" name="revision" value="{{ spec['revision'] }}"></label>
@@ -183,8 +183,8 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('specs.upload_to_set', set_id=spec['id']) }}" enctype="multipart/form-data" class="inline-form">
-        <label class="field flex1"><span class="field-label">Sections (.docx)</span>
-          <input type="file" name="files" accept=".docx" multiple required></label>
+        <label class="field flex1"><span class="field-label">Sections (.doc or .docx)</span>
+          <input type="file" name="files" accept=".doc,.docx" multiple required></label>
         <button type="submit" class="btn btn-ghost">Read them in</button>
       </form>
     </div>

@@ -256,3 +256,125 @@ def test_the_suggested_questions_are_added_without_changing_what_is_there(signed
     assert 'value="Standards"' in page and "BS EN|ASTM|ACI/ASTM|Both" not in page
     assert "BS EN|ACI/ASTM|Both" in page or "BS EN|ASTM|Both" in page
     assert 'value="rebar"' in page and 'value="Reinforcement"' in page
+
+
+# --- old Word files -------------------------------------------------------------------
+
+FIXTURES = __import__("pathlib").Path(__file__).parent / "fixtures"
+
+
+def test_an_old_doc_reads_the_same_as_the_docx_it_was_saved_from():
+    from app import specs_doc
+
+    data = (FIXTURES / "section-032000.doc").read_bytes()
+    assert specs_doc.is_doc(data)
+    read = specs.read_docx(data)
+    assert (read["number"], read["title"]) == ("032000", "CONCRETE REINFORCING")
+    levels = [(n["level"], n["text"]) for n in read["nodes"]]
+    assert ("PRT", "GENERAL") in levels and ("ART", "RELATED DOCUMENTS") in levels
+    assert ("PR2", "Steel reinforcement bars.") in levels
+    assert ("TBL", "| Test | Standard |\n| Slump | BS EN 12350-2 |") in levels
+
+
+def test_a_doc_is_loaded_through_the_page(signed_in):
+    data = (FIXTURES / "section-032000.doc").read_bytes()
+    upload(signed_in, "/specs/library/upload", [("SPC-032000.doc", data)])
+    assert "CONCRETE REINFORCING" in text(signed_in.get("/specs/library"))
+    bad = upload(signed_in, "/specs/library/upload", [("broken.doc", data[:600])])
+    assert bad.status_code == 302
+
+
+# --- language -------------------------------------------------------------------------
+
+LANGUAGE = """\
+# GENERAL
+## SUMMARY
+- The colour of the the concrete shall conforms to a approved sample; an HDPE sleeve , a unit.
+- Provide 2 meters of aluminum at the center line; use a cover meter. See "Color Guide".
+- Reinforcment within the entire building, and building products.
+- Submit data etc.
+"""
+
+
+def language(english, chosen=None, wording=()):
+    from app import specs_language
+
+    sections = [{"id": 7, "number": "033000", "title": "X",
+                 "nodes": specs.align([], specs.from_text(LANGUAGE))}]
+    return [(f["kind"], f["old"], f["new"]) for f in
+            specs_language.findings(sections, chosen or {}, english, wording)]
+
+
+def test_one_english_throughout():
+    uk = language("UK")
+    assert ("english", "aluminum", "aluminium") in uk and ("english", "center", "centre") in uk
+    assert ("english", "meters", "metres") in uk
+    # A cover meter is an instrument, and a title in quotes is the document's own.
+    assert not any(old in ("meter", "Color") for _k, old, _n in uk)
+    us = language("US")
+    assert ("english", "colour", "color") in us and not any(k == "english" and o == "center"
+                                                             for k, o, _n in us)
+
+
+def test_grammar_and_spelling_are_suggested():
+    found = language("UK")
+    for expected in [("grammar", "the the", "the"), ("grammar", "conforms", "conform"),
+                     ("grammar", "a", "an"), ("grammar", " ,", ","),
+                     ("spelling", "Reinforcment", "Reinforcement")]:
+        assert expected in found
+    assert ("grammar", "an", "a") not in found            # "an HDPE sleeve" is right
+
+
+def test_the_scope_rewords_only_where_it_applies():
+    rules = [{"find": "building", "replace": "structure", "when": "structures!=Buildings",
+              "unless_next": "products"}, {"find": "etc.", "replace": "", "note": "list them"}]
+    marine = language("UK", {"structures": "Marine structures"}, rules)
+    assert marine.count(("scope", "building", "structure")) == 1       # not "building products"
+    assert ("wording", "etc.", "") in marine
+    both = language("UK", {"structures": "Marine structures|Buildings"}, rules)
+    assert not any(k == "scope" for k, _o, _n in both)
+
+
+def test_nothing_changes_until_it_is_accepted(signed_in):
+    load(signed_in, "033000", LANGUAGE, "CAST-IN-PLACE CONCRETE")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_english": "UK",
+                                                  "opt_structures": ["Marine structures"]})
+    page = text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    assert "aluminium" in page and "structure" in page
+    edit = lambda: text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
+    assert "aluminum" in edit() and "the the" in edit()
+
+    from app import specs_store
+    with signed_in.application.test_request_context():
+        from flask import g
+        g.user = {"id": 1, "name": "t", "role": "admin"}
+        found = {f["old"]: f for f in specs_store.language_set(set_id)}
+    one = found["aluminum"]
+    signed_in.post(f"/specs/sets/{set_id}/language", data={
+        "action": "accept", "row_id": one["row_id"], "node_id": one["node_id"], "old": "aluminum",
+        "at": one["at"], "new": "aluminium"})
+    # Or what the engineer typed instead.
+    signed_in.post(f"/specs/sets/{set_id}/language", data={
+        "action": "accept", "old": "the the", "new": "all the", "row_id": found["the the"]["row_id"],
+        "node_id": found["the the"]["node_id"], "at": found["the the"]["at"]})
+    assert "aluminium" in edit() and "all the concrete" in edit() and "center" in edit()
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "leave", "old": "center"})
+    assert "centre" not in text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    # The master is as it was.
+    assert "aluminum" in text(signed_in.get("/specs/library/1"))
+
+
+def test_an_issue_that_refers_to_a_section_not_in_it_is_held(signed_in):
+    load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    held = signed_in.get(f"/specs/sets/{set_id}/export")
+    assert held.status_code == 302 and "/check" in held.headers["Location"]
+    page = text(signed_in.get(held.headers["Location"]))
+    assert "Section 016000" in page and "Issue anyway" in page
+    issued = signed_in.get(f"/specs/sets/{set_id}/export?anyway=1")
+    assert issued.mimetype == "application/zip"

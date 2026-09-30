@@ -256,6 +256,10 @@ def delete_image(image_id: int) -> None:
 
 CODE_FAMILIES = ("American: ACI, ASTM, AISC", "British and European: BS, BS EN",
                  "Saudi Building Code")
+# The codes each kind of specification is written to: 16A follows the Saudi
+# Building Code, which is itself built on ACI 318.
+BASIS = {"15A": (CODE_FAMILIES[0],), "03A": (CODE_FAMILIES[1],),
+         "16A": (CODE_FAMILIES[2], CODE_FAMILIES[0])}
 BRITISH = re.compile(r"^(BS|EN|PD|DD|NSCS|NSSS|National Structural|ICE|CIRIA|Concrete Society|SCI|"
                      r"Eurocode|UK NA)\b", re.I)
 
@@ -289,16 +293,16 @@ def explained(key: str, family: str = "") -> dict | None:
     # Every code's clause is shown whatever the project's basis, one family of
     # codes under another: the one the project uses first.
     families: dict[str, dict] = {}
+    basis = BASIS.get(family, ())
     for r in refs:
         name = code_family(r)
-        one = families.setdefault(name, {"name": name, "refs": [], "mine": False})
+        one = families.setdefault(name, {"name": name, "refs": [], "mine": name in basis})
         one["refs"].append(r)
-        one["mine"] = one["mine"] or (bool(family) and family in r["kinds"])
-    order = list(CODE_FAMILIES)
+    order = list(basis) + [f for f in CODE_FAMILIES if f not in basis]
     return {**d, "definition": definition_for(d, family), "drawing": drawing(d.get("picture") or ""),
             "own_definition": family in clean_kinds(d.get("definition_kinds")),
             "refs": [r for r in refs if r["mine"]], "other_refs": [r for r in refs if not r["mine"]],
-            "families": sorted(families.values(), key=lambda f: (not f["mine"], order.index(f["name"]))),
+            "families": sorted(families.values(), key=lambda f: order.index(f["name"])),
             "pictures": [i for i in shots if not i["code"]],
             "loose": [i for i in shots if i["code"] and (i["code"].lower(), i["clause"].lower()) not in placed]}
 

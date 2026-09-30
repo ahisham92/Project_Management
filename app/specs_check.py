@@ -225,13 +225,19 @@ REF = re.compile(r"\{ref:\s*([^}]+?)\s*\}")
 SMALL = {"and", "or", "of", "the", "for", "in", "to", "a", "an", "on", "at", "by", "with"}
 
 
+# Kept in capitals in a title: "SBS Modified Bituminous Sheet Waterproofing".
+ACRONYMS = {"sbs", "app", "pvc", "epdm", "tpo", "hdpe", "ldpe", "gfrp", "frp", "cfrp", "cmu",
+            "hss", "leed", "mep", "hvac", "grp", "upvc"}
+
+
 def title_case(title: str) -> str:
     """"CAST-IN-PLACE CONCRETE" as MasterSpec cites it: "Cast-in-Place Concrete"."""
     words = (title or "").lower().split()
     out = []
     for i, word in enumerate(words):
         parts = word.split("-")
-        parts = [p if (j > 0 or i > 0) and p in SMALL else p[:1].upper() + p[1:]
+        parts = [p.upper() if p.strip("()[],;:") in ACRONYMS else
+                 p if (j > 0 or i > 0) and p in SMALL else p[:1].upper() + p[1:]
                  for j, p in enumerate(parts)]
         out.append("-".join(parts))
     return " ".join(out)
@@ -358,9 +364,14 @@ TYPED_SECTION = re.compile(
     r"(?:\s*[-–,]?\s*[\"“”'](?P<title>[^\"“”']{3,80})[\"“”'],?)?", re.I)
 SECTION_LIST = re.compile(
     r"\bSections\s+((?:\d{5,6}|[A-Z]\d{2})(?:\s*(?:,|and|&|or)\s*(?:\d{5,6}|[A-Z]\d{2}))*)")
+# "Section 7.5 of AISC 303" or "Article 3.2 in Section 033000" is somebody
+# else's numbering, not an article of the section it is written in.
+ELSEWHERE = r"(?!\s+(?:of|in)\s+(?:the\s+)?[A-Z0-9])"
 TYPED_ARTICLE = re.compile(
-    r"\b(?:Article|article|Section|section|clause|Clause)\s+(?P<path>\d\.\d{1,2})(?![.\d])")
-TYPED_PARAGRAPH = re.compile(r"\b(?:Paragraph|paragraph)\s+(?P<path>\d\.\d{1,2}\.[A-Z](?:\.\d{1,2})?)\b")
+    r"\b(?:Article|article|Section|section|clause|Clause)\s+(?P<path>\d\.\d{1,2})(?![.\d])"
+    + ELSEWHERE)
+TYPED_PARAGRAPH = re.compile(
+    r"\b(?:Paragraph|paragraph)\s+(?P<path>\d\.\d{1,2}\.[A-Z](?:\.\d{1,2})?)\b" + ELSEWHERE)
 
 
 NAMED_AFTER = "\x00"          # marks a reference just made, until its typed title is dropped

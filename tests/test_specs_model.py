@@ -206,14 +206,16 @@ def test_step_strings_are_decoded():
 
 
 def test_bridge_and_bollards():
-    text = IFC4.replace("#60=IFCBUILDINGELEMENTPROXY('6O2Fr$t4X7Zf8NOew3FLOA',$,'Cone Fender SCN1200:6001',$,\n  'Cone Fender SCN1200'",
-                        "#60=IFCBUILDINGELEMENTPROXY('6O2Fr$t4X7Zf8NOew3FLOA',$,'Tee Bollard 1000kN:6001',$,\n  'Tee Bollard 1000kN'")
-    result = specs_model.read_model("Quay.ifc", text.encode())
+    fender = "'Cone Fender SCN1200:6001',$,\n  'Cone Fender SCN1200'"
+    bollard = IFC4.replace(fender, "'Tee Bollard 1000kN:6001',$,\n  'Tee Bollard 1000kN'")
+    result = specs_model.read_model("Quay.ifc", bollard.encode())
     assert ("bollards", "100 t") in answers(result)
-    bridge = IFC4.replace("#11=IFCBUILDING(", "#12=IFCBRIDGE('9YvctVUKr0kugbFTf53O9L',$,'Bridge',$,$,$,$,$,$,$);\n#11=IFCBUILDING(")
-    bridge = bridge.replace("'Cone Fender SCN1200:6001',$,\n  'Cone Fender SCN1200'",
-                            "'Pot Bearing PB-1:6001',$,\n  'Pot Bearing PB-1'")
-    result = specs_model.read_model("Bridge.ifc", bridge.replace("FILE_SCHEMA(('IFC4'))", "FILE_SCHEMA(('IFC4X3_ADD2'))").encode())
+
+    bridge = IFC4.replace("#11=IFCBUILDING(", "#12=IFCBRIDGE('9YvctVUKr0kugbFTf53O9L',$,"
+                                              "'Bridge',$,$,$,$,$,$,$);\n#11=IFCBUILDING(")
+    bridge = bridge.replace(fender, "'Pot Bearing PB-1:6001',$,\n  'Pot Bearing PB-1'")
+    bridge = bridge.replace("FILE_SCHEMA(('IFC4'))", "FILE_SCHEMA(('IFC4X3_ADD2'))")
+    result = specs_model.read_model("Bridge.ifc", bridge.encode())
     assert result["detail"].startswith("IFC4X3 export")
     found = answers(result)
     assert ("structures", "Bridges") in found
@@ -447,3 +449,13 @@ def test_word_rules_across_a_multi_category_schedule():
     # Shotcrete and tilt-up are not counted as cast in place.
     assert answer(result, "cast_in_place", "Yes")["count"] == 1 + 3 + 2
     assert result["categories"][0] == {"name": "Structural Rebar", "count": 62}
+
+
+def test_steel_stair_with_concrete_fill_is_a_metal_pan():
+    text = ("Stair Material Takeoff\nFamily and Type\tMaterial: Name\n"
+            "Assembled Stair: Steel Pan\tMetal - Steel - ASTM A36\n"
+            "Assembled Stair: Steel Pan\tConcrete - 3000 psi\n"
+            "Cast-In-Place Stair: Monolithic\tConcrete, Cast-in-Place gray\n")
+    result = specs_model.read_model("Stairs.txt", text.encode())
+    assert ("stairs", "Metal pan") in answers(result)
+    assert answer(result, "cast_in_place", "Yes")["count"] == 1

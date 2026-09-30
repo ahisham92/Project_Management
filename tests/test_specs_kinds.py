@@ -302,3 +302,46 @@ def test_many_bracketed_choices_are_one_item_for_the_section():
     report = specs_check.check([{"id": 1, "number": "033000", "title": "CONCRETE", "nodes": few}],
                                {}, {}, [], specs_check.Standards([], []))
     assert len([i for i in report["setup"] if "in brackets" in i["message"]]) == 2
+
+
+# --- the model -----------------------------------------------------------------------
+
+def test_a_project_started_from_the_model_ticks_adds_and_flags(app, signed_in):
+    from tests.test_specs_model import IFC4
+    from app import specs_store
+
+    load(signed_in, "STD15A_SPC_355913_ST_Fenders.docx", "# GENERAL\n## SUMMARY\n- Fenders.\n",
+         "355913", "FENDERS")
+    applies(app, "355913", "15A", "fenders!=None")
+    ifc = IFC4.replace("Concrete C32/40", "Concrete 3 MPa").replace("32000000.", "3000000.")
+    answer = signed_in.post("/specs/sets", data={
+        "name": "Quay", "family": "15A", "model": [(io.BytesIO(ifc.encode()), "Quay.ifc")]},
+        content_type="multipart/form-data")
+    set_id = set_id_of(answer)
+    assert answer.headers["Location"].endswith("#step-elements")
+    page = text(signed_in.get(f"/specs/sets/{set_id}"))
+    assert "Read Quay.ifc" in page and "does not look realistic" in page
+    assert "Added 1 section the answers call for" in page
+    assert "From the model: Quay.ifc" in page and "In the model" in page
+    with app.app_context():
+        row = specs_store.spec_set(set_id)
+        chosen = specs_store.chosen_for(row)
+        assert chosen["fenders"] == "Cone" and chosen["post_tensioning"] == "Unbonded"
+        assert [r["number"] for r in specs_store.set_sections(set_id)] == ["355913"]
+    check = text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    assert "The model&#39;s grades" in check or "The model's grades" in check
+    assert "below any structural concrete" in check
+    # Forgotten, the model's grades leave the check; its ticks stay.
+    signed_in.post(f"/specs/sets/{set_id}/model", data={"action": "forget"})
+    assert "below any structural concrete" not in text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    with app.app_context():
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["fenders"] == "Cone"
+
+
+def test_a_revit_file_itself_is_turned_away_plainly(app, signed_in):
+    set_id = set_id_of(signed_in.post("/specs/sets", data={"name": "Quay", "family": "15A"}))
+    answer = signed_in.post(f"/specs/sets/{set_id}/model", data={
+        "model": [(io.BytesIO(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600), "Quay.rvt")]},
+        content_type="multipart/form-data", follow_redirects=True)
+    body = text(answer)
+    assert "Quay.rvt" in body and "File → Export → IFC" in body

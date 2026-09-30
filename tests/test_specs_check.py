@@ -609,3 +609,21 @@ def test_an_answer_nothing_is_written_for_is_said(signed_in):
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works",
                                                   "opt_waterproofing": ["Liquid membrane"]})
     assert "Waterproofing: Liquid membrane" in text(signed_in.get(f"/specs/sets/{set_id}"))
+
+
+def test_an_article_of_a_standard_is_not_taken_for_one_of_the_section():
+    from app.specs_check import TYPED_ARTICLE
+
+    assert not TYPED_ARTICLE.search("to tolerances in Section 7.5 of AISC 303.")
+    assert not TYPED_ARTICLE.search("as Article 1.4 in Section 033000 says")
+    assert TYPED_ARTICLE.search("as Article 3.2 of this Section says")
+    assert TYPED_ARTICLE.search("see Article 3.2 for the tolerances")
+
+
+def test_titles_keep_their_acronyms_in_capitals():
+    from app.specs_check import title_case
+
+    assert title_case("SBS MODIFIED BITUMINOUS SHEET WATERPROOFING") == \
+        "SBS Modified Bituminous Sheet Waterproofing"
+    assert title_case("GLASS-FIBER-REINFORCED POLYMER (GFRP) BARS") == \
+        "Glass-Fiber-Reinforced Polymer (GFRP) Bars"

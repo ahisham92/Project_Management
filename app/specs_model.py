@@ -1282,10 +1282,16 @@ def _judge(model: Model) -> tuple[Evidence, list[str]]:
             ev.add("structures", "Marine structures", n, f"{g.unit} named '{g.name}'")
     bridge = ev.has("structures", "Bridges") or any(g.role == "BEARING" for g, _n in groups)
     marine = ev.has("structures", "Marine structures")
-    if not bridge and not marine and model.total:
+    if not ev.has("structures", "Bridges") and not marine and model.total:
         things = "elements" if model.source == "IFC" else "rows"
         ev.add("structures", "Buildings", model.total,
                f"no bridge or marine works among {model.total} {things}")
+
+    # A material takeoff gives an element one row per material; its type's rows together.
+    siblings: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for g, _n in groups:
+        siblings[(g.kind, g.name)].update(
+            material_kind(m + " " + model.material_extra.get(m, "")) for m in g.mats)
 
     pt_undecided: list[tuple[Group, int, str]] = []
     fenders_untyped = 0
@@ -1324,8 +1330,10 @@ def _judge(model: Model) -> tuple[Evidence, list[str]]:
             ev.add("tilt_up", "Yes", n, _where(g, TILT) or named)
         if spray:
             ev.add("shotcrete", "Yes", n, _where(g, SHOTCRETE) or named)
+        # A metal pan stair's concrete fill is part of the steel stair.
+        steel_stair = g.role == "STAIR" and ("steel" in siblings[(g.kind, g.name)] or steel)
         if concrete and g.role in CIP_ROLES and not precast and not tilt and not spray \
-                and not (g.role == "OTHER" and not g.mats):
+                and not steel_stair and not (g.role == "OTHER" and not g.mats):
             ev.add("cast_in_place", "Yes", n, mat_why or named)
         if MASS.search(text):
             ev.add("mass_concrete", "Yes", n, _where(g, MASS) or named)
@@ -1367,13 +1375,16 @@ def _judge(model: Model) -> tuple[Evidence, list[str]]:
             ev.add("steel_systems", "Space frames", n, _where(g, SPACE_FRAME) or named)
         if LINTEL.search(g.words) and (steel or STEEL_SECTION.search(g.words)) and not concrete:
             ev.add("steel_systems", "Isolated members", n, named)
-        if g.role == "STAIR" and (steel or GRATING.search(text) or FLOOR_PLATE.search(text)):
+        if steel_stair or (g.role == "STAIR" and (GRATING.search(text)
+                                                  or FLOOR_PLATE.search(text))):
             if GRATING.search(text):
                 ev.add("stairs", "Grating", n, _where(g, GRATING) or named)
             elif FLOOR_PLATE.search(text):
                 ev.add("stairs", "Floor plate", n, _where(g, FLOOR_PLATE) or named)
             else:
-                ev.add("stairs", "Metal pan", n, mat_why or named)
+                ev.add("stairs", "Metal pan", n, next(
+                    (f"{g.unit} of '{m}'" for m in g.mats if material_kind(m) == "steel"),
+                    named))
         if AESS.search(text):
             ev.add("aess", "Yes", n, _where(g, AESS) or named)
         if CRANE.search(text):
@@ -1383,7 +1394,8 @@ def _judge(model: Model) -> tuple[Evidence, list[str]]:
         if g.role == "BEARING":
             ev.add("bridge_items", "Bearings", n, _as_class(g))
         if bridge:
-            if g.role != "BEARING" and BEARING.search(g.words) and not LOAD_BEARING.search(g.words):
+            if g.role != "BEARING" and BEARING.search(g.words) \
+                    and not LOAD_BEARING.search(g.words):
                 ev.add("bridge_items", "Bearings", n, named)
             if EXPANSION_JOINT.search(g.words) or EJ.search(g.words):
                 ev.add("bridge_items", "Expansion joints", n, named)

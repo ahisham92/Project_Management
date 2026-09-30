@@ -143,9 +143,10 @@ meet, so the Specs Writer reads across them:
   A Revit `.rvt` is a closed format nothing outside Revit can read, so export it: an **IFC**
   (File → Export → IFC; `.ifc` or `.ifczip`) or a **schedule** (View → Schedules, then File →
   Export → Reports → Schedule, `.txt`/`.csv`, or an `.xlsx`). The elements found tick their
-  tiles, the concrete grades found fill the concrete class if it is blank, and a grade that does
-  not look realistic (C8/10 in a pile, 3 MPa, a cube strength read as a cylinder one, psi mixed
-  with MPa) is shown on the project page and listed on the check as critical.
+  tiles, the concrete grades found fill the concrete class if it is blank, and a grade that is not
+  realistic (3 MPa, 40000 psi where 4000 was meant) is shown on the project page and listed on
+  the check as critical; one that is only doubtful (C12/15 in a column, C25/30 at sea, a very
+  high strength, a bare C30 that could be a cylinder or a cube value) is listed as a warning.
 - **Sections arrive with the answers.** A library section says when it belongs (`fenders!=None`,
   or `*` for every project of its kind; blank means it is only ever added by hand). Answering a
   question or ticking an element that calls for a section adds it at once and says so; one no

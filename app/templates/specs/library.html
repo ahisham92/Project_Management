@@ -14,7 +14,11 @@
       administrator changes it.{% endif %}
     </p>
   </div>
-  <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.check_library') }}">Check</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
+  </div>
 </div>
 
 {% if is_admin %}
@@ -24,18 +28,18 @@
       <div>
         <h2>Load sections from Word</h2>
         <p class="small muted" style="margin-top:2px">
-          One or many .docx files. A section drafted in the MasterSpec styles reads exactly; one
+          One or many .doc or .docx files. A section drafted in the MasterSpec styles reads exactly; one
           typed in Normal or List Paragraph is read from its numbering, so check it reads right.
-          A section already here becomes its next version. An old .doc has to be saved as .docx
-          in Word first.
+          A section already here becomes its next version. Old Word 97–2003 .doc files are read
+          as they are.
         </p>
       </div>
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('specs.upload_to_library') }}" enctype="multipart/form-data" class="inline-form">
         <label class="field flex1">
-          <span class="field-label">Sections (.docx)</span>
-          <input type="file" name="files" accept=".docx" multiple required>
+          <span class="field-label">Sections (.doc or .docx)</span>
+          <input type="file" name="files" accept=".doc,.docx" multiple required>
         </label>
         <button type="submit" class="btn btn-primary">Read them in</button>
       </form>
@@ -85,12 +89,32 @@
     </div>
   </div>
 </div>
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Library file</h2>
+      <p class="small muted" style="margin-top:2px">
+        The whole library in one file: every section, the questions, the words, the standards and
+        the house template. Load one to start the library from it or to bring another site's in;
+        sections it has become new versions, and nothing here that it lacks is removed.
+      </p>
+    </div>
+  </div>
+  <div class="card-body inline-form">
+    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" class="inline-form flex1">
+      <label class="field flex1"><span class="field-label">Library file (.zip)</span>
+        <input type="file" name="library" accept=".zip" required></label>
+      <button type="submit" class="btn btn-primary">Load it</button>
+    </form>
+    <a class="btn btn-ghost" href="{{ url_for('specs.library_file') }}">Download this library</a>
+  </div>
+</div>
 {% endif %}
 
 <div class="card" style="margin-top:16px">
   <div class="card-head"><h2>Sections</h2></div>
   {% if not sections %}
-    <div class="card-body">{{ empty('The library is empty', 'Load the master sections from Word to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
+    <div class="card-body">{{ empty('The library is empty', 'Load the library file, or the master sections from Word, to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
     <table>

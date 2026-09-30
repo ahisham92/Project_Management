@@ -53,10 +53,25 @@
 
 <div class="card">
   <div class="card-body spec-doc">
-    {% for p in rows %}{{ paragraph(p, values) }}{% else %}<p class="muted small">Nothing in this section yet.</p>{% endfor %}
+    {% for p in rows %}{{ paragraph(p, values, reader, section['number']) }}{% else %}<p class="muted small">Nothing in this section yet.</p>{% endfor %}
     <p class="spec-p spec-PRT" style="margin-top:18px"><span class="spec-text">END OF SECTION {{ section['number'] }}</span></p>
   </div>
 </div>
+
+<p class="small muted" style="margin-top:8px">
+  References in blue are kept up to date: they are written out from the numbers as they stand, so
+  adding, dropping or switching off a paragraph moves every reference to it. ¶ beside a paragraph
+  copies a reference to it to paste into any section's text.
+</p>
+<script>
+document.addEventListener("click", function (e) {
+  var b = e.target.closest(".spec-handle");
+  if (!b) return;
+  var done = function () { var t = b.textContent; b.textContent = "Copied"; setTimeout(function () { b.textContent = t; }, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.ref).then(done, function () { prompt("Copy this reference:", b.dataset.ref); });
+  else prompt("Copy this reference:", b.dataset.ref);
+});
+</script>
 
 {% if spec %}
 <div class="inline-form" style="margin-top:16px">

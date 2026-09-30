@@ -4,6 +4,7 @@ beyond Flask itself.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -524,21 +525,138 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    conn.execute("CREATE TABLE IF NOT EXISTS spec_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    seeded = conn.execute("SELECT value FROM spec_meta WHERE key = 'seed'").fetchone()
+    upgrading = not fresh and int(seeded[0] if seeded else 0) < SPEC_SEED_VERSION
+    for column, definition in (("grp", "TEXT NOT NULL DEFAULT ''"),
+                               ("kind", "TEXT NOT NULL DEFAULT 'one'")):
+        _ensure_column(conn, "spec_options", column, definition)
+
+    from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
+
+    if upgrading:
+        # A library started on an earlier starting list gets what the newer
+        # one adds; its own answers and wording are kept.
+        merge_spec_seed(conn)
+    conn.execute("INSERT OR REPLACE INTO spec_meta (key, value) VALUES ('seed', ?)",
+                 (str(SPEC_SEED_VERSION),))
+
     if fresh:
-        # A start, to be changed: the choices the office's own sections already
-        # branch on, and the two parties every section names.
+        # A start, to be changed: the questions every project answers, and
+        # the words every project fills in.
         conn.executemany(
-            "INSERT OR IGNORE INTO spec_options (key, label, choices, default_value, position) "
-            "VALUES (?, ?, ?, ?, ?)",
-            [("standards", "Standards referred to", "BS EN|ASTM", "BS EN", 1),
-             ("leed", "LEED certification", "None|v4|v4.1", "None", 2),
-             ("conformity", "Certificates of conformity", "None|SASO SABER", "None", 3),
-             ("exposure", "Exposure", "General|Marine", "General", 4)])
+            "INSERT OR IGNORE INTO spec_options (key, label, choices, default_value, grp, kind, "
+            "position) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(*row, i) for i, row in enumerate(OPTIONS, start=1)])
         conn.executemany(
             "INSERT OR IGNORE INTO spec_variables (key, label, default_value, position) "
-            "VALUES (?, ?, ?, ?)",
-            [("engineer", "The Engineer, as the contract names it", "Engineer", 1),
-             ("employer", "The Employer, as the contract names it", "Employer", 2)])
+            "VALUES (?, ?, ?, ?)", [(*row, i) for i, row in enumerate(VARIABLES, start=1)])
+
+    # The standards: what each is on the other basis, and what has been
+    # withdrawn. Seeded once, when the tables first appear.
+    new_tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                              "AND name = 'spec_standards'").fetchone() is None
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_standards (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic     TEXT NOT NULL DEFAULT '',
+            bs        TEXT NOT NULL DEFAULT '',
+            us        TEXT NOT NULL DEFAULT '',
+            position  INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS spec_withdrawn (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            old       TEXT NOT NULL DEFAULT '',
+            new       TEXT NOT NULL DEFAULT '',
+            note      TEXT NOT NULL DEFAULT '',
+            position  INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    # The office's words, and words the project's scope rewords; and the
+    # suggestions somebody chose to leave as they are.
+    new_wording = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                               "AND name = 'spec_wording'").fetchone() is None
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_wording (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            find        TEXT NOT NULL DEFAULT '',
+            replace     TEXT NOT NULL DEFAULT '',
+            note        TEXT NOT NULL DEFAULT '',
+            cond        TEXT NOT NULL DEFAULT '',
+            unless_next TEXT NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0
+        );
+        -- scope 0 is the library; otherwise the specification's id.
+        CREATE TABLE IF NOT EXISTS spec_ignored (
+            scope   INTEGER NOT NULL DEFAULT 0,
+            words   TEXT    NOT NULL,
+            UNIQUE (scope, words)
+        );
+        """
+    )
+    if new_wording:
+        conn.executemany("INSERT INTO spec_wording (find, replace, note, cond, unless_next, position) "
+                         "VALUES (?, ?, ?, ?, ?, ?)",
+                         [(*row, i) for i, row in enumerate(WORDING, start=1)])
+    if new_tables:
+        conn.executemany("INSERT INTO spec_standards (topic, bs, us, position) VALUES (?, ?, ?, ?)",
+                         [(*row, i) for i, row in enumerate(EQUIVALENTS, start=1)])
+        conn.executemany("INSERT INTO spec_withdrawn (old, new, note, position) VALUES (?, ?, ?, ?)",
+                         [(*row, i) for i, row in enumerate(WITHDRAWN, start=1)])
+
+
+# Raised whenever the starting list of questions and words gains something an
+# existing library should be offered.
+SPEC_SEED_VERSION = 2
+
+
+def merge_spec_seed(conn: sqlite3.Connection) -> int:
+    """The starting questions and words a library lacks, added. A question it
+    already has keeps its wording and default; it only gains the starting
+    choices it did not offer, and a group if it had none."""
+    from .specs_seed import OPTIONS, VARIABLES
+
+    added = 0
+    with conn:
+        last = conn.execute("SELECT COALESCE(MAX(position), 0) FROM spec_options").fetchone()[0]
+        for key, label, choices, default, grp, kind in OPTIONS:
+            have = conn.execute("SELECT choices, grp FROM spec_options WHERE key = ?",
+                                (key,)).fetchone()
+            if have is None:
+                last += 1
+                conn.execute(
+                    "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, "
+                    "position) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (key, label, choices, default, grp, kind, last))
+                added += 1
+                continue
+            offered = [c for c in have[0].split("|") if c.strip()]
+            if key == "standards" and offered == ["BS EN", "ASTM"]:
+                offered = ["BS EN", "ACI/ASTM"]     # the first release's wording
+                for spec_set in conn.execute("SELECT id, options FROM spec_sets").fetchall():
+                    chosen = json.loads(spec_set[1] or "{}")
+                    if chosen.get("standards") == "ASTM":
+                        chosen["standards"] = "ACI/ASTM"
+                        conn.execute("UPDATE spec_sets SET options = ? WHERE id = ?",
+                                     (json.dumps(chosen, ensure_ascii=False), spec_set[0]))
+            known = {c.strip().lower() for c in offered}
+            extra = [c for c in choices.split("|") if c.strip().lower() not in known]
+            if extra or not have[1]:
+                conn.execute("UPDATE spec_options SET choices = ?, grp = ? WHERE key = ?",
+                             ("|".join(offered + extra), have[1] or grp, key))
+                added += len(extra)
+        last = conn.execute("SELECT COALESCE(MAX(position), 0) FROM spec_variables").fetchone()[0]
+        for key, label, default in VARIABLES:
+            if conn.execute("SELECT 1 FROM spec_variables WHERE key = ?", (key,)).fetchone():
+                continue
+            last += 1
+            conn.execute("INSERT INTO spec_variables (key, label, default_value, position) "
+                         "VALUES (?, ?, ?, ?)", (key, label, default, last))
+            added += 1
+    return added
 
 
 def _ensure_crs(conn: sqlite3.Connection) -> None:

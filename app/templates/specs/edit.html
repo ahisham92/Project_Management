@@ -59,6 +59,14 @@
       <p><strong>Only for some projects:</strong> start the text with a condition, and whatever sits under that paragraph goes with it.</p>
       <p class="spec-key">-- {if leed=v4.1} Product Data for ...</p>
       <p class="muted">Several conditions: <span class="spec-key">{if a=x &amp; b=y}</span>. Either of two: <span class="spec-key">{if a=x|y}</span>. Anything but: <span class="spec-key">{if a!=x}</span>.</p>
+      <p><strong>Referring to other paragraphs:</strong> write the reference, not the number, and it stays right when anything moves.</p>
+      <table class="spec-table"><tbody>
+        <tr><td class="spec-key">{ref:033000}</td><td>Section 033000 "Cast-in-Place Concrete"</td></tr>
+        <tr><td class="spec-key">{ref:CURING}</td><td>Article 3.7 (this section's)</td></tr>
+        <tr><td class="spec-key">{ref:033000/CURING}</td><td>Article 3.7 of Section 033000 …</td></tr>
+        <tr><td class="spec-key">{ref:#1a2b3c4d}</td><td>any paragraph: copy it with ¶ on the section page</td></tr>
+      </tbody></table>
+      <p><strong>Standards</strong> are written as usual (ASTM C150, BS EN 197-1); the project's basis puts them all on BS EN, ACI/ASTM or both when it is shown and issued.</p>
       {% if options %}
       <p><strong>Options:</strong></p>
       <ul style="margin:0;padding-left:18px">

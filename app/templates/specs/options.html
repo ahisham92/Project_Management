@@ -13,21 +13,34 @@
       {% if not is_admin %}Only an administrator changes them.{% endif %}
     </p>
   </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
+    {% if is_admin %}
+    <form method="post" action="{{ url_for('specs.add_suggested') }}">
+      <button type="submit" class="btn btn-ghost" title="Adds the starting questions, choices and words this list lacks. Nothing here is changed or removed.">Add the suggested questions</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
 
 <form method="post">
 <div class="card">
-  <div class="card-head"><div><h2>Options</h2><p class="small muted" style="margin-top:2px">Choices separated by |. Clear a key to drop the row.</p></div></div>
+  <div class="card-head"><div><h2>Options</h2><p class="small muted" style="margin-top:2px">Choices separated by |. "Many" lets a project tick several, and a condition holds when any ticked one matches. The heading groups the questions on each project's page. Clear a key to drop the row.</p></div></div>
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Key</th><th>Question</th><th>Choices</th><th>Default</th></tr></thead>
+      <thead><tr><th>Heading</th><th>Key</th><th>Question</th><th>Choices</th><th>Default</th><th>Answers</th></tr></thead>
       <tbody>
-        {% for o in options + [{'key': '', 'label': '', 'choices': '', 'default_value': ''}] %}
+        {% for o in options + [{'key': '', 'label': '', 'choices': '', 'default_value': '', 'grp': '', 'kind': 'one'}] %}
         <tr>
+          <td><input type="text" name="opt_grp" value="{{ o['grp'] }}" {{ 'disabled' if not is_admin }}></td>
           <td><input type="text" name="opt_key" value="{{ o['key'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
           <td><input type="text" name="opt_label" value="{{ o['label'] }}" {{ 'disabled' if not is_admin }}></td>
           <td><input type="text" name="opt_choices" value="{{ o['choices'] }}" {{ 'disabled' if not is_admin }}></td>
           <td><input type="text" name="opt_default" value="{{ o['default_value'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><select name="opt_kind" {{ 'disabled' if not is_admin }}>
+            <option value="one" {{ 'selected' if o['kind'] != 'many' }}>One</option>
+            <option value="many" {{ 'selected' if o['kind'] == 'many' }}>Many</option>
+          </select></td>
         </tr>
         {% endfor %}
       </tbody>

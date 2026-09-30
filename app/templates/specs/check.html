@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge %}
+{% block title %}Check · {{ spec['name'] if spec else 'Master library' }} · Specs Writer{% endblock %}
+
+{% macro where(item) %}
+  {% if item['row_id'] %}
+    {% if spec %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=item['row_id']) }}">{{ item['section'] }}{% if item['path'] %} {{ item['path'] }}{% endif %}</a>
+    {% else %}<a href="{{ url_for('specs.library_section', section_id=item['row_id']) }}">{{ item['section'] }}{% if item['path'] %} {{ item['path'] }}{% endif %}</a>{% endif %}
+  {% endif %}
+{% endmacro %}
+
+{% macro fix_form(fix) %}
+  {% if fix and (spec or is_admin) %}
+  <form method="post" action="{{ url_for('specs.fix_set', set_id=spec['id']) if spec else url_for('specs.fix_library') }}" class="inline-form" style="margin-top:6px">
+    <input type="hidden" name="action" value="{{ fix['action'] }}">
+    {% if fix['action'] == 'replace' %}
+      <input type="hidden" name="old" value="{{ fix['old'] }}"><input type="hidden" name="new" value="{{ fix['new'] }}">
+      <button type="submit" class="btn btn-ghost btn-sm">Replace {{ fix['old'] }} with {{ fix['new'] }} everywhere</button>
+    {% elif fix['action'] == 'variable' %}
+      <input type="hidden" name="value" value="{{ fix['value'] }}"><input type="hidden" name="property" value="{{ fix.get('property', '') }}">
+      <label class="field w-md"><span class="field-label">Name</span><input type="text" name="name" value="{{ fix['suggest'] }}" class="spec-key"></label>
+      <button type="submit" class="btn btn-ghost btn-sm" title="Every {{ fix['value'] }} becomes {{ '{{' }}name{{ '}}' }}, filled in per project, so it is changed in one place">Make it one word filled in per project</button>
+    {% elif fix['action'] == 'link' %}
+      <button type="submit" class="btn btn-ghost btn-sm">Make the typed references live</button>
+    {% endif %}
+  </form>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
+      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}</p>
+    <h1>Check {{ 'the specification' if spec else 'the master library' }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {% if spec %}Read across every section this project issues, with its choices{% if chosen.get('standards') %} and on the {{ chosen['standards'] }} basis{% endif %}.
+      Fixes change this project's copies only.
+      {% else %}Read across every master section with every choice switched on.
+      {% if is_admin %}Fixes save each section they change as a new version.{% endif %}{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
+</div>
+
+{% if spec and blocking %}
+<div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
+  <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>
+    (listed under Cross-references). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
+  {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1) }}">Issue anyway</a>{% endif %}
+</div></div>
+{% endif %}
+
+{% if report['typed_links'] %}
+<div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
+  <p class="small">{{ report['typed_links'][0]['count'] }} reference{{ 's' if report['typed_links'][0]['count'] != 1 }} to other sections and articles {{ 'are' if report['typed_links'][0]['count'] != 1 else 'is' }} typed in as numbers.
+    Made live, they are written out from the numbers as they stand, so they follow the paragraph when anything moves or is taken out.</p>
+  {{ fix_form({'action': 'link'}) }}
+</div></div>
+{% endif %}
+
+{% for key, title, about in checks %}
+<div class="card" style="margin-top:12px">
+  <div class="card-head">
+    <div><h2>{{ title }} {% if report[key] %}{{ badge('warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', report[key] | length) }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+      <p class="small muted" style="margin-top:2px">{{ about }}</p></div>
+  </div>
+  {% if report[key] %}
+  <div class="card-body">
+    {% for item in report[key] %}
+    <div class="spec-check-item">
+      <div>{% if item['section'] and item['row_id'] %}<strong>{{ where(item) }}</strong> · {% endif %}{{ item['message'] }}</div>
+      {% if item['text'] and not item.get('places') %}<div class="small muted">{{ item['text'] }}</div>{% endif %}
+      {% if item.get('places') %}
+        <ul class="spec-places">
+          {% for p in item['places'] %}<li>{{ where(p) }}{% if p.get('value') %} <strong>{{ p['value'] }}</strong>{% endif %} <span class="muted">{{ p['text'] }}</span></li>{% endfor %}
+        </ul>
+      {% endif %}
+      {{ fix_form(item.get('fix')) }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if language is defined %}
+{% set action = url_for('specs.language_set', set_id=spec['id']) if spec else url_for('specs.language_library') %}
+{% set can = spec or is_admin %}
+<div class="card" style="margin-top:12px" id="language">
+  <div class="card-head">
+    <div><h2>Language {% set total = language.values() | map('length') | sum %}{% if total %}{{ badge('neutral', total) }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+      <p class="small muted" style="margin-top:2px">
+        Suggestions only: nothing changes until you accept one, or type what it should say and accept that.
+        Written in {{ chosen.get('english') or 'the English the options set' }} English{% if spec %}, for this project's scope{% endif %}.
+        Leave a suggestion and it is not made again {{ 'in this specification' if spec else 'in the library' }}.
+        The office's wording and the scope rewording are kept on the <a href="{{ url_for('specs.standards') }}#wording">Standards and wording</a> page.
+      </p></div>
+  </div>
+  <div class="card-body">
+  {% for kind, title, bulk in kinds if language[kind] %}
+    <div class="inline-form" style="justify-content:space-between;margin-top:{{ '0' if loop.first else '14px' }}">
+      <h3>{{ title }} <span class="muted small">{{ language[kind] | length }}</span></h3>
+      {% if can and kind in ('english', 'spelling', 'units') %}
+      <form method="post" action="{{ action }}" onsubmit="return confirm('Accept every suggestion in {{ title }}? Figures that disagree are left for you to decide.')">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <button type="submit" name="action" value="all" class="btn btn-ghost btn-sm">Accept all {{ title }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% for g in language[kind] %}
+    <div class="spec-check-item">
+      <div>
+        {% if g['old'] %}<span class="spec-removed" style="text-decoration:line-through">{{ g['old'] }}</span>
+          {% if g['new'] %} → <strong>{{ g['new'] }}</strong>{% endif %} · {% endif %}{{ g['message'] }}
+        {% if g['places'] | length > 1 %}<span class="muted small">· {{ g['places'] | length }} places</span>{% endif %}
+      </div>
+      {% if can and g['old'] and bulk and g['places'] | length > 1 %}
+      <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
+        <input type="hidden" name="old" value="{{ g['old'] }}"><input type="hidden" name="everywhere" value="1">
+        <input type="text" name="new" value="{{ g['new'] }}" class="w-md" aria-label="Replace with">
+        <button type="submit" name="action" value="accept" class="btn btn-ghost btn-sm">Accept in all {{ g['places'] | length }}</button>
+        <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Leave it</button>
+      </form>
+      {% endif %}
+      {% set shown = g['places'][:3] if g['places'] | length > 1 else g['places'] %}
+      {% for p in shown %}
+      <div class="small" style="margin-top:6px">
+        {% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path']}) }} · {% endif %}
+        <span class="muted">{{ p['text']['before'] }}</span><mark>{{ p['text']['words'] }}</mark><span class="muted">{{ p['text']['after'] }}</span>
+        {% if can and p['old'] %}
+        <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
+          {% for k in ('row_id', 'node_id', 'old', 'at') %}<input type="hidden" name="{{ k }}" value="{{ p[k] }}">{% endfor %}
+          <input type="text" name="new" value="{{ p['new'] }}" class="w-md" aria-label="Replace with">
+          <button type="submit" name="action" value="accept" class="btn btn-ghost btn-sm">Accept</button>
+          {% if g['places'] | length == 1 %}<button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Leave it</button>{% endif %}
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if g['places'] | length > 3 %}
+      <details class="small" style="margin-top:4px"><summary>{{ g['places'] | length - 3 }} more</summary>
+        {% for p in g['places'][3:] %}
+        <div style="margin-top:4px">{% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path']}) }} · {% endif %}<span class="muted">{{ p['text']['before'] }}</span><mark>{{ p['text']['words'] }}</mark><span class="muted">{{ p['text']['after'] }}</span></div>
+        {% endfor %}
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

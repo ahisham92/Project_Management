@@ -1,5 +1,5 @@
 {# One paragraph of a section as the page shows it. #}
-{% macro paragraph(p, values) %}
+{% macro paragraph(p, values, reader=none, here='') %}
   {% set klass = 'spec-p spec-' ~ p['level'] ~ ' spec-i' ~ p['indent'] %}
   {% if p['state'] != 'same' %}{% set klass = klass ~ ' spec-' ~ p['state'] %}{% endif %}
   {% if not p['included'] %}{% set klass = klass ~ ' spec-out' %}{% endif %}
@@ -8,16 +8,20 @@
   {% elif p['level'] == 'TBL' %}
     <div class="{{ klass }}"><span class="spec-num"></span><span class="spec-text">
       <table class="spec-table"><tbody>
-        {% for row in p['text'] | spec_rows %}<tr>{% for cell in row %}<td>{{ cell | spectext(values) }}</td>{% endfor %}</tr>{% endfor %}
+        {% for row in p['text'] | spec_rows %}<tr>{% for cell in row %}<td>{{ cell | spectext(values, reader, here) }}</td>{% endfor %}</tr>{% endfor %}
       </tbody></table>
       {% if p['state'] == 'changed' %}<span class="spec-was">The master's table was different.</span>{% endif %}
     </span></div>
   {% else %}
     <div class="{{ klass }}">
       <span class="spec-num">{{ p['label'] }}</span>
+      {% if p['id'] and p['state'] != 'removed' and reader is not none %}
+        <button type="button" class="spec-handle" data-ref="{ref:#{{ p['id'] }}}"
+                title="Copy a reference to {% if p['path'] %}{{ 'Article' if p['level'] == 'ART' else ('Part' if p['level'] == 'PRT' else 'Paragraph') }} {{ p['path'] }}{% else %}this paragraph{% endif %} that follows it wherever it moves">¶</button>
+      {% endif %}
       <span class="spec-text">
         {% if p['when'] %}<span class="spec-when" title="Only when this holds">if {{ p['when'] }}</span>{% endif %}
-        {{ p['text'] | spectext(values) }}
+        {{ p['text'] | spectext(values, reader, here) }}
         {% if p['state'] == 'changed' and p['was'] %}
           <span class="spec-was">Master: {% if p['was']['when'] %}[if {{ p['was']['when'] }}] {% endif %}{{ p['was']['text'] }}{% if p['was']['level'] != p['level'] %} ({{ p['was']['level'] }}){% endif %}</span>
         {% endif %}

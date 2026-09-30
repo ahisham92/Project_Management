@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Standards and wording · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.options') }}">Options and variables</a></p>
+    <h1>Standards and wording</h1>
+    <p class="small muted" style="margin-top:2px">
+      What puts every specification on one basis. A project on BS EN has each ASTM or ACI
+      citation replaced by its equivalent here; one on ACI/ASTM the other way round; one on both
+      cites each with its equivalent beside it. The checker lists what it could not convert and
+      anything cited from the withdrawn list. This is a starting list: check it against the current
+      catalogues before relying on it for a contract.
+      {% if not is_admin %}Only an administrator changes it.{% endif %}
+    </p>
+  </div>
+</div>
+
+<form method="post">
+<div class="card">
+  <div class="card-head"><div><h2>Equivalents</h2><p class="small muted" style="margin-top:2px">Several on one side are separated by ; and the first is the one put in. Clear both standards to drop a row.</p></div></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Subject</th><th>BS / EN / ISO</th><th>ASTM / ACI / AWS …</th></tr></thead>
+      <tbody>
+        {% for r in pairs + [{'topic': '', 'bs': '', 'us': ''}] * 3 %}
+        <tr>
+          <td><input type="text" name="eq_topic" value="{{ r['topic'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="eq_bs" value="{{ r['bs'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="eq_us" value="{{ r['us'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Withdrawn and superseded</h2><p class="small muted" style="margin-top:2px">Give an edition (BS EN 10210-1:1994) to mean that edition and older. Where one standard replaces it, the checker offers to put it in everywhere.</p></div></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Cited as</th><th>Replaced by</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for r in gone + [{'old': '', 'new': '', 'note': ''}] * 3 %}
+        <tr>
+          <td><input type="text" name="wd_old" value="{{ r['old'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wd_new" value="{{ r['new'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wd_note" value="{{ r['note'] }}" {{ 'disabled' if not is_admin }}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="card" style="margin-top:16px" id="wording">
+  <div class="card-head"><div><h2>Wording</h2><p class="small muted" style="margin-top:2px">
+    What the checker suggests instead, never changes by itself. <strong>Only when</strong> ties a
+    suggestion to the project's choices: <span class="spec-key">structures!=Buildings</span> offers
+    "structure" for "building" in a project with no buildings. <strong>Unless followed by</strong>
+    lists words that keep it as it is ("building products"). Leave <em>Suggest</em> blank to flag
+    the words for the engineer to reword.</p></div></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Words</th><th>Suggest</th><th>Why</th><th>Only when</th><th>Unless followed by</th></tr></thead>
+      <tbody>
+        {% for r in words + [{'find': '', 'replace': '', 'note': '', 'cond': '', 'unless_next': ''}] * 3 %}
+        <tr>
+          <td><input type="text" name="wo_find" value="{{ r['find'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wo_replace" value="{{ r['replace'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wo_note" value="{{ r['note'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wo_cond" value="{{ r['cond'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="wo_unless" value="{{ r['unless_next'] }}" {{ 'disabled' if not is_admin }}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if is_admin %}<div style="margin-top:12px"><button type="submit" class="btn btn-primary">Save</button></div>{% endif %}
+</form>
+{% endblock %}

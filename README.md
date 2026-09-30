@@ -62,7 +62,7 @@ text** of each section and makes every project's copy of it **known**.
   sections in from `.docx` — several at once — and edits them as plain text. Every save is kept
   as a version. A section typed in Normal or List Paragraph is read from its typed numbers and
   its list levels, so it comes in at the right levels even though it was not drafted in the
-  house styles; check it reads right. An old `.doc` has to be saved as `.docx` in Word first.
+  house styles; check it reads right. Old `.doc` files are read as they are.
 - **A project specification** has the project's header lines, document code, revision and file
   naming, its **choices** (options such as LEED version or standards basis that switch the
   master's conditional paragraphs in and out) and its **words** (variables such as
@@ -84,6 +84,59 @@ text** of each section and makes every project's copy of it **known**.
 The text editor uses one line per paragraph: `#` a PART, `##` an article, `-` to `----` the
 paragraphs under it, `//` an editor's note that is never issued, `| a | b |` a table row, and
 `{if leed=v4.1}` at the start of the text for a paragraph that only some projects get.
+
+**Reading a specification whole.** What goes wrong in a set of forty sections is where they
+meet, so the Specs Writer reads across them:
+
+- **Live cross-references.** Text refers to a section as `{ref:033000}`, to an article by its
+  title as `{ref:CURING}` or `{ref:033000/CURING}`, and to any paragraph as `{ref:#id}` (the ¶
+  beside a paragraph copies it). They are written out — `Section 033000 "Cast-in-Place
+  Concrete"`, `Article 3.7`, `Paragraph 2.4.B` — from the numbers as they stand for the project,
+  on the page and in the issued `.docx`. Add, drop or switch off a paragraph and every reference
+  to it moves; point at something taken out and the checker says so instead of issuing it. The
+  checker can turn references typed as numbers into live ones.
+- **One basis of standards.** The project's *Standards* choice is BS EN, ACI/ASTM or both. The
+  **Standards** page keeps the equivalents (ASTM C150 = BS EN 197-1 and so on) and the withdrawn
+  and superseded ones; every citation is put on the basis when shown and issued, and on *both*
+  each is cited with its equivalent. The master text is never changed by it.
+- **The checker** (*Check* on a project, and on the library) lists references that point
+  nowhere; standards that are out of date, with a one-click replacement; citations the basis
+  cannot convert; discrepancies (the same property — cover, slump, w/c ratio, cement content and
+  so on — given different values, a section cited under the wrong title, a standard in two
+  editions); values written out many times, with a one-click change into a project word; the
+  same paragraph said in several places; and conditions or words that are not set up.
+- **Choices** are grouped under headings, and a question can take several answers (tick all
+  that apply); a condition holds when any of them matches. *Add the suggested questions* on the
+  options page fills in the starting list without changing anything already there.
+- **Nothing is issued that refers to what is not in it.** *Issue all* stops at the checker when
+  a reference points at a section the specification does not include, or at a paragraph its
+  choices switch off, and says which; it can still be issued anyway from there.
+- **Language.** The *English* choice (UK, UK with -ize, or US) and the checker's language list
+  suggest one spelling throughout (colour, aluminium, centre, metre as a length but not a cover
+  meter), common spelling mistakes, grammar (the same word twice, "a" or "an", "shall conforms",
+  "shall be provide", stray spaces, brackets that do not pair) and the office's wording
+  (*Standards and wording* page). Each is only a suggestion: the engineer accepts it, types
+  something else and accepts that, or leaves it — and a left one is not suggested again.
+  Quoted titles, references and variables are never touched, and nothing leaves the server.
+- **SI units.** Imperial figures (°F, psi, ksi, inches, feet, lb, mils, gallons and so on) are
+  offered in SI. Where both are given, the imperial one in brackets goes — and where the two
+  disagree (25 deg. C (68 deg. F)) the checker says so and leaves it to the engineer. The unit
+  suggestions can be accepted one by one or all at once.
+- **New editions.** Nothing learns of a new edition by itself: the publishers have no open feed.
+  An administrator adds the superseded edition to the withdrawn list on the *Standards and
+  wording* page, and every project's checker then lists each citation of it with a
+  replace-everywhere fix. Citations dated more than 15 years ago are listed to be looked at, and
+  an undated citation always means the current edition.
+- **Scope.** *What the project builds* (marine structures, buildings, or both) and *Crane rails
+  and cranes* are questions like the others: a paragraph can be only for one of them
+  (`{if structures=Buildings}`, `{if cranes=Yes}`), and a project with no buildings is offered
+  "structure" wherever the text says "building" (not in "building products" and the like).
+- **Old Word files.** Sections can be read in from Word 97–2003 `.doc` files as they are, with
+  the same styles, list levels and tables as a `.docx`.
+- **The library file** (*Download this library* / *Load it* on the library page) carries every
+  section, question, word, standard and the house template in one `.zip` — a backup, a way to
+  move a library between sites, and how a library starts with the office's own sections without
+  them being kept in this repository.
 
 The Specs Writer is a program like the others: the administrator gives it to each account on
 the Admin page. Only administrators change the library, the options and the house template;
@@ -1236,7 +1289,11 @@ there and can be exported from it.
 After the update that adds the **Specs Writer**, its tables are created on the first request
 after the reload too. Administrators see its door straight away; for everybody else, tick
 *Specs Writer* against their account on the Admin page. Then open **Specs Writer → Master
-library** and read the master sections in from Word.
+library** and read the master sections in from Word, or load a library file.
+
+After the update that adds the checker and the standards basis, the options gain their
+headings and the fuller starting list of questions on the first request, keeping every answer
+and wording already there; the standards tables are created and filled then too.
 
 ### Triton, the quay element designer
 

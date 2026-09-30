@@ -13,8 +13,8 @@ from typing import Any, Iterable, Mapping
 
 from flask import g
 
-from . import specs
-from .db import execute, get_db, insert, query, query_one
+from . import specs, specs_check, specs_seed
+from .db import execute, get_db, insert, merge_spec_seed, query, query_one
 
 
 def _who() -> str:
@@ -57,11 +57,19 @@ def save_options(rows: Iterable[Mapping[str, str]]) -> None:
                 continue
             choices = "|".join(c.strip() for c in row.get("choices", "").replace(",", "|").split("|")
                                if c.strip())
+            kind = "many" if (row.get("kind") or "").strip().lower() == "many" else "one"
             conn.execute(
-                "INSERT OR REPLACE INTO spec_options (key, label, choices, default_value, position) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO spec_options (key, label, choices, default_value, grp, kind, "
+                "position) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (key, row.get("label", "").strip() or key, choices,
-                 row.get("default_value", "").strip(), position))
+                 row.get("default_value", "").strip(), (row.get("grp") or "").strip(), kind,
+                 position))
+
+
+def add_suggested() -> int:
+    """The starting questions, choices and words a library lacks, added; what
+    it already says is kept."""
+    return merge_spec_seed(get_db())
 
 
 def save_variables(rows: Iterable[Mapping[str, str]]) -> None:
@@ -82,7 +90,8 @@ def save_variables(rows: Iterable[Mapping[str, str]]) -> None:
 def chosen_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
     """A set's choices, with the default for anything it has not answered."""
     stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
-    return {o["key"]: stored.get(o["key"]) or o["default_value"] for o in options()}
+    return {o["key"]: stored[o["key"]] if o["key"] in stored else o["default_value"]
+            for o in options()}
 
 
 def values_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
@@ -454,3 +463,406 @@ def promote(set_id: int, row_id: int) -> int:
     execute("UPDATE spec_set_sections SET section_id = ?, base_version = ? WHERE id = ?",
             (section_id, fresh["version"], row_id))
     return section_id
+
+
+# --- standards ------------------------------------------------------------------
+
+def equivalents() -> list[dict]:
+    return [dict(r) for r in query("SELECT * FROM spec_standards ORDER BY position, id")]
+
+
+def withdrawn() -> list[dict]:
+    return [dict(r) for r in query("SELECT * FROM spec_withdrawn ORDER BY position, id")]
+
+
+def save_standards(pairs: Iterable[Mapping[str, str]], gone: Iterable[Mapping[str, str]]) -> None:
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM spec_standards")
+        for i, row in enumerate(pairs, start=1):
+            if (row.get("bs") or "").strip() and (row.get("us") or "").strip():
+                conn.execute("INSERT INTO spec_standards (topic, bs, us, position) VALUES (?, ?, ?, ?)",
+                             (row.get("topic", "").strip(), row["bs"].strip(), row["us"].strip(), i))
+        conn.execute("DELETE FROM spec_withdrawn")
+        for i, row in enumerate(gone, start=1):
+            if (row.get("old") or "").strip():
+                conn.execute("INSERT INTO spec_withdrawn (old, new, note, position) VALUES (?, ?, ?, ?)",
+                             (row["old"].strip(), (row.get("new") or "").strip(),
+                              (row.get("note") or "").strip(), i))
+
+
+def standards_table() -> specs_check.Standards:
+    if "spec_standards" not in g:
+        g.spec_standards = specs_check.Standards(equivalents(), withdrawn())
+    return g.spec_standards
+
+
+# --- reading a set whole: references, basis, checks -------------------------------
+
+def _whole(rows: Iterable[Mapping[str, Any]]) -> list[dict]:
+    return [{"id": r["id"], "number": r["number"], "title": r["title"],
+             "nodes": specs.loads(r["body"])} for r in rows]
+
+
+def set_whole(set_id: int) -> list[dict]:
+    return _whole(query("SELECT id, number, title, body FROM spec_set_sections WHERE set_id = ? "
+                        "ORDER BY number", (set_id,)))
+
+
+def library_whole() -> list[dict]:
+    return _whole(query("SELECT id, number, title, body FROM spec_sections ORDER BY number"))
+
+
+def reader(sections: list[dict], chosen: Mapping[str, str],
+           standards: bool = True) -> specs_check.Reader:
+    """What turns a section's text as kept into the text as issued, for one
+    set of sections: the references written out, the standards on the basis."""
+    return specs_check.Reader(sections, chosen, standards_table() if standards else None)
+
+
+def check_set(set_id: int) -> dict:
+    row = spec_set(set_id)
+    return specs_check.check(set_whole(set_id), chosen_for(row), values_for(row), options(),
+                             standards_table())
+
+
+def check_library() -> dict:
+    everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
+    everything["standards"] = ""
+    report = specs_check.check(library_whole(), everything,
+                               {v["key"]: v["default_value"] or v["key"] for v in variables()},
+                               options(), standards_table())
+    return report
+
+
+def _rewrite(rows: list[dict], change) -> int:
+    """``change(text, section)`` applied to every paragraph; what changed is counted."""
+    total = 0
+    for s in rows:
+        edited, count = [], 0
+        for n in s["nodes"]:
+            text, k = change(n["text"], s)
+            count += k
+            edited.append(dict(n, text=text))
+        if count:
+            s["nodes"] = edited
+            s["changed"] = count
+            total += count
+    return total
+
+
+def fix_set(set_id: int, action: str, **how: str) -> int:
+    """One of the checker's fixes, applied to this project's copies only."""
+    rows = set_whole(set_id)
+    if how.get("row_id"):
+        rows = [r for r in rows if r["id"] == int(how["row_id"])]
+    count = _apply(action, rows, set_whole(set_id), chosen_for(spec_set(set_id)), how)
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    if action == "variable" and count:
+        _ensure_variable(how["name"], how.get("value", ""))
+        current = spec_set(set_id)
+        values = json.loads(current["variables"] or "{}")
+        values[how["name"]] = how.get("value", "")
+        execute("UPDATE spec_sets SET variables = ? WHERE id = ?",
+                (json.dumps(values, ensure_ascii=False), set_id))
+    return count
+
+
+def fix_library(action: str, **how: str) -> int:
+    """The same, on the masters: each section changed is saved as a new version."""
+    rows = library_whole()
+    everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
+    count = _apply(action, rows, rows, everything, how)
+    note = {"link": "Typed references made live", "replace": f"{how.get('old')} replaced by {how.get('new')}",
+            "variable": f"{how.get('value')} made {{{{{how.get('name')}}}}}"}.get(action, "")
+    for s in rows:
+        if s.get("changed"):
+            master = section(s["id"])
+            save_section(master["number"], master["title"], s["nodes"], note=note, section_id=s["id"])
+    if action == "variable" and count:
+        _ensure_variable(how["name"], how.get("value", ""), default=True)
+    return count
+
+
+def _apply(action: str, rows: list[dict], everything: list[dict], chosen: Mapping[str, str],
+           how: Mapping[str, str]) -> int:
+    if action == "link":
+        where = specs_check.index(everything, chosen)
+        return _rewrite(rows, lambda text, s: specs_check.link_typed(text, s["number"], where))
+    if action == "replace":
+        old, new = how.get("old", ""), how.get("new", "")
+        if not old or not new:
+            raise specs.SpecError("Say which standard replaces which.")
+        return _rewrite(rows, lambda text, s: specs_check.replace_standard(text, old, new))
+    if action == "variable":
+        name = _clean_key(how.get("name", ""))
+        value = how.get("value", "")
+        if not name or not value:
+            raise specs.SpecError("Give the variable a name.")
+        how = dict(how, name=name)
+        prop = how.get("property", "")
+        return _rewrite(rows, lambda text, s: specs_check.make_variable(text, value, name, prop))
+    raise specs.SpecError("That is not a fix this knows.")
+
+
+def _ensure_variable(name: str, value: str, default: bool = False) -> None:
+    name = _clean_key(name)
+    have = query_one("SELECT * FROM spec_variables WHERE key = ?", (name,))
+    if have is None:
+        last = query_one("SELECT COALESCE(MAX(position), 0) AS n FROM spec_variables")["n"]
+        execute("INSERT INTO spec_variables (key, label, default_value, position) VALUES (?, ?, ?, ?)",
+                (name, name.replace("_", " ").capitalize(), value if default else "", last + 1))
+    elif default and not have["default_value"]:
+        execute("UPDATE spec_variables SET default_value = ? WHERE key = ?", (value, name))
+
+
+# --- the library as one file -----------------------------------------------------
+
+def pack() -> bytes:
+    """The whole library — sections, questions, words, standards — as one file,
+    to back up, to move to another site, or to start one from."""
+    import io
+    import zipfile
+
+    data = {
+        "format": "specs-writer-library/1",
+        "sections": [{"number": s["number"], "title": s["title"], "body": specs.loads(s["body"])}
+                     for s in (dict(r) for r in query("SELECT * FROM spec_sections ORDER BY number"))],
+        "options": [{k: o[k] for k in ("key", "label", "choices", "default_value", "grp", "kind")}
+                    for o in options()],
+        "variables": [{k: v[k] for k in ("key", "label", "default_value")} for v in variables()],
+        "standards": [{k: r[k] for k in ("topic", "bs", "us")} for r in equivalents()],
+        "withdrawn": [{k: r[k] for k in ("old", "new", "note")} for r in withdrawn()],
+        "wording": [{k: r[k] for k in ("find", "replace", "note", "cond", "unless_next")}
+                    for r in wording()],
+    }
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("library.json", json.dumps(data, ensure_ascii=False, indent=1))
+        template = template_bytes()
+        if template:
+            z.writestr("template.docx", template)
+    return out.getvalue()
+
+
+def unpack(data: bytes) -> dict:
+    """A library file read in. Sections it has become new versions of the
+    ones here (or new sections); questions, words and standards it has are
+    added or updated; nothing here that it lacks is removed."""
+    import io
+    import zipfile
+
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        loaded = json.loads(z.read("library.json").decode("utf-8"))
+    except (zipfile.BadZipFile, KeyError, ValueError) as exc:
+        raise specs.SpecError("That is not a Specs Writer library file.") from exc
+    if not str(loaded.get("format", "")).startswith("specs-writer-library/"):
+        raise specs.SpecError("That is not a Specs Writer library file.")
+    counted = {"sections": 0, "options": 0, "variables": 0, "standards": 0}
+    for s in loaded.get("sections", []):
+        nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
+                 for n in s.get("body", []) if n.get("level") in specs.KINDS]
+        have = section_by_number(s["number"])
+        if have:
+            nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
+        save_section(s["number"], s.get("title", ""), nodes, note="Read from a library file",
+                     section_id=have["id"] if have else None)
+        counted["sections"] += 1
+    conn = get_db()
+    with conn:
+        for o in loaded.get("options", []):
+            last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_options").fetchone()["n"]
+            conn.execute(
+                "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET label = excluded.label, "
+                "choices = excluded.choices, default_value = excluded.default_value, "
+                "grp = excluded.grp, kind = excluded.kind",
+                (_clean_key(o["key"]), o.get("label", ""), o.get("choices", ""),
+                 o.get("default_value", ""), o.get("grp", ""), o.get("kind", "one"), last + 1))
+            counted["options"] += 1
+        for v in loaded.get("variables", []):
+            last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_variables").fetchone()["n"]
+            conn.execute(
+                "INSERT INTO spec_variables (key, label, default_value, position) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET label = excluded.label, "
+                "default_value = excluded.default_value",
+                (_clean_key(v["key"]), v.get("label", ""), v.get("default_value", ""), last + 1))
+            counted["variables"] += 1
+        if loaded.get("standards") is not None:
+            have = {(r["bs"], r["us"]) for r in conn.execute("SELECT bs, us FROM spec_standards")}
+            for r in loaded["standards"]:
+                if (r["bs"], r["us"]) not in have:
+                    conn.execute("INSERT INTO spec_standards (topic, bs, us, position) VALUES (?, ?, ?, 999)",
+                                 (r.get("topic", ""), r["bs"], r["us"]))
+                    counted["standards"] += 1
+        if loaded.get("withdrawn") is not None:
+            have = {r["old"] for r in conn.execute("SELECT old FROM spec_withdrawn")}
+            for r in loaded["withdrawn"]:
+                if r["old"] not in have:
+                    conn.execute("INSERT INTO spec_withdrawn (old, new, note, position) VALUES (?, ?, ?, 999)",
+                                 (r["old"], r.get("new", ""), r.get("note", "")))
+                    counted["standards"] += 1
+        if loaded.get("wording") is not None:
+            have = {r["find"].lower() for r in conn.execute("SELECT find FROM spec_wording")}
+            for r in loaded["wording"]:
+                if (r.get("find") or "").lower() not in have:
+                    conn.execute("INSERT INTO spec_wording (find, replace, note, cond, unless_next, "
+                                 "position) VALUES (?, ?, ?, ?, ?, 999)",
+                                 (r["find"], r.get("replace", ""), r.get("note", ""),
+                                  r.get("cond", ""), r.get("unless_next", "")))
+    if "template.docx" in z.namelist() and template_bytes() is None:
+        save_template("house-template.docx", z.read("template.docx"))
+    return counted
+
+
+def _same_ids(have: Mapping[str, Any], nodes: list[dict]) -> bool:
+    """Whether a file's section already carries this library's paragraph ids
+    (it came from here), in which case they are kept as they are."""
+    mine = {n["id"] for n in specs.loads(have["body"])}
+    return bool(mine & {n["id"] for n in nodes})
+
+
+# --- language and wording ------------------------------------------------------------
+
+def wording() -> list[dict]:
+    return [dict(r) for r in query("SELECT * FROM spec_wording ORDER BY position, id")]
+
+
+def save_wording(rows: Iterable[Mapping[str, str]]) -> None:
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM spec_wording")
+        for i, row in enumerate(rows, start=1):
+            if (row.get("find") or "").strip():
+                conn.execute(
+                    "INSERT INTO spec_wording (find, replace, note, cond, unless_next, position) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (row["find"].strip(), (row.get("replace") or "").strip(),
+                     (row.get("note") or "").strip(), (row.get("cond") or "").strip(),
+                     (row.get("unless_next") or "").strip(), i))
+
+
+def ignored(scope: int) -> list[str]:
+    return [r["words"] for r in query("SELECT words FROM spec_ignored WHERE scope = ?", (scope,))]
+
+
+def ignore(scope: int, words: str) -> None:
+    if words.strip():
+        execute("INSERT OR IGNORE INTO spec_ignored (scope, words) VALUES (?, ?)",
+                (scope, words.strip().lower()))
+
+
+def _rules() -> list[dict]:
+    return [dict(r, when=r["cond"]) for r in wording()]
+
+
+def language_set(set_id: int) -> list[dict]:
+    from . import specs_language
+
+    chosen = chosen_for(spec_set(set_id))
+    return specs_language.findings(set_whole(set_id), chosen, chosen.get("english", ""),
+                                   _rules(), ignored(set_id))
+
+
+def language_library() -> list[dict]:
+    from . import specs_language
+
+    defaults = chosen_for(None)
+    everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
+    # The library is read with every paragraph on, in the office's own English,
+    # and without the project scope's rewording, which belongs to projects.
+    rules = [r for r in _rules() if not r["cond"]]
+    return specs_language.findings(library_whole(), everything, defaults.get("english", ""),
+                                   rules, ignored(0))
+
+
+def accept_language(rows: list[dict], how: Mapping[str, str]) -> int:
+    """A suggestion taken in the paragraph it was made for, or — asked for —
+    the same words changed in every paragraph."""
+    from . import specs_language
+
+    old, new = how.get("old", ""), how.get("new", "")
+    if not old:
+        raise specs.SpecError("There is nothing there to change; edit the paragraph itself.")
+    if how.get("everywhere"):
+        return _rewrite(rows, lambda text, s: specs_language.accept_everywhere(text, old, new))
+    node_id, row_id = how.get("node_id", ""), int(how.get("row_id") or 0)
+    at = int(how["at"]) if str(how.get("at", "")).isdigit() else None
+    for s in rows:
+        if s["id"] != row_id:
+            continue
+        for n in s["nodes"]:
+            if n["id"] == node_id:
+                n["text"], count = specs_language.accept(n["text"], old, new, at)
+                if count:
+                    s["changed"] = count
+                return count
+    return 0
+
+
+def accept_set(set_id: int, how: Mapping[str, str]) -> int:
+    rows = set_whole(set_id)
+    count = accept_language(rows, how)
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    return count
+
+
+def accept_library(how: Mapping[str, str]) -> int:
+    rows = library_whole()
+    count = accept_language(rows, how)
+    for s in rows:
+        if s.get("changed"):
+            master = section(s["id"])
+            save_section(master["number"], master["title"], s["nodes"],
+                         note=f"\"{how.get('old')}\" made \"{how.get('new')}\"", section_id=s["id"])
+    return count
+
+
+# Kinds of suggestion that can be taken all at once: each is one word or one
+# quantity, where the suggestion is the whole answer. Grammar is read one by one.
+BULK = ("english", "spelling", "units")
+
+
+def _accept_found(rows: list[dict], found: list[dict], kind: str) -> int:
+    from . import specs_language
+
+    if kind not in BULK:
+        raise specs.SpecError("Those are taken one at a time.")
+    todo = [f for f in found if f["kind"] == kind and f["old"] and f["new"]
+            and "disagree" not in f["message"]]
+    count = 0
+    for s in rows:
+        for n in s["nodes"]:
+            mine = sorted((f for f in todo if f["row_id"] == s["id"] and f["node_id"] == n["id"]),
+                          key=lambda f: -f["at"])
+            for f in mine:
+                n["text"], k = specs_language.accept(n["text"], f["old"], f["new"], f["at"])
+                if k:
+                    s["changed"] = s.get("changed", 0) + k
+                    count += k
+    return count
+
+
+def accept_all_set(set_id: int, kind: str) -> int:
+    rows = set_whole(set_id)
+    count = _accept_found(rows, language_set(set_id), kind)
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    return count
+
+
+def accept_all_library(kind: str) -> int:
+    rows = library_whole()
+    count = _accept_found(rows, language_library(), kind)
+    for s in rows:
+        if s.get("changed"):
+            master = section(s["id"])
+            save_section(master["number"], master["title"], s["nodes"],
+                         note=f"All {kind} suggestions accepted", section_id=s["id"])
+    return count

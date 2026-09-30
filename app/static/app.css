@@ -1056,3 +1056,13 @@ tr.just-moved > td { animation: settle 0.7s ease-out; }
 .spec-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; }
 .spec-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.75rem; }
 .spec-legend span { padding: 1px 6px; border-radius: 4px; }
+.spec-ref { color: var(--series-1); border-bottom: 1px dotted currentColor; }
+.spec-ref.spec-bad { color: var(--critical); background: var(--tint-critical); }
+.spec-handle { flex: 0 0 auto; order: 3; border: 0; background: none; padding: 0 2px; cursor: pointer;
+  color: var(--muted); opacity: 0; font-size: 0.8rem; font-family: system-ui, sans-serif; }
+.spec-p:hover .spec-handle, .spec-handle:focus { opacity: 1; }
+.spec-choices { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.spec-group + .spec-group { margin-top: 6px; }
+.spec-check-item { padding: 8px 0; border-top: 1px solid var(--grid); }
+.spec-check-item:first-child { border-top: 0; }
+.spec-places { margin: 4px 0 0; padding-left: 18px; font-size: 0.8rem; }

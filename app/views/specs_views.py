@@ -12,6 +12,7 @@ issued in the house template so it looks like every other one.
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 
 from flask import (
@@ -19,7 +20,7 @@ from flask import (
 )
 from markupsafe import Markup, escape
 
-from .. import specs, specs_check
+from .. import specs, specs_check, specs_seed
 from .. import specs_store as store
 from ..auth import login_required
 
@@ -28,6 +29,8 @@ bp = Blueprint("specs", __name__, url_prefix="/specs")
 # A specification section is a few hundred kilobytes; a house template with a
 # logo in its header a few more. Twelve megabytes is room for a batch of them.
 MOST = 12 * 1024 * 1024
+# An IFC export of a whole model is bigger: a large one runs to tens of megabytes.
+MOST_MODEL = 80 * 1024 * 1024
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
@@ -38,6 +41,19 @@ def spectext(text: str, values: dict | None = None, reader=None, here: str = "")
     that knows the project's basis — each standard on that basis."""
     values = values or {}
     text = text or ""
+    if specs.INLINE.search(text):
+        # Choices inside the paragraph: each marked, and shown only when it holds.
+        out, last = [], 0
+        for match in specs.INLINE.finditer(text):
+            out.append(spectext(text[last:match.start()], values, reader, here))
+            condition = f"{match.group(1)}{match.group(2)}{match.group(3)}"
+            holds = reader is None or specs.applies(condition, getattr(reader, "chosen", {}))
+            if holds:
+                out.append(Markup('<span class="spec-choice" title="Only when %s">%s</span>')
+                           % (condition, spectext(match.group(4), values, reader, here)))
+            last = match.end()
+        out.append(spectext(text[last:], values, reader, here))
+        return Markup("").join(out)
     out, last = [], 0
     for match in specs_check.REF.finditer(text):
         out.append(_words(text[last:match.start()], values, reader))
@@ -58,7 +74,7 @@ def _words(text: str, values: dict, reader) -> Markup:
         text = reader.standards(text)
     out, last = [], 0
     for match in specs.VARIABLE.finditer(text):
-        out.append(escape(text[last:match.start()]))
+        out.append(_open(text[last:match.start()]))
         name = match.group(1)
         if values.get(name):
             out.append(Markup('<span class="spec-var" title="{{%s}}">%s</span>')
@@ -67,8 +83,54 @@ def _words(text: str, values: dict, reader) -> Markup:
             out.append(Markup('<span class="spec-var" title="No value yet">%s</span>')
                        % match.group(0))
         last = match.end()
+    out.append(_open(text[last:]))
+    return Markup("").join(out)
+
+
+BRACKETED = re.compile(r"\[[^\[\]]{1,300}\]")
+
+
+def _open(text: str) -> Markup:
+    """Plain words, with each choice still left in square brackets marked."""
+    out, last = [], 0
+    for match in BRACKETED.finditer(text):
+        out.append(escape(text[last:match.start()]))
+        out.append(Markup('<span class="spec-open" title="A choice still to make">%s</span>')
+                   % match.group(0))
+        last = match.end()
     out.append(escape(text[last:]))
     return Markup("").join(out)
+
+
+@bp.app_template_filter("spec_mark")
+def spec_mark(text: str, words: str = "") -> Markup:
+    """The text with the words a check item is about marked."""
+    text = text or ""
+    at = text.lower().find(words.lower()) if words else -1
+    if at < 0:
+        return escape(text)
+    return (escape(text[:at]) + Markup('<mark class="spec-mark">%s</mark>') % text[at:at + len(words)]
+            + escape(text[at + len(words):]))
+
+
+@bp.app_template_test("spec_fits")
+def spec_fits(section: dict, chosen: dict) -> bool:
+    return store.fits(section.get("applies") or "", chosen or {})
+
+
+@bp.app_template_test("spec_declined")
+def spec_declined(section: dict, declined: set) -> bool:
+    return section.get("id") in (declined or ())
+
+
+@bp.app_template_filter("spec_icon_for")
+def spec_icon_for(choice: str, key: str, icons: dict) -> str:
+    return (icons or {}).get((key, choice), "")
+
+
+@bp.app_template_filter("spec_applies")
+def spec_applies(when: str, chosen: dict) -> bool:
+    return (when or "").strip() == store.ALWAYS or specs.applies(when or "", chosen or {})
 
 
 @bp.app_template_filter("spec_rows")
@@ -118,15 +180,16 @@ def _set_section_or_404(set_id: int, row_id: int) -> dict:
     return row
 
 
-def _uploads(field: str) -> list[tuple[str, bytes]]:
-    """The Word files sent, each read in full; anything too big is refused."""
+def _uploads(field: str, most: int = MOST) -> list[tuple[str, bytes]]:
+    """The files sent, each read in full; anything too big is refused."""
     out = []
     for upload in request.files.getlist(field):
         if not upload or not upload.filename:
             continue
-        data = upload.read(MOST + 1)
-        if len(data) > MOST:
-            flash(f"{upload.filename} is too big to read here — 12 MB is the limit.", "error")
+        data = upload.read(most + 1)
+        if len(data) > most:
+            flash(f"{upload.filename} is too big to read here — {most // (1024 * 1024)} MB is the "
+                  "limit.", "error")
             continue
         out.append((upload.filename, data))
     return out
@@ -142,8 +205,12 @@ def _docx_response(data: bytes, name: str) -> Response:
 @bp.get("/")
 @login_required
 def index():
-    return render_template("specs/index.html", sets=store.sets(), library=store.library(),
-                           is_admin=_is_admin())
+    everything = store.sets()
+    mine = [s for s in everything if s["created_by"] == g.user["id"]]
+    return render_template("specs/index.html", sets=everything, mine=mine,
+                           others=[s for s in everything if s["created_by"] != g.user["id"]],
+                           families=store.families(), library=store.library(),
+                           is_admin=_is_admin(), start_from=request.args.get("start_from", type=int))
 
 
 @bp.post("/sets")
@@ -154,9 +221,52 @@ def new_set():
     except specs.SpecError as exc:
         flash(str(exc), "error")
         return redirect(url_for("specs.index"))
-    flash("Specification started. Fill in its header, make its choices, then add sections.",
-          "success")
-    return redirect(url_for("specs.spec_set", set_id=set_id))
+    models = _uploads("model", MOST_MODEL)
+    if models and _read_model(set_id, *models[0]):
+        _added(set_id)
+    elif not request.form.get("copy_from"):
+        flash("Specification started. Tick what the project has, or read it from the Revit model, "
+              "and save: the sections each element needs are added then.", "success")
+    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
+
+
+def _added(set_id: int) -> None:
+    """The sections the answers call for, put in, and the engineer told which
+    and why; and the ones in it the answers now rule out, named."""
+    done = store.auto_add(set_id)
+    if done["added"]:
+        flash(Markup("Added {n} section{s} the answers call for: {list}.").format(
+            n=len(done["added"]), s="s" if len(done["added"]) != 1 else "",
+            list=Markup("; ").join(Markup("<strong>{}</strong> {} ({})").format(
+                x["number"], specs_check.title_case(x["title"]),
+                "every project of this kind" if x["applies"] == store.ALWAYS else x["applies"])
+                for x in done["added"])), "success")
+    if done["out"]:
+        flash(Markup("No longer called for by the answers: {list}. Take {it} out on {its} page if "
+                     "{it} should go.").format(
+            list=Markup("; ").join(Markup("<strong>{}</strong> {} ({})").format(
+                x["number"], specs_check.title_case(x["title"]), x["applies"]) for x in done["out"]),
+            it="it" if len(done["out"]) == 1 else "they",
+            its="its" if len(done["out"]) == 1 else "their"), "error")
+
+
+def _read_model(set_id: int, filename: str, data: bytes) -> bool:
+    from .. import specs_model
+
+    try:
+        found = specs_model.read_model(filename, data)
+    except specs.SpecError as exc:
+        flash(f"{filename}: {exc}", "error")
+        return False
+    store.save_model(set_id, found)
+    changed = store.apply_model(set_id, found)
+    flagged = [m for m in found.get("concrete", []) if m.get("state") == "unrealistic"]
+    flash(f"Read {filename}: " + (("ticked " + "; ".join(changed) + ".") if changed else
+                                  "nothing new to tick.")
+          + (f" {len(flagged)} concrete grade{'s do' if len(flagged) != 1 else ' does'} not look "
+             "realistic: see the model's grades below." if flagged else ""),
+          "error" if flagged else "success")
+    return True
 
 
 # --- one project's specification ------------------------------------------------
@@ -175,12 +285,62 @@ def spec_set(set_id: int):
                 missing.append(name)
     chosen = store.chosen_for(row)
     report = store.check_set(set_id) if sections else None
+    waiting = store.open_items(set_id, report) if report else None
+    everything = store.options()
+    tiles = _tiles(everything)
+    library = store.library()
+    model = store.model_for(row)
     return render_template(
-        "specs/set.html", spec=row, sections=sections, groups=_grouped(store.options()),
+        "specs/set.html", spec=row, sections=sections, tiles=tiles,
+        groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS]),
+        waiting=waiting, uncovered=store.uncovered(chosen, row["family"]),
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
-        variables=store.variables(), values=values,
-        available=[s for s in store.library() if s["id"] not in have],
+        variables=store.variables(), values=values, families=store.families(),
+        family=store.family_name(row["family"]),
+        available=[s for s in library if s["id"] not in have and s["family"] == row["family"]],
+        elsewhere=[s for s in library if s["id"] not in have and s["family"] != row["family"]],
+        declined=store.declined(row), model=model,
+        from_model={(e["key"], specs._norm(e["value"])) for e in (model or {}).get("elements", [])},
+        icons=specs_seed.ELEMENT_ICONS, group_icons=GROUP_ICONS,
+        labels={o["key"]: o["label"] for o in everything},
         missing=missing, is_admin=_is_admin(), report=report)
+
+
+TILE_KEYS = {key for key, _g, _how, _icon in specs_seed.ELEMENTS}
+GROUP_ICONS = {"Basis": "basis", "Sustainability and compliance": "sustainability",
+               "Scope": "scope", "Environment": "environment", "Concrete": "concrete",
+               "Reinforcement": "reinforcement", "Steel": "steel",
+               "Marine furniture": "marine_furniture", "Protection": "protection",
+               "Bridges": "bridges"}
+
+
+def _tiles(options: list[dict]) -> list[dict]:
+    """The element questions as tiles, under their headings: one tile a
+    question, or one an answer for a question that takes several."""
+    known = {o["key"]: o for o in options}
+    groups = [{"key": k, "title": t, "tiles": []} for k, t in specs_seed.ELEMENT_GROUPS]
+    by_key = {grp["key"]: grp for grp in groups}
+    for key, grp, how, drawing in specs_seed.ELEMENTS:
+        o = known.get(key)
+        if o is None or not o["choice_list"]:
+            continue
+        if how == "many" and o["kind"] == "many":
+            for c in o["choice_list"]:
+                if specs._norm(c) in ("none", ""):
+                    continue
+                by_key[grp]["tiles"].append({"how": "many", "option": o, "value": c,
+                                             "label": specs_seed.ELEMENT_LABELS.get((key, c), c),
+                                             "icon": specs_seed.ELEMENT_ICONS.get((key, c), drawing)})
+        elif how == "toggle" and len(o["choice_list"]) >= 2:
+            on = o["choice_list"][1]
+            by_key[grp]["tiles"].append({"how": "toggle", "option": o, "value": on,
+                                         "off": o["choice_list"][0],
+                                         "label": specs_seed.ELEMENT_LABELS.get((key, on), o["label"]),
+                                         "icon": drawing})
+        else:
+            by_key[grp]["tiles"].append({"how": "pick", "option": o, "value": "", "label": o["label"],
+                                         "icon": drawing})
+    return [grp for grp in groups if grp["tiles"]]
 
 
 def _grouped(options: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -195,8 +355,20 @@ def _grouped(options: list[dict]) -> list[tuple[str, list[dict]]]:
 @login_required
 def save_set(set_id: int):
     _set_or_404(set_id)
-    chosen = {o["key"]: "|".join(request.form.getlist(f"opt_{o['key']}")) if o["kind"] == "many"
-              else request.form.get(f"opt_{o['key']}", "") for o in store.options()}
+    chosen = {}
+    toggles = {key for key, _g, how, _i in specs_seed.ELEMENTS if how == "toggle"}
+    for o in store.options():
+        key = o["key"]
+        if key in toggles and len(o["choice_list"]) >= 2 and key in request.form.getlist("tile_shown"):
+            # A ticked tile is the question's second answer; an unticked one its first.
+            chosen[key] = o["choice_list"][1] if request.form.get(f"tile_{key}") else o["choice_list"][0]
+        elif o["kind"] == "many":
+            ticked = [v for v in request.form.getlist(f"opt_{key}") if v]
+            if not ticked and key in request.form.getlist("tile_shown"):
+                ticked = [c for c in o["choice_list"] if specs._norm(c) == "none"][:1]
+            chosen[key] = "|".join(ticked)
+        else:
+            chosen[key] = request.form.get(f"opt_{key}", "")
     values = {v["key"]: request.form.get(f"var_{v['key']}", "") for v in store.variables()}
     try:
         store.update_set(set_id, request.form, chosen, values)
@@ -204,7 +376,28 @@ def save_set(set_id: int):
         flash(str(exc), "error")
     else:
         flash("Saved.", "success")
+        _added(set_id)
+    step = request.form.get("next")
+    if step in ("elements", "questions", "sections"):
+        return redirect(url_for("specs.spec_set", set_id=set_id) + f"#step-{step}")
     return redirect(url_for("specs.spec_set", set_id=set_id))
+
+
+@bp.post("/sets/<int:set_id>/model")
+@login_required
+def upload_model(set_id: int):
+    """The elements and concrete grades read from an export of the Revit model."""
+    _set_or_404(set_id)
+    if request.form.get("action") == "forget":
+        store.save_model(set_id, None)
+        flash("The model is forgotten. What it ticked stays ticked.", "success")
+        return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
+    models = _uploads("model", MOST_MODEL)
+    if not models:
+        flash("Choose the model's IFC export or schedule first.", "error")
+    elif _read_model(set_id, *models[0]):
+        _added(set_id)
+    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
 
 
 @bp.post("/sets/<int:set_id>/delete")
@@ -269,14 +462,23 @@ def export_set(set_id: int):
     if not sections:
         flash("There are no sections in this specification to issue yet.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
-    missing = _not_issued(store.check_set(set_id))
-    if missing and not request.args.get("anyway"):
+    report = store.check_set(set_id)
+    if row["hold_issue"]:
+        waiting = store.open_items(set_id, report)
+        if waiting["total"]:
+            flash(f"Not issued yet: {waiting['total']} item{'s' if waiting['total'] != 1 else ''} "
+                  "on the check still to accept or reject. This project is held until each one "
+                  "is settled (the hold is a tick box on the project page).", "error")
+            return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
+    missing = _not_issued(report)
+    if missing and not row["hold_issue"] and not request.args.get("anyway"):
         flash(f"Not issued yet: {len(missing)} reference{'s' if len(missing) != 1 else ''} point at "
               "sections or paragraphs this specification does not issue. Add the sections, or "
               "correct the references, then issue — or issue anyway from the top of this page.",
               "error")
         return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
-    chosen, values, template = store.chosen_for(row), store.values_for(row), store.template_bytes()
+    chosen, values = store.chosen_for(row), store.values_for(row)
+    template = store.template_bytes(row["family"])
     reader = store.reader(store.set_whole(set_id), chosen)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
@@ -293,8 +495,27 @@ def export_set(set_id: int):
 
 def _not_issued(report: dict) -> list[dict]:
     """References that would go out pointing at nothing this issue contains."""
-    return [i for i in report["references"] if "not in this specification" in i["message"]
-            or i["severity"] == "error"]
+    return [i for i in report["references"] if ("not in this specification" in i["message"]
+            or i["severity"] == "error") and not i.get("settled")]
+
+
+@bp.post("/sets/<int:set_id>/settle")
+@login_required
+def settle(set_id: int):
+    """A check item accepted or rejected, or opened again."""
+    _set_or_404(set_id)
+    keys = request.form.getlist("key")
+    try:
+        for key in keys:
+            store.settle(set_id, key, request.form.get("state", ""),
+                         request.form.get("message", "") if len(keys) == 1 else "")
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    if len(keys) > 1:
+        flash(f"{len(keys)} items {request.form.get('state') or 'opened again'}.", "success")
+    back = url_for("specs.check_set", set_id=set_id, issuing=request.form.get("issuing") or None)
+    return redirect(back + (f"#item-{keys[0]}" if len(keys) == 1 else
+                            f"#group-{request.form.get('group', '')}"))
 
 
 @bp.get("/sets/<int:set_id>/amendments")
@@ -366,7 +587,8 @@ def set_section_action(set_id: int, row_id: int, action: str):
                   "success")
         elif action == "remove":
             store.remove_set_section(set_id, row_id)
-            flash(f"Took section {s['number']} out of this specification.", "success")
+            flash(f"Took section {s['number']} out of this specification. It stays out when the "
+                  "answers are saved again; add it back from the library list any time.", "success")
             return redirect(url_for("specs.spec_set", set_id=set_id))
         elif action == "promote":
             if not _admin_only():
@@ -389,7 +611,7 @@ def set_section_docx(set_id: int, row_id: int):
     chosen = store.chosen_for(row)
     reader = store.reader(store.set_whole(set_id), chosen)
     data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, store.values_for(row),
-                            store.template_bytes(), resolve=reader.issued(s["number"]))
+                            store.template_bytes(row["family"]), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name(row["file_pattern"], s))
 
 
@@ -398,8 +620,12 @@ def set_section_docx(set_id: int, row_id: int):
 @bp.get("/library")
 @login_required
 def library():
-    return render_template("specs/library.html", sections=store.library(),
-                           template=store.template_row(), is_admin=_is_admin())
+    families = store.families()
+    family = request.args.get("family") or next((f["code"] for f in families if f["sections"]),
+                                                store.DEFAULT_FAMILY)
+    return render_template("specs/library.html", sections=store.library(family), family=family,
+                           families=families, template=store.template_row(),
+                           family_templates=store.family_templates(), is_admin=_is_admin())
 
 
 @bp.post("/library/upload")
@@ -408,9 +634,10 @@ def upload_to_library():
     if not _admin_only():
         return redirect(url_for("specs.library"))
     done = []
+    family = store.clean_family(request.form.get("family"))
     for filename, data in _uploads("files"):
         try:
-            _section_id, how = store.import_to_library(filename, data)
+            _section_id, how = store.import_to_library(filename, data, family)
         except specs.SpecError as exc:
             flash(f"{filename}: {exc}", "error")
             continue
@@ -418,7 +645,7 @@ def upload_to_library():
     if done:
         flash("Read " + ", ".join(done) + ". Check each one reads right before a project "
               "takes it.", "success")
-    return redirect(url_for("specs.library"))
+    return redirect(url_for("specs.library", family=family))
 
 
 @bp.post("/library/new")
@@ -434,7 +661,8 @@ def new_library_section():
                specs.node("PRT", "EXECUTION")]
     try:
         section_id = store.save_section(request.form.get("number", ""),
-                                        request.form.get("title", ""), starter, note="Started")
+                                        request.form.get("title", ""), starter, note="Started",
+                                        family=store.clean_family(request.form.get("family")))
     except specs.SpecError as exc:
         flash(str(exc), "error")
         return redirect(url_for("specs.library"))
@@ -460,7 +688,7 @@ def library_section(section_id: int):
     return render_template(
         "specs/section.html", spec=None, section=s, rows=rows, compared=False,
         values={v["key"]: v["default_value"] for v in store.variables()}, chosen={},
-        reader=store.reader(store.library_whole(), _every_choice(), standards=False),
+        reader=store.reader(store.library_whole(s["family"]), _every_choice(), standards=False),
         options=store.options(), versions=store.versions(section_id), version=version,
         is_admin=_is_admin(), master=None)
 
@@ -491,6 +719,7 @@ def edit_library_section(section_id: int):
             store.save_section(request.form.get("number", s["number"]),
                                request.form.get("title", s["title"]), nodes,
                                note=request.form.get("note", "").strip(), section_id=section_id)
+            store.set_applies(section_id, request.form.get("applies", ""))
         except specs.SpecError as exc:
             flash(str(exc), "error")
             return redirect(url_for("specs.edit_library_section", section_id=section_id))
@@ -518,10 +747,10 @@ def delete_library_section(section_id: int):
 def library_docx(section_id: int):
     s = _library_or_404(section_id)
     chosen = store.chosen_for(None)
-    reader = store.reader(store.library_whole(), chosen, standards=False)
+    reader = store.reader(store.library_whole(s["family"]), chosen, standards=False)
     data = specs.write_docx(s, specs.loads(s["body"]), {"revision": ""}, chosen,
                             {v["key"]: v["default_value"] for v in store.variables()},
-                            store.template_bytes(), resolve=reader.issued(s["number"]))
+                            store.template_bytes(s["family"]), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name("SPC-{number}", s))
 
 
@@ -555,31 +784,37 @@ def upload_template():
     if not _admin_only():
         return redirect(url_for("specs.library"))
     files = _uploads("template")
+    family = request.form.get("family", "")
+    family = store.clean_family(family) if family else ""
     if files:
         filename, data = files[0]
         try:
-            store.save_template(filename, data)
+            store.save_template(filename, data, family)
         except specs.SpecError as exc:
             flash(str(exc), "error")
         else:
-            flash(f"Every section now goes out in {filename}'s styles, page and header.", "success")
-    return redirect(url_for("specs.library"))
+            flash(f"Every {family + ' ' if family else ''}section now goes out in {filename}'s "
+                  "styles, page and header.", "success")
+    return redirect(url_for("specs.library", family=family or None))
 
 
 @bp.post("/template/delete")
 @login_required
 def delete_template():
+    family = request.form.get("family", "")
     if _admin_only():
-        store.drop_template()
-        flash("Back to the built-in template.", "success")
-    return redirect(url_for("specs.library"))
+        store.drop_template(store.clean_family(family) if family else "")
+        flash(f"{family} sections go out in the office's template again." if family
+              else "Back to the built-in template.", "success")
+    return redirect(url_for("specs.library", family=family or None))
 
 
 @bp.get("/template")
 @login_required
 def download_template():
-    row = store.template_row()
-    data = store.template_bytes() or specs.TEMPLATE.read_bytes()
+    family = request.args.get("family", "")
+    row = store.template_row(family) or store.template_row()
+    data = store.template_bytes(family) or specs.TEMPLATE.read_bytes()
     return _docx_response(data, row["filename"] if row else "spec-template.docx")
 
 
@@ -621,6 +856,9 @@ def standards():
 # --- the checker ----------------------------------------------------------------------
 
 CHECKS = [
+    ("model", "The model's grades",
+     "Concrete and steel grades read from the Revit model that do not look realistic, need a "
+     "second look, or could not be read."),
     ("references", "Cross-references",
      "References to sections, articles and paragraphs that are not there, or not issued."),
     ("outdated", "Outdated standards", "Standards cited that have been withdrawn or superseded."),
@@ -629,7 +867,8 @@ CHECKS = [
     ("discrepancies", "Discrepancies",
      "The same property given different values, sections cited under the wrong title, "
      "a standard cited in two editions."),
-    ("repeated", "Repeated", "Values written out many times, and paragraphs said more than once."),
+    ("repeated", "Repeated", "Values written out many times, and paragraphs said more than once. "
+                             "Advice on keeping the text tidy: these do not hold the issue."),
     ("setup", "Set-up", "Conditions naming questions or answers that do not exist, and words "
                         "with no value."),
 ]
@@ -643,7 +882,8 @@ def check_set(set_id: int):
     return render_template("specs/check.html", spec=row, report=report, checks=CHECKS,
                            chosen=store.chosen_for(row), is_admin=_is_admin(),
                            issuing=request.args.get("issuing"), blocking=_not_issued(report),
-                           language=_language(store.language_set(set_id)), kinds=KINDS)
+                           language=_language(store.language_set(set_id)), kinds=KINDS,
+                           waiting=store.open_items(set_id, report))
 
 
 @bp.post("/sets/<int:set_id>/fix")
@@ -663,9 +903,11 @@ def fix_set(set_id: int):
 @bp.get("/library/check")
 @login_required
 def check_library():
-    return render_template("specs/check.html", spec=None, report=store.check_library(),
+    family = request.args.get("family") or None
+    return render_template("specs/check.html", spec=None, report=store.check_library(family),
                            checks=CHECKS, chosen=store.chosen_for(None), is_admin=_is_admin(),
-                           language=_language(store.language_library()), kinds=KINDS)
+                           language=_language(store.language_library()), kinds=KINDS,
+                           family=family)
 
 
 @bp.post("/library/fix")
@@ -675,13 +917,14 @@ def fix_library():
         return redirect(url_for("specs.check_library"))
     how = {k: request.form.get(k, "") for k in ("old", "new", "name", "value", "property")}
     try:
-        count = store.fix_library(request.form.get("action", ""), **how)
+        count = store.fix_library(request.form.get("action", ""),
+                                  family=request.form.get("family") or None, **how)
     except specs.SpecError as exc:
         flash(str(exc), "error")
     else:
         flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
               "success" if count else "error")
-    return redirect(url_for("specs.check_library"))
+    return redirect(url_for("specs.check_library", family=request.form.get("family") or None))
 
 
 KINDS = [
@@ -780,11 +1023,44 @@ def load_library_file():
     files = _uploads("library")
     if files:
         filename, data = files[0]
+        mode = request.form.get("mode", "update")
+        if mode == "replace" and request.form.get("sure") != "yes":
+            flash("Tick that you mean to take out the sections the file does not have, "
+                  "or choose another way to load it.", "error")
+            return redirect(url_for("specs.library", family=request.form.get("family") or None))
         try:
-            counted = store.unpack(data)
+            counted = store.unpack(data, mode)
         except specs.SpecError as exc:
             flash(f"{filename}: {exc}", "error")
         else:
-            flash(f"Read {filename}: {counted['sections']} sections, {counted['options']} questions, "
-                  f"{counted['variables']} words and {counted['standards']} standards.", "success")
-    return redirect(url_for("specs.library"))
+            said = [f"{counted['added']} new section{'s' if counted['added'] != 1 else ''}"]
+            if counted["updated"]:
+                said.append(f"{counted['updated']} updated to a new version")
+            if counted["same"]:
+                said.append(f"{counted['same']} already the same")
+            if counted["kept"]:
+                said.append(f"{counted['kept']} already here and left as they are")
+            if counted["removed"]:
+                said.append(f"{len(counted['removed'])} taken out ({', '.join(counted['removed'])})")
+            flash(f"Read {filename}: " + "; ".join(said) + f". {counted['options']} questions, "
+                  f"{counted['variables']} words and {counted['standards']} new standards."
+                  + (" Projects keep their own copies of the sections taken out."
+                     if counted["removed"] else ""), "success")
+    return redirect(url_for("specs.library", family=request.form.get("family") or None))
+
+
+@bp.post("/library/delete")
+@login_required
+def delete_library_sections():
+    """The ticked sections taken out of the master library."""
+    family = request.form.get("family") or None
+    if not _admin_only():
+        return redirect(url_for("specs.library", family=family))
+    gone = store.delete_sections(int(v) for v in request.form.getlist("section_id") if v.isdigit())
+    if gone:
+        flash(f"Took {len(gone)} section{'s' if len(gone) != 1 else ''} out of the library: "
+              + ", ".join(f"{s['number']}" for s in gone)
+              + ". Projects keep their own copies.", "success")
+    else:
+        flash("Tick the sections to take out first.", "error")
+    return redirect(url_for("specs.library", family=family))

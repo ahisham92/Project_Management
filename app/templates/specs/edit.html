@@ -34,6 +34,9 @@
       <label class="field"><span class="field-label">The text</span>
         <textarea name="text" class="spec-editor" spellcheck="true">{{ text }}</textarea></label>
       {% if library %}
+      <label class="field"><span class="field-label">Belongs in a project when</span>
+        <input type="text" name="applies" value="{{ section['applies'] }}" placeholder="e.g. shotcrete=Yes">
+        <span class="field-hint">A condition on the answers, added to a project when it holds; * for every {{ section['family'] }} project; blank when only ever added by hand.</span></label>
       <label class="field"><span class="field-label">What changed, for the version history</span>
         <input type="text" name="note" placeholder="e.g. Updated to ACI 318-19"></label>
       {% endif %}
@@ -59,6 +62,7 @@
       <p><strong>Only for some projects:</strong> start the text with a condition, and whatever sits under that paragraph goes with it.</p>
       <p class="spec-key">-- {if leed=v4.1} Product Data for ...</p>
       <p class="muted">Several conditions: <span class="spec-key">{if a=x &amp; b=y}</span>. Either of two: <span class="spec-key">{if a=x|y}</span>. Anything but: <span class="spec-key">{if a!=x}</span>.</p>
+      <p class="muted">A choice inside a paragraph, for the words MasterSpec puts in [brackets]: <span class="spec-key">Anchor rods: {anchor_rods=Grade 105: ASTM F1554, Grade 105}{anchor_rods=A325M: ASTM F3125, Grade A325M}.</span> The words after the colon are issued only when the project made that choice.</p>
       <p><strong>Referring to other paragraphs:</strong> write the reference, not the number, and it stays right when anything moves.</p>
       <table class="spec-table"><tbody>
         <tr><td class="spec-key">{ref:033000}</td><td>Section 033000 "Cast-in-Place Concrete"</td></tr>

@@ -4,8 +4,30 @@
 
 {% macro where(item) %}
   {% if item['row_id'] %}
-    {% if spec %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=item['row_id']) }}">{{ item['section'] }}{% if item['path'] %} {{ item['path'] }}{% endif %}</a>
-    {% else %}<a href="{{ url_for('specs.library_section', section_id=item['row_id']) }}">{{ item['section'] }}{% if item['path'] %} {{ item['path'] }}{% endif %}</a>{% endif %}
+    {% set url = url_for('specs.set_section', set_id=spec['id'], row_id=item['row_id']) if spec else url_for('specs.library_section', section_id=item['row_id']) %}
+    <a class="spec-where" href="{{ url }}{% if item.get('node_id') %}#p-{{ item['node_id'] }}{% endif %}">
+      <span class="spec-where-section">{{ item['section'] }}{% if item.get('title') %} {{ item['title'] }}{% endif %}</span>
+      {% if item.get('part') %}<span class="spec-where-sep">›</span> <span>{{ item['part'] }}</span>{% endif %}
+      {% if item.get('article') %}<span class="spec-where-sep">›</span> <span>{{ item['article'] }}</span>{% endif %}
+      {% if item['path'] and item['path'] not in (item.get('article') or '') %}<span class="spec-where-sep">›</span> <strong>{{ item['path'] }}</strong>{% endif %}
+    </a>
+  {% elif item['section'] %}<span class="spec-where-section">{{ item['section'] }}</span>{% endif %}
+{% endmacro %}
+
+{% macro settle_form(item) %}
+  {% if spec and item.get('key') %}
+  <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form spec-settle">
+    <input type="hidden" name="key" value="{{ item['key'] }}"><input type="hidden" name="message" value="{{ item['message'] }}">
+    {% if issuing %}<input type="hidden" name="issuing" value="1">{% endif %}
+    {% if item['settled'] %}
+      {{ badge('good' if item['settled']['state'] == 'accepted' else 'neutral', 'Accepted' if item['settled']['state'] == 'accepted' else 'Rejected') }}
+      <span class="small muted">{{ item['settled']['settled_by'] }} · {{ item['settled']['settled_at'][:16] }}</span>
+      <button type="submit" name="state" value="" class="btn btn-ghost btn-sm">Open again</button>
+    {% else %}
+      <button type="submit" name="state" value="accepted" class="btn btn-ghost btn-sm spec-accept" title="Agreed: it is dealt with, or right as it stands for this project">Accept</button>
+      <button type="submit" name="state" value="rejected" class="btn btn-ghost btn-sm spec-reject" title="Not a problem here: the text stays as it is">Reject</button>
+    {% endif %}
+  </form>
   {% endif %}
 {% endmacro %}
 
@@ -13,6 +35,7 @@
   {% if fix and (spec or is_admin) %}
   <form method="post" action="{{ url_for('specs.fix_set', set_id=spec['id']) if spec else url_for('specs.fix_library') }}" class="inline-form" style="margin-top:6px">
     <input type="hidden" name="action" value="{{ fix['action'] }}">
+    {% if not spec and family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
     {% if fix['action'] == 'replace' %}
       <input type="hidden" name="old" value="{{ fix['old'] }}"><input type="hidden" name="new" value="{{ fix['new'] }}">
       <button type="submit" class="btn btn-ghost btn-sm">Replace {{ fix['old'] }} with {{ fix['new'] }} everywhere</button>
@@ -25,6 +48,23 @@
     {% endif %}
   </form>
   {% endif %}
+{% endmacro %}
+
+{% macro check_item(item) %}
+    <div class="spec-check-item spec-sev-{{ item['severity'] }}{% if item.get('settled') %} spec-is-settled{% endif %}" id="item-{{ item.get('key', '') }}">
+      {% if item['section'] %}<div class="small">{{ where(item) }}</div>{% endif %}
+      <div class="spec-check-message">{{ item['message'] }}</div>
+      {% if item['text'] and not item.get('places') %}<div class="spec-check-text">{{ item['text'] | spec_mark(item.get('words', '')) }}</div>{% endif %}
+      {% if item.get('places') %}
+        <ul class="spec-places">
+          {% for p in item['places'] %}<li>{{ where(p) }}{% if p.get('value') %} <strong>{{ p['value'] }}</strong>{% endif %} <div class="spec-check-text">{{ p['text'] | spec_mark(p.get('words', '')) }}</div></li>{% endfor %}
+        </ul>
+      {% endif %}
+      <div class="inline-form" style="gap:8px;align-items:center">
+        {% if not item.get('settled') %}{{ fix_form(item.get('fix')) }}{% endif %}
+        {{ settle_form(item) }}
+      </div>
+    </div>
 {% endmacro %}
 
 {% block content %}
@@ -44,7 +84,27 @@
   <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
 </div>
 
-{% if spec and blocking %}
+{% if spec %}
+{% set held = spec['hold_issue'] and waiting['total'] %}
+<div class="spec-steps-bar card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
+  <div>
+    {% if waiting['total'] %}
+      <p><strong>{{ waiting['total'] }} to accept or reject</strong>
+        <span class="muted small">· {{ waiting['checks'] }} check item{{ 's' if waiting['checks'] != 1 }}, {{ waiting['language'] }} language suggestion{{ 's' if waiting['language'] != 1 }}</span></p>
+      <p class="small muted">{% if spec['hold_issue'] %}This project is not issued until each one is settled. Accept what is right or dealt with; reject what should stay as it is.{% else %}The hold is off for this project, so it can be issued as it stands.{% endif %}</p>
+    {% else %}
+      <p><strong class="spec-good-ink">Everything is settled.</strong> <span class="small muted">Nothing on the check is waiting for you.</span></p>
+    {% endif %}
+  </div>
+  {% if held %}
+    <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is accepted or rejected">Next: Issue all</span>
+  {% else %}
+    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Next: Issue all (.zip of .docx)</a>
+  {% endif %}
+</div></div>
+{% endif %}
+
+{% if spec and blocking and not spec['hold_issue'] %}
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>
     (listed under Cross-references). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
@@ -60,26 +120,35 @@
 </div></div>
 {% endif %}
 
-{% for key, title, about in checks %}
-<div class="card" style="margin-top:12px">
-  <div class="card-head">
-    <div><h2>{{ title }} {% if report[key] %}{{ badge('warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', report[key] | length) }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+{% for key, title, about in checks if key != 'model' or report.get(key) %}
+<div class="card" style="margin-top:12px" id="group-{{ key }}">
+  <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+    {% set open_n = report['open'][key] if report.get('open') else report[key] | length %}
+    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
       <p class="small muted" style="margin-top:2px">{{ about }}</p></div>
+    {% set open_items = report[key] | rejectattr('settled') | list %}
+    {% if spec and open_items | length > 1 %}
+    <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form spec-settle"
+          onsubmit="return confirm('Settle all ' + {{ open_items | length }} + ' open items under {{ title }} this way? Each can be opened again.')">
+      <input type="hidden" name="group" value="{{ key }}">
+      {% if issuing %}<input type="hidden" name="issuing" value="1">{% endif %}
+      {% for item in open_items %}<input type="hidden" name="key" value="{{ item['key'] }}">{% endfor %}
+      <button type="submit" name="state" value="accepted" class="btn btn-ghost btn-sm spec-accept">Accept all {{ open_items | length }}</button>
+      <button type="submit" name="state" value="rejected" class="btn btn-ghost btn-sm spec-reject">Reject all {{ open_items | length }}</button>
+    </form>
+    {% endif %}
   </div>
   {% if report[key] %}
   <div class="card-body">
-    {% for item in report[key] %}
-    <div class="spec-check-item">
-      <div>{% if item['section'] and item['row_id'] %}<strong>{{ where(item) }}</strong> · {% endif %}{{ item['message'] }}</div>
-      {% if item['text'] and not item.get('places') %}<div class="small muted">{{ item['text'] }}</div>{% endif %}
-      {% if item.get('places') %}
-        <ul class="spec-places">
-          {% for p in item['places'] %}<li>{{ where(p) }}{% if p.get('value') %} <strong>{{ p['value'] }}</strong>{% endif %} <span class="muted">{{ p['text'] }}</span></li>{% endfor %}
-        </ul>
-      {% endif %}
-      {{ fix_form(item.get('fix')) }}
-    </div>
-    {% endfor %}
+    {% if key == 'repeated' and report[key] | length > 20 %}<details><summary class="small">Show {{ report[key] | length }} repeats</summary>{% endif %}
+    {% for item in report[key] if not item.get('settled') %}{{ check_item(item) }}{% endfor %}
+    {% set done = report[key] | selectattr('settled') | list %}
+    {% if done %}
+    <details class="spec-settled-list"><summary class="small">{{ done | length }} settled</summary>
+      {% for item in done %}{{ check_item(item) }}{% endfor %}
+    </details>
+    {% endif %}
+    {% if key == 'repeated' and report[key] | length > 20 %}</details>{% endif %}
   </div>
   {% endif %}
 </div>
@@ -94,7 +163,7 @@
       <p class="small muted" style="margin-top:2px">
         Suggestions only: nothing changes until you accept one, or type what it should say and accept that.
         Written in {{ chosen.get('english') or 'the English the options set' }} English{% if spec %}, for this project's scope{% endif %}.
-        Leave a suggestion and it is not made again {{ 'in this specification' if spec else 'in the library' }}.
+        Reject a suggestion and it is not made again {{ 'in this specification' if spec else 'in the library' }}.
         The office's wording and the scope rewording are kept on the <a href="{{ url_for('specs.standards') }}#wording">Standards and wording</a> page.
       </p></div>
   </div>
@@ -116,25 +185,31 @@
           {% if g['new'] %} → <strong>{{ g['new'] }}</strong>{% endif %} · {% endif %}{{ g['message'] }}
         {% if g['places'] | length > 1 %}<span class="muted small">· {{ g['places'] | length }} places</span>{% endif %}
       </div>
+      {% if can and g['old'] and not bulk and g['places'] | length > 1 %}
+      <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
+        <input type="hidden" name="old" value="{{ g['old'] }}">
+        <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Reject in all {{ g['places'] | length }}</button>
+      </form>
+      {% endif %}
       {% if can and g['old'] and bulk and g['places'] | length > 1 %}
       <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
         <input type="hidden" name="old" value="{{ g['old'] }}"><input type="hidden" name="everywhere" value="1">
         <input type="text" name="new" value="{{ g['new'] }}" class="w-md" aria-label="Replace with">
         <button type="submit" name="action" value="accept" class="btn btn-ghost btn-sm">Accept in all {{ g['places'] | length }}</button>
-        <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Leave it</button>
+        <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Reject</button>
       </form>
       {% endif %}
       {% set shown = g['places'][:3] if g['places'] | length > 1 else g['places'] %}
       {% for p in shown %}
       <div class="small" style="margin-top:6px">
-        {% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path']}) }} · {% endif %}
+        {% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path'], 'node_id': p['node_id']}) }} · {% endif %}
         <span class="muted">{{ p['text']['before'] }}</span><mark>{{ p['text']['words'] }}</mark><span class="muted">{{ p['text']['after'] }}</span>
         {% if can and p['old'] %}
         <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
           {% for k in ('row_id', 'node_id', 'old', 'at') %}<input type="hidden" name="{{ k }}" value="{{ p[k] }}">{% endfor %}
           <input type="text" name="new" value="{{ p['new'] }}" class="w-md" aria-label="Replace with">
           <button type="submit" name="action" value="accept" class="btn btn-ghost btn-sm">Accept</button>
-          {% if g['places'] | length == 1 %}<button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Leave it</button>{% endif %}
+          {% if g['places'] | length == 1 %}<button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Reject</button>{% endif %}
         </form>
         {% endif %}
       </div>
@@ -142,7 +217,7 @@
       {% if g['places'] | length > 3 %}
       <details class="small" style="margin-top:4px"><summary>{{ g['places'] | length - 3 }} more</summary>
         {% for p in g['places'][3:] %}
-        <div style="margin-top:4px">{% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path']}) }} · {% endif %}<span class="muted">{{ p['text']['before'] }}</span><mark>{{ p['text']['words'] }}</mark><span class="muted">{{ p['text']['after'] }}</span></div>
+        <div style="margin-top:4px">{% if p['row_id'] %}{{ where({'row_id': p['row_id'], 'section': p['section'], 'path': p['path'], 'node_id': p['node_id']}) }} · {% endif %}<span class="muted">{{ p['text']['before'] }}</span><mark>{{ p['text']['words'] }}</mark><span class="muted">{{ p['text']['after'] }}</span></div>
         {% endfor %}
       </details>
       {% endif %}

@@ -154,6 +154,22 @@ def _dedupe(text: str) -> str:
                 text = text[:a.end()] + text[end:]
                 changed = True
                 break
+        if changed:
+            continue
+        # The same standard again further along one list ("A, B, A"): the
+        # second said once.
+        for i, a in enumerate(found):
+            for j in range(i + 2, len(found)):
+                b = found[j]
+                between = STANDARD.sub("", text[a.end():b.start()])
+                if not re.fullmatch(r"(?:\s*(?:,|;|/|or|and)\s*)*", between, re.I):
+                    break
+                if std_key(a.group(0)) == std_key(b.group(0)):
+                    text = text[:found[j - 1].end()] + text[b.end():]
+                    changed = True
+                    break
+            if changed:
+                break
     return text
 
 
@@ -209,13 +225,19 @@ REF = re.compile(r"\{ref:\s*([^}]+?)\s*\}")
 SMALL = {"and", "or", "of", "the", "for", "in", "to", "a", "an", "on", "at", "by", "with"}
 
 
+# Kept in capitals in a title: "SBS Modified Bituminous Sheet Waterproofing".
+ACRONYMS = {"sbs", "app", "pvc", "epdm", "tpo", "hdpe", "ldpe", "gfrp", "frp", "cfrp", "cmu",
+            "hss", "leed", "mep", "hvac", "grp", "upvc"}
+
+
 def title_case(title: str) -> str:
     """"CAST-IN-PLACE CONCRETE" as MasterSpec cites it: "Cast-in-Place Concrete"."""
     words = (title or "").lower().split()
     out = []
     for i, word in enumerate(words):
         parts = word.split("-")
-        parts = [p if (j > 0 or i > 0) and p in SMALL else p[:1].upper() + p[1:]
+        parts = [p.upper() if p.strip("()[],;:") in ACRONYMS else
+                 p if (j > 0 or i > 0) and p in SMALL else p[:1].upper() + p[1:]
                  for j, p in enumerate(parts)]
         out.append("-".join(parts))
     return " ".join(out)
@@ -315,6 +337,7 @@ class Reader:
     def __init__(self, sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                  table: "Standards | None" = None, basis_key: str = "standards"):
         self.where = index(sections, chosen)
+        self.chosen = chosen
         self.basis = basis_of(chosen.get(basis_key, "")) if table is not None else ""
         self.table = table
 
@@ -331,7 +354,7 @@ class Reader:
 
     def issued(self, here: str):
         def resolve(text: str) -> str:
-            return self.standards(render(text, here, self.where))
+            return self.standards(render(specs.choose(text, self.chosen), here, self.where))
         return resolve
 
 
@@ -341,9 +364,14 @@ TYPED_SECTION = re.compile(
     r"(?:\s*[-–,]?\s*[\"“”'](?P<title>[^\"“”']{3,80})[\"“”'],?)?", re.I)
 SECTION_LIST = re.compile(
     r"\bSections\s+((?:\d{5,6}|[A-Z]\d{2})(?:\s*(?:,|and|&|or)\s*(?:\d{5,6}|[A-Z]\d{2}))*)")
+# "Section 7.5 of AISC 303" or "Article 3.2 in Section 033000" is somebody
+# else's numbering, not an article of the section it is written in.
+ELSEWHERE = r"(?!\s+(?:of|in)\s+(?:the\s+)?[A-Z0-9])"
 TYPED_ARTICLE = re.compile(
-    r"\b(?:Article|article|Section|section|clause|Clause)\s+(?P<path>\d\.\d{1,2})(?![.\d])")
-TYPED_PARAGRAPH = re.compile(r"\b(?:Paragraph|paragraph)\s+(?P<path>\d\.\d{1,2}\.[A-Z](?:\.\d{1,2})?)\b")
+    r"\b(?:Article|article|Section|section|clause|Clause)\s+(?P<path>\d\.\d{1,2})(?![.\d])"
+    + ELSEWHERE)
+TYPED_PARAGRAPH = re.compile(
+    r"\b(?:Paragraph|paragraph)\s+(?P<path>\d\.\d{1,2}\.[A-Z](?:\.\d{1,2})?)\b" + ELSEWHERE)
 
 
 NAMED_AFTER = "\x00"          # marks a reference just made, until its typed title is dropped
@@ -507,7 +535,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
             if n["included"]:
                 issued.append((s, n))
             # Conditions that name questions or answers nobody can give.
-            for part in (n.get("when") or "").split("&"):
+            for part in (n.get("when") or "").split("&") + specs.inline_conditions(n["text"]):
                 if not part.strip():
                     continue
                 key, _, wanted = part.partition("!=" if "!=" in part else "=")
@@ -522,20 +550,34 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                                                            f"which is not a choice of \"{key}\""))
 
     typed_links = 0
+    brackets: dict[str, list[dict]] = defaultdict(list)
     std_seen: dict[str, dict] = {}
     editions: dict[str, set] = defaultdict(set)
     for s, n in issued:
-        text = n["text"]
+        text = specs.choose(n["text"], chosen)
+        # Choices left open the MasterSpec way, in square brackets.
+        if n["level"] != specs.TABLE:
+            for m in re.finditer(r"\[([^\[\]]{1,300})\]", text):
+                brackets[s["number"]].append(_item(
+                    s, n, f"still has a choice in brackets, [{_brief(m.group(1), 60)}]: keep the "
+                          "words, drop them, or tie them to a question", severity="warning",
+                    words=m.group(0)))
+            for a, b in ("[]", "()"):
+                if text.count(a) != text.count(b):
+                    report["setup"].append(_item(s, n, f"has a {a} or {b} without its pair",
+                                                 severity="warning",
+                                                 words=a if text.count(a) > text.count(b) else b))
         # Live references that point nowhere.
+        shown = render(text, s["number"], where)       # as it reads, references written out
         for m in REF.finditer(text):
             found = lookup(m.group(1), s["number"], where)
             if found.get("problem"):
-                report["references"].append(_item(s, n, f"{{ref:{m.group(1)}}} {found['problem']}",
-                                                  severity="error"))
+                report["references"].append(_item(s, n, found["problem"][:1].upper() + found["problem"][1:],
+                                                  severity="error", words=cite(found), shown=shown))
             elif found["kind"] in ("article", "paragraph", "part") and not found["hit"]["included"]:
                 report["references"].append(_item(
                     s, n, f"refers to {found['hit']['text'][:60]!r}, which this project's choices "
-                          "leave out", severity="error"))
+                          "leave out", severity="error", words=cite(found), shown=shown))
         # Typed references: to sections not issued, under the wrong title, or
         # simply not live yet.
         plain = REF.sub("", text)
@@ -545,7 +587,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
             if target is None:
                 report["references"].append(_item(
                     s, n, f"refers to Section {number}, which is not in this specification",
-                    severity="warning"))
+                    severity="warning", words=m.group(0)))
                 continue
             if _section_key(number) == _section_key(s["number"]):
                 continue
@@ -553,19 +595,20 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
             if m.group("title") and _article_key(m.group("title")) != _article_key(target["title"]):
                 report["discrepancies"].append(_item(
                     s, n, f"cites Section {number} as \"{m.group('title').strip()}\"; it is "
-                          f"\"{title_case(target['title'])}\"", fix={"action": "link"}))
+                          f"\"{title_case(target['title'])}\"", fix={"action": "link"},
+                    words=m.group(0)))
         for m in SECTION_LIST.finditer(plain):
             for number in re.findall(r"\d{5,6}|[A-Z]\d{2}", m.group(1)):
                 if _section_key(number) not in where:
                     report["references"].append(_item(
                         s, n, f"refers to Section {number}, which is not in this specification",
-                        severity="warning"))
+                        severity="warning", words=number))
         mine = where.get(_section_key(s["number"]))
         for m in TYPED_ARTICLE.finditer(plain):
             if mine and not any(h["path"] == m.group("path") for h in mine["articles"].values()):
                 report["references"].append(_item(
                     s, n, f"refers to {m.group(0)}, and this section has no article {m.group('path')}",
-                    severity="error"))
+                    severity="error", words=m.group(0)))
             elif mine:
                 typed_links += 1
 
@@ -582,11 +625,12 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                     s, n, f"{ref.strip()} is out of date" + (f"; use {gone['new']}" if gone["new"] else "")
                           + (f" ({gone['note']})" if gone["note"] else ""),
                     severity="warning", fix={"action": "replace", "old": gone["old"], "new": gone["new"]}
-                    if _single(gone["new"]) else None, extra={"ref": ref.strip()}))
+                    if _single(gone["new"]) else None, extra={"ref": ref.strip()}, words=ref.strip()))
             elif year and year < OLD_EDITION_BEFORE:
                 report["outdated"].append(_item(
                     s, n, f"{ref.strip()} cites the {year} edition: check it is still current, or "
-                          "cite it undated so the current edition applies", extra={"ref": ref.strip()}))
+                          "cite it undated so the current edition applies", extra={"ref": ref.strip()},
+                    words=ref.strip()))
             side = family(ref)
             if basis in ("bs", "us") and side != basis and not table.equivalent(ref):
                 seen = std_seen.setdefault(key, {"ref": ref.strip(), "places": []})
@@ -621,7 +665,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                 continue
             for sentence in _sentences(specs.VARIABLE.sub("", REF.sub("", n["text"]))):
                 for value in _values_after(name, rule, units, sentence):
-                    found[value].append(_item(s, n, _brief(sentence)))
+                    found[value].append(_item(s, n, _brief(sentence), words=value))
         if len(found) > 1:
             report["discrepancies"].append({
                 "severity": "info", "section": "", "row_id": None, "path": "", "property": name,
@@ -638,7 +682,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
         places: dict[str, list[dict]] = defaultdict(list)
         for s, n in issued:
             for m in rule.finditer(specs.VARIABLE.sub("", REF.sub("", n["text"]))):
-                places[m.group(0)].append(_item(s, n, _brief(n["text"], 90)))
+                places[m.group(0)].append(_item(s, n, _brief(n["text"], 90), words=m.group(0)))
         for value, where_found in _by_count(places):
             if len(where_found) >= REPEATS:
                 report["repeated"].append(_repeat(f"{kind} {value}", value, where_found, variable))
@@ -660,11 +704,52 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
     for s, n in issued:
         for name in specs.VARIABLE.findall(n["text"]):
             if not values.get(name):
-                report["setup"].append(_item(s, n, f"{{{{{name}}}}} has no value for this project"))
+                report["setup"].append(_item(s, n, f"{{{{{name}}}}} has no value for this project",
+                                             words="{{" + name + "}}"))
 
+    # A section named in many places and not issued (Division 01's, say) is one
+    # item, with every place it is named under it.
+    missing: dict[str, list[dict]] = defaultdict(list)
+    kept = []
+    for item in report["references"]:
+        m = NOT_ISSUED.match(item["message"])
+        if m and item["severity"] == "warning":
+            missing[m.group(1)].append(item)
+        else:
+            kept.append(item)
+    for number, places in missing.items():
+        if len(places) == 1:
+            kept.append(places[0])
+            continue
+        kept.append({"section": "", "row_id": None, "path": "", "node_id": "", "severity": "warning",
+                     "fix": None, "words": "", "text": places[0]["text"], "places": places,
+                     "message": f"Section {number} is referred to in {len(places)} places and is not "
+                                "in this specification: add it, or check the references are meant "
+                                "to point outside this issue"})
+    report["references"] = kept
+    # A master section can hold hundreds of bracketed choices: past a few, one
+    # item for the section, settled once its choices have been gone through.
+    for number, found in brackets.items():
+        if len(found) <= BRACKETS_ONE_BY_ONE:
+            report["setup"] += found
+            continue
+        first = found[0]
+        shown = ", ".join(f["words"] for f in found[:4])
+        report["setup"].append({
+            **{k: first[k] for k in ("section", "row_id", "title")}, "path": "", "part": "",
+            "article": "", "node_id": "", "severity": "warning", "fix": None, "words": "",
+            "text": "", "count": len(found),
+            "message": f"{len(found)} choices are still in square brackets, such as {shown}: go "
+                       "through the section, keep or drop the words of each, or tie them to a "
+                       "question. They are marked on the section's page."})
     report["typed_links"] = [{"count": typed_links}] if typed_links else []
     report["counts"] = {k: len(v) for k, v in report.items() if isinstance(v, list)}
     return report
+
+
+NOT_ISSUED = re.compile(r"^refers to Section (\S+), which is not in this specification$")
+# Bracketed choices listed one at a time, up to this many in a section.
+BRACKETS_ONE_BY_ONE = 5
 
 
 def _single(ref: str) -> bool:
@@ -706,13 +791,33 @@ def _repeat(what: str, value: str, places: list[dict], variable: str, prop: str 
 
 
 def _where(s: Mapping[str, Any], n: Mapping[str, Any]) -> dict:
-    return {"section": s["number"], "row_id": s.get("id"), "path": n.get("path", "")}
+    """Where a paragraph is, as a reader finds it: the section and its title, the
+    part and article it sits under, and its own number."""
+    return {"section": s["number"], "row_id": s.get("id"), "path": n.get("path", ""),
+            "title": title_case(s.get("title", "")), "part": n.get("part", ""),
+            "article": n.get("article", ""), "node_id": n.get("id", "")}
 
 
 def _item(s: Mapping[str, Any], n: Mapping[str, Any], message: str, severity: str = "info",
-          fix: dict | None = None, extra: dict | None = None) -> dict:
+          fix: dict | None = None, extra: dict | None = None, words: str = "",
+          shown: str | None = None) -> dict:
+    """One thing found, with the words it is about, for the page to mark.
+    ``shown`` is the paragraph as it reads, when that is not its text as kept."""
+    text = shown if shown is not None else n.get("text", "")
     return {**_where(s, n), "severity": severity, "message": message,
-            "text": _brief(n.get("text", "")), "fix": fix, **(extra or {})}
+            "text": _around(text, words), "words": words, "fix": fix, **(extra or {})}
+
+
+def _around(text: str, words: str, width: int = 220) -> str:
+    """The paragraph, cut down around the words it is about when it is long."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    at = text.lower().find(words.lower()) if words else -1
+    if len(text) <= width or at < 0:
+        return _brief(text, width)
+    start = max(0, at - (width - len(words)) // 2)
+    end = min(len(text), start + width)
+    start = max(0, end - width)
+    return ("…" if start else "") + text[start:end].strip() + ("…" if end < len(text) else "")
 
 
 def replace_standard(text: str, old: str, new: str) -> tuple[str, int]:

@@ -133,6 +133,38 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
     return True
 
 
+# A choice inside a paragraph: ``{steel_protection=Paint system: or painted}`` —
+# the words after the colon are there only when the condition holds.
+INLINE = re.compile(r"\{([A-Za-z0-9_]+)\s*(!?=)\s*([^:{}]+?)\s*:\s?([^{}]*)\}")
+
+
+def choose(text: str, chosen: Mapping[str, str]) -> str:
+    """The paragraph with its inline choices settled for a project: the words of
+    each choice that holds kept, the rest dropped with the gap they leave."""
+    if "{" not in (text or ""):
+        return text or ""
+    dropped = False
+
+    def one(m: re.Match) -> str:
+        nonlocal dropped
+        if applies(f"{m.group(1)}{m.group(2)}{m.group(3)}", chosen):
+            return m.group(4)
+        dropped = True
+        return ""
+
+    out = INLINE.sub(one, text)
+    if dropped:
+        out = re.sub(r"[ \t]{2,}", " ", out)
+        out = re.sub(r"\s+([.,;:)])", r"\1", out)
+        out = re.sub(r"\(\s+", "(", out).strip()
+    return out
+
+
+def inline_conditions(text: str) -> list[str]:
+    """The conditions of a paragraph's inline choices, as ``key=value``."""
+    return [f"{m.group(1)}{m.group(2)}{m.group(3)}" for m in INLINE.finditer(text or "")]
+
+
 def fill(text: str, values: Mapping[str, str]) -> str:
     """The text with every ``{{variable}}`` it has a value for filled in."""
     def one(match: re.Match) -> str:
@@ -155,7 +187,7 @@ def unfilled(nodes: Iterable[Mapping[str, Any]], values: Mapping[str, str]) -> l
 def keys_used(nodes: Iterable[Mapping[str, Any]]) -> set[str]:
     used = set()
     for n in nodes:
-        for part in (n.get("when") or "").split("&"):
+        for part in (n.get("when") or "").split("&") + inline_conditions(n.get("text", "")):
             key = re.split(r"!?=", part, maxsplit=1)[0].strip()
             if key:
                 used.add(key)
@@ -180,10 +212,12 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
     left out uses up a number.
     """
     chosen = chosen or {}
+    nbs = is_nbs(nodes)
     counters = [0] * len(LEVELS)
     marks = [""] * len(LEVELS)                     # each level's own mark: "2.4", "B", "1" ...
     out: list[dict] = []
     cut_at: int | None = None                      # depth of the paragraph that was cut
+    part, article = "", ""                         # the headings each paragraph sits under
     for n in nodes:
         level = n["level"]
         depth = DEPTH.get(level)
@@ -198,22 +232,46 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
             for deeper in range(depth + 1, len(LEVELS)):
                 counters[deeper] = 0
             c = counters[depth]
-            label = {
-                "PRT": f"PART {c} -",
-                "ART": f"{counters[0] or 1}.{c}",
-                "PR1": f"{_letter(c, True)}.",
-                "PR2": f"{c}.",
-                "PR3": f"{_letter(c, False)}.",
-                "PR4": f"{c})",
-            }[level]
-            marks[depth] = label.rstrip(".)").replace("PART ", "").rstrip(" -")
+            if nbs:
+                # NBS: the clause number is typed in the heading, groups are
+                # unnumbered and the lines under a clause are bulleted.
+                clause = CLAUSE.match(n["text"]) if level == "ART" else None
+                label = {"PRT": "", "ART": "", "PR1": "\u2022", "PR2": "\u2013",
+                         "PR3": "\u00b7", "PR4": "\u00b7"}[level]
+                marks[depth] = (clause.group(1) if clause else "") if level == "ART" else (
+                    str(c) if level != "PRT" else "")
+            else:
+                label = {
+                    "PRT": f"PART {c} -",
+                    "ART": f"{counters[0] or 1}.{c}",
+                    "PR1": f"{_letter(c, True)}.",
+                    "PR2": f"{c}.",
+                    "PR3": f"{_letter(c, False)}.",
+                    "PR4": f"{c})",
+                }[level]
+                marks[depth] = label.rstrip(".)").replace("PART ", "").rstrip(" -")
             for deeper in range(depth + 1, len(LEVELS)):
                 marks[deeper] = ""
             # How a cross-reference names it: Article 2.4, Paragraph 2.4.B.1.
             path = ".".join(m for m in marks[1:depth + 1] if m) if depth >= 1 else marks[0]
+        if level == "PRT":
+            part, article = (f"{label} {n['text']}" if label else n["text"]), ""
+        elif level == "ART":
+            article = f"{label} {n['text']}" if label else n["text"]
         out.append({**n, "label": label, "included": included, "path": path,
-                    "indent": _indent(out, n)})
+                    "indent": _indent(out, n), "part": part, "article": article})
     return out
+
+
+# An NBS clause heading starts with its three-figure number: "110 QUALITY ASSURANCE".
+CLAUSE = re.compile(r"^(\d{3}[A-Z]?)\b")
+
+
+def is_nbs(nodes: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether a section is written the NBS way (the British 03A sections):
+    clause headings that carry their own numbers rather than 1.1, 1.2 ..."""
+    heads = [n["text"] for n in nodes if n.get("level") == "ART"]
+    return bool(heads) and sum(1 for t in heads if CLAUSE.match(t)) * 2 >= len(heads)
 
 
 def _indent(before: list[dict], n: Mapping[str, Any]) -> int:
@@ -448,7 +506,9 @@ def merge(base: Sequence[Mapping[str, Any]], master: Sequence[Mapping[str, Any]]
 
 # --- reading a Word document ------------------------------------------------
 
-SECTION_LINE = re.compile(r"^SECTION\s+([0-9A-Za-z.\- ]+?)\s*[-–—]+\s*(.+)$", re.I)
+SECTION_LINE = re.compile(r"^SECTION\s*(\d[0-9A-Za-z.\- ]*?|[A-Z]\d{2}[A-Z]?)\s*[-–—]+\s*(.+)$", re.I)
+# An NBS section's title line: "E30 - REINFORCEMENT FOR IN SITU CONCRETE".
+NBS_LINE = re.compile(r"^([A-Z]\d{2}[A-Z]?)\s*[-–—]+\s*(.+)$")
 PART_LINE = re.compile(r"^PART\s+\d+(?:\.\d+)?\s*[-–—]+\s*(.+)$", re.I)
 END_LINE = re.compile(r"^END\s+OF\s+SECTION\b", re.I)
 MANUAL = [
@@ -469,22 +529,69 @@ def _deleted(p: ET.Element) -> set[int]:
     return {id(t) for d in p.iter(W + "del") for t in d.iter(W + "t")}
 
 
-def _paragraph_text(p: ET.Element) -> str:
+def _on(el: ET.Element | None) -> bool:
+    """Whether a Word on/off property is on: present, and not set to off."""
+    return el is not None and (el.get(W + "val") or "true").lower() not in ("0", "false", "off")
+
+
+def _texts(p: ET.Element, hidden_styles: set[str] = frozenset(), para_hidden: bool = False
+           ) -> tuple[str, str]:
+    """The words of a paragraph (or table cell) Word shows, and the ones it hides.
+
+    Text is hidden by the run's own formatting, by its character style, or by
+    the paragraph's style, and a run can switch the last two off again.
+    """
     gone = _deleted(p)
-    parts: list[str] = []
-    for el in p.iter():
-        if el.tag == W + "t" and el.text and id(el) not in gone:
-            parts.append(el.text)
-        elif el.tag in (W + "tab", W + "br", W + "cr"):
-            parts.append(" ")
-    return re.sub(r"\s+", " ", "".join(parts)).strip()
+    shown: list[str] = []
+    hidden: list[str] = []
+    for r in p.iter(W + "r"):
+        rpr = r.find(W + "rPr")
+        vanish = rpr.find(W + "vanish") if rpr is not None else None
+        if vanish is not None:
+            is_hidden = _on(vanish)
+        else:
+            rstyle = rpr.find(W + "rStyle") if rpr is not None else None
+            is_hidden = para_hidden or (rstyle is not None and rstyle.get(W + "val") in hidden_styles)
+        out = hidden if is_hidden else shown
+        for el in r:
+            if el.tag == W + "t" and el.text and id(el) not in gone:
+                out.append(el.text)
+            elif el.tag in (W + "tab", W + "br", W + "cr"):
+                out.append(" ")
+    clean = [re.sub(r"\s+", " ", "".join(x)).strip() for x in (shown, hidden)]
+    return clean[0], clean[1]
 
 
-def _hidden(p: ET.Element) -> bool:
-    runs = [r for r in p.iter(W + "r") if r.find(W + "t") is not None]
-    if not runs:
-        return False
-    return all(r.find(f"{W}rPr/{W}vanish") is not None for r in runs)
+def _paragraph_text(p: ET.Element, hidden_styles: set[str] = frozenset()) -> str:
+    return _texts(p, hidden_styles)[0]
+
+
+def _hidden_styles(z: zipfile.ZipFile) -> set[str]:
+    """The styles that hide their text, directly or through the style they are based on."""
+    try:
+        root = ET.fromstring(z.read("word/styles.xml"))
+    except (KeyError, ET.ParseError):
+        return set()
+    own: dict[str, bool | None] = {}
+    based: dict[str, str] = {}
+    for st in root.iter(W + "style"):
+        sid = st.get(W + "styleId") or ""
+        vanish = st.find(f"{W}rPr/{W}vanish")
+        own[sid] = _on(vanish) if vanish is not None else None
+        b = st.find(W + "basedOn")
+        if b is not None:
+            based[sid] = b.get(W + "val") or ""
+    out = set()
+    for sid in own:
+        seen, at = set(), sid
+        while at in own and at not in seen:
+            seen.add(at)
+            if own[at] is not None:
+                if own[at]:
+                    out.add(sid)
+                break
+            at = based.get(at, "")
+    return out
 
 
 def _styles(z: zipfile.ZipFile) -> dict[str, str]:
@@ -540,11 +647,13 @@ def read_docx(data: bytes) -> dict:
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise SpecError("That is not a Word document (.doc or .docx) this can read.") from exc
     style_names = _styles(z)
+    hidden_styles = _hidden_styles(z)
     body = root.find(W + "body")
     if body is None:
         raise SpecError("That Word document has no body to read.")
 
     number_, title = "", ""
+    nbs = False
     nodes: list[dict] = []
     # How deep the last paragraph that said where it sat went. A list that
     # is not the specification's own hangs one level under it.
@@ -554,7 +663,8 @@ def read_docx(data: bytes) -> dict:
         if el.tag == W + "tbl":
             rows = []
             for tr in el.iter(W + "tr"):
-                cells = [_paragraph_text(tc).replace("|", "/") for tc in tr.findall(W + "tc")]
+                cells = [_paragraph_text(tc, hidden_styles).replace("|", "/")
+                         for tc in tr.findall(W + "tc")]
                 if any(cells):
                     rows.append("| " + " | ".join(cells) + " |")
             if rows:
@@ -562,21 +672,47 @@ def read_docx(data: bytes) -> dict:
             continue
         if el.tag != W + "p":
             continue
-        text = _paragraph_text(el)
-        if not text:
-            continue
         ppr = el.find(W + "pPr")
-        style_id = ""
+        ps = ppr.find(W + "pStyle") if ppr is not None else None
+        style_id = (ps.get(W + "val") or "") if ps is not None else ""
+        text, hidden = _texts(el, hidden_styles, style_id in hidden_styles)
+        if not text and not hidden:
+            continue
+        if not text:
+            # Word hides the whole paragraph: keep it, but as a note that is never issued.
+            nodes.append(node(NOTE, hidden))
+            continue
         ilvl, num = None, ""
         if ppr is not None:
-            ps = ppr.find(W + "pStyle")
-            style_id = ps.get(W + "val") if ps is not None else ""
             lv = ppr.find(f"{W}numPr/{W}ilvl")
             ni = ppr.find(f"{W}numPr/{W}numId")
             ilvl = int(lv.get(W + "val")) if lv is not None and (lv.get(W + "val") or "").isdigit() else None
             num = ni.get(W + "val", "") if ni is not None else ""
         style = style_names.get(style_id, style_id).strip().lower()
         kind = STYLE_LEVEL.get(style)
+        if not number_ and not nodes and style in ("heading 1", "title") and NBS_LINE.match(text):
+            # An NBS section: headings for its groups and clauses, lists under them.
+            m = NBS_LINE.match(text)
+            number_, title, nbs = m.group(1), m.group(2).strip(), True
+            continue
+        if nbs:
+            if style == "heading 2":
+                kind = "PRT"
+            elif style == "heading 3":
+                kind = "ART" if CLAUSE.match(text) else "PR1"
+            elif style == "heading 1":
+                kind = "PRT"
+            elif ilvl is not None and kind is None:
+                kind = LEVELS[min(DEPTH["PR1"] + ilvl, DEPTH["PR4"])]
+            elif kind is None:
+                kind = "PR1"
+            if kind in ("PRT", "ART"):
+                text = text.rstrip(":").strip()
+                text = text.upper() if kind == "PRT" else text
+            nodes.append(node(kind, text))
+            if hidden:
+                nodes.append(node(NOTE, f"Hidden in Word: {hidden}"))
+            continue
         if kind in ("PRT", "ART") and num and not spec_list:
             spec_list = num
 
@@ -589,8 +725,8 @@ def read_docx(data: bytes) -> dict:
             continue
         if kind == "EOS" or END_LINE.match(text):
             continue
-        if kind == NOTE or _hidden(el):
-            nodes.append(node(NOTE, text))
+        if kind == NOTE:
+            nodes.append(node(NOTE, " ".join(x for x in (text, hidden) if x)))
             continue
 
         part = PART_LINE.match(text)
@@ -626,6 +762,9 @@ def read_docx(data: bytes) -> dict:
         if kind in ("PRT", "ART"):
             text = text.rstrip(":").strip().upper()
         nodes.append(node(kind, text))
+        if hidden:
+            # Words Word hides inside a paragraph it shows stay out of the issue too.
+            nodes.append(node(NOTE, f"Hidden in Word: {hidden}"))
         if kind in DEPTH and not listed:
             anchor = DEPTH[kind]
 
@@ -635,9 +774,24 @@ def read_docx(data: bytes) -> dict:
 
 
 def number_from_filename(name: str) -> str:
-    """"SPC-FD-032000-ST.docx" is section 032000."""
-    m = re.search(r"(\d{5,6})", name or "")
+    """"SPC-FD-032000-ST.docx" is section 032000; "STD15A_SPC_071352.13_ST_..." is
+    071352.13; "STD03A_SPC_J30A_ST_..." is the NBS section J30A."""
+    name = re.sub(r"(?i)STD\d{2}[A-Z]\d*", "", name or "")
+    m = re.search(r"(?<![\d.])(\d{5,6}(?:\.\d{2})?)(?![\d])", name)
+    if m:
+        return m.group(1)
+    m = re.search(r"(?:^|[_\- ])([A-Z]\d{2}[A-Z]?)(?=[_\- .]|$)", name)
     return m.group(1) if m else ""
+
+
+# The office's kinds of specification are named in its files: "STD15A_SPC_..."
+# or a document code such as "...-SPC-16A-ST-01".
+FAMILY_MARK = re.compile(r"(?:STD|SPC[-_])(\d{2}A)(?=[\d_\-])", re.I)
+
+
+def family_from_filename(name: str) -> str:
+    m = FAMILY_MARK.search(name or "")
+    return m.group(1).upper() if m else ""
 
 
 # --- writing a Word document --------------------------------------------------
@@ -679,6 +833,16 @@ def template_info(data: bytes) -> dict:
     ids = {name.upper(): sid for sid, name in names.items()}
     missing = [level for level in ("SCT", "PRT", "ART", "PR1", "PR2", "PR3")
                if level not in ids]
+    nbs = [ids.get(h) for h in ("HEADING 1", "HEADING 2", "HEADING 3", "LIST PARAGRAPH")]
+    if missing and all(nbs):
+        # An NBS template (the British sections): headings for the title, the
+        # groups and the clauses, and one bulleted list under them.
+        listed = re.search(r'<w:pStyle w:val="%s"/>(?:(?!</w:pPr>).)*?<w:numId w:val="(\d+)"/>'
+                           % re.escape(nbs[3]), document, re.S)
+        return {"layout": "nbs", "num_id": listed.group(1) if listed else "",
+                "styles": {"SCT": nbs[0], "PRT": nbs[1], "ART": nbs[2], "PR1": nbs[3],
+                           "PR2": nbs[3], "PR3": nbs[3], "PR4": nbs[3]},
+                "ilvl": {"PRT": 0, "ART": 0, "PR1": 0, "PR2": 1, "PR3": 2, "PR4": 2}}
     if missing:
         raise SpecError("That template does not have the specification styles in it "
                         f"({', '.join(missing)} are missing). Upload a section that "
@@ -699,7 +863,7 @@ def template_info(data: bytes) -> dict:
         found = re.search(r'<w:numId w:val="(\d+)"/>', art.group(0)) if art else None
         num_id = found.group(1) if found else ""
     levels = {name: ilvl.get(name, STANDARD_ILVL[name]) for name in STANDARD_ILVL}
-    return {"styles": ids, "num_id": num_id, "ilvl": levels}
+    return {"layout": "masterspec", "styles": ids, "num_id": num_id, "ilvl": levels}
 
 
 def _paragraph(style_id: str, text: str, num: tuple[str, int] | None = None) -> str:
@@ -779,7 +943,10 @@ def _part_root(xml: str, tag: str) -> tuple[str, str]:
 
 def _targets(z: zipfile.ZipFile, document: str) -> tuple[str | None, str | None]:
     """The header and footer parts the document's last page layout uses."""
-    rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
+    try:
+        rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
+    except KeyError:                                   # a bare package: no header or footer
+        return None, None
     sect = document[document.rfind("<w:sectPr"):]
     found = []
     for kind in ("header", "footer"):
@@ -820,19 +987,24 @@ def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
     room = _text_width(document)
     body: list[str] = []
     sct = styles["SCT"]
+    nbs = info.get("layout") == "nbs"
     body.append(f'<w:p><w:pPr><w:pStyle w:val="{sct}"/></w:pPr>'
-                + _run("SECTION ") + _run(number_) + _run(" - ") + _run(title) + "</w:p>")
+                + ("" if nbs else _run("SECTION ")) + _run(number_) + _run(" - ") + _run(title)
+                + "</w:p>")
     for n in number(nodes, chosen):
         if not n["included"] or n["level"] == NOTE:
             continue
-        text = fill(resolve(n["text"]) if resolve else n["text"], values)
+        text = fill(resolve(n["text"]) if resolve else choose(n["text"], chosen), values)
         if n["level"] == TABLE:
             body.append(_table(text, 576 * (n["indent"] + 1), room))
             continue
+        # An NBS group or clause heading carries its own number, typed.
+        listed = not (nbs and n["level"] in ("PRT", "ART"))
         body.append(_paragraph(styles[n["level"]] if n["level"] in styles else styles["PR1"],
-                               text, (num_id, ilvl[n["level"]])))
-    eos = styles.get("EOS", sct)
-    body.append(_paragraph(eos, f"END OF SECTION {number_}"))
+                               text, (num_id, ilvl[n["level"]]) if listed else None))
+    if not nbs:
+        eos = styles.get("EOS", sct)
+        body.append(_paragraph(eos, f"END OF SECTION {number_}"))
 
     start = document.index("<w:body>") + len("<w:body>")
     sect = document.rindex("<w:sectPr")

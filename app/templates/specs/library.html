@@ -15,11 +15,18 @@
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost" href="{{ url_for('specs.check_library') }}">Check</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.check_library', family=family) }}">Check {{ family }}</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
   </div>
 </div>
+
+<nav class="spec-tabs" aria-label="Kinds of specification">
+  {% for f in families %}
+    <a class="spec-tab{{ ' spec-tab-on' if f['code'] == family }}" href="{{ url_for('specs.library', family=f['code']) }}"{% if f['code'] == family %} aria-current="page"{% endif %}>
+      <strong>{{ f['code'] }}</strong> {{ f['name'] }} <span class="muted">{{ f['sections'] }}</span></a>
+  {% endfor %}
+</nav>
 
 {% if is_admin %}
 <div class="grid grid-2">
@@ -37,13 +44,16 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('specs.upload_to_library') }}" enctype="multipart/form-data" class="inline-form">
+        <input type="hidden" name="family" value="{{ family }}">
         <label class="field flex1">
           <span class="field-label">Sections (.doc or .docx)</span>
           <input type="file" name="files" accept=".doc,.docx" multiple required>
         </label>
-        <button type="submit" class="btn btn-primary">Read them in</button>
+        <button type="submit" class="btn btn-primary">Read them into {{ family }}</button>
       </form>
+      <p class="small muted" style="margin-top:4px">A file named the office's way (STD03A_…, STD15A_…, STD16A_…) goes into its own kind whichever tab is open.</p>
       <form method="post" action="{{ url_for('specs.new_library_section') }}" class="inline-form" style="margin-top:12px">
+        <input type="hidden" name="family" value="{{ family }}">
         <label class="field w-md">
           <span class="field-label">Or a new one: number</span>
           <input type="text" name="number" placeholder="033000" required>
@@ -69,21 +79,27 @@
       </div>
     </div>
     <div class="card-body">
+      {% set own = family_templates.get(family) %}
       <p class="small">
-        {% if template %}In use: <strong>{{ template['filename'] }}</strong>, from {{ template['user_name'] }}, {{ template['added_at'][:10] }}.
-        {% else %}In use: the built-in MasterSpec template (Times New Roman, A4).{% endif %}
-        <a href="{{ url_for('specs.download_template') }}">Download it</a>
+        {% if own %}{{ family }} sections go out in <strong>{{ own['filename'] }}</strong>, from {{ own['user_name'] or 'a library file' }}, {{ own['added_at'][:10] }}.
+        {% elif template %}{{ family }} sections go out in the office's template, <strong>{{ template['filename'] }}</strong>.
+        {% else %}{{ family }} sections go out in the built-in MasterSpec template (Times New Roman, A4).{% endif %}
+        <a href="{{ url_for('specs.download_template', family=family) }}">Download it</a>
       </p>
+      <p class="small muted">A British (NBS) section is written with Word's headings and one bulleted list; give that kind a template made from one of its own sections so its clauses keep their look.</p>
       <form method="post" action="{{ url_for('specs.upload_template') }}" enctype="multipart/form-data" class="inline-form" style="margin-top:8px">
         <label class="field flex1">
           <span class="field-label">A section in the house format (.docx)</span>
           <input type="file" name="template" accept=".docx" required>
         </label>
+        <label class="field w-md"><span class="field-label">For</span>
+          <select name="family"><option value="{{ family }}">{{ family }} only</option><option value="">Every kind without its own</option></select></label>
         <button type="submit" class="btn btn-ghost">Use it</button>
       </form>
-      {% if template %}
+      {% if own or template %}
       <form method="post" action="{{ url_for('specs.delete_template') }}" style="margin-top:8px">
-        <button type="submit" class="btn btn-danger btn-sm">Go back to the built-in one</button>
+        <input type="hidden" name="family" value="{{ family if own else '' }}">
+        <button type="submit" class="btn btn-danger btn-sm">{{ 'Stop using ' ~ family ~ "'s own template" if own else 'Go back to the built-in one' }}</button>
       </form>
       {% endif %}
     </div>
@@ -95,36 +111,69 @@
       <h2>Library file</h2>
       <p class="small muted" style="margin-top:2px">
         The whole library in one file: every section, the questions, the words, the standards and
-        the house template. Load one to start the library from it or to bring another site's in;
-        sections it has become new versions, and nothing here that it lacks is removed.
+        each kind's house template. Load one to start the library from it or to bring another
+        site's in. Download this one first if you may want it back.
       </p>
     </div>
   </div>
-  <div class="card-body inline-form">
-    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" class="inline-form flex1">
-      <label class="field flex1"><span class="field-label">Library file (.zip)</span>
-        <input type="file" name="library" accept=".zip" required></label>
-      <button type="submit" class="btn btn-primary">Load it</button>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" id="library-load">
+      <input type="hidden" name="family" value="{{ family }}">
+      <fieldset class="spec-load-modes">
+        <legend class="field-label">For the sections already here</legend>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="update" checked>
+          <span><strong>Add and update</strong><span class="small muted">New sections come in; a section already here takes the file's text as its next version (projects that took it are told and can bring it in). Nothing is taken out.</span></span></label>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="add">
+          <span><strong>Add only what is new</strong><span class="small muted">Only sections, questions and words not here yet come in. Everything already here stays exactly as it is.</span></span></label>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="replace">
+          <span><strong>Replace</strong><span class="small muted">As add and update, and then every section of the kinds in the file that the file does not have is taken out of the library. Other kinds are not touched; projects keep their own copies.</span></span></label>
+      </fieldset>
+      <label class="spec-load-sure small" hidden><input type="checkbox" name="sure" value="yes"> I mean to take out the sections the file does not have</label>
+      <div class="inline-form" style="margin-top:8px">
+        <label class="field flex1"><span class="field-label">Library file (.zip)</span>
+          <input type="file" name="library" accept=".zip" required></label>
+        <button type="submit" class="btn btn-primary">Load it</button>
+        <a class="btn btn-ghost" href="{{ url_for('specs.library_file') }}">Download this library</a>
+      </div>
     </form>
-    <a class="btn btn-ghost" href="{{ url_for('specs.library_file') }}">Download this library</a>
+    <script>
+      (function () {
+        var form = document.getElementById('library-load'), sure = form.querySelector('.spec-load-sure');
+        function show() { var r = form.querySelector('input[name=mode]:checked'); sure.hidden = !(r && r.value === 'replace'); }
+        form.addEventListener('change', show); show();
+      })();
+    </script>
   </div>
 </div>
 {% endif %}
 
 <div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>Sections</h2></div>
+  <div class="card-head">
+    <h2>{{ family }} sections ({{ sections | length }})</h2>
+    {% if is_admin and sections %}
+    <button type="submit" form="library-delete" class="btn btn-danger btn-sm">Take the ticked out</button>
+    {% endif %}
+  </div>
+  {% if is_admin and sections %}
+  <form method="post" action="{{ url_for('specs.delete_library_sections') }}" id="library-delete"
+        onsubmit="var n = this.querySelectorAll('input[name=section_id]:checked').length; if (!n) { alert('Tick the sections to take out first.'); return false; } return confirm('Take ' + n + ' section' + (n === 1 ? '' : 's') + ' out of the {{ family }} library? Projects keep their own copies. Download the library file first if you may want them back.')">
+    <input type="hidden" name="family" value="{{ family }}">
+  </form>
+  {% endif %}
   {% if not sections %}
     <div class="card-body">{{ empty('The library is empty', 'Load the library file, or the master sections from Word, to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
+      <thead><tr>{% if is_admin %}<th class="spec-tick"><input type="checkbox" aria-label="Tick all" onclick="document.querySelectorAll('input[form=library-delete][name=section_id]').forEach(b => b.checked = this.checked)"></th>{% endif %}<th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>In a project when</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
+          {% if is_admin %}<td class="spec-tick"><input type="checkbox" name="section_id" value="{{ s['id'] }}" form="library-delete" aria-label="Tick {{ s['number'] }}"></td>{% endif %}
           <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="right">{{ s['paragraphs'] }}</td>
+          <td class="small">{% if s['applies'] == '*' %}every {{ family }} project{% elif s['applies'] %}{{ s['applies'] }}{% else %}<span class="muted">added by hand</span>{% endif %}</td>
           <td class="small">{{ s['uses'] | join(', ') }}</td>
           <td>v{{ s['version'] }}</td>
           <td class="small muted">{{ s['updated_at'][:16] }} · {{ s['updated_by'] }}</td>

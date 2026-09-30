@@ -66,21 +66,20 @@
   {% if q['drawing'] %}<figure class="spec-explain-drawing">{{ q['drawing'] | safe }}</figure>{% endif %}
   {{ shots(q['pictures']) }}
 
-  <h3>What the codes say{% if spec['family'] %} <span class="small muted">for {{ spec['family'] }} projects</span>{% endif %}</h3>
-  {% if q['refs'] %}
-    {% for r in q['refs'] %}{{ ref_card(r) }}{% endfor %}
+  <h3>What each code says</h3>
+  {% if q['families'] %}
+    {% for f in q['families'] %}
+    <section class="spec-explain-family">
+      <h4 class="small">{{ f['name'] }}{% if f['mine'] %} <span class="spec-explain-mine">this project's basis</span>{% endif %}</h4>
+      {% for r in f['refs'] %}{{ ref_card(r) }}{% endfor %}
+    </section>
+    {% endfor %}
   {% else %}
-  <p class="small muted">No code clause is listed for this question{% if q['other_refs'] %} for this kind of project{% endif %}.</p>
+  <p class="small muted">No code clause is listed for this question.</p>
   {% endif %}
   {% if q['loose'] %}
   <h3 class="small">Other screenshots</h3>
   {% for code, list in q['loose'] | groupby('code') %}<p class="small"><strong>{{ code }}</strong></p>{{ shots(list) }}{% endfor %}
-  {% endif %}
-  {% if q['other_refs'] %}
-  <details class="spec-explain-other">
-    <summary class="small">Other codes ({{ q['other_refs'] | map(attribute='code') | unique | join(', ') }})</summary>
-    {% for r in q['other_refs'] %}{{ ref_card(r) }}{% endfor %}
-  </details>
   {% endif %}
   <p class="small muted spec-explain-note">Clause numbers are for the editions named; check them against the office's copy before relying on them.</p>
 

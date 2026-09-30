@@ -1276,8 +1276,9 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-explain-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .spec-explain-drop { padding: 8px; border: 1px dashed var(--axis); border-radius: 6px; }
 .spec-explain-drop:focus { outline: 2px solid var(--series-1); }
-.spec-explain-other { margin-top: 8px; }
-.spec-explain-other summary { cursor: pointer; }
+.spec-explain-family { margin-top: 10px; }
+.spec-explain-family h4 { margin: 0 0 6px; font-weight: 600; color: var(--muted); }
+.spec-explain-mine { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; font-weight: 500; background: color-mix(in srgb, var(--series-1) 16%, transparent); color: var(--series-1); }
 .spec-explain-note { margin-top: 12px; }
 .spec-explain-places { padding-left: 18px; }
 .spec-explain-admin { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }

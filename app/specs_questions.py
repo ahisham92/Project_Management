@@ -254,6 +254,22 @@ def delete_image(image_id: int) -> None:
     get_db().commit()
 
 
+CODE_FAMILIES = ("American: ACI, ASTM, AISC", "British and European: BS, BS EN",
+                 "Saudi Building Code")
+BRITISH = re.compile(r"^(BS|EN|PD|DD|NSCS|NSSS|National Structural|ICE|CIRIA|Concrete Society|SCI|"
+                     r"Eurocode|UK NA)\b", re.I)
+
+
+def code_family(ref: Mapping[str, Any]) -> str:
+    """Which family of codes a reference is from, by its code's name."""
+    code = (ref.get("code") or "").strip()
+    if code.upper().startswith("SBC"):
+        return CODE_FAMILIES[2]
+    if BRITISH.match(code) or (ref.get("kinds") or []) == ["03A"]:
+        return CODE_FAMILIES[1]
+    return CODE_FAMILIES[0]
+
+
 def explained(key: str, family: str = "") -> dict | None:
     """Everything the side panel shows for a question: what it means, its
     drawing, and what each code says, the project's own kind's codes first,
@@ -270,9 +286,19 @@ def explained(key: str, family: str = "") -> dict | None:
                      "images": [i for i in shots if i["code"].lower() == r["code"].lower()
                                 and i["clause"].lower() == r["clause"].lower()]})
     placed = {(i["code"].lower(), i["clause"].lower()) for r in refs for i in r["images"]}
+    # Every code's clause is shown whatever the project's basis, one family of
+    # codes under another: the one the project uses first.
+    families: dict[str, dict] = {}
+    for r in refs:
+        name = code_family(r)
+        one = families.setdefault(name, {"name": name, "refs": [], "mine": False})
+        one["refs"].append(r)
+        one["mine"] = one["mine"] or (bool(family) and family in r["kinds"])
+    order = list(CODE_FAMILIES)
     return {**d, "definition": definition_for(d, family), "drawing": drawing(d.get("picture") or ""),
             "own_definition": family in clean_kinds(d.get("definition_kinds")),
             "refs": [r for r in refs if r["mine"]], "other_refs": [r for r in refs if not r["mine"]],
+            "families": sorted(families.values(), key=lambda f: (not f["mine"], order.index(f["name"]))),
             "pictures": [i for i in shots if not i["code"]],
             "loose": [i for i in shots if i["code"] and (i["code"].lower(), i["clause"].lower()) not in placed]}
 

@@ -518,6 +518,8 @@
     var m = window.innerWidth < NARROW ? 'single' : 'spread';
     if (m !== mode) { mode = m; build(); }
     var wide = mode === 'spread' ? 2 * PAGE_W : PAGE_W;
+    // Fitted, the book never needs the desk to scroll (see spec-book.css).
+    root.classList.toggle('bk-fitted', zoom === 'fit');
     var cs = window.getComputedStyle(stage);
     var roomW = stage.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
     var fromTop = stage.getBoundingClientRect().top + window.pageYOffset;

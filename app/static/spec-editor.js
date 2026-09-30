@@ -71,9 +71,9 @@
 
   // --- the text of a paragraph, with its fields ----------------------------------------
 
+  var ONE_TOKEN = new RegExp("^(?:" + TOKEN.source + ")$");
   function tokenHTML(raw) {
-    TOKEN.lastIndex = 0;
-    var m = TOKEN.exec(raw);
+    var m = ONE_TOKEN.exec(raw);
     if (!m || m[0] !== raw) return esc(raw);
     var cls, label, title;
     if (m[1] !== undefined) {
@@ -198,9 +198,13 @@
     });
   }
   function render(nodes, focusIndex, atEnd) {
-    flow.innerHTML = "";
     if (!nodes.length) nodes = [{ id: "", level: NBS ? "ART" : "PRT", text: "", when: "" }];
-    nodes.forEach(function (n) { flow.appendChild(makePara(n)); });
+    // Built aside and swapped in whole, so a failure never leaves half a section.
+    var built = document.createDocumentFragment();
+    nodes.forEach(function (n) { built.appendChild(makePara(n)); });
+    here = null;
+    flow.innerHTML = "";
+    flow.appendChild(built);
     renumber();
     if (focusIndex != null) focusPara(paras()[Math.max(0, Math.min(focusIndex, nodes.length - 1))], atEnd);
   }
@@ -284,10 +288,10 @@
     if (!p || !p.isConnected || p.dataset.level === "TBL") return;
     var t = textOf(p);
     var text = readText(t);
-    TOKEN.lastIndex = 0;
     var hasTyped = false;
+    var ANY = new RegExp(TOKEN.source);
     Array.prototype.forEach.call(t.childNodes, function (n) {
-      if (n.nodeType === 3) { TOKEN.lastIndex = 0; if (TOKEN.test(n.nodeValue)) hasTyped = true; }
+      if (n.nodeType === 3 && ANY.test(n.nodeValue)) hasTyped = true;
     });
     if (hasTyped) setText(t, text, p.dataset.when);
   }
@@ -1188,9 +1192,10 @@
   });
   form.addEventListener("submit", function () {
     if (form.querySelector('input[name="mode"]').value === "page") {
-      form.querySelector('input[name="nodes"]').value = JSON.stringify(collect().filter(function (n) {
+      var sent = collect().filter(function (n) {
         return n.level === "TBL" ? rowsOf(n.text).some(function (r) { return r.some(Boolean); }) : n.text;
-      }));
+      });
+      form.querySelector('input[name="nodes"]').value = JSON.stringify({ count: sent.length, nodes: sent });
     }
     dirty = false;
   });
@@ -1201,7 +1206,7 @@
   buildStyles();
   heading();
   render(data.nodes, null);
-  if (canvas.clientWidth && canvas.clientWidth < 834) setZoom((canvas.clientWidth - 40) / 794);
+  if (window.innerWidth > 900 && canvas.clientWidth && canvas.clientWidth < 834) setZoom((canvas.clientWidth - 40) / 794);
   showTools();
   showStatus();
   root.classList.add("se-ready");

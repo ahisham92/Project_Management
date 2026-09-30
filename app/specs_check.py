@@ -872,3 +872,201 @@ def make_variable(text: str, value: str, name: str, prop: str = "") -> tuple[str
         return wanted
 
     return rule.sub(one, text), count
+
+
+# --- acting on an item: the text kept, amended or taken out ---------------------------
+
+CODES = "the applicable codes and standards"
+# "refers to Section 034500, which is not in this specification", "Section 034500 is not in
+# this specification", "Section 014000 is referred to in 3 places and is not in ...".
+MISSING = re.compile(r"\bSection (\S+?),? (?:which is not|is not|is referred to in \d+ places? and is not) "
+                     r"in this specification")
+
+
+def missing_number(message: str) -> str:
+    """The section an item says is not in the specification, if that is what it says."""
+    m = MISSING.search(message or "")
+    return m.group(1) if m else ""
+
+
+def _section_ref(number: str) -> re.Pattern:
+    """A reference to one section, live or typed, with the title typed after it."""
+    digits = re.escape((number or "").strip().lstrip("0") or (number or "").strip())
+    return re.compile(
+        r"(?:\{ref:\s*0*%s(?:/[^}]*)?\s*\}|\bSection\s+0*%s(?![\w/]))"
+        r"(?:\s*[-–,]?\s*[\"“](?P<title>[^\"“”{}]{3,160}?)(?P<comma>,?)[\"”])?" % (digits, digits),
+        re.I)
+
+
+REQUIREMENTS_IN = re.compile(r"(?:\bthe\s+)?\brequirements\s+(?:(?:specified|given|included|indicated|"
+                             r"contained|set out)\s+)?(?:in|of|under)\s+$", re.I)
+
+
+def without_section(text: str, number: str) -> str:
+    """The text with every reference to a section put as the applicable codes and
+    standards instead, so it no longer cites a section that is not issued.
+
+    ``Section 034500 "Precast Architectural Concrete" for reinforcing ...``
+    reads ``The applicable codes and standards for reinforcing ...``; ``as
+    defined in Section 014000 "Quality Requirements," to design`` reads ``as
+    defined in the applicable codes and standards, to design``; ``comply with
+    requirements in Section 013100 "..."`` reads ``comply with the requirements
+    of the applicable codes and standards``. A section named in a list
+    (``Sections 033000 and 034500``) is only taken out of the list.
+    """
+    text = text or ""
+    key = (number or "").strip().lstrip("0")
+    if not key:
+        return text
+
+    def listed(m: re.Match) -> str:
+        numbers = re.findall(r"\d{5,6}|[A-Z]\d{2}", m.group(1))
+        left = [n for n in numbers if n.lstrip("0") != key]
+        if len(left) == len(numbers) or not left:
+            return m.group(0)
+        if len(left) == 1:
+            return f"Section {left[0]}"
+        return "Sections " + ", ".join(left[:-1]) + " and " + left[-1]
+
+    text = SECTION_LIST.sub(listed, text)
+    rule = _section_ref(number)
+    out, last = [], 0
+    for m in rule.finditer(text):
+        before = "".join(out) + text[last:m.start()]
+        lead = REQUIREMENTS_IN.search(before)
+        start_of_sentence = not before.strip() or re.search(r"[.:;!?]\s*$", before)
+        if lead:
+            phrase = "the requirements of " + CODES
+            if lead.group(0)[:1].isupper():
+                phrase = phrase[:1].upper() + phrase[1:]
+            before = before[:lead.start()] + phrase
+        else:
+            before = re.sub(r"\bthe\s+$", "", before)
+            phrase = CODES[:1].upper() + CODES[1:] if start_of_sentence else CODES
+            before += phrase
+        out = [before + (m.group("comma") or "")]
+        last = m.end()
+    if not out:
+        return text
+    return "".join(out) + text[last:]
+
+
+ABBREVIATIONS = {"no", "nos", "e.g", "i.e", "eg", "ie", "sect", "approx", "fig", "figs", "para",
+                 "art", "ref", "vol", "incl", "dia", "cf", "vs", "st", "mr", "mrs", "dr", "inc",
+                 "ltd", "co", "min", "max", "nom", "sq", "cu", "approx"}
+
+
+def sentence_spans(text: str) -> list[tuple[int, int]]:
+    """Where each sentence of a paragraph starts and ends.
+
+    A sentence ends at ``.``, ``;``, ``?`` or ``!`` followed by a space —
+    not inside quotes, braces or square brackets, and not after an
+    abbreviation such as ``No.``, ``e.g.``, ``i.e.``, ``Sect.`` or ``approx.``.
+    """
+    text = text or ""
+    spans: list[tuple[int, int]] = []
+    start, depth, quoted = 0, 0, False
+    for i, c in enumerate(text):
+        closed = False
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth = max(0, depth - 1)
+        elif c == "“":
+            quoted = True
+        elif c == "”":
+            quoted, closed = False, True
+        elif c == '"':
+            quoted = not quoted
+            closed = not quoted
+        if depth or quoted:
+            continue
+        after = text[i + 1:i + 2]
+        if after and not after.isspace():
+            continue
+        end = False
+        if c in ".;?!":
+            word = re.search(r"([\w.]*)$", text[start:i]).group(1)
+            end = c != "." or not (word.lower() in ABBREVIATIONS
+                                   or re.fullmatch(r"(?:[A-Za-z]\.)+[A-Za-z]", word))
+        elif closed and i and text[i - 1] in ".;?!":
+            end = True
+        if end:
+            if text[start:i + 1].strip():
+                spans.append((start, i + 1))
+            start = i + 1
+            while start < len(text) and text[start].isspace():
+                start += 1
+    if text[start:].strip():
+        spans.append((start, len(text.rstrip())))
+    return spans
+
+
+def sentences(text: str) -> list[str]:
+    return [text[a:b] for a, b in sentence_spans(text)]
+
+
+def without_sentence(text: str, at: int) -> tuple[str, str]:
+    """The paragraph with the sentence at ``at`` taken out, and that sentence.
+    Nothing is left (``""``) when it was the only sentence, or when what is
+    left has no words."""
+    text = text or ""
+    spans = sentence_spans(text)
+    for n, (a, b) in enumerate(spans):
+        if a <= at < max(b, a + 1) or (n == len(spans) - 1 and at >= a):
+            gone = text[a:b]
+            if n + 1 < len(spans):
+                left = text[:a] + text[spans[n + 1][0]:]
+            else:
+                left = text[:a].rstrip()
+                # "Do this; do that." without the last: "Do this."
+                left = re.sub(r"[;,]$", ".", left)
+            left = left.strip()
+            if n == 0 and left[:1].islower():
+                left = left[:1].upper() + left[1:]
+            if not re.search(r"[A-Za-z0-9]", REF.sub("", left)):
+                left = ""
+            return left, gone
+    return text, ""
+
+
+def locate(text: str, message: str, words: str = "", here: str = "",
+           where: Mapping[str, dict] | None = None) -> int | None:
+    """Where in a paragraph as kept the words a check item is about are, or None."""
+    text = text or ""
+    number = missing_number(message)
+    if number:
+        m = _section_ref(number).search(text)
+        if m:
+            return m.start()
+        key = number.lstrip("0")
+        for m in SECTION_LIST.finditer(text):
+            if any(n.lstrip("0") == key for n in re.findall(r"\d{5,6}|[A-Z]\d{2}", m.group(1))):
+                return m.start()
+    if words:
+        at = text.lower().find(words.lower())
+        if at >= 0:
+            return at
+        if where is not None:
+            for m in REF.finditer(text):
+                if cite(lookup(m.group(1), here, where)) == words:
+                    return m.start()
+    return None
+
+
+def propose(text: str, message: str, fix: Mapping[str, Any] | None = None, here: str = "",
+            where: Mapping[str, dict] | None = None) -> str:
+    """The paragraph as a check item suggests it should read: a section that is not
+    issued put as the codes and standards, or the item's own fix made."""
+    text = text or ""
+    number = missing_number(message)
+    if number:
+        return without_section(text, number)
+    fix = fix or {}
+    if fix.get("action") == "replace" and fix.get("old") and fix.get("new"):
+        return replace_standard(text, fix["old"], fix["new"])[0]
+    if fix.get("action") == "variable" and fix.get("value") and fix.get("suggest"):
+        return make_variable(text, fix["value"], fix["suggest"], fix.get("property", ""))[0]
+    if fix.get("action") == "link" and where is not None:
+        return link_typed(text, here, where)[0]
+    return text

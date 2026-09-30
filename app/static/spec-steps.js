@@ -73,7 +73,9 @@
 
   function fromAddress() { show(fromHash() || first()); }
   window.addEventListener("popstate", fromAddress);
-  window.addEventListener("hashchange", fromAddress);
+  // A step's address typed or followed on this page: that step, from the top
+  // (the browser has just scrolled down to its card).
+  window.addEventListener("hashchange", function () { fromAddress(); toTop(); });
 
   // A field the browser will not submit (the project name left empty, say)
   // may be on a step out of view: that step is brought up so it can be seen.
@@ -133,5 +135,10 @@
     }
     toTop();
   });
-  window.addEventListener("load", toTop);
+  // The browser scrolls to the address's card once more after the load
+  // event, so the page is put back at the top after that, too.
+  window.addEventListener("load", function () {
+    toTop();
+    window.requestAnimationFrame(function () { setTimeout(toTop, 0); });
+  });
 })();

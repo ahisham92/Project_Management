@@ -31,3 +31,9 @@ a.spec-step:focus-visible { outline: 2px solid var(--series-1); outline-offset: 
 
 .spec-remove-row { white-space: nowrap; }
 .spec-remove-row .btn + .btn { margin-left: 4px; }
+
+/* Sections' head: the take-out button keeps to one line, and drops under the
+   heading on a narrow screen rather than squeezing it. */
+#step-sections > .card-head { flex-wrap: wrap; gap: 8px; }
+#step-sections > .card-head > div { flex: 1 1 320px; }
+#step-sections > .card-head .btn { white-space: nowrap; }

@@ -21,7 +21,7 @@ from flask import (
 )
 from markupsafe import Markup, escape
 
-from .. import specs, specs_check, specs_seed
+from .. import specs, specs_check, specs_export, specs_seed
 from .. import specs_store as store
 from ..auth import login_required
 
@@ -171,6 +171,13 @@ def _edited_nodes(body: str) -> list[dict]:
         except ValueError as exc:
             raise specs.SpecError("The editor sent something that could not be read; "
                                   "nothing was saved.") from exc
+        # The editor says how many paragraphs it sent: a page cut short on the
+        # way is refused rather than saved over the section.
+        if isinstance(data, dict):
+            data, count = data.get("nodes"), data.get("count")
+            if not isinstance(data, list) or count != len(data):
+                raise specs.SpecError("The page did not arrive whole; nothing was saved. "
+                                      "Try saving again.")
         nodes, seen = [], set()
         for n in data if isinstance(data, list) else []:
             if not isinstance(n, dict) or n.get("level") not in specs.KINDS:

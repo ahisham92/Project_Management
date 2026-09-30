@@ -19,7 +19,7 @@
 }
 .bk-back { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bk-nav { display: flex; align-items: center; gap: 6px; }
-.bk-where { min-width: 13ch; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.bk-where { min-width: 17ch; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .bk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .bk-pick { display: flex; align-items: center; gap: 6px; }
 .bk-pick select { width: auto; max-width: 30ch; padding: 4px 8px; font-size: 0.8rem; }
@@ -27,12 +27,16 @@
 /* --- the desk -------------------------------------------------------------------- */
 
 .bk-stage {
-  position: relative; overflow: auto; padding: 20px 16px;
+  position: relative; overflow: auto; padding: 24px 16px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
   outline: none; touch-action: pan-y pinch-zoom;
 }
 .bk-viewport { position: relative; margin: 0 auto; }
-.bk-book { position: absolute; left: 0; top: 0; height: 1123px; transform-origin: 0 0; perspective: 3200px; }
+/* Fitted, nothing needs scrolling, and a leaf lifting towards the reader may
+   rise a little past the desk's edge rather than being cut off. */
+.bk-fitted .bk-stage { overflow: visible; padding-top: 32px; padding-bottom: 32px; }
+.bk-fitted .bk-bar { position: relative; z-index: 5; background: var(--plane); }
+.bk-book { position: absolute; left: 0; top: 0; height: 1123px; transform-origin: 0 0; perspective: 6000px; }
 .bk-spread { width: 1588px; }
 .bk-single { width: 794px; overflow: hidden; overflow: clip; }
 
@@ -83,7 +87,7 @@
 /* The page the leaf is lifting off, or landing on, is in its shadow a moment. */
 .bk-folding .bk-slot::before {
   content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  background: rgba(0, 0, 0, 0.10); animation: bk-dim var(--bk-turn) ease-in-out forwards;
+  background: rgba(0, 0, 0, 0.07); animation: bk-dim var(--bk-turn) ease-in-out forwards;
 }
 @keyframes bk-dim { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -183,6 +187,7 @@
 .bk-paper .spec-var, .bk-paper .spec-ref, .bk-paper .spec-choice, .bk-paper .spec-open,
 .bk-paper .spec-ref.spec-bad {
   background: none; color: inherit; border: 0; padding: 0; border-radius: 0; text-decoration: none;
+  box-shadow: none;
 }
 
 /* Without JavaScript the text reads as one long sheet. */

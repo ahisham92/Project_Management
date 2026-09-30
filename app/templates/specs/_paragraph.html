@@ -1,17 +1,28 @@
-{# One paragraph of a section as the page shows it. #}
-{% macro paragraph(p, values, reader=none, here='') %}
+{# One paragraph of a section as the page shows it; with ``cmt`` (the project,
+   the page to come back to, who may close, and the threads by paragraph), its
+   review comments under it and a button to add one. #}
+{% from "specs/_review.html" import thread %}
+{% macro comments_of(p, cmt) %}
+  {% if cmt %}{% for t in cmt['threads'].get(p['id'], []) %}{{ thread(cmt['spec'], t, cmt['back'], cmt['may_close']) }}{% endfor %}{% endif %}
+{% endmacro %}
+{% macro comment_button(p, cmt) %}
+  {% if cmt and p['id'] and p['state'] != 'removed' %}<button type="button" class="spec-cmt-btn" data-comment="{{ p['id'] }}" data-where="{{ p['path'] or p['label'] }}" title="Comment on this paragraph" aria-label="Comment on this paragraph">&#128172;{% set n = cmt['threads'].get(p['id'], []) | selectattr('state', 'equalto', 'open') | list | length %}{% if n %}<span class="spec-cmt-n">{{ n }}</span>{% endif %}</button>{% endif %}
+{% endmacro %}
+{% macro paragraph(p, values, reader=none, here='', cmt=none) %}
   {% set klass = 'spec-p spec-' ~ p['level'] ~ ' spec-i' ~ p['indent'] %}
   {% if p['state'] != 'same' %}{% set klass = klass ~ ' spec-' ~ p['state'] %}{% endif %}
   {% if not p['included'] %}{% set klass = klass ~ ' spec-out' %}{% endif %}
   {% if p['level'] == 'CMT' %}
     <div id="p-{{ p['id'] }}" class="{{ klass }} spec-note"><span class="spec-num">Note</span><span class="spec-text">{{ p['text'] }}</span></div>
+    {{ comments_of(p, cmt) }}
   {% elif p['level'] == 'TBL' %}
     <div id="p-{{ p['id'] }}" class="{{ klass }}"><span class="spec-num"></span><span class="spec-text">
       <table class="spec-table"><tbody>
         {% for row in p['text'] | spec_rows %}<tr>{% for cell in row %}<td>{{ cell | spectext(values, reader, here) }}</td>{% endfor %}</tr>{% endfor %}
       </tbody></table>
       {% if p['state'] == 'changed' %}<span class="spec-was">The master's table was different.</span>{% endif %}
-    </span></div>
+    </span>{{ comment_button(p, cmt) }}</div>
+    {{ comments_of(p, cmt) }}
   {% else %}
     <div id="p-{{ p['id'] }}" class="{{ klass }}">
       <span class="spec-num">{{ p['label'] }}</span>
@@ -26,6 +37,8 @@
           <span class="spec-was">Master: {% if p['was']['when'] %}[if {{ p['was']['when'] }}] {% endif %}{{ p['was']['text'] }}{% if p['was']['level'] != p['level'] %} ({{ p['was']['level'] }}){% endif %}</span>
         {% endif %}
       </span>
+      {{ comment_button(p, cmt) }}
     </div>
+    {{ comments_of(p, cmt) }}
   {% endif %}
 {% endmacro %}

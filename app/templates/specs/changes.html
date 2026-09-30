@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_review.html" import review_head %}
+{% block title %}Changes since Rev {{ since['revision'] }} · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{{ review_head(spec, 'changes', 'Changes since Rev ' ~ since['revision'], 'What the specification says now that Rev ' ~ since['revision'] ~ ' (' ~ since['issue_date'] ~ ') did not, word by word, as issued: answers written out and switched-off paragraphs left out.') }}
+
+<div class="inline-form" style="margin-bottom:12px;justify-content:space-between">
+  <form method="get" class="inline-form">
+    <label class="field" style="min-width:320px"><span class="field-label">Compare with</span>
+      <select name="since" onchange="this.form.submit()">
+        {% for i in issues %}<option value="{{ i['id'] }}"{% if i['id'] == since['id'] %} selected{% endif %}>Rev {{ i['revision'] }} · {{ i['issue_date'] }}{% if i['purpose'] %} · {{ i['purpose'] }}{% endif %}</option>{% endfor %}
+      </select></label>
+    <noscript><button type="submit" class="btn btn-ghost btn-sm">Show</button></noscript>
+  </form>
+  {% if found %}<a class="btn btn-primary" href="{{ url_for('specs.changes_docx', set_id=spec['id'], since=since['id']) }}" title="One .docx per section with every change since Rev {{ since['revision'] }} as Word's tracked changes">Word with these changes marked (.zip)</a>{% endif %}
+</div>
+
+{% if answers %}
+<details class="card" style="margin-bottom:12px">
+  <summary class="card-head"><h2>Answers changed since ({{ answers | length }})</h2></summary>
+  <div class="card-body flush table-scroll"><table>
+    <thead><tr><th>Answer</th><th>Was</th><th>Now</th><th>By</th></tr></thead>
+    <tbody>{% for h in answers %}<tr><td>{{ h['what'] }}</td><td class="small">{{ h['before'] or '—' }}</td><td class="small">{{ h['after'] or '—' }}</td><td class="small muted">{{ h['who'] }} · {{ h['at'][:16] }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+
+{% for s in found %}
+<div class="card" style="margin-bottom:12px">
+  <div class="card-head">
+    <h2>{% if s['row_id'] %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=s['row_id']) }}">{{ s['number'] }} — {{ s['title'] }}</a>{% else %}{{ s['number'] }} — {{ s['title'] }}{% endif %}</h2>
+    {% if s['state'] == 'added' %}{{ badge('warning', 'New since Rev ' ~ since['revision']) }}
+    {% elif s['state'] == 'removed' %}{{ badge('serious', 'Taken out since Rev ' ~ since['revision']) }}
+    {% else %}{{ badge('warning', s['count'] ~ ' paragraph' ~ ('s' if s['count'] != 1 else '') ~ ' changed') }}{% endif %}
+  </div>
+  {% if s['state'] == 'changed' %}
+  <div class="card-body spec-doc">
+    {% if s['heading'] %}<p class="small">The section's {{ s['heading'] | join(' and ') }} changed{% if 'title' in s['heading'] %} (was {{ s['old_title'] }}){% endif %}.</p>{% endif %}
+    {% for p in s['paragraphs'] %}
+    <div class="spec-p spec-{{ p['level'] }} spec-change-{{ p['state'] }}">
+      <span class="spec-num">{{ p['label'] }}</span>
+      <span class="spec-text">
+        {% if p['state'] == 'changed' %}{% for kind, a, b in p['diff'] %}{% if kind == 'equal' %}{{ a }}{% else %}{% if a %}<del>{{ a }}</del>{% endif %}{% if b %}<ins>{{ b }}</ins>{% endif %}{% endif %}{% endfor %}
+        {% elif p['state'] == 'added' %}<ins>{{ p['new'] }}</ins>
+        {% else %}<del>{{ p['old'] }}</del>{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+  {{ empty('No changes', 'Every section reads as it was issued in Rev ' ~ since['revision'] ~ '.') }}
+{% endfor %}
+{% endblock %}

@@ -181,10 +181,10 @@
     {% endif %}
   </div>
   {% if held %}
-    <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: Issue all</span>
+    <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: review and sign-off</span>
   {% else %}
     {% set fmt = request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none %}
-    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt=fmt) }}">Next: Issue all ({{ {'tracked': 'Word with tracked changes', 'pdf': 'one PDF'}[fmt] if fmt else '.zip of .docx' }})</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.review_set', set_id=spec['id']) }}">Next: review and sign-off</a>
   {% endif %}
 </div></div>
 {% endif %}
@@ -246,9 +246,9 @@
       {% set issue_fmt = request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none %}
       {% if spec['hold_issue'] and waiting['total'] %}
         <span class="small muted">{{ waiting['total'] }} still to settle before it can be issued.</span>
-        <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: Issue all</span>
+        <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: review and sign-off</span>
       {% else %}
-        <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt=issue_fmt) }}">Next: Issue all ({{ {'tracked': 'Word with tracked changes', 'pdf': 'one PDF'}[issue_fmt] if issue_fmt else '.zip of .docx' }}) →</a>
+        <a class="btn btn-primary" href="{{ url_for('specs.review_set', set_id=spec['id']) }}">Next: review and sign-off →</a>
       {% endif %}
     {% else %}
       <a class="btn btn-primary" href="{{ url_for('specs.library') }}">Done: back to the library</a>

@@ -366,6 +366,9 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
                                            source["variables"] if source else "{}",
                                            source["declined"] if source else "[]",
                                            g.user["id"] if g.get("user") else None])
+    if fields.get("need_signoff"):
+        # Held for sign-off and closed comments, as the new-project form offers.
+        execute("UPDATE spec_sets SET need_signoff = 1 WHERE id = ?", (set_id,))
     if source:
         conn = get_db()
         with conn:
@@ -397,8 +400,17 @@ def update_set(set_id: int, fields: Mapping[str, str], chosen: Mapping[str, str]
     if "hold_shown" in fields:                   # the page's tick box: absent when unticked
         execute("UPDATE spec_sets SET hold_issue = ? WHERE id = ?",
                 (1 if fields.get("hold_issue") else 0, set_id))
+    if "signoff_shown" in fields:
+        execute("UPDATE spec_sets SET need_signoff = ? WHERE id = ?",
+                (1 if fields.get("need_signoff") else 0, set_id))
     if fields.get("family"):
         execute("UPDATE spec_sets SET family = ? WHERE id = ?", (clean_family(fields["family"]), set_id))
+
+
+def set_revision(set_id: int, revision: str, issue_date: str) -> None:
+    """The revision and date the project was last issued as, on every page of it."""
+    execute("UPDATE spec_sets SET revision = ?, issue_date = ?, updated_at = datetime('now') "
+            "WHERE id = ?", (revision, issue_date, set_id))
 
 
 def delete_set(set_id: int) -> None:

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% from "specs/_review.html" import review_head %}
+{% block title %}History · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{{ review_head(spec, 'history', 'History', 'Every answer, paragraph, sign-off, comment and issue on this project: who, when, and what it was before and after.') }}
+
+<form method="get" class="inline-form" style="margin-bottom:12px">
+  <label class="field w-lg"><span class="field-label">Section</span>
+    <select name="section"><option value="">Every section and the project</option>
+      {% for s in sections %}<option value="{{ s['id'] }}"{% if s['id'] == row_id %} selected{% endif %}>{{ s['number'] }} {{ s['title'] }}</option>{% endfor %}
+    </select></label>
+  <label class="field w-md"><span class="field-label">What</span>
+    <select name="kind"><option value="">Everything</option>
+      {% for k, name in KIND_NAMES.items() %}<option value="{{ k }}"{% if k == kind %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select></label>
+  <label class="field w-md"><span class="field-label">Who</span>
+    <select name="who"><option value="">Everyone</option>
+      {% for p in people %}<option value="{{ p }}"{% if p == who %} selected{% endif %}>{{ p }}</option>{% endfor %}
+    </select></label>
+  <button type="submit" class="btn btn-ghost btn-sm" style="align-self:end">Show</button>
+</form>
+
+{% if not rows %}
+  {{ empty('Nothing yet', 'Changes are recorded from now on.') }}
+{% else %}
+<div class="card"><div class="card-body flush table-scroll">
+  <table class="spec-history">
+    <thead><tr><th>When</th><th>Who</th><th>Where</th><th>What</th><th>Before</th><th>After</th></tr></thead>
+    <tbody>
+    {% for h in rows %}
+      <tr>
+        <td class="small" style="white-space:nowrap">{{ h['at'][:16] }}</td>
+        <td class="small">{{ h['who'] or '—' }}</td>
+        <td class="small">{% if h['row_id'] %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=h['row_id']) }}">{{ h['number'] }}</a>{% else %}{{ h['number'] or 'Project' }}{% endif %}</td>
+        <td><span class="spec-key">{{ KIND_NAMES.get(h['kind'], h['kind']) }}</span> {{ h['what'] }}</td>
+        <td class="small spec-history-was">{{ h['before'] }}</td>
+        <td class="small">{{ h['after'] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% if more %}<p style="margin-top:8px"><a class="btn btn-ghost btn-sm" href="{{ url_for('specs.history', set_id=spec['id'], section=row_id or none, kind=kind or none, who=who or none, before=rows[-1]['id']) }}">Older changes →</a></p>{% endif %}
+{% endif %}
+{% endblock %}

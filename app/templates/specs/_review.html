@@ -1,0 +1,61 @@
+{# Pieces shared by the review pages: the head with its tabs, and a stage of sign-off. #}
+{% macro review_head(spec, here, title, lead='') %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <h1>{{ title }}</h1>
+    {% if lead %}<p class="small muted" style="margin-top:2px">{{ lead }}</p>{% endif %}
+  </div>
+</div>
+<nav class="spec-review-tabs" aria-label="Review and issue">
+  {% for key, label, endpoint in [('review', 'Team and sign-off', 'specs.review_set'), ('comments', 'Comments', 'specs.comments'), ('issues', 'Issues', 'specs.issues'), ('changes', 'Changes since last issue', 'specs.changes'), ('history', 'History', 'specs.history')] %}
+  <a href="{{ url_for(endpoint, set_id=spec['id']) }}"{% if key == here %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}
+
+{% macro stage_cell(spec, s, stage, row_id, back, may_take_back) %}
+  {% if s %}
+    <span class="spec-sign {{ 'spec-sign-ok' if s['current'] else 'spec-sign-stale' }}" title="{{ 'Signed for the words as they stand' if s['current'] else 'The words have changed since: sign again' }}">
+      {{ '✓' if s['current'] else '!' }} {{ s['name'] }}<span class="small muted"> {{ s['at'][:10] }}</span>
+    </span>
+    {% if not s['current'] %}<span class="small spec-bad">changed since</span>{% endif %}
+    {% if may_take_back(s) %}
+    <form method="post" action="{{ url_for('specs.withdraw_signoff', set_id=spec['id']) }}" class="spec-sign-back">
+      <input type="hidden" name="row_id" value="{{ row_id }}"><input type="hidden" name="stage" value="{{ stage }}"><input type="hidden" name="back" value="{{ back }}">
+      <button type="submit" class="btn btn-ghost btn-sm" title="Take this sign-off back">Take back</button>
+    </form>
+    {% endif %}
+  {% else %}<span class="muted">—</span>{% endif %}
+{% endmacro %}
+
+{# One comment thread with its replies, and the forms to answer and close it. #}
+{% macro thread(spec, t, back, may_close, show_where=false) %}
+<article class="spec-cmt spec-cmt-{{ t['state'] }}" id="c-{{ t['id'] }}">
+  <header class="small">
+    <strong>{{ t['author'] }}</strong> <span class="muted">{{ t['created_at'][:16] }}</span>
+    {% if show_where %} · {% if t['row_id'] %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=t['row_id']) }}#{{ ('p-' ~ t['node_id']) if t['node_id'] else 'comments' }}">{{ t['number'] }}{% if t['label'] %} {{ t['label'] }}{% endif %}</a>{% elif t['number'] %}{{ t['number'] }} <span class="muted">(taken out)</span>{% else %}the whole project{% endif %}{% endif %}
+    {% if t['state'] == 'closed' %} · <span class="spec-cmt-closed-tag">closed by {{ t['closed_by'] }}</span>{% endif %}
+  </header>
+  {% if show_where and t['quote'] %}<blockquote class="small muted spec-cmt-quote">{{ t['quote'] }}</blockquote>{% endif %}
+  <p class="spec-cmt-body">{{ t['body'] }}</p>
+  {% for r in t['replies'] %}
+  <div class="spec-cmt-reply" id="c-{{ r['id'] }}"><p class="small"><strong>{{ r['author'] }}</strong> <span class="muted">{{ r['created_at'][:16] }}</span></p><p class="spec-cmt-body">{{ r['body'] }}</p></div>
+  {% endfor %}
+  <div class="spec-cmt-actions">
+    <details class="spec-cmt-answer"><summary class="small">Reply</summary>
+      <form method="post" action="{{ url_for('specs.add_comment', set_id=spec['id']) }}">
+        <input type="hidden" name="parent_id" value="{{ t['id'] }}"><input type="hidden" name="back" value="{{ back }}">
+        <textarea name="body" rows="2" required aria-label="Reply"></textarea>
+        <button type="submit" class="btn btn-sm">Reply</button>
+      </form>
+    </details>
+    {% if may_close(t) %}
+    <form method="post" action="{{ url_for('specs.reopen_comment' if t['state'] == 'closed' else 'specs.close_comment', set_id=spec['id'], comment_id=t['id']) }}">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button type="submit" class="btn btn-ghost btn-sm">{{ 'Open again' if t['state'] == 'closed' else 'Close' }}</button>
+    </form>
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}

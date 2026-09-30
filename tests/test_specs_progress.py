@@ -266,7 +266,7 @@ def test_the_check_is_laid_out_one_group_at_a_time(app, signed_in):
     assert "← Back: Cross-references" in page
     assert page.count("spec-group-foot") >= len(groups)
     last = page[page.index('data-group="language"'):]
-    assert "Next: Issue all" in last
+    assert "Next: review and sign-off" in last
     # Every form is still there: Keep, Amend and Remove, and the summary bar on top.
     assert ">Keep<" in page and ">Amend<" in page and ">Remove<" in page
     assert page.index("to settle") < page.index("data-check-flow")

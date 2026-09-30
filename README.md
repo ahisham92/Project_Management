@@ -147,7 +147,7 @@ meet, so the Specs Writer reads across them:
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
 - **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Details*,
-  *Check*, *Issue*, one step in view at a time, with Next and Back buttons and the state of each
+  *Check*, *Review*, *Issue*, one step in view at a time, with Next and Back buttons and the state of each
   at the top. The project's location sits beside its client.
 - **Details: the questions the sections ask.** Once the sections are chosen, *Details* asks
   only what those sections need, grouped the way an engineer thinks (project information,
@@ -252,6 +252,38 @@ meet, so the Specs Writer reads across them:
   that it lacks are taken out, after a tick to say so).
 - **Taking sections out.** Tick sections on the library page and *Take the ticked out*, or use
   the button on a section's own page. Projects that took a section keep their own copy.
+
+**Review, approval and issue.** A project is written by a team and issued under control:
+
+- **The team.** The lead (whoever started the project, and administrators) names the team on
+  *Team and sign-off*, each as an **editor** (writes and prepares), **checker** (also checks) or
+  **approver** (also approves and issues). Anybody else can read the project and comment, but
+  not change it. A project with no team is open to everyone, as before.
+- **Sign-off.** Each section is signed as **prepared**, **checked** and **approved**, in that
+  order, several at once from the list or on the section's page. The checker and the approver
+  must be someone other than the preparer. A sign-off is for the words as they stand: if the
+  issued words of the section change afterwards (by an edit or by an answer), it shows
+  *changed since* and must be signed again. Taking a stage back takes back the later ones too.
+  With *Hold its issue for sign-off* ticked (the default for a new project), a project is not
+  issued until every section is approved and no comment is open.
+- **The issue register.** *Issue…* asks for the revision (suggested as the next one: 0→1,
+  A→B, P01→P02), date, purpose and a note, and keeps the files exactly as sent (Word, PDF, or
+  Word with the changes since the last issue marked) with who prepared, checked and approved
+  each. A revision cannot be issued twice. *Download a copy* on the project page still makes a
+  copy at any time; that is not an issue.
+- **Changes since an issue.** *Changes since last issue* shows, word by word, what each section
+  says now that the chosen issue did not, and the answers changed since; *Word with these
+  changes marked* gives each section with them as Word's tracked changes, for the revision marks.
+- **Comments.** A reviewer comments on a paragraph (the speech bubble beside it) or on a whole
+  section; the thread shows beside the paragraph and on *Comments*, with replies. The author, a
+  checker or the lead closes it.
+- **History.** Every change is kept: who changed which answer, choice, word or paragraph (with
+  its number and the words before and after), who signed, commented and issued, and when;
+  filtered by section, kind of change and person.
+- **Two engineers at once.** A section page says who else has it open. Saving a section, the
+  project page or the answers after someone else saved them does not overwrite their work: the
+  section editor shows your version with a note to look at theirs first, and answers they
+  changed meanwhile are kept.
 
 The Specs Writer is a program like the others: the administrator gives it to each account on
 the Admin page. Only administrators change the library, the options and the house template;

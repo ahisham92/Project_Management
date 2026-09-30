@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% from "specs/_review.html" import review_head, thread %}
+{% block title %}Comments · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{{ review_head(spec, 'comments', 'Review comments', 'Comments on this project\'s paragraphs, answered and closed here. Anyone with THEMIS can comment; whoever raised a comment, a checker or the lead closes it.') }}
+
+<div class="inline-form" style="margin-bottom:12px;justify-content:space-between">
+  <nav class="spec-review-filter small">
+    <a href="{{ url_for('specs.comments', set_id=spec['id'], show='open') }}"{% if shown == 'open' %} aria-current="page"{% endif %}>Open ({{ open_n }})</a> ·
+    <a href="{{ url_for('specs.comments', set_id=spec['id'], show='closed') }}"{% if shown == 'closed' %} aria-current="page"{% endif %}>Closed</a> ·
+    <a href="{{ url_for('specs.comments', set_id=spec['id'], show='all') }}"{% if shown == 'all' %} aria-current="page"{% endif %}>All</a>
+  </nav>
+  <span class="small muted">Comment on a paragraph from its section's page (the speech mark beside it).</span>
+</div>
+
+{% set back = url_for('specs.comments', set_id=spec['id'], show=shown) %}
+{% for t in threads %}{{ thread(spec, t, back, may_close, show_where=true) }}{% else %}
+  {{ empty('No ' ~ ('open ' if shown == 'open' else ('closed ' if shown == 'closed' else '')) ~ 'comments', 'Comments made on the sections show here.') }}
+{% endfor %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Comment on the whole project</h2></div>
+  <form method="post" action="{{ url_for('specs.add_comment', set_id=spec['id']) }}" class="card-body" style="display:grid;gap:8px">
+    <input type="hidden" name="back" value="{{ back }}">
+    <textarea name="body" rows="3" required aria-label="Comment"></textarea>
+    <div><button type="submit" class="btn btn-primary btn-sm">Add the comment</button></div>
+  </form>
+</div>
+{% endblock %}

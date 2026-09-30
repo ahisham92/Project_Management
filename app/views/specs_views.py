@@ -812,7 +812,8 @@ def details(set_id: int):
         if here + 1 < len(groups) and request.form.get("go") != "stay":
             return redirect(url_for("specs.details", set_id=set_id, group=slugs[here + 1]))
         return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
-    labels = {e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])}
+    labels = dict(specs_questions.KIND_LABELS)
+    labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
     return render_template(
         "specs/details.html", spec=row, groups=groups, group=groups[here] if groups else None,
         here=here, total=sum(len(g["questions"]) for g in groups),

@@ -44,6 +44,10 @@ FIELDS = ("key", "label", "grp", "help", "suggested", "per_element", "many", "op
 # Which questions a project answers per element rather than once for all.
 SPLIT = "__split__"
 FREE, NONE, SAME = "__free__", "__none__", "__same__"
+# Kinds of concrete the master gives their own mix, named like elements.
+KIND_LABELS = {"lightweight_slabs": "Lightweight concrete slabs", "stairs": "Stairs",
+               "self_compacting": "Self-compacting concrete", "mass_concrete": "Mass concrete",
+               "architectural_concrete": "Architectural concrete", "shotcrete": "Shotcrete"}
 
 
 # --- the library's questions ------------------------------------------------------
@@ -147,6 +151,8 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
     answers = answers_of(spec_set)
     split = split_keys(answers)
     have = set(elements)
+    from . import specs_seed
+    known = {k[0] for k in getattr(specs_seed, "ELEMENT_KINDS", [])}
     found: "OrderedDict[str, dict]" = OrderedDict()
     for s in sections:
         nodes = specs.loads(s["body"])
@@ -194,7 +200,9 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
             q["choices"] = [specs.KEEP]
             if q["suggested"] is not None:
                 q["suggested"] = specs.KEEP if q["suggested"] not in ("", specs.KEEP, "No", "no") else ""
-        q["rows"] = ([e for e in q["elements"] if not have or e in have]
+        # A row for each element the project has; a kind of concrete the master
+        # sets apart (self-compacting, mass) that is not an element always has one.
+        q["rows"] = ([e for e in q["elements"] if not have or e in have or e not in known]
                      if q["per_element"] or q["elements"] else [])
         q["split"] = q["key"] in split and bool(q["rows"])
         q["answer"] = answers.get(q["key"])

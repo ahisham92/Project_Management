@@ -207,8 +207,7 @@
           tries = 0;
           if (answer.total) {
             show("Loading the library", answer.done / answer.total,
-                 answer.done + " of " + answer.total + " sections read" +
-                 (answer.finished ? ". Done." : ""));
+                 answer.message || (answer.done + " of " + answer.total + " sections read."));
           }
           if (answer.go) return go(answer.go);
           return next();

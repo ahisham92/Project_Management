@@ -107,6 +107,7 @@ def streams(data: bytes) -> dict[str, bytes]:
 
 # Paragraph properties this reads, by their sprm codes.
 ILVL, ILFO, IN_TABLE, ROW_END, ITAP = 0x260A, 0x460B, 0x2416, 0x2417, 0x6649
+VANISH = 0x083C                                    # sprmCFVanish: hidden text
 INNER_ROW_END, INNER_CELL = 0x244C, 0x244B
 SIZES = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}
 
@@ -168,12 +169,14 @@ def _lists(table: bytes, lfo: tuple[int, int]) -> dict[int, int]:
     return {i + 1: _u32(raw, 4 + 16 * i) for i in range(count)}
 
 
-def _deleted(word: bytes, table: bytes, chpx: tuple[int, int]) -> list[tuple[int, int]]:
-    """The stretches of the file that tracked changes deleted, or that are hidden."""
+def _deleted(word: bytes, table: bytes, chpx: tuple[int, int]
+             ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """The stretches of the file that tracked changes deleted, and the ones
+    formatted as hidden text."""
     fc, lcb = chpx
     raw = table[fc:fc + lcb]
     n = (len(raw) - 4) // 8
-    gone = []
+    gone, veiled = [], []
     for i in range(n):
         page_no = _u32(raw, 4 * (n + 1) + 4 * i) & 0x3FFFFF
         page = word[page_no * 512:page_no * 512 + 512]
@@ -188,7 +191,9 @@ def _deleted(word: bytes, table: bytes, chpx: tuple[int, int]) -> list[tuple[int
             props = sprms(page[where + 1:where + 1 + page[where]])
             if props.get(0x0800) == 1:              # deleted with tracked changes
                 gone.append((fcs[j], fcs[j + 1]))
-    return gone
+            if props.get(VANISH) in (1, 0x81):      # hidden text (0x81: the style's opposite)
+                veiled.append((fcs[j], fcs[j + 1]))
+    return gone, veiled
 
 
 def _characters(word: bytes, table: bytes, clx: tuple[int, int], limit: int
@@ -298,8 +303,14 @@ def _styles(table: bytes, stsh: tuple[int, int]) -> dict[int, dict]:
 
 def _clean(text: str) -> str:
     """Field codes dropped (their results kept) and Word's special marks made plain."""
-    out, depth, shown = [], 0, [True]
-    for c in text:
+    return "".join(c for c, _ in _clean_marked(text, [False] * len(text)))
+
+
+def _clean_marked(text: str, mask: list[bool]) -> list[tuple[str, bool]]:
+    """As ``_clean``, each character kept with its flag from ``mask``."""
+    out: list[tuple[str, bool]] = []
+    depth, shown = 0, [True]
+    for c, flag in zip(text, mask):
         if c == "\x13":
             depth += 1
             shown.append(False)
@@ -314,15 +325,27 @@ def _clean(text: str) -> str:
             continue
         elif c in "\x01\x02\x03\x04\x05\x08\x1f":
             continue
-        elif c == "\x0b":
-            out.append(" ")
+        elif c in "\x0b\xa0":
+            out.append((" ", flag))
         elif c == "\x1e":
-            out.append("-")
-        elif c == "\xa0":
-            out.append(" ")
+            out.append(("-", flag))
         else:
-            out.append(c)
-    return "".join(out)
+            out.append((c, flag))
+    return out
+
+
+def _runs(marked: list[tuple[str, bool]]) -> str:
+    """Runs of text, the hidden stretches marked hidden as Word had them."""
+    out, at = [], 0
+    while at < len(marked):
+        flag, end = marked[at][1], at
+        while end < len(marked) and marked[end][1] == flag:
+            end += 1
+        words = escape("".join(ch for ch, _ in marked[at:end]))
+        props = "<w:rPr><w:vanish/></w:rPr>" if flag else ""
+        out.append(f'<w:r>{props}<w:t xml:space="preserve">{words}</w:t></w:r>')
+        at = end
+    return "".join(out) or '<w:r><w:t xml:space="preserve"></w:t></w:r>'
 
 
 def to_docx(data: bytes) -> bytes:
@@ -338,11 +361,13 @@ def to_docx(data: bytes) -> bytes:
     starts, runs = _paragraph_runs(word, table, fib["papx"])
     styles = _styles(table, fib["stsh"])
     lists = _lists(table, fib["lfo"])
-    gone = _deleted(word, table, fib["chpx"])
+    gone, veiled = _deleted(word, table, fib["chpx"])
     if gone:
         cut = [any(a <= fc < b for a, b in gone) for fc in places]
         text = "".join(c for c, drop in zip(text, cut) if not drop)
         places = [fc for fc, drop in zip(places, cut) if not drop]
+    hidden = ([any(a <= fc < b for a, b in veiled) for fc in places] if veiled
+              else [False] * len(places))
 
     def props_at(fc: int) -> tuple[int, dict]:
         i = bisect_right(starts, fc) - 1
@@ -365,7 +390,8 @@ def to_docx(data: bytes) -> bytes:
     for i, c in enumerate(text):
         if c not in "\r\x07\x0c":
             continue
-        piece = _clean(text[start:i])
+        marked = _clean_marked(text[start:i], hidden[start:i])
+        piece = "".join(ch for ch, _ in marked)
         start = i + 1
         istd, props = props_at(places[i])
         in_table = props.get(IN_TABLE) or props.get(ITAP)
@@ -375,7 +401,7 @@ def to_docx(data: bytes) -> bytes:
                     rows.append(row)
                 row, cell = [], []
                 continue
-            cell.append(piece)
+            cell.append("".join(ch for ch, veil in marked if not veil))
             if c == "\x07":
                 row.append(" ".join(p for p in cell if p.strip()).strip())
                 cell = []
@@ -387,7 +413,7 @@ def to_docx(data: bytes) -> bytes:
         numbered = (f'<w:numPr><w:ilvl w:val="{level}"/><w:numId w:val="{lfo}"/></w:numPr>'
                     if lfo else "")
         body.append(f'<w:p><w:pPr><w:pStyle w:val="S{istd}"/>{numbered}</w:pPr>'
-                    f'<w:r><w:t xml:space="preserve">{escape(piece)}</w:t></w:r></w:p>')
+                    f'{_runs(marked)}</w:p>')
     flush_table()
 
     ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'

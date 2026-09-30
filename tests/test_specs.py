@@ -226,7 +226,8 @@ def test_the_whole_round(app, signed_in):
     set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
     signed_in.post(f"/specs/sets/{set_id}", data={
         "name": "Harbour Works", "code": "HW-001", "header_left": "Port Works", "doc_code": "N1",
-        "revision": "1", "file_pattern": "SPC-FD-{number}-ST", "opt_leed": "v4.1"})
+        "revision": "1", "file_pattern": "SPC-FD-{number}-ST", "opt_leed": "v4.1",
+        "hold_shown": "1"})                                  # issued without settling the check
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
     assert "As the master" in page

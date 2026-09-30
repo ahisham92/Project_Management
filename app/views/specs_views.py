@@ -38,6 +38,19 @@ def spectext(text: str, values: dict | None = None, reader=None, here: str = "")
     that knows the project's basis — each standard on that basis."""
     values = values or {}
     text = text or ""
+    if specs.INLINE.search(text):
+        # Choices inside the paragraph: each marked, and shown only when it holds.
+        out, last = [], 0
+        for match in specs.INLINE.finditer(text):
+            out.append(spectext(text[last:match.start()], values, reader, here))
+            condition = f"{match.group(1)}{match.group(2)}{match.group(3)}"
+            holds = reader is None or specs.applies(condition, getattr(reader, "chosen", {}))
+            if holds:
+                out.append(Markup('<span class="spec-choice" title="Only when %s">%s</span>')
+                           % (condition, spectext(match.group(4), values, reader, here)))
+            last = match.end()
+        out.append(spectext(text[last:], values, reader, here))
+        return Markup("").join(out)
     out, last = [], 0
     for match in specs_check.REF.finditer(text):
         out.append(_words(text[last:match.start()], values, reader))
@@ -69,6 +82,27 @@ def _words(text: str, values: dict, reader) -> Markup:
         last = match.end()
     out.append(escape(text[last:]))
     return Markup("").join(out)
+
+
+@bp.app_template_filter("spec_mark")
+def spec_mark(text: str, words: str = "") -> Markup:
+    """The text with the words a check item is about marked."""
+    text = text or ""
+    at = text.lower().find(words.lower()) if words else -1
+    if at < 0:
+        return escape(text)
+    return (escape(text[:at]) + Markup('<mark class="spec-mark">%s</mark>') % text[at:at + len(words)]
+            + escape(text[at + len(words):]))
+
+
+@bp.app_template_test("spec_fits")
+def spec_fits(section: dict, chosen: dict) -> bool:
+    return bool(section.get("applies")) and specs.applies(section["applies"], chosen or {})
+
+
+@bp.app_template_filter("spec_applies")
+def spec_applies(when: str, chosen: dict) -> bool:
+    return specs.applies(when or "", chosen or {})
 
 
 @bp.app_template_filter("spec_rows")
@@ -143,7 +177,7 @@ def _docx_response(data: bytes, name: str) -> Response:
 @login_required
 def index():
     return render_template("specs/index.html", sets=store.sets(), library=store.library(),
-                           is_admin=_is_admin())
+                           is_admin=_is_admin(), start_from=request.args.get("start_from", type=int))
 
 
 @bp.post("/sets")
@@ -175,8 +209,10 @@ def spec_set(set_id: int):
                 missing.append(name)
     chosen = store.chosen_for(row)
     report = store.check_set(set_id) if sections else None
+    waiting = store.open_items(set_id, report) if report else None
     return render_template(
         "specs/set.html", spec=row, sections=sections, groups=_grouped(store.options()),
+        waiting=waiting, uncovered=store.uncovered(chosen),
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
         variables=store.variables(), values=values,
         available=[s for s in store.library() if s["id"] not in have],
@@ -204,6 +240,8 @@ def save_set(set_id: int):
         flash(str(exc), "error")
     else:
         flash("Saved.", "success")
+    if request.form.get("next") == "sections":
+        return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
     return redirect(url_for("specs.spec_set", set_id=set_id))
 
 
@@ -269,8 +307,16 @@ def export_set(set_id: int):
     if not sections:
         flash("There are no sections in this specification to issue yet.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
-    missing = _not_issued(store.check_set(set_id))
-    if missing and not request.args.get("anyway"):
+    report = store.check_set(set_id)
+    if row["hold_issue"]:
+        waiting = store.open_items(set_id, report)
+        if waiting["total"]:
+            flash(f"Not issued yet: {waiting['total']} item{'s' if waiting['total'] != 1 else ''} "
+                  "on the check still to accept or reject. This project is held until each one "
+                  "is settled (the hold is a tick box on the project page).", "error")
+            return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
+    missing = _not_issued(report)
+    if missing and not row["hold_issue"] and not request.args.get("anyway"):
         flash(f"Not issued yet: {len(missing)} reference{'s' if len(missing) != 1 else ''} point at "
               "sections or paragraphs this specification does not issue. Add the sections, or "
               "correct the references, then issue — or issue anyway from the top of this page.",
@@ -293,8 +339,27 @@ def export_set(set_id: int):
 
 def _not_issued(report: dict) -> list[dict]:
     """References that would go out pointing at nothing this issue contains."""
-    return [i for i in report["references"] if "not in this specification" in i["message"]
-            or i["severity"] == "error"]
+    return [i for i in report["references"] if ("not in this specification" in i["message"]
+            or i["severity"] == "error") and not i.get("settled")]
+
+
+@bp.post("/sets/<int:set_id>/settle")
+@login_required
+def settle(set_id: int):
+    """A check item accepted or rejected, or opened again."""
+    _set_or_404(set_id)
+    keys = request.form.getlist("key")
+    try:
+        for key in keys:
+            store.settle(set_id, key, request.form.get("state", ""),
+                         request.form.get("message", "") if len(keys) == 1 else "")
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+    if len(keys) > 1:
+        flash(f"{len(keys)} items {request.form.get('state') or 'opened again'}.", "success")
+    back = url_for("specs.check_set", set_id=set_id, issuing=request.form.get("issuing") or None)
+    return redirect(back + (f"#item-{keys[0]}" if len(keys) == 1 else
+                            f"#group-{request.form.get('group', '')}"))
 
 
 @bp.get("/sets/<int:set_id>/amendments")
@@ -491,6 +556,7 @@ def edit_library_section(section_id: int):
             store.save_section(request.form.get("number", s["number"]),
                                request.form.get("title", s["title"]), nodes,
                                note=request.form.get("note", "").strip(), section_id=section_id)
+            store.set_applies(section_id, request.form.get("applies", ""))
         except specs.SpecError as exc:
             flash(str(exc), "error")
             return redirect(url_for("specs.edit_library_section", section_id=section_id))
@@ -643,7 +709,8 @@ def check_set(set_id: int):
     return render_template("specs/check.html", spec=row, report=report, checks=CHECKS,
                            chosen=store.chosen_for(row), is_admin=_is_admin(),
                            issuing=request.args.get("issuing"), blocking=_not_issued(report),
-                           language=_language(store.language_set(set_id)), kinds=KINDS)
+                           language=_language(store.language_set(set_id)), kinds=KINDS,
+                           waiting=store.open_items(set_id, report))
 
 
 @bp.post("/sets/<int:set_id>/fix")

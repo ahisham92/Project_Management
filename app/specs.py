@@ -133,6 +133,38 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
     return True
 
 
+# A choice inside a paragraph: ``{steel_protection=Paint system: or painted}`` —
+# the words after the colon are there only when the condition holds.
+INLINE = re.compile(r"\{([A-Za-z0-9_]+)\s*(!?=)\s*([^:{}]+?)\s*:\s?([^{}]*)\}")
+
+
+def choose(text: str, chosen: Mapping[str, str]) -> str:
+    """The paragraph with its inline choices settled for a project: the words of
+    each choice that holds kept, the rest dropped with the gap they leave."""
+    if "{" not in (text or ""):
+        return text or ""
+    dropped = False
+
+    def one(m: re.Match) -> str:
+        nonlocal dropped
+        if applies(f"{m.group(1)}{m.group(2)}{m.group(3)}", chosen):
+            return m.group(4)
+        dropped = True
+        return ""
+
+    out = INLINE.sub(one, text)
+    if dropped:
+        out = re.sub(r"[ \t]{2,}", " ", out)
+        out = re.sub(r"\s+([.,;:)])", r"\1", out)
+        out = re.sub(r"\(\s+", "(", out).strip()
+    return out
+
+
+def inline_conditions(text: str) -> list[str]:
+    """The conditions of a paragraph's inline choices, as ``key=value``."""
+    return [f"{m.group(1)}{m.group(2)}{m.group(3)}" for m in INLINE.finditer(text or "")]
+
+
 def fill(text: str, values: Mapping[str, str]) -> str:
     """The text with every ``{{variable}}`` it has a value for filled in."""
     def one(match: re.Match) -> str:
@@ -155,7 +187,7 @@ def unfilled(nodes: Iterable[Mapping[str, Any]], values: Mapping[str, str]) -> l
 def keys_used(nodes: Iterable[Mapping[str, Any]]) -> set[str]:
     used = set()
     for n in nodes:
-        for part in (n.get("when") or "").split("&"):
+        for part in (n.get("when") or "").split("&") + inline_conditions(n.get("text", "")):
             key = re.split(r"!?=", part, maxsplit=1)[0].strip()
             if key:
                 used.add(key)
@@ -184,6 +216,7 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
     marks = [""] * len(LEVELS)                     # each level's own mark: "2.4", "B", "1" ...
     out: list[dict] = []
     cut_at: int | None = None                      # depth of the paragraph that was cut
+    part, article = "", ""                         # the headings each paragraph sits under
     for n in nodes:
         level = n["level"]
         depth = DEPTH.get(level)
@@ -211,8 +244,12 @@ def number(nodes: Sequence[Mapping[str, Any]], chosen: Mapping[str, str] | None 
                 marks[deeper] = ""
             # How a cross-reference names it: Article 2.4, Paragraph 2.4.B.1.
             path = ".".join(m for m in marks[1:depth + 1] if m) if depth >= 1 else marks[0]
+        if level == "PRT":
+            part, article = (f"{label} {n['text']}" if label else n["text"]), ""
+        elif level == "ART":
+            article = f"{label} {n['text']}" if label else n["text"]
         out.append({**n, "label": label, "included": included, "path": path,
-                    "indent": _indent(out, n)})
+                    "indent": _indent(out, n), "part": part, "article": article})
     return out
 
 
@@ -469,22 +506,69 @@ def _deleted(p: ET.Element) -> set[int]:
     return {id(t) for d in p.iter(W + "del") for t in d.iter(W + "t")}
 
 
-def _paragraph_text(p: ET.Element) -> str:
+def _on(el: ET.Element | None) -> bool:
+    """Whether a Word on/off property is on: present, and not set to off."""
+    return el is not None and (el.get(W + "val") or "true").lower() not in ("0", "false", "off")
+
+
+def _texts(p: ET.Element, hidden_styles: set[str] = frozenset(), para_hidden: bool = False
+           ) -> tuple[str, str]:
+    """The words of a paragraph (or table cell) Word shows, and the ones it hides.
+
+    Text is hidden by the run's own formatting, by its character style, or by
+    the paragraph's style, and a run can switch the last two off again.
+    """
     gone = _deleted(p)
-    parts: list[str] = []
-    for el in p.iter():
-        if el.tag == W + "t" and el.text and id(el) not in gone:
-            parts.append(el.text)
-        elif el.tag in (W + "tab", W + "br", W + "cr"):
-            parts.append(" ")
-    return re.sub(r"\s+", " ", "".join(parts)).strip()
+    shown: list[str] = []
+    hidden: list[str] = []
+    for r in p.iter(W + "r"):
+        rpr = r.find(W + "rPr")
+        vanish = rpr.find(W + "vanish") if rpr is not None else None
+        if vanish is not None:
+            is_hidden = _on(vanish)
+        else:
+            rstyle = rpr.find(W + "rStyle") if rpr is not None else None
+            is_hidden = para_hidden or (rstyle is not None and rstyle.get(W + "val") in hidden_styles)
+        out = hidden if is_hidden else shown
+        for el in r:
+            if el.tag == W + "t" and el.text and id(el) not in gone:
+                out.append(el.text)
+            elif el.tag in (W + "tab", W + "br", W + "cr"):
+                out.append(" ")
+    clean = [re.sub(r"\s+", " ", "".join(x)).strip() for x in (shown, hidden)]
+    return clean[0], clean[1]
 
 
-def _hidden(p: ET.Element) -> bool:
-    runs = [r for r in p.iter(W + "r") if r.find(W + "t") is not None]
-    if not runs:
-        return False
-    return all(r.find(f"{W}rPr/{W}vanish") is not None for r in runs)
+def _paragraph_text(p: ET.Element, hidden_styles: set[str] = frozenset()) -> str:
+    return _texts(p, hidden_styles)[0]
+
+
+def _hidden_styles(z: zipfile.ZipFile) -> set[str]:
+    """The styles that hide their text, directly or through the style they are based on."""
+    try:
+        root = ET.fromstring(z.read("word/styles.xml"))
+    except (KeyError, ET.ParseError):
+        return set()
+    own: dict[str, bool | None] = {}
+    based: dict[str, str] = {}
+    for st in root.iter(W + "style"):
+        sid = st.get(W + "styleId") or ""
+        vanish = st.find(f"{W}rPr/{W}vanish")
+        own[sid] = _on(vanish) if vanish is not None else None
+        b = st.find(W + "basedOn")
+        if b is not None:
+            based[sid] = b.get(W + "val") or ""
+    out = set()
+    for sid in own:
+        seen, at = set(), sid
+        while at in own and at not in seen:
+            seen.add(at)
+            if own[at] is not None:
+                if own[at]:
+                    out.add(sid)
+                break
+            at = based.get(at, "")
+    return out
 
 
 def _styles(z: zipfile.ZipFile) -> dict[str, str]:
@@ -540,6 +624,7 @@ def read_docx(data: bytes) -> dict:
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise SpecError("That is not a Word document (.doc or .docx) this can read.") from exc
     style_names = _styles(z)
+    hidden_styles = _hidden_styles(z)
     body = root.find(W + "body")
     if body is None:
         raise SpecError("That Word document has no body to read.")
@@ -554,7 +639,8 @@ def read_docx(data: bytes) -> dict:
         if el.tag == W + "tbl":
             rows = []
             for tr in el.iter(W + "tr"):
-                cells = [_paragraph_text(tc).replace("|", "/") for tc in tr.findall(W + "tc")]
+                cells = [_paragraph_text(tc, hidden_styles).replace("|", "/")
+                         for tc in tr.findall(W + "tc")]
                 if any(cells):
                     rows.append("| " + " | ".join(cells) + " |")
             if rows:
@@ -562,15 +648,18 @@ def read_docx(data: bytes) -> dict:
             continue
         if el.tag != W + "p":
             continue
-        text = _paragraph_text(el)
-        if not text:
-            continue
         ppr = el.find(W + "pPr")
-        style_id = ""
+        ps = ppr.find(W + "pStyle") if ppr is not None else None
+        style_id = (ps.get(W + "val") or "") if ps is not None else ""
+        text, hidden = _texts(el, hidden_styles, style_id in hidden_styles)
+        if not text and not hidden:
+            continue
+        if not text:
+            # Word hides the whole paragraph: keep it, but as a note that is never issued.
+            nodes.append(node(NOTE, hidden))
+            continue
         ilvl, num = None, ""
         if ppr is not None:
-            ps = ppr.find(W + "pStyle")
-            style_id = ps.get(W + "val") if ps is not None else ""
             lv = ppr.find(f"{W}numPr/{W}ilvl")
             ni = ppr.find(f"{W}numPr/{W}numId")
             ilvl = int(lv.get(W + "val")) if lv is not None and (lv.get(W + "val") or "").isdigit() else None
@@ -589,8 +678,8 @@ def read_docx(data: bytes) -> dict:
             continue
         if kind == "EOS" or END_LINE.match(text):
             continue
-        if kind == NOTE or _hidden(el):
-            nodes.append(node(NOTE, text))
+        if kind == NOTE:
+            nodes.append(node(NOTE, " ".join(x for x in (text, hidden) if x)))
             continue
 
         part = PART_LINE.match(text)
@@ -626,6 +715,9 @@ def read_docx(data: bytes) -> dict:
         if kind in ("PRT", "ART"):
             text = text.rstrip(":").strip().upper()
         nodes.append(node(kind, text))
+        if hidden:
+            # Words Word hides inside a paragraph it shows stay out of the issue too.
+            nodes.append(node(NOTE, f"Hidden in Word: {hidden}"))
         if kind in DEPTH and not listed:
             anchor = DEPTH[kind]
 
@@ -825,7 +917,7 @@ def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
     for n in number(nodes, chosen):
         if not n["included"] or n["level"] == NOTE:
             continue
-        text = fill(resolve(n["text"]) if resolve else n["text"], values)
+        text = fill(resolve(n["text"]) if resolve else choose(n["text"], chosen), values)
         if n["level"] == TABLE:
             body.append(_table(text, 576 * (n["indent"] + 1), room))
             continue

@@ -222,6 +222,8 @@ def findings(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str], e
             # Words inside a standard's citation, a variable or a reference are left alone.
             shielded = quoted + [m.span() for m in re.finditer(
                 r"\{\{[^}]*\}\}|\{ref:[^}]*\}|\{if[^}]*\}|https?://\S+", text)]
+            for m in specs.INLINE.finditer(text):
+                shielded += [(m.start(), m.start(4)), (m.end() - 1, m.end())]
 
             def free(a: int, b: int) -> bool:
                 return not any(x < b and a < y for x, y in shielded)
@@ -284,8 +286,6 @@ def findings(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str], e
                     continue
                 add("grammar", m.start(2), m.group(2), m.group(2).upper(),
                     "a sentence starts with a capital letter")
-            if n["level"] != specs.TABLE and text.count("(") != text.count(")"):
-                add("grammar", 0, "", "", "the brackets do not pair up")
             # SI units.
             for at, old, new, why in unit_findings(text):
                 add("units", at, old, new, why)

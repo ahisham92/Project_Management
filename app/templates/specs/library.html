@@ -118,13 +118,14 @@
   {% else %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
+      <thead><tr><th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>In a project when</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
           <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="right">{{ s['paragraphs'] }}</td>
+          <td class="small">{{ s['applies'] or 'always' }}</td>
           <td class="small">{{ s['uses'] | join(', ') }}</td>
           <td>v{{ s['version'] }}</td>
           <td class="small muted">{{ s['updated_at'][:16] }} · {{ s['updated_by'] }}</td>

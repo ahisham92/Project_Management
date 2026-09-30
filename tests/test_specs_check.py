@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 
 from app import specs, specs_check
@@ -372,6 +373,7 @@ def test_an_issue_that_refers_to_a_section_not_in_it_is_held(signed_in):
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
     set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "hold_shown": "1"})
     held = signed_in.get(f"/specs/sets/{set_id}/export")
     assert held.status_code == 302 and "/check" in held.headers["Location"]
     page = text(signed_in.get(held.headers["Location"]))
@@ -416,3 +418,185 @@ def test_an_old_dated_edition_is_worth_a_look():
     report = specs_check.check(sections, {}, {}, [], TABLE)
     assert any("2005 edition" in i["message"] for i in report["outdated"])
     assert not any("1090-2" in i["message"] for i in report["outdated"])
+
+
+# --- hidden text ----------------------------------------------------------------------
+
+def hidden_docx() -> bytes:
+    """A section with words Word hides three ways: a run formatted hidden, a
+    whole paragraph formatted hidden, and a style that hides its text."""
+    ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+    def para(runs: str, style: str = "") -> str:
+        props = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+        return f"<w:p>{props}{runs}</w:p>"
+
+    def run(words: str, hidden: bool = False) -> str:
+        props = "<w:rPr><w:vanish/></w:rPr>" if hidden else ""
+        return f'<w:r>{props}<w:t xml:space="preserve">{words}</w:t></w:r>'
+
+    body = "".join([
+        para(run("SECTION 032000 - CONCRETE REINFORCING")),
+        para(run("PART 1 - GENERAL")),
+        para(run("1.1\tSUMMARY".replace("\t", " "))),
+        para(run("A. Provide bar supports") + run(" of plastic only", hidden=True) + run(".")),
+        para(run("B. Retain this paragraph for coastal sites only.", hidden=True)),
+        para(run("Editor: check the cover with the designer."), "EditorNote"),
+        para(run("C. Tie the bars") + run(" firmly", hidden=False) + run(".")),
+    ])
+    document = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                f"<w:document {ns}><w:body>{body}</w:body></w:document>")
+    styles = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {ns}>'
+              '<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+              '<w:style w:type="paragraph" w:styleId="NoteBase"><w:name w:val="Note base"/>'
+              '<w:rPr><w:vanish/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="EditorNote"><w:name w:val="Editor note"/>'
+              '<w:basedOn w:val="NoteBase"/></w:style></w:styles>')
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("[Content_Types].xml",
+                   '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                   '<Default Extension="xml" ContentType="application/xml"/>'
+                   '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                   '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+                   "</Types>")
+        z.writestr("_rels/.rels",
+                   '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                   "</Relationships>")
+        z.writestr("word/_rels/document.xml.rels",
+                   '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+                   "</Relationships>")
+        z.writestr("word/document.xml", document)
+        z.writestr("word/styles.xml", styles)
+    return out.getvalue()
+
+
+def _hidden_read(data: bytes) -> list[tuple[str, str]]:
+    return [(n["level"], n["text"]) for n in specs.read_docx(data)["nodes"]]
+
+
+def test_hidden_words_are_kept_as_notes_and_never_issued():
+    got = _hidden_read(hidden_docx())
+    assert ("PR1", "Provide bar supports.") in got
+    assert ("CMT", "Hidden in Word: of plastic only") in got
+    assert ("CMT", "B. Retain this paragraph for coastal sites only.") in got
+    assert ("CMT", "Editor: check the cover with the designer.") in got
+    assert ("PR1", "Tie the bars firmly.") in got
+
+
+def test_hidden_words_in_an_old_doc_are_found_too():
+    got = _hidden_read((FIXTURES / "hidden-text.doc").read_bytes())
+    assert ("PR1", "Provide bar supports.") in got
+    assert ("CMT", "Hidden in Word: of plastic only") in got
+    assert ("CMT", "B. Retain this paragraph for coastal sites only.") in got
+
+
+# --- choices inside a paragraph, and sections that follow the choices ----------------
+
+ANCHORS = ("Anchor rods: property class 8.8, or {anchor_rods=F1554: ASTM F1554, Grade 105}"
+           "{anchor_rods=A325M: ASTM F3125, Grade A325M}, {finish!=Plain: galvanized,} with nuts.")
+
+
+def test_a_choice_inside_a_paragraph_is_issued_only_when_it_holds():
+    got = specs.choose(ANCHORS, {"anchor_rods": "A325M", "finish": "Plain"})
+    assert got == "Anchor rods: property class 8.8, or ASTM F3125, Grade A325M, with nuts."
+    got = specs.choose(ANCHORS, {"anchor_rods": "F1554", "finish": "Galvanized"})
+    assert got == "Anchor rods: property class 8.8, or ASTM F1554, Grade 105, galvanized, with nuts."
+    assert specs.keys_used([{"text": ANCHORS, "when": ""}]) == {"anchor_rods", "finish"}
+    # Written to Word settled, and the brackets MasterSpec leaves are flagged.
+    nodes = [specs.node("PRT", "PRODUCTS"), specs.node("ART", "ANCHORS"), specs.node("PR1", ANCHORS),
+             specs.node("PR1", "Conduct the conference at [Project site].")]
+    data = specs.write_docx({"number": "051200", "title": "STEEL"}, nodes, {"revision": "0"},
+                            {"anchor_rods": "F1554"}, {})
+    document = part(data, "word/document.xml")
+    assert "Grade 105" in document and "A325M" not in document and "{" not in document
+    options = [{"key": "anchor_rods", "choice_list": ["F1554", "A325M"]},
+               {"key": "finish", "choice_list": ["Plain", "Galvanized"]}]
+    report = specs_check.check([{"id": 1, "number": "051200", "title": "STEEL", "nodes": nodes}],
+                               {"anchor_rods": "F1554"}, {}, options, specs_check.Standards([], []))
+    assert any("[Project site]" in i["message"] for i in report["setup"])
+    report = specs_check.check([{"id": 1, "number": "051200", "title": "STEEL", "nodes": nodes}],
+                               {}, {}, options[:1], specs_check.Standards([], []))
+    assert any('asks about "finish"' in i["message"] for i in report["setup"])
+
+
+def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
+    load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
+    load(signed_in, "355913", "# PRODUCTS\n## FENDERS\n- Cone fenders.\n", "FENDERS")
+    signed_in.post("/specs/library/2/edit", data={
+        "number": "355913", "title": "FENDERS", "text": "# PRODUCTS\n## FENDERS\n- Cone fenders.\n",
+        "applies": "fenders != None"})
+    assert "fenders!=None" in text(signed_in.get("/specs/library"))
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "Cone"})
+    page = signed_in.get(f"/specs/sets/{set_id}").get_data(as_text=True)
+    assert re.search(r'value="2" checked> 355913', page)
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    check = text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    assert "Section 355913 Fenders: the choices call for it" in check
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["2"]})
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "None"})
+    assert "which the choices rule out" in text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    # The condition travels in the library file.
+    library = json.loads(zipfile.ZipFile(io.BytesIO(signed_in.get("/specs/library/file").data))
+                         .read("library.json"))
+    assert {s["number"]: s["applies"] for s in library["sections"]}["355913"] == "fenders!=None"
+    # And a new project can start from this one.
+    start = signed_in.get(f"/specs/?start_from={set_id}").get_data(as_text=True)
+    assert f'value="{set_id}" selected' in start
+
+
+def test_an_issue_waits_until_every_item_is_accepted_or_rejected(signed_in):
+    load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_english": "UK",
+                                                  "hold_shown": "1", "hold_issue": "1"})
+    held = signed_in.get(f"/specs/sets/{set_id}/export")
+    assert held.status_code == 302 and "/check" in held.headers["Location"]
+    page = signed_in.get(held.headers["Location"]).get_data(as_text=True)
+    # Each item says where it is, with the words it is about marked.
+    assert "Concrete Reinforcing" in page and "PART 1 - PRODUCTS" in page
+    assert ">Section 016000</mark>" in page
+    from app import specs_store
+    with signed_in.application.test_request_context():
+        from flask import g
+        g.user = {"id": 1, "name": "t", "role": "admin"}
+        report = specs_store.check_set(set_id)
+        keys = [i["key"] for group in specs_store.GROUPS for i in report[group]]
+        assert keys and specs_store.open_items(set_id)["total"] >= len(keys)
+    for n, key in enumerate(keys):
+        signed_in.post(f"/specs/sets/{set_id}/settle",
+                       data={"key": key, "state": "rejected" if n % 2 else "accepted"})
+    with signed_in.application.test_request_context():
+        g.user = {"id": 1, "name": "t", "role": "admin"}
+        left = specs_store.open_items(set_id)
+    assert left["checks"] == 0
+    still = signed_in.get(f"/specs/sets/{set_id}/export")
+    if left["language"]:
+        assert still.status_code == 302
+        # Language suggestions are accepted or rejected too; reject what is left.
+        with signed_in.application.test_request_context():
+            g.user = {"id": 1, "name": "t", "role": "admin"}
+            olds = {f["old"] for f in specs_store.language_set(set_id)}
+        for old in olds:
+            signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "leave", "old": old})
+    issued = signed_in.get(f"/specs/sets/{set_id}/export")
+    assert issued.mimetype == "application/zip"
+    # Opened again, it holds again.
+    signed_in.post(f"/specs/sets/{set_id}/settle", data={"key": keys[0], "state": ""})
+    assert signed_in.get(f"/specs/sets/{set_id}/export").status_code == 302
+
+
+def test_an_answer_nothing_is_written_for_is_said(signed_in):
+    load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works",
+                                                  "opt_waterproofing": ["Liquid membrane"]})
+    assert "Waterproofing: Liquid membrane" in text(signed_in.get(f"/specs/sets/{set_id}"))

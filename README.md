@@ -67,7 +67,8 @@ text** of each section and makes every project's copy of it **known**.
   naming, its **choices** (options such as LEED version or standards basis that switch the
   master's conditional paragraphs in and out) and its **words** (variables such as
   `{{engineer}}` filled in wherever the text uses them). It takes a copy of each section it
-  needs. It can also start from an earlier project's specification.
+  needs. It can also start from an earlier project's specification (*Start a new project from
+  this one*), taking its header, choices and amended sections.
 - **Amending** a section marks every difference from the master it was copied from: added,
   reworded (with the master's words beside it) and dropped. The *Amendments to the master* page
   lists them all for review before issue. Reading in a project's own old Word files lines them
@@ -108,15 +109,34 @@ meet, so the Specs Writer reads across them:
 - **Choices** are grouped under headings, and a question can take several answers (tick all
   that apply); a condition holds when any of them matches. *Add the suggested questions* on the
   options page fills in the starting list without changing anything already there.
-- **Nothing is issued that refers to what is not in it.** *Issue all* stops at the checker when
-  a reference points at a section the specification does not include, or at a paragraph its
-  choices switch off, and says which; it can still be issued anyway from there.
+- **Nothing is issued until the check is settled.** Each item on the checker, and each language
+  suggestion, is accepted (right, or dealt with) or rejected (the text stays as it is); a whole
+  group can be settled at once, and a settled item can be opened again. *Issue all* holds a
+  project while anything is open. The hold is a tick box on the project page; with it off,
+  *Issue all* still stops when a reference points at a section the specification does not
+  include, or at a paragraph its choices switch off, and it can be issued anyway from there.
+- **Where each item is.** An item names the section with its title, the part and the article
+  it sits under and the paragraph's number, links straight to the paragraph, and shows the words
+  it is about marked in the text.
+- **Sections follow the choices.** A library section can say when it belongs in a project
+  (`fenders!=None`, `precast!=None`), on its edit page. A project's *Add from the library* ticks
+  the ones its answers call for, the checker says when one is called for and missing or ruled
+  out and still in, and an answer nothing in the library is written for (waterproofing by liquid
+  membrane with no section for it) is said on the project page and on the check.
+- **Choices inside a paragraph.** The alternatives MasterSpec writes in `[brackets]` become
+  `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
+  projects that chose that answer. Brackets left in the text are listed by the checker.
+- **Steps.** A project page runs *Project and choices*, *Sections*, *Check*, *Issue*, with a Next
+  button from each to the next and the state of each at the top.
+- **Hidden text.** Words Word hides (hidden formatting, or a style that hides its text, such as
+  the editor's notes) are kept as notes, shown on the page and never issued; hidden words inside
+  a paragraph Word shows go into a note beside it.
 - **Language.** The *English* choice (UK, UK with -ize, or US) and the checker's language list
   suggest one spelling throughout (colour, aluminium, centre, metre as a length but not a cover
   meter), common spelling mistakes, grammar (the same word twice, "a" or "an", "shall conforms",
-  "shall be provide", stray spaces, brackets that do not pair) and the office's wording
+  "shall be provide", stray spaces) and the office's wording
   (*Standards and wording* page). Each is only a suggestion: the engineer accepts it, types
-  something else and accepts that, or leaves it — and a left one is not suggested again.
+  something else and accepts that, or rejects it — and a rejected one is not suggested again.
   Quoted titles, references and variables are never touched, and nothing leaves the server.
 - **SI units.** Imperial figures (°F, psi, ksi, inches, feet, lb, mils, gallons and so on) are
   offered in SI. Where both are given, the imperial one in brackets goes — and where the two

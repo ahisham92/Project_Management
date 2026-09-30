@@ -14,13 +14,32 @@
   </div>
   <div class="inline-form">
     {% if report %}
-      {% set found = report['counts']['references'] + report['counts']['outdated'] + report['counts']['standards'] + report['counts']['discrepancies'] + report['counts']['repeated'] + report['counts']['setup'] %}
-      <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Check{% if found %} ({{ found }}){% endif %}</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Check{% if waiting['total'] %} ({{ waiting['total'] }} open){% endif %}</a>
     {% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id']) }}#new" title="A new project with this one's choices, header and sections, amendments and all">Start a new project from this one</a>
     <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Issue all (.zip of .docx)</a>
   </div>
 </div>
+
+{% set answered = chosen.values() | select | list | length %}
+{% set suggested = available | selectattr('applies') | list %}
+{% set suggested_n = suggested | select('spec_fits', chosen) | list | length %}
+<nav class="spec-steps" aria-label="Steps">
+  <a class="spec-step spec-step-done" href="#step-choices"><span class="spec-step-n">1</span>
+    <span><strong>Project and choices</strong><span class="small">{{ answered }} answered</span></span></a>
+  <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections"><span class="spec-step-n">2</span>
+    <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncovered %} · {{ uncovered | length }} not covered{% endif %}</span></span></a>
+  {% if report %}
+  <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">3</span>
+    <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to accept or reject{% else %}all settled{% endif %}</span></span></a>
+  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">4</span>
+    <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% else %}ready{% endif %}</span></span></a>
+  {% else %}
+  <span class="spec-step"><span class="spec-step-n">3</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">4</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
+  {% endif %}
+</nav>
 
 {% if missing %}
   <div class="flashes"><div class="flash error">
@@ -29,7 +48,7 @@
   </div></div>
 {% endif %}
 
-<form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}">
+<form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}" id="step-choices">
 <div class="grid grid-2">
   <div class="card">
     <div class="card-head"><h2>Project information</h2></div>
@@ -60,6 +79,9 @@
       <label class="field"><span class="field-label">File names</span>
         <input type="text" name="file_pattern" value="{{ spec['file_pattern'] }}">
         <span class="field-hint">{number} is the section number: SPC-FD-{number}-ST gives SPC-FD-032000-ST.docx.</span></label>
+      <input type="hidden" name="hold_shown" value="1">
+      <label class="check"><input type="checkbox" name="hold_issue" value="1" {{ 'checked' if spec['hold_issue'] }}>
+        Hold the issue until every item on the check is accepted or rejected</label>
     </div>
   </div>
 
@@ -107,10 +129,13 @@
     </div>
   </div>
 </div>
-<div style="margin-top:12px"><button type="submit" class="btn btn-primary">Save project information and choices</button></div>
+<div class="inline-form" style="margin-top:12px">
+  <button type="submit" class="btn btn-ghost">Save</button>
+  <button type="submit" name="next" value="sections" class="btn btn-primary">Save and next: sections →</button>
+</div>
 </form>
 
-<div class="card" style="margin-top:16px">
+<div class="card" style="margin-top:16px" id="step-sections">
   <div class="card-head">
     <div>
       <h2>Sections</h2>
@@ -141,18 +166,32 @@
       </tbody>
     </table>
   </div>
+  <div class="card-body inline-form" style="justify-content:flex-end">
+    <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to accept or reject){% endif %} →</a>
+  </div>
   {% endif %}
 </div>
 
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
-    <div class="card-head"><h2>Add from the library</h2></div>
+    <div class="card-head"><div><h2>Add from the library</h2>
+      <p class="small muted" style="margin-top:2px">Suggested from the project's elements and choices above.</p></div></div>
     <div class="card-body">
+      {% if uncovered %}
+      <div class="spec-callout">
+        <p class="small"><strong>Nothing in the library is written for {{ 'this answer' if uncovered | length == 1 else 'these answers' }}:</strong></p>
+        <ul class="small">{% for label, value in uncovered %}<li>{{ label }}: {{ value }}</li>{% endfor %}</ul>
+        <p class="small muted">Check the sections cover {{ 'it' if uncovered | length == 1 else 'them' }}, write a section of this project's own below, or ask an administrator to add one to the library.</p>
+      </div>
+      {% endif %}
       {% if available %}
       <form method="post" action="{{ url_for('specs.add_sections', set_id=spec['id']) }}">
+        <p class="small muted">Ticked: the sections these choices call for. Save the choices first if you have just changed them.</p>
         <div class="checks" style="flex-direction:column">
           {% for s in available %}
-            <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"> {{ s['number'] }} — {{ s['title'] }}</label>
+            {% set fits = s['applies'] | spec_applies(chosen) %}
+            <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"{% if fits %} checked{% endif %}> {{ s['number'] }} — {{ s['title'] }}
+              {% if s['applies'] %}<span class="small {% if fits %}muted{% else %}spec-bad{% endif %}" title="When this section belongs in a project">({{ 'called for' if fits else 'not called for' }}: {{ s['applies'] }})</span>{% endif %}</label>
           {% endfor %}
         </div>
         <button type="submit" class="btn btn-primary" style="margin-top:8px">Add the ticked sections</button>

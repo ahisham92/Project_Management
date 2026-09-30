@@ -4,16 +4,16 @@
   {% if p['state'] != 'same' %}{% set klass = klass ~ ' spec-' ~ p['state'] %}{% endif %}
   {% if not p['included'] %}{% set klass = klass ~ ' spec-out' %}{% endif %}
   {% if p['level'] == 'CMT' %}
-    <div class="{{ klass }} spec-note"><span class="spec-num">Note</span><span class="spec-text">{{ p['text'] }}</span></div>
+    <div id="p-{{ p['id'] }}" class="{{ klass }} spec-note"><span class="spec-num">Note</span><span class="spec-text">{{ p['text'] }}</span></div>
   {% elif p['level'] == 'TBL' %}
-    <div class="{{ klass }}"><span class="spec-num"></span><span class="spec-text">
+    <div id="p-{{ p['id'] }}" class="{{ klass }}"><span class="spec-num"></span><span class="spec-text">
       <table class="spec-table"><tbody>
         {% for row in p['text'] | spec_rows %}<tr>{% for cell in row %}<td>{{ cell | spectext(values, reader, here) }}</td>{% endfor %}</tr>{% endfor %}
       </tbody></table>
       {% if p['state'] == 'changed' %}<span class="spec-was">The master's table was different.</span>{% endif %}
     </span></div>
   {% else %}
-    <div class="{{ klass }}">
+    <div id="p-{{ p['id'] }}" class="{{ klass }}">
       <span class="spec-num">{{ p['label'] }}</span>
       {% if p['id'] and p['state'] != 'removed' and reader is not none %}
         <button type="button" class="spec-handle" data-ref="{ref:#{{ p['id'] }}}"

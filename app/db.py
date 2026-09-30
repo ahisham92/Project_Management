@@ -531,6 +531,17 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     for column, definition in (("grp", "TEXT NOT NULL DEFAULT ''"),
                                ("kind", "TEXT NOT NULL DEFAULT 'one'")):
         _ensure_column(conn, "spec_options", column, definition)
+    # When a library section belongs in a project, as a condition on its choices.
+    _ensure_column(conn, "spec_sections", "applies", "TEXT NOT NULL DEFAULT ''")
+    # Whether a project is held back until every check item is accepted or rejected,
+    # and what was decided about each.
+    _ensure_column(conn, "spec_sets", "hold_issue", "INTEGER NOT NULL DEFAULT 1")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS spec_check_settled ("
+        " set_id INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,"
+        " key TEXT NOT NULL, state TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',"
+        " settled_by TEXT NOT NULL DEFAULT '', settled_at TEXT NOT NULL DEFAULT (datetime('now')),"
+        " PRIMARY KEY (set_id, key))")
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -610,7 +621,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
 
 # Raised whenever the starting list of questions and words gains something an
 # existing library should be offered.
-SPEC_SEED_VERSION = 2
+SPEC_SEED_VERSION = 3
 
 
 def merge_spec_seed(conn: sqlite3.Connection) -> int:
@@ -648,6 +659,10 @@ def merge_spec_seed(conn: sqlite3.Connection) -> int:
                 conn.execute("UPDATE spec_options SET choices = ?, grp = ? WHERE key = ?",
                              ("|".join(offered + extra), have[1] or grp, key))
                 added += len(extra)
+        # AWS D1.1 was the first list's counterpart for headed studs as well as
+        # for structural welding, so welding citations became the stud standard.
+        conn.execute("UPDATE spec_standards SET us = 'ASTM A108' "
+                     "WHERE bs = 'BS EN ISO 13918' AND us = 'AWS D1.1'")
         last = conn.execute("SELECT COALESCE(MAX(position), 0) FROM spec_variables").fetchone()[0]
         for key, label, default in VARIABLES:
             if conn.execute("SELECT 1 FROM spec_variables WHERE key = ?", (key,)).fetchone():

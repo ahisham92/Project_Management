@@ -211,6 +211,12 @@ def fill(text: str, values: Mapping[str, str]) -> str:
         if value == KEEP:
             left_out = True
             return kept(match.group(3) or "")
+        if match.group(3):
+            # One of the master's own choices goes in as the master wrote it,
+            # with the space or comma it starts with ("[, piling]", "[ or bolt]").
+            for raw in re.findall(r"\[([^\[\]]*)\]", match.group(3)):
+                if raw.strip(" ,;") == value and raw != value:
+                    return raw
         left_out = left_out or value == ""
         return value
 

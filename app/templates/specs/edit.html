@@ -24,6 +24,7 @@
 <form method="post" id="spec-edit-form" class="se-form">
   <input type="hidden" name="nodes" value="">
   <input type="hidden" name="mode" value="page">
+  {% if seen %}<input type="hidden" name="seen" value="{{ seen }}">{% endif %}
   <div class="inline-form se-meta">
     {% if library %}
     <label class="field w-md"><span class="field-label">Number</span>

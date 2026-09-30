@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_review.html" import review_head, stage_cell %}
+{% block title %}Team and sign-off · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{{ review_head(spec, 'review', 'Team and sign-off', 'Who may change this project, check it and issue it, and each section prepared, checked and approved by name for its words as they will be issued.') }}
+
+{% set rows = ready['rows'] %}
+<div class="card spec-ready {{ 'spec-ready-held' if ready['reasons'] else 'spec-ready-ok' }}">
+  <div class="card-body inline-form" style="justify-content:space-between">
+    <div>
+      {% if ready['reasons'] %}
+        <strong>Held:</strong> {{ ready['reasons'] | join('; ') }}.
+      {% elif not rows %}
+        No sections yet.
+      {% else %}
+        <strong>Ready to issue.</strong>
+        {% if not spec['need_signoff'] %}<span class="small muted">This project does not wait for sign-off (a tick box on the project page).</span>{% endif %}
+      {% endif %}
+      <p class="small muted" style="margin-top:2px">
+        {{ rows | selectattr('standing', 'equalto', 'approved') | list | length }} of {{ rows | length }} sections approved ·
+        <a href="{{ url_for('specs.comments', set_id=spec['id']) }}">{{ ready['open_comments'] }} open comment{{ 's' if ready['open_comments'] != 1 }}</a>
+        {% if last %} · last issued Rev {{ last['revision'] }} on {{ last['issue_date'] }}{% endif %}
+      </p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}">Issues →</a>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px" id="signoff">
+  <div class="card-head">
+    <div><h2>Sign-off</h2>
+      <p class="small muted" style="margin-top:2px">Tick sections and sign them. A section is checked by someone other than who prepared it, and approved once checked. Changing its words, or an answer that changes them, asks for the sign-off again.</p></div>
+  </div>
+  {% if not rows %}
+    <div class="card-body">{{ empty('No sections yet', 'Sections are signed once they are in the project.') }}</div>
+  {% else %}
+  <form method="post" action="{{ url_for('specs.sign_sections', set_id=spec['id']) }}" id="sign-form">
+    <input type="hidden" name="back" value="{{ url_for('specs.review_set', set_id=spec['id']) }}#signoff">
+  </form>
+  <div class="card-body inline-form">
+    {% for stage in STAGES %}
+      {% if may[stage] %}<button type="submit" form="sign-form" name="stage" value="{{ stage }}" class="btn {{ 'btn-primary' if stage == 'approved' else 'btn-ghost' }} btn-sm">Sign ticked as {{ stage }}</button>{% endif %}
+    {% endfor %}
+    {% if not (may['prepared'] or may['checked'] or may['approved']) %}<span class="small muted">Your role on this project does not sign sections.</span>{% endif %}
+  </div>
+  <div class="card-body flush table-scroll">
+    <table class="spec-sign-table">
+      <thead><tr><th class="spec-tick"><input type="checkbox" class="spec-js-only" data-tick-all aria-label="Tick all the sections"></th><th>Section</th>{% for stage in STAGES %}<th>{{ STAGE_NAMES[stage] }}</th>{% endfor %}<th class="right">Open comments</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="spec-tick"><input type="checkbox" name="row_id" value="{{ r['row_id'] }}" form="sign-form" aria-label="Tick {{ r['number'] }}"></td>
+          <td><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=r['row_id']) }}">{{ r['number'] }}</a> <span class="small muted">{{ r['title'] }}</span></td>
+          {% for stage in STAGES %}
+          <td>{{ stage_cell(spec, r['stages'].get(stage), stage, r['row_id'], url_for('specs.review_set', set_id=spec['id']) ~ '#signoff', take_back) }}</td>
+          {% endfor %}
+          <td class="right">{% set n = open_by_section.get(r['row_id'], 0) %}{% if n %}<a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=r['row_id']) }}#comments">{{ n }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px" id="team">
+  <div class="card-head">
+    <div><h2>Team</h2>
+      <p class="small muted" style="margin-top:2px">
+        {% if is_open %}Nobody is listed yet, so everyone with THEMIS can change, sign and issue this project. List a team and only the team can.
+        {% else %}Only the people listed change this project; anyone with THEMIS can read it and comment on it.{% endif %}
+      </p></div>
+  </div>
+  {% if may['team'] %}
+  <form method="post" action="{{ url_for('specs.save_team', set_id=spec['id']) }}">
+    <div class="card-body flush table-scroll">
+      <table>
+        <thead><tr><th>Person</th><th>Role</th></tr></thead>
+        <tbody>
+        {% for p in people %}
+          <tr>
+            <td>{{ p['name'] or p['email'] }}{% if p['role'] == 'admin' %} <span class="small muted">(administrator)</span>{% endif %}</td>
+            <td>
+              {% if p['id'] == spec['created_by'] %}
+                <span>Lead</span> <span class="small muted">started this project</span>
+              {% else %}
+              <select name="role_{{ p['id'] }}" aria-label="Role for {{ p['name'] or p['email'] }}">
+                <option value="">Not on the team</option>
+                {% for r in ROLES %}<option value="{{ r }}"{% if members.get(p['id']) == r %} selected{% endif %}>{{ ROLE_NAMES[r] }}: {{ ROLE_HINTS[r] }}</option>{% endfor %}
+              </select>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-body inline-form" style="justify-content:flex-end">
+      <button type="submit" class="btn btn-primary btn-sm">Save the team</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="card-body">
+    {% if team %}
+    <ul class="small">{% for m in team %}<li>{{ m['name'] or m['email'] }}: {{ ROLE_NAMES[m['role']] }}</li>{% endfor %}</ul>
+    {% endif %}
+    <p class="small muted">Your role: {{ ROLE_NAMES[my_role] if my_role else 'not on the team' }}. The project's lead or an administrator chooses the team.</p>
+  </div>
+  {% endif %}
+</div>
+<script>
+document.querySelectorAll('[data-tick-all]').forEach(function (all) {
+  all.addEventListener('change', function () {
+    document.querySelectorAll('input[name=row_id][form=sign-form]').forEach(function (b) { b.checked = all.checked; });
+  });
+});
+</script>
+{% endblock %}

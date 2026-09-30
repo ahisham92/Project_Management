@@ -21,7 +21,7 @@ from flask import (
 )
 from markupsafe import Markup, escape
 
-from .. import specs, specs_check, specs_export, specs_questions, specs_seed
+from .. import specs, specs_check, specs_export, specs_questions, specs_review as review, specs_seed
 from .. import specs_store as store
 from ..auth import login_required
 
@@ -207,7 +207,7 @@ def _edited_nodes(body: str) -> list[dict]:
     return specs.align(before, specs.from_text(request.form.get("text", "")))
 
 
-def _editor(s: dict, family: str, library: bool, spec=None):
+def _editor(s: dict, family: str, library: bool, spec=None, seen: str = ""):
     """The edit page: the page editor, with the plain text beside it."""
     nodes = specs.loads(s["body"])
     sections = [{"number": x["number"], "title": specs_check.title_case(x["title"])}
@@ -216,7 +216,7 @@ def _editor(s: dict, family: str, library: bool, spec=None):
     return render_template(
         "specs/edit.html", spec=spec, section=s, text=specs.to_text(nodes),
         nodes=nodes, nbs=specs.is_nbs(nodes), sections=sections, options=options,
-        variables=variables, library=library,
+        variables=variables, library=library, seen=seen,
         options_json=[{"key": o["key"], "label": o["label"], "choices": o["choice_list"],
                        "group": o.get("grp") or ""} for o in options],
         variables_json=[{"key": v["key"], "label": v["label"]} for v in variables])
@@ -290,9 +290,10 @@ def _progress_answer(response: Response) -> Response:
 @login_required
 def index():
     everything = store.sets()
-    mine = [s for s in everything if s["created_by"] == g.user["id"]]
+    on = review.my_sets(g.user)
+    mine = [s for s in everything if s["created_by"] == g.user["id"] or s["id"] in on]
     return render_template("specs/index.html", sets=everything, mine=mine,
-                           others=[s for s in everything if s["created_by"] != g.user["id"]],
+                           others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
                            is_admin=_is_admin(), start_from=request.args.get("start_from", type=int))
 
@@ -413,7 +414,9 @@ def spec_set(set_id: int):
         from_model={(e["key"], specs._norm(e["value"])) for e in (model or {}).get("elements", [])},
         icons=specs_seed.ELEMENT_ICONS, group_icons=GROUP_ICONS,
         labels={o["key"]: o["label"] for o in everything},
-        missing=missing, is_admin=_is_admin(), report=report)
+        missing=missing, is_admin=_is_admin(), report=report, seen=review.project_mark(row),
+        team=review.team(set_id), may_edit=review.may(row, g.user, "edit"),
+        open_comments=review.open_comments(set_id), last_issue=review.last_issue(set_id))
 
 
 TILE_KEYS = {key for key, _g, _how, _icon in specs_seed.ELEMENTS}
@@ -486,7 +489,19 @@ def _grouped(options: list[dict]) -> list[tuple[str, list[dict]]]:
 @bp.post("/sets/<int:set_id>")
 @login_required
 def save_set(set_id: int):
-    _set_or_404(set_id)
+    row = _set_or_404(set_id)
+    seen = request.form.get("seen", "")
+    if seen and seen != review.project_mark(row):
+        # Everything on this page is sent at once: saving a page opened before
+        # somebody else's change would put their answers back as they were.
+        last = review.last_change(set_id)
+        flash(f"{(last or {}).get('who') or 'Somebody'} changed this project "
+              f"{review.minutes_ago((last or {}).get('at') or row['updated_at'])} after you opened this page, "
+              "so nothing was saved over it. The page now shows the project as it stands: make your "
+              "changes again and save.", "error")
+        step = request.form.get("next")
+        return redirect(url_for("specs.spec_set", set_id=set_id)
+                        + (f"#step-{step}" if step in ("elements", "questions", "sections") else ""))
     chosen = {}
     toggles = {key for key, _g, how, _i in specs_seed.ELEMENTS if how == "toggle"}
     for o in store.options():
@@ -663,33 +678,46 @@ def export_set(set_id: int):
               "correct the references, then issue — or issue anyway from the top of this page.",
               "error")
         return redirect(url_for("specs.check_set", set_id=set_id, issuing=1, fmt=keep_fmt))
+    data, name, mime = _bundle(row, sections, fmt)
+    return Response(data, mimetype=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+def _bundle(row: dict, sections: list[dict], fmt: str, since: dict | None = None
+            ) -> tuple[bytes, str, str]:
+    """The project's sections as issued: clean Word (a .zip of .docx), Word
+    with tracked changes against the master, one PDF, or (``since``: an issue
+    on the register) Word with every change since that issue marked.
+    Returns the file, its name and its type."""
     chosen, values = store.chosen_for(row), store.values_for(row)
     template = store.template_bytes(row["family"])
-    reader = store.reader(store.set_whole(set_id), chosen)
+    reader = store.reader(store.set_whole(row["id"]), chosen)
     name = "".join(c if c.isalnum() or c in "-_ " else "-" for c in (row["code"] or row["name"]))
     name = f'{name.strip() or "specification"} - specification REV {row["revision"]}'
     if fmt == "pdf":
         data = specs_export.write_pdf(
             [(s, specs.loads(s["body"]), reader.issued(s["number"])) for s in sections],
             row, chosen, values, template, title=row["name"])
-        return Response(data, mimetype="application/pdf",
-                        headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'})
+        return data, f"{name}.pdf", "application/pdf"
+    before = {s["number"]: s for s in since["snapshot"].get("sections", [])} if since else {}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
         for s in sections:
-            if fmt == "tracked":
+            if fmt == "tracked" or since:
+                base = (review.base_nodes(before.get(s["number"])) if since else store.base_of(s))
                 data, _ = specs_export.write_tracked_docx(
-                    s, specs.loads(s["body"]), store.base_of(s), row, chosen, values, template,
-                    resolve=reader.issued(s["number"]), author=s.get("updated_by") or "")
+                    s, specs.loads(s["body"]), base, row, chosen, values, template,
+                    resolve=reader.issued(s["number"]),
+                    author=f"Changes since Rev {since['revision']}" if since else (s.get("updated_by") or ""))
                 bundle.writestr(specs_export.tracked_name(row["file_pattern"], s), data)
                 continue
             data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, values, template,
                                     resolve=reader.issued(s["number"]))
             bundle.writestr(specs.file_name(row["file_pattern"], s), data)
-    if fmt == "tracked":
+    if since:
+        name += f" - changes since REV {since['revision']}"
+    elif fmt == "tracked":
         name += " - tracked changes"
-    return Response(buffer.getvalue(), mimetype="application/zip",
-                    headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
+    return buffer.getvalue(), f"{name}.zip", "application/zip"
 
 
 def _not_issued(report: dict) -> list[dict]:
@@ -804,6 +832,7 @@ def details(set_id: int):
     if request.method == "POST" and groups:
         given, split = specs_questions.read_form(request.form, groups[here]["questions"])
         switches = {q["key"] for q in groups[here]["questions"] if q.get("switch")}
+        kept = _answered_meanwhile(row, given, switches)
         before = store.ruled_out(set_id)
         specs_questions.save_switches(set_id, {k: v for k, v in given.items() if k in switches})
         specs_questions.save_answers(set_id, {k: v for k, v in given.items() if k not in switches},
@@ -811,6 +840,10 @@ def details(set_id: int):
         answered = sum(1 for k, v in given.items() if "@" not in k and v is not None)
         flash(f"Saved {answered} answer{'s' if answered != 1 else ''} in "
               f"{groups[here]['name']}.", "success")
+        if kept:
+            flash("Somebody else answered " + "; ".join(kept) + " after you opened this page, so "
+                  "theirs was kept; change it again if yours should stand.", "error")
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
         if switches:
             _added(set_id, before)
         if request.form.get("go") == "back" and here:
@@ -826,7 +859,37 @@ def details(set_id: int):
         open_n=sum(g["open"] for g in groups), need_n=sum(g["need"] for g in groups), element_labels=labels,
         FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP,
-        explain_key=request.args.get("explain", ""))
+        explain_key=request.args.get("explain", ""),
+        was=json.dumps(_group_answers(row, groups[here]) if groups else {}, ensure_ascii=False))
+
+
+def _group_answers(row: dict, group: dict) -> dict:
+    """The answers a group's page shows as it is opened, to tell a later save
+    which of them somebody else has changed since."""
+    keys = {q["key"] for q in group["questions"] if not q.get("switch")}
+    return {k: v for k, v in specs_questions.answers_of(row).items() if k.partition("@")[0] in keys} \
+        | {k: None for k in keys if k not in specs_questions.answers_of(row)}
+
+
+def _answered_meanwhile(row: dict, given: dict, switches: set) -> list[str]:
+    """Answers somebody else changed after this page was opened, taken out of
+    ``given`` so this save does not put back what the page showed; in words."""
+    try:
+        was = json.loads(request.form.get("was") or "null")
+    except ValueError:
+        was = None
+    if not isinstance(was, dict):
+        return []
+    now = specs_questions.answers_of(store.spec_set(row["id"]))
+    labels = {k: d.get("label") or k for k, d in specs_questions.definitions().items()}
+    kept = []
+    for key in list(given):
+        if key in switches or key.partition("@")[0] not in {k.partition("@")[0] for k in was}:
+            continue
+        if was.get(key) != now.get(key) and given[key] != now.get(key):
+            kept.append(f"{labels.get(key.partition('@')[0], key)} ({now.get(key) or 'cleared'})")
+            given.pop(key)
+    return kept
 
 
 @bp.get("/sets/<int:set_id>/explain/<key>")
@@ -1004,12 +1067,28 @@ def set_section(set_id: int, row_id: int):
     nodes = specs.loads(s["body"])
     base = store.base_of(s)
     chosen = store.chosen_for(row)
+    words = next((w for w in review.issued_words(row) if w["row_id"] == row_id), None)
+    stages = review.signoffs(set_id, {row_id: review.fingerprint(words)} if words else {}).get(row_id, {})
+    threads = review.comments(set_id, row_id)
+    by_node: dict[str, list[dict]] = {}
+    for t in threads:
+        by_node.setdefault(t["node_id"], []).append(t)
+    here = {n["id"] for n in nodes}
+    back = url_for("specs.set_section", set_id=set_id, row_id=row_id)
+    lead = review.role_of(row, g.user) == "lead"
     return render_template(
         "specs/section.html", spec=row, section=s, rows=_rows(nodes, chosen, base),
         compared=base is not None, values=store.values_for(row), is_admin=_is_admin(),
         options=store.options(), chosen=chosen,
         reader=store.reader(store.set_whole(set_id), chosen),
-        master=store.section(s["section_id"]) if s["section_id"] else None)
+        master=store.section(s["section_id"]) if s["section_id"] else None,
+        cmt={"spec": row, "back": back, "threads": by_node,
+             "may_close": lambda c: review.may_close(row, c)},
+        general=by_node.get("", []), lost=[t for k, ts in by_node.items() if k and k not in here for t in ts],
+        open_n=sum(t["state"] == "open" for t in threads), stages=stages, STAGES=review.STAGES,
+        STAGE_NAMES=review.STAGE_NAMES, standing=review.standing(stages),
+        may={w: review.may(row, g.user, w) for w in ("edit", "prepared", "checked", "approved")},
+        take_back=lambda x: lead or x["user_id"] == g.user["id"], editing=review.editing(row_id))
 
 
 @bp.route("/sets/<int:set_id>/sections/<int:row_id>/edit", methods=["GET", "POST"])
@@ -1023,13 +1102,36 @@ def edit_set_section(set_id: int, row_id: int):
         except specs.SpecError as exc:
             flash(str(exc), "error")
             return redirect(url_for("specs.edit_set_section", set_id=set_id, row_id=row_id))
+        seen = request.form.get("seen", "")
+        if seen and seen != review.section_mark(s):
+            # Somebody saved this section after this editor was opened: nothing
+            # is saved over them; the engineer's own version is shown again to
+            # look at theirs first and then save on purpose.
+            flash(Markup("{who} saved this section {when} while you were editing, so yours was not "
+                         "saved over it. Your version is below: <a href=\"{url}\" target=\"_blank\">see "
+                         "theirs</a>, then Save to put yours in its place.").format(
+                who=s["updated_by"] or "Somebody", when=review.minutes_ago(s["updated_at"]),
+                url=url_for("specs.set_section", set_id=set_id, row_id=row_id)), "error")
+            mine = dict(s, body=specs.dumps(nodes),
+                        title=(request.form.get("title") or s["title"]).strip().upper(),
+                        doc_code=(request.form.get("doc_code") if request.form.get("doc_code") is not None
+                                  else s["doc_code"]).strip())
+            return _editor(mine, row["family"], library=False, spec=row, seen=review.section_mark(s))
         store.save_set_section(set_id, row_id, nodes, title=request.form.get("title"),
                                doc_code=request.form.get("doc_code"))
+        review.stop_editing(row_id)
         flash("Saved. Anything that differs from the master is marked.", "success")
         if request.form.get("stay"):
             return redirect(url_for("specs.edit_set_section", set_id=set_id, row_id=row_id))
         return redirect(url_for("specs.set_section", set_id=set_id, row_id=row_id))
-    return _editor(s, row["family"], library=False, spec=row)
+    others = review.start_editing(row_id)
+    if others:
+        flash(Markup("{names} opened this section in the editor {when}. If you both save, the second "
+                     "save is stopped and shown the first, so nothing is lost; still, a word first "
+                     "saves the work.").format(
+            names=", ".join(o["name"] for o in others), when=review.minutes_ago(others[0]["since"])),
+            "notice")
+    return _editor(s, row["family"], library=False, spec=row, seen=review.section_mark(s))
 
 
 @bp.post("/sets/<int:set_id>/sections/<int:row_id>/<action>")
@@ -1660,3 +1762,7 @@ def delete_library_sections():
     else:
         flash("Tick the sections to take out first.", "error")
     return redirect(url_for("specs.library", family=family))
+
+
+# Review, approval and issue control: its routes join this blueprint.
+from . import specs_review_views  # noqa: E402,F401

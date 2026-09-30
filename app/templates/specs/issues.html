@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% from "specs/_review.html" import review_head %}
+{% block title %}Issues · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{{ review_head(spec, 'issues', 'Issues', 'Every issue of this specification: its revision, purpose and date, who prepared, checked and approved it, and the files exactly as they were sent.') }}
+
+{% if may_issue and sections %}
+<div class="card" id="issue-new">
+  <div class="card-head"><div><h2>Issue a new revision</h2>
+    <p class="small muted" style="margin-top:2px">The files carry the revision and date given here; a copy is kept below exactly as sent.</p></div></div>
+  {% if ready and ready['reasons'] %}
+  <div class="card-body">
+    <p><strong>Held:</strong> {{ ready['reasons'] | join('; ') }}.</p>
+    <p class="small muted">See <a href="{{ url_for('specs.review_set', set_id=spec['id']) }}">Team and sign-off</a>{% if ready['waiting'] and ready['waiting']['total'] %} and <a href="{{ url_for('specs.check_set', set_id=spec['id']) }}">the check</a>{% endif %}.</p>
+  </div>
+  {% else %}
+  <form method="post" action="{{ url_for('specs.issue_set', set_id=spec['id']) }}" class="card-body" style="display:grid;gap:12px">
+    <div class="inline-form">
+      <label class="field w-sm"><span class="field-label">Revision</span>
+        <input type="text" name="revision" value="{{ suggested }}" required></label>
+      <label class="field w-md"><span class="field-label">Issue date</span>
+        <input type="date" name="issue_date" value="{{ today }}"></label>
+      <label class="field w-lg"><span class="field-label">Purpose</span>
+        <select name="purpose" data-purpose>
+          {% for p in purposes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+          <option value="__other__">Other…</option>
+        </select></label>
+      <label class="field flex1" data-purpose-other hidden><span class="field-label">Purpose, in words</span>
+        <input type="text" name="purpose_other"></label>
+    </div>
+    <fieldset class="spec-families">
+      <legend class="field-label">Files</legend>
+      <label class="spec-family"><input type="radio" name="fmt" value="docx" checked><span><strong>Word</strong> <span class="small muted">A .zip of one clean .docx per section.</span></span></label>
+      <label class="spec-family"><input type="radio" name="fmt" value="pdf"><span><strong>PDF</strong> <span class="small muted">Every section in one PDF.</span></span></label>
+      {% if last %}<label class="spec-family"><input type="radio" name="fmt" value="since"><span><strong>Word with the changes since Rev {{ last['revision'] }} marked</strong> <span class="small muted">Each section with every change since the last issue as Word's tracked changes, for the revision marks.</span></span></label>{% endif %}
+    </fieldset>
+    <label class="field"><span class="field-label">Note (optional)</span>
+      <textarea name="note" rows="2" placeholder="e.g. Issued with drawing package 3; client comments of 12 May addressed"></textarea></label>
+    {% if missing and not spec['hold_issue'] %}
+    <label class="check"><input type="checkbox" name="anyway" value="1"> Issue anyway: {{ missing | length }} reference{{ 's' if missing | length != 1 }} point at sections or paragraphs this issue does not contain</label>
+    {% endif %}
+    <div class="inline-form" style="justify-content:flex-end">
+      <button type="submit" class="btn btn-primary">Issue Rev <span data-rev>{{ suggested }}</span></button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% elif sections %}
+<p class="small muted">Your role on this project does not issue it: an approver or the lead does. You can download a copy from the project page at any time; it is not recorded as an issue.</p>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Register</h2></div>
+  {% if not issues %}
+    <div class="card-body">{{ empty('Nothing issued yet', 'Each issue made here is listed with its files.') }}</div>
+  {% else %}
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Rev</th><th>Date</th><th>Purpose</th><th>Prepared</th><th>Checked</th><th>Approved</th><th>Issued by</th><th></th></tr></thead>
+      <tbody>
+      {% for i in issues %}
+        <tr id="issue-{{ i['id'] }}">
+          <td><strong>{{ i['revision'] }}</strong></td>
+          <td class="small">{{ i['issue_date'] }}</td>
+          <td>{{ i['purpose'] }}{% if i['note'] %}<div class="small muted">{{ i['note'] }}</div>{% endif %}</td>
+          {% for stage in ('prepared', 'checked', 'approved') %}<td class="small">{{ (i['signed'].get(stage) or []) | join(', ') or '—' }}</td>{% endfor %}
+          <td class="small">{{ i['issued_by'] }}<div class="muted">{{ i['issued_at'][:16] }}</div></td>
+          <td class="right" style="white-space:nowrap">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.issue_file', set_id=spec['id'], issue_id=i['id']) }}" title="{{ i['filename'] }}">{{ {'pdf': 'PDF', 'since': 'Word, changes marked'}.get(i['fmt'], 'Word') }} as issued</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.changes', set_id=spec['id'], since=i['id']) }}">Changes since</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<script>
+(function () {
+  var pick = document.querySelector('[data-purpose]'), other = document.querySelector('[data-purpose-other]');
+  if (pick && other) pick.addEventListener('change', function () { other.hidden = pick.value !== '__other__'; });
+  var rev = document.querySelector('input[name=revision]'), shown = document.querySelector('[data-rev]');
+  if (rev && shown) rev.addEventListener('input', function () { shown.textContent = rev.value; });
+})();
+</script>
+{% endblock %}

@@ -39,6 +39,7 @@ def test_a_question_explains_itself_with_the_projects_own_codes(app, signed_in):
     assert panel.index("ACI 318-19") < panel.index("BS 8500-1")
     assert "this project&#39;s basis" in panel or "this project's basis" in panel
     assert panel.index("American: ACI") < panel.index("British and European: BS")
+    assert panel.count("spec-explain-mine") == 1
     assert "19.2.1.1" in panel and "Where it goes in this project" in panel
     assert signed_in.get(f"/specs/sets/{set_id}/explain/no_such_key").status_code == 404
     # A library file without explanations does not clear them.

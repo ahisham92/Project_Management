@@ -20,11 +20,27 @@
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id']) }}#new" title="A new project with this one's choices, header and sections, amendments and all">Start a new project from this one</a>
     {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id']) }}" title="Every section as issued, as pages to turn">Read as a book</a>{% endif %}
-    <a class="btn btn-ghost" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='tracked') }}" title="Every change from the master as Word's tracked changes, one .docx per section">Issue all, tracked changes (.zip)</a>
-    <a class="btn btn-ghost" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='pdf') }}" title="Every section in one PDF">Issue all as one PDF</a>
-    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}" title="A clean copy, one .docx per section">Issue all (.zip of .docx)</a>
+    <details class="spec-menu">
+      <summary class="btn btn-ghost" title="A copy to read or send round; not recorded as an issue">Download a copy</summary>
+      <div class="spec-menu-list">
+        <a href="{{ url_for('specs.export_set', set_id=spec['id']) }}" title="A clean copy, one .docx per section">Word (.zip of .docx)</a>
+        <a href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='tracked') }}" title="Every change from the master as Word's tracked changes, one .docx per section">Word, changes from the master tracked (.zip)</a>
+        <a href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='pdf') }}" title="Every section in one PDF">One PDF</a>
+      </div>
+    </details>
+    <a class="btn btn-ghost" href="{{ url_for('specs.review_set', set_id=spec['id']) }}">Team and sign-off</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.comments', set_id=spec['id']) }}">Comments{% if open_comments %} ({{ open_comments }} open){% endif %}</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.history', set_id=spec['id']) }}">History</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}" title="Issue a revision and keep it on the register">Issue…</a>
   </div>
 </div>
+<p class="small muted" style="margin:-6px 0 12px">
+  {% if team %}Team: {% for m in team %}{{ m['name'] or m['email'] }} ({{ m['role'] }}){{ ', ' if not loop.last }}{% endfor %}.{% else %}No team listed: anyone with THEMIS can change and issue it.{% endif %}
+  {% if last_issue %} Last issued Rev {{ last_issue['revision'] }} on {{ last_issue['issue_date'] }}{% if last_issue['purpose'] %} ({{ last_issue['purpose'] | lower }}){% endif %}; <a href="{{ url_for('specs.changes', set_id=spec['id']) }}">changes since</a>.{% endif %}
+</p>
+{% if not may_edit %}
+<div class="flashes"><div class="flash notice">You can read and comment on this project; only its team changes it. Its lead can add you on <a href="{{ url_for('specs.review_set', set_id=spec['id']) }}#team">Team and sign-off</a>.</div></div>
+{% endif %}
 
 {% set answered = chosen.values() | select | list | length %}
 {% set suggested = available | selectattr('applies') | list %}
@@ -57,11 +73,14 @@
   {% if report %}
   <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
     <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to settle{% else %}all settled{% endif %}</span></span></a>
-  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">7</span>
-    <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% else %}ready{% endif %}</span></span></a>
+  <a class="spec-step" href="{{ url_for('specs.review_set', set_id=spec['id']) }}"><span class="spec-step-n">7</span>
+    <span><strong>Review</strong><span class="small">sign-off{% if open_comments %} · {{ open_comments }} comment{{ 's' if open_comments != 1 }}{% endif %}</span></span></a>
+  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.issues', set_id=spec['id']) }}"><span class="spec-step-n">8</span>
+    <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% elif last_issue %}last Rev {{ last_issue['revision'] }}{% else %}ready{% endif %}</span></span></a>
   {% else %}
   <span class="spec-step"><span class="spec-step-n">6</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
-  <span class="spec-step"><span class="spec-step-n">7</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">7</span><span><strong>Review</strong><span class="small">after the check</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">8</span><span><strong>Issue</strong><span class="small">after sign-off</span></span></span>
   {% endif %}
 </nav>
 
@@ -76,6 +95,7 @@
 <form method="post" action="{{ url_for('specs.upload_model', set_id=spec['id']) }}" enctype="multipart/form-data" id="model-form"></form>
 
 <form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}" id="step-choices">
+<input type="hidden" name="seen" value="{{ seen }}">
 <div class="card" id="step-project" data-step="project">
   <div class="card-head"><div><h2><span class="spec-n">1</span> Project</h2>
     <p class="small muted" style="margin-top:2px">What goes on every page of the issue, and which kind of specification it is.</p></div></div>
@@ -122,6 +142,9 @@
       <input type="hidden" name="hold_shown" value="1">
       <label class="check"><input type="checkbox" name="hold_issue" value="1" {{ 'checked' if spec['hold_issue'] }}>
         Hold the issue until every item on the check is accepted or rejected</label>
+      <input type="hidden" name="signoff_shown" value="1">
+      <label class="check"><input type="checkbox" name="need_signoff" value="1" {{ 'checked' if spec['need_signoff'] }}>
+        Hold the issue until every section is prepared, checked and approved, and every review comment is closed</label>
     </div>
   </div>
   <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">

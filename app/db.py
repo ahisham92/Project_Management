@@ -586,6 +586,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         " content BLOB NOT NULL, added_by TEXT NOT NULL DEFAULT '',"
         " added_at TEXT NOT NULL DEFAULT (datetime('now')))")
     conn.execute("CREATE INDEX IF NOT EXISTS spec_question_images_key ON spec_question_images (key)")
+    _spec_review(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -667,6 +668,102 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
 # Raised whenever the starting list of questions and words gains something an
 # existing library should be offered.
 SPEC_SEED_VERSION = 4
+
+
+def _spec_review(conn: sqlite3.Connection) -> None:
+    """Review, approval and issue control for a project's specification: its
+    team, who prepared, checked and approved each section, every issue with a
+    frozen copy, reviewers' comments on paragraphs, a history of every change,
+    and who has a section open in the editor."""
+    # Whether the issue waits for every section to be signed off and every
+    # comment closed, as hold_issue makes it wait for the check.
+    _ensure_column(conn, "spec_sets", "need_signoff", "INTEGER NOT NULL DEFAULT 0")
+    conn.executescript(
+        """
+        -- A project with nobody listed is open to everyone with THEMIS, as
+        -- before; once it has a team, only the team changes it.
+        CREATE TABLE IF NOT EXISTS spec_set_members (
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role        TEXT    NOT NULL,
+            added_by    TEXT    NOT NULL DEFAULT '',
+            added_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (set_id, user_id)
+        );
+        -- A stage (prepared, checked, approved) holds for the section as it
+        -- was issued-text-wise when it was signed: fingerprint says which.
+        CREATE TABLE IF NOT EXISTS spec_signoffs (
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            row_id      INTEGER NOT NULL REFERENCES spec_set_sections(id) ON DELETE CASCADE,
+            stage       TEXT    NOT NULL,
+            user_id     INTEGER,
+            name        TEXT    NOT NULL DEFAULT '',
+            at          TEXT    NOT NULL DEFAULT (datetime('now')),
+            fingerprint TEXT    NOT NULL DEFAULT '',
+            PRIMARY KEY (row_id, stage)
+        );
+        -- Every issue: its revision, purpose and date, the files as sent, and
+        -- the issued words of each section (snapshot) to compare the next with.
+        CREATE TABLE IF NOT EXISTS spec_issues (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            revision    TEXT    NOT NULL,
+            purpose     TEXT    NOT NULL DEFAULT '',
+            issue_date  TEXT    NOT NULL DEFAULT '',
+            note        TEXT    NOT NULL DEFAULT '',
+            fmt         TEXT    NOT NULL DEFAULT 'docx',
+            filename    TEXT    NOT NULL DEFAULT '',
+            mime        TEXT    NOT NULL DEFAULT '',
+            content     BLOB,
+            snapshot    TEXT    NOT NULL DEFAULT '{}',
+            signoffs    TEXT    NOT NULL DEFAULT '[]',
+            history_mark INTEGER NOT NULL DEFAULT 0,
+            user_id     INTEGER,
+            issued_by   TEXT    NOT NULL DEFAULT '',
+            issued_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS spec_issues_set ON spec_issues (set_id);
+        CREATE TABLE IF NOT EXISTS spec_comments (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            row_id      INTEGER REFERENCES spec_set_sections(id) ON DELETE SET NULL,
+            number      TEXT    NOT NULL DEFAULT '',
+            node_id     TEXT    NOT NULL DEFAULT '',
+            parent_id   INTEGER REFERENCES spec_comments(id) ON DELETE CASCADE,
+            label       TEXT    NOT NULL DEFAULT '',
+            quote       TEXT    NOT NULL DEFAULT '',
+            body        TEXT    NOT NULL,
+            user_id     INTEGER,
+            author      TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            state       TEXT    NOT NULL DEFAULT 'open',
+            closed_by   TEXT    NOT NULL DEFAULT '',
+            closed_at   TEXT    NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS spec_comments_set ON spec_comments (set_id, row_id);
+        CREATE TABLE IF NOT EXISTS spec_history (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            row_id      INTEGER,
+            number      TEXT    NOT NULL DEFAULT '',
+            kind        TEXT    NOT NULL,
+            what        TEXT    NOT NULL DEFAULT '',
+            before      TEXT    NOT NULL DEFAULT '',
+            after       TEXT    NOT NULL DEFAULT '',
+            user_id     INTEGER,
+            who         TEXT    NOT NULL DEFAULT '',
+            at          TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS spec_history_set ON spec_history (set_id, id);
+        CREATE TABLE IF NOT EXISTS spec_editing (
+            row_id      INTEGER NOT NULL REFERENCES spec_set_sections(id) ON DELETE CASCADE,
+            user_id     INTEGER NOT NULL,
+            name        TEXT    NOT NULL DEFAULT '',
+            since       TEXT    NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (row_id, user_id)
+        );
+        """
+    )
 
 
 def _spec_families(conn: sqlite3.Connection) -> None:

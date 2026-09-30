@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "specs/_paragraph.html" import paragraph %}
+{% from "specs/_review.html" import stage_cell, thread %}
 {% block title %}{{ section['number'] }} {{ section['title'] }} · THEMIS{% endblock %}
 
 {% block content %}
@@ -24,7 +25,7 @@
   </div>
   <div class="inline-form">
     {% if spec %}
-      <a class="btn btn-primary" href="{{ url_for('specs.edit_set_section', set_id=spec['id'], row_id=section['id']) }}">Amend</a>
+      {% if may['edit'] %}<a class="btn btn-primary" href="{{ url_for('specs.edit_set_section', set_id=spec['id'], row_id=section['id']) }}">Amend</a>{% endif %}
       <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id']) }}" title="Clean copy in the house template">Download .docx</a>
       <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id'], fmt='tracked') }}" title="{% if master %}Every change from the master as Word's tracked changes, to accept or reject in Word{% else %}This project's own section: every paragraph shows as an insertion{% endif %}">Word with tracked changes</a>
       <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id'], fmt='pdf') }}" title="The section as issued, as a PDF">PDF</a>
@@ -37,6 +38,34 @@
     {% endif %}
   </div>
 </div>
+
+{% if spec %}
+{% if editing %}
+<div class="flashes"><div class="flash notice">{% for e in editing %}{{ e['name'] }}{{ ', ' if not loop.last }}{% endfor %} opened this section in the editor {{ editing[0]['since'] | ago }}: saving over each other is caught, but check with {{ 'them' if editing | length > 1 else editing[0]['name'] }} first.</div></div>
+{% endif %}
+<div class="card spec-signstrip" style="margin-bottom:12px" id="signoff">
+  <div class="card-body inline-form" style="justify-content:space-between;align-items:flex-start">
+    <div class="spec-signstrip-stages">
+      {% for stage in STAGES %}
+      <div><span class="field-label">{{ STAGE_NAMES[stage] }}</span>
+        {{ stage_cell(spec, stages.get(stage), stage, section['id'], url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) ~ '#signoff', take_back) }}</div>
+      {% endfor %}
+    </div>
+    <div class="inline-form">
+      {% set next_stage = {'': 'prepared', 'prepared': 'checked', 'checked': 'approved'}.get(standing) %}
+      {% if next_stage and may[next_stage] %}
+      <form method="post" action="{{ url_for('specs.sign_sections', set_id=spec['id']) }}">
+        <input type="hidden" name="row_id" value="{{ section['id'] }}"><input type="hidden" name="stage" value="{{ next_stage }}">
+        <input type="hidden" name="back" value="{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) }}#signoff">
+        <button type="submit" class="btn btn-primary btn-sm">Sign as {{ next_stage }}</button>
+      </form>
+      {% endif %}
+      <a class="btn btn-ghost btn-sm" href="#comments">Comments ({{ open_n }} open)</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.history', set_id=spec['id'], section=section['id']) }}">History</a>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% if spec and master and section['master_version'] and section['master_version'] > section['base_version'] %}
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
@@ -58,7 +87,7 @@
 
 <div class="card">
   <div class="card-body spec-doc">
-    {% for p in rows %}{{ paragraph(p, values, reader, section['number']) }}{% else %}<p class="muted small">Nothing in this section yet.</p>{% endfor %}
+    {% for p in rows %}{{ paragraph(p, values, reader, section['number'], cmt if spec else none) }}{% else %}<p class="muted small">Nothing in this section yet.</p>{% endfor %}
     <p class="spec-p spec-PRT" style="margin-top:18px"><span class="spec-text">END OF SECTION {{ section['number'] }}</span></p>
   </div>
 </div>
@@ -79,6 +108,43 @@ document.addEventListener("click", function (e) {
 </script>
 
 {% if spec %}
+<div class="card" style="margin-top:16px" id="comments">
+  <div class="card-head"><div><h2>Review comments</h2>
+    <p class="small muted" style="margin-top:2px">&#128172; beside a paragraph comments on it; the comment shows under it until it is closed. <a href="{{ url_for('specs.comments', set_id=spec['id']) }}">Every comment on the project</a>.</p></div></div>
+  <div class="card-body">
+    {% for t in general %}{{ thread(spec, t, cmt['back'], cmt['may_close']) }}{% endfor %}
+    {% if lost %}<p class="small muted">On paragraphs no longer in this section:</p>{% for t in lost %}{{ thread(spec, t, cmt['back'], cmt['may_close'], show_where=true) }}{% endfor %}{% endif %}
+    <form method="post" action="{{ url_for('specs.add_comment', set_id=spec['id']) }}" style="display:grid;gap:6px;margin-top:8px">
+      <input type="hidden" name="row_id" value="{{ section['id'] }}"><input type="hidden" name="back" value="{{ cmt['back'] }}">
+      <textarea name="body" rows="2" required aria-label="Comment on the whole section" placeholder="A comment on the whole section"></textarea>
+      <div><button type="submit" class="btn btn-sm">Add the comment</button></div>
+    </form>
+  </div>
+</div>
+<form method="post" action="{{ url_for('specs.add_comment', set_id=spec['id']) }}" class="spec-cmt-new" id="spec-cmt-new" hidden>
+  <input type="hidden" name="row_id" value="{{ section['id'] }}"><input type="hidden" name="node_id" value="">
+  <input type="hidden" name="back" value="{{ cmt['back'] }}">
+  <p class="small"><strong>Comment on <span data-cmt-where></span></strong></p>
+  <textarea name="body" rows="3" required aria-label="Comment"></textarea>
+  <div class="inline-form"><button type="submit" class="btn btn-primary btn-sm">Add the comment</button><button type="button" class="btn btn-ghost btn-sm" data-cmt-cancel>Cancel</button></div>
+</form>
+<script>
+(function () {
+  var form = document.getElementById('spec-cmt-new');
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-comment]');
+    if (b) {
+      var p = document.getElementById('p-' + b.dataset.comment);
+      form.node_id.value = b.dataset.comment;
+      form.querySelector('[data-cmt-where]').textContent = b.dataset.where ? 'paragraph ' + b.dataset.where : 'this paragraph';
+      p.after(form); form.hidden = false; form.body.focus();
+      return;
+    }
+    if (e.target.closest('[data-cmt-cancel]')) { form.hidden = true; }
+  });
+})();
+</script>
+
 <div class="inline-form" style="margin-top:16px">
   {% if master %}
   <form method="post" action="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=section['id'], action='reset') }}"

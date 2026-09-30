@@ -50,6 +50,10 @@
 .spec-group-foot .spec-step-back { margin-right: auto; }
 .spec-check-flow:not(.spec-check-js) .spec-group-foot { display: none; }
 @media (max-width: 560px) {
+  /* On a phone the groups run in one line that scrolls sideways (the page does not). */
+  .spec-check-js .spec-groups { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin;
+    margin: 4px -16px 0; padding: 2px 16px 6px; scroll-padding: 0 16px; }
+  .spec-check-js .spec-group-tab { flex: 0 0 auto; white-space: nowrap; }
   .spec-group-tab { padding: 6px 8px 6px 10px; font-size: 0.82rem; }
   .spec-group-foot .btn { white-space: normal; text-align: center; }
 }

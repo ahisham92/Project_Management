@@ -47,7 +47,10 @@ FREE, NONE, SAME = "__free__", "__none__", "__same__"
 # Kinds of concrete the master gives their own mix, named like elements.
 KIND_LABELS = {"lightweight_slabs": "Lightweight concrete slabs", "stairs": "Stairs",
                "self_compacting": "Self-compacting concrete", "mass_concrete": "Mass concrete",
-               "architectural_concrete": "Architectural concrete", "shotcrete": "Shotcrete"}
+               "architectural_concrete": "Architectural concrete", "shotcrete": "Shotcrete",
+               "bedding": "Bedding", "buried_structures": "Buried structures",
+               "high_strength": "High-strength concrete", "cyclopean": "Cyclopean concrete",
+               "pond_lining": "Pond linings", "equipment_bases": "Equipment bases"}
 
 
 # --- the library's questions ------------------------------------------------------

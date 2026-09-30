@@ -48,9 +48,20 @@
     flow.setAttribute('data-current', group);
     var links = flow.querySelectorAll('[data-group-link]');
     for (var i = 0; i < links.length; i++) {
-      if (links[i].getAttribute('data-group-link') === group) links[i].setAttribute('aria-current', 'true');
-      else links[i].removeAttribute('aria-current');
+      if (links[i].getAttribute('data-group-link') === group) {
+        links[i].setAttribute('aria-current', 'true');
+        strip(links[i]);
+      } else links[i].removeAttribute('aria-current');
     }
+  }
+
+  // On a phone the bar is one line that scrolls sideways: the group in view is kept in it.
+  function strip(link) {
+    var bar = link.parentNode;
+    if (!bar || bar.scrollWidth <= bar.clientWidth) return;
+    var left = link.offsetLeft - bar.offsetLeft, right = left + link.offsetWidth;
+    if (left < bar.scrollLeft + 16) bar.scrollLeft = Math.max(0, left - 16);
+    else if (right > bar.scrollLeft + bar.clientWidth - 16) bar.scrollLeft = right - bar.clientWidth + 16;
   }
 
   function under() {

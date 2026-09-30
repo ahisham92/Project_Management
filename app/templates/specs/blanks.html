@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Blanks to fill · {{ spec['name'] }} · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <h1>Blanks to fill</h1>
+    <p class="small muted" style="margin-top:2px">The master leaves choices in [square brackets] and places to type in &lt;Insert ...&gt;. Pick or type the answer for each: it is written into this project's text in place of the blank, and shows as an amendment to the master.</p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
+  </div>
+</div>
+
+{% if not current %}
+  {{ empty('No blanks left', 'Every [choice] and <Insert ...> in this project\'s sections has been answered.') }}
+{% else %}
+<nav class="spec-blank-sections" aria-label="Sections with blanks">
+  <span class="small muted">{{ total }} blank{{ 's' if total != 1 }} in {{ groups | length }} section{{ 's' if groups | length != 1 }}:</span>
+  {% for g in groups %}
+  <a href="{{ url_for('specs.blanks', set_id=spec['id'], section=g['row_id']) }}" class="{{ 'spec-blank-here' if g is sameas current }}"{% if g is sameas current %} aria-current="page"{% endif %} title="{{ g['title'] }}">{{ g['number'] }} <span class="muted">{{ g['count'] }}</span></a>
+  {% endfor %}
+</nav>
+
+<form method="post" class="spec-blanks">
+  <input type="hidden" name="section" value="{{ current['row_id'] }}">
+  <div class="card">
+    <div class="card-head">
+      <h2><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=current['row_id']) }}">{{ current['number'] }} — {{ current['title'] }}</a></h2>
+      <span class="small muted">{{ current['count'] }} blank{{ 's' if current['count'] != 1 }}</span>
+    </div>
+    <div class="card-body spec-blank-list">
+      {% for para in current['paragraphs'] %}
+      <div class="spec-blank-para">
+        <p class="small muted spec-blank-where">{{ para['label'] or 'Paragraph' }}{% if para['article'] %} · {{ para['article'] }}{% endif %}</p>
+        <p class="spec-blank-text">{% for words, n in para['parts'] %}{% if n %}<mark>{% if para['blanks'] | length > 1 %}<sup>{{ n }}</sup>{% endif %}{{ words }}</mark>{% else %}{{ words }}{% endif %}{% endfor %}</p>
+        {% for b in para['blanks'] %}
+        {% set key = b['key'] %}
+        <fieldset class="spec-blank" id="blank-{{ key }}">
+          <input type="hidden" name="key" value="{{ key }}">
+          {% if para['blanks'] | length > 1 %}<legend class="small">Blank {{ b['n'] }}</legend>{% endif %}
+          <div class="spec-blank-picks">
+            {% for o in b['options'] if not o['free'] %}
+            <label><input type="radio" name="pick_{{ key }}" value="{{ o['text'] }}"> {{ o['text'] }}</label>
+            {% endfor %}
+            {% set free = b['options'] | selectattr('free') | map(attribute='text') | list %}
+            <label class="spec-blank-free"><input type="radio" name="pick_{{ key }}" value="__free__" aria-label="Use the typed words">
+              <input type="text" name="free_{{ key }}" placeholder="{{ free | join(' or ') if free else 'Other words' }}" aria-label="Type the answer"
+                     oninput="if (this.value) this.previousElementSibling.checked = true"></label>
+            <label class="muted"><input type="radio" name="pick_{{ key }}" value="__none__"> Leave out</label>
+          </div>
+          {% if repeats[b['run']] > 1 %}
+          <label class="small spec-blank-all"><input type="checkbox" name="all_{{ key }}" value="1"> Same answer wherever this blank appears ({{ repeats[b['run']] }} places)</label>
+          {% endif %}
+        </fieldset>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="spec-blanks-foot inline-form">
+    {% if before %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id'], section=before['row_id']) }}">← {{ before['number'] }}</a>{% endif %}
+    <button type="submit" class="btn btn-primary">Write the answers in</button>
+    {% if after %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id'], section=after['row_id']) }}" title="Answers not yet written in on this page are not kept">Next: {{ after['number'] }} →</a>{% endif %}
+    <span class="small muted">Blanks left unanswered stay as they are.</span>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

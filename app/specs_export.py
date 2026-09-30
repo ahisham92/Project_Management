@@ -174,8 +174,9 @@ def _tracked_table(old: str | None, new: str | None, indent: int, room: int, mar
     border = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
                      for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
     grid = "".join(f'<w:gridCol w:w="{column}"/>' for _ in range(width))
-    out = [f'<w:tbl><w:tblPr><w:tblW w:w="{column * width}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
-           f'<w:tblInd w:w="{indent}" w:type="dxa"/><w:tblBorders>{border}</w:tblBorders></w:tblPr>'
+    out = [f'<w:tbl><w:tblPr><w:tblW w:w="{column * width}" w:type="dxa"/>'
+           f'<w:tblInd w:w="{indent}" w:type="dxa"/><w:tblBorders>{border}</w:tblBorders>'
+           '<w:tblLayout w:type="fixed"/></w:tblPr>'
            f"<w:tblGrid>{grid}</w:tblGrid>"]
     props = '<w:sz w:val="20"/>'
     for mode, o, n in rows:
@@ -465,7 +466,10 @@ def _section_flow(kit, section: Mapping[str, Any], nodes: Sequence[Mapping[str, 
             continue
         words = issued(n["text"], chosen, values, resolve)
         if n["level"] == TABLE:
-            flow += _table_flow(kit, words, n["indent"], width, regular)
+            table = _table_flow(kit, words, n["indent"], width, regular)
+            if table and flow:
+                flow[-1].keepWithNext = True          # the words that lead into it go with it
+            flow += table
             previous = TABLE
             continue
         label = n["label"] if (typed_nbs or not nbs) else NBS_MARKS[n["level"]]
@@ -484,24 +488,34 @@ def _section_flow(kit, section: Mapping[str, Any], nodes: Sequence[Mapping[str, 
 
 
 def _table_flow(kit, text: str, indent: int, width: float, font: str) -> list:
+    """A table ruled in 10 pt, set in from the margin as far as its paragraph.
+
+    The indent is a first column with no rules, which keeps the table one
+    flowable, so the paragraph leading into it can be kept on its page."""
     rows = specs.rows_of(text)
     if not rows:
         return []
-    from reportlab.platypus.doctemplate import Indenter
-
     Paragraph, ParagraphStyle = kit["Paragraph"], kit["ParagraphStyle"]
     cell = ParagraphStyle("cell", fontName=font, fontSize=10, leading=11.5)
     left = INDENT * min(indent + 1, 4)
     columns = max(len(r) for r in rows)
     each = (width - left) / columns
-    data = [[Paragraph(_markup(c), cell) for c in r + [""] * (columns - len(r))] for r in rows]
-    table = kit["Table"](data, colWidths=[each] * columns, hAlign="LEFT", spaceBefore=12)
+    data = [[""] + [Paragraph(_markup(c), cell) for c in r + [""] * (columns - len(r))]
+            for r in rows]
+    class Whole(kit["Table"]):
+        """A short table is not cut: it goes over to the next page whole. (Not
+        a KeepTogether, which would not chain with the paragraph before it.)"""
+
+        def split(self, availWidth, availHeight):      # noqa: N803 - reportlab's names
+            return [] if len(rows) <= 20 else super().split(availWidth, availHeight)
+
+    table = Whole(data, colWidths=[left] + [each] * columns, hAlign="LEFT", spaceBefore=12)
     table.setStyle(kit["TableStyle"]([
-        ("GRID", (0, 0), (-1, -1), 0.5, kit["colors"].black),
+        ("GRID", (1, 0), (-1, -1), 0.5, kit["colors"].black),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3.75), ("RIGHTPADDING", (0, 0), (-1, -1), 3.75),
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
-    return [Indenter(left=left), table, Indenter(left=-left)]
+    return [table]
 
 
 def write_pdf(items: Iterable[tuple[Mapping[str, Any], Sequence[Mapping[str, Any]], Resolve]],
@@ -629,3 +643,8 @@ def write_pdf(items: Iterable[tuple[Mapping[str, Any], Sequence[Mapping[str, Any
 
 def pdf_name(pattern: str, section: Mapping[str, Any]) -> str:
     return specs.file_name(pattern, section).removesuffix(".docx") + ".pdf"
+
+
+def tracked_name(pattern: str, section: Mapping[str, Any]) -> str:
+    """The issued name with "(tracked)" on it, so it is never taken for the clean copy."""
+    return specs.file_name(pattern, section).removesuffix(".docx") + " (tracked).docx"

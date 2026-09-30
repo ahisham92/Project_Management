@@ -558,6 +558,8 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         " key TEXT NOT NULL, state TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',"
         " settled_by TEXT NOT NULL DEFAULT '', settled_at TEXT NOT NULL DEFAULT (datetime('now')),"
         " PRIMARY KEY (set_id, key))")
+    # An item amended or removed from the check: where, and what the text was and became.
+    _ensure_column(conn, "spec_check_settled", "detail", "TEXT NOT NULL DEFAULT ''")
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 

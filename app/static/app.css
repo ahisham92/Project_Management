@@ -1173,3 +1173,23 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-load-sure input { width: auto; }
 .spec-tick { width: 32px; }
 .spec-tick input { width: auto; }
+
+/* Blanks to fill */
+.spec-blank-sections { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+.spec-blank-sections a { padding: 2px 8px; border: 1px solid var(--border); border-radius: 12px; font-size: 0.8rem; text-decoration: none; color: var(--ink-2); background: var(--raised); }
+.spec-blank-sections a.spec-blank-here { border-color: var(--series-1); color: var(--ink); font-weight: 600; }
+.spec-blank-list { display: grid; gap: 16px; }
+.spec-blank-para { border-top: 1px solid var(--border); padding-top: 12px; }
+.spec-blank-para:first-child { border-top: 0; padding-top: 0; }
+.spec-blank-where { margin: 0; }
+.spec-blank-text { font-family: "Times New Roman", Times, serif; margin: 2px 0 8px; overflow-wrap: anywhere; }
+.spec-blank-text mark { background: var(--tint-warning); color: var(--ink); padding: 0 2px; border-radius: 3px; }
+.spec-blank-text sup { font: 600 0.65rem/1 system-ui, sans-serif; margin-right: 2px; }
+.spec-blank { border: 0; margin: 0 0 8px; padding: 0 0 0 10px; min-width: 0; border-left: 3px solid var(--tint-warning); }
+.spec-blank legend { padding: 0; font-weight: 600; }
+.spec-blank-picks { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.spec-blank-picks label { display: inline-flex; gap: 6px; align-items: center; font-size: 0.9rem; }
+.spec-blank-picks input[type=radio], .spec-blank-all input { width: auto; margin: 0; }
+.spec-blank-free input[type=text] { width: min(320px, 60vw); }
+.spec-blank-all { display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; }
+.spec-blanks-foot { position: sticky; bottom: 0; padding: 10px 0; margin-top: 12px; background: var(--plane); border-top: 1px solid var(--border); }

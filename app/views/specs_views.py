@@ -371,6 +371,7 @@ def spec_set(set_id: int):
     model = store.model_for(row)
     return render_template(
         "specs/set.html", spec=row, sections=sections, tiles=tiles,
+        blanks_n=len(store.blanks(set_id)) if sections else 0,
         groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS]),
         waiting=waiting, uncovered=store.uncovered(chosen, row["family"]),
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
@@ -572,35 +573,52 @@ def export_set(set_id: int):
     if not sections:
         flash("There are no sections in this specification to issue yet.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
+    # Clean Word (the default), Word with tracked changes, or one PDF; the
+    # hold and the reference check stop every one of them alike.
+    fmt = specs_export.fmt_of(request.args.get("fmt"))
+    keep_fmt = fmt if fmt != "docx" else None
     report = store.check_set(set_id)
     if row["hold_issue"]:
         waiting = store.open_items(set_id, report)
         if waiting["total"]:
             flash(f"Not issued yet: {waiting['total']} item{'s' if waiting['total'] != 1 else ''} "
-                  "on the check still to accept or reject. This project is held until each one "
+                  "on the check still to keep, amend or remove. This project is held until each one "
                   "is settled (the hold is a tick box on the project page).", "error")
-            return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
+            return redirect(url_for("specs.check_set", set_id=set_id, issuing=1, fmt=keep_fmt))
     missing = _not_issued(report)
     if missing and not row["hold_issue"] and not request.args.get("anyway"):
         flash(f"Not issued yet: {len(missing)} reference{'s' if len(missing) != 1 else ''} point at "
               "sections or paragraphs this specification does not issue. Add the sections, or "
               "correct the references, then issue — or issue anyway from the top of this page.",
               "error")
-        return redirect(url_for("specs.check_set", set_id=set_id, issuing=1))
+        return redirect(url_for("specs.check_set", set_id=set_id, issuing=1, fmt=keep_fmt))
     chosen, values = store.chosen_for(row), store.values_for(row)
     template = store.template_bytes(row["family"])
     reader = store.reader(store.set_whole(set_id), chosen)
+    name = "".join(c if c.isalnum() or c in "-_ " else "-" for c in (row["code"] or row["name"]))
+    name = f'{name.strip() or "specification"} - specification REV {row["revision"]}'
+    if fmt == "pdf":
+        data = specs_export.write_pdf(
+            [(s, specs.loads(s["body"]), reader.issued(s["number"])) for s in sections],
+            row, chosen, values, template, title=row["name"])
+        return Response(data, mimetype="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'})
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
         for s in sections:
+            if fmt == "tracked":
+                data, _ = specs_export.write_tracked_docx(
+                    s, specs.loads(s["body"]), store.base_of(s), row, chosen, values, template,
+                    resolve=reader.issued(s["number"]), author=s.get("updated_by") or "")
+                bundle.writestr(specs_export.tracked_name(row["file_pattern"], s), data)
+                continue
             data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, values, template,
                                     resolve=reader.issued(s["number"]))
             bundle.writestr(specs.file_name(row["file_pattern"], s), data)
-    name = "".join(c if c.isalnum() or c in "-_ " else "-" for c in (row["code"] or row["name"]))
+    if fmt == "tracked":
+        name += " - tracked changes"
     return Response(buffer.getvalue(), mimetype="application/zip",
-                    headers={"Content-Disposition":
-                             f'attachment; filename="{name.strip() or "specification"} - '
-                             f'specification REV {row["revision"]}.zip"'})
+                    headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
 
 
 def _not_issued(report: dict) -> list[dict]:
@@ -612,20 +630,141 @@ def _not_issued(report: dict) -> list[dict]:
 @bp.post("/sets/<int:set_id>/settle")
 @login_required
 def settle(set_id: int):
-    """A check item accepted or rejected, or opened again."""
+    """A check item kept as it stands, or opened again."""
     _set_or_404(set_id)
     keys = request.form.getlist("key")
+    state = request.form.get("state", "")
     try:
         for key in keys:
-            store.settle(set_id, key, request.form.get("state", ""),
+            store.settle(set_id, key, state,
                          request.form.get("message", "") if len(keys) == 1 else "")
     except specs.SpecError as exc:
         flash(str(exc), "error")
-    if len(keys) > 1:
-        flash(f"{len(keys)} items {request.form.get('state') or 'opened again'}.", "success")
-    back = url_for("specs.check_set", set_id=set_id, issuing=request.form.get("issuing") or None)
-    return redirect(back + (f"#item-{keys[0]}" if len(keys) == 1 else
-                            f"#group-{request.form.get('group', '')}"))
+    else:
+        if keys and state:
+            flash("Kept." if len(keys) == 1 else f"Kept all {len(keys)}.", "success")
+        elif keys:
+            flash("Opened again." if len(keys) == 1 else f"{len(keys)} items opened again.", "success")
+    return redirect(_back_to_check(set_id) + (f"#item-{keys[0]}" if len(keys) == 1 else
+                                              f"#group-{request.form.get('group', '')}"))
+
+
+def _back_to_check(set_id: int, shown: str | None = None) -> str:
+    """The check again; ``shown`` is an item just settled, shown open under its group."""
+    return url_for("specs.check_set", set_id=set_id, issuing=request.form.get("issuing") or None,
+                   fmt=request.form.get("fmt") or None, shown=shown)
+
+
+@bp.post("/sets/<int:set_id>/check/amend")
+@login_required
+def amend_item(set_id: int):
+    """A check item's paragraphs given the text the engineer settled on."""
+    _set_or_404(set_id)
+    key = request.form.get("key", "")
+    edits = []
+    for row_id, node_id, new in zip(request.form.getlist("row_id"), request.form.getlist("node_id"),
+                                    request.form.getlist("text")):
+        if row_id.isdigit():
+            edits.append((int(row_id), node_id, new))
+    try:
+        detail = store.amend_item(set_id, key, edits)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+        return redirect(_back_to_check(set_id) + f"#item-{key}")
+    flash(f"Amended: {store.labels(detail['places'])}.", "success")
+    return redirect(_back_to_check(set_id, detail["key"]) + f"#item-{detail['key']}")
+
+
+@bp.post("/sets/<int:set_id>/check/remove")
+@login_required
+def remove_item(set_id: int):
+    """The sentence a check item is about taken out, in every place it is."""
+    _set_or_404(set_id)
+    keys = request.form.getlist("key")
+    try:
+        done = store.remove_items(set_id, keys)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+        return redirect(_back_to_check(set_id) + (f"#item-{keys[0]}" if keys else ""))
+    places = [p for one in done for p in one["detail"]["places"]]
+    whole = [p for p in places if p["whole"]]
+    if not places:
+        flash("Nothing was removed: the words were not found as they stand.", "error")
+    elif len(done) == 1 and len(places) == 1 and whole:
+        flash(f"Removed paragraph {store.label(places[0])}: it was its only sentence"
+              + (f", and the {whole[0]['under']} paragraph{'s' if whole[0]['under'] != 1 else ''} "
+                 "under it went with it." if whole[0]["under"] else "."), "success")
+    else:
+        flash(f"Removed the sentence from {store.labels(places)}."
+              + (f" {len(whole)} of them had no other sentence, so the paragraph went."
+                 if whole else ""), "success")
+    if len(done) == 1:
+        return redirect(_back_to_check(set_id, done[0]["key"]) + f"#item-{done[0]['key']}")
+    group = done[0]["group"] if done else request.form.get("group", "")
+    return redirect(_back_to_check(set_id) + f"#group-{group}")
+
+
+@bp.route("/sets/<int:set_id>/blanks", methods=["GET", "POST"])
+@login_required
+def blanks(set_id: int):
+    """The [choices] and <Insert ...> places the master leaves for the project:
+    each answer is written into the project's text in place of its blank."""
+    row = _set_or_404(set_id)
+    if request.method == "POST":
+        answers = {}
+        for key in request.form.getlist("key"):
+            pick = request.form.get(f"pick_{key}", "")
+            typed = request.form.get(f"free_{key}", "").strip()
+            if pick in ("", "__free__"):
+                # Words typed in the box count even if its button was not pressed.
+                if not typed:
+                    continue
+                words = typed
+            else:
+                words = "" if pick == "__none__" else pick
+            answers[key] = (words, bool(request.form.get(f"all_{key}")))
+        filled = store.fill_blanks(set_id, answers)
+        if filled:
+            flash(f"Filled {filled} blank{'s' if filled != 1 else ''}. The words are now in "
+                  "the project's text and show as amendments to the master.", "success")
+        else:
+            flash("Nothing was filled: pick an answer, or type one, for a blank first.", "error")
+        return redirect(url_for("specs.blanks", set_id=set_id,
+                                section=request.form.get("section", type=int)))
+    found = store.blanks(set_id)
+    order = [s["id"] for s in store.set_sections(set_id)]
+    groups: dict[int, dict] = {}
+    for b in found:
+        g = groups.setdefault(b["row_id"], {"row_id": b["row_id"], "number": b["number"],
+                                           "title": b["title"], "count": 0, "paragraphs": []})
+        g["count"] += 1
+        paras = g["paragraphs"]
+        if not paras or paras[-1]["node_id"] != b["node_id"]:
+            paras.append({"node_id": b["node_id"], "label": b["label"], "article": b["article"],
+                          "text": b["text"], "blanks": []})
+        paras[-1]["blanks"].append(dict(b, n=len(paras[-1]["blanks"]) + 1))
+    for g in groups.values():
+        for para in g["paragraphs"]:
+            # The paragraph's words in pieces, each blank numbered where it stands.
+            parts, at = [], 0
+            for b in para["blanks"]:
+                parts += [(para["text"][at:b["start"]], None), (b["run"], b["n"])]
+                at = b["end"]
+            para["parts"] = parts + [(para["text"][at:], None)]
+    # One section at a time: the one asked for, else the next one still with blanks.
+    asked = request.args.get("section", type=int)
+    if asked not in groups:
+        later = [r for r in order[order.index(asked) + 1:] if r in groups] if asked in order else []
+        asked = (later or [r for r in order if r in groups] or [None])[0]
+    listed = [groups[r] for r in order if r in groups]
+    here = listed.index(groups[asked]) if asked else 0
+    repeats: dict[str, int] = {}
+    for b in found:
+        repeats[b["run"]] = repeats.get(b["run"], 0) + 1
+    return render_template(
+        "specs/blanks.html", spec=row, groups=listed, total=len(found), repeats=repeats,
+        current=groups.get(asked), after=listed[here + 1] if asked and here + 1 < len(listed) else None,
+        before=listed[here - 1] if asked and here else None)
 
 
 @bp.get("/sets/<int:set_id>/amendments")
@@ -725,9 +864,25 @@ def set_section_docx(set_id: int, row_id: int):
     s = _set_section_or_404(set_id, row_id)
     chosen = store.chosen_for(row)
     reader = store.reader(store.set_whole(set_id), chosen)
-    data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, store.values_for(row),
-                            store.template_bytes(row["family"]), resolve=reader.issued(s["number"]))
+    fmt = specs_export.fmt_of(request.args.get("fmt"))
+    values, template = store.values_for(row), store.template_bytes(row["family"])
+    if fmt == "pdf":
+        data = specs_export.write_pdf([(s, specs.loads(s["body"]), reader.issued(s["number"]))],
+                                      row, chosen, values, template)
+        return _pdf_response(data, specs_export.pdf_name(row["file_pattern"], s))
+    if fmt == "tracked":
+        data, _ = specs_export.write_tracked_docx(
+            s, specs.loads(s["body"]), store.base_of(s), row, chosen, values, template,
+            resolve=reader.issued(s["number"]), author=s.get("updated_by") or "")
+        return _docx_response(data, specs_export.tracked_name(row["file_pattern"], s))
+    data = specs.write_docx(s, specs.loads(s["body"]), row, chosen, values, template,
+                            resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name(row["file_pattern"], s))
+
+
+def _pdf_response(data: bytes, name: str) -> Response:
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # --- the library ------------------------------------------------------------------
@@ -863,8 +1018,13 @@ def library_docx(section_id: int):
     s = _library_or_404(section_id)
     chosen = store.chosen_for(None)
     reader = store.reader(store.library_whole(s["family"]), chosen, standards=False)
-    data = specs.write_docx(s, specs.loads(s["body"]), {"revision": ""}, chosen,
-                            {v["key"]: v["default_value"] for v in store.variables()},
+    values = {v["key"]: v["default_value"] for v in store.variables()}
+    if request.args.get("fmt") == "pdf":
+        data = specs_export.write_pdf([(s, specs.loads(s["body"]), reader.issued(s["number"]))],
+                                      {"revision": ""}, chosen, values,
+                                      store.template_bytes(s["family"]))
+        return _pdf_response(data, specs_export.pdf_name("SPC-{number}", s))
+    data = specs.write_docx(s, specs.loads(s["body"]), {"revision": ""}, chosen, values,
                             store.template_bytes(s["family"]), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name("SPC-{number}", s))
 
@@ -1048,8 +1208,11 @@ CHECKS = [
 def check_set(set_id: int):
     row = _set_or_404(set_id)
     report = store.check_set(set_id)
+    store.check_actions(set_id, report)
     return render_template("specs/check.html", spec=row, report=report, checks=CHECKS,
                            chosen=store.chosen_for(row), is_admin=_is_admin(),
+                           amending=request.args.get("amend", ""), shown=request.args.get("shown", ""),
+                           fmt=request.args.get("fmt") or "",
                            issuing=request.args.get("issuing"), blocking=_not_issued(report),
                            language=_language(store.language_set(set_id)), kinds=KINDS,
                            waiting=store.open_items(set_id, report))

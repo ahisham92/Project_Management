@@ -306,7 +306,10 @@
       <p class="small muted" style="margin-top:2px">Each is this project's own copy, counted against the master it was taken from. The ones the answers call for are added when they are saved.</p>
     </div>
     {% if sections %}
+    <div class="inline-form">
+    {% if blanks_n %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.blanks', set_id=spec['id']) }}">Fill the blanks ({{ blanks_n }})</a>{% endif %}
     <button type="submit" form="sections-remove" class="btn btn-danger btn-sm" title="Take the ticked sections out of this project, for one added by mistake">Take the ticked out</button>
+    </div>
     {% endif %}
   </div>
   {% if not sections %}
@@ -408,6 +411,7 @@
 <div class="spec-step-foot spec-steps-end spec-step-more" data-step="sections">
   <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: questions</a>
   {% if sections %}
+  {% if blanks_n %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id']) }}" title="The master's [choices] and &lt;Insert ...&gt; places, each with a box to answer">Fill the blanks ({{ blanks_n }})</a>{% endif %}
   <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to accept or reject){% endif %} →</a>
   {% else %}
   <span class="small muted">The check comes once the project has sections.</span>

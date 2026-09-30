@@ -953,7 +953,7 @@ def without_section(text: str, number: str) -> str:
 
 ABBREVIATIONS = {"no", "nos", "e.g", "i.e", "eg", "ie", "sect", "approx", "fig", "figs", "para",
                  "art", "ref", "vol", "incl", "dia", "cf", "vs", "st", "mr", "mrs", "dr", "inc",
-                 "ltd", "co", "min", "max", "nom", "sq", "cu", "approx"}
+                 "ltd", "co", "min", "max", "nom", "sq", "cu"}
 
 
 def sentence_spans(text: str) -> list[tuple[int, int]]:
@@ -985,12 +985,14 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
         if after and not after.isspace():
             continue
         end = False
+        # A full stop before a word in small letters does not end the sentence.
+        lower = text[i + 1:].lstrip()[:1].islower()
         if c in ".;?!":
             word = re.search(r"([\w.]*)$", text[start:i]).group(1)
-            end = c != "." or not (word.lower() in ABBREVIATIONS
+            end = c != "." or not (lower or word.lower() in ABBREVIATIONS
                                    or re.fullmatch(r"(?:[A-Za-z]\.)+[A-Za-z]", word))
         elif closed and i and text[i - 1] in ".;?!":
-            end = True
+            end = text[i - 1] == ";" or not lower
         if end:
             if text[start:i + 1].strip():
                 spans.append((start, i + 1))

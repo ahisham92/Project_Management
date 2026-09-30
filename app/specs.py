@@ -881,8 +881,9 @@ def _table(text: str, indent: int, room: int = 9026) -> str:
     border = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
                      for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
     grid = "".join(f'<w:gridCol w:w="{column}"/>' for _ in range(width))
-    out = [f'<w:tbl><w:tblPr><w:tblW w:w="{column * width}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblInd w:w="{indent}" w:type="dxa"/>'
-           f"<w:tblBorders>{border}</w:tblBorders></w:tblPr><w:tblGrid>{grid}</w:tblGrid>"]
+    # tblPr's children in the schema's order: width, indent, borders, layout.
+    out = [f'<w:tbl><w:tblPr><w:tblW w:w="{column * width}" w:type="dxa"/><w:tblInd w:w="{indent}" w:type="dxa"/>'
+           f'<w:tblBorders>{border}</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>']
     for row in rows:
         cells = row + [""] * (width - len(row))
         props = '<w:sz w:val="20"/>'

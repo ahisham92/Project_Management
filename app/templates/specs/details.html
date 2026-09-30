@@ -169,20 +169,6 @@
     if (e.target.closest('[data-explain-close]')) close();
   }, true);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !panel.hidden) close(); });
-  // A screenshot pasted into the panel goes into the add form it was pasted in.
-  panel.addEventListener('paste', function (e) {
-    var form = e.target.closest('[data-paste-form]') || (document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-paste-form]'));
-    if (!form || !e.clipboardData) return;
-    var files = Array.prototype.filter.call(e.clipboardData.files || [], function (f) { return /^image\//.test(f.type); });
-    if (!files.length) return;
-    e.preventDefault();
-    var box = form.querySelector('input[type=file]');
-    var dt = new DataTransfer();
-    Array.prototype.forEach.call(box.files, function (f) { dt.items.add(f); });
-    files.forEach(function (f, i) { dt.items.add(new File([f], 'pasted-' + Date.now() + '-' + i + '.png', {type: f.type})); });
-    box.files = dt.files;
-    form.querySelector('[data-paste-note]').textContent = box.files.length + ' picture' + (box.files.length > 1 ? 's' : '') + ' ready to add.';
-  });
   if (panel.dataset.open) open(panel.dataset.open);
 })();
 document.querySelectorAll('.spec-details [data-pick-free]').forEach(function (box) {

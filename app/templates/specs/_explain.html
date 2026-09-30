@@ -1,28 +1,4 @@
 {# The side panel beside a question on Details: loaded into the page when a question is clicked. #}
-{% macro shot_form(code='', clause='', ask_code=false, label='Add a screenshot') %}
-<details class="spec-explain-add">
-  <summary>{{ label }}</summary>
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('specs.add_question_images', key=q['key']) }}" data-paste-form>
-    <input type="hidden" name="set_id" value="{{ spec['id'] }}">
-    <input type="hidden" name="group" value="{{ group }}">
-    {% if ask_code %}
-    <div class="spec-explain-row">
-      <label>Code <input type="text" name="code" value="{{ code }}" placeholder="e.g. ACI 318-19" required></label>
-      <label>Clause <input type="text" name="clause" value="{{ clause }}" placeholder="e.g. 20.5.1.3"></label>
-    </div>
-    {% else %}
-    <input type="hidden" name="code" value="{{ code }}"><input type="hidden" name="clause" value="{{ clause }}">
-    {% endif %}
-    <label class="spec-explain-drop" tabindex="0">
-      <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
-      <span class="small muted" data-paste-note>Choose a file, or click here and paste a screenshot (Ctrl+V).</span>
-    </label>
-    <input type="text" name="caption" placeholder="Caption (optional)">
-    <button type="submit" class="btn btn-sm">Add</button>
-  </form>
-</details>
-{% endmacro %}
-
 {% macro shots(list) %}
 {% if list %}
 <div class="spec-explain-shots">
@@ -48,7 +24,6 @@
   {% if r['title'] %}<p class="spec-explain-title">{{ r['title'] }}</p>{% endif %}
   {% if r['says'] %}<p class="small">{{ r['says'] }}</p>{% endif %}
   {{ shots(r['images']) }}
-  {% if admin %}{{ shot_form(r['code'], r['clause']) }}{% endif %}
 </article>
 {% endmacro %}
 
@@ -66,21 +41,20 @@
   {% if q['drawing'] %}<figure class="spec-explain-drawing">{{ q['drawing'] | safe }}</figure>{% endif %}
   {{ shots(q['pictures']) }}
 
-  <h3>What the codes say{% if spec['family'] %} <span class="small muted">for {{ spec['family'] }} projects</span>{% endif %}</h3>
-  {% if q['refs'] %}
-    {% for r in q['refs'] %}{{ ref_card(r) }}{% endfor %}
+  <h3>What each code says</h3>
+  {% if q['families'] %}
+    {% for f in q['families'] %}
+    <section class="spec-explain-family">
+      <h4 class="small">{{ f['name'] }}{% if f['mine'] %} <span class="spec-explain-mine">this project's basis</span>{% endif %}</h4>
+      {% for r in f['refs'] %}{{ ref_card(r) }}{% endfor %}
+    </section>
+    {% endfor %}
   {% else %}
-  <p class="small muted">No code clause is listed for this question{% if q['other_refs'] %} for this kind of project{% endif %}.</p>
+  <p class="small muted">No code clause is listed for this question.</p>
   {% endif %}
   {% if q['loose'] %}
   <h3 class="small">Other screenshots</h3>
   {% for code, list in q['loose'] | groupby('code') %}<p class="small"><strong>{{ code }}</strong></p>{{ shots(list) }}{% endfor %}
-  {% endif %}
-  {% if q['other_refs'] %}
-  <details class="spec-explain-other">
-    <summary class="small">Other codes ({{ q['other_refs'] | map(attribute='code') | unique | join(', ') }})</summary>
-    {% for r in q['other_refs'] %}{{ ref_card(r) }}{% endfor %}
-  </details>
   {% endif %}
   <p class="small muted spec-explain-note">Clause numbers are for the editions named; check them against the office's copy before relying on them.</p>
 
@@ -91,8 +65,6 @@
 
   {% if admin %}
   <div class="spec-explain-admin">
-    {{ shot_form(ask_code=true, label='Add a screenshot for another code') }}
-    {{ shot_form(label='Add a picture of this item') }}
     <details class="spec-explain-add">
       <summary>Edit this explanation</summary>
       <form method="post" action="{{ url_for('specs.save_explanation', key=q['key']) }}">

@@ -35,8 +35,10 @@ def test_a_question_explains_itself_with_the_projects_own_codes(app, signed_in):
     assert 'data-explain="conc_strength"' in page and 'id="spec-explain"' in page
     panel = text(signed_in.get(f"/specs/sets/{set_id}/explain/conc_strength"))
     assert "The strength the concrete must reach at 28 days." in panel
-    # A 15A project reads ACI first; the British code is folded under Other codes.
-    assert panel.index("ACI 318-19") < panel.index("Other codes (BS 8500-1)")
+    # Every code is shown whatever the basis: a 15A project reads ACI first, then BS.
+    assert panel.index("ACI 318-19") < panel.index("BS 8500-1")
+    assert "this project&#39;s basis" in panel or "this project's basis" in panel
+    assert panel.index("American: ACI") < panel.index("British and European: BS")
     assert "19.2.1.1" in panel and "Where it goes in this project" in panel
     assert signed_in.get(f"/specs/sets/{set_id}/explain/no_such_key").status_code == 404
     # A library file without explanations does not clear them.
@@ -68,6 +70,8 @@ def test_screenshots_of_a_code_clause_are_added_shown_and_carried(app, signed_in
     assert got.data == PNG and got.mimetype == "image/png"
     panel = text(signed_in.get(f"/specs/sets/{set_id}/explain/conc_strength"))
     assert f"/specs/question-images/{shots[0]['id']}" in panel and "Table 19.2.1.1" in panel
+    # The codes' clauses are written out now: the panel offers no screenshot upload.
+    assert "Add a screenshot" not in panel and "data-paste-form" not in panel
     # The same screenshot twice is kept once; the library file carries it.
     with app.app_context():
         assert specs_questions.add_image("conc_strength", PNG, "ACI 318-19", "19.2.1.1") == shots[0]["id"]

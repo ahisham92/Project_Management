@@ -31,7 +31,7 @@
 
 {% macro question(q) %}
       <fieldset class="spec-q{{ ' spec-q-answered' if q['answered'] }}" id="q-{{ q['key'] }}">
-        <legend class="spec-q-label">{{ q['label'] }}{% if q['answered'] %} <span class="spec-q-tick" title="Answered">✓</span>{% endif %}</legend>
+        <legend class="spec-q-label"><span class="spec-q-ask" data-explain="{{ q['key'] }}" title="What this means and what the codes say">{{ q['label'] }}</span>{% if q['answered'] %} <span class="spec-q-tick" title="Answered">✓</span>{% endif %} <button type="button" class="spec-q-info" data-explain="{{ q['key'] }}" aria-label="What this means and what the codes say">i</button></legend>
         {% if q['help'] %}<p class="small muted spec-q-help">{{ q['help'] }}</p>{% endif %}
         {% if q['yes_no'] and q['example'] %}<p class="small muted spec-q-help">Yes keeps the words “{{ q['example'] | trim(' ,') }}”.</p>{% endif %}
         {{ controls(q['key'], q, q['answer'], q['answered']) }}
@@ -104,7 +104,7 @@
       <h3 class="spec-q-part">Suggested from the master <span class="muted small">{{ suggested | length }} · written in as shown when you save; open one to change it</span></h3>
       {% for q in suggested %}
       <details class="spec-q-compact">
-        <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{{ shown(q, q['suggested']) }}</span><span class="spec-q-change">Change</span></summary>
+        <summary><span class="spec-q-name">{{ q['label'] }} <button type="button" class="spec-q-info" data-explain="{{ q['key'] }}" aria-label="What this means and what the codes say">i</button></span><span class="spec-q-value">{{ shown(q, q['suggested']) }}</span><span class="spec-q-change">Change</span></summary>
         {{ question(q) }}
       </details>
       {% endfor %}
@@ -113,7 +113,7 @@
       <h3 class="spec-q-part">Answered <span class="muted small">{{ done | length }}</span></h3>
       {% for q in done %}
       <details class="spec-q-compact spec-q-answered">
-        <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{% if q['split'] %}Different per element{% else %}{{ shown(q, q['answer']) }}{% endif %}</span><span class="spec-q-change">Change</span></summary>
+        <summary><span class="spec-q-name">{{ q['label'] }} <button type="button" class="spec-q-info" data-explain="{{ q['key'] }}" aria-label="What this means and what the codes say">i</button></span><span class="spec-q-value">{% if q['split'] %}Different per element{% else %}{{ shown(q, q['answer']) }}{% endif %}</span><span class="spec-q-change">Change</span></summary>
         {{ question(q) }}
       </details>
       {% endfor %}
@@ -132,7 +132,59 @@
     <span class="small muted">Suggested answers are written in when you save.</span>
   </div>
 </form>
+<aside class="spec-explain" id="spec-explain" hidden aria-labelledby="spec-explain-title" data-url="{{ url_for('specs.explain', set_id=spec['id'], key='KEY') }}?group={{ group['slug'] }}" data-open="{{ explain_key }}">
+  <div class="spec-explain-head">
+    <span class="small muted">About this question</span>
+    <button type="button" class="btn btn-ghost btn-sm" data-explain-close aria-label="Close">✕ Close</button>
+  </div>
+  <div class="spec-explain-body" data-explain-body></div>
+</aside>
 <script>
+(function () {
+  var panel = document.getElementById('spec-explain');
+  var body = panel.querySelector('[data-explain-body]');
+  var current = '';
+  function open(key) {
+    if (current === key && !panel.hidden) return;
+    current = key;
+    panel.hidden = false;
+    document.body.classList.add('spec-explain-on');
+    document.querySelectorAll('.spec-q-current').forEach(function (e) { e.classList.remove('spec-q-current'); });
+    var q = document.getElementById('q-' + key);
+    if (q) q.classList.add('spec-q-current');
+    body.innerHTML = '<p class="small muted">Loading…</p>';
+    fetch(panel.dataset.url.replace('KEY', encodeURIComponent(key)), {credentials: 'same-origin'})
+      .then(function (r) { if (!r.ok) throw r; return r.text(); })
+      .then(function (html) { if (current === key) { body.innerHTML = html; body.scrollTop = 0; } })
+      .catch(function () { body.innerHTML = '<p class="small muted">Could not load this question\'s explanation.</p>'; });
+  }
+  function close() {
+    panel.hidden = true; current = '';
+    document.body.classList.remove('spec-explain-on');
+    document.querySelectorAll('.spec-q-current').forEach(function (e) { e.classList.remove('spec-q-current'); });
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-explain]');
+    if (t) { e.preventDefault(); e.stopPropagation(); open(t.dataset.explain); return; }
+    if (e.target.closest('[data-explain-close]')) close();
+  }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !panel.hidden) close(); });
+  // A screenshot pasted into the panel goes into the add form it was pasted in.
+  panel.addEventListener('paste', function (e) {
+    var form = e.target.closest('[data-paste-form]') || (document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-paste-form]'));
+    if (!form || !e.clipboardData) return;
+    var files = Array.prototype.filter.call(e.clipboardData.files || [], function (f) { return /^image\//.test(f.type); });
+    if (!files.length) return;
+    e.preventDefault();
+    var box = form.querySelector('input[type=file]');
+    var dt = new DataTransfer();
+    Array.prototype.forEach.call(box.files, function (f) { dt.items.add(f); });
+    files.forEach(function (f, i) { dt.items.add(new File([f], 'pasted-' + Date.now() + '-' + i + '.png', {type: f.type})); });
+    box.files = dt.files;
+    form.querySelector('[data-paste-note]').textContent = box.files.length + ' picture' + (box.files.length > 1 ? 's' : '') + ' ready to add.';
+  });
+  if (panel.dataset.open) open(panel.dataset.open);
+})();
 document.querySelectorAll('.spec-details [data-pick-free]').forEach(function (box) {
   box.addEventListener('input', function () {
     var pick = box.parentNode.querySelector('input[type=radio]');

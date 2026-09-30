@@ -1393,6 +1393,15 @@ def pack() -> bytes:
             z.writestr("template.docx", template)
         for family in family_templates():
             z.writestr(f"templates/{family}.docx", template_bytes(family))
+        # The screenshots of the codes each question carries.
+        from . import specs_questions
+        shots = []
+        for i in specs_questions.images():
+            name = f"question-images/{i['id']}.{i['mime'].split('/')[-1]}"
+            z.writestr(name, specs_questions.image(i["id"])["content"])
+            shots.append({**{k: i[k] for k in ("key", "code", "clause", "caption")}, "file": name})
+        if shots:
+            z.writestr("question-images.json", json.dumps(shots, ensure_ascii=False, indent=1))
     return out.getvalue()
 
 
@@ -1529,6 +1538,12 @@ def _load_the_rest(z, loaded: Mapping[str, Any], mode: str, counted: dict,
                                   r.get("cond", ""), r.get("unless_next", "")))
     from . import specs_questions
     counted["questions"] = specs_questions.save_definitions(loaded.get("questions") or [], mode)
+    if "question-images.json" in z.namelist():
+        # The same screenshot already here is kept once.
+        for i in json.loads(z.read("question-images.json").decode("utf-8")) or []:
+            if isinstance(i, dict) and i.get("key") and i.get("file") in z.namelist():
+                specs_questions.add_image(str(i["key"]), z.read(i["file"]), i.get("code", ""),
+                                          i.get("clause", ""), i.get("caption", ""), _who())
     if "template.docx" in z.namelist() and template_bytes() is None:
         save_template("house-template.docx", z.read("template.docx"))
     # A kind's own template comes with its sections: it is how they look.

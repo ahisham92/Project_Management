@@ -825,7 +825,91 @@ def details(set_id: int):
         here=here, total=sum(len(g["questions"]) for g in groups),
         open_n=sum(g["open"] for g in groups), need_n=sum(g["need"] for g in groups), element_labels=labels,
         FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
-        picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
+        picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP,
+        explain_key=request.args.get("explain", ""))
+
+
+@bp.get("/sets/<int:set_id>/explain/<key>")
+@login_required
+def explain(set_id: int, key: str):
+    """The side panel beside a question: what it means, a drawing of it, and
+    what the project's codes say about it, with their screenshots."""
+    row = _set_or_404(set_id)
+    found = specs_questions.explained(key, row["family"])
+    if found is None:
+        abort(404)
+    asked = next((q for q in _asked(set_id, row) if q["key"] == key), None)
+    return render_template(
+        "specs/_explain.html", spec=row, q=found, asked=asked, admin=_is_admin(),
+        refs_text=specs_questions.refs_as_lines(specs_questions.refs_of(found)),
+        drawings=specs_questions.drawings(), group=request.args.get("group", ""))
+
+
+def _back_to_panel(key: str):
+    set_id = request.form.get("set_id", type=int)
+    if set_id:
+        return redirect(url_for("specs.details", set_id=set_id, group=request.form.get("group") or None,
+                                explain=key))
+    return redirect(url_for("specs.index"))
+
+
+@bp.post("/questions/<key>/explain")
+@login_required
+def save_explanation(key: str):
+    if _admin_only() and key in specs_questions.definitions():
+        specs_questions.save_explanation(
+            key, request.form.get("definition", ""), request.form.get("picture", ""),
+            specs_questions.refs_from_lines(request.form.get("refs", "")))
+        flash("Saved the explanation. Every project sees it.", "success")
+    return _back_to_panel(key)
+
+
+@bp.post("/questions/<key>/images")
+@login_required
+def add_question_images(key: str):
+    if _admin_only() and key in specs_questions.definitions():
+        code, clause = request.form.get("code", ""), request.form.get("clause", "")
+        added = bad = 0
+        for f in request.files.getlist("image"):
+            data = f.read()
+            if not data:
+                continue
+            if specs_questions.add_image(key, data, code, clause, request.form.get("caption", ""),
+                                         store._who()):
+                added += 1
+            else:
+                bad += 1
+        if added:
+            flash(f"Added {added} picture{'s' if added != 1 else ''}"
+                  + (f" to {code} {clause}".rstrip() if code else "") + ".", "success")
+        if bad:
+            flash(f"{bad} file{'s were' if bad != 1 else ' was'} not added: only PNG, JPEG, GIF "
+                  f"or WebP pictures up to {specs_questions.IMAGE_LIMIT // (1024 * 1024)} MB.", "error")
+        if not added and not bad:
+            flash("Choose or paste a picture first.", "error")
+    return _back_to_panel(key)
+
+
+@bp.post("/questions/<key>/images/<int:image_id>/delete")
+@login_required
+def delete_question_image(key: str, image_id: int):
+    found = specs_questions.image(image_id)
+    if _admin_only() and found and found["key"] == key:
+        specs_questions.delete_image(image_id)
+        flash("Took the picture out.", "success")
+    return _back_to_panel(key)
+
+
+@bp.get("/question-images/<int:image_id>")
+@login_required
+def question_image(image_id: int):
+    found = specs_questions.image(image_id)
+    if found is None:
+        abort(404)
+    response = Response(found["content"], mimetype=found["mime"])
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @bp.route("/sets/<int:set_id>/blanks", methods=["GET", "POST"])

@@ -230,9 +230,12 @@ def new_set():
     return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
 
 
-def _added(set_id: int) -> None:
+def _added(set_id: int, before: set[int] | None = None) -> None:
     """The sections the answers call for, put in, and the engineer told which
-    and why; and the ones in it the answers now rule out, named."""
+    and why; and the ones in it that the answers have just ruled out, named
+    with a button to take them out (they stay unless the engineer says so,
+    since they may carry amendments). One already ruled out before this
+    change is not named again."""
     done = store.auto_add(set_id)
     if done["added"]:
         flash(Markup("Added {n} section{s} the answers call for: {list}.").format(
@@ -241,13 +244,32 @@ def _added(set_id: int) -> None:
                 x["number"], specs_check.title_case(x["title"]),
                 "every project of this kind" if x["applies"] == store.ALWAYS else x["applies"])
                 for x in done["added"])), "success")
-    if done["out"]:
-        flash(Markup("No longer called for by the answers: {list}. Take {it} out on {its} page if "
-                     "{it} should go.").format(
+    out = [x for x in done["out"] if x["id"] not in (before or set())]
+    if out:
+        one = len(out) == 1
+        flash(Markup(
+            "Your answers no longer call for {list}. {It} stays in the specification with any "
+            "amendments until you take {it_} out.{button}").format(
             list=Markup("; ").join(Markup("<strong>{}</strong> {} ({})").format(
-                x["number"], specs_check.title_case(x["title"]), x["applies"]) for x in done["out"]),
-            it="it" if len(done["out"]) == 1 else "they",
-            its="its" if len(done["out"]) == 1 else "their"), "error")
+                x["number"], specs_check.title_case(x["title"]), x["applies"]) for x in out),
+            It="It" if one else "They", it_="it" if one else "them",
+            button=Markup('<form method="post" action="{url}" class="flash-action">{ids}'
+                          '<button type="submit" class="btn btn-ghost btn-sm">Take {it_} out</button>'
+                          "</form>").format(
+                url=url_for("specs.drop_ruled_out", set_id=set_id), it_="it" if one else "them",
+                ids=Markup("").join(Markup('<input type="hidden" name="section_id" value="{}">').format(x["id"])
+                                    for x in out))), "notice")
+
+
+@bp.post("/sets/<int:set_id>/sections/ruled-out")
+@login_required
+def drop_ruled_out(set_id: int):
+    """The sections the answers no longer call for, taken out at the engineer's word."""
+    _set_or_404(set_id)
+    n = store.remove_by_master(set_id, (int(v) for v in request.form.getlist("section_id") if v.isdigit()))
+    flash(f"Took {n} section{'s' if n != 1 else ''} out of this specification." if n
+          else "Those sections were already out.", "success")
+    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
 
 
 def _read_model(set_id: int, filename: str, data: bytes) -> bool:
@@ -370,13 +392,14 @@ def save_set(set_id: int):
         else:
             chosen[key] = request.form.get(f"opt_{key}", "")
     values = {v["key"]: request.form.get(f"var_{v['key']}", "") for v in store.variables()}
+    before = store.ruled_out(set_id)
     try:
         store.update_set(set_id, request.form, chosen, values)
     except specs.SpecError as exc:
         flash(str(exc), "error")
     else:
         flash("Saved.", "success")
-        _added(set_id)
+        _added(set_id, before)
     step = request.form.get("next")
     if step in ("elements", "questions", "sections"):
         return redirect(url_for("specs.spec_set", set_id=set_id) + f"#step-{step}")
@@ -395,8 +418,10 @@ def upload_model(set_id: int):
     models = _uploads("model", MOST_MODEL)
     if not models:
         flash("Choose the model's IFC export or schedule first.", "error")
-    elif _read_model(set_id, *models[0]):
-        _added(set_id)
+    else:
+        before = store.ruled_out(set_id)
+        if _read_model(set_id, *models[0]):
+            _added(set_id, before)
     return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
 
 

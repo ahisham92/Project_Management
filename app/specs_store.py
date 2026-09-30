@@ -495,6 +495,24 @@ def auto_add(set_id: int) -> dict[str, list[dict]]:
     return {"added": wanted, "out": [s for s in called["out"] if s["id"] in have]}
 
 
+def ruled_out(set_id: int) -> set[int]:
+    """The library sections this project has that its answers rule out."""
+    row = spec_set(set_id)
+    have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
+                                           "WHERE set_id = ?", (set_id,)) if r["section_id"]}
+    return {s["id"] for s in called_for(chosen_for(row), row["family"])["out"] if s["id"] in have}
+
+
+def remove_by_master(set_id: int, section_ids: Iterable[int]) -> int:
+    """The project's copies of these library sections taken out; how many."""
+    wanted = set(section_ids)
+    rows = [r for r in query("SELECT id, section_id FROM spec_set_sections WHERE set_id = ?", (set_id,))
+            if r["section_id"] in wanted]
+    for r in rows:
+        remove_set_section(set_id, r["id"])
+    return len(rows)
+
+
 def save_set_section(set_id: int, row_id: int, nodes: list[dict], title: str | None = None,
                      doc_code: str | None = None) -> None:
     current = set_section(set_id, row_id)

@@ -807,6 +807,8 @@ tr.is-critical { background: color-mix(in srgb, var(--critical) 5%, transparent)
 .flash { padding: 8px 12px; border-radius: 8px; font-size: 0.875rem; }
 .flash.success { background: var(--tint-good); color: var(--good-ink); }
 .flash.error { background: var(--tint-critical); color: var(--critical); }
+.flash.notice { background: var(--tint-warning); color: var(--ink); }
+.flash-action { display: inline-block; margin-left: 8px; }
 
 /* --- charts --------------------------------------------------------------- */
 

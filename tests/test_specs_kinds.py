@@ -218,7 +218,21 @@ def test_ticking_an_element_adds_its_section_and_says_so(app, signed_in):
     # Unticked, the section stays (it may carry amendments) but is named.
     answer = signed_in.post(f"/specs/sets/{set_id}", data={
         "name": "Tunnel", "tile_shown": ["shotcrete"]}, follow_redirects=True)
-    assert "No longer called for by the answers" in text(answer)
+    body = text(answer)
+    assert "Your answers no longer call for" in body and "until you take it out" in body
+    assert "Take it out</button>" in body
+    # Said once: saving again with the same answers does not say it again.
+    again = signed_in.post(f"/specs/sets/{set_id}", data={
+        "name": "Tunnel", "tile_shown": ["shotcrete"]}, follow_redirects=True)
+    assert "Your answers no longer call for" not in text(again)
+    # The button takes it out, and it stays out.
+    with app.app_context():
+        section_id = specs_store.section_by_number("033713", "16A")["id"]
+    answer = signed_in.post(f"/specs/sets/{set_id}/sections/ruled-out",
+                            data={"section_id": [str(section_id)]}, follow_redirects=True)
+    assert "Took 1 section out of this specification" in text(answer)
+    with app.app_context():
+        assert specs_store.set_sections(set_id) == []
 
 
 def test_a_section_taken_out_by_hand_stays_out(app, signed_in):

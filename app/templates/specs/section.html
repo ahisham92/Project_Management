@@ -25,10 +25,15 @@
   <div class="inline-form">
     {% if spec %}
       <a class="btn btn-primary" href="{{ url_for('specs.edit_set_section', set_id=spec['id'], row_id=section['id']) }}">Amend</a>
-      <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id']) }}">Download .docx</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id']) }}" title="Clean copy in the house template">Download .docx</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id'], fmt='tracked') }}" title="{% if master %}Every change from the master as Word's tracked changes, to accept or reject in Word{% else %}This project's own section: every paragraph shows as an insertion{% endif %}">Word with tracked changes</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id'], fmt='pdf') }}" title="The section as issued, as a PDF">PDF</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id'], row=section['id']) }}" title="The whole specification as issued, as pages to turn, open at this section">Read as a book</a>
     {% else %}
       {% if is_admin %}<a class="btn btn-primary" href="{{ url_for('specs.edit_library_section', section_id=section['id']) }}">Edit the master</a>{% endif %}
       <a class="btn btn-ghost" href="{{ url_for('specs.library_docx', section_id=section['id']) }}">Download .docx</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.library_docx', section_id=section['id'], fmt='pdf') }}" title="The section as issued, as a PDF">PDF</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.library_book', section_id=section['id']) }}" title="This section as issued, as pages to turn">Read as a book</a>
     {% endif %}
   </div>
 </div>

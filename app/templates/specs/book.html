@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{# The specification read as a book: the text as it is issued, on pages the
+   size of the issued document, two to a spread, turned like leaves.
+
+   The page itself sends the text once, as one continuous flow (which is also
+   what somebody without JavaScript reads). spec-book.js cuts that flow into
+   pages by measuring it, puts the running header and footer on each, and turns
+   them. Each section starts on a page of its own and numbers its own pages, as
+   each issued section is a document of its own. #}
+{% block title %}{% if spec %}{{ spec['name'] }}{% else %}{{ sections[0]['number'] }} {{ sections[0]['title'] }}{% endif %} · Book · Specs Writer{% endblock %}
+
+{% macro block(b, values, reader, here, nbs) %}
+  {% if b['level'] == 'TBL' %}
+    <div class="bk-b bk-TBL bk-i{{ b['indent'] }}"><table class="bk-table"><tbody>
+      {% for row in b['text'] | spec_rows %}<tr>{% for cell in row %}<td>{{ cell | spectext(values, reader, here) }}</td>{% endfor %}</tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}
+    <div class="bk-b bk-{{ b['level'] }}{% if nbs %} bk-nbs{% endif %}">
+      {%- if b['label'] %}<span class="bk-n">{{ b['label'] }}</span>{% endif -%}
+      <span class="bk-t">{{ b['text'] | spectext(values, reader, here) }}</span></div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-book.css') }}">
+<div class="bk" data-book{% if start_row %} data-start-row="{{ start_row }}"{% endif %}>
+  <div class="bk-bar no-print">
+    <a class="btn btn-ghost btn-sm bk-back" href="{{ back }}" title="Back to {{ back_label }}">&larr; {{ back_label }}</a>
+    <div class="bk-nav" role="group" aria-label="Turn the pages">
+      <button type="button" class="btn btn-ghost btn-sm" data-bk-go="first" title="First page (Home)" aria-label="First page">&laquo;</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-bk-go="prev" title="Previous (Left arrow, Page Up)" aria-label="Previous page">&lsaquo; Prev</button>
+      <span class="bk-where small" data-bk-where aria-live="polite">Laying out the pages&hellip;</span>
+      <button type="button" class="btn btn-ghost btn-sm" data-bk-go="next" title="Next (Right arrow, Page Down)" aria-label="Next page">Next &rsaquo;</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-bk-go="last" title="Last page (End)" aria-label="Last page">&raquo;</button>
+    </div>
+    <div class="bk-tools">
+      {% if sections | length > 1 %}
+        <label class="bk-pick small"><span class="muted">Section</span>
+          <select data-bk-jump aria-label="Go to a section">
+            {% for s in sections %}<option value="{{ s['id'] }}">{{ s['number'] }} {{ s['title'] }}</option>{% endfor %}
+          </select></label>
+      {% endif %}
+      <label class="bk-pick small"><span class="muted">Zoom</span>
+        <select data-bk-zoom aria-label="Zoom">
+          <option value="fit">Fit</option>
+          <option value="1">100%</option>
+        </select></label>
+    </div>
+  </div>
+
+  {% if not sections %}
+    <div class="card"><div class="card-body"><p class="muted">There are no sections in this specification yet, so there is nothing to read.</p></div></div>
+  {% else %}
+    <div class="bk-stage" data-bk-stage tabindex="-1" aria-label="The specification as a book">
+      <div class="bk-viewport" data-bk-viewport></div>
+    </div>
+
+    {# The running header every page carries, as the issued document has it. #}
+    <div class="bk-head" data-bk-head hidden>
+      {% for left, right in header %}<div class="bk-head-line"><span>{{ left }}</span><span>{{ right }}</span></div>{% endfor %}
+    </div>
+
+    <div class="bk-source bk-paper" data-bk-source>
+      {% for s in sections %}
+        <section class="bk-sec" data-row="{{ s['id'] }}" data-number="{{ s['number'] }}"
+                 data-title="{{ s['title'] }}" data-code="{{ s['code_line'] }}">
+          <div class="bk-b bk-SCT">{% if not s['nbs'] %}SECTION {% endif %}{{ s['number'] }} - {{ s['title'] }}</div>
+          {% for b in s['blocks'] %}{{ block(b, values, reader, s['number'], s['nbs']) }}{% endfor %}
+          {% if not s['nbs'] %}<div class="bk-b bk-EOS">END OF SECTION {{ s['number'] }}</div>{% endif %}
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+<script src="{{ url_for('static', filename='spec-book.js') }}"></script>
+{% endblock %}

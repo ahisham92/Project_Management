@@ -495,6 +495,24 @@ def auto_add(set_id: int) -> dict[str, list[dict]]:
     return {"added": wanted, "out": [s for s in called["out"] if s["id"] in have]}
 
 
+def ruled_out(set_id: int) -> set[int]:
+    """The library sections this project has that its answers rule out."""
+    row = spec_set(set_id)
+    have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
+                                           "WHERE set_id = ?", (set_id,)) if r["section_id"]}
+    return {s["id"] for s in called_for(chosen_for(row), row["family"])["out"] if s["id"] in have}
+
+
+def remove_by_master(set_id: int, section_ids: Iterable[int]) -> int:
+    """The project's copies of these library sections taken out; how many."""
+    wanted = set(section_ids)
+    rows = [r for r in query("SELECT id, section_id FROM spec_set_sections WHERE set_id = ?", (set_id,))
+            if r["section_id"] in wanted]
+    for r in rows:
+        remove_set_section(set_id, r["id"])
+    return len(rows)
+
+
 def save_set_section(set_id: int, row_id: int, nodes: list[dict], title: str | None = None,
                      doc_code: str | None = None) -> None:
     current = set_section(set_id, row_id)
@@ -539,13 +557,105 @@ def bring_up_to_date(set_id: int, row_id: int) -> None:
     _touch(set_id)
 
 
-def remove_set_section(set_id: int, row_id: int) -> None:
+def remove_set_section(set_id: int, row_id: int) -> list[str]:
+    """A section taken out of a project. When adding it by hand set answers,
+    those answers go back to what they were (it was added by mistake); what
+    changed back, in words."""
     row = set_section(set_id, row_id)
     execute("DELETE FROM spec_set_sections WHERE id = ? AND set_id = ?", (row_id, set_id))
     _touch(set_id)
     master = section(row["section_id"]) if row and row["section_id"] else None
+    undone = _unset_answers(set_id, master["id"]) if master else []
     if master and fits(master["applies"], chosen_for(spec_set(set_id))):
         _decline(set_id, add=[master["id"]])
+    return undone
+
+
+def _set_by(row: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    try:
+        data = json.loads(row.get("set_by") or "{}")
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        return {}
+
+
+def answer_for(set_id: int, section_id: int) -> list[str]:
+    """A section added by hand is taken as the answer that calls for it: the
+    project's answers are set so its condition holds, as if the engineer had
+    chosen them, and what they were before is kept so that taking the section
+    out again puts them back. What was set, in words."""
+    row = spec_set(set_id)
+    master = section(section_id)
+    applies = (master or {}).get("applies") or ""
+    if not master or applies in ("", ALWAYS):
+        return []
+    chosen = chosen_for(row)
+    if specs.applies(applies, chosen):
+        return []
+    kinds = {o["key"]: o for o in options()}
+    stored = json.loads(row["options"] or "{}")
+    before: dict[str, str] = {}
+    said = []
+    for part in applies.split("&"):
+        part = part.strip()
+        negate = "!=" in part
+        key, _, wanted = part.partition("!=" if negate else "=")
+        key = key.strip()
+        o = kinds.get(key)
+        if o is None or specs.applies(part, {**chosen, **stored}):
+            continue
+        names = [w.strip() for w in wanted.split("|") if w.strip()]
+        norm = {specs._norm(w) for w in names}
+        if negate:
+            pick = [c for c in o["choice_list"] if specs._norm(c) not in norm
+                    and specs._norm(c) != "none"] or [c for c in o["choice_list"]
+                                                     if specs._norm(c) not in norm]
+        else:
+            pick = [c for c in o["choice_list"] if specs._norm(c) in norm] or names
+        if not pick:
+            continue
+        now = stored.get(key, chosen.get(key, "")) or ""
+        before.setdefault(key, now)
+        if o["kind"] == "many":
+            have = [v for v in now.split("|") if v and specs._norm(v) != "none"]
+            stored[key] = "|".join(have + [pick[0]])
+        else:
+            stored[key] = pick[0]
+        said.append(f"{o['label']}: {pick[0]}")
+    if not said:
+        return []
+    set_by = _set_by(row)
+    set_by.setdefault(str(section_id), {}).update(
+        {k: v for k, v in before.items() if k not in set_by.get(str(section_id), {})})
+    execute("UPDATE spec_sets SET options = ?, set_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(stored, ensure_ascii=False), json.dumps(set_by, ensure_ascii=False), set_id))
+    return said
+
+
+def _unset_answers(set_id: int, section_id: int) -> list[str]:
+    """The answers adding this section by hand set, put back as they were
+    unless somebody has changed them since or another section still needs them."""
+    row = spec_set(set_id)
+    set_by = _set_by(row)
+    before = set_by.pop(str(section_id), None)
+    if not before:
+        return []
+    stored = json.loads(row["options"] or "{}")
+    kinds = {o["key"]: o for o in options()}
+    still = [s for s in (section(r["section_id"]) for r in query(
+        "SELECT section_id FROM spec_set_sections WHERE set_id = ? AND section_id IS NOT NULL",
+        (set_id,))) if s]
+    said = []
+    for key, was in before.items():
+        trial = {**chosen_for(row), key: was}
+        if any(fits(s["applies"], chosen_for(row)) and not fits(s["applies"], trial) for s in still):
+            continue
+        stored[key] = was
+        o = kinds.get(key)
+        said.append(f"{o['label'] if o else key}: {was or 'not answered'}")
+    execute("UPDATE spec_sets SET options = ?, set_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(stored, ensure_ascii=False), json.dumps(set_by, ensure_ascii=False), set_id))
+    return said
 
 
 def import_to_set(set_id: int, filename: str, data: bytes) -> tuple[int, str]:
@@ -659,6 +769,48 @@ def _whole(rows: Iterable[Mapping[str, Any]]) -> list[dict]:
              "nodes": specs.loads(r["body"])} for r in rows]
 
 
+def blanks(set_id: int) -> list[dict]:
+    """The [choices] and <Insert ...> places still open in a project's text."""
+    from . import specs_blanks
+
+    return specs_blanks.find(set_sections(set_id), chosen_for(spec_set(set_id)))
+
+
+def fill_blanks(set_id: int, answers: Mapping[str, tuple[str, bool]]) -> int:
+    """Answers written into the project's paragraphs, each in place of its
+    blank: ``answers`` maps a blank's key to (the words, whether the same
+    words go wherever that same blank appears). How many blanks were filled."""
+    from . import specs_blanks
+
+    found = blanks(set_id)
+    by_key = {b["key"]: b for b in found}
+    todo: dict[tuple[int, str], dict[tuple[str, int], str]] = {}
+    # A blank's own answer comes before one given for "wherever it appears".
+    for key, (words, everywhere) in sorted(answers.items(), key=lambda kv: kv[1][1]):
+        b = by_key.get(key)
+        if b is None:
+            continue
+        targets = [x for x in found if x["run"] == b["run"]] if everywhere else [b]
+        for t in targets:
+            todo.setdefault((t["row_id"], t["node_id"]), {}).setdefault((t["run"], t["nth"]), words)
+    filled = 0
+    for (row_id, node_id), fills in todo.items():
+        row = set_section(set_id, row_id)
+        if row is None:
+            continue
+        nodes = specs.loads(row["body"])
+        for n in nodes:
+            if n["id"] != node_id:
+                continue
+            # Later copies of a run first, so the earlier ones keep their places.
+            for (run, nth), words in sorted(fills.items(), key=lambda kv: -kv[0][1]):
+                was = n["text"]
+                n["text"] = specs_blanks.fill(n["text"], run, nth, words)
+                filled += n["text"] != was
+        save_set_section(set_id, row_id, nodes)
+    return filled
+
+
 def set_whole(set_id: int) -> list[dict]:
     return _whole(query("SELECT id, number, title, body FROM spec_set_sections WHERE set_id = ? "
                         "ORDER BY number", (set_id,)))
@@ -685,16 +837,46 @@ def check_set(set_id: int) -> dict:
     """The checker's report for a project, each item keyed and marked with what
     the engineer decided about it, if anything."""
     report = _check_set(set_id)
-    settled = {r["key"]: dict(r) for r in query(
-        "SELECT key, state, settled_by, settled_at FROM spec_check_settled WHERE set_id = ?",
-        (set_id,))}
+    settled = {r["key"]: _settled_row(r) for r in query(
+        "SELECT key, state, message, settled_by, settled_at, detail FROM spec_check_settled "
+        "WHERE set_id = ?", (set_id,))}
     report["open"] = {}
+    seen = set()
     for group in GROUPS:
         for item in report[group]:
             item["key"] = _item_key(group, item)
             item["settled"] = settled.get(item["key"])
+            seen.add(item["key"])
         report["open"][group] = sum(1 for i in report[group] if not i["settled"])
+    # What was amended or removed and is no longer found: kept, to show what was done.
+    report["done"] = {group: [] for group in GROUPS}
+    for key, row in settled.items():
+        detail = row["detail"]
+        if key in seen or row["how"] == "kept" or detail.get("group") not in report["done"]:
+            continue
+        report["done"][detail["group"]].append({
+            **{k: detail.get(k) or "" for k in ("section", "title", "part", "article", "path",
+                                                "node_id")},
+            "row_id": detail.get("row_id"), "message": detail.get("message") or row["message"],
+            "severity": "info", "text": "", "words": "", "fix": None, "key": key,
+            "settled": row, "done": True})
     return report
+
+
+# What each stored state means now. An item accepted or rejected before items were
+# kept, amended or removed was settled with its text as it stood: it was kept.
+SETTLED_AS = {"kept": "kept", "amended": "amended", "removed": "removed",
+              "accepted": "kept", "rejected": "kept"}
+
+
+def _settled_row(r: Mapping[str, Any]) -> dict:
+    row = dict(r)
+    row["how"] = SETTLED_AS.get(row["state"], "kept")
+    try:
+        row["detail"] = json.loads(row.get("detail") or "{}") or {}
+    except ValueError:
+        row["detail"] = {}
+    return row
 
 
 def _item_key(group: str, item: Mapping[str, Any]) -> str:
@@ -708,26 +890,268 @@ def _item_key(group: str, item: Mapping[str, Any]) -> str:
     return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:20]
 
 
-def settle(set_id: int, key: str, state: str, message: str = "") -> None:
-    """An item accepted or rejected; a blank state opens it again."""
-    if state not in ("accepted", "rejected", ""):
-        raise specs.SpecError("An item is accepted or rejected.")
+def settle(set_id: int, key: str, state: str, message: str = "",
+           detail: Mapping[str, Any] | None = None) -> None:
+    """An item kept, amended or removed; a blank state opens it again. (Accepted
+    and rejected, from before, are taken as kept.)"""
+    if state not in SETTLED_AS and state != "":
+        raise specs.SpecError("An item is kept, amended or removed.")
     with get_db() as conn:
         conn.execute("DELETE FROM spec_check_settled WHERE set_id = ? AND key = ?", (set_id, key))
         if state:
-            conn.execute("INSERT INTO spec_check_settled (set_id, key, state, message, settled_by) "
-                         "VALUES (?, ?, ?, ?, ?)", (set_id, key, state, message[:300], _who()))
+            conn.execute("INSERT INTO spec_check_settled (set_id, key, state, message, settled_by, "
+                         "detail) VALUES (?, ?, ?, ?, ?, ?)",
+                         (set_id, key, state, message[:300], _who(),
+                          json.dumps(detail or {}, ensure_ascii=False) if detail else ""))
 
 
 def open_items(set_id: int, report: Mapping[str, Any] | None = None) -> dict:
-    """What still waits for an accept or reject: check items and language
-    suggestions (each change counted once, however many places it is in)."""
+    """What still waits for the engineer: check items to keep, amend or remove,
+    and language suggestions to accept or reject (each change counted once,
+    however many places it is in)."""
     report = report if report is not None else check_set(set_id)
     # Paragraphs said twice are advice on keeping the text tidy; they do not hold an issue.
     checks = sum(n for group, n in report["open"].items() if group not in ADVICE)
     changes = {(f["kind"], f["old"].lower(), f["new"].lower(), f["message"] if not f["old"] else "")
                for f in language_set(set_id)}
     return {"checks": checks, "language": len(changes), "total": checks + len(changes)}
+
+
+# --- keeping, amending or removing what a check item is about ---------------------------
+
+WHERE_KEYS = ("section", "title", "part", "article", "path")
+# A heading or a table is amended, never cut down a sentence at a time.
+WHOLE_ONLY = ("PRT", "ART", specs.TABLE)
+
+
+def _targets(item: Mapping[str, Any]) -> list[dict]:
+    """The paragraphs an item is about: its own, or each of its places."""
+    if item.get("done"):
+        return list((item["settled"]["detail"] or {}).get("places") or [])
+    places = item.get("places") or [item]
+    return [p for p in places if p.get("row_id") and p.get("node_id")]
+
+
+def _place(p: Mapping[str, Any], s: Mapping[str, Any], n: Mapping[str, Any]) -> dict:
+    return {**{k: p.get(k) or "" for k in WHERE_KEYS}, "row_id": s["id"], "node_id": n["id"]}
+
+
+def label(p: Mapping[str, Any]) -> str:
+    """Where a paragraph is, as a flash says it: "1.2.B.4 of 032000"."""
+    return f"{p['path']} of {p['section']}" if p.get("path") else (p.get("section") or "the section")
+
+
+def labels(places: list[Mapping[str, Any]]) -> str:
+    names = list(dict.fromkeys(label(p) for p in places))
+    if len(names) > 4:
+        return ", ".join(names[:3]) + f" and {len(names) - 3} more"
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _node(s: Mapping[str, Any], node_id: str) -> dict | None:
+    return next((n for n in s["nodes"] if n["id"] == node_id), None)
+
+
+def _under(nodes: list[Mapping[str, Any]], node_id: str) -> list[str]:
+    """The paragraphs under one, which go with it when it goes (an editor's note
+    just before the next paragraph is that paragraph's, so it stays)."""
+    out, depth = [], None
+    for x in nodes:
+        if depth is None:
+            if x["id"] == node_id:
+                depth = specs.DEPTH.get(x["level"], len(specs.LEVELS))
+            continue
+        d = specs.DEPTH.get(x["level"])
+        if d is not None and d <= depth:
+            break
+        out.append(x)
+    while out and out[-1]["level"] == specs.NOTE:
+        out.pop()
+    return [x["id"] for x in out]
+
+
+def _removal(item: Mapping[str, Any], p: Mapping[str, Any], s: Mapping[str, Any],
+             n: Mapping[str, Any], where: Mapping[str, dict]) -> dict | None:
+    """What Remove would take out of one paragraph: the sentence the item is
+    about, or the whole paragraph when that is all there is."""
+    if n["level"] in WHOLE_ONLY:
+        return None
+    words = p.get("words") or ""
+    at = specs_check.locate(n["text"], item["message"], words, s["number"], where)
+    if at is None and words:
+        return None
+    left, gone = specs_check.without_sentence(n["text"], at) if at is not None else ("", n["text"])
+    return {"sentence": gone, "left": left, "whole": not left,
+            "under": len(_under(s["nodes"], n["id"])) if not left else 0}
+
+
+def check_actions(set_id: int, report: Mapping[str, Any]) -> None:
+    """What the check page can do with each item, as ``item["act"]``: each of its
+    paragraphs as kept, the amendment proposed for it, and what Remove would
+    take out (``None`` where Remove is not offered)."""
+    rows = set_whole(set_id)
+    where = specs_check.index(rows, chosen_for(spec_set(set_id)))
+    found = {(s["id"], n["id"]): (s, n) for s in rows for n in s["nodes"]}
+    for group in GROUPS:
+        for item in report[group] + report.get("done", {}).get(group, []):
+            places = []
+            for p in _targets(item):
+                hit = found.get((p.get("row_id"), p.get("node_id")))
+                if hit is None:
+                    continue
+                s, n = hit
+                proposed = n["text"] if item.get("done") else specs_check.propose(
+                    n["text"], item["message"], item.get("fix"), s["number"], where)
+                places.append({**_place(p, s, n), "current": n["text"], "proposed": proposed,
+                               "table": n["level"] == specs.TABLE,
+                               "remove": None if item.get("done") else _removal(item, p, s, n, where)})
+            several = len(places) > 1
+            can_remove = bool(places) and all(p["remove"] for p in places) and (
+                not several or bool(specs_check.missing_number(item["message"])))
+            item["act"] = {"places": places, "can_remove": can_remove,
+                           "missing": bool(specs_check.missing_number(item["message"])),
+                           "proposes": any(p["proposed"] != p["current"] for p in places),
+                           "confirm": _confirm(item, places) if can_remove else ""}
+
+
+def _confirm(item: Mapping[str, Any], places: list[dict]) -> str:
+    """What the browser asks before Remove: what goes."""
+    if len(places) == 1:
+        p, r = places[0], places[0]["remove"]
+        if r["whole"]:
+            ask = f"Remove paragraph {label(p)}?\n\n“{r['sentence']}”\n\n"
+            ask += "It is the only sentence in the paragraph, so the whole paragraph goes"
+            ask += (f", with the {r['under']} paragraph{'s' if r['under'] != 1 else ''} under it."
+                    if r["under"] else ".")
+            return ask
+        return f"Remove this sentence from {label(p)}?\n\n“{r['sentence']}”"
+    number = specs_check.missing_number(item["message"])
+    whole = [p for p in places if p["remove"]["whole"]]
+    ask = f"Remove the sentence that refers to Section {number} in each of the {len(places)} places?\n\n"
+    ask += "\n".join(f"{label(p)}: “{specs_check._brief(p['remove']['sentence'], 90)}”"
+                     for p in places[:8])
+    if whole:
+        ask += (f"\n\nIn {len(whole)} of them it is the only sentence, so the whole paragraph goes"
+                f" ({labels(whole)}).")
+    return ask
+
+
+def _find(report: Mapping[str, Any], key: str) -> tuple[str, dict | None]:
+    for group in GROUPS:
+        for item in report[group] + report.get("done", {}).get(group, []):
+            if item["key"] == key:
+                return group, item
+    return "", None
+
+
+def _tidy(text: str, table: bool) -> str:
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return text if table else re.sub(r"\s+", " ", text)
+
+
+def amend_item(set_id: int, key: str, edits: Iterable[tuple[int, str, str]]) -> dict:
+    """An item's paragraphs given the text the engineer settled on, and the item
+    settled as amended. ``edits`` are ``(row_id, node_id, text)``.
+
+    When the check still finds the same thing in the same paragraphs, the
+    amendment is what was meant, so that is settled as amended too."""
+    report = check_set(set_id)
+    group, item = _find(report, key)
+    if item is None:
+        raise specs.SpecError("That item is no longer on the check: the text it was about has "
+                              "changed since. Here is the check as it stands.")
+    targets = {(p.get("row_id"), p.get("node_id")): p for p in _targets(item)}
+    earlier = {(p.get("row_id"), p.get("node_id")): p.get("before")
+               for p in ((item.get("settled") or {}).get("detail") or {}).get("places") or []}
+    rows = {s["id"]: s for s in set_whole(set_id)}
+    places = []
+    for row_id, node_id, text in edits:
+        s = rows.get(row_id)
+        n = _node(s, node_id) if s else None
+        if n is None or (row_id, node_id) not in targets:
+            raise specs.SpecError("That paragraph is not in the section any more, or is not one "
+                                  "this item is about.")
+        text = _tidy(text, n["level"] == specs.TABLE)
+        if not text:
+            raise specs.SpecError("An amendment cannot be empty. To take the words out, use Remove.")
+        places.append({**_place(targets[(row_id, node_id)], s, n),
+                       "before": earlier.get((row_id, node_id)) or n["text"], "after": text})
+        if text != n["text"]:
+            n["text"] = text
+            s["changed"] = True
+    if not places:
+        raise specs.SpecError("Nothing to amend.")
+    for s in rows.values():
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    detail = {"group": group, "message": item["message"],
+              **{k: item.get(k) or "" for k in WHERE_KEYS + ("node_id",)},
+              "row_id": item.get("row_id"), "places": places}
+    mine = {(p["row_id"], p["node_id"]) for p in places}
+    after = check_set(set_id)
+    still = [i for i in after[group] if i["message"] == item["message"] and not i["settled"]
+             and _targets(i) and {(t["row_id"], t["node_id"]) for t in _targets(i)} <= mine]
+    settle(set_id, key, "")
+    for i in still:
+        settle(set_id, i["key"], "amended", i["message"], detail)
+    if not still:
+        settle(set_id, key, "amended", item["message"], detail)
+    # The key the amendment is now kept under, for the page to show it.
+    return {**detail, "key": still[0]["key"] if still else key}
+
+
+def remove_items(set_id: int, keys: Iterable[str]) -> list[dict]:
+    """The sentence each item is about taken out of its paragraphs (the whole
+    paragraph, and the ones under it, when it was the only sentence), and the
+    item settled as removed. What was done comes back, one entry per item."""
+    keys = list(keys)
+    report = check_set(set_id)
+    rows = set_whole(set_id)
+    where = specs_check.index(rows, chosen_for(spec_set(set_id)))
+    by_id = {s["id"]: s for s in rows}
+    done = []
+    for key in keys:
+        group, item = _find(report, key)
+        if item is None or item.get("done"):
+            continue
+        targets = _targets(item)
+        if len(targets) > 1 and not specs_check.missing_number(item["message"]):
+            raise specs.SpecError("Only a reference to a missing section is removed in every place "
+                                  "at once. Amend the others one by one.")
+        places = []
+        for p in targets:
+            s = by_id.get(p.get("row_id"))
+            n = _node(s, p.get("node_id")) if s else None
+            if n is None:
+                continue
+            r = _removal(item, p, s, n, where)
+            if r is None:
+                continue
+            place = {**_place(p, s, n), "before": n["text"], "after": r["left"],
+                     "removed": r["sentence"], "whole": r["whole"], "under": 0}
+            if r["left"]:
+                n["text"] = r["left"]
+            else:
+                gone = {n["id"], *_under(s["nodes"], n["id"])}
+                place["under"] = len(gone) - 1
+                s["nodes"] = [x for x in s["nodes"] if x["id"] not in gone]
+            s["changed"] = True
+            places.append(place)
+        if not places:
+            if len(keys) == 1:
+                raise specs.SpecError("The words this item is about were not found in the paragraph "
+                                      "as it stands. Amend it instead.")
+            continue
+        detail = {"group": group, "message": item["message"],
+                  **{k: item.get(k) or "" for k in WHERE_KEYS + ("node_id",)},
+                  "row_id": item.get("row_id"), "places": places}
+        done.append({"key": key, "group": group, "item": item, "detail": detail})
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    for one in done:
+        settle(set_id, one["key"], "removed", one["item"]["message"], one["detail"])
+    return done
 
 
 def _check_set(set_id: int) -> dict:

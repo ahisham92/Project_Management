@@ -1,0 +1,31 @@
+/* The check page: Keep, Amend, Remove, and what was done. */
+.spec-actions { gap: 8px; align-items: center; flex-wrap: wrap; }
+.spec-settle { gap: 6px; flex-wrap: wrap; align-items: center; }
+.spec-keep { color: var(--good-ink); border-color: var(--good); }
+.spec-remove { color: var(--critical); }
+.spec-remove:hover { background: var(--tint-critical); }
+
+.spec-amend { display: grid; gap: 10px; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); }
+.spec-amend[hidden] { display: none; }
+.spec-amend-place { display: grid; gap: 4px; }
+.spec-amend-place + .spec-amend-place { padding-top: 10px; border-top: 1px dashed var(--grid); }
+.spec-amend-now { font-size: 0.85rem; color: var(--ink-2); line-height: 1.5; padding: 6px 8px;
+  border-left: 3px solid var(--grid); background: var(--raised); }
+.spec-amend-text { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical;
+  font: inherit; font-size: 0.9rem; line-height: 1.5; }
+
+.spec-done { display: grid; gap: 8px; margin-top: 2px; }
+.spec-done-place { display: grid; gap: 2px; }
+.spec-done-label { color: var(--good-ink); font-weight: 600; }
+.spec-done-text { font-size: 0.88rem; line-height: 1.5; padding: 6px 8px; border-left: 3px solid var(--good);
+  background: var(--tint-good); border-radius: 0 4px 4px 0; }
+.spec-done-removed { text-decoration: line-through; text-decoration-color: var(--critical);
+  border-left-color: var(--critical); background: var(--tint-critical); color: var(--ink-2); }
+.spec-done-was summary { cursor: pointer; color: var(--muted); }
+.spec-done-was div { color: var(--ink-2); padding: 4px 8px; }
+
+/* An item just amended or removed stays readable among the settled ones. */
+.spec-check-item.spec-is-settled:has(.spec-done), .spec-check-item.spec-just { opacity: 1; }
+.spec-check-item.spec-just { box-shadow: 0 0 0 2px var(--series-1); }
+.spec-check-item:has(.spec-amend:not([hidden])) { opacity: 1; }

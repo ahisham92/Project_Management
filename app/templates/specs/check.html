@@ -14,20 +14,101 @@
   {% elif item['section'] %}<span class="spec-where-section">{{ item['section'] }}</span>{% endif %}
 {% endmacro %}
 
+{% macro back_fields() %}{% if issuing %}<input type="hidden" name="issuing" value="1">{% endif %}{% if fmt %}<input type="hidden" name="fmt" value="{{ fmt }}">{% endif %}{% endmacro %}
+
+{# Keep, Amend, Remove: what the engineer decides about an item. Keep leaves the
+   text as it is; Amend opens the paragraph (or each of its places) with the
+   amendment proposed; Remove takes out the sentence the item is about. #}
 {% macro settle_form(item) %}
   {% if spec and item.get('key') %}
-  <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form spec-settle">
-    <input type="hidden" name="key" value="{{ item['key'] }}"><input type="hidden" name="message" value="{{ item['message'] }}">
-    {% if issuing %}<input type="hidden" name="issuing" value="1">{% endif %}
+  {% set act = item.get('act') or {'places': [], 'can_remove': False, 'confirm': ''} %}
+  {% set amend_url = url_for('specs.check_set', set_id=spec['id'], amend=item['key'], issuing=issuing or None, fmt=fmt or None) ~ '#item-' ~ item['key'] %}
+  <div class="inline-form spec-settle">
     {% if item['settled'] %}
-      {{ badge('good' if item['settled']['state'] == 'accepted' else 'neutral', 'Accepted' if item['settled']['state'] == 'accepted' else 'Rejected') }}
+      {% set how = item['settled']['how'] %}
+      {{ badge('good', {'kept': 'Kept', 'amended': 'Amended', 'removed': 'Removed'}[how]) }}
       <span class="small muted">{{ item['settled']['settled_by'] }} · {{ item['settled']['settled_at'][:16] }}</span>
-      <button type="submit" name="state" value="" class="btn btn-ghost btn-sm">Open again</button>
+      {% if how == 'amended' and act['places'] %}
+        <a class="btn btn-ghost btn-sm spec-amend-open" href="{{ amend_url }}" data-key="{{ item['key'] }}" aria-controls="amend-{{ item['key'] }}">Amend again</a>
+      {% endif %}
+      {% if not item.get('done') %}
+      <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form">
+        <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
+        <button type="submit" name="state" value="" class="btn btn-ghost btn-sm" title="Back on the list of things to settle; the text stays as it is now">Open again</button>
+      </form>
+      {% endif %}
     {% else %}
-      <button type="submit" name="state" value="accepted" class="btn btn-ghost btn-sm spec-accept" title="Agreed: it is dealt with, or right as it stands for this project">Accept</button>
-      <button type="submit" name="state" value="rejected" class="btn btn-ghost btn-sm spec-reject" title="Not a problem here: the text stays as it is">Reject</button>
+      <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form">
+        <input type="hidden" name="key" value="{{ item['key'] }}"><input type="hidden" name="message" value="{{ item['message'] }}">{{ back_fields() }}
+        <button type="submit" name="state" value="kept" class="btn btn-ghost btn-sm spec-keep" title="Right as it stands for this project: the text stays as it is">Keep</button>
+      </form>
+      {% if act['places'] %}
+        <a class="btn btn-ghost btn-sm spec-amend-open" href="{{ amend_url }}" data-key="{{ item['key'] }}" aria-controls="amend-{{ item['key'] }}"
+           title="{{ 'Change the text: an amendment is proposed' if act['proposes'] else 'Change the text' }}">Amend</a>
+      {% endif %}
+      {% if act['can_remove'] %}
+      <form method="post" action="{{ url_for('specs.remove_item', set_id=spec['id']) }}" class="inline-form"
+            data-confirm="{{ act['confirm'] }}">
+        <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
+        <button type="submit" class="btn btn-ghost btn-sm spec-remove" title="Take the sentence out{{ ' in every place' if act['places'] | length > 1 }}">Remove</button>
+      </form>
+      {% endif %}
     {% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{# The box Amend opens: each paragraph the item is about, with the amendment
+   proposed in it. Shown when the page is opened with ?amend=<key>; with
+   JavaScript, Amend opens it in place. #}
+{% macro amend_box(item) %}
+  {% set act = item.get('act') %}
+  {% if spec and act and act['places'] %}
+  <form method="post" action="{{ url_for('specs.amend_item', set_id=spec['id']) }}" class="spec-amend"
+        id="amend-{{ item['key'] }}"{% if amending != item['key'] %} hidden{% endif %}>
+    <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
+    {% for p in act['places'] %}
+    <div class="spec-amend-place">
+      {% if act['places'] | length > 1 %}<div class="small">{{ where(p) }}</div>{% endif %}
+      <input type="hidden" name="row_id" value="{{ p['row_id'] }}"><input type="hidden" name="node_id" value="{{ p['node_id'] }}">
+      {% if p['proposed'] != p['current'] %}
+        <div class="small muted">Now</div>
+        <div class="spec-amend-now">{{ p['current'] }}</div>
+        <label class="small muted" for="amend-{{ item['key'] }}-{{ loop.index }}">Proposed amendment: change it as you need</label>
+      {% else %}
+        <label class="small muted" for="amend-{{ item['key'] }}-{{ loop.index }}">{{ 'The paragraph as it stands: change it as you need' if not item.get('done') else 'As it stands now' }}</label>
+      {% endif %}
+      <textarea name="text" id="amend-{{ item['key'] }}-{{ loop.index }}" rows="{{ [3, (p['proposed'] | length // 90) + 2] | max }}" class="spec-amend-text">{{ p['proposed'] }}</textarea>
+    </div>
+    {% endfor %}
+    <div class="inline-form" style="gap:8px">
+      <button type="submit" class="btn btn-primary btn-sm">Save {{ 'the amendments' if act['places'] | length > 1 else 'the amendment' }}</button>
+      <a class="btn btn-ghost btn-sm spec-amend-cancel" data-key="{{ item['key'] }}" href="{{ url_for('specs.check_set', set_id=spec['id'], issuing=issuing or None, fmt=fmt or None) }}#item-{{ item['key'] }}">Cancel</a>
+      {% if act['places'] | length > 1 %}<span class="small muted">Saved together, in all {{ act['places'] | length }} places.</span>{% endif %}
+    </div>
   </form>
+  {% endif %}
+{% endmacro %}
+
+{# What was done: the amendment as saved, or what was taken out. #}
+{% macro done_note(item) %}
+  {% set s = item.get('settled') %}
+  {% if s and s['how'] in ('amended', 'removed') and s['detail'].get('places') %}
+  <div class="spec-done">
+    {% for p in s['detail']['places'] %}
+    <div class="spec-done-place">
+      {% if s['detail']['places'] | length > 1 %}<div class="small">{{ where(p) }}</div>{% endif %}
+      {% if s['how'] == 'amended' %}
+        <div class="small spec-done-label">Amended to</div>
+        <div class="spec-done-text">{{ p['after'] }}</div>
+        {% if p['before'] != p['after'] %}<details class="small spec-done-was"><summary>What it said before</summary><div>{{ p['before'] }}</div></details>{% endif %}
+      {% else %}
+        <div class="small spec-done-label">{% if p['whole'] %}Removed the paragraph{% if p.get('under') %}, with the {{ p['under'] }} paragraph{{ 's' if p['under'] != 1 }} under it{% endif %}{% else %}Removed the sentence{% endif %}</div>
+        <div class="spec-done-text spec-done-removed">{{ p['removed'] }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
 {% endmacro %}
 
@@ -51,23 +132,26 @@
 {% endmacro %}
 
 {% macro check_item(item) %}
-    <div class="spec-check-item spec-sev-{{ item['severity'] }}{% if item.get('settled') %} spec-is-settled{% endif %}" id="item-{{ item.get('key', '') }}">
+    <div class="spec-check-item spec-sev-{{ item['severity'] }}{% if item.get('settled') %} spec-is-settled{% endif %}{% if item.get('key') and item['key'] in [amending, shown] %} spec-just{% endif %}" id="item-{{ item.get('key', '') }}">
       {% if item['section'] %}<div class="small">{{ where(item) }}</div>{% endif %}
       <div class="spec-check-message">{{ item['message'] }}</div>
-      {% if item['text'] and not item.get('places') %}<div class="spec-check-text">{{ item['text'] | spec_mark(item.get('words', '')) }}</div>{% endif %}
-      {% if item.get('places') %}
+      {% if item['text'] and not item.get('places') and not (item.get('settled') and item['settled']['how'] != 'kept') %}<div class="spec-check-text">{{ item['text'] | spec_mark(item.get('words', '')) }}</div>{% endif %}
+      {% if item.get('places') and not (item.get('settled') and item['settled']['how'] != 'kept') %}
         <ul class="spec-places">
           {% for p in item['places'] %}<li>{{ where(p) }}{% if p.get('value') %} <strong>{{ p['value'] }}</strong>{% endif %} <div class="spec-check-text">{{ p['text'] | spec_mark(p.get('words', '')) }}</div></li>{% endfor %}
         </ul>
       {% endif %}
-      <div class="inline-form" style="gap:8px;align-items:center">
+      {{ done_note(item) }}
+      <div class="inline-form spec-actions">
         {% if not item.get('settled') %}{{ fix_form(item.get('fix')) }}{% endif %}
         {{ settle_form(item) }}
       </div>
+      {{ amend_box(item) }}
     </div>
 {% endmacro %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-check.css') }}">
 <div class="page-head">
   <div>
     <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
@@ -89,17 +173,18 @@
 <div class="spec-steps-bar card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <div>
     {% if waiting['total'] %}
-      <p><strong>{{ waiting['total'] }} to accept or reject</strong>
-        <span class="muted small">· {{ waiting['checks'] }} check item{{ 's' if waiting['checks'] != 1 }}, {{ waiting['language'] }} language suggestion{{ 's' if waiting['language'] != 1 }}</span></p>
-      <p class="small muted">{% if spec['hold_issue'] %}This project is not issued until each one is settled. Accept what is right or dealt with; reject what should stay as it is.{% else %}The hold is off for this project, so it can be issued as it stands.{% endif %}</p>
+      <p><strong>{{ waiting['total'] }} to settle</strong>
+        <span class="muted small">· {{ waiting['checks'] }} check item{{ 's' if waiting['checks'] != 1 }} to keep, amend or remove, {{ waiting['language'] }} language suggestion{{ 's' if waiting['language'] != 1 }} to accept or reject</span></p>
+      <p class="small muted">{% if spec['hold_issue'] %}This project is not issued until each one is settled. Keep what is right as it stands; amend what should say something else; remove what should not be said at all.{% else %}The hold is off for this project, so it can be issued as it stands.{% endif %}</p>
     {% else %}
       <p><strong class="spec-good-ink">Everything is settled.</strong> <span class="small muted">Nothing on the check is waiting for you.</span></p>
     {% endif %}
   </div>
   {% if held %}
-    <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is accepted or rejected">Next: Issue all</span>
+    <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: Issue all</span>
   {% else %}
-    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Next: Issue all (.zip of .docx)</a>
+    {% set fmt = request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none %}
+    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt=fmt) }}">Next: Issue all ({{ {'tracked': 'Word with tracked changes', 'pdf': 'one PDF'}[fmt] if fmt else '.zip of .docx' }})</a>
   {% endif %}
 </div></div>
 {% endif %}
@@ -108,7 +193,7 @@
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>
     (listed under Cross-references). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
-  {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1) }}">Issue anyway</a>{% endif %}
+  {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1, fmt=request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none) }}">Issue anyway</a>{% endif %}
 </div></div>
 {% endif %}
 
@@ -124,28 +209,38 @@
 <div class="card" style="margin-top:12px" id="group-{{ key }}">
   <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
     {% set open_n = report['open'][key] if report.get('open') else report[key] | length %}
-    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] or (report.get('done') or {}).get(key) %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
       <p class="small muted" style="margin-top:2px">{{ about }}</p></div>
     {% set open_items = report[key] | rejectattr('settled') | list %}
+    {% set gone_missing = open_items | selectattr('act', 'defined') | selectattr('act.can_remove') | selectattr('act.missing') | list if spec else [] %}
     {% if spec and open_items | length > 1 %}
-    <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form spec-settle"
-          onsubmit="return confirm('Settle all ' + {{ open_items | length }} + ' open items under {{ title }} this way? Each can be opened again.')">
-      <input type="hidden" name="group" value="{{ key }}">
-      {% if issuing %}<input type="hidden" name="issuing" value="1">{% endif %}
+    <div class="inline-form spec-settle">
+    <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form"
+          onsubmit="return confirm('Keep all ' + {{ open_items | length }} + ' open items under {{ title }} as they stand? Each can be opened again.')">
+      <input type="hidden" name="group" value="{{ key }}">{{ back_fields() }}
       {% for item in open_items %}<input type="hidden" name="key" value="{{ item['key'] }}">{% endfor %}
-      <button type="submit" name="state" value="accepted" class="btn btn-ghost btn-sm spec-accept">Accept all {{ open_items | length }}</button>
-      <button type="submit" name="state" value="rejected" class="btn btn-ghost btn-sm spec-reject">Reject all {{ open_items | length }}</button>
+      <button type="submit" name="state" value="kept" class="btn btn-ghost btn-sm spec-keep">Keep all {{ open_items | length }}</button>
+    </form>
+    {% if key == 'references' and gone_missing | length > 1 %}
+    <form method="post" action="{{ url_for('specs.remove_item', set_id=spec['id']) }}" class="inline-form"
+          data-confirm="Remove every sentence that refers to a section not in this specification? {{ gone_missing | length }} item{{ 's' if gone_missing | length != 1 }}, {{ gone_missing | map(attribute='act.places') | map('length') | sum }} place{{ 's' if (gone_missing | map(attribute='act.places') | map('length') | sum) != 1 }}. A paragraph with no other sentence goes whole. This cannot be undone from the check.">
+      <input type="hidden" name="group" value="{{ key }}">{{ back_fields() }}
+      {% for item in gone_missing %}<input type="hidden" name="key" value="{{ item['key'] }}">{% endfor %}
+      <button type="submit" class="btn btn-ghost btn-sm spec-remove" title="Take out every sentence that refers to a section not in this specification">Remove all {{ gone_missing | length }} to missing sections</button>
     </form>
     {% endif %}
+    </div>
+    {% endif %}
   </div>
-  {% if report[key] %}
+  {% set settled_items = (report[key] | selectattr('settled') | list) + ((report.get('done') or {}).get(key) or []) %}
+  {% if report[key] or settled_items %}
   <div class="card-body">
     {% if key == 'repeated' and report[key] | length > 20 %}<details><summary class="small">Show {{ report[key] | length }} repeats</summary>{% endif %}
     {% for item in report[key] if not item.get('settled') %}{{ check_item(item) }}{% endfor %}
-    {% set done = report[key] | selectattr('settled') | list %}
-    {% if done %}
-    <details class="spec-settled-list"><summary class="small">{{ done | length }} settled</summary>
-      {% for item in done %}{{ check_item(item) }}{% endfor %}
+    {% if settled_items %}
+    {% set looking = settled_items | selectattr('key', 'in', [amending, shown]) | list %}
+    <details class="spec-settled-list"{% if looking %} open{% endif %}><summary class="small">{{ settled_items | length }} settled</summary>
+      {% for item in settled_items %}{{ check_item(item) }}{% endfor %}
     </details>
     {% endif %}
     {% if key == 'repeated' and report[key] | length > 20 %}</details>{% endif %}
@@ -227,4 +322,5 @@
   </div>
 </div>
 {% endif %}
+{% if spec %}<script src="{{ url_for('static', filename='spec-check.js') }}"></script>{% endif %}
 {% endblock %}

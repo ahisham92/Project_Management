@@ -2,6 +2,7 @@
 {% block title %}Edit {{ section['number'] }} · Specs Writer{% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-editor.css') }}">
 <div class="page-head">
   <div>
     <p class="small">
@@ -13,78 +14,211 @@
     </p>
     <h1>{% if library %}Edit the master: {% else %}Amend for {{ spec['name'] }}: {% endif %}{{ section['number'] }}</h1>
   </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) if spec else url_for('specs.library_section', section_id=section['id']) }}">Close without saving</a>
+    <button type="submit" form="spec-edit-form" name="stay" value="1" class="btn btn-ghost" title="Save and keep editing (Ctrl+S)">Save</button>
+    <button type="submit" form="spec-edit-form" class="btn btn-primary">Save and close</button>
+  </div>
 </div>
 
-<form method="post">
-<div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(0,1fr);align-items:start">
-  <div class="card">
-    <div class="card-body" style="display:grid;gap:10px">
-      <div class="inline-form">
-        {% if library %}
-        <label class="field w-md"><span class="field-label">Number</span>
-          <input type="text" name="number" value="{{ section['number'] }}" required></label>
-        {% endif %}
-        <label class="field flex1"><span class="field-label">Title</span>
-          <input type="text" name="title" value="{{ section['title'] }}"></label>
-        {% if not library %}
-        <label class="field flex1"><span class="field-label">Document code (blank for the project's)</span>
-          <input type="text" name="doc_code" value="{{ section['doc_code'] }}" placeholder="{{ spec['doc_code'] }}"></label>
-        {% endif %}
+<form method="post" id="spec-edit-form" class="se-form">
+  <input type="hidden" name="nodes" value="">
+  <input type="hidden" name="mode" value="page">
+  <div class="inline-form se-meta">
+    {% if library %}
+    <label class="field w-md"><span class="field-label">Number</span>
+      <input type="text" name="number" value="{{ section['number'] }}" required></label>
+    {% endif %}
+    <label class="field flex1"><span class="field-label">Title</span>
+      <input type="text" name="title" value="{{ section['title'] }}" data-se-title></label>
+    {% if not library %}
+    <label class="field flex1"><span class="field-label">Document code (blank for the project's)</span>
+      <input type="text" name="doc_code" value="{{ section['doc_code'] }}" placeholder="{{ spec['doc_code'] }}"></label>
+    {% endif %}
+  </div>
+
+  <div class="se" data-se>
+    {# The ribbon: tabs of commands, as Word lays them out. #}
+    <div class="se-ribbon" role="toolbar" aria-label="Editing commands">
+      <div class="se-tabs" role="tablist">
+        <button type="button" role="tab" class="se-tab se-tab-on" data-tab="home" aria-selected="true">Home</button>
+        <button type="button" role="tab" class="se-tab" data-tab="insert" aria-selected="false">Insert</button>
+        <button type="button" role="tab" class="se-tab se-tab-table" data-tab="table" aria-selected="false" hidden>Table</button>
+        <button type="button" role="tab" class="se-tab" data-tab="review" aria-selected="false">Review</button>
+        <button type="button" role="tab" class="se-tab" data-tab="view" aria-selected="false">View</button>
       </div>
-      <label class="field"><span class="field-label">The text</span>
-        <textarea name="text" class="spec-editor" spellcheck="true">{{ text }}</textarea></label>
-      {% if library %}
-      <label class="field"><span class="field-label">Belongs in a project when</span>
-        <input type="text" name="applies" value="{{ section['applies'] }}" placeholder="e.g. shotcrete=Yes">
-        <span class="field-hint">A condition on the answers, added to a project when it holds; * for every {{ section['family'] }} project; blank when only ever added by hand.</span></label>
-      <label class="field"><span class="field-label">What changed, for the version history</span>
-        <input type="text" name="note" placeholder="e.g. Updated to ACI 318-19"></label>
-      {% endif %}
-      <div><button type="submit" class="btn btn-primary">Save</button></div>
+
+      <div class="se-panel" data-panel="home">
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="undo" title="Undo (Ctrl+Z)"><span class="se-ico">↶</span>Undo</button>
+            <button type="button" class="se-btn" data-cmd="redo" title="Redo (Ctrl+Y)"><span class="se-ico">↷</span>Redo</button>
+          </div>
+          <span class="se-group-name">History</span>
+        </div>
+        <div class="se-group se-group-styles">
+          <div class="se-styles" data-styles></div>
+          <span class="se-group-name">Styles</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="outdent" title="Up a level (Shift+Tab)"><span class="se-ico">⇤</span>Level up</button>
+            <button type="button" class="se-btn" data-cmd="indent" title="Down a level (Tab)"><span class="se-ico">⇥</span>Level down</button>
+            <button type="button" class="se-btn" data-cmd="up" title="Move the paragraph up (Alt+↑)"><span class="se-ico">↑</span>Move up</button>
+            <button type="button" class="se-btn" data-cmd="down" title="Move the paragraph down (Alt+↓)"><span class="se-ico">↓</span>Move down</button>
+            <button type="button" class="se-btn" data-cmd="below" title="A new paragraph below (Enter at the end)"><span class="se-ico">＋</span>New paragraph</button>
+            <button type="button" class="se-btn" data-cmd="duplicate" title="A copy of this paragraph below"><span class="se-ico">⧉</span>Duplicate</button>
+            <button type="button" class="se-btn se-danger" data-cmd="remove" title="Delete the paragraph (Ctrl+Shift+K)"><span class="se-ico">✕</span>Delete</button>
+          </div>
+          <span class="se-group-name">Paragraph</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="find" title="Find and replace (Ctrl+F, Ctrl+H)"><span class="se-ico">⌕</span>Find and replace</button>
+            <button type="button" class="se-btn" data-cmd="upper" title="Change the paragraph to capitals"><span class="se-ico">Aa</span>Change case</button>
+          </div>
+          <span class="se-group-name">Editing</span>
+        </div>
+      </div>
+
+      <div class="se-panel" data-panel="insert" hidden>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="table" title="A table below this paragraph"><span class="se-ico">▦</span>Table</button>
+            <button type="button" class="se-btn" data-cmd="note" title="An editor's note below: shown here, never issued"><span class="se-ico">✎</span>Editor's note</button>
+          </div>
+          <span class="se-group-name">Blocks</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="ref" title="A cross-reference that stays right when anything moves"><span class="se-ico">§</span>Cross-reference</button>
+            <button type="button" class="se-btn" data-cmd="word" title="A word filled in per project, such as the engineer"><span class="se-ico">{ }</span>Project word</button>
+            <button type="button" class="se-btn" data-cmd="choice" title="Words issued only for projects that made a choice"><span class="se-ico">⎇</span>Choice in the text</button>
+            <button type="button" class="se-btn" data-cmd="condition" title="This paragraph (and what sits under it) only for some projects"><span class="se-ico">?</span>Only when…</button>
+          </div>
+          <span class="se-group-name">Fields</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools se-symbols" data-symbols>
+            {% for c in ['°', '±', '×', '²', '³', 'µ', '≤', '≥', '–', '—', '½', 'Ø', '™', '®', '§'] %}<button type="button" class="se-btn se-sym" data-char="{{ c }}" title="Insert {{ c }}">{{ c }}</button>{% endfor %}
+          </div>
+          <span class="se-group-name">Symbols</span>
+        </div>
+      </div>
+
+      <div class="se-panel" data-panel="table" hidden>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="row-above"><span class="se-ico">⤒</span>Row above</button>
+            <button type="button" class="se-btn" data-cmd="row-below"><span class="se-ico">⤓</span>Row below</button>
+            <button type="button" class="se-btn" data-cmd="col-left"><span class="se-ico">⇠</span>Column left</button>
+            <button type="button" class="se-btn" data-cmd="col-right"><span class="se-ico">⇢</span>Column right</button>
+          </div>
+          <span class="se-group-name">Rows and columns</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn se-danger" data-cmd="row-delete"><span class="se-ico">✕</span>Delete row</button>
+            <button type="button" class="se-btn se-danger" data-cmd="col-delete"><span class="se-ico">✕</span>Delete column</button>
+            <button type="button" class="se-btn se-danger" data-cmd="remove"><span class="se-ico">✕</span>Delete table</button>
+          </div>
+          <span class="se-group-name">Delete</span>
+        </div>
+      </div>
+
+      <div class="se-panel" data-panel="review" hidden>
+        <div class="se-group">
+          <div class="se-tools">
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="spell" checked> Spelling</label>
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="notes" checked> Editor's notes</label>
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="conds" checked> Conditions</label>
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="fields" checked> Fields shaded</label>
+          </div>
+          <span class="se-group-name">Show</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="count"><span class="se-ico">#</span>Word count</button>
+          </div>
+          <span class="se-group-name">Proofing</span>
+        </div>
+      </div>
+
+      <div class="se-panel" data-panel="view" hidden>
+        <div class="se-group">
+          <div class="se-tools">
+            <button type="button" class="se-btn" data-cmd="zoom-out" title="Zoom out"><span class="se-ico">−</span>Zoom out</button>
+            <button type="button" class="se-btn" data-cmd="zoom-reset" title="100%"><span class="se-ico" data-zoom>100%</span>Zoom</button>
+            <button type="button" class="se-btn" data-cmd="zoom-in" title="Zoom in"><span class="se-ico">＋</span>Zoom in</button>
+            <button type="button" class="se-btn" data-cmd="zoom-width" title="Fit the page to the window"><span class="se-ico">↔</span>Page width</button>
+          </div>
+          <span class="se-group-name">Zoom</span>
+        </div>
+        <div class="se-group">
+          <div class="se-tools">
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="nav" checked> Navigation pane</label>
+            <label class="se-btn se-check"><input type="checkbox" data-toggle="marks"> Paragraph marks</label>
+            <button type="button" class="se-btn" data-cmd="plain" title="Edit the text with its line marks"><span class="se-ico">≡</span>Plain text</button>
+          </div>
+          <span class="se-group-name">Show</span>
+        </div>
+      </div>
     </div>
+
+    <div class="se-find" data-find hidden>
+      <input type="text" placeholder="Find" data-find-what aria-label="Find">
+      <input type="text" placeholder="Replace with" data-find-with aria-label="Replace with">
+      <label class="se-check small"><input type="checkbox" data-find-case> Match case</label>
+      <button type="button" class="btn btn-ghost btn-sm" data-cmd="find-next">Find next</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-cmd="replace-one">Replace</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-cmd="replace-all">Replace all</button>
+      <span class="small muted" data-find-said></span>
+      <button type="button" class="btn btn-ghost btn-sm" data-cmd="find-close" aria-label="Close find">✕</button>
+    </div>
+
+    <div class="se-body">
+      <nav class="se-nav" data-nav aria-label="Headings in this section"></nav>
+      <div class="se-canvas" data-canvas>
+        <div class="se-page{{ ' se-nbs' if nbs }}" data-page>
+          <div class="se-sct" data-sct></div>
+          <div class="se-flow" data-flow></div>
+          <div class="se-eos" data-eos></div>
+        </div>
+      </div>
+      <div class="se-plain" data-plain hidden>
+        <p class="small muted">One paragraph to a line: <span class="spec-key">#</span> a PART, <span class="spec-key">##</span> an article, <span class="spec-key">-</span> to <span class="spec-key">----</span> the paragraphs under it, <span class="spec-key">//</span> an editor's note, <span class="spec-key">| a | b |</span> a table row, and <span class="spec-key">{if leed=v4.1}</span> at the start for a paragraph only some projects get.</p>
+        <textarea name="text" class="spec-editor" spellcheck="true">{{ text }}</textarea>
+        <button type="button" class="btn btn-ghost" data-cmd="page">Back to the page</button>
+      </div>
+    </div>
+
+    <div class="se-status small" data-status aria-live="polite"></div>
   </div>
 
-  <div class="card">
-    <div class="card-head"><h2>How to write it</h2></div>
-    <div class="card-body small" style="display:grid;gap:8px">
-      <p>One paragraph to a line. What starts the line says where it sits; the numbers are worked out for you.</p>
-      <table class="spec-table"><tbody>
-        <tr><td class="spec-key"># GENERAL</td><td>PART 1 - GENERAL</td></tr>
-        <tr><td class="spec-key">## SUMMARY</td><td>1.1 SUMMARY</td></tr>
-        <tr><td class="spec-key">- text</td><td>A. text</td></tr>
-        <tr><td class="spec-key">-- text</td><td>1. text</td></tr>
-        <tr><td class="spec-key">--- text</td><td>a. text</td></tr>
-        <tr><td class="spec-key">---- text</td><td>1) text</td></tr>
-        <tr><td class="spec-key">// note</td><td>a note to whoever edits it; never issued</td></tr>
-        <tr><td class="spec-key">| a | b |</td><td>a table row</td></tr>
-      </tbody></table>
-      <p>A line with no mark carries on the paragraph above it.</p>
-      <p><strong>Only for some projects:</strong> start the text with a condition, and whatever sits under that paragraph goes with it.</p>
-      <p class="spec-key">-- {if leed=v4.1} Product Data for ...</p>
-      <p class="muted">Several conditions: <span class="spec-key">{if a=x &amp; b=y}</span>. Either of two: <span class="spec-key">{if a=x|y}</span>. Anything but: <span class="spec-key">{if a!=x}</span>.</p>
-      <p class="muted">A choice inside a paragraph, for the words MasterSpec puts in [brackets]: <span class="spec-key">Anchor rods: {anchor_rods=Grade 105: ASTM F1554, Grade 105}{anchor_rods=A325M: ASTM F3125, Grade A325M}.</span> The words after the colon are issued only when the project made that choice.</p>
-      <p><strong>Referring to other paragraphs:</strong> write the reference, not the number, and it stays right when anything moves.</p>
-      <table class="spec-table"><tbody>
-        <tr><td class="spec-key">{ref:033000}</td><td>Section 033000 "Cast-in-Place Concrete"</td></tr>
-        <tr><td class="spec-key">{ref:CURING}</td><td>Article 3.7 (this section's)</td></tr>
-        <tr><td class="spec-key">{ref:033000/CURING}</td><td>Article 3.7 of Section 033000 …</td></tr>
-        <tr><td class="spec-key">{ref:#1a2b3c4d}</td><td>any paragraph: copy it with ¶ on the section page</td></tr>
-      </tbody></table>
-      <p><strong>Standards</strong> are written as usual (ASTM C150, BS EN 197-1); the project's basis puts them all on BS EN, ACI/ASTM or both when it is shown and issued.</p>
-      {% if options %}
-      <p><strong>Options:</strong></p>
-      <ul style="margin:0;padding-left:18px">
-        {% for o in options %}<li><span class="spec-key">{{ o['key'] }}</span> = {{ o['choice_list'] | join(' | ') }}</li>{% endfor %}
-      </ul>
-      {% endif %}
-      {% if variables %}
-      <p><strong>Words filled in per project:</strong></p>
-      <ul style="margin:0;padding-left:18px">
-        {% for v in variables %}<li><span class="spec-key">{% raw %}{{{% endraw %}{{ v['key'] }}{% raw %}}}{% endraw %}</span> — {{ v['label'] }}</li>{% endfor %}
-      </ul>
-      {% endif %}
-    </div>
+  {% if library %}
+  <div class="inline-form se-meta">
+    <label class="field flex1"><span class="field-label">Belongs in a project when</span>
+      <input type="text" name="applies" value="{{ section['applies'] }}" placeholder="e.g. shotcrete=Yes">
+      <span class="field-hint">A condition on the answers, added to a project when it holds; * for every {{ section['family'] }} project; blank when only ever added by hand.</span></label>
+    <label class="field flex1"><span class="field-label">What changed, for the version history</span>
+      <input type="text" name="note" placeholder="e.g. Updated to ACI 318-19"></label>
   </div>
-</div>
+  {% endif %}
 </form>
+
+<dialog class="se-dialog" data-dialog>
+  <form method="dialog" class="se-dialog-body" data-dialog-form>
+    <h2 data-dialog-title></h2>
+    <div data-dialog-fields></div>
+    <div class="inline-form se-dialog-foot">
+      <button type="submit" value="ok" class="btn btn-primary" data-dialog-ok>Insert</button>
+      <button type="submit" value="cancel" class="btn btn-ghost" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="application/json" id="se-data">{{ {
+  "nodes": nodes, "nbs": nbs, "number": section['number'],
+  "options": options_json, "variables": variables_json, "sections": sections} | tojson }}</script>
+<script src="{{ url_for('static', filename='spec-editor.js') }}"></script>
 {% endblock %}

@@ -80,11 +80,27 @@ text** of each section and makes every project's copy of it **known**.
   (SCT, PRT, ART, PR1 to PR4, EOS), page, header and footer — with the numbers done by Word's
   own list, so they stay right when somebody edits the file. The built-in template is the
   MasterSpec layout; an administrator can upload one of the office's own sections as the house
-  template instead, and its formatting is used exactly.
+  template instead, and its formatting is used exactly. A project's sections can also be issued
+  as **Word with tracked changes** (every amendment to the master as Word's own insertions and
+  deletions, to accept or reject in Word) or as **one PDF**, section by section or all at once.
+- **Reading as a book.** *Read as a book* lays a project's sections (or one master section) out
+  as issued, two A4 pages side by side, and the page turns over like a book's: the arrows, the
+  page edges or a swipe. On a phone it shows one page at a time.
 
-The text editor uses one line per paragraph: `#` a PART, `##` an article, `-` to `----` the
-paragraphs under it, `//` an editor's note that is never issued, `| a | b |` a table row, and
-`{if leed=v4.1}` at the start of the text for a paragraph that only some projects get.
+**Editing** a section opens it as a page laid out the way it is issued, with a ribbon as in
+Word: *Home* (undo and redo, the paragraph styles PART to PR4, note and table, level in and out,
+move up and down, find and replace, change case), *Insert* (table, editor's note,
+cross-reference, project word, choice, condition, symbols), *Table* (rows and columns, shown when
+the cursor is in one), *Review* (spelling, show notes, conditions and fields, word count) and
+*View* (zoom, the navigation pane, paragraph marks, plain text). Enter starts a new paragraph at
+the same level, Tab and Shift+Tab change the level, Alt+Up and Alt+Down move it, and a
+paragraph pasted from Word keeps its levels. Ctrl+S saves and stays. Each paragraph keeps its
+identity, so amendments and cross-references follow it.
+
+The plain text (*View → Plain text*) uses one line per paragraph: `#` a PART, `##` an article,
+`-` to `----` the paragraphs under it, `//` an editor's note that is never issued, `| a | b |` a
+table row, and `{if leed=v4.1}` at the start of the text for a paragraph that only some projects
+get.
 
 **Reading a specification whole.** What goes wrong in a set of forty sections is where they
 meet, so the Specs Writer reads across them:
@@ -109,9 +125,13 @@ meet, so the Specs Writer reads across them:
 - **Choices** are grouped under headings, and a question can take several answers (tick all
   that apply); a condition holds when any of them matches. *Add the suggested questions* on the
   options page fills in the starting list without changing anything already there.
-- **Nothing is issued until the check is settled.** Each item on the checker, and each language
-  suggestion, is accepted (right, or dealt with) or rejected (the text stays as it is); a whole
-  group can be settled at once, and a settled item can be opened again. *Issue all* holds a
+- **Nothing is issued until the check is settled.** Each item on the checker is **kept** (the
+  text stays as it is), **amended** (a box opens under it with the paragraph and a proposed
+  amendment to edit and save; the amendment is shown under the item with what it said before,
+  and can be amended again) or **removed** (the sentence goes, or the paragraph if it was its
+  only sentence). A reference to a section the specification does not include is offered as a
+  reference to the applicable codes and standards instead. Each language suggestion is accepted
+  or rejected. A whole group can be kept at once, and a settled item can be opened again. *Issue all* holds a
   project while anything is open. The hold is a tick box on the project page; with it off,
   *Issue all* still stops when a reference points at a section the specification does not
   include, or at a paragraph its choices switch off, and it can be issued anyway from there.
@@ -127,7 +147,13 @@ meet, so the Specs Writer reads across them:
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
 - **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Check*,
-  *Issue*, with a Next button from each to the next and the state of each at the top.
+  *Issue*, one step in view at a time, with Next and Back buttons and the state of each at the
+  top.
+- **Blanks to fill.** The master's choices left in `[square brackets]` and its `<Insert ...>`
+  places are listed section by section on *Fill the blanks* (step 4), each paragraph shown with
+  its blanks numbered. Pick one of the bracketed answers, type your own, or leave it out; the
+  answer is written into the project's text in place of the blank and shows as an amendment.
+  *Same answer wherever this blank appears* fills every copy of it at once.
 - **Three kinds of specification.** The office issues three: **03A** (British Standards, in the
   NBS layout: `E30 - TITLE`, clauses numbered `110`, `120`), **15A** (American, MasterSpec; marine
   works go under it too) and **16A** (Saudi Arabia, MasterSpec, with SASO / SABER conformity). A
@@ -150,8 +176,10 @@ meet, so the Specs Writer reads across them:
 - **Sections arrive with the answers.** A library section says when it belongs (`fenders!=None`,
   or `*` for every project of its kind; blank means it is only ever added by hand). Answering a
   question or ticking an element that calls for a section adds it at once and says so; one no
-  longer called for is said too. A section taken out by hand stays out, and the check asks for
-  it to be accepted. An answer the kind's library has no section for says which other kind has
+  longer called for is said once, with a button to take it out. A section added by hand from the
+  library sets the answers that call for it, as if they had been picked; taking it out again
+  (tick it and *Take the ticked out*, or *Take out* on its row) puts those answers back. A
+  section taken out by hand stays out, and the check asks for it to be accepted. An answer the kind's library has no section for says which other kind has
   one to borrow.
 - **Whose projects.** The start page lists *My projects* first; everybody else's are folded
   under *Other people's projects*, and any of them can still be the starting point of a new one.

@@ -1,0 +1,127 @@
+/* The section editor: a ribbon of commands over a page laid out the way the
+   section is issued, as in Word. The page stays paper white in either theme. */
+
+.se-form { display: grid; gap: 12px; }
+.se-meta { align-items: flex-end; }
+.se { border: 1px solid var(--border); border-radius: 10px; background: var(--raised); overflow: hidden; }
+
+/* Ribbon */
+.se-ribbon { border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+.se-tabs { display: flex; gap: 2px; padding: 4px 8px 0; overflow-x: auto; }
+.se-tab { border: 0; background: transparent; padding: 6px 14px; border-radius: 6px 6px 0 0; font: inherit; font-size: 0.875rem; color: var(--ink-2); cursor: pointer; width: auto; }
+.se-tab:hover { color: var(--ink); background: var(--raised); }
+.se-tab-on { background: var(--raised); color: var(--series-1); font-weight: 600; box-shadow: inset 0 -2px 0 var(--series-1); }
+.se-tab-table { color: var(--series-1); }
+.se-panel { display: flex; gap: 0; align-items: stretch; padding: 6px 8px; background: var(--raised); overflow-x: auto; min-height: 84px; }
+.se-panel[hidden] { display: none; }
+.se-group { display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 0 10px; border-right: 1px solid var(--border); flex: 0 0 auto; }
+.se-group:last-child { border-right: 0; }
+.se-group-name { font-size: 0.7rem; color: var(--muted); text-align: center; }
+.se-tools { display: flex; flex-wrap: nowrap; gap: 2px; }
+.se-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 54px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 0.72rem; line-height: 1.15; cursor: pointer; width: auto; }
+.se-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border); }
+.se-btn:disabled { opacity: 0.4; cursor: default; }
+.se-btn.se-on { background: var(--tint-good); }
+.se-ico { font-size: 1.05rem; line-height: 1.2; }
+.se-danger:hover:not(:disabled) { color: var(--critical); }
+.se-check { flex-direction: row; gap: 6px; min-width: 0; font-size: 0.8rem; }
+.se-check input { width: auto; margin: 0; }
+.se-sym { min-width: 30px; font-size: 1rem; font-family: "Times New Roman", Times, serif; }
+.se-symbols { flex-wrap: wrap; max-width: 290px; }
+
+/* The style gallery, as Word's: each box shows what the style looks like. */
+.se-styles { display: flex; gap: 4px; flex-wrap: nowrap; }
+.se-style { border: 1px solid var(--border); border-radius: 4px; background: #fff; color: #111; padding: 3px 8px; min-width: 72px; height: 44px; text-align: left; cursor: pointer; font: 12px/1.2 "Times New Roman", Times, serif; display: flex; flex-direction: column; justify-content: center; width: auto; }
+.se-style small { font: 10px/1.2 system-ui, sans-serif; color: #666; }
+.se-style:hover { border-color: var(--series-1); }
+.se-style.se-on { border-color: var(--series-1); box-shadow: 0 0 0 1px var(--series-1) inset; }
+
+/* Find and replace */
+.se-find { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.se-find[hidden] { display: none; }
+.se-find input[type=text] { width: 200px; }
+
+/* Body: navigation pane and the page */
+.se-body { display: flex; min-height: 70vh; background: var(--grid); }
+.se-nav { flex: 0 0 230px; max-height: 80vh; overflow: auto; background: var(--raised); border-right: 1px solid var(--border); padding: 8px 0; font-size: 0.8rem; position: sticky; top: 0; align-self: flex-start; }
+.se-nav[hidden], .se.se-no-nav .se-nav { display: none; }
+.se-nav a { display: block; padding: 3px 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.se-nav a:hover { background: var(--surface); color: var(--ink); }
+.se-nav a.se-nav-part { font-weight: 600; color: var(--ink); margin-top: 6px; }
+.se-nav a.se-nav-here { background: var(--tint-good); color: var(--ink); }
+.se-canvas { flex: 1 1 auto; overflow: auto; padding: 24px 16px 48px; max-height: 80vh; }
+.se-plain { flex: 1 1 auto; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.se-plain[hidden] { display: none; }
+.se-plain textarea { min-height: 60vh; }
+
+/* The page: A4 at 96 dpi, margins as the house template's. */
+.se-page { --z: 1; width: calc(794px * var(--z)); min-height: calc(1123px * var(--z)); margin: 0 auto; background: #fff; color: #111; box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.12); padding: calc(72px * var(--z)) calc(84px * var(--z)); font: calc(15px * var(--z))/1.35 "Times New Roman", Times, serif; box-sizing: border-box; }
+.se-sct { text-align: center; font-weight: bold; text-transform: uppercase; margin-bottom: 1.4em; }
+.se-eos { text-align: center; font-weight: bold; margin-top: 2em; text-transform: uppercase; }
+.se-nbs .se-eos { display: none; }
+
+.se-p { position: relative; margin: 0 0 0.55em; padding-left: calc(var(--in, 0) * 0.5in * var(--z) + var(--hang, 0.5in) * var(--z)); border-radius: 2px; }
+.se-p.se-here { background: rgba(42, 120, 214, 0.06); box-shadow: -6px 0 0 rgba(42, 120, 214, 0.35); }
+.se-num { position: absolute; left: calc(var(--in, 0) * 0.5in * var(--z)); top: 0; user-select: none; white-space: nowrap; }
+.se-text { outline: none; min-height: 1.35em; white-space: pre-wrap; word-wrap: break-word; caret-color: #111; }
+.se-text:empty::before { content: attr(data-empty); color: #aaa; }
+.se-text[spellcheck=false] { }
+
+.se-PRT { --hang: 0.9in; font-weight: bold; text-transform: uppercase; margin-top: 1.2em; }
+.se-PRT .se-num { font-weight: bold; }
+.se-ART { --hang: 0.5in; font-weight: bold; text-transform: uppercase; margin-top: 0.9em; }
+.se-PR1, .se-PR2, .se-PR3, .se-PR4 { --hang: 0.5in; }
+.se-CMT { --hang: 0; margin-left: calc(var(--in, 1) * 0.5in * var(--z)); padding: 4px 8px; border: 1px dashed #c89b3c; background: #fff8e6; color: #6b4e00; font: italic calc(13px * var(--z))/1.35 system-ui, sans-serif; }
+.se-CMT .se-num { position: static; font-style: normal; font-weight: 600; margin-right: 6px; }
+.se-CMT::before { content: none; }
+.se.se-hide-notes .se-CMT { display: none; }
+.se-TBL { --hang: 0; padding-left: calc(var(--in, 1) * 0.5in * var(--z) + 0.5in * var(--z)); }
+.se-TBL table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
+.se-TBL td { border: 1px solid #777; padding: 3px 6px; vertical-align: top; outline: none; min-width: 40px; }
+.se-TBL td:focus { background: rgba(42, 120, 214, 0.06); }
+
+/* The NBS way (03A): headings and clauses, bullets underneath. */
+.se-nbs .se-PRT { --hang: 0; text-transform: none; font-size: 1.05em; }
+.se-nbs .se-ART { --hang: 0; text-transform: none; }
+.se-nbs .se-PR1, .se-nbs .se-PR2, .se-nbs .se-PR3, .se-nbs .se-PR4 { --hang: 0.3in; }
+
+/* Conditions and fields */
+.se-cond { display: inline-block; font: 600 11px/1.5 system-ui, sans-serif; color: #7a3fb0; background: #f3eafc; border: 1px solid #d9c2f0; border-radius: 10px; padding: 0 7px; margin: 0 6px 0 0; cursor: pointer; text-transform: none; vertical-align: 1px; user-select: none; }
+.se-cond:hover { border-color: #7a3fb0; }
+.se-p[data-when]:not([data-when=""]) { box-shadow: -3px 0 0 #d9c2f0; }
+.se.se-hide-conds .se-cond { display: none; }
+.se-tok { border-radius: 3px; padding: 0 2px; cursor: pointer; text-transform: none; font-weight: normal; }
+.se-ref { background: #e6f0fb; color: #1b5aa6; }
+.se-var { background: #e5f6ee; color: #0f6b43; }
+.se-choice { background: #fdf0e6; color: #8a4411; }
+.se-choice b { font: 600 10px/1 system-ui, sans-serif; margin-right: 3px; }
+.se.se-plain-fields .se-tok { background: transparent; }
+.se.se-marks .se-text::after { content: "¶"; color: #9ab; margin-left: 2px; }
+.se.se-marks .se-p { outline: 1px dotted #dde; }
+
+/* Status bar */
+.se-status { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 5px 12px; border-top: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
+.se-status .se-dirty { color: #8a5a00; font-weight: 600; }
+
+/* Dialogs */
+.se-dialog { border: 1px solid var(--border); border-radius: 10px; padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--raised); color: var(--ink); }
+.se-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.se-dialog-body { display: grid; gap: 10px; padding: 16px; }
+.se-dialog-body h2 { margin: 0; font-size: 1.05rem; }
+.se-dialog-foot { justify-content: flex-end; }
+.se-dialog .field { display: grid; gap: 4px; }
+.se-dialog .se-choices { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.se-dialog .se-choices label { display: inline-flex; gap: 4px; align-items: center; font-size: 0.875rem; }
+.se-dialog .se-choices input { width: auto; }
+
+@media (max-width: 900px) {
+  .se-nav { display: none; }
+  .se-canvas { padding: 12px 8px 32px; }
+  .se-page { --z: 0.9; width: 100%; padding: 32px 20px; min-height: 0; }
+  .se-tools { max-width: none; }
+}
+@media print {
+  .se-ribbon, .se-nav, .se-status, .se-find, .se-meta { display: none !important; }
+  .se-canvas { max-height: none; overflow: visible; padding: 0; }
+  .se-page { box-shadow: none; }
+}

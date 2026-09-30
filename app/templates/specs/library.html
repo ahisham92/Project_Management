@@ -111,33 +111,65 @@
       <h2>Library file</h2>
       <p class="small muted" style="margin-top:2px">
         The whole library in one file: every section, the questions, the words, the standards and
-        the house template. Load one to start the library from it or to bring another site's in;
-        sections it has become new versions, and nothing here that it lacks is removed.
+        each kind's house template. Load one to start the library from it or to bring another
+        site's in. Download this one first if you may want it back.
       </p>
     </div>
   </div>
-  <div class="card-body inline-form">
-    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" class="inline-form flex1">
-      <label class="field flex1"><span class="field-label">Library file (.zip)</span>
-        <input type="file" name="library" accept=".zip" required></label>
-      <button type="submit" class="btn btn-primary">Load it</button>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" id="library-load">
+      <input type="hidden" name="family" value="{{ family }}">
+      <fieldset class="spec-load-modes">
+        <legend class="field-label">For the sections already here</legend>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="update" checked>
+          <span><strong>Add and update</strong><span class="small muted">New sections come in; a section already here takes the file's text as its next version (projects that took it are told and can bring it in). Nothing is taken out.</span></span></label>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="add">
+          <span><strong>Add only what is new</strong><span class="small muted">Only sections, questions and words not here yet come in. Everything already here stays exactly as it is.</span></span></label>
+        <label class="spec-load-mode"><input type="radio" name="mode" value="replace">
+          <span><strong>Replace</strong><span class="small muted">As add and update, and then every section of the kinds in the file that the file does not have is taken out of the library. Other kinds are not touched; projects keep their own copies.</span></span></label>
+      </fieldset>
+      <label class="spec-load-sure small" hidden><input type="checkbox" name="sure" value="yes"> I mean to take out the sections the file does not have</label>
+      <div class="inline-form" style="margin-top:8px">
+        <label class="field flex1"><span class="field-label">Library file (.zip)</span>
+          <input type="file" name="library" accept=".zip" required></label>
+        <button type="submit" class="btn btn-primary">Load it</button>
+        <a class="btn btn-ghost" href="{{ url_for('specs.library_file') }}">Download this library</a>
+      </div>
     </form>
-    <a class="btn btn-ghost" href="{{ url_for('specs.library_file') }}">Download this library</a>
+    <script>
+      (function () {
+        var form = document.getElementById('library-load'), sure = form.querySelector('.spec-load-sure');
+        function show() { var r = form.querySelector('input[name=mode]:checked'); sure.hidden = !(r && r.value === 'replace'); }
+        form.addEventListener('change', show); show();
+      })();
+    </script>
   </div>
 </div>
 {% endif %}
 
 <div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>{{ family }} sections ({{ sections | length }})</h2></div>
+  <div class="card-head">
+    <h2>{{ family }} sections ({{ sections | length }})</h2>
+    {% if is_admin and sections %}
+    <button type="submit" form="library-delete" class="btn btn-danger btn-sm">Take the ticked out</button>
+    {% endif %}
+  </div>
+  {% if is_admin and sections %}
+  <form method="post" action="{{ url_for('specs.delete_library_sections') }}" id="library-delete"
+        onsubmit="var n = this.querySelectorAll('input[name=section_id]:checked').length; if (!n) { alert('Tick the sections to take out first.'); return false; } return confirm('Take ' + n + ' section' + (n === 1 ? '' : 's') + ' out of the {{ family }} library? Projects keep their own copies. Download the library file first if you may want them back.')">
+    <input type="hidden" name="family" value="{{ family }}">
+  </form>
+  {% endif %}
   {% if not sections %}
     <div class="card-body">{{ empty('The library is empty', 'Load the library file, or the master sections from Word, to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>In a project when</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
+      <thead><tr>{% if is_admin %}<th class="spec-tick"><input type="checkbox" aria-label="Tick all" onclick="document.querySelectorAll('input[form=library-delete][name=section_id]').forEach(b => b.checked = this.checked)"></th>{% endif %}<th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>In a project when</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
+          {% if is_admin %}<td class="spec-tick"><input type="checkbox" name="section_id" value="{{ s['id'] }}" form="library-delete" aria-label="Tick {{ s['number'] }}"></td>{% endif %}
           <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="right">{{ s['paragraphs'] }}</td>

@@ -1023,11 +1023,44 @@ def load_library_file():
     files = _uploads("library")
     if files:
         filename, data = files[0]
+        mode = request.form.get("mode", "update")
+        if mode == "replace" and request.form.get("sure") != "yes":
+            flash("Tick that you mean to take out the sections the file does not have, "
+                  "or choose another way to load it.", "error")
+            return redirect(url_for("specs.library", family=request.form.get("family") or None))
         try:
-            counted = store.unpack(data)
+            counted = store.unpack(data, mode)
         except specs.SpecError as exc:
             flash(f"{filename}: {exc}", "error")
         else:
-            flash(f"Read {filename}: {counted['sections']} sections, {counted['options']} questions, "
-                  f"{counted['variables']} words and {counted['standards']} standards.", "success")
-    return redirect(url_for("specs.library"))
+            said = [f"{counted['added']} new section{'s' if counted['added'] != 1 else ''}"]
+            if counted["updated"]:
+                said.append(f"{counted['updated']} updated to a new version")
+            if counted["same"]:
+                said.append(f"{counted['same']} already the same")
+            if counted["kept"]:
+                said.append(f"{counted['kept']} already here and left as they are")
+            if counted["removed"]:
+                said.append(f"{len(counted['removed'])} taken out ({', '.join(counted['removed'])})")
+            flash(f"Read {filename}: " + "; ".join(said) + f". {counted['options']} questions, "
+                  f"{counted['variables']} words and {counted['standards']} new standards."
+                  + (" Projects keep their own copies of the sections taken out."
+                     if counted["removed"] else ""), "success")
+    return redirect(url_for("specs.library", family=request.form.get("family") or None))
+
+
+@bp.post("/library/delete")
+@login_required
+def delete_library_sections():
+    """The ticked sections taken out of the master library."""
+    family = request.form.get("family") or None
+    if not _admin_only():
+        return redirect(url_for("specs.library", family=family))
+    gone = store.delete_sections(int(v) for v in request.form.getlist("section_id") if v.isdigit())
+    if gone:
+        flash(f"Took {len(gone)} section{'s' if len(gone) != 1 else ''} out of the library: "
+              + ", ".join(f"{s['number']}" for s in gone)
+              + ". Projects keep their own copies.", "success")
+    else:
+        flash("Tick the sections to take out first.", "error")
+    return redirect(url_for("specs.library", family=family))

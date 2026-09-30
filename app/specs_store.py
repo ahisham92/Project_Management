@@ -310,6 +310,14 @@ def delete_section(section_id: int) -> None:
     execute("DELETE FROM spec_sections WHERE id = ?", (section_id,))
 
 
+def delete_sections(section_ids: Iterable[int]) -> list[dict]:
+    """Several sections taken out of the library at once; the ones found."""
+    gone = [s for s in (section(i) for i in section_ids) if s]
+    for s in gone:
+        delete_section(s["id"])
+    return gone
+
+
 # --- sets -----------------------------------------------------------------------
 
 SET_FIELDS = ("name", "code", "client", "header_left", "header_right", "doc_code",
@@ -946,10 +954,21 @@ def pack() -> bytes:
     return out.getvalue()
 
 
-def unpack(data: bytes) -> dict:
-    """A library file read in. Sections it has become new versions of the
-    ones here (or new sections); questions, words and standards it has are
-    added or updated; nothing here that it lacks is removed."""
+LOAD_MODES = ("update", "add", "replace")
+
+
+def unpack(data: bytes, mode: str = "update") -> dict:
+    """A library file read in, one of three ways.
+
+    ``update``: sections it has become new versions of the ones here (or new
+    sections); questions and words it has are added or updated; nothing here
+    that it lacks is removed. ``add``: only what is not here yet comes in,
+    and nothing here is changed. ``replace``: as ``update``, and then every
+    section of the kinds the file carries that the file does not have is
+    taken out of the library (projects keep their own copies).
+    """
+    if mode not in LOAD_MODES:
+        mode = "update"
     import io
     import zipfile
 
@@ -960,12 +979,19 @@ def unpack(data: bytes) -> dict:
         raise specs.SpecError("That is not a Specs Writer library file.") from exc
     if not str(loaded.get("format", "")).startswith("specs-writer-library/"):
         raise specs.SpecError("That is not a Specs Writer library file.")
-    counted = {"sections": 0, "options": 0, "variables": 0, "standards": 0}
+    counted = {"sections": 0, "options": 0, "variables": 0, "standards": 0,
+               "added": 0, "updated": 0, "same": 0, "kept": 0, "removed": []}
+    in_file: dict[str, set[str]] = {}
     for s in loaded.get("sections", []):
         nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
                  for n in s.get("body", []) if n.get("level") in specs.KINDS]
         family = clean_family(s.get("family") or loaded.get("family"))
+        in_file.setdefault(family, set()).add(s["number"].strip().upper())
         have = section_by_number(s["number"], family)
+        counted["sections"] += 1
+        if have and mode == "add":
+            counted["kept"] += 1
+            continue
         if have:
             nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
         section_id = save_section(s["number"], s.get("title", ""), nodes,
@@ -973,16 +999,28 @@ def unpack(data: bytes) -> dict:
                                   section_id=have["id"] if have else None, family=family)
         if "applies" in s:
             set_applies(section_id, s["applies"])
-        counted["sections"] += 1
+        if not have:
+            counted["added"] += 1
+        elif section(section_id)["version"] != have["version"]:
+            counted["updated"] += 1
+        else:
+            counted["same"] += 1
+    if mode == "replace":
+        for family, numbers in in_file.items():
+            for r in library(family):
+                if r["number"].upper() not in numbers:
+                    delete_section(r["id"])
+                    counted["removed"].append(f"{family} {r['number']}")
     conn = get_db()
     with conn:
         for o in loaded.get("options", []):
             last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_options").fetchone()["n"]
             conn.execute(
                 "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, position) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET label = excluded.label, "
-                "choices = excluded.choices, default_value = excluded.default_value, "
-                "grp = excluded.grp, kind = excluded.kind",
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO "
+                + ("NOTHING" if mode == "add" else
+                   "UPDATE SET label = excluded.label, choices = excluded.choices, "
+                   "default_value = excluded.default_value, grp = excluded.grp, kind = excluded.kind"),
                 (_clean_key(o["key"]), o.get("label", ""), o.get("choices", ""),
                  o.get("default_value", ""), o.get("grp", ""), o.get("kind", "one"), last + 1))
             counted["options"] += 1
@@ -990,8 +1028,9 @@ def unpack(data: bytes) -> dict:
             last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_variables").fetchone()["n"]
             conn.execute(
                 "INSERT INTO spec_variables (key, label, default_value, position) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET label = excluded.label, "
-                "default_value = excluded.default_value",
+                "ON CONFLICT(key) DO " + ("NOTHING" if mode == "add" else
+                                          "UPDATE SET label = excluded.label, "
+                                          "default_value = excluded.default_value"),
                 (_clean_key(v["key"]), v.get("label", ""), v.get("default_value", ""), last + 1))
             counted["variables"] += 1
         if loaded.get("standards") is not None:
@@ -1021,7 +1060,7 @@ def unpack(data: bytes) -> dict:
     # A kind's own template comes with its sections: it is how they look.
     for name in z.namelist():
         m = re.fullmatch(r"templates/([0-9A-Za-z]{1,8})\.docx", name)
-        if m:
+        if m and not (mode == "add" and template_row(clean_family(m.group(1)))):
             save_template(f"{m.group(1)}-template.docx", z.read(name), family=clean_family(m.group(1)))
     return counted
 

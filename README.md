@@ -183,7 +183,12 @@ meet, so the Specs Writer reads across them:
 - **The library file** (*Download this library* / *Load it* on the library page) carries every
   section (with its kind), question, word, standard and each kind's house template in one `.zip` — a backup, a way to
   move a library between sites, and how a library starts with the office's own sections without
-  them being kept in this repository.
+  them being kept in this repository. Loading one asks what to do with the sections already
+  here: *add and update* (the file's text becomes their next version), *add only what is new*
+  (nothing here changes), or *replace* (as add and update, then the sections of the file's kinds
+  that it lacks are taken out, after a tick to say so).
+- **Taking sections out.** Tick sections on the library page and *Take the ticked out*, or use
+  the button on a section's own page. Projects that took a section keep their own copy.
 
 The Specs Writer is a program like the others: the administrator gives it to each account on
 the Admin page. Only administrators change the library, the options and the house template;

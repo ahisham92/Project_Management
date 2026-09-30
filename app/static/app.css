@@ -1159,3 +1159,15 @@ mark.spec-mark { background: var(--tint-warning); color: inherit; border-radius:
 .spec-family:has(input:checked) { border-color: var(--series-1); box-shadow: inset 0 0 0 1px var(--series-1); }
 details.card > summary { cursor: pointer; list-style: none; }
 details.card > summary::-webkit-details-marker { display: none; }
+
+/* Loading a library file: how it meets the sections already here. */
+.spec-load-modes { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+.spec-load-mode { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.spec-load-mode input { width: auto; flex: 0 0 auto; margin-top: 3px; }
+.spec-load-mode > span { display: flex; flex-direction: column; gap: 2px; }
+.spec-load-mode:has(input:checked) { border-color: var(--series-1); }
+.spec-load-sure { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.spec-load-sure[hidden] { display: none; }
+.spec-load-sure input { width: auto; }
+.spec-tick { width: 32px; }
+.spec-tick input { width: auto; }

@@ -345,3 +345,70 @@ def test_a_revit_file_itself_is_turned_away_plainly(app, signed_in):
         content_type="multipart/form-data", follow_redirects=True)
     body = text(answer)
     assert "Quay.rvt" in body and "File → Export → IFC" in body
+
+
+# --- loading a library file over one, and taking sections out -------------------------
+
+def _library_with(app, signed_in, *numbers):
+    from app import specs_store
+
+    for number in numbers:
+        load(signed_in, f"STD15A_SPC_{number}_ST_S.docx", "# GENERAL\n## SUMMARY\n- Old words.\n",
+             number, f"SECTION {number}")
+    with app.app_context():
+        return specs_store.pack()
+
+
+def test_a_library_file_can_add_update_or_replace(app, signed_in):
+    from app import specs_store
+
+    packed = _library_with(app, signed_in, "033000", "033713")
+    # Here: 033000 amended, 034100 extra; the file has 033000 and 033713 as they were.
+    with app.app_context():
+        s = specs_store.section_by_number("033000", "15A")
+        specs_store.save_section("033000", s["title"], specs.align(specs.loads(s["body"]), specs.from_text(
+            "# GENERAL\n## SUMMARY\n- New words.\n")), section_id=s["id"])
+    load(signed_in, "STD15A_SPC_034100_ST_Precast.docx", "# GENERAL\n## SUMMARY\n- P.\n",
+         "034100", "PRECAST")
+    load(signed_in, "STD03A_SPC_E10_ST_Concrete.docx", "# GENERAL\n## 110 SCOPE\n- E.\n",
+         "E10", "IN SITU CONCRETE")
+
+    def post(mode, **more):
+        return text(signed_in.post("/specs/library/file", data={
+            "mode": mode, "library": [(io.BytesIO(packed), "lib.zip")], **more},
+            content_type="multipart/form-data", follow_redirects=True))
+
+    def words(number):
+        with app.app_context():
+            return specs_store.section_by_number(number, "15A")["body"]
+
+    assert "left as they are" in post("add") and "New words" in words("033000")
+    assert "updated to a new version" in post("update") and "Old words" in words("033000")
+    # Replace asks to be meant first, then takes out 034100 but not the 03A section.
+    assert "Tick that you mean" in post("replace")
+    with app.app_context():
+        assert specs_store.section_by_number("034100", "15A")
+    assert "taken out (15A 034100)" in post("replace", sure="yes")
+    with app.app_context():
+        assert specs_store.section_by_number("034100", "15A") is None
+        assert specs_store.section_by_number("E10", "03A")
+
+
+def test_ticked_sections_are_taken_out_of_the_library(app, signed_in):
+    from app import specs_store
+
+    _library_with(app, signed_in, "033000", "033713", "034100")
+    set_id = set_id_of(signed_in.post("/specs/sets", data={"name": "Quay", "family": "15A"}))
+    with app.app_context():
+        ids = {n: specs_store.section_by_number(n, "15A")["id"] for n in ("033000", "033713", "034100")}
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": [str(ids["033000"])]})
+    page = text(signed_in.get("/specs/library?family=15A"))
+    assert 'form="library-delete"' in page and "Take the ticked out" in page
+    answer = text(signed_in.post("/specs/library/delete", data={
+        "family": "15A", "section_id": [str(ids["033000"]), str(ids["033713"])]},
+        follow_redirects=True))
+    assert "Took 2 sections out of the library: 033000, 033713" in answer
+    with app.app_context():
+        assert [s["number"] for s in specs_store.library("15A")] == ["034100"]
+        # The project keeps its copy.
+        assert [r["number"] for r in specs_store.set_sections(set_id)] == ["033000"]

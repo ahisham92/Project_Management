@@ -100,7 +100,15 @@
   </div>
   <div class="card-body">
   {% for kind, title, bulk in kinds if language[kind] %}
-    <h3 style="margin-top:{{ '0' if loop.first else '14px' }}">{{ title }} <span class="muted small">{{ language[kind] | length }}</span></h3>
+    <div class="inline-form" style="justify-content:space-between;margin-top:{{ '0' if loop.first else '14px' }}">
+      <h3>{{ title }} <span class="muted small">{{ language[kind] | length }}</span></h3>
+      {% if can and kind in ('english', 'spelling', 'units') %}
+      <form method="post" action="{{ action }}" onsubmit="return confirm('Accept every suggestion in {{ title }}? Figures that disagree are left for you to decide.')">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <button type="submit" name="action" value="all" class="btn btn-ghost btn-sm">Accept all {{ title }}</button>
+      </form>
+      {% endif %}
+    </div>
     {% for g in language[kind] %}
     <div class="spec-check-item">
       <div>

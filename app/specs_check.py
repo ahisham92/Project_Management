@@ -41,6 +41,10 @@ STANDARD = re.compile(
         (?:/[A-Z]{0,2}\s?\d+(?:\.\d+)*M?(?:-\d\d(?!\d))?)?
     )(?P<year>\s*(?::\s*|-)(?:19|20)\d\d)?\b""", re.X)
 
+# A dated citation older than this is worth a look even when nothing says it
+# has been replaced.
+OLD_EDITION_BEFORE = __import__("datetime").date.today().year - 15
+
 US_ORGS = {"ASTM", "ACI", "AASHTO", "AWS", "AISC", "CRSI", "PCI", "SSPC", "ASCE"}
 
 
@@ -579,6 +583,10 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                           + (f" ({gone['note']})" if gone["note"] else ""),
                     severity="warning", fix={"action": "replace", "old": gone["old"], "new": gone["new"]}
                     if _single(gone["new"]) else None, extra={"ref": ref.strip()}))
+            elif year and year < OLD_EDITION_BEFORE:
+                report["outdated"].append(_item(
+                    s, n, f"{ref.strip()} cites the {year} edition: check it is still current, or "
+                          "cite it undated so the current edition applies", extra={"ref": ref.strip()}))
             side = family(ref)
             if basis in ("bs", "us") and side != basis and not table.equivalent(ref):
                 seen = std_seen.setdefault(key, {"ref": ref.strip(), "places": []})

@@ -118,6 +118,15 @@ meet, so the Specs Writer reads across them:
   (*Standards and wording* page). Each is only a suggestion: the engineer accepts it, types
   something else and accepts that, or leaves it — and a left one is not suggested again.
   Quoted titles, references and variables are never touched, and nothing leaves the server.
+- **SI units.** Imperial figures (°F, psi, ksi, inches, feet, lb, mils, gallons and so on) are
+  offered in SI. Where both are given, the imperial one in brackets goes — and where the two
+  disagree (25 deg. C (68 deg. F)) the checker says so and leaves it to the engineer. The unit
+  suggestions can be accepted one by one or all at once.
+- **New editions.** Nothing learns of a new edition by itself: the publishers have no open feed.
+  An administrator adds the superseded edition to the withdrawn list on the *Standards and
+  wording* page, and every project's checker then lists each citation of it with a
+  replace-everywhere fix. Citations dated more than 15 years ago are listed to be looked at, and
+  an undated citation always means the current edition.
 - **Scope.** *What the project builds* (marine structures, buildings, or both) and *Crane rails
   and cranes* are questions like the others: a paragraph can be only for one of them
   (`{if structures=Buildings}`, `{if cranes=Yes}`), and a project with no buildings is offered

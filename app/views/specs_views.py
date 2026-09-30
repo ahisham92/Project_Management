@@ -688,6 +688,7 @@ KINDS = [
     ("spelling", "Spelling", True),
     ("grammar", "Grammar", False),
     ("english", "UK or US English", True),
+    ("units", "SI units", True),
     ("scope", "Wording for the project's scope", True),
     ("wording", "The office's wording", True),
 ]
@@ -714,6 +715,10 @@ def _language(found: list[dict]) -> dict[str, list[dict]]:
 def language_set(set_id: int):
     _set_or_404(set_id)
     back = url_for("specs.check_set", set_id=set_id) + "#language"
+    if request.form.get("action") == "all":
+        count = store.accept_all_set(set_id, request.form.get("kind", ""))
+        flash(_fixed(count), "success" if count else "error")
+        return redirect(back)
     if request.form.get("action") == "leave":
         store.ignore(set_id, request.form.get("old", ""))
         flash(f"\"{request.form.get('old')}\" is left as it is in this specification.", "success")
@@ -733,6 +738,11 @@ def language_set(set_id: int):
 def language_library():
     back = url_for("specs.check_library") + "#language"
     if not _admin_only():
+        return redirect(back)
+    if request.form.get("action") == "all":
+        count = store.accept_all_library(request.form.get("kind", ""))
+        flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
+              "success" if count else "error")
         return redirect(back)
     if request.form.get("action") == "leave":
         store.ignore(0, request.form.get("old", ""))

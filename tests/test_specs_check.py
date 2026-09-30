@@ -378,3 +378,41 @@ def test_an_issue_that_refers_to_a_section_not_in_it_is_held(signed_in):
     assert "Section 016000" in page and "Issue anyway" in page
     issued = signed_in.get(f"/specs/sets/{set_id}/export?anyway=1")
     assert issued.mimetype == "application/zip"
+
+
+# --- SI units -------------------------------------------------------------------------
+
+def test_imperial_units_are_offered_in_si():
+    from app.specs_language import unit_findings
+
+    found = {old: (new, why) for _at, old, new, why in unit_findings(
+        "Water at 20 deg. C (68 deg. F); below 25 deg.C (68 deg. F); 4000 psi concrete; "
+        "2.0 to 3.0 mils DFT; aggregate 3/8\"; 1-1/2 inches (38 mm) cover; see Section 2.4 in. full.")}
+    assert found["20 deg. C (68 deg. F)"][0] == "20 deg. C"
+    # A pair that does not agree is said so, not silently resolved.
+    assert "disagree" in found["25 deg.C (68 deg. F)"][1]
+    assert found["4000 psi"][0] == "27.6 MPa"
+    assert found["2.0 to 3.0 mils"][0] == "50 to 75 µm"
+    assert found["3/8\""][0] == "10 mm"
+    assert found["1-1/2 inches (38 mm)"][0] == "38 mm"
+    assert not any("2.4 in." in old for old in found)
+
+
+def test_all_the_unit_suggestions_accepted_at_once(signed_in):
+    load(signed_in, "033000", "# GENERAL\n## SUMMARY\n- Cure at 20 deg. C (68 deg. F) with 4000 psi grout.\n"
+                              "- Keep below 25 deg. C (68 deg. F).\n", "CAST-IN-PLACE CONCRETE")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "all", "kind": "units"})
+    edit = text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
+    assert "Cure at 20 deg. C with 27.6 MPa grout." in edit
+    assert "25 deg. C (68 deg. F)" in edit                # left for the engineer to decide
+
+
+def test_an_old_dated_edition_is_worth_a_look():
+    sections = [{"id": 1, "number": "051200", "title": "X", "nodes": specs.align([], specs.from_text(
+        "# GENERAL\n## A\n- Loads to EN 1991-1-4:2005 and BS EN 1090-2."))}]
+    report = specs_check.check(sections, {}, {}, [], TABLE)
+    assert any("2005 edition" in i["message"] for i in report["outdated"])
+    assert not any("1090-2" in i["message"] for i in report["outdated"])

@@ -821,3 +821,48 @@ def accept_library(how: Mapping[str, str]) -> int:
             save_section(master["number"], master["title"], s["nodes"],
                          note=f"\"{how.get('old')}\" made \"{how.get('new')}\"", section_id=s["id"])
     return count
+
+
+# Kinds of suggestion that can be taken all at once: each is one word or one
+# quantity, where the suggestion is the whole answer. Grammar is read one by one.
+BULK = ("english", "spelling", "units")
+
+
+def _accept_found(rows: list[dict], found: list[dict], kind: str) -> int:
+    from . import specs_language
+
+    if kind not in BULK:
+        raise specs.SpecError("Those are taken one at a time.")
+    todo = [f for f in found if f["kind"] == kind and f["old"] and f["new"]
+            and "disagree" not in f["message"]]
+    count = 0
+    for s in rows:
+        for n in s["nodes"]:
+            mine = sorted((f for f in todo if f["row_id"] == s["id"] and f["node_id"] == n["id"]),
+                          key=lambda f: -f["at"])
+            for f in mine:
+                n["text"], k = specs_language.accept(n["text"], f["old"], f["new"], f["at"])
+                if k:
+                    s["changed"] = s.get("changed", 0) + k
+                    count += k
+    return count
+
+
+def accept_all_set(set_id: int, kind: str) -> int:
+    rows = set_whole(set_id)
+    count = _accept_found(rows, language_set(set_id), kind)
+    for s in rows:
+        if s.get("changed"):
+            save_set_section(set_id, s["id"], s["nodes"])
+    return count
+
+
+def accept_all_library(kind: str) -> int:
+    rows = library_whole()
+    count = _accept_found(rows, language_library(), kind)
+    for s in rows:
+        if s.get("changed"):
+            master = section(s["id"])
+            save_section(master["number"], master["title"], s["nodes"],
+                         note=f"All {kind} suggestions accepted", section_id=s["id"])
+    return count

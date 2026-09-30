@@ -286,6 +286,9 @@ def findings(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str], e
                     "a sentence starts with a capital letter")
             if n["level"] != specs.TABLE and text.count("(") != text.count(")"):
                 add("grammar", 0, "", "", "the brackets do not pair up")
+            # SI units.
+            for at, old, new, why in unit_findings(text):
+                add("units", at, old, new, why)
             # The office's words, and the project's scope.
             for rule, replace, note, when, unless in rules:
                 for m in rule.finditer(text):
@@ -335,3 +338,141 @@ def accept_everywhere(text: str, old: str, new: str) -> tuple[str, int]:
         last = m.end()
     out.append(text[last:])
     return "".join(out), count
+
+
+# --- SI units ----------------------------------------------------------------------------
+
+NUM = r"(?:\d+\s*-\s*\d+/\d+|\d+/\d+|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+SPAN = NUM + r"(?:\s*(?:to|-|–)\s*" + NUM + r")?"
+# imperial unit, the SI one it becomes, what to multiply by, how to round
+IMPERIAL: list[tuple[str, str, float, str]] = [
+    (r"(?:°\s*F|deg(?:rees?)?\.?\s*F)\b", "°C", 0.0, "temperature"),
+    (r"(?:lbs?\.?\s*/\s*cu\.?\s*ft\.?|pcf\b)", "kg/m3", 16.018, "sig"),
+    (r"oz\.?\s*/\s*sq\.?\s*ft\.?", "g/m2", 305.15, "sig"),
+    (r"(?:sq\.?\s*ft\.?|square\s+(?:feet|foot))", "m2", 0.092903, "sig"),
+    (r"(?:sq\.?\s*yd\.?|square\s+yards?)", "m2", 0.836127, "sig"),
+    (r"(?:cu\.?\s*yd\.?|cubic\s+yards?)", "m3", 0.764555, "sig"),
+    (r"(?:cu\.?\s*ft\.?|cubic\s+(?:feet|foot))", "m3", 0.0283168, "sig"),
+    (r"ksi\b", "MPa", 6.894757, "MPa"),
+    (r"psi\b", "MPa", 0.006894757, "MPa"),
+    (r"kips?\b", "kN", 4.448222, "sig"),
+    (r"lbf\b", "N", 4.448222, "sig"),
+    (r"(?:lbs?\.?|pounds?)(?![\w/])", "kg", 0.453592, "sig"),
+    (r"(?:inch(?:es)?\b|in\.(?=[\s,;)]|$)|\"(?![A-Za-z0-9]))", "mm", 25.4, "mm"),
+    (r"(?:feet|foot|ft\.?)(?![\w/])", "m", 0.3048, "m"),
+    (r"(?:yards?|yd\.?)(?![\w/])", "m", 0.9144, "m"),
+    (r"gal(?:lons?)?\.?(?![\w/])", "L", 3.785412, "sig"),
+    (r"mph\b", "km/h", 1.609344, "sig"),
+    (r"mils?\b", "µm", 25.4, "um"),
+]
+SI_UNIT = (r"(?:mm|m|MPa|N/mm2|N/mm²|°\s*C|deg(?:rees?)?\.?\s*C|kg/m3|kg/m³|kg|kN|N|L|µm|microns?|m2|m²|"
+           r"m3|m³|g/m2|g/m²|km/h)\b")
+IMPERIAL_ANY = "|".join(f"(?:{u})" for u, *_ in IMPERIAL)
+SI_QTY = r"(?P<si>" + SPAN + r"\s*-?\s*" + SI_UNIT + r")"
+IMP_QTY = r"(?P<imp>" + SPAN + r"\s*-?\s*(?:" + IMPERIAL_ANY + r"))"
+SI_THEN_IMPERIAL = re.compile(SI_QTY + r"\s*\(\s*" + IMP_QTY + r"\s*\)")
+IMPERIAL_THEN_SI = re.compile(IMP_QTY + r"\s*\(\s*" + SI_QTY + r"\s*\)")
+IMPERIAL_ALONE = re.compile(r"(?<![\w.])" + IMP_QTY)
+
+
+def _number(text: str) -> float:
+    text = text.replace(",", "").strip()
+    whole = re.fullmatch(r"(\d+)\s*-\s*(\d+)/(\d+)", text)
+    if whole:
+        return int(whole.group(1)) + int(whole.group(2)) / int(whole.group(3))
+    part = re.fullmatch(r"(\d+)/(\d+)", text)
+    if part:
+        return int(part.group(1)) / int(part.group(2))
+    return float(text)
+
+
+def _nice(value: float, rounding: str) -> str:
+    if rounding == "temperature" or rounding == "int":
+        out = round(value)
+    elif rounding == "mm":
+        out = round(value) if value < 20 else 5 * round(value / 5)
+    elif rounding == "um":
+        out = 5 * round(value / 5)
+    elif rounding == "MPa":
+        out = round(value, 1) if value < 100 else round(value)
+    elif rounding == "m":
+        out = round(value, 2)
+    else:
+        digits = 3 - len(str(int(abs(value)))) if value >= 1 else 3
+        out = round(value, digits)
+    text = f"{out:.10g}"
+    return text
+
+
+def _imperial(qty: str) -> tuple[list[float], str, float, str] | None:
+    """The numbers of an imperial quantity, and how each becomes SI."""
+    for unit, si, factor, rounding in IMPERIAL:
+        m = re.fullmatch(r"(" + SPAN + r")\s*-?\s*(?:" + unit + r")", qty.strip(), re.I)
+        if m:
+            numbers = re.findall(NUM, m.group(1))
+            try:
+                return [_number(n) for n in numbers], si, factor, rounding
+            except (ValueError, ZeroDivisionError):
+                return None
+    return None
+
+
+def _si_values(qty: str) -> tuple[list[float], str, str] | None:
+    found = _imperial(qty)
+    if not found:
+        return None
+    numbers, si, factor, rounding = found
+    if rounding == "temperature":
+        return [(n - 32) * 5 / 9 for n in numbers], si, rounding
+    return [n * factor for n in numbers], si, rounding
+
+
+def _to_si(qty: str) -> str | None:
+    found = _si_values(qty)
+    if not found:
+        return None
+    values, si, rounding = found
+    return " to ".join(_nice(v, rounding) for v in values) + f" {si}"
+
+
+def _si_numbers(qty: str) -> list[float]:
+    return [float(n.replace(",", "")) for n in re.findall(r"\d[\d,]*(?:\.\d+)?", qty)]
+
+
+def unit_findings(text: str) -> list[tuple[int, str, str, str]]:
+    """Imperial units, each with its SI suggestion: ``(at, old, new, why)``."""
+    out: list[tuple[int, str, str, str]] = []
+    taken: list[tuple[int, int]] = []
+
+    def free(a: int, b: int) -> bool:
+        return not any(x < b and a < y for x, y in taken)
+
+    for rule, keep in ((SI_THEN_IMPERIAL, "si"), (IMPERIAL_THEN_SI, "si")):
+        for m in rule.finditer(text):
+            if not free(*m.span()):
+                continue
+            taken.append(m.span())
+            si, imp = m.group("si"), m.group("imp")
+            converted = _to_si(imp)
+            why = "SI only: the imperial figure goes"
+            if converted:
+                a, b = _si_numbers(si), _si_values(imp)[0]
+                found = _imperial(imp)
+                if a and b and len(a) == len(b) and not all(
+                        abs(x - y) <= max(1.5, 0.03 * abs(x)) for x, y in zip(a, b)):
+                    as_difference = found and found[3] == "temperature" and all(
+                        abs(x - n * 5 / 9) <= 1.5 for x, n in zip(a, found[0]))
+                    if not as_difference:
+                        why = (f"the two figures disagree: {imp.strip()} is {converted}, not "
+                               f"{si.strip()}; check which is meant before accepting")
+            out.append((m.start(), m.group(0), si.strip(), why))
+    for m in IMPERIAL_ALONE.finditer(text):
+        if not free(*m.span()) or re.search(
+                r"\b(?:Section|Article|Paragraph|Clause|Part|Table|Figure|Grade|Type|Class)\s*$",
+                text[max(0, m.start() - 14):m.start()], re.I):
+            continue
+        converted = _to_si(m.group("imp"))
+        if converted:
+            out.append((m.start(), m.group(0), converted,
+                        "SI only; the figure is converted and rounded, so check it"))
+    return sorted(out)

@@ -1,0 +1,117 @@
+{# The side panel beside a question on Details: loaded into the page when a question is clicked. #}
+{% macro shot_form(code='', clause='', ask_code=false, label='Add a screenshot') %}
+<details class="spec-explain-add">
+  <summary>{{ label }}</summary>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('specs.add_question_images', key=q['key']) }}" data-paste-form>
+    <input type="hidden" name="set_id" value="{{ spec['id'] }}">
+    <input type="hidden" name="group" value="{{ group }}">
+    {% if ask_code %}
+    <div class="spec-explain-row">
+      <label>Code <input type="text" name="code" value="{{ code }}" placeholder="e.g. ACI 318-19" required></label>
+      <label>Clause <input type="text" name="clause" value="{{ clause }}" placeholder="e.g. 20.5.1.3"></label>
+    </div>
+    {% else %}
+    <input type="hidden" name="code" value="{{ code }}"><input type="hidden" name="clause" value="{{ clause }}">
+    {% endif %}
+    <label class="spec-explain-drop" tabindex="0">
+      <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+      <span class="small muted" data-paste-note>Choose a file, or click here and paste a screenshot (Ctrl+V).</span>
+    </label>
+    <input type="text" name="caption" placeholder="Caption (optional)">
+    <button type="submit" class="btn btn-sm">Add</button>
+  </form>
+</details>
+{% endmacro %}
+
+{% macro shots(list) %}
+{% if list %}
+<div class="spec-explain-shots">
+  {% for i in list %}
+  <figure>
+    <a href="{{ url_for('specs.question_image', image_id=i['id']) }}" target="_blank" rel="noopener"><img src="{{ url_for('specs.question_image', image_id=i['id']) }}" alt="{{ i['caption'] or (i['code'] ~ ' ' ~ i['clause']) }}" loading="lazy"></a>
+    {% if i['caption'] %}<figcaption class="small muted">{{ i['caption'] }}</figcaption>{% endif %}
+    {% if admin %}
+    <form method="post" action="{{ url_for('specs.delete_question_image', key=q['key'], image_id=i['id']) }}" onsubmit="return confirm('Take this picture out? Every project stops showing it.')">
+      <input type="hidden" name="set_id" value="{{ spec['id'] }}"><input type="hidden" name="group" value="{{ group }}">
+      <button type="submit" class="btn btn-ghost btn-sm">Take out</button>
+    </form>
+    {% endif %}
+  </figure>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro ref_card(r) %}
+<article class="spec-explain-ref">
+  <header><strong>{{ r['code'] }}</strong>{% if r['clause'] %} <span class="spec-explain-clause">{{ r['clause'] }}</span>{% endif %}</header>
+  {% if r['title'] %}<p class="spec-explain-title">{{ r['title'] }}</p>{% endif %}
+  {% if r['says'] %}<p class="small">{{ r['says'] }}</p>{% endif %}
+  {{ shots(r['images']) }}
+  {% if admin %}{{ shot_form(r['code'], r['clause']) }}{% endif %}
+</article>
+{% endmacro %}
+
+<div class="spec-explain-content" data-key="{{ q['key'] }}">
+  <h2 id="spec-explain-title">{{ q['label'] }}</h2>
+  <p class="small muted">{{ q['grp'] or 'Other details' }}</p>
+
+  {% if q['definition'] %}
+  <p class="spec-explain-def">{{ q['definition'] }}</p>
+  {% else %}
+  <p class="small muted">No explanation has been written for this question yet.{% if admin %} Add one under Edit below.{% endif %}</p>
+  {% endif %}
+  {% if q['help'] and q['help'] != q['definition'] %}<p class="small muted">{{ q['help'] }}</p>{% endif %}
+
+  {% if q['drawing'] %}<figure class="spec-explain-drawing">{{ q['drawing'] | safe }}</figure>{% endif %}
+  {{ shots(q['pictures']) }}
+
+  <h3>What the codes say{% if spec['family'] %} <span class="small muted">for {{ spec['family'] }} projects</span>{% endif %}</h3>
+  {% if q['refs'] %}
+    {% for r in q['refs'] %}{{ ref_card(r) }}{% endfor %}
+  {% else %}
+  <p class="small muted">No code clause is listed for this question{% if q['other_refs'] %} for this kind of project{% endif %}.</p>
+  {% endif %}
+  {% if q['loose'] %}
+  <h3 class="small">Other screenshots</h3>
+  {% for code, list in q['loose'] | groupby('code') %}<p class="small"><strong>{{ code }}</strong></p>{{ shots(list) }}{% endfor %}
+  {% endif %}
+  {% if q['other_refs'] %}
+  <details class="spec-explain-other">
+    <summary class="small">Other codes ({{ q['other_refs'] | map(attribute='code') | unique | join(', ') }})</summary>
+    {% for r in q['other_refs'] %}{{ ref_card(r) }}{% endfor %}
+  </details>
+  {% endif %}
+  <p class="small muted spec-explain-note">Clause numbers are for the editions named; check them against the office's copy before relying on them.</p>
+
+  {% if asked and asked['places'] %}
+  <h3>Where it goes in this project</h3>
+  <ul class="small spec-explain-places">{% for p in asked['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['article'] %} <span class="muted">{{ p['article'] }}</span>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if admin %}
+  <div class="spec-explain-admin">
+    {{ shot_form(ask_code=true, label='Add a screenshot for another code') }}
+    {{ shot_form(label='Add a picture of this item') }}
+    <details class="spec-explain-add">
+      <summary>Edit this explanation</summary>
+      <form method="post" action="{{ url_for('specs.save_explanation', key=q['key']) }}">
+        <input type="hidden" name="set_id" value="{{ spec['id'] }}"><input type="hidden" name="group" value="{{ group }}">
+        <label>What it means<textarea name="definition" rows="4">{{ q['definition'] }}</textarea></label>
+        {% if spec['family'] %}
+        <input type="hidden" name="kind" value="{{ spec['family'] }}">
+        <label class="spec-explain-check"><input type="checkbox" name="only_kind" value="1"{% if q['own_definition'] %} checked{% endif %}> This wording is only for {{ spec['family'] }} projects</label>
+        {% endif %}
+        <label>Drawing
+          <select name="picture">
+            <option value="">None</option>
+            {% for d in drawings %}<option value="{{ d }}"{% if d == q['picture'] %} selected{% endif %}>{{ d | replace('-', ' ') }}</option>{% endfor %}
+          </select></label>
+        <label>Codes, one per line: code | clause | title | what it says | kinds (15A 16A 03A; blank for all)
+          <textarea name="refs" rows="5" class="mono">{{ refs_text }}</textarea></label>
+        <button type="submit" class="btn btn-sm btn-primary">Save for every project</button>
+      </form>
+    </details>
+  </div>
+  {% endif %}
+</div>

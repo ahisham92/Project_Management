@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from . import specs, specs_blanks
@@ -41,6 +42,8 @@ GROUPS = [
 ]
 OTHER = "Other details"
 FIELDS = ("key", "label", "grp", "help", "suggested", "per_element", "many", "optional", "position")
+# What explains a question: a file that lacks them never clears them.
+EXPLAINED = ("definition", "picture", "refs", "definition_kinds")
 # Which questions a project answers per element rather than once for all.
 SPLIT = "__split__"
 FREE, NONE, SAME = "__free__", "__none__", "__same__"
@@ -62,9 +65,15 @@ def definitions() -> dict[str, dict]:
 
 def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") -> int:
     """Questions from a library file (or the builder) written in; ``add`` keeps
-    the ones already here as they are."""
+    the ones already here as they are. A question's explanation comes in when
+    the file has one; a file without them leaves the ones here alone."""
     conn = get_db()
     count = 0
+    columns = FIELDS + EXPLAINED
+    keep = {f: f"COALESCE(NULLIF(excluded.{f}, {empty!r}), spec_questions.{f})"
+            for f, empty in (("definition", ""), ("picture", ""), ("refs", "[]"),
+                             ("definition_kinds", "{}"))}
+    update = ", ".join(f"{f} = {keep.get(f, 'excluded.' + f)}" for f in columns[1:])
     with conn:
         for i, r in enumerate(rows):
             key = re.sub(r"[^a-z0-9_]", "", str(r.get("key", "")).lower())
@@ -74,19 +83,198 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
                       r.get("grp") or r.get("group") or "", r.get("help") or "",
                       r.get("suggested") if r.get("suggested") is not None else None,
                       1 if r.get("per_element") else 0, 1 if r.get("many") else 0,
-                      1 if r.get("optional") else 0, int(r.get("position", r.get("order", i)) or 0))
+                      1 if r.get("optional") else 0, int(r.get("position", r.get("order", i)) or 0),
+                      str(r.get("definition") or "").strip(), _slug(r.get("picture")),
+                      json.dumps(clean_refs(r.get("refs")), ensure_ascii=False),
+                      json.dumps(clean_kinds(r.get("definition_kinds")), ensure_ascii=False))
             conn.execute(
-                f"INSERT INTO spec_questions ({', '.join(FIELDS)}) VALUES ({', '.join('?' * len(FIELDS))}) "
-                "ON CONFLICT(key) DO " + ("NOTHING" if mode == "add" else
-                                          "UPDATE SET " + ", ".join(f"{f} = excluded.{f}"
-                                                                    for f in FIELDS[1:])),
+                f"INSERT INTO spec_questions ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))}) "
+                "ON CONFLICT(key) DO " + ("NOTHING" if mode == "add" else "UPDATE SET " + update),
                 values)
             count += 1
     return count
 
 
 def packed() -> list[dict]:
-    return [{k: d[k] for k in FIELDS} for d in definitions().values()]
+    return [{**{k: d[k] for k in FIELDS}, "definition": d.get("definition") or "",
+             "picture": d.get("picture") or "", "refs": refs_of(d),
+             "definition_kinds": clean_kinds(d.get("definition_kinds"))}
+            for d in definitions().values()]
+
+
+# --- what explains a question ---------------------------------------------------------
+
+REF_FIELDS = ("code", "clause", "title", "says")
+DRAWINGS = Path(__file__).resolve().parent / "static" / "spec-drawings"
+IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif",
+               b"RIFF": "image/webp"}
+IMAGE_LIMIT = 4 * 1024 * 1024
+
+
+def _slug(value: Any) -> str:
+    slug = str(value or "").strip().lower()
+    return slug if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,60}", slug) else ""
+
+
+def clean_refs(refs: Any) -> list[dict]:
+    """What the codes say about a question, as a list of plain entries."""
+    if isinstance(refs, str):
+        try:
+            refs = json.loads(refs or "[]")
+        except ValueError:
+            refs = []
+    out = []
+    for r in refs if isinstance(refs, list) else []:
+        if not isinstance(r, Mapping) or not str(r.get("code") or "").strip():
+            continue
+        kinds = r.get("kinds") or []
+        if isinstance(kinds, str):
+            kinds = re.split(r"[\s,;/]+", kinds)
+        out.append({**{f: str(r.get(f) or "").strip()[:600] for f in REF_FIELDS},
+                    "kinds": [k.strip().upper() for k in kinds if k and k.strip()]})
+    return out
+
+
+def clean_kinds(given: Any) -> dict[str, str]:
+    """A definition worded for one kind of project, by kind ("03A")."""
+    if isinstance(given, str):
+        try:
+            given = json.loads(given or "{}")
+        except ValueError:
+            given = {}
+    if not isinstance(given, Mapping):
+        return {}
+    return {str(k).strip().upper(): str(v).strip() for k, v in given.items()
+            if str(k).strip() and str(v or "").strip()}
+
+
+def definition_for(d: Mapping[str, Any], family: str = "") -> str:
+    return clean_kinds(d.get("definition_kinds")).get((family or "").upper()) or d.get("definition") or ""
+
+
+def refs_of(d: Mapping[str, Any]) -> list[dict]:
+    return clean_refs(d.get("refs") or "[]")
+
+
+def refs_from_lines(text: str) -> list[dict]:
+    """Refs typed one per line: code | clause | title | what it says | kinds."""
+    rows = []
+    for line in (text or "").splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if not parts or not parts[0]:
+            continue
+        parts += [""] * (5 - len(parts))
+        rows.append({"code": parts[0], "clause": parts[1], "title": parts[2], "says": parts[3],
+                     "kinds": parts[4]})
+    return clean_refs(rows)
+
+
+def refs_as_lines(refs: list[dict]) -> str:
+    return "\n".join(" | ".join([r["code"], r["clause"], r["title"], r["says"], " ".join(r["kinds"])])
+                     for r in refs)
+
+
+def drawing(slug: str) -> str:
+    """One of the app's own drawings, to put in the page as it is."""
+    slug = _slug(slug)
+    path = DRAWINGS / f"{slug}.svg"
+    if not slug or not path.is_file():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    return text[text.find("<svg"):] if "<svg" in text else ""
+
+
+def drawings() -> list[str]:
+    return sorted(p.stem for p in DRAWINGS.glob("*.svg")) if DRAWINGS.is_dir() else []
+
+
+def save_explanation(key: str, definition: str, picture: str, refs: list[dict],
+                     family: str = "") -> None:
+    """An administrator's wording; with a kind, it is that kind's own definition
+    (an empty one goes back to the shared wording)."""
+    d = definitions().get(key) or {}
+    kinds = clean_kinds(d.get("definition_kinds"))
+    shared = d.get("definition") or ""
+    if family:
+        kinds[family.upper()] = (definition or "").strip()
+        kinds = clean_kinds(kinds)
+    else:
+        shared = (definition or "").strip()
+    get_db().execute("UPDATE spec_questions SET definition = ?, definition_kinds = ?, picture = ?, "
+                     "refs = ? WHERE key = ?",
+                     (shared, json.dumps(kinds, ensure_ascii=False), _slug(picture),
+                      json.dumps(clean_refs(refs), ensure_ascii=False), key))
+    get_db().commit()
+
+
+def image_type(data: bytes) -> str | None:
+    for magic, mime in IMAGE_TYPES.items():
+        if data.startswith(magic) and (mime != "image/webp" or data[8:12] == b"WEBP"):
+            return mime
+    return None
+
+
+def add_image(key: str, data: bytes, code: str = "", clause: str = "", caption: str = "",
+              who: str = "") -> int | None:
+    """A screenshot of a code's clause (or a picture) added to a question; the
+    same picture twice is kept once. None when it is not a picture."""
+    import hashlib
+
+    mime = image_type(data)
+    if mime is None or len(data) > IMAGE_LIMIT:
+        return None
+    sha = hashlib.sha256(data).hexdigest()
+    code, clause = (code or "").strip()[:80], (clause or "").strip()[:80]
+    have = query("SELECT id FROM spec_question_images WHERE key = ? AND code = ? AND clause = ? "
+                 "AND sha = ?", (key, code, clause, sha))
+    if have:
+        return have[0]["id"]
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO spec_question_images (key, code, clause, caption, mime, sha, content, added_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (key, code, clause, (caption or "").strip()[:300], mime,
+                                           sha, data, who))
+    conn.commit()
+    return cur.lastrowid
+
+
+def images(key: str | None = None) -> list[dict]:
+    sql = "SELECT id, key, code, clause, caption, mime, sha, added_by, added_at FROM spec_question_images"
+    rows = query(sql + (" WHERE key = ?" if key else "") + " ORDER BY id", (key,) if key else ())
+    return [dict(r) for r in rows]
+
+
+def image(image_id: int) -> dict | None:
+    rows = query("SELECT * FROM spec_question_images WHERE id = ?", (image_id,))
+    return dict(rows[0]) if rows else None
+
+
+def delete_image(image_id: int) -> None:
+    get_db().execute("DELETE FROM spec_question_images WHERE id = ?", (image_id,))
+    get_db().commit()
+
+
+def explained(key: str, family: str = "") -> dict | None:
+    """Everything the side panel shows for a question: what it means, its
+    drawing, and what each code says, the project's own kind's codes first,
+    with the screenshots added to each."""
+    d = definitions().get(key)
+    if d is None:
+        return None
+    family = (family or "").upper()
+    shots = images(key)
+    refs = []
+    for r in refs_of(d):
+        mine = not r["kinds"] or family in r["kinds"]
+        refs.append({**r, "mine": mine,
+                     "images": [i for i in shots if i["code"].lower() == r["code"].lower()
+                                and i["clause"].lower() == r["clause"].lower()]})
+    placed = {(i["code"].lower(), i["clause"].lower()) for r in refs for i in r["images"]}
+    return {**d, "definition": definition_for(d, family), "drawing": drawing(d.get("picture") or ""),
+            "own_definition": family in clean_kinds(d.get("definition_kinds")),
+            "refs": [r for r in refs if r["mine"]], "other_refs": [r for r in refs if not r["mine"]],
+            "pictures": [i for i in shots if not i["code"]],
+            "loose": [i for i in shots if i["code"] and (i["code"].lower(), i["clause"].lower()) not in placed]}
 
 
 # --- a project's answers ------------------------------------------------------------
@@ -201,7 +389,8 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                         target.append(text)
                 if element and element not in q["elements"]:
                     q["elements"].append(element)
-                place = {"row_id": s["id"], "number": s["number"], "label": n["label"],
+                place = {"row_id": s["id"], "number": s["number"], "label": n.get("path") or n["label"],
+                         "article": re.sub(r"^\d+(\.\d+)?\s+", "", n.get("article") or "").strip().capitalize(),
                          "node_id": n["id"], "element": element}
                 if place not in q["places"]:
                     q["places"].append(place)

@@ -569,6 +569,23 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         " many INTEGER NOT NULL DEFAULT 0, optional INTEGER NOT NULL DEFAULT 0,"
         " position INTEGER NOT NULL DEFAULT 0)")
     _ensure_column(conn, "spec_sets", "answers", "TEXT NOT NULL DEFAULT '{}'")
+    # What a question means, a drawing of it, and what the codes say about it
+    # (refs: JSON list of {code, clause, title, says, kinds}), shown beside it.
+    _ensure_column(conn, "spec_questions", "definition", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_questions", "picture", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_questions", "refs", "TEXT NOT NULL DEFAULT '[]'")
+    # A kind's own wording of the definition where its codes differ ({"03A": "..."}).
+    _ensure_column(conn, "spec_questions", "definition_kinds", "TEXT NOT NULL DEFAULT '{}'")
+    # Screenshots of the codes' own clauses (and pictures) an administrator adds
+    # to a question; code '' is a picture of the question itself.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS spec_question_images ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL,"
+        " code TEXT NOT NULL DEFAULT '', clause TEXT NOT NULL DEFAULT '',"
+        " caption TEXT NOT NULL DEFAULT '', mime TEXT NOT NULL, sha TEXT NOT NULL,"
+        " content BLOB NOT NULL, added_by TEXT NOT NULL DEFAULT '',"
+        " added_at TEXT NOT NULL DEFAULT (datetime('now')))")
+    conn.execute("CREATE INDEX IF NOT EXISTS spec_question_images_key ON spec_question_images (key)")
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 

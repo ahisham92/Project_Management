@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ section['number'] }} · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small">
+      <a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a> ·
+        <a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) }}">{{ section['number'] }}</a>
+      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a> ·
+        <a href="{{ url_for('specs.library_section', section_id=section['id']) }}">{{ section['number'] }}</a>{% endif %}
+    </p>
+    <h1>{% if library %}Edit the master: {% else %}Amend for {{ spec['name'] }}: {% endif %}{{ section['number'] }}</h1>
+  </div>
+</div>
+
+<form method="post">
+<div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(0,1fr);align-items:start">
+  <div class="card">
+    <div class="card-body" style="display:grid;gap:10px">
+      <div class="inline-form">
+        {% if library %}
+        <label class="field w-md"><span class="field-label">Number</span>
+          <input type="text" name="number" value="{{ section['number'] }}" required></label>
+        {% endif %}
+        <label class="field flex1"><span class="field-label">Title</span>
+          <input type="text" name="title" value="{{ section['title'] }}"></label>
+        {% if not library %}
+        <label class="field flex1"><span class="field-label">Document code (blank for the project's)</span>
+          <input type="text" name="doc_code" value="{{ section['doc_code'] }}" placeholder="{{ spec['doc_code'] }}"></label>
+        {% endif %}
+      </div>
+      <label class="field"><span class="field-label">The text</span>
+        <textarea name="text" class="spec-editor" spellcheck="true">{{ text }}</textarea></label>
+      {% if library %}
+      <label class="field"><span class="field-label">What changed, for the version history</span>
+        <input type="text" name="note" placeholder="e.g. Updated to ACI 318-19"></label>
+      {% endif %}
+      <div><button type="submit" class="btn btn-primary">Save</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>How to write it</h2></div>
+    <div class="card-body small" style="display:grid;gap:8px">
+      <p>One paragraph to a line. What starts the line says where it sits; the numbers are worked out for you.</p>
+      <table class="spec-table"><tbody>
+        <tr><td class="spec-key"># GENERAL</td><td>PART 1 - GENERAL</td></tr>
+        <tr><td class="spec-key">## SUMMARY</td><td>1.1 SUMMARY</td></tr>
+        <tr><td class="spec-key">- text</td><td>A. text</td></tr>
+        <tr><td class="spec-key">-- text</td><td>1. text</td></tr>
+        <tr><td class="spec-key">--- text</td><td>a. text</td></tr>
+        <tr><td class="spec-key">---- text</td><td>1) text</td></tr>
+        <tr><td class="spec-key">// note</td><td>a note to whoever edits it; never issued</td></tr>
+        <tr><td class="spec-key">| a | b |</td><td>a table row</td></tr>
+      </tbody></table>
+      <p>A line with no mark carries on the paragraph above it.</p>
+      <p><strong>Only for some projects:</strong> start the text with a condition, and whatever sits under that paragraph goes with it.</p>
+      <p class="spec-key">-- {if leed=v4.1} Product Data for ...</p>
+      <p class="muted">Several conditions: <span class="spec-key">{if a=x &amp; b=y}</span>. Either of two: <span class="spec-key">{if a=x|y}</span>. Anything but: <span class="spec-key">{if a!=x}</span>.</p>
+      {% if options %}
+      <p><strong>Options:</strong></p>
+      <ul style="margin:0;padding-left:18px">
+        {% for o in options %}<li><span class="spec-key">{{ o['key'] }}</span> = {{ o['choice_list'] | join(' | ') }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if variables %}
+      <p><strong>Words filled in per project:</strong></p>
+      <ul style="margin:0;padding-left:18px">
+        {% for v in variables %}<li><span class="spec-key">{% raw %}{{{% endraw %}{{ v['key'] }}{% raw %}}}{% endraw %}</span> — {{ v['label'] }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}

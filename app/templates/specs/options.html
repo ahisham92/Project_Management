@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Options and variables · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a></p>
+    <h1>Options and variables</h1>
+    <p class="small muted" style="margin-top:2px">
+      The same list for every project, so every specification is set up from the same questions.
+      An option switches the master's conditional paragraphs in and out; a variable is a word a
+      project fills in wherever the text says <span class="spec-key">{% raw %}{{key}}{% endraw %}</span>.
+      {% if not is_admin %}Only an administrator changes them.{% endif %}
+    </p>
+  </div>
+</div>
+
+<form method="post">
+<div class="card">
+  <div class="card-head"><div><h2>Options</h2><p class="small muted" style="margin-top:2px">Choices separated by |. Clear a key to drop the row.</p></div></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Key</th><th>Question</th><th>Choices</th><th>Default</th></tr></thead>
+      <tbody>
+        {% for o in options + [{'key': '', 'label': '', 'choices': '', 'default_value': ''}] %}
+        <tr>
+          <td><input type="text" name="opt_key" value="{{ o['key'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="opt_label" value="{{ o['label'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="opt_choices" value="{{ o['choices'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="opt_default" value="{{ o['default_value'] }}" {{ 'disabled' if not is_admin }}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Variables</h2></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Key</th><th>What it is</th><th>Default</th></tr></thead>
+      <tbody>
+        {% for v in variables + [{'key': '', 'label': '', 'default_value': ''}] %}
+        <tr>
+          <td><input type="text" name="var_key" value="{{ v['key'] }}" class="spec-key" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="var_label" value="{{ v['label'] }}" {{ 'disabled' if not is_admin }}></td>
+          <td><input type="text" name="var_default" value="{{ v['default_value'] }}" {{ 'disabled' if not is_admin }}></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if is_admin %}<div style="margin-top:12px"><button type="submit" class="btn btn-primary">Save</button></div>{% endif %}
+</form>
+{% endblock %}

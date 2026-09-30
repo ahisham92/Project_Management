@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}{{ spec['name'] }} · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a></p>
+    <h1>{{ spec['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ spec['code'] }}{% if spec['client'] %} · {{ spec['client'] }}{% endif %} · REV {{ spec['revision'] }}
+      · {{ sections | length }} section{{ 's' if sections | length != 1 }}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Issue all (.zip of .docx)</a>
+  </div>
+</div>
+
+{% if missing %}
+  <div class="flashes"><div class="flash error">
+    The text uses {{ missing | map('tojson') | join(', ') }} with no value for this project yet —
+    it goes out as typed until one is given below{% if is_admin %} or in <a href="{{ url_for('specs.options') }}">options and variables</a>{% endif %}.
+  </div></div>
+{% endif %}
+
+<form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}">
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2>Project information</h2></div>
+    <div class="card-body" style="display:grid;gap:10px">
+      <div class="inline-form">
+        <label class="field flex1"><span class="field-label">Project name</span>
+          <input type="text" name="name" value="{{ spec['name'] }}" required></label>
+        <label class="field w-lg"><span class="field-label">Project code</span>
+          <input type="text" name="code" value="{{ spec['code'] }}"></label>
+      </div>
+      <label class="field"><span class="field-label">Client</span>
+        <input type="text" name="client" value="{{ spec['client'] }}"></label>
+      <div class="grid grid-2">
+        <label class="field"><span class="field-label">Page header, left (one line each)</span>
+          <textarea name="header_left" rows="3">{{ spec['header_left'] }}</textarea></label>
+        <label class="field"><span class="field-label">Page header, right (same lines)</span>
+          <textarea name="header_right" rows="3">{{ spec['header_right'] }}</textarea></label>
+      </div>
+      <div class="inline-form">
+        <label class="field flex1"><span class="field-label">Document code in the footer</span>
+          <input type="text" name="doc_code" value="{{ spec['doc_code'] }}" placeholder="e.g. N25185-0100D-FD-APA-00-SPC-15A-ST-01">
+          <span class="field-hint">A section can have its own, on its edit page.</span></label>
+        <label class="field w-sm"><span class="field-label">Revision</span>
+          <input type="text" name="revision" value="{{ spec['revision'] }}"></label>
+        <label class="field w-md"><span class="field-label">Issue date</span>
+          <input type="date" name="issue_date" value="{{ spec['issue_date'] }}"></label>
+      </div>
+      <label class="field"><span class="field-label">File names</span>
+        <input type="text" name="file_pattern" value="{{ spec['file_pattern'] }}">
+        <span class="field-hint">{number} is the section number: SPC-FD-{number}-ST gives SPC-FD-032000-ST.docx.</span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Choices</h2>
+        <p class="small muted" style="margin-top:2px">They switch the master's conditional paragraphs in and out of every section.</p>
+      </div>
+    </div>
+    <div class="card-body" style="display:grid;gap:10px">
+      {% for o in options %}
+        <label class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
+          <select name="opt_{{ o['key'] }}">
+            {% for c in o['choice_list'] %}
+              <option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>
+            {% endfor %}
+          </select></label>
+      {% else %}
+        <p class="small muted">No options are set up yet.</p>
+      {% endfor %}
+      {% if variables %}
+        <h3 style="margin-top:6px">Words this project fills in</h3>
+        {% for v in variables %}
+          <label class="field"><span class="field-label">{{ v['label'] }} <span class="spec-key muted">{% raw %}{{{% endraw %}{{ v['key'] }}{% raw %}}}{% endraw %}</span></span>
+            <input type="text" name="var_{{ v['key'] }}" value="{{ values[v['key']] }}" placeholder="{{ v['default_value'] }}"></label>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+<div style="margin-top:12px"><button type="submit" class="btn btn-primary">Save project information and choices</button></div>
+</form>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>Sections</h2>
+      <p class="small muted" style="margin-top:2px">Each is this project's own copy, counted against the master it was taken from.</p>
+    </div>
+  </div>
+  {% if not sections %}
+    <div class="card-body">{{ empty('No sections yet', 'Add them from the library below, or read in the project\'s own Word files.') }}</div>
+  {% else %}
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Section</th><th>Title</th><th>Against the master</th><th></th></tr></thead>
+      <tbody>
+        {% for s in sections %}
+        <tr>
+          <td><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=s['id']) }}">{{ s['number'] }}</a></td>
+          <td>{{ s['title'] }}</td>
+          <td>
+            {% if s['own'] %}{{ badge('neutral', "This project's own") }}
+            {% elif s['added'] is none %}{{ badge('neutral', 'Master version missing') }}
+            {% elif s['added'] + s['changed'] + s['removed'] == 0 %}{{ badge('good', 'As the master') }}
+            {% else %}{{ badge('warning', s['summary']) }}{% endif %}
+            {% if s['behind'] %}{{ badge('serious', 'Master is now v' ~ s['master_version']) }}{% endif %}
+          </td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=s['id']) }}">.docx</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><h2>Add from the library</h2></div>
+    <div class="card-body">
+      {% if available %}
+      <form method="post" action="{{ url_for('specs.add_sections', set_id=spec['id']) }}">
+        <div class="checks" style="flex-direction:column">
+          {% for s in available %}
+            <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"> {{ s['number'] }} — {{ s['title'] }}</label>
+          {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:8px">Add the ticked sections</button>
+      </form>
+      {% else %}
+        <p class="small muted">Every section in the library is in this specification.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('specs.new_own_section', set_id=spec['id']) }}" class="inline-form" style="margin-top:14px">
+        <label class="field w-md"><span class="field-label">Or one of its own: number</span>
+          <input type="text" name="number" required></label>
+        <label class="field flex1"><span class="field-label">Title</span>
+          <input type="text" name="title"></label>
+        <button type="submit" class="btn btn-ghost">Write it</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Read in the project's own Word files</h2>
+        <p class="small muted" style="margin-top:2px">
+          An earlier issue, or a section amended outside. Each is lined up against the master of
+          the same number, so whatever it says differently shows as this project's amendment — the
+          quickest way to bring an old project into line.
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('specs.upload_to_set', set_id=spec['id']) }}" enctype="multipart/form-data" class="inline-form">
+        <label class="field flex1"><span class="field-label">Sections (.docx)</span>
+          <input type="file" name="files" accept=".docx" multiple required></label>
+        <button type="submit" class="btn btn-ghost">Read them in</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('specs.delete_set', set_id=spec['id']) }}" style="margin-top:24px"
+      onsubmit="return confirm('Delete this whole specification? Its sections and amendments go with it.')">
+  <button type="submit" class="btn btn-danger btn-sm">Delete this specification</button>
+</form>
+{% endblock %}

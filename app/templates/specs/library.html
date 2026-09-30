@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Master library · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a></p>
+    <h1>Master library</h1>
+    <p class="small muted" style="margin-top:2px">
+      The office's own text of each section — what every project starts from and is compared
+      against. {% if is_admin %}Saving a section keeps the last one as a version, and projects
+      that took it can bring the new one in without losing their amendments.{% else %}Only an
+      administrator changes it.{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
+</div>
+
+{% if is_admin %}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Load sections from Word</h2>
+        <p class="small muted" style="margin-top:2px">
+          One or many .docx files. A section drafted in the MasterSpec styles reads exactly; one
+          typed in Normal or List Paragraph is read from its numbering, so check it reads right.
+          A section already here becomes its next version. An old .doc has to be saved as .docx
+          in Word first.
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('specs.upload_to_library') }}" enctype="multipart/form-data" class="inline-form">
+        <label class="field flex1">
+          <span class="field-label">Sections (.docx)</span>
+          <input type="file" name="files" accept=".docx" multiple required>
+        </label>
+        <button type="submit" class="btn btn-primary">Read them in</button>
+      </form>
+      <form method="post" action="{{ url_for('specs.new_library_section') }}" class="inline-form" style="margin-top:12px">
+        <label class="field w-md">
+          <span class="field-label">Or a new one: number</span>
+          <input type="text" name="number" placeholder="033000" required>
+        </label>
+        <label class="field flex1">
+          <span class="field-label">Title</span>
+          <input type="text" name="title" placeholder="CAST-IN-PLACE CONCRETE">
+        </label>
+        <button type="submit" class="btn btn-ghost">Start it</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>House template</h2>
+        <p class="small muted" style="margin-top:2px">
+          The Word document every section is issued in — its styles, page, header and footer. The
+          text is the project's; how it looks is this. Upload one of your own sections saved as .docx
+          to use its formatting exactly.
+        </p>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="small">
+        {% if template %}In use: <strong>{{ template['filename'] }}</strong>, from {{ template['user_name'] }}, {{ template['added_at'][:10] }}.
+        {% else %}In use: the built-in MasterSpec template (Times New Roman, A4).{% endif %}
+        <a href="{{ url_for('specs.download_template') }}">Download it</a>
+      </p>
+      <form method="post" action="{{ url_for('specs.upload_template') }}" enctype="multipart/form-data" class="inline-form" style="margin-top:8px">
+        <label class="field flex1">
+          <span class="field-label">A section in the house format (.docx)</span>
+          <input type="file" name="template" accept=".docx" required>
+        </label>
+        <button type="submit" class="btn btn-ghost">Use it</button>
+      </form>
+      {% if template %}
+      <form method="post" action="{{ url_for('specs.delete_template') }}" style="margin-top:8px">
+        <button type="submit" class="btn btn-danger btn-sm">Go back to the built-in one</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Sections</h2></div>
+  {% if not sections %}
+    <div class="card-body">{{ empty('The library is empty', 'Load the master sections from Word to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
+  {% else %}
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
+      <tbody>
+        {% for s in sections %}
+        <tr>
+          <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
+          <td>{{ s['title'] }}</td>
+          <td class="right">{{ s['paragraphs'] }}</td>
+          <td class="small">{{ s['uses'] | join(', ') }}</td>
+          <td>v{{ s['version'] }}</td>
+          <td class="small muted">{{ s['updated_at'][:16] }} · {{ s['updated_by'] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

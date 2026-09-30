@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "specs/_paragraph.html" import paragraph %}
+{% block title %}{{ section['number'] }} {{ section['title'] }} · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small">
+      <a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
+      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}
+    </p>
+    <h1>SECTION {{ section['number'] }} - {{ section['title'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {% if spec %}
+        {% if master %}Copied from master v{{ section['base_version'] }}{% if section['master_version'] and section['master_version'] > section['base_version'] %}; the master is now v{{ section['master_version'] }}{% endif %}.
+        {% else %}This project's own section: there is no master to compare it with.{% endif %}
+        Last changed {{ section['updated_at'][:16] }}{% if section['updated_by'] %} by {{ section['updated_by'] }}{% endif %}.
+      {% else %}
+        Master{% if version %}, as it was at v{{ version }}{% else %} v{{ section['version'] }}{% endif %}, saved {{ section['updated_at'][:16] }}{% if section['updated_by'] %} by {{ section['updated_by'] }}{% endif %}.
+        Every conditional paragraph is shown; each project sees only the ones its choices keep.
+      {% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    {% if spec %}
+      <a class="btn btn-primary" href="{{ url_for('specs.edit_set_section', set_id=spec['id'], row_id=section['id']) }}">Amend</a>
+      <a class="btn btn-ghost" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=section['id']) }}">Download .docx</a>
+    {% else %}
+      {% if is_admin %}<a class="btn btn-primary" href="{{ url_for('specs.edit_library_section', section_id=section['id']) }}">Edit the master</a>{% endif %}
+      <a class="btn btn-ghost" href="{{ url_for('specs.library_docx', section_id=section['id']) }}">Download .docx</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if spec and master and section['master_version'] and section['master_version'] > section['base_version'] %}
+<div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
+  <p class="small">The master has been saved since this project took it. Bring its changes in: paragraphs this project never touched take the master's new wording, and its own amendments stay.</p>
+  <form method="post" action="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=section['id'], action='update') }}">
+    <button type="submit" class="btn btn-primary btn-sm">Bring in master v{{ section['master_version'] }}</button>
+  </form>
+</div></div>
+{% endif %}
+
+{% if compared %}
+<div class="spec-legend" style="margin-bottom:8px">
+  <span class="spec-added">added by this project</span>
+  <span class="spec-changed">reworded (master's words beneath)</span>
+  <span class="spec-removed">dropped from the master</span>
+  <span class="spec-out">switched off by this project's choices</span>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body spec-doc">
+    {% for p in rows %}{{ paragraph(p, values) }}{% else %}<p class="muted small">Nothing in this section yet.</p>{% endfor %}
+    <p class="spec-p spec-PRT" style="margin-top:18px"><span class="spec-text">END OF SECTION {{ section['number'] }}</span></p>
+  </div>
+</div>
+
+{% if spec %}
+<div class="inline-form" style="margin-top:16px">
+  {% if master %}
+  <form method="post" action="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=section['id'], action='reset') }}"
+        onsubmit="return confirm('Throw away this project\'s amendments to this section and take the master as it is now?')">
+    <button type="submit" class="btn btn-ghost btn-sm">Go back to the master</button>
+  </form>
+  {% endif %}
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=section['id'], action='promote') }}"
+        onsubmit="return confirm('Make the library\'s master read exactly as this project has it? Every project can then bring it in.')">
+    <button type="submit" class="btn btn-ghost btn-sm">Make this the master</button>
+  </form>
+  {% endif %}
+  <form method="post" action="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=section['id'], action='remove') }}"
+        onsubmit="return confirm('Take this section out of the project\'s specification? Its amendments go with it.')">
+    <button type="submit" class="btn btn-danger btn-sm">Take it out of this specification</button>
+  </form>
+</div>
+{% else %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Versions</h2></div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Version</th><th>Saved</th><th>By</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for v in versions %}
+        <tr>
+          <td><a href="{{ url_for('specs.library_section', section_id=section['id'], v=v['version']) }}">v{{ v['version'] }}</a></td>
+          <td class="small">{{ v['saved_at'][:16] }}</td>
+          <td class="small">{{ v['saved_by'] }}</td>
+          <td class="small">{{ v['note'] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if is_admin %}
+<form method="post" action="{{ url_for('specs.delete_library_section', section_id=section['id']) }}" style="margin-top:16px"
+      onsubmit="return confirm('Take this section out of the library? Projects keep their own copies.')">
+  <button type="submit" class="btn btn-danger btn-sm">Take it out of the library</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

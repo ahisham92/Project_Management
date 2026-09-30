@@ -15,6 +15,7 @@ The site opens on a choice rather than dropping everybody into one application:
 |---|---|---|
 | **Project Management** | Everything described in this README — programme, progress, budget, the register, the resource plan, the minutes. | `/projects` |
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
+| **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -49,6 +50,44 @@ sheet — but whatever is still in somebody's browser can be opened and exported
 is SQLite, which is part of Python itself. It needs six packages: Flask, Waitress,
 openpyxl (for the Excel round trip), reportlab and pypdf (for the PDFs and for compiling
 attachments into them) and anthropic (for Carmen).
+
+### About the specs writer
+
+Every project's specification starts from the same master sections and gets amended. Left to
+Word, each project drifts: a section retyped in Normal instead of the MasterSpec styles, a
+paragraph numbered by hand, a header from the last job. The Specs Writer keeps **one master
+text** of each section and makes every project's copy of it **known**.
+
+- **The library** (`/specs/library`) holds the master of each section. An administrator reads
+  sections in from `.docx` — several at once — and edits them as plain text. Every save is kept
+  as a version. A section typed in Normal or List Paragraph is read from its typed numbers and
+  its list levels, so it comes in at the right levels even though it was not drafted in the
+  house styles; check it reads right. An old `.doc` has to be saved as `.docx` in Word first.
+- **A project specification** has the project's header lines, document code, revision and file
+  naming, its **choices** (options such as LEED version or standards basis that switch the
+  master's conditional paragraphs in and out) and its **words** (variables such as
+  `{{engineer}}` filled in wherever the text uses them). It takes a copy of each section it
+  needs. It can also start from an earlier project's specification.
+- **Amending** a section marks every difference from the master it was copied from: added,
+  reworded (with the master's words beside it) and dropped. The *Amendments to the master* page
+  lists them all for review before issue. Reading in a project's own old Word files lines them
+  up against the master the same way, which is how an old project is brought into line.
+- **When the master changes**, a project's section says so, and *Bring in master vN* takes the
+  new wording for every paragraph the project never touched while keeping its own amendments.
+  An administrator can go the other way too: *Make this the master*.
+- **Issuing** writes each section as a `.docx` in the **house template** — the styles
+  (SCT, PRT, ART, PR1 to PR4, EOS), page, header and footer — with the numbers done by Word's
+  own list, so they stay right when somebody edits the file. The built-in template is the
+  MasterSpec layout; an administrator can upload one of the office's own sections as the house
+  template instead, and its formatting is used exactly.
+
+The text editor uses one line per paragraph: `#` a PART, `##` an article, `-` to `----` the
+paragraphs under it, `//` an editor's note that is never issued, `| a | b |` a table row, and
+`{if leed=v4.1}` at the start of the text for a paragraph that only some projects get.
+
+The Specs Writer is a program like the others: the administrator gives it to each account on
+the Admin page. Only administrators change the library, the options and the house template;
+anybody given the program writes project specifications.
 
 ---
 
@@ -1193,6 +1232,11 @@ rather than the portfolio, which is the intended change. The comment response sh
 created on the first request after the reload, so there is nothing to run. The sheet that kept
 its work in each browser moved to `/crs/classic`; anything left in somebody's browser is still
 there and can be exported from it.
+
+After the update that adds the **Specs Writer**, its tables are created on the first request
+after the reload too. Administrators see its door straight away; for everybody else, tick
+*Specs Writer* against their account on the Admin page. Then open **Specs Writer → Master
+library** and read the master sections in from Word.
 
 ### Triton, the quay element designer
 

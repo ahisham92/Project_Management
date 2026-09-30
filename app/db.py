@@ -167,6 +167,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_resource_weeks(conn)
         _ensure_register(conn)
         _ensure_crs(conn)
+        _ensure_specs(conn)
         for table, column, definition in (
             # A workflow line that hands nothing over. Its hours are not lost:
             # they flow to whatever it feeds, so the deliverable that does go
@@ -426,6 +427,118 @@ def _ensure_resource_weeks(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS resource_weeks_project "
                  "ON resource_weeks (project_id, week)")
+
+
+def _ensure_specs(conn: sqlite3.Connection) -> None:
+    """The specification writer: the master sections, and each project's copy.
+
+    A section's text is kept as JSON — the paragraphs in order, each with its
+    level and an id it keeps for life. The id is what lets a project's copy be
+    compared with the master it came from, paragraph by paragraph, and what
+    lets a newer master be brought into a copy without losing its amendments.
+    Every saved master is kept as a version for the same reason: a copy is
+    compared with the master as it was when it was taken.
+    """
+    fresh = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                         "AND name = 'spec_options'").fetchone() is None
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_sections (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            number      TEXT    NOT NULL UNIQUE,
+            title       TEXT    NOT NULL DEFAULT '',
+            body        TEXT    NOT NULL DEFAULT '[]',
+            version     INTEGER NOT NULL DEFAULT 1,
+            note        TEXT    NOT NULL DEFAULT '',
+            updated_by  TEXT    NOT NULL DEFAULT '',
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS spec_section_versions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            section_id  INTEGER NOT NULL REFERENCES spec_sections(id) ON DELETE CASCADE,
+            version     INTEGER NOT NULL,
+            title       TEXT    NOT NULL DEFAULT '',
+            body        TEXT    NOT NULL DEFAULT '[]',
+            note        TEXT    NOT NULL DEFAULT '',
+            saved_by    TEXT    NOT NULL DEFAULT '',
+            saved_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (section_id, version)
+        );
+        -- The choices a project makes that switch paragraphs in and out.
+        CREATE TABLE IF NOT EXISTS spec_options (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            key         TEXT    NOT NULL UNIQUE,
+            label       TEXT    NOT NULL DEFAULT '',
+            choices     TEXT    NOT NULL DEFAULT '',
+            default_value TEXT  NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0
+        );
+        -- The words projects differ on, written {{key}} in the text.
+        CREATE TABLE IF NOT EXISTS spec_variables (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            key         TEXT    NOT NULL UNIQUE,
+            label       TEXT    NOT NULL DEFAULT '',
+            default_value TEXT  NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS spec_sets (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            name         TEXT    NOT NULL DEFAULT '',
+            code         TEXT    NOT NULL DEFAULT '',
+            client       TEXT    NOT NULL DEFAULT '',
+            header_left  TEXT    NOT NULL DEFAULT '',
+            header_right TEXT    NOT NULL DEFAULT '',
+            doc_code     TEXT    NOT NULL DEFAULT '',
+            revision     TEXT    NOT NULL DEFAULT '0',
+            issue_date   TEXT    NOT NULL DEFAULT '',
+            file_pattern TEXT    NOT NULL DEFAULT 'SPC-{number}',
+            options      TEXT    NOT NULL DEFAULT '{}',
+            variables    TEXT    NOT NULL DEFAULT '{}',
+            created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS spec_set_sections (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id       INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            -- The master it was copied from, and which version of it. A copy
+            -- outlives its master being deleted: it is the project's text.
+            section_id   INTEGER REFERENCES spec_sections(id) ON DELETE SET NULL,
+            base_version INTEGER NOT NULL DEFAULT 0,
+            number       TEXT    NOT NULL DEFAULT '',
+            title        TEXT    NOT NULL DEFAULT '',
+            doc_code     TEXT    NOT NULL DEFAULT '',
+            body         TEXT    NOT NULL DEFAULT '[]',
+            updated_by   TEXT    NOT NULL DEFAULT '',
+            updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (set_id, number)
+        );
+        -- The Word document every section is issued in: its styles, page,
+        -- header and footer. One, replaced rather than versioned.
+        CREATE TABLE IF NOT EXISTS spec_template (
+            id          INTEGER PRIMARY KEY CHECK (id = 1),
+            filename    TEXT    NOT NULL DEFAULT '',
+            content     BLOB    NOT NULL,
+            user_name   TEXT    NOT NULL DEFAULT '',
+            added_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    if fresh:
+        # A start, to be changed: the choices the office's own sections already
+        # branch on, and the two parties every section names.
+        conn.executemany(
+            "INSERT OR IGNORE INTO spec_options (key, label, choices, default_value, position) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [("standards", "Standards referred to", "BS EN|ASTM", "BS EN", 1),
+             ("leed", "LEED certification", "None|v4|v4.1", "None", 2),
+             ("conformity", "Certificates of conformity", "None|SASO SABER", "None", 3),
+             ("exposure", "Exposure", "General|Marine", "General", 4)])
+        conn.executemany(
+            "INSERT OR IGNORE INTO spec_variables (key, label, default_value, position) "
+            "VALUES (?, ?, ?, ?)",
+            [("engineer", "The Engineer, as the contract names it", "Engineer", 1),
+             ("employer", "The Employer, as the contract names it", "Employer", 2)])
 
 
 def _ensure_crs(conn: sqlite3.Connection) -> None:

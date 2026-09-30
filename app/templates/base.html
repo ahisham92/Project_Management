@@ -33,6 +33,9 @@
         {% if 'triton' in my_programs %}
           <a href="/triton/" class="small" style="text-decoration:none;color:var(--muted)">Triton</a>
         {% endif %}
+        {% if 'specs' in my_programs %}
+          <a href="{{ url_for('specs.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Specs</a>
+        {% endif %}
         {% if 'pm' in my_programs %}
           <a href="{{ url_for('portfolio.guide') }}" class="small"
              style="text-decoration:none;color:var(--muted)">How to use</a>

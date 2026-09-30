@@ -105,7 +105,7 @@ meet, so the Specs Writer reads across them:
   cannot convert; discrepancies (the same property — cover, slump, w/c ratio, cement content and
   so on — given different values, a section cited under the wrong title, a standard in two
   editions); values written out many times, with a one-click change into a project word; the
-  same paragraph said in several places; and conditions or words that are not set up.
+  same paragraph said in several places (advice only: it never holds an issue); and conditions or words that are not set up.
 - **Choices** are grouped under headings, and a question can take several answers (tick all
   that apply); a condition holds when any of them matches. *Add the suggested questions* on the
   options page fills in the starting list without changing anything already there.
@@ -126,8 +126,34 @@ meet, so the Specs Writer reads across them:
 - **Choices inside a paragraph.** The alternatives MasterSpec writes in `[brackets]` become
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
-- **Steps.** A project page runs *Project and choices*, *Sections*, *Check*, *Issue*, with a Next
-  button from each to the next and the state of each at the top.
+- **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Check*,
+  *Issue*, with a Next button from each to the next and the state of each at the top.
+- **Three kinds of specification.** The office issues three: **03A** (British Standards, in the
+  NBS layout: `E30 - TITLE`, clauses numbered `110`, `120`), **15A** (American, MasterSpec; marine
+  works go under it too) and **16A** (Saudi Arabia, MasterSpec, with SASO / SABER conformity). A
+  project is one kind; the library keeps each kind's sections apart (the same number can exist in
+  each), each kind has its own house template, and a new project starts with the kind's
+  standards basis and spelling. A file named `STD15A_SPC_033000_…` or `SPC-16A-…` is read into
+  that kind. Sections read in before the kinds existed became 15A.
+- **Elements.** The second step shows what the project builds as picture tiles (piles,
+  post-tensioned slabs, fenders, bridge bearings, bentonite waterproofing and so on); ticking one
+  answers the question behind it. The questions keep their pictures too where every answer has
+  one.
+- **From the model.** A project can be started, or its elements set, from the structural model.
+  A Revit `.rvt` is a closed format nothing outside Revit can read, so export it: an **IFC**
+  (File → Export → IFC; `.ifc` or `.ifczip`) or a **schedule** (View → Schedules, then File →
+  Export → Reports → Schedule, `.txt`/`.csv`, or an `.xlsx`). The elements found tick their
+  tiles, the concrete grades found fill the concrete class if it is blank, and a grade that does
+  not look realistic (C8/10 in a pile, 3 MPa, a cube strength read as a cylinder one, psi mixed
+  with MPa) is shown on the project page and listed on the check as critical.
+- **Sections arrive with the answers.** A library section says when it belongs (`fenders!=None`,
+  or `*` for every project of its kind; blank means it is only ever added by hand). Answering a
+  question or ticking an element that calls for a section adds it at once and says so; one no
+  longer called for is said too. A section taken out by hand stays out, and the check asks for
+  it to be accepted. An answer the kind's library has no section for says which other kind has
+  one to borrow.
+- **Whose projects.** The start page lists *My projects* first; everybody else's are folded
+  under *Other people's projects*, and any of them can still be the starting point of a new one.
 - **Hidden text.** Words Word hides (hidden formatting, or a style that hides its text, such as
   the editor's notes) are kept as notes, shown on the page and never issued; hidden words inside
   a paragraph Word shows go into a note beside it.
@@ -154,7 +180,7 @@ meet, so the Specs Writer reads across them:
 - **Old Word files.** Sections can be read in from Word 97–2003 `.doc` files as they are, with
   the same styles, list levels and tables as a `.docx`.
 - **The library file** (*Download this library* / *Load it* on the library page) carries every
-  section, question, word, standard and the house template in one `.zip` — a backup, a way to
+  section (with its kind), question, word, standard and each kind's house template in one `.zip` — a backup, a way to
   move a library between sites, and how a library starts with the office's own sections without
   them being kept in this repository.
 

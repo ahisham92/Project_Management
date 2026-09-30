@@ -15,11 +15,18 @@
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost" href="{{ url_for('specs.check_library') }}">Check</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.check_library', family=family) }}">Check {{ family }}</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
   </div>
 </div>
+
+<nav class="spec-tabs" aria-label="Kinds of specification">
+  {% for f in families %}
+    <a class="spec-tab{{ ' spec-tab-on' if f['code'] == family }}" href="{{ url_for('specs.library', family=f['code']) }}"{% if f['code'] == family %} aria-current="page"{% endif %}>
+      <strong>{{ f['code'] }}</strong> {{ f['name'] }} <span class="muted">{{ f['sections'] }}</span></a>
+  {% endfor %}
+</nav>
 
 {% if is_admin %}
 <div class="grid grid-2">
@@ -37,13 +44,16 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('specs.upload_to_library') }}" enctype="multipart/form-data" class="inline-form">
+        <input type="hidden" name="family" value="{{ family }}">
         <label class="field flex1">
           <span class="field-label">Sections (.doc or .docx)</span>
           <input type="file" name="files" accept=".doc,.docx" multiple required>
         </label>
-        <button type="submit" class="btn btn-primary">Read them in</button>
+        <button type="submit" class="btn btn-primary">Read them into {{ family }}</button>
       </form>
+      <p class="small muted" style="margin-top:4px">A file named the office's way (STD03A_…, STD15A_…, STD16A_…) goes into its own kind whichever tab is open.</p>
       <form method="post" action="{{ url_for('specs.new_library_section') }}" class="inline-form" style="margin-top:12px">
+        <input type="hidden" name="family" value="{{ family }}">
         <label class="field w-md">
           <span class="field-label">Or a new one: number</span>
           <input type="text" name="number" placeholder="033000" required>
@@ -69,21 +79,27 @@
       </div>
     </div>
     <div class="card-body">
+      {% set own = family_templates.get(family) %}
       <p class="small">
-        {% if template %}In use: <strong>{{ template['filename'] }}</strong>, from {{ template['user_name'] }}, {{ template['added_at'][:10] }}.
-        {% else %}In use: the built-in MasterSpec template (Times New Roman, A4).{% endif %}
-        <a href="{{ url_for('specs.download_template') }}">Download it</a>
+        {% if own %}{{ family }} sections go out in <strong>{{ own['filename'] }}</strong>, from {{ own['user_name'] or 'a library file' }}, {{ own['added_at'][:10] }}.
+        {% elif template %}{{ family }} sections go out in the office's template, <strong>{{ template['filename'] }}</strong>.
+        {% else %}{{ family }} sections go out in the built-in MasterSpec template (Times New Roman, A4).{% endif %}
+        <a href="{{ url_for('specs.download_template', family=family) }}">Download it</a>
       </p>
+      <p class="small muted">A British (NBS) section is written with Word's headings and one bulleted list; give that kind a template made from one of its own sections so its clauses keep their look.</p>
       <form method="post" action="{{ url_for('specs.upload_template') }}" enctype="multipart/form-data" class="inline-form" style="margin-top:8px">
         <label class="field flex1">
           <span class="field-label">A section in the house format (.docx)</span>
           <input type="file" name="template" accept=".docx" required>
         </label>
+        <label class="field w-md"><span class="field-label">For</span>
+          <select name="family"><option value="{{ family }}">{{ family }} only</option><option value="">Every kind without its own</option></select></label>
         <button type="submit" class="btn btn-ghost">Use it</button>
       </form>
-      {% if template %}
+      {% if own or template %}
       <form method="post" action="{{ url_for('specs.delete_template') }}" style="margin-top:8px">
-        <button type="submit" class="btn btn-danger btn-sm">Go back to the built-in one</button>
+        <input type="hidden" name="family" value="{{ family if own else '' }}">
+        <button type="submit" class="btn btn-danger btn-sm">{{ 'Stop using ' ~ family ~ "'s own template" if own else 'Go back to the built-in one' }}</button>
       </form>
       {% endif %}
     </div>
@@ -112,7 +128,7 @@
 {% endif %}
 
 <div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>Sections</h2></div>
+  <div class="card-head"><h2>{{ family }} sections ({{ sections | length }})</h2></div>
   {% if not sections %}
     <div class="card-body">{{ empty('The library is empty', 'Load the library file, or the master sections from Word, to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
   {% else %}
@@ -125,7 +141,7 @@
           <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="right">{{ s['paragraphs'] }}</td>
-          <td class="small">{{ s['applies'] or 'always' }}</td>
+          <td class="small">{% if s['applies'] == '*' %}every {{ family }} project{% elif s['applies'] %}{{ s['applies'] }}{% else %}<span class="muted">added by hand</span>{% endif %}</td>
           <td class="small">{{ s['uses'] | join(', ') }}</td>
           <td>v{{ s['version'] }}</td>
           <td class="small muted">{{ s['updated_at'][:16] }} · {{ s['updated_by'] }}</td>

@@ -106,31 +106,80 @@ def values_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
 
 # --- the house template -------------------------------------------------------
 
-def template_bytes() -> bytes | None:
+def template_bytes(family: str = "") -> bytes | None:
+    """The template a kind of specification goes out in: its own if it has
+    one, else the office's, else (None) the built-in one."""
+    if family:
+        row = query_one("SELECT content FROM spec_family_templates WHERE family = ?", (family,))
+        if row:
+            return bytes(row["content"])
     row = query_one("SELECT content FROM spec_template WHERE id = 1")
     return bytes(row["content"]) if row else None
 
 
-def template_row() -> dict | None:
+def template_row(family: str = "") -> dict | None:
+    if family:
+        return _row(query_one("SELECT family, filename, user_name, added_at, length(content) AS size "
+                              "FROM spec_family_templates WHERE family = ?", (family,)))
     return _row(query_one("SELECT id, filename, user_name, added_at, length(content) AS size "
                           "FROM spec_template WHERE id = 1"))
 
 
-def save_template(filename: str, data: bytes) -> None:
+def family_templates() -> dict[str, dict]:
+    return {r["family"]: dict(r) for r in query(
+        "SELECT family, filename, user_name, added_at, length(content) AS size "
+        "FROM spec_family_templates")}
+
+
+def save_template(filename: str, data: bytes, family: str = "") -> None:
     specs.template_info(data)                          # refuses one that will not do
+    if family:
+        execute("INSERT OR REPLACE INTO spec_family_templates (family, filename, content, user_name, "
+                "added_at) VALUES (?, ?, ?, ?, datetime('now'))", (family, filename, data, _who()))
+        return
     execute("INSERT OR REPLACE INTO spec_template (id, filename, content, user_name, added_at) "
             "VALUES (1, ?, ?, ?, datetime('now'))", (filename, data, _who()))
 
 
-def drop_template() -> None:
+def drop_template(family: str = "") -> None:
+    if family:
+        execute("DELETE FROM spec_family_templates WHERE family = ?", (family,))
+        return
     execute("DELETE FROM spec_template WHERE id = 1")
+
+
+# --- kinds of specification ---------------------------------------------------------
+
+DEFAULT_FAMILY = "15A"
+
+
+def families() -> list[dict]:
+    """The kinds of specification, with how many sections the library has of
+    each: the office's three, and any other a library file brought in."""
+    counts = {r["family"]: r["n"] for r in query(
+        "SELECT family, COUNT(*) AS n FROM spec_sections GROUP BY family")}
+    out = [{"code": code, "name": name, "note": note, "sections": counts.pop(code, 0)}
+           for code, name, note in specs_seed.FAMILIES]
+    out += [{"code": code, "name": code, "note": "", "sections": n} for code, n in sorted(counts.items())
+            if code]
+    return out
+
+
+def family_name(code: str) -> str:
+    return next((f"{c} {name}" for c, name, _n in specs_seed.FAMILIES if c == code), code)
+
+
+def clean_family(code: str | None) -> str:
+    code = re.sub(r"[^0-9A-Za-z]", "", code or "").upper()[:8]
+    return code or DEFAULT_FAMILY
 
 
 # --- the library ----------------------------------------------------------------
 
-def library() -> list[dict]:
-    rows = query("SELECT id, number, title, version, updated_by, updated_at, note, body, applies "
-                 "FROM spec_sections ORDER BY number")
+def library(family: str | None = None) -> list[dict]:
+    rows = query("SELECT id, family, number, title, version, updated_by, updated_at, note, body, "
+                 "applies FROM spec_sections" + (" WHERE family = ?" if family else "")
+                 + " ORDER BY family, number", (family,) if family else ())
     out = []
     for row in rows:
         one = dict(row)
@@ -145,9 +194,9 @@ def section(section_id: int) -> dict | None:
     return _row(query_one("SELECT * FROM spec_sections WHERE id = ?", (section_id,)))
 
 
-def section_by_number(number: str) -> dict | None:
-    return _row(query_one("SELECT * FROM spec_sections WHERE number = ? COLLATE NOCASE",
-                          (number.strip(),)))
+def section_by_number(number: str, family: str = DEFAULT_FAMILY) -> dict | None:
+    return _row(query_one("SELECT * FROM spec_sections WHERE number = ? COLLATE NOCASE "
+                          "AND family = ?", (number.strip(), family)))
 
 
 def versions(section_id: int) -> list[dict]:
@@ -163,7 +212,7 @@ def version_body(section_id: int, version: int) -> list[dict] | None:
 
 
 def save_section(number: str, title: str, nodes: list[dict], note: str = "",
-                 section_id: int | None = None) -> int:
+                 section_id: int | None = None, family: str | None = None) -> int:
     """A master section, new or saved over, kept as a new version either way.
 
     Saving text that is the same as the current version is not a new version:
@@ -172,53 +221,71 @@ def save_section(number: str, title: str, nodes: list[dict], note: str = "",
     number, title = number.strip(), title.strip().upper()
     if not number:
         raise specs.SpecError("A section needs its number, as in 032000.")
-    clash = section_by_number(number)
+    if family is None:
+        now = section(section_id) if section_id else None
+        family = now["family"] if now else DEFAULT_FAMILY
+    family = clean_family(family)
+    clash = section_by_number(number, family)
     if clash and clash["id"] != section_id:
-        raise specs.SpecError(f"Section {number} is already in the library.")
+        raise specs.SpecError(f"Section {number} is already in the {family} library.")
     conn = get_db()
     body = specs.dumps(nodes)
     with conn:
         if section_id is None:
             cursor = conn.execute(
-                "INSERT INTO spec_sections (number, title, body, version, note, updated_by) "
-                "VALUES (?, ?, ?, 1, ?, ?)", (number, title, body, note, _who()))
+                "INSERT INTO spec_sections (family, number, title, body, version, note, updated_by) "
+                "VALUES (?, ?, ?, ?, 1, ?, ?)", (family, number, title, body, note, _who()))
             section_id = int(cursor.lastrowid)
             version = 1
         else:
             now = conn.execute("SELECT * FROM spec_sections WHERE id = ?", (section_id,)).fetchone()
             if now is None:
                 raise specs.SpecError("That section is not in the library any more.")
+            if (now["body"] == body and now["title"] == title and now["number"] == number
+                    and now["family"] == family):
+                return section_id
             if now["body"] == body and now["title"] == title and now["number"] == number:
+                conn.execute("UPDATE spec_sections SET family = ? WHERE id = ?", (family, section_id))
                 return section_id
             version = int(now["version"]) + 1
             conn.execute(
-                "UPDATE spec_sections SET number = ?, title = ?, body = ?, version = ?, note = ?, "
-                "updated_by = ?, updated_at = datetime('now') WHERE id = ?",
-                (number, title, body, version, note, _who(), section_id))
+                "UPDATE spec_sections SET family = ?, number = ?, title = ?, body = ?, version = ?, "
+                "note = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?",
+                (family, number, title, body, version, note, _who(), section_id))
         conn.execute(
             "INSERT INTO spec_section_versions (section_id, version, title, body, note, saved_by) "
             "VALUES (?, ?, ?, ?, ?, ?)", (section_id, version, title, body, note, _who()))
     return section_id
 
 
+ALWAYS = "*"
+
+
 def set_applies(section_id: int, applies: str) -> None:
     """When a library section belongs in a project: a condition on its choices,
-    written as a paragraph's is (``fenders!=None``), or blank for every project."""
+    written as a paragraph's is (``fenders!=None``); ``*`` for every project of
+    its kind; blank when it is only ever added by hand."""
     applies = re.sub(r"\s*([&|]|!?=)\s*", r"\1", (applies or "").strip())
     execute("UPDATE spec_sections SET applies = ? WHERE id = ?", (applies, section_id))
 
 
-def called_for(chosen: Mapping[str, str]) -> dict[str, list[dict]]:
+def fits(applies: str, chosen: Mapping[str, str]) -> bool:
+    applies = (applies or "").strip()
+    return bool(applies) and (applies == ALWAYS or specs.applies(applies, chosen))
+
+
+def called_for(chosen: Mapping[str, str], family: str | None = None) -> dict[str, list[dict]]:
     """The library sections a project's choices call for and the ones they rule
-    out; sections with no condition are in neither list."""
+    out, of one kind of specification; sections with no condition are in
+    neither list."""
     out: dict[str, list[dict]] = {"in": [], "out": []}
-    for s in library():
+    for s in library(family):
         if (s.get("applies") or "").strip():
-            out["in" if specs.applies(s["applies"], chosen) else "out"].append(s)
+            out["in" if fits(s["applies"], chosen) else "out"].append(s)
     return out
 
 
-def import_to_library(filename: str, data: bytes) -> tuple[int, str]:
+def import_to_library(filename: str, data: bytes, family: str = "") -> tuple[int, str]:
     """A Word section into the library: a new section, or a new version of one.
 
     Paragraphs that read the same as the master's keep their ids, so a project
@@ -228,13 +295,15 @@ def import_to_library(filename: str, data: bytes) -> tuple[int, str]:
     number = read["number"] or specs.number_from_filename(filename)
     if not number:
         raise specs.SpecError(f"{filename}: no section number in it or in its name.")
-    existing = section_by_number(number)
+    family = clean_family(specs.family_from_filename(filename) or family)
+    existing = section_by_number(number, family)
     if existing:
         nodes = specs.align(specs.loads(existing["body"]), read["nodes"])
         save_section(number, read["title"] or existing["title"], nodes,
                      note=f"Read from {filename}", section_id=existing["id"])
         return existing["id"], "updated"
-    return save_section(number, read["title"], read["nodes"], note=f"Read from {filename}"), "added"
+    return save_section(number, read["title"], read["nodes"], note=f"Read from {filename}",
+                        family=family), "added"
 
 
 def delete_section(section_id: int) -> None:
@@ -273,11 +342,17 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
     values["name"] = name
     values["file_pattern"] = values["file_pattern"] or "SPC-{number}"
     values["revision"] = values["revision"] or "0"
+    family = clean_family(fields.get("family") or (source["family"] if source else ""))
+    # A new project of a kind starts on that kind's basis: British standards
+    # and English for 03A, American for 15A, and so on.
+    answers = (source["options"] if source else
+               json.dumps(specs_seed.FAMILY_DEFAULTS.get(family, {}), ensure_ascii=False))
     set_id = insert(
-        f"INSERT INTO spec_sets ({', '.join(SET_FIELDS)}, options, variables, created_by) "
-        f"VALUES ({', '.join('?' * len(SET_FIELDS))}, ?, ?, ?)",
-        [values[k] for k in SET_FIELDS] + [source["options"] if source else "{}",
+        f"INSERT INTO spec_sets ({', '.join(SET_FIELDS)}, family, options, variables, declined, "
+        f"created_by) VALUES ({', '.join('?' * len(SET_FIELDS))}, ?, ?, ?, ?, ?)",
+        [values[k] for k in SET_FIELDS] + [family, answers,
                                            source["variables"] if source else "{}",
+                                           source["declined"] if source else "[]",
                                            g.user["id"] if g.get("user") else None])
     if source:
         conn = get_db()
@@ -308,6 +383,8 @@ def update_set(set_id: int, fields: Mapping[str, str], chosen: Mapping[str, str]
     if "hold_shown" in fields:                   # the page's tick box: absent when unticked
         execute("UPDATE spec_sets SET hold_issue = ? WHERE id = ?",
                 (1 if fields.get("hold_issue") else 0, set_id))
+    if fields.get("family"):
+        execute("UPDATE spec_sets SET family = ? WHERE id = ?", (clean_family(fields["family"]), set_id))
 
 
 def delete_set(set_id: int) -> None:
@@ -321,7 +398,8 @@ def _touch(set_id: int) -> None:
 def set_sections(set_id: int) -> list[dict]:
     """A set's sections, each with how it stands against its master."""
     out = []
-    for row in query("SELECT x.*, s.version AS master_version FROM spec_set_sections x "
+    for row in query("SELECT x.*, s.version AS master_version, COALESCE(s.applies, '') AS applies "
+                     "FROM spec_set_sections x "
                      "LEFT JOIN spec_sections s ON s.id = x.section_id "
                      "WHERE x.set_id = ? ORDER BY x.number", (set_id,)):
         one = dict(row)
@@ -350,6 +428,7 @@ def set_section(set_id: int, row_id: int) -> dict | None:
 
 def add_sections(set_id: int, section_ids: Iterable[int]) -> int:
     """Copies of these master sections into a set; ones it has are left alone."""
+    section_ids = list(section_ids)
     added = 0
     conn = get_db()
     with conn:
@@ -364,7 +443,48 @@ def add_sections(set_id: int, section_ids: Iterable[int]) -> int:
                  master["body"], _who()))
             added += cursor.rowcount
         _touch(set_id)
+    _decline(set_id, drop=section_ids)
     return added
+
+
+def declined(row: Mapping[str, Any] | None) -> set[int]:
+    """The library sections a project took out although its answers call for
+    them: they are not put back each time the answers are saved."""
+    try:
+        return {int(i) for i in json.loads((row or {}).get("declined") or "[]")}
+    except (TypeError, ValueError):
+        return set()
+
+
+def _decline(set_id: int, add: Iterable[int] = (), drop: Iterable[int] = ()) -> None:
+    row = spec_set(set_id)
+    if row is None:
+        return
+    now = (declined(row) | set(add)) - set(drop)
+    if now != declined(row):
+        execute("UPDATE spec_sets SET declined = ? WHERE id = ?", (json.dumps(sorted(now)), set_id))
+
+
+def auto_add(set_id: int) -> dict[str, list[dict]]:
+    """The library sections this project's answers call for, added; and the
+    ones it has that its answers now rule out, named but left in (taking a
+    section out would lose its amendments, so that is the engineer's call).
+
+    Sections the engineer took out by hand stay out.
+    """
+    row = spec_set(set_id)
+    chosen = chosen_for(row)
+    called = called_for(chosen, row["family"])
+    have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
+                                           "WHERE set_id = ?", (set_id,)) if r["section_id"]}
+    numbers = {r["number"].lower() for r in query("SELECT number FROM spec_set_sections "
+                                                  "WHERE set_id = ?", (set_id,))}
+    skip = declined(row)
+    wanted = [s for s in called["in"] if s["id"] not in have and s["id"] not in skip
+              and s["number"].lower() not in numbers]
+    if wanted:
+        add_sections(set_id, [s["id"] for s in wanted])
+    return {"added": wanted, "out": [s for s in called["out"] if s["id"] in have]}
 
 
 def save_set_section(set_id: int, row_id: int, nodes: list[dict], title: str | None = None,
@@ -412,8 +532,12 @@ def bring_up_to_date(set_id: int, row_id: int) -> None:
 
 
 def remove_set_section(set_id: int, row_id: int) -> None:
+    row = set_section(set_id, row_id)
     execute("DELETE FROM spec_set_sections WHERE id = ? AND set_id = ?", (row_id, set_id))
     _touch(set_id)
+    master = section(row["section_id"]) if row and row["section_id"] else None
+    if master and fits(master["applies"], chosen_for(spec_set(set_id))):
+        _decline(set_id, add=[master["id"]])
 
 
 def import_to_set(set_id: int, filename: str, data: bytes) -> tuple[int, str]:
@@ -429,7 +553,8 @@ def import_to_set(set_id: int, filename: str, data: bytes) -> tuple[int, str]:
         raise specs.SpecError(f"{filename}: no section number in it or in its name.")
     have = query_one("SELECT * FROM spec_set_sections WHERE set_id = ? AND number = ? COLLATE NOCASE",
                      (set_id, number))
-    master = section_by_number(number)
+    project = spec_set(set_id)
+    master = section_by_number(number, project["family"] if project else DEFAULT_FAMILY)
     if have:
         nodes = specs.align(specs.loads(have["body"]), read["nodes"])
         save_set_section(set_id, have["id"], nodes, title=read["title"] or have["title"])
@@ -476,10 +601,11 @@ def promote(set_id: int, row_id: int) -> int:
     if row is None:
         raise specs.SpecError("That section is not in this specification any more.")
     nodes = specs.loads(row["body"])
-    master = section_by_number(row["number"])
+    family = (spec_set(set_id) or {}).get("family") or DEFAULT_FAMILY
+    master = section_by_number(row["number"], family)
     section_id = save_section(row["number"], row["title"], nodes,
                               note="Taken from a project specification",
-                              section_id=master["id"] if master else None)
+                              section_id=master["id"] if master else None, family=family)
     fresh = section(section_id)
     execute("UPDATE spec_set_sections SET section_id = ?, base_version = ? WHERE id = ?",
             (section_id, fresh["version"], row_id))
@@ -530,8 +656,10 @@ def set_whole(set_id: int) -> list[dict]:
                         "ORDER BY number", (set_id,)))
 
 
-def library_whole() -> list[dict]:
-    return _whole(query("SELECT id, number, title, body FROM spec_sections ORDER BY number"))
+def library_whole(family: str | None = None) -> list[dict]:
+    return _whole(query("SELECT id, number, title, body FROM spec_sections"
+                        + (" WHERE family = ?" if family else "") + " ORDER BY number",
+                        (family,) if family else ()))
 
 
 def reader(sections: list[dict], chosen: Mapping[str, str],
@@ -541,7 +669,8 @@ def reader(sections: list[dict], chosen: Mapping[str, str],
     return specs_check.Reader(sections, chosen, standards_table() if standards else None)
 
 
-GROUPS = ("references", "outdated", "standards", "discrepancies", "repeated", "setup")
+ADVICE = ("repeated",)
+GROUPS = ("model", "references", "outdated", "standards", "discrepancies", "repeated", "setup")
 
 
 def check_set(set_id: int) -> dict:
@@ -586,7 +715,8 @@ def open_items(set_id: int, report: Mapping[str, Any] | None = None) -> dict:
     """What still waits for an accept or reject: check items and language
     suggestions (each change counted once, however many places it is in)."""
     report = report if report is not None else check_set(set_id)
-    checks = sum(report["open"].values())
+    # Paragraphs said twice are advice on keeping the text tidy; they do not hold an issue.
+    checks = sum(n for group, n in report["open"].items() if group not in ADVICE)
     changes = {(f["kind"], f["old"].lower(), f["new"].lower(), f["message"] if not f["old"] else "")
                for f in language_set(set_id)}
     return {"checks": checks, "language": len(changes), "total": checks + len(changes)}
@@ -599,20 +729,28 @@ def _check_set(set_id: int) -> dict:
                                standards_table())
     # Sections the answers call for that are missing, and ones they rule out.
     have = {r["section_id"] for r in set_sections(set_id) if r["section_id"]}
-    called = called_for(chosen)
+    called = called_for(chosen, row["family"])
+    skip = declined(row)
     for s in called["in"]:
         if s["id"] not in have:
-            report["setup"].append(_fit(s, "the choices call for it (" + s["applies"] + "), and it "
-                                           "is not in this specification: add it", "warning"))
+            why = "every project of its kind has it" if s["applies"] == ALWAYS else \
+                f"the choices call for it ({s['applies']})"
+            report["setup"].append(_fit(s, why + (", and it was taken out of this specification: "
+                                                  "accept if that was meant" if s["id"] in skip else
+                                                  ", and it is not in this specification: add it"),
+                                        "warning"))
     for s in called["out"]:
         if s["id"] in have:
             report["setup"].append(_fit(s, "it is in this specification, but it is for "
                                            + s["applies"] + ", which the choices rule out"))
-    for label, value in uncovered(chosen):
+    report["model"] = model_items(model_for(row))
+    for label, value, elsewhere in uncovered(chosen, row["family"]):
         report["setup"].append({
             "section": "", "row_id": None, "path": "", "severity": "warning", "text": "",
-            "fix": None, "message": f"{label}: {value}. Nothing in the library is written for this "
-                                    "answer: check the sections cover it, or add a section for it"})
+            "fix": None, "message": f"{label}: {value}. Nothing in the {row['family']} library is "
+                                    "written for this answer: check the sections cover it, or add "
+                                    "a section for it" + (f" ({', '.join(elsewhere)} has one to "
+                                                          "borrow)" if elsewhere else "")})
     report["counts"] = {k: len(v) for k, v in report.items() if isinstance(v, list)}
     return report
 
@@ -620,21 +758,16 @@ def _check_set(set_id: int) -> dict:
 NOT_AN_ELEMENT = {"", "none", "no"}
 
 
-def uncovered(chosen: Mapping[str, str]) -> list[tuple[str, str]]:
-    """Answers that call for something no library section or paragraph is
-    written for: a project element the library has nothing to say about.
-
-    The basis questions (standards, English, stage and the like) change how
-    everything reads rather than what is specified, so they are left out, and
-    so is each question's default: the sections as they stand are written for it.
-    """
-    parts: list[tuple[str, bool, set[str]]] = []
-    applies = {r["id"]: r["applies"] for r in query("SELECT id, applies FROM spec_sections")}
-    for s in library_whole():
-        conditions = [applies.get(s["id"]) or ""]
-        for n in s["nodes"]:
+def _covers() -> dict[str, list[tuple[str, bool, set[str]]]]:
+    """Every condition the library is written for, by kind: section and
+    paragraph conditions and inline choices, split into their parts."""
+    out: dict[str, list[tuple[str, bool, set[str]]]] = {}
+    for row in query("SELECT family, applies, body FROM spec_sections"):
+        conditions = [row["applies"] or ""]
+        for n in specs.loads(row["body"]):
             conditions.append(n.get("when") or "")
             conditions += specs.inline_conditions(n.get("text", ""))
+        parts = out.setdefault(row["family"], [])
         for condition in conditions:
             for part in condition.split("&"):
                 if "=" not in part:
@@ -642,18 +775,42 @@ def uncovered(chosen: Mapping[str, str]) -> list[tuple[str, str]]:
                 negate = "!=" in part
                 key, _, wanted = part.partition("!=" if negate else "=")
                 parts.append((key.strip(), negate, {specs._norm(w) for w in wanted.split("|")}))
+    return out
+
+
+def uncovered(chosen: Mapping[str, str], family: str | None = None
+              ) -> list[tuple[str, str, list[str]]]:
+    """Answers that call for something no library section or paragraph of the
+    project's kind is written for: a project element the library has nothing
+    to say about. Each comes with the other kinds that do have something.
+
+    The basis questions (standards, English, stage and the like) change how
+    everything reads rather than what is specified, so they are left out, and
+    so is each question's default, and the kind's own starting answer: the
+    sections as they stand are written for those.
+    """
+    covers = _covers()
+    mine = (covers.get(family, []) if family else [p for ps in covers.values() for p in ps])
+    starts = specs_seed.FAMILY_DEFAULTS.get(family or "", {})
+
+    def covered(parts, key, v):
+        return any(k == key and ((v in w) != negate) for k, negate, w in parts)
+
     out = []
     for o in options():
         if (o.get("grp") or "") == "Basis":
             continue
         # The plain case (the question's default) is what the sections say as they stand.
         plain = {specs._norm(v) for v in (o.get("default_value") or "").split("|")}
+        plain.add(specs._norm(starts.get(o["key"], "")))
         for value in (chosen.get(o["key"]) or "").split("|"):
             v = specs._norm(value)
             if v in NOT_AN_ELEMENT or v in plain:
                 continue
-            if not any(k == o["key"] and ((v in w) != negate) for k, negate, w in parts):
-                out.append((o["label"], value.strip()))
+            if not covered(mine, o["key"], v):
+                elsewhere = sorted(f for f, parts in covers.items()
+                                   if family and f != family and covered(parts, o["key"], v))
+                out.append((o["label"], value.strip(), elsewhere))
     return out
 
 
@@ -663,12 +820,13 @@ def _fit(s: Mapping[str, Any], message: str, severity: str = "info") -> dict:
             "text": "", "fix": None}
 
 
-def check_library() -> dict:
+def check_library(family: str | None = None) -> dict:
     everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
     everything["standards"] = ""
-    report = specs_check.check(library_whole(), everything,
+    report = specs_check.check(library_whole(family), everything,
                                {v["key"]: v["default_value"] or v["key"] for v in variables()},
                                options(), standards_table())
+    report.setdefault("model", [])
     return report
 
 
@@ -707,9 +865,9 @@ def fix_set(set_id: int, action: str, **how: str) -> int:
     return count
 
 
-def fix_library(action: str, **how: str) -> int:
+def fix_library(action: str, family: str | None = None, **how: str) -> int:
     """The same, on the masters: each section changed is saved as a new version."""
-    rows = library_whole()
+    rows = library_whole(family)
     everything = {o["key"]: "|".join(o["choice_list"]) for o in options()}
     count = _apply(action, rows, rows, everything, how)
     note = {"link": "Typed references made live", "replace": f"{how.get('old')} replaced by {how.get('new')}",
@@ -765,9 +923,10 @@ def pack() -> bytes:
 
     data = {
         "format": "specs-writer-library/1",
-        "sections": [{"number": s["number"], "title": s["title"], "applies": s.get("applies") or "",
-                      "body": specs.loads(s["body"])}
-                     for s in (dict(r) for r in query("SELECT * FROM spec_sections ORDER BY number"))],
+        "sections": [{"family": s["family"], "number": s["number"], "title": s["title"],
+                      "applies": s.get("applies") or "", "body": specs.loads(s["body"])}
+                     for s in (dict(r) for r in query("SELECT * FROM spec_sections "
+                                                      "ORDER BY family, number"))],
         "options": [{k: o[k] for k in ("key", "label", "choices", "default_value", "grp", "kind")}
                     for o in options()],
         "variables": [{k: v[k] for k in ("key", "label", "default_value")} for v in variables()],
@@ -782,6 +941,8 @@ def pack() -> bytes:
         template = template_bytes()
         if template:
             z.writestr("template.docx", template)
+        for family in family_templates():
+            z.writestr(f"templates/{family}.docx", template_bytes(family))
     return out.getvalue()
 
 
@@ -803,12 +964,13 @@ def unpack(data: bytes) -> dict:
     for s in loaded.get("sections", []):
         nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
                  for n in s.get("body", []) if n.get("level") in specs.KINDS]
-        have = section_by_number(s["number"])
+        family = clean_family(s.get("family") or loaded.get("family"))
+        have = section_by_number(s["number"], family)
         if have:
             nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
         section_id = save_section(s["number"], s.get("title", ""), nodes,
                                   note="Read from a library file",
-                                  section_id=have["id"] if have else None)
+                                  section_id=have["id"] if have else None, family=family)
         if "applies" in s:
             set_applies(section_id, s["applies"])
         counted["sections"] += 1
@@ -856,6 +1018,11 @@ def unpack(data: bytes) -> dict:
                                   r.get("cond", ""), r.get("unless_next", "")))
     if "template.docx" in z.namelist() and template_bytes() is None:
         save_template("house-template.docx", z.read("template.docx"))
+    # A kind's own template comes with its sections: it is how they look.
+    for name in z.namelist():
+        m = re.fullmatch(r"templates/([0-9A-Za-z]{1,8})\.docx", name)
+        if m:
+            save_template(f"{m.group(1)}-template.docx", z.read(name), family=clean_family(m.group(1)))
     return counted
 
 
@@ -864,6 +1031,75 @@ def _same_ids(have: Mapping[str, Any], nodes: list[dict]) -> bool:
     (it came from here), in which case they are kept as they are."""
     mine = {n["id"] for n in specs.loads(have["body"])}
     return bool(mine & {n["id"] for n in nodes})
+
+
+# --- what the project's model says ----------------------------------------------------
+
+def model_for(row: Mapping[str, Any] | None) -> dict | None:
+    try:
+        return json.loads(row["model"]) if row and row.get("model") else None
+    except ValueError:
+        return None
+
+
+def save_model(set_id: int, found: Mapping[str, Any] | None) -> None:
+    execute("UPDATE spec_sets SET model = ? WHERE id = ?",
+            (json.dumps(dict(found), ensure_ascii=False) if found else "", set_id))
+
+
+def apply_model(set_id: int, found: Mapping[str, Any]) -> list[str]:
+    """The model's elements ticked in this project's answers — added to what
+    is ticked, nothing unticked — and its concrete class taken for the words
+    the project fills in when it has none of its own. What changed, in words."""
+    row = spec_set(set_id)
+    stored = json.loads(row["options"] or "{}")
+    chosen = chosen_for(row)
+    kinds = {o["key"]: o for o in options()}
+    changed = []
+    for e in found.get("elements", []):
+        o = kinds.get(e["key"])
+        if o is None or specs._norm(e["value"]) not in {specs._norm(c) for c in o["choice_list"]}:
+            continue
+        if o["kind"] == "many":
+            now = [v for v in (chosen.get(e["key"]) or "").split("|")
+                   if v and specs._norm(v) not in ("none", "")]
+            if specs._norm(e["value"]) in {specs._norm(v) for v in now}:
+                continue
+            stored[e["key"]] = "|".join(now + [e["value"]])
+        else:
+            if specs._norm(chosen.get(e["key"])) == specs._norm(e["value"]):
+                continue
+            stored[e["key"]] = e["value"]
+        changed.append(f"{o['label']}: {e['value']}")
+    values = json.loads(row["variables"] or "{}")
+    grade = found.get("concrete_class") or ""
+    if grade and not values.get("concrete_class"):
+        values["concrete_class"] = grade
+        changed.append(f"Structural concrete strength class: {grade}")
+    execute("UPDATE spec_sets SET options = ?, variables = ?, updated_at = datetime('now') "
+            "WHERE id = ?", (json.dumps(stored, ensure_ascii=False),
+                             json.dumps(values, ensure_ascii=False), set_id))
+    return changed
+
+
+MODEL_SEVERITY = {"unrealistic": "error", "check": "warning", "missing": "info"}
+
+
+def model_items(found: Mapping[str, Any] | None) -> list[dict]:
+    """The grades the model gives that do not look right, as check items."""
+    out = []
+    for kind, what in (("concrete", "Concrete"), ("steel", "Steel")):
+        for m in (found or {}).get(kind, []):
+            if m.get("state") not in MODEL_SEVERITY:
+                continue
+            used = ", ".join(m.get("used_in") or [])
+            out.append({"section": "", "row_id": None, "path": "", "node_id": "",
+                        "severity": MODEL_SEVERITY[m["state"]], "fix": None,
+                        "text": m.get("material", ""), "words": m.get("grade") or "",
+                        "message": f"{what} \"{m.get('material', '')}\""
+                                   + (f" ({used})" if used else "") + ": " + (m.get("note") or ""),
+                        "where": "The model" + (f", {found.get('filename')}" if found.get("filename") else "")})
+    return out
 
 
 # --- language and wording ------------------------------------------------------------

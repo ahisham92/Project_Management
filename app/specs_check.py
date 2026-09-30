@@ -539,6 +539,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                                                            f"which is not a choice of \"{key}\""))
 
     typed_links = 0
+    brackets: dict[str, list[dict]] = defaultdict(list)
     std_seen: dict[str, dict] = {}
     editions: dict[str, set] = defaultdict(set)
     for s, n in issued:
@@ -546,7 +547,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
         # Choices left open the MasterSpec way, in square brackets.
         if n["level"] != specs.TABLE:
             for m in re.finditer(r"\[([^\[\]]{1,300})\]", text):
-                report["setup"].append(_item(
+                brackets[s["number"]].append(_item(
                     s, n, f"still has a choice in brackets, [{_brief(m.group(1), 60)}]: keep the "
                           "words, drop them, or tie them to a question", severity="warning",
                     words=m.group(0)))
@@ -695,9 +696,49 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
                 report["setup"].append(_item(s, n, f"{{{{{name}}}}} has no value for this project",
                                              words="{{" + name + "}}"))
 
+    # A section named in many places and not issued (Division 01's, say) is one
+    # item, with every place it is named under it.
+    missing: dict[str, list[dict]] = defaultdict(list)
+    kept = []
+    for item in report["references"]:
+        m = NOT_ISSUED.match(item["message"])
+        if m and item["severity"] == "warning":
+            missing[m.group(1)].append(item)
+        else:
+            kept.append(item)
+    for number, places in missing.items():
+        if len(places) == 1:
+            kept.append(places[0])
+            continue
+        kept.append({"section": "", "row_id": None, "path": "", "node_id": "", "severity": "warning",
+                     "fix": None, "words": "", "text": places[0]["text"], "places": places,
+                     "message": f"Section {number} is referred to in {len(places)} places and is not "
+                                "in this specification: add it, or check the references are meant "
+                                "to point outside this issue"})
+    report["references"] = kept
+    # A master section can hold hundreds of bracketed choices: past a few, one
+    # item for the section, settled once its choices have been gone through.
+    for number, found in brackets.items():
+        if len(found) <= BRACKETS_ONE_BY_ONE:
+            report["setup"] += found
+            continue
+        first = found[0]
+        shown = ", ".join(f["words"] for f in found[:4])
+        report["setup"].append({
+            **{k: first[k] for k in ("section", "row_id", "title")}, "path": "", "part": "",
+            "article": "", "node_id": "", "severity": "warning", "fix": None, "words": "",
+            "text": "", "count": len(found),
+            "message": f"{len(found)} choices are still in square brackets, such as {shown}: go "
+                       "through the section, keep or drop the words of each, or tie them to a "
+                       "question. They are marked on the section's page."})
     report["typed_links"] = [{"count": typed_links}] if typed_links else []
     report["counts"] = {k: len(v) for k, v in report.items() if isinstance(v, list)}
     return report
+
+
+NOT_ISSUED = re.compile(r"^refers to Section (\S+), which is not in this specification$")
+# Bracketed choices listed one at a time, up to this many in a section.
+BRACKETS_ONE_BY_ONE = 5
 
 
 def _single(ref: str) -> bool:

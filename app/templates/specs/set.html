@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import badge, empty %}
+{% from "specs/_icons.html" import icon %}
 {% block title %}{{ spec['name'] }} · Specs Writer{% endblock %}
 
 {% block content %}
@@ -24,20 +25,28 @@
 
 {% set answered = chosen.values() | select | list | length %}
 {% set suggested = available | selectattr('applies') | list %}
-{% set suggested_n = suggested | select('spec_fits', chosen) | list | length %}
+{% set suggested_n = suggested | select('spec_fits', chosen) | reject('spec_declined', declined) | list | length %}
+{% set ticked = namespace(n=0) %}
+{% for grp in tiles %}{% for t in grp['tiles'] %}
+  {% if (t['how'] == 'many' and t['value'] in picked[t['option']['key']]) or (t['how'] == 'toggle' and chosen[t['option']['key']] | lower == t['value'] | lower) or (t['how'] == 'pick' and chosen[t['option']['key']] | lower not in ('', 'none', 'no')) %}{% set ticked.n = ticked.n + 1 %}{% endif %}
+{% endfor %}{% endfor %}
 <nav class="spec-steps" aria-label="Steps">
-  <a class="spec-step spec-step-done" href="#step-choices"><span class="spec-step-n">1</span>
-    <span><strong>Project and choices</strong><span class="small">{{ answered }} answered</span></span></a>
-  <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections"><span class="spec-step-n">2</span>
+  <a class="spec-step spec-step-done" href="#step-project"><span class="spec-step-n">1</span>
+    <span><strong>Project</strong><span class="small">{{ family }}</span></span></a>
+  <a class="spec-step {{ 'spec-step-done' if ticked.n else 'spec-step-now' }}" href="#step-elements"><span class="spec-step-n">2</span>
+    <span><strong>Elements</strong><span class="small">{{ ticked.n }} ticked{% if model %} · from the model{% endif %}</span></span></a>
+  <a class="spec-step spec-step-done" href="#step-questions"><span class="spec-step-n">3</span>
+    <span><strong>Questions</strong><span class="small">{{ answered }} answered</span></span></a>
+  <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections"><span class="spec-step-n">4</span>
     <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncovered %} · {{ uncovered | length }} not covered{% endif %}</span></span></a>
   {% if report %}
-  <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">3</span>
+  <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
     <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to accept or reject{% else %}all settled{% endif %}</span></span></a>
-  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">4</span>
+  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
     <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% else %}ready{% endif %}</span></span></a>
   {% else %}
-  <span class="spec-step"><span class="spec-step-n">3</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
-  <span class="spec-step"><span class="spec-step-n">4</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">5</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">6</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
   {% endif %}
 </nav>
 
@@ -48,11 +57,15 @@
   </div></div>
 {% endif %}
 
+{# The model's own form: its fields sit in the elements card, inside the main form. #}
+<form method="post" action="{{ url_for('specs.upload_model', set_id=spec['id']) }}" enctype="multipart/form-data" id="model-form"></form>
+
 <form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}" id="step-choices">
-<div class="grid grid-2">
-  <div class="card">
-    <div class="card-head"><h2>Project information</h2></div>
-    <div class="card-body" style="display:grid;gap:10px">
+<div class="card" id="step-project">
+  <div class="card-head"><div><h2><span class="spec-n">1</span> Project</h2>
+    <p class="small muted" style="margin-top:2px">What goes on every page of the issue, and which kind of specification it is.</p></div></div>
+  <div class="card-body grid grid-2" style="gap:14px">
+    <div style="display:grid;gap:10px;align-content:start">
       <div class="inline-form">
         <label class="field flex1"><span class="field-label">Project name</span>
           <input type="text" name="name" value="{{ spec['name'] }}" required></label>
@@ -61,12 +74,19 @@
       </div>
       <label class="field"><span class="field-label">Client</span>
         <input type="text" name="client" value="{{ spec['client'] }}"></label>
+      <label class="field"><span class="field-label">Kind of specification</span>
+        <select name="family">
+          {% for f in families %}<option value="{{ f['code'] }}"{% if f['code'] == spec['family'] %} selected{% endif %}>{{ f['code'] }} · {{ f['name'] }} ({{ f['sections'] }} sections)</option>{% endfor %}
+        </select>
+        <span class="field-hint">Which library its sections come from. Changing it keeps the sections already in.</span></label>
       <div class="grid grid-2">
         <label class="field"><span class="field-label">Page header, left (one line each)</span>
           <textarea name="header_left" rows="3">{{ spec['header_left'] }}</textarea></label>
         <label class="field"><span class="field-label">Page header, right (same lines)</span>
           <textarea name="header_right" rows="3">{{ spec['header_right'] }}</textarea></label>
       </div>
+    </div>
+    <div style="display:grid;gap:10px;align-content:start">
       <div class="inline-form">
         <label class="field flex1"><span class="field-label">Document code in the footer</span>
           <input type="text" name="doc_code" value="{{ spec['doc_code'] }}" placeholder="e.g. P1234-0100-FD-00-SPC-ST-01">
@@ -84,62 +104,193 @@
         Hold the issue until every item on the check is accepted or rejected</label>
     </div>
   </div>
+  <div class="card-body inline-form" style="justify-content:flex-end">
+    <button type="submit" name="next" value="elements" class="btn btn-primary">Save and next: elements →</button>
+  </div>
+</div>
 
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <h2>Choices</h2>
-        <p class="small muted" style="margin-top:2px">They switch the master's conditional paragraphs in and out of every section.</p>
-      </div>
+<div class="card" style="margin-top:16px" id="step-elements">
+  <div class="card-head">
+    <div>
+      <h2><span class="spec-n">2</span> Elements</h2>
+      <p class="small muted" style="margin-top:2px">Tick what the project has, or read it from the Revit model. The sections each one needs are added when you save.</p>
     </div>
-    <div class="card-body" style="display:grid;gap:10px">
-      {% for group, questions in groups %}
-        <div class="spec-group">
-        <h3>{{ group }}</h3>
-        {% for o in questions %}
-          {% if o['kind'] == 'many' %}
-          <div class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span> <span class="muted">· tick all that apply</span></span>
-            <div class="spec-choices">
-              {% for c in o['choice_list'] %}
-                <label class="check"><input type="checkbox" name="opt_{{ o['key'] }}" value="{{ c }}" {{ 'checked' if c in picked[o['key']] }}> {{ c }}</label>
-              {% endfor %}
-            </div></div>
+  </div>
+  <div class="card-body">
+    <div class="spec-model">
+      <div class="spec-model-head">
+        {{ icon('model', 40) }}
+        <div class="flex1">
+          <strong>Read the elements from the Revit model</strong>
+          <p class="small muted">An IFC export of the model (.ifc or .ifczip), or a schedule or material takeoff exported from Revit as text (.txt, .csv) or Excel (.xlsx). It ticks what it finds and reads the concrete grades.</p>
+        </div>
+        <label class="field"><span class="field-label">Model export</span>
+          <input type="file" name="model" form="model-form" accept=".ifc,.ifczip,.txt,.csv,.tsv,.xlsx"></label>
+        <button type="submit" form="model-form" class="btn btn-ghost">Read it</button>
+      </div>
+      <details class="small">
+        <summary>How to export it from Revit</summary>
+        <ul>
+          <li><strong>IFC</strong> (everything): File → Export → IFC. Pick IFC4 Reference View or IFC2x3 Coordination View 2.0, leave "Export only elements visible in view" unticked, and export. Upload the .ifc.</li>
+          <li><strong>A schedule</strong> (quicker): View → Schedules → Material Takeoff, choose Multi-Category, add the fields Category, Family and Type, Material: Name and Material: Volume. Then File → Export → Reports → Schedule, and upload the .txt.</li>
+          <li>The .rvt file itself cannot be read here: Revit keeps its models in its own closed format that only Revit opens.</li>
+        </ul>
+      </details>
+    </div>
+
+    {% if model %}
+    {% set bad = model['concrete'] | selectattr('state', 'equalto', 'unrealistic') | list %}
+    <div class="spec-model-found">
+      <div class="inline-form" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <strong>From the model: {{ model['filename'] }}</strong>
+          <p class="small muted">{{ model['detail'] }}</p>
+        </div>
+        <button type="submit" form="model-form" name="action" value="forget" class="btn btn-ghost btn-sm">Forget the model</button>
+      </div>
+      {% if bad %}
+      <div class="spec-callout spec-callout-bad">
+        <p><strong>{{ bad | length }} concrete grade{{ 's do' if bad | length != 1 else ' does' }} not look realistic.</strong>
+          Check the material in the model before the grade goes into the specification.</p>
+        <ul class="small">{% for m in bad %}<li><strong>{{ m['material'] }}</strong>{% if m['used_in'] %} ({{ m['used_in'] | join(', ') }}){% endif %}: {{ m['note'] }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      {% if model['elements'] %}
+        <p class="small" style="margin-top:8px">Found and ticked:</p>
+        <div class="spec-chips">
+          {% for e in model['elements'] %}<span class="spec-chip" title="{{ e['why'] }}">{{ labels.get(e['key'], e['key']) }}: {{ e['value'] }}</span>{% endfor %}
+        </div>
+      {% endif %}
+      {% if model['concrete'] or model['steel'] %}
+      <div class="table-scroll" style="margin-top:10px">
+        <table class="spec-grades">
+          <thead><tr><th>Material in the model</th><th>Used in</th><th>Grade</th><th>Verdict</th><th>Why</th></tr></thead>
+          <tbody>
+          {% for m in model['concrete'] + model['steel'] %}
+            <tr class="spec-grade-{{ m['state'] }}">
+              <td>{{ m['material'] }}</td>
+              <td class="small">{{ m['used_in'] | join(', ') }}{% if m['count'] %} <span class="muted">({{ m['count'] }})</span>{% endif %}</td>
+              <td><strong>{{ m['grade'] or '—' }}</strong>{% if m.get('mpa') %} <span class="small muted">{{ '%g' % m['mpa'] }} MPa</span>{% endif %}</td>
+              <td>{% if m['state'] == 'unrealistic' %}{{ badge('critical', 'Not realistic') }}{% elif m['state'] == 'check' %}{{ badge('warning', 'Check it') }}{% elif m['state'] == 'missing' %}{{ badge('neutral', 'No grade') }}{% else %}{{ badge('good', 'Looks right') }}{% endif %}</td>
+              <td class="small">{{ m['note'] }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% if model['concrete_class'] %}<p class="small" style="margin-top:6px">Concrete class taken for the project's words: <strong>{{ model['concrete_class'] }}</strong> (the most used grade that looks right). Change it under Questions.</p>{% endif %}
+      {% for note in model['notes'] %}<p class="small muted">{{ note }}</p>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% for grp in tiles %}
+      <div class="spec-tile-group">
+        <h3>{{ grp['title'] }}</h3>
+        <div class="spec-tiles">
+        {% for t in grp['tiles'] %}
+          {% set o = t['option'] %}
+          {% if loop.first or loop.previtem['option']['key'] != o['key'] %}<input type="hidden" name="tile_shown" value="{{ o['key'] }}">{% endif %}
+          {% if t['how'] == 'many' %}
+            {% set found = (o['key'], t['value'] | lower) in from_model %}
+            <label class="spec-tile{{ ' spec-tile-model' if found }}" title="{{ o['label'] }}: {{ t['value'] }}">
+              <input type="checkbox" name="opt_{{ o['key'] }}" value="{{ t['value'] }}" {{ 'checked' if t['value'] in picked[o['key']] }}>
+              {{ icon(t['icon']) }}
+              <span class="spec-tile-label">{{ t['label'] }}</span>
+              {% if found %}<span class="spec-tile-flag">In the model</span>{% endif %}
+            </label>
+          {% elif t['how'] == 'toggle' %}
+            {% set found = (o['key'], t['value'] | lower) in from_model %}
+            <label class="spec-tile{{ ' spec-tile-model' if found }}">
+              <input type="checkbox" name="tile_{{ o['key'] }}" value="1" {{ 'checked' if chosen[o['key']] | lower == t['value'] | lower }}>
+              {{ icon(t['icon']) }}
+              <span class="spec-tile-label">{{ t['label'] }}</span>
+              {% if found %}<span class="spec-tile-flag">In the model</span>{% endif %}
+            </label>
           {% else %}
-          <label class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
-            <select name="opt_{{ o['key'] }}">
-              {% for c in o['choice_list'] %}
-                <option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>
-              {% endfor %}
-            </select>
-            {% if o['key'] == 'standards' %}<span class="field-hint">Every standard cited is put on this basis when the sections are shown and issued. Both cites each with its equivalent.</span>{% endif %}
-          </label>
+            <div class="spec-tile spec-tile-pick{{ ' spec-tile-on' if chosen[o['key']] | lower not in ('', 'none', 'no') }}">
+              {{ icon(t['icon']) }}
+              <span class="spec-tile-label">{{ t['label'] }}</span>
+              <select name="opt_{{ o['key'] }}" aria-label="{{ o['label'] }}">
+                {% for c in o['choice_list'] %}<option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
           {% endif %}
         {% endfor %}
         </div>
-      {% else %}
-        <p class="small muted">No options are set up yet.</p>
-      {% endfor %}
-      {% if variables %}
-        <h3 style="margin-top:6px">Words this project fills in</h3>
-        {% for v in variables %}
-          <label class="field"><span class="field-label">{{ v['label'] }} <span class="spec-key muted">{% raw %}{{{% endraw %}{{ v['key'] }}{% raw %}}}{% endraw %}</span></span>
-            <input type="text" name="var_{{ v['key'] }}" value="{{ values[v['key']] }}" placeholder="{{ v['default_value'] }}"></label>
-        {% endfor %}
-      {% endif %}
-    </div>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="card-body inline-form" style="justify-content:flex-end">
+    <button type="submit" name="next" value="questions" class="btn btn-primary">Save and next: questions →</button>
   </div>
 </div>
-<div class="inline-form" style="margin-top:12px">
-  <button type="submit" class="btn btn-ghost">Save</button>
-  <button type="submit" name="next" value="sections" class="btn btn-primary">Save and next: sections →</button>
+
+<div class="card" style="margin-top:16px" id="step-questions">
+  <div class="card-head">
+    <div>
+      <h2><span class="spec-n">3</span> Questions</h2>
+      <p class="small muted" style="margin-top:2px">They switch the master's conditional paragraphs in and out of every section. An answer that needs a section of its own adds it, and says so.</p>
+    </div>
+  </div>
+  <div class="card-body spec-questions">
+    {% for group, questions in groups %}
+      <div class="spec-group">
+      <h3>{% if group_icons.get(group) %}{{ icon(group_icons[group], 24) }}{% endif %} {{ group }}</h3>
+      {% for o in questions %}
+        {% set pictured = o['choice_list'] | map('spec_icon_for', o['key'], icons) | select | list %}
+        {% if o['kind'] == 'many' %}
+        <div class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span> <span class="muted">· tick all that apply</span></span>
+          <div class="spec-choices">
+            {% for c in o['choice_list'] %}
+              <label class="check"><input type="checkbox" name="opt_{{ o['key'] }}" value="{{ c }}" {{ 'checked' if c in picked[o['key']] }}> {{ c }}</label>
+            {% endfor %}
+          </div></div>
+        {% elif pictured | length == o['choice_list'] | length %}
+        <div class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
+          <div class="spec-tiles spec-tiles-sm">
+            {% for c in o['choice_list'] %}
+              <label class="spec-tile"><input type="radio" name="opt_{{ o['key'] }}" value="{{ c }}" {{ 'checked' if chosen[o['key']] | lower == c | lower }}>
+                {{ icon(icons[(o['key'], c)], 40) }}<span class="spec-tile-label">{{ c }}</span></label>
+            {% endfor %}
+          </div></div>
+        {% else %}
+        <label class="field"><span class="field-label">{{ o['label'] }} <span class="spec-key muted">{{ o['key'] }}</span></span>
+          <select name="opt_{{ o['key'] }}">
+            {% for c in o['choice_list'] %}
+              <option value="{{ c }}" {{ 'selected' if chosen[o['key']] | lower == c | lower }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+          {% if o['key'] == 'standards' %}<span class="field-hint">Every standard cited is put on this basis when the sections are shown and issued. Both cites each with its equivalent.</span>{% endif %}
+        </label>
+        {% endif %}
+      {% endfor %}
+      </div>
+    {% else %}
+      <p class="small muted">No options are set up yet.</p>
+    {% endfor %}
+    {% if variables %}
+      <div class="spec-group">
+      <h3>Words this project fills in</h3>
+      {% for v in variables %}
+        <label class="field"><span class="field-label">{{ v['label'] }} <span class="spec-key muted">{% raw %}{{{% endraw %}{{ v['key'] }}{% raw %}}}{% endraw %}</span></span>
+          <input type="text" name="var_{{ v['key'] }}" value="{{ values[v['key']] }}" placeholder="{{ v['default_value'] }}"></label>
+      {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="card-body inline-form" style="justify-content:flex-end">
+    <button type="submit" class="btn btn-ghost">Save</button>
+    <button type="submit" name="next" value="sections" class="btn btn-primary">Save and next: sections →</button>
+  </div>
 </div>
 </form>
 
 <div class="card" style="margin-top:16px" id="step-sections">
   <div class="card-head">
     <div>
-      <h2>Sections</h2>
-      <p class="small muted" style="margin-top:2px">Each is this project's own copy, counted against the master it was taken from.</p>
+      <h2><span class="spec-n">4</span> Sections</h2>
+      <p class="small muted" style="margin-top:2px">Each is this project's own copy, counted against the master it was taken from. The ones the answers call for are added when they are saved.</p>
     </div>
   </div>
   {% if not sections %}
@@ -147,12 +298,13 @@
   {% else %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Section</th><th>Title</th><th>Against the master</th><th></th></tr></thead>
+      <thead><tr><th>Section</th><th>Title</th><th>Why it is in</th><th>Against the master</th><th></th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
           <td><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
+          <td class="small muted">{% if s['applies'] == '*' %}every {{ spec['family'] }} project{% elif s['applies'] %}{{ s['applies'] }}{% if not s['applies'] | spec_applies(chosen) %} <span class="spec-bad">(the answers no longer call for it)</span>{% endif %}{% else %}added by hand{% endif %}</td>
           <td>
             {% if s['own'] %}{{ badge('neutral', "This project's own") }}
             {% elif s['added'] is none %}{{ badge('neutral', 'Master version missing') }}
@@ -179,25 +331,34 @@
     <div class="card-body">
       {% if uncovered %}
       <div class="spec-callout">
-        <p class="small"><strong>Nothing in the library is written for {{ 'this answer' if uncovered | length == 1 else 'these answers' }}:</strong></p>
-        <ul class="small">{% for label, value in uncovered %}<li>{{ label }}: {{ value }}</li>{% endfor %}</ul>
+        <p class="small"><strong>Nothing in the {{ spec['family'] }} library is written for {{ 'this answer' if uncovered | length == 1 else 'these answers' }}:</strong></p>
+        <ul class="small">{% for label, value, elsewhere in uncovered %}<li>{{ label }}: {{ value }}{% if elsewhere %} <span class="muted">— {{ elsewhere | join(', ') }} has a section for it, under "Sections of the other kinds" below</span>{% endif %}</li>{% endfor %}</ul>
         <p class="small muted">Check the sections cover {{ 'it' if uncovered | length == 1 else 'them' }}, write a section of this project's own below, or ask an administrator to add one to the library.</p>
       </div>
       {% endif %}
       {% if available %}
       <form method="post" action="{{ url_for('specs.add_sections', set_id=spec['id']) }}">
-        <p class="small muted">Ticked: the sections these choices call for. Save the choices first if you have just changed them.</p>
+        <p class="small muted">The {{ family }} library. Ticked: the sections the answers call for that are not in yet{% if declined %}, bar the ones taken out by hand{% endif %}.</p>
         <div class="checks" style="flex-direction:column">
           {% for s in available %}
-            {% set fits = s['applies'] | spec_applies(chosen) %}
-            <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"{% if fits %} checked{% endif %}> {{ s['number'] }} — {{ s['title'] }}
-              {% if s['applies'] %}<span class="small {% if fits %}muted{% else %}spec-bad{% endif %}" title="When this section belongs in a project">({{ 'called for' if fits else 'not called for' }}: {{ s['applies'] }})</span>{% endif %}</label>
+            {% set fits = s['applies'] | spec_applies(chosen) and s['applies'] %}
+            <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"{% if fits and s['id'] not in declined %} checked{% endif %}> {{ s['number'] }} — {{ s['title'] }}
+              {% if s['applies'] %}<span class="small {% if fits %}muted{% else %}spec-bad{% endif %}" title="When this section belongs in a project">({% if s['id'] in declined %}taken out by hand{% elif fits %}called for{% else %}not called for{% endif %}{% if s['applies'] != '*' %}: {{ s['applies'] }}{% endif %})</span>{% endif %}</label>
           {% endfor %}
         </div>
+        {% if elsewhere %}
+        <details style="margin-top:8px"><summary class="small">Sections of the other kinds ({{ elsewhere | length }}), for a project that borrows one</summary>
+          <div class="checks" style="flex-direction:column;margin-top:6px">
+            {% for s in elsewhere %}
+              <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"> <span class="spec-key">{{ s['family'] }}</span> {{ s['number'] }} — {{ s['title'] }}</label>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
         <button type="submit" class="btn btn-primary" style="margin-top:8px">Add the ticked sections</button>
       </form>
       {% else %}
-        <p class="small muted">Every section in the library is in this specification.</p>
+        <p class="small muted">Every section in the {{ family }} library is in this specification.</p>
       {% endif %}
       <form method="post" action="{{ url_for('specs.new_own_section', set_id=spec['id']) }}" class="inline-form" style="margin-top:14px">
         <label class="field w-md"><span class="field-label">Or one of its own: number</span>
@@ -229,6 +390,18 @@
     </div>
   </div>
 </div>
+
+<script>
+  // Saved and sent on to a step: the messages (which sections went in, and why)
+  // move to just above that step, where the page opens.
+  (function () {
+    var notes = document.querySelector(".flashes"), step = location.hash && document.querySelector(location.hash);
+    if (notes && step && step.id.indexOf("step-") === 0) {
+      step.parentNode.insertBefore(notes, step);
+      window.addEventListener("load", function () { notes.scrollIntoView({block: "start"}); window.scrollBy(0, -72); });
+    }
+  })();
+</script>
 
 <form method="post" action="{{ url_for('specs.delete_set', set_id=spec['id']) }}" style="margin-top:24px"
       onsubmit="return confirm('Delete this whole specification? Its sections and amendments go with it.')">

@@ -34,8 +34,9 @@
       <label class="field"><span class="field-label">The text</span>
         <textarea name="text" class="spec-editor" spellcheck="true">{{ text }}</textarea></label>
       {% if library %}
-      <label class="field"><span class="field-label">Belongs in a project when (blank: always)</span>
-        <input type="text" name="applies" value="{{ section['applies'] }}" placeholder="e.g. fenders!=None"></label>
+      <label class="field"><span class="field-label">Belongs in a project when</span>
+        <input type="text" name="applies" value="{{ section['applies'] }}" placeholder="e.g. shotcrete=Yes">
+        <span class="field-hint">A condition on the answers, added to a project when it holds; * for every {{ section['family'] }} project; blank when only ever added by hand.</span></label>
       <label class="field"><span class="field-label">What changed, for the version history</span>
         <input type="text" name="note" placeholder="e.g. Updated to ACI 318-19"></label>
       {% endif %}

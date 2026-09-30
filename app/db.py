@@ -446,13 +446,18 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS spec_sections (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            number      TEXT    NOT NULL UNIQUE,
+            -- The kind of specification it belongs to (03A, 15A, 16A): each
+            -- kind numbers its own sections, so 033000 is in two of them.
+            family      TEXT    NOT NULL DEFAULT '15A',
+            number      TEXT    NOT NULL,
             title       TEXT    NOT NULL DEFAULT '',
             body        TEXT    NOT NULL DEFAULT '[]',
             version     INTEGER NOT NULL DEFAULT 1,
             note        TEXT    NOT NULL DEFAULT '',
             updated_by  TEXT    NOT NULL DEFAULT '',
-            updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            applies     TEXT    NOT NULL DEFAULT '',
+            UNIQUE (family, number)
         );
         CREATE TABLE IF NOT EXISTS spec_section_versions (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -533,6 +538,16 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         _ensure_column(conn, "spec_options", column, definition)
     # When a library section belongs in a project, as a condition on its choices.
     _ensure_column(conn, "spec_sections", "applies", "TEXT NOT NULL DEFAULT ''")
+    _spec_families(conn)
+    # A project's kind of specification; the library sections it took out that
+    # its answers call for (so they are not put back); what its model said.
+    _ensure_column(conn, "spec_sets", "family", "TEXT NOT NULL DEFAULT '15A'")
+    _ensure_column(conn, "spec_sets", "declined", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(conn, "spec_sets", "model", "TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS spec_family_templates ("
+        " family TEXT PRIMARY KEY, filename TEXT NOT NULL DEFAULT '', content BLOB NOT NULL,"
+        " user_name TEXT NOT NULL DEFAULT '', added_at TEXT NOT NULL DEFAULT (datetime('now')))")
     # Whether a project is held back until every check item is accepted or rejected,
     # and what was decided about each.
     _ensure_column(conn, "spec_sets", "hold_issue", "INTEGER NOT NULL DEFAULT 1")
@@ -621,7 +636,51 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
 
 # Raised whenever the starting list of questions and words gains something an
 # existing library should be offered.
-SPEC_SEED_VERSION = 3
+SPEC_SEED_VERSION = 4
+
+
+def _spec_families(conn: sqlite3.Connection) -> None:
+    """A library from before there were kinds of specification: its sections
+    were numbered once across the lot. They become 15A's — the American
+    MasterFormat sections every library so far was made of — and the table is
+    rebuilt so that each kind numbers its own.
+
+    SQLite cannot drop a UNIQUE constraint, so the table is copied: foreign
+    keys are off while it is, or dropping the old one would take every
+    version and project copy with it.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(spec_sections)")}
+    if "family" in columns:
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(
+            """
+            BEGIN;
+            CREATE TABLE spec_sections_new (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                family      TEXT    NOT NULL DEFAULT '15A',
+                number      TEXT    NOT NULL,
+                title       TEXT    NOT NULL DEFAULT '',
+                body        TEXT    NOT NULL DEFAULT '[]',
+                version     INTEGER NOT NULL DEFAULT 1,
+                note        TEXT    NOT NULL DEFAULT '',
+                updated_by  TEXT    NOT NULL DEFAULT '',
+                updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+                applies     TEXT    NOT NULL DEFAULT '',
+                UNIQUE (family, number)
+            );
+            INSERT INTO spec_sections_new (id, family, number, title, body, version, note,
+                                           updated_by, updated_at, applies)
+                SELECT id, '15A', number, title, body, version, note, updated_by, updated_at,
+                       applies FROM spec_sections;
+            DROP TABLE spec_sections;
+            ALTER TABLE spec_sections_new RENAME TO spec_sections;
+            COMMIT;
+            """)
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def merge_spec_seed(conn: sqlite3.Connection) -> int:

@@ -35,6 +35,7 @@
   {% if fix and (spec or is_admin) %}
   <form method="post" action="{{ url_for('specs.fix_set', set_id=spec['id']) if spec else url_for('specs.fix_library') }}" class="inline-form" style="margin-top:6px">
     <input type="hidden" name="action" value="{{ fix['action'] }}">
+    {% if not spec and family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
     {% if fix['action'] == 'replace' %}
       <input type="hidden" name="old" value="{{ fix['old'] }}"><input type="hidden" name="new" value="{{ fix['new'] }}">
       <button type="submit" class="btn btn-ghost btn-sm">Replace {{ fix['old'] }} with {{ fix['new'] }} everywhere</button>
@@ -119,11 +120,11 @@
 </div></div>
 {% endif %}
 
-{% for key, title, about in checks %}
+{% for key, title, about in checks if key != 'model' or report.get(key) %}
 <div class="card" style="margin-top:12px" id="group-{{ key }}">
   <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
     {% set open_n = report['open'][key] if report.get('open') else report[key] | length %}
-    <div><h2>{{ title }} {% if open_n %}{{ badge('warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ (' open' if spec else '')) }}{% elif report[key] %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
       <p class="small muted" style="margin-top:2px">{{ about }}</p></div>
     {% set open_items = report[key] | rejectattr('settled') | list %}
     {% if spec and open_items | length > 1 %}
@@ -139,6 +140,7 @@
   </div>
   {% if report[key] %}
   <div class="card-body">
+    {% if key == 'repeated' and report[key] | length > 20 %}<details><summary class="small">Show {{ report[key] | length }} repeats</summary>{% endif %}
     {% for item in report[key] if not item.get('settled') %}{{ check_item(item) }}{% endfor %}
     {% set done = report[key] | selectattr('settled') | list %}
     {% if done %}
@@ -146,6 +148,7 @@
       {% for item in done %}{{ check_item(item) }}{% endfor %}
     </details>
     {% endif %}
+    {% if key == 'repeated' and report[key] | length > 20 %}</details>{% endif %}
   </div>
   {% endif %}
 </div>

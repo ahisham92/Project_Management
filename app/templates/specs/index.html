@@ -23,62 +23,96 @@
     <div>
       <h2>Start a project specification</h2>
       <p class="small muted" style="margin-top:2px">
-        Blank, or from an earlier project's — its header, choices and amended sections come with it.
+        From the library, or from an earlier project's — its header, answers and amended sections come with it.
+        Then tick the project's elements (or read them from the Revit model), answer the questions, and the sections follow.
       </p>
     </div>
   </div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('specs.new_set') }}" class="inline-form">
-      <label class="field flex1">
-        <span class="field-label">Project name</span>
-        <input type="text" name="name" required placeholder="As it should read on the specification"{% if start_from %} autofocus{% endif %}>
-      </label>
-      <label class="field w-lg">
-        <span class="field-label">Project code</span>
-        <input type="text" name="code" placeholder="e.g. P1234">
-      </label>
-      <label class="field w-lg">
-        <span class="field-label">Client</span>
-        <input type="text" name="client">
-      </label>
-      {% if sets %}
-      <label class="field w-lg">
-        <span class="field-label">Start from</span>
-        <select name="copy_from">
-          <option value="">The master library</option>
-          {% for one in sets %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }}</option>{% endfor %}
-        </select>
-      </label>
-      {% endif %}
-      <button type="submit" class="btn btn-primary">Start</button>
+    <form method="post" action="{{ url_for('specs.new_set') }}" enctype="multipart/form-data" style="display:grid;gap:12px">
+      <div class="inline-form">
+        <label class="field flex1">
+          <span class="field-label">Project name</span>
+          <input type="text" name="name" required placeholder="As it should read on the specification"{% if start_from %} autofocus{% endif %}>
+        </label>
+        <label class="field w-lg">
+          <span class="field-label">Project code</span>
+          <input type="text" name="code" placeholder="e.g. P1234">
+        </label>
+        <label class="field w-lg">
+          <span class="field-label">Client</span>
+          <input type="text" name="client">
+        </label>
+      </div>
+      <fieldset class="spec-families">
+        <legend class="field-label">Kind of specification</legend>
+        {% for f in families %}
+          <label class="spec-family">
+            <input type="radio" name="family" value="{{ f['code'] }}"{% if loop.first and not families | selectattr('code', 'equalto', '15A') | list or f['code'] == '15A' %} checked{% endif %}>
+            <span><strong>{{ f['code'] }}</strong> {{ f['name'] }}<span class="small muted">{{ f['note'] }} {{ f['sections'] }} section{{ 's' if f['sections'] != 1 }} in the library.</span></span>
+          </label>
+        {% endfor %}
+      </fieldset>
+      <div class="inline-form">
+        {% if sets %}
+        <label class="field w-lg">
+          <span class="field-label">Start from</span>
+          <select name="copy_from">
+            <option value="">The library</option>
+            {% if mine %}<optgroup label="My projects">{% for one in mine %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
+            {% if others %}<optgroup label="Other people's">{% for one in others %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
+          </select>
+          <span class="field-hint">A project started from another keeps that one's kind.</span>
+        </label>
+        {% endif %}
+        <label class="field flex1">
+          <span class="field-label">Elements from the Revit model (optional)</span>
+          <input type="file" name="model" accept=".ifc,.ifczip,.txt,.csv,.tsv,.xlsx">
+          <span class="field-hint">An IFC export or an exported schedule. Or tick the elements by hand on the next page.</span>
+        </label>
+        <button type="submit" class="btn btn-primary">Start</button>
+      </div>
     </form>
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>Project specifications</h2></div>
-  {% if not sets %}
-    <div class="card-body">
-      {{ empty('None yet', 'Start one above. ' ~ ('The library has ' ~ (library | length) ~ ' sections for it to take.' if library else 'The library is empty too: an administrator loads the master sections into it first.')) }}
-    </div>
-  {% else %}
+{% macro project_table(rows, who=False) %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Project</th><th>Code</th><th>Client</th><th class="right">Sections</th><th>Revision</th><th>Last changed</th></tr></thead>
+      <thead><tr><th>Project</th><th>Kind</th><th>Code</th><th>Client</th><th class="right">Sections</th><th>Revision</th>{% if who %}<th>Started by</th>{% endif %}<th>Last changed</th></tr></thead>
       <tbody>
-        {% for one in sets %}
+        {% for one in rows %}
         <tr>
           <td><a href="{{ url_for('specs.spec_set', set_id=one['id']) }}">{{ one['name'] }}</a></td>
+          <td><span class="spec-key">{{ one['family'] }}</span></td>
           <td>{{ one['code'] }}</td>
           <td>{{ one['client'] }}</td>
           <td class="right">{{ one['sections'] }}</td>
           <td>REV {{ one['revision'] }}</td>
+          {% if who %}<td class="small">{{ one['creator'] or '—' }}</td>{% endif %}
           <td class="small muted">{{ one['updated_at'][:16] }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+{% endmacro %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>My projects</h2></div>
+  {% if not mine %}
+    <div class="card-body">
+      {{ empty('None yet', 'Start one above. ' ~ ('The library has ' ~ (library | length) ~ ' sections for it to take.' if library else 'The library is empty too: an administrator loads the master sections into it first.')) }}
+    </div>
+  {% else %}
+    {{ project_table(mine) }}
   {% endif %}
 </div>
+
+{% if others %}
+<details class="card" style="margin-top:16px">
+  <summary class="card-head"><h2>Other people's projects ({{ others | length }})</h2></summary>
+  {{ project_table(others, who=True) }}
+</details>
+{% endif %}
 {% endblock %}

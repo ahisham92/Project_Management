@@ -7,7 +7,7 @@
    pages by measuring it, puts the running header and footer on each, and turns
    them. Each section starts on a page of its own and numbers its own pages, as
    each issued section is a document of its own. #}
-{% block title %}{% if spec %}{{ spec['name'] }}{% else %}{{ sections[0]['number'] }} {{ sections[0]['title'] }}{% endif %} · Book · Specs Writer{% endblock %}
+{% block title %}{% if spec %}{{ spec['name'] }}{% else %}{{ sections[0]['number'] }} {{ sections[0]['title'] }}{% endif %} · Book · THEMIS{% endblock %}
 
 {% macro block(b, values, reader, here, nbs) %}
   {% if b['level'] == 'TBL' %}

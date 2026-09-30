@@ -1443,10 +1443,10 @@ def _library_file(data: bytes):
         z = zipfile.ZipFile(io.BytesIO(data))
         loaded = json.loads(z.read("library.json").decode("utf-8"))
     except (zipfile.BadZipFile, KeyError, ValueError) as exc:
-        raise specs.SpecError("That is not a Specs Writer library file.") from exc
+        raise specs.SpecError("That is not a THEMIS library file.") from exc
     if not isinstance(loaded, dict) or not str(loaded.get("format", "")).startswith(
             "specs-writer-library/"):
-        raise specs.SpecError("That is not a Specs Writer library file.")
+        raise specs.SpecError("That is not a THEMIS library file.")
     return z, loaded
 
 

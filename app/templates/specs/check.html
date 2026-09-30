@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import badge %}
-{% block title %}Check · {{ spec['name'] if spec else 'Master library' }} · Specs Writer{% endblock %}
+{% block title %}Check · {{ spec['name'] if spec else 'Master library' }} · THEMIS{% endblock %}
 
 {% macro where(item) %}
   {% if item['row_id'] %}
@@ -154,7 +154,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='spec-check.css') }}">
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> ·
       {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
       {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}</p>
     <h1>Check {{ 'the specification' if spec else 'the master library' }}</h1>

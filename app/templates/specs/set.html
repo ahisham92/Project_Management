@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import badge, empty %}
 {% from "specs/_icons.html" import icon %}
-{% block title %}{{ spec['name'] }} · Specs Writer{% endblock %}
+{% block title %}{{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a></p>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a></p>
     <h1>{{ spec['name'] }}</h1>
     <p class="small muted" style="margin-top:2px">
       {{ spec['code'] }}{% if spec['client'] %} · {{ spec['client'] }}{% endif %} · REV {{ spec['revision'] }}

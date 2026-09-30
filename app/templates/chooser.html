@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/themis.html" as themis %}
 {% block title %}Choose an application{% endblock %}
 
 {% block content %}
@@ -63,14 +64,14 @@
 
   {% if 'specs' in my_programs %}
   <a class="door" href="{{ url_for('specs.index') }}">
-    <span class="door-mark door-mark-specs" aria-hidden="true">SPC</span>
-    <span class="door-name">Specs Writer</span>
+    <span class="door-mark door-mark-themis" aria-hidden="true">{{ themis.mark(label='') }}</span>
+    <span class="door-name door-name-themis">THEMIS<span class="door-tagline">Structural Specifications</span></span>
     <span class="door-what">
       The office's master specification, section by section, and each project's copy of it:
       the project's details and choices in, its amendments marked against the master, and every
       section issued in the same Word format as the original.
     </span>
-    <span class="door-go">Open the Specs Writer →</span>
+    <span class="door-go">Open THEMIS →</span>
   </a>
   {% endif %}
 </div>

@@ -36,7 +36,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 from . import specs
 from .specs import NOTE, TABLE, _run, _x
 
-AUTHOR = "Specs Writer"
+AUTHOR = "THEMIS"
 FORMATS = ("docx", "tracked", "pdf")
 
 Resolve = Callable[[str], str] | None

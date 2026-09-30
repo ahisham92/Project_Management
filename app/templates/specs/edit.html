@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Edit {{ section['number'] }} · Specs Writer{% endblock %}
+{% block title %}Edit {{ section['number'] }} · THEMIS{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='spec-editor.css') }}">
 <div class="page-head">
   <div>
     <p class="small">
-      <a href="{{ url_for('specs.index') }}">Specs Writer</a> ·
+      <a href="{{ url_for('specs.index') }}">THEMIS</a> ·
       {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a> ·
         <a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) }}">{{ section['number'] }}</a>
       {% else %}<a href="{{ url_for('specs.library') }}">Master library</a> ·

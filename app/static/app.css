@@ -1283,3 +1283,24 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-explain-admin { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
 @media (min-width: 1100px) { body.spec-explain-on main { margin-right: 460px; } }
 .spec-explain-add label.spec-explain-check { display: flex; gap: 6px; align-items: center; }
+
+/* THEMIS, the structural specifications app: its mark and name. */
+:root { --themis-ink: #1f2a40; --themis-gold: #a67c3a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --themis-ink: #ffffff; --themis-gold: #c09550; } }
+:root[data-theme="dark"] { --themis-ink: #ffffff; --themis-gold: #c09550; }
+.themis-mark { display: block; width: 100%; height: auto; }
+.themis-lockup { display: inline-flex; align-items: center; gap: 10px; color: var(--themis-ink); }
+.themis-lockup .themis-mark { width: 30px; flex: none; }
+.themis-words { display: flex; flex-direction: column; line-height: 1.1; }
+.themis-name { font-weight: 700; letter-spacing: 0.28em; font-size: 0.95rem; }
+.themis-tagline { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-2); }
+.brand .themis-lockup .themis-mark { width: 26px; }
+.door-mark-themis { background: #1f2a40; padding: 6px 5px 7px; }
+.door-mark-themis .themis-mark rect:not(:first-child) { fill: #ffffff; }
+.door-mark-themis .themis-mark rect:first-child { fill: #a67c3a; }
+.door-tagline { display: block; font-size: 0.68rem; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-2); margin-top: 2px; }
+.door-name-themis { letter-spacing: 0.22em; }
+.themis-hero { display: flex; align-items: center; gap: 18px; margin-bottom: 10px; }
+.themis-hero .themis-mark { width: 64px; flex: none; }
+.themis-hero h1 { margin: 0; letter-spacing: 0.28em; color: var(--themis-ink); }
+.themis-hero .themis-tagline { font-size: 0.72rem; }

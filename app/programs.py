@@ -18,7 +18,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("pm", "Project Management"),
     ("crs", "Comment Response Sheet"),
     ("triton", "Triton"),
-    ("specs", "Specs Writer"),
+    ("specs", "THEMIS (structural specifications)"),
 ]
 KEYS = [key for key, _ in PROGRAMS]
 NAMES = dict(PROGRAMS)

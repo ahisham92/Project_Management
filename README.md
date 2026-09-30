@@ -51,11 +51,11 @@ is SQLite, which is part of Python itself. It needs six packages: Flask, Waitres
 openpyxl (for the Excel round trip), reportlab and pypdf (for the PDFs and for compiling
 attachments into them) and anthropic (for Carmen).
 
-### About the specs writer
+### About THEMIS (structural specifications)
 
 Every project's specification starts from the same master sections and gets amended. Left to
 Word, each project drifts: a section retyped in Normal instead of the MasterSpec styles, a
-paragraph numbered by hand, a header from the last job. The Specs Writer keeps **one master
+paragraph numbered by hand, a header from the last job. THEMIS, the structural specifications app (formerly the Specs Writer, at `/specs`), keeps **one master
 text** of each section and makes every project's copy of it **known**.
 
 - **The library** (`/specs/library`) holds the master of each section. An administrator reads

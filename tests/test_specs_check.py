@@ -245,7 +245,7 @@ def test_the_library_travels_as_one_file(app, signed_in):
     assert "CAST-IN-PLACE CONCRETE" in text(signed_in.get("/specs/library"))
     bad = signed_in.post("/specs/library/file", data={"library": (io.BytesIO(b"nope"), "x.zip")},
                          content_type="multipart/form-data", follow_redirects=True)
-    assert "not a Specs Writer library file" in text(bad)
+    assert "not a THEMIS library file" in text(bad)
 
 
 def test_the_suggested_questions_are_added_without_changing_what_is_there(signed_in):

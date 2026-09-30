@@ -408,7 +408,7 @@
           {% for s in available %}
             {% set fits = s['applies'] | spec_applies(chosen) and s['applies'] %}
             <label class="check"><input type="checkbox" name="section_id" value="{{ s['id'] }}"{% if fits and s['id'] not in declined %} checked{% endif %}> {{ s['number'] }} — {{ s['title'] }}
-              {% if s['applies'] %}<span class="small {% if fits %}muted{% else %}spec-bad{% endif %}" title="When this section belongs in a project">({% if s['id'] in declined %}taken out by hand{% elif fits %}called for{% else %}not called for{% endif %}{% if s['applies'] != '*' %}: {{ s['applies'] }}{% endif %})</span>{% endif %}</label>
+              {% if s['applies'] %}<span class="small {% if fits %}muted{% else %}spec-bad{% endif %}" title="When this section belongs in a project" style="overflow-wrap:anywhere">({% if s['id'] in declined %}taken out by hand{% elif fits %}called for{% else %}not called for{% endif %}{% if s['applies'] != '*' %}: {{ s['applies'] }}{% endif %})</span>{% endif %}</label>
           {% endfor %}
         </div>
         {% if elsewhere %}

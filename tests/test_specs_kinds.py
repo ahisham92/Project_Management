@@ -428,3 +428,34 @@ def test_ticked_sections_are_taken_out_of_the_library(app, signed_in):
         assert [s["number"] for s in specs_store.library("15A")] == ["034100"]
         # The project keeps its copy.
         assert [r["number"] for r in specs_store.set_sections(set_id)] == ["033000"]
+
+
+def test_a_section_added_by_hand_sets_its_answer_and_taking_it_out_undoes_it(app, signed_in):
+    from app import specs_store
+
+    load(signed_in, "STD15A_SPC_033816_ST_PT.docx", "# GENERAL\n## SUMMARY\n- PT.\n",
+         "033816", "UNBONDED POST-TENSIONED CONCRETE")
+    applies(app, "033816", "15A", "post_tensioning=Unbonded")
+    set_id = set_id_of(signed_in.post("/specs/sets", data={"name": "Tower", "family": "15A"}))
+    with app.app_context():
+        section_id = specs_store.section_by_number("033816", "15A")["id"]
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["post_tensioning"] in ("", "None")
+    answer = text(signed_in.post(f"/specs/sets/{set_id}/sections",
+                                 data={"section_id": [str(section_id)]}, follow_redirects=True))
+    assert "The answers now say so: Post-tensioning: Unbonded" in answer
+    assert "no longer call for" not in answer
+    with app.app_context():
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["post_tensioning"] == "Unbonded"
+        row_id = specs_store.set_sections(set_id)[0]["id"]
+    # Saving the answers leaves it in, with nothing said against it.
+    saved = text(signed_in.post(f"/specs/sets/{set_id}", data={
+        "name": "Tower", "opt_post_tensioning": "Unbonded"}, follow_redirects=True))
+    assert "Your answers no longer call for" not in saved
+    # Added by mistake: taken out, the answer goes back.
+    answer = text(signed_in.post(f"/specs/sets/{set_id}/sections/remove",
+                                 data={"row_id": [str(row_id)]}, follow_redirects=True))
+    assert "Took 1 section out: 033816" in answer and "back as they were" in answer
+    with app.app_context():
+        row = specs_store.spec_set(set_id)
+        assert specs_store.chosen_for(row)["post_tensioning"] != "Unbonded"
+        assert specs_store.set_sections(set_id) == []

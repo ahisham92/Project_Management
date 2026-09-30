@@ -12,6 +12,7 @@ issued in the house template so it looks like every other one.
 from __future__ import annotations
 
 import io
+import json
 import re
 import zipfile
 
@@ -153,6 +154,55 @@ def _rows(nodes: list[dict], chosen: dict, base: list[dict] | None) -> list[dict
             one = numbered[m["id"]]
             rows.append(dict(m, label=one["label"], included=one["included"], indent=one["indent"]))
     return rows
+
+
+ID = re.compile(r"^[0-9a-f]{8}$")
+
+
+def _edited_nodes(body: str) -> list[dict]:
+    """The paragraphs the editor sent back. The page editor sends them as they
+    are, with their ids, so nothing has to be matched up again; the plain text
+    editor sends text, which is lined up against what was there."""
+    before = specs.loads(body)
+    sent = request.form.get("nodes", "")
+    if sent and request.form.get("mode") != "text":
+        try:
+            data = json.loads(sent)
+        except ValueError as exc:
+            raise specs.SpecError("The editor sent something that could not be read; "
+                                  "nothing was saved.") from exc
+        nodes, seen = [], set()
+        for n in data if isinstance(data, list) else []:
+            if not isinstance(n, dict) or n.get("level") not in specs.KINDS:
+                continue
+            text = str(n.get("text") or "").replace("\r", "")
+            text = text if n["level"] == specs.TABLE else " ".join(text.split())
+            if not text.strip():
+                continue
+            if n["level"] in ("PRT", "ART") and not specs.is_nbs(before):
+                text = text.upper()
+            ident = str(n.get("id") or "")
+            ident = ident if ID.match(ident) and ident not in seen else None
+            node = specs.node(n["level"], text, str(n.get("when") or "").strip(), ident)
+            seen.add(node["id"])
+            nodes.append(node)
+        return nodes
+    return specs.align(before, specs.from_text(request.form.get("text", "")))
+
+
+def _editor(s: dict, family: str, library: bool, spec=None):
+    """The edit page: the page editor, with the plain text beside it."""
+    nodes = specs.loads(s["body"])
+    sections = [{"number": x["number"], "title": specs_check.title_case(x["title"])}
+                for x in store.library(family)]
+    options, variables = store.options(), store.variables()
+    return render_template(
+        "specs/edit.html", spec=spec, section=s, text=specs.to_text(nodes),
+        nodes=nodes, nbs=specs.is_nbs(nodes), sections=sections, options=options,
+        variables=variables, library=library,
+        options_json=[{"key": o["key"], "label": o["label"], "choices": o["choice_list"],
+                       "group": o.get("grp") or ""} for o in options],
+        variables_json=[{"key": v["key"], "label": v["label"]} for v in variables])
 
 
 def _is_admin() -> bool:
@@ -442,10 +492,38 @@ def delete_set(set_id: int):
 def add_sections(set_id: int):
     _set_or_404(set_id)
     picked = [int(v) for v in request.form.getlist("section_id") if v.isdigit()]
+    before = store.ruled_out(set_id)
     added = store.add_sections(set_id, picked)
+    # A section added by hand is the answer that calls for it, as if chosen.
+    said = [line for section_id in picked for line in store.answer_for(set_id, section_id)]
     flash(f"Added {added} section{'s' if added != 1 else ''} from the library."
+          + (f" The answers now say so: {'; '.join(said)}." if said else "")
           if added else "Tick the sections to add first.", "success" if added else "error")
-    return redirect(url_for("specs.spec_set", set_id=set_id))
+    if said:
+        _added(set_id, before)
+    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
+
+
+@bp.post("/sets/<int:set_id>/sections/remove")
+@login_required
+def remove_sections(set_id: int):
+    """Ticked sections taken out of the project, for one added by mistake."""
+    _set_or_404(set_id)
+    rows = {r["id"]: r for r in store.set_sections(set_id)}
+    picked = [rows[int(v)] for v in request.form.getlist("row_id") if v.isdigit() and int(v) in rows]
+    if not picked:
+        flash("Tick the sections to take out first.", "error")
+        return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
+    before = store.ruled_out(set_id)
+    undone = [line for r in picked for line in store.remove_set_section(set_id, r["id"])]
+    flash(f"Took {len(picked)} section{'s' if len(picked) != 1 else ''} out: "
+          + ", ".join(r["number"] for r in picked) + "."
+          + (f" The answers adding {'it' if len(picked) == 1 else 'them'} set are back as they "
+             f"were: {'; '.join(undone)}." if undone else "")
+          + " Add back any time from the library list.", "success")
+    if undone:
+        _added(set_id, before)
+    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
 
 
 @bp.post("/sets/<int:set_id>/sections/new")
@@ -585,15 +663,18 @@ def edit_set_section(set_id: int, row_id: int):
     row = _set_or_404(set_id)
     s = _set_section_or_404(set_id, row_id)
     if request.method == "POST":
-        text = request.form.get("text", "")
-        nodes = specs.align(specs.loads(s["body"]), specs.from_text(text))
+        try:
+            nodes = _edited_nodes(s["body"])
+        except specs.SpecError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("specs.edit_set_section", set_id=set_id, row_id=row_id))
         store.save_set_section(set_id, row_id, nodes, title=request.form.get("title"),
                                doc_code=request.form.get("doc_code"))
         flash("Saved. Anything that differs from the master is marked.", "success")
+        if request.form.get("stay"):
+            return redirect(url_for("specs.edit_set_section", set_id=set_id, row_id=row_id))
         return redirect(url_for("specs.set_section", set_id=set_id, row_id=row_id))
-    return render_template(
-        "specs/edit.html", spec=row, section=s, text=specs.to_text(specs.loads(s["body"])),
-        options=store.options(), variables=store.variables(), library=False)
+    return _editor(s, row["family"], library=False, spec=row)
 
 
 @bp.post("/sets/<int:set_id>/sections/<int:row_id>/<action>")
@@ -611,10 +692,12 @@ def set_section_action(set_id: int, row_id: int, action: str):
             flash("Brought in the master's changes. This project's own amendments were kept.",
                   "success")
         elif action == "remove":
-            store.remove_set_section(set_id, row_id)
+            undone = store.remove_set_section(set_id, row_id)
             flash(f"Took section {s['number']} out of this specification. It stays out when the "
-                  "answers are saved again; add it back from the library list any time.", "success")
-            return redirect(url_for("specs.spec_set", set_id=set_id))
+                  "answers are saved again; add it back from the library list any time."
+                  + (f" The answers adding it set are back as they were: {'; '.join(undone)}."
+                     if undone else ""), "success")
+            return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-sections")
         elif action == "promote":
             if not _admin_only():
                 return redirect(back)
@@ -739,8 +822,8 @@ def edit_library_section(section_id: int):
         flash("Only an administrator changes the master library.", "error")
         return redirect(url_for("specs.library_section", section_id=section_id))
     if request.method == "POST":
-        nodes = specs.align(specs.loads(s["body"]), specs.from_text(request.form.get("text", "")))
         try:
+            nodes = _edited_nodes(s["body"])
             store.save_section(request.form.get("number", s["number"]),
                                request.form.get("title", s["title"]), nodes,
                                note=request.form.get("note", "").strip(), section_id=section_id)
@@ -750,10 +833,10 @@ def edit_library_section(section_id: int):
             return redirect(url_for("specs.edit_library_section", section_id=section_id))
         flash("Saved as a new version. Projects that took the last one can bring this in.",
               "success")
+        if request.form.get("stay"):
+            return redirect(url_for("specs.edit_library_section", section_id=section_id))
         return redirect(url_for("specs.library_section", section_id=section_id))
-    return render_template(
-        "specs/edit.html", spec=None, section=s, text=specs.to_text(specs.loads(s["body"])),
-        options=store.options(), variables=store.variables(), library=True)
+    return _editor(s, s["family"], library=True)
 
 
 @bp.post("/library/<int:section_id>/delete")
@@ -777,6 +860,60 @@ def library_docx(section_id: int):
                             {v["key"]: v["default_value"] for v in store.variables()},
                             store.template_bytes(s["family"]), resolve=reader.issued(s["number"]))
     return _docx_response(data, specs.file_name("SPC-{number}", s))
+
+
+# --- reading as a book ------------------------------------------------------------------
+# The text as it goes out — only the paragraphs the project keeps, no editor's
+# notes, no amendment marks — laid out on pages like the issued document, two
+# to a spread. The pages themselves are cut by spec-book.js in the browser.
+
+def _book_section(s: dict, project: dict, chosen: dict) -> dict:
+    nodes = specs.loads(s["body"])
+    blocks = [{"id": n["id"], "level": n["level"], "label": n["label"], "indent": n["indent"],
+               "text": specs.choose(n["text"], chosen)}
+              for n in specs.number(nodes, chosen)
+              if n["included"] and n["level"] != specs.NOTE]
+    revision = str(project.get("revision") or "").strip()
+    code = (s.get("doc_code") or project.get("doc_code") or "").strip()
+    return {"id": s["id"], "number": s["number"], "title": (s["title"] or "").upper(),
+            "nbs": specs.is_nbs(nodes), "blocks": blocks,
+            "code_line": " ".join(b for b in (code, f"REV {revision}" if revision else "") if b)}
+
+
+def _book_header(project: dict) -> list[tuple[str, str]]:
+    """The running header's lines, left and right, as the issued document has them."""
+    left = [line.rstrip() for line in (project.get("header_left") or "").splitlines()]
+    right = [line.rstrip() for line in (project.get("header_right") or "").splitlines()]
+    return [(left[i] if i < len(left) else "", right[i] if i < len(right) else "")
+            for i in range(max(len(left), len(right)))]
+
+
+@bp.get("/sets/<int:set_id>/book")
+@login_required
+def set_book(set_id: int):
+    row = _set_or_404(set_id)
+    chosen = store.chosen_for(row)
+    sections = [_book_section(s, row, chosen) for s in store.set_sections(set_id)]
+    return render_template(
+        "specs/book.html", spec=row, sections=sections, values=store.values_for(row),
+        reader=store.reader(store.set_whole(set_id), chosen),
+        header=_book_header(row) or [(row["name"], row["code"] or "")],
+        start_row=request.args.get("row", type=int),
+        back=url_for("specs.spec_set", set_id=set_id), back_label=row["name"])
+
+
+@bp.get("/library/<int:section_id>/book")
+@login_required
+def library_book(section_id: int):
+    s = _library_or_404(section_id)
+    chosen = store.chosen_for(None)
+    return render_template(
+        "specs/book.html", spec=None, sections=[_book_section(s, {}, chosen)],
+        values={v["key"]: v["default_value"] for v in store.variables()},
+        reader=store.reader(store.library_whole(s["family"]), chosen, standards=False),
+        header=[("Master library", store.family_name(s["family"]))], start_row=None,
+        back=url_for("specs.library_section", section_id=section_id),
+        back_label=f"{s['number']} {s['title']}")
 
 
 # --- options, variables and the template ---------------------------------------------

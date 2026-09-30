@@ -544,6 +544,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "spec_sets", "family", "TEXT NOT NULL DEFAULT '15A'")
     _ensure_column(conn, "spec_sets", "declined", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "spec_sets", "model", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_sets", "set_by", "TEXT NOT NULL DEFAULT '{}'")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS spec_family_templates ("
         " family TEXT PRIMARY KEY, filename TEXT NOT NULL DEFAULT '', content BLOB NOT NULL,"

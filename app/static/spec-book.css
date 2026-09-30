@@ -1,0 +1,196 @@
+/* The specification read as a book (templates/specs/book.html, spec-book.js).
+ *
+ * A page is drawn at the size of the issued A4 page at 96 dpi — 794 × 1123 px,
+ * one-inch margins, Times New Roman 12 pt — and the whole book is scaled to fit,
+ * so the lines break where they would on paper whatever the window. Lengths in
+ * the paper rules come from the house template: a twip is 1/15 px.
+ *
+ * The paper stays white in either theme; only the desk around it follows the
+ * site's colours.
+ */
+
+.bk { --bk-top: 96px; --bk-turn: 750ms; --bk-slide: 320ms; }
+
+/* --- the toolbar --------------------------------------------------------------- */
+
+.bk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px 16px; margin-bottom: 12px;
+}
+.bk-back { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-nav { display: flex; align-items: center; gap: 6px; }
+.bk-where { min-width: 13ch; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.bk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.bk-pick { display: flex; align-items: center; gap: 6px; }
+.bk-pick select { width: auto; max-width: 30ch; padding: 4px 8px; font-size: 0.8rem; }
+
+/* --- the desk -------------------------------------------------------------------- */
+
+.bk-stage {
+  position: relative; overflow: auto; padding: 20px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  outline: none; touch-action: pan-y pinch-zoom;
+}
+.bk-viewport { position: relative; margin: 0 auto; }
+.bk-book { position: absolute; left: 0; top: 0; height: 1123px; transform-origin: 0 0; perspective: 3200px; }
+.bk-spread { width: 1588px; }
+.bk-single { width: 794px; overflow: hidden; overflow: clip; }
+
+.bk-slot { position: absolute; top: 0; width: 794px; height: 1123px; }
+.bk-slot-l { left: 0; }
+.bk-slot-r { left: 794px; }
+.bk-slot-c { left: 0; }
+.bk-sliding .bk-slot { transition: transform var(--bk-slide) ease; }
+
+.bk-page {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+/* The fold of the spine: each page darkens a little towards the middle. */
+.bk-slot-l .bk-page::after, .bk-slot-r .bk-page::after, .bk-face .bk-page::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 48px; pointer-events: none;
+}
+.bk-slot-l .bk-page::after, .bk-leaf-fwd .bk-face-back .bk-page::after, .bk-leaf-bwd .bk-face-front .bk-page::after {
+  right: 0; background: linear-gradient(to left, rgba(0, 0, 0, 0.13), rgba(0, 0, 0, 0));
+}
+.bk-slot-r .bk-page::after, .bk-leaf-fwd .bk-face-front .bk-page::after, .bk-leaf-bwd .bk-face-back .bk-page::after {
+  left: 0; background: linear-gradient(to right, rgba(0, 0, 0, 0.13), rgba(0, 0, 0, 0));
+}
+
+/* --- turning a leaf ---------------------------------------------------------------- */
+
+.bk-leaf {
+  position: absolute; top: 0; width: 794px; height: 1123px; z-index: 3;
+  transform-style: preserve-3d; transform: rotateY(0deg);
+}
+.bk-leaf-fwd { left: 794px; transform-origin: 0 50%; }
+.bk-leaf-bwd { left: 0; transform-origin: 100% 50%; }
+.bk-leaf.bk-turn { transition: transform var(--bk-turn) cubic-bezier(0.42, 0.05, 0.3, 1); }
+.bk-leaf-fwd.bk-turn { transform: rotateY(-180deg); }
+.bk-leaf-bwd.bk-turn { transform: rotateY(180deg); }
+.bk-face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+}
+.bk-face-back { transform: rotateY(180deg); }
+.bk-shade { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.bk-leaf-fwd .bk-face-front .bk-shade { background: linear-gradient(to left, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.05)); }
+.bk-leaf-fwd .bk-face-back .bk-shade { background: linear-gradient(to right, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.05)); }
+.bk-leaf-bwd .bk-face-front .bk-shade { background: linear-gradient(to right, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.05)); }
+.bk-leaf-bwd .bk-face-back .bk-shade { background: linear-gradient(to left, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.05)); }
+.bk-turn .bk-face-front .bk-shade { animation: bk-lift var(--bk-turn) ease-in forwards; }
+.bk-turn .bk-face-back .bk-shade { animation: bk-land var(--bk-turn) ease-out forwards; }
+@keyframes bk-lift { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes bk-land { 0% { opacity: 1; } 50% { opacity: 1; } 100% { opacity: 0; } }
+/* The page the leaf is lifting off, or landing on, is in its shadow a moment. */
+.bk-folding .bk-slot::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: rgba(0, 0, 0, 0.10); animation: bk-dim var(--bk-turn) ease-in-out forwards;
+}
+@keyframes bk-dim { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+
+/* The outer edge of a page turns it. */
+.bk-edge {
+  position: absolute; top: 0; bottom: 0; width: 64px; z-index: 4; cursor: pointer;
+  border: 0; padding: 0; margin: 0; background: transparent; appearance: none;
+}
+.bk-edge[hidden] { display: none; }
+.bk-edge-l { left: 0; }
+.bk-edge-r { right: 0; }
+.bk-edge-l:hover, .bk-edge-l:focus-visible { background: linear-gradient(to right, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0)); }
+.bk-edge-r:hover, .bk-edge-r:focus-visible { background: linear-gradient(to left, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0)); }
+.bk-edge:focus-visible { outline: 4px solid var(--series-1); outline-offset: -4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bk-leaf.bk-turn, .bk-sliding .bk-slot { transition: none; }
+  .bk-turn .bk-shade, .bk-folding .bk-slot::before { animation: none; }
+}
+
+/* --- the paper ------------------------------------------------------------------ */
+
+.bk-paper {
+  color-scheme: light;
+  background: #fff; color: #000;
+  font-family: "Times New Roman", Times, "Liberation Serif", Tinos, "Nimbus Roman", "Nimbus Roman No9 L", serif;
+  font-size: 16px; line-height: 1.15;
+  -webkit-font-smoothing: auto;
+  text-rendering: geometricPrecision;
+  font-kerning: normal;
+}
+.bk-page { position: relative; width: 794px; height: 1123px; overflow: hidden; }
+.bk-head {
+  position: absolute; left: 96px; right: 96px; top: 48px;
+  font-size: 13.33px; line-height: 1.15;
+}
+.bk-head-line { display: flex; justify-content: space-between; gap: 24px; }
+.bk-head-line:last-child { border-bottom: 1px solid #000; padding-bottom: 1px; }
+.bk-body { position: absolute; left: 96px; right: 96px; top: var(--bk-top); bottom: 96px; overflow: hidden; }
+.bk-foot {
+  position: absolute; left: 96px; right: 96px; bottom: 48px;
+  font-size: 12px; line-height: 1.15;
+}
+.bk-foot-line { display: flex; justify-content: space-between; gap: 24px; border-top: 1px solid #000; padding-top: 1px; }
+.bk-foot-line span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-foot-line span:last-child { white-space: nowrap; }
+
+/* Measuring and cutting happen off the desk, at full size. */
+.bk-host { position: absolute; left: -20000px; top: 0; visibility: hidden; pointer-events: none; contain: layout style; }
+.bk-measure { height: auto; }
+.bk-measure .bk-body { position: static; margin: 0 96px; overflow: visible; }
+
+/* One paragraph as the house template sets it (MasterSpec). */
+.bk-b {
+  position: relative; text-align: justify; hyphens: manual; overflow-wrap: anywhere;
+  padding-top: 16px;                               /* 12 pt before */
+}
+.bk-body > .bk-b:first-child { padding-top: 0; }
+.bk-b.bk-cont { padding-top: 0; }
+.bk-b.bk-cut { text-align-last: justify; }
+.bk-n { display: inline-block; }
+.bk-SCT { padding-top: 16px; }
+.bk-PRT { padding-top: 32px; }
+.bk-PRT .bk-n { margin-right: 0.3em; }
+.bk-ART { padding-top: 32px; padding-left: 57.6px; }
+.bk-ART .bk-n { width: 57.6px; margin-left: -57.6px; }
+.bk-PR1, .bk-PR2, .bk-PR3, .bk-PR4 { font-size: 14.67px; }  /* 11 pt */
+.bk-PR1 { padding-left: 57.6px; }
+.bk-PR2 { padding-left: 96px; }
+.bk-PR3 { padding-left: 134.4px; }
+.bk-PR4 { padding-left: 172.8px; padding-top: 0; font-size: 16px; }
+.bk-PR1 .bk-n, .bk-PR2 .bk-n, .bk-PR3 .bk-n, .bk-PR4 .bk-n { width: 38.4px; margin-left: -38.4px; }
+.bk-PR2 + .bk-PR2, .bk-PR3 + .bk-PR3 { padding-top: 0; }   /* contextual spacing */
+.bk-EOS { padding-top: 32px; }
+.bk-n + .bk-t, .bk-t { white-space: normal; }
+
+/* An NBS section (the British kind): groups and clause headings, bulleted lines. */
+.bk-SCT.bk-nbs, .bk-PRT.bk-nbs, .bk-ART.bk-nbs { font-weight: bold; text-align: left; }
+.bk-PRT.bk-nbs { padding-top: 32px; text-transform: uppercase; }
+.bk-ART.bk-nbs { padding-top: 16px; padding-left: 0; }
+.bk-PR1.bk-nbs { padding-top: 6px; padding-left: 57.6px; }
+.bk-PR2.bk-nbs { padding-top: 2px; padding-left: 86.4px; }
+.bk-PR3.bk-nbs { padding-top: 2px; padding-left: 115.2px; }
+.bk-PR4.bk-nbs { padding-top: 2px; padding-left: 144px; font-size: 14.67px; }
+.bk-nbs .bk-n { width: 24px; margin-left: -24px; }
+.bk-PR2.bk-nbs + .bk-PR2.bk-nbs, .bk-PR3.bk-nbs + .bk-PR3.bk-nbs { padding-top: 2px; }
+
+/* A table: ruled cells in 10 pt, indented to its paragraph. */
+.bk-TBL { padding-left: 38.4px; }
+.bk-TBL.bk-i1 { padding-left: 76.8px; }
+.bk-TBL.bk-i2 { padding-left: 115.2px; }
+.bk-TBL.bk-i3, .bk-TBL.bk-i4, .bk-TBL.bk-i5 { padding-left: 153.6px; }
+.bk-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13.33px; line-height: 1.15; }
+.bk-table td { border: 1px solid #000; padding: 2.7px 5px; vertical-align: top; text-align: left; }
+
+/* The words as issued: nothing marked, nothing linked. */
+.bk-paper .spec-var, .bk-paper .spec-ref, .bk-paper .spec-choice, .bk-paper .spec-open,
+.bk-paper .spec-ref.spec-bad {
+  background: none; color: inherit; border: 0; padding: 0; border-radius: 0; text-decoration: none;
+}
+
+/* Without JavaScript the text reads as one long sheet. */
+.bk-source { max-width: 794px; margin: 0 auto; padding: 96px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
+.bk-source .bk-sec + .bk-sec { margin-top: 96px; }
+.js .bk-source { display: none; }
+
+@media (max-width: 899px) {
+  .bk-bar { justify-content: center; }
+  .bk-stage { padding: 12px 8px; }
+}

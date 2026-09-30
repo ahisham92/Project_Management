@@ -19,6 +19,7 @@
     {% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id']) }}#new" title="A new project with this one's choices, header and sections, amendments and all">Start a new project from this one</a>
+    {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id']) }}" title="Every section as issued, as pages to turn">Read as a book</a>{% endif %}
     <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Issue all (.zip of .docx)</a>
   </div>
 </div>
@@ -30,14 +31,20 @@
 {% for grp in tiles %}{% for t in grp['tiles'] %}
   {% if (t['how'] == 'many' and t['value'] in picked[t['option']['key']]) or (t['how'] == 'toggle' and chosen[t['option']['key']] | lower == t['value'] | lower) or (t['how'] == 'pick' and chosen[t['option']['key']] | lower not in ('', 'none', 'no')) %}{% set ticked.n = ticked.n + 1 %}{% endif %}
 {% endfor %}{% endfor %}
+{# One step in view at a time (spec-steps.js): Project for a new project (no sections yet),
+   otherwise the first step the bar has not marked done (Elements with nothing ticked, else Sections). #}
+{% set first_step = 'project' if not sections else ('elements' if not ticked.n else 'sections') %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-steps.css') }}">
+<div class="spec-flow" data-spec-flow data-first="{{ first_step }}">
+<script src="{{ url_for('static', filename='spec-steps.js') }}"></script>
 <nav class="spec-steps" aria-label="Steps">
-  <a class="spec-step spec-step-done" href="#step-project"><span class="spec-step-n">1</span>
+  <a class="spec-step spec-step-done" href="#step-project" data-step-link="project"><span class="spec-step-n">1</span>
     <span><strong>Project</strong><span class="small">{{ family }}</span></span></a>
-  <a class="spec-step {{ 'spec-step-done' if ticked.n else 'spec-step-now' }}" href="#step-elements"><span class="spec-step-n">2</span>
+  <a class="spec-step {{ 'spec-step-done' if ticked.n else 'spec-step-now' }}" href="#step-elements" data-step-link="elements"><span class="spec-step-n">2</span>
     <span><strong>Elements</strong><span class="small">{{ ticked.n }} ticked{% if model %} · from the model{% endif %}</span></span></a>
-  <a class="spec-step spec-step-done" href="#step-questions"><span class="spec-step-n">3</span>
+  <a class="spec-step spec-step-done" href="#step-questions" data-step-link="questions"><span class="spec-step-n">3</span>
     <span><strong>Questions</strong><span class="small">{{ answered }} answered</span></span></a>
-  <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections"><span class="spec-step-n">4</span>
+  <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections" data-step-link="sections"><span class="spec-step-n">4</span>
     <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncovered %} · {{ uncovered | length }} not covered{% endif %}</span></span></a>
   {% if report %}
   <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
@@ -61,7 +68,7 @@
 <form method="post" action="{{ url_for('specs.upload_model', set_id=spec['id']) }}" enctype="multipart/form-data" id="model-form"></form>
 
 <form method="post" action="{{ url_for('specs.save_set', set_id=spec['id']) }}" id="step-choices">
-<div class="card" id="step-project">
+<div class="card" id="step-project" data-step="project">
   <div class="card-head"><div><h2><span class="spec-n">1</span> Project</h2>
     <p class="small muted" style="margin-top:2px">What goes on every page of the issue, and which kind of specification it is.</p></div></div>
   <div class="card-body grid grid-2" style="gap:14px">
@@ -104,12 +111,12 @@
         Hold the issue until every item on the check is accepted or rejected</label>
     </div>
   </div>
-  <div class="card-body inline-form" style="justify-content:flex-end">
+  <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
     <button type="submit" name="next" value="elements" class="btn btn-primary">Save and next: elements →</button>
   </div>
 </div>
 
-<div class="card" style="margin-top:16px" id="step-elements">
+<div class="card" style="margin-top:16px" id="step-elements" data-step="elements">
   <div class="card-head">
     <div>
       <h2><span class="spec-n">2</span> Elements</h2>
@@ -221,12 +228,13 @@
       </div>
     {% endfor %}
   </div>
-  <div class="card-body inline-form" style="justify-content:flex-end">
+  <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
+    <a class="btn btn-ghost spec-step-back" href="#step-project">← Back: project</a>
     <button type="submit" name="next" value="questions" class="btn btn-primary">Save and next: questions →</button>
   </div>
 </div>
 
-<div class="card" style="margin-top:16px" id="step-questions">
+<div class="card" style="margin-top:16px" id="step-questions" data-step="questions">
   <div class="card-head">
     <div>
       <h2><span class="spec-n">3</span> Questions</h2>
@@ -279,29 +287,38 @@
       </div>
     {% endif %}
   </div>
-  <div class="card-body inline-form" style="justify-content:flex-end">
+  <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
+    <a class="btn btn-ghost spec-step-back" href="#step-elements">← Back: elements</a>
     <button type="submit" class="btn btn-ghost">Save</button>
     <button type="submit" name="next" value="sections" class="btn btn-primary">Save and next: sections →</button>
   </div>
 </div>
 </form>
 
-<div class="card" style="margin-top:16px" id="step-sections">
+{# Taking sections out: its own form, outside the others (forms do not nest); the ticks in the table join it by form=. #}
+{% if sections %}
+<form method="post" action="{{ url_for('specs.remove_sections', set_id=spec['id']) }}" id="sections-remove"></form>
+{% endif %}
+<div class="card" style="margin-top:16px" id="step-sections" data-step="sections">
   <div class="card-head">
     <div>
       <h2><span class="spec-n">4</span> Sections</h2>
       <p class="small muted" style="margin-top:2px">Each is this project's own copy, counted against the master it was taken from. The ones the answers call for are added when they are saved.</p>
     </div>
+    {% if sections %}
+    <button type="submit" form="sections-remove" class="btn btn-danger btn-sm" title="Take the ticked sections out of this project, for one added by mistake">Take the ticked out</button>
+    {% endif %}
   </div>
   {% if not sections %}
     <div class="card-body">{{ empty('No sections yet', 'Add them from the library below, or read in the project\'s own Word files.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
     <table>
-      <thead><tr><th>Section</th><th>Title</th><th>Why it is in</th><th>Against the master</th><th></th></tr></thead>
+      <thead><tr><th class="spec-tick"><input type="checkbox" class="spec-js-only" data-tick-all aria-label="Tick all the sections"></th><th>Section</th><th>Title</th><th>Why it is in</th><th>Against the master</th><th></th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
+          <td class="spec-tick"><input type="checkbox" name="row_id" value="{{ s['id'] }}" form="sections-remove" aria-label="Tick {{ s['number'] }}"></td>
           <td><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="small muted">{% if s['applies'] == '*' %}every {{ spec['family'] }} project{% elif s['applies'] %}{{ s['applies'] }}{% if not s['applies'] | spec_applies(chosen) %} <span class="spec-bad">(the answers no longer call for it)</span>{% endif %}{% else %}added by hand{% endif %}</td>
@@ -312,22 +329,19 @@
             {% else %}{{ badge('warning', s['summary']) }}{% endif %}
             {% if s['behind'] %}{{ badge('serious', 'Master is now v' ~ s['master_version']) }}{% endif %}
           </td>
-          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=s['id']) }}">.docx</a></td>
+          <td class="right spec-remove-row"><a class="btn btn-ghost btn-sm" href="{{ url_for('specs.set_section_docx', set_id=spec['id'], row_id=s['id']) }}">.docx</a><button type="submit" form="sections-remove" formaction="{{ url_for('specs.set_section_action', set_id=spec['id'], row_id=s['id'], action='remove') }}" class="btn btn-ghost btn-sm" data-take-one="{{ s['number'] }}" title="Take {{ s['number'] }} out of this project">Take out</button></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <div class="card-body inline-form" style="justify-content:flex-end">
-    <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to accept or reject){% endif %} →</a>
-  </div>
   {% endif %}
 </div>
 
-<div class="grid grid-2" style="margin-top:16px">
+<div class="grid grid-2 spec-step-more" style="margin-top:16px" data-step="sections">
   <div class="card">
     <div class="card-head"><div><h2>Add from the library</h2>
-      <p class="small muted" style="margin-top:2px">Suggested from the project's elements and choices above.</p></div></div>
+      <p class="small muted" style="margin-top:2px">Suggested from the project's elements and answers.</p></div></div>
     <div class="card-body">
       {% if uncovered %}
       <div class="spec-callout">
@@ -391,17 +405,15 @@
   </div>
 </div>
 
-<script>
-  // Saved and sent on to a step: the messages (which sections went in, and why)
-  // move to just above that step, where the page opens.
-  (function () {
-    var notes = document.querySelector(".flashes"), step = location.hash && document.querySelector(location.hash);
-    if (notes && step && step.id.indexOf("step-") === 0) {
-      step.parentNode.insertBefore(notes, step);
-      window.addEventListener("load", function () { notes.scrollIntoView({block: "start"}); window.scrollBy(0, -72); });
-    }
-  })();
-</script>
+<div class="spec-step-foot spec-steps-end spec-step-more" data-step="sections">
+  <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: questions</a>
+  {% if sections %}
+  <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to accept or reject){% endif %} →</a>
+  {% else %}
+  <span class="small muted">The check comes once the project has sections.</span>
+  {% endif %}
+</div>
+</div>{# .spec-flow: the flashes of the last save are put under its step bar by spec-steps.js #}
 
 <form method="post" action="{{ url_for('specs.delete_set', set_id=spec['id']) }}" style="margin-top:24px"
       onsubmit="return confirm('Delete this whole specification? Its sections and amendments go with it.')">

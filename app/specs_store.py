@@ -557,13 +557,105 @@ def bring_up_to_date(set_id: int, row_id: int) -> None:
     _touch(set_id)
 
 
-def remove_set_section(set_id: int, row_id: int) -> None:
+def remove_set_section(set_id: int, row_id: int) -> list[str]:
+    """A section taken out of a project. When adding it by hand set answers,
+    those answers go back to what they were (it was added by mistake); what
+    changed back, in words."""
     row = set_section(set_id, row_id)
     execute("DELETE FROM spec_set_sections WHERE id = ? AND set_id = ?", (row_id, set_id))
     _touch(set_id)
     master = section(row["section_id"]) if row and row["section_id"] else None
+    undone = _unset_answers(set_id, master["id"]) if master else []
     if master and fits(master["applies"], chosen_for(spec_set(set_id))):
         _decline(set_id, add=[master["id"]])
+    return undone
+
+
+def _set_by(row: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    try:
+        data = json.loads(row.get("set_by") or "{}")
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        return {}
+
+
+def answer_for(set_id: int, section_id: int) -> list[str]:
+    """A section added by hand is taken as the answer that calls for it: the
+    project's answers are set so its condition holds, as if the engineer had
+    chosen them, and what they were before is kept so that taking the section
+    out again puts them back. What was set, in words."""
+    row = spec_set(set_id)
+    master = section(section_id)
+    applies = (master or {}).get("applies") or ""
+    if not master or applies in ("", ALWAYS):
+        return []
+    chosen = chosen_for(row)
+    if specs.applies(applies, chosen):
+        return []
+    kinds = {o["key"]: o for o in options()}
+    stored = json.loads(row["options"] or "{}")
+    before: dict[str, str] = {}
+    said = []
+    for part in applies.split("&"):
+        part = part.strip()
+        negate = "!=" in part
+        key, _, wanted = part.partition("!=" if negate else "=")
+        key = key.strip()
+        o = kinds.get(key)
+        if o is None or specs.applies(part, {**chosen, **stored}):
+            continue
+        names = [w.strip() for w in wanted.split("|") if w.strip()]
+        norm = {specs._norm(w) for w in names}
+        if negate:
+            pick = [c for c in o["choice_list"] if specs._norm(c) not in norm
+                    and specs._norm(c) != "none"] or [c for c in o["choice_list"]
+                                                     if specs._norm(c) not in norm]
+        else:
+            pick = [c for c in o["choice_list"] if specs._norm(c) in norm] or names
+        if not pick:
+            continue
+        now = stored.get(key, chosen.get(key, "")) or ""
+        before.setdefault(key, now)
+        if o["kind"] == "many":
+            have = [v for v in now.split("|") if v and specs._norm(v) != "none"]
+            stored[key] = "|".join(have + [pick[0]])
+        else:
+            stored[key] = pick[0]
+        said.append(f"{o['label']}: {pick[0]}")
+    if not said:
+        return []
+    set_by = _set_by(row)
+    set_by.setdefault(str(section_id), {}).update(
+        {k: v for k, v in before.items() if k not in set_by.get(str(section_id), {})})
+    execute("UPDATE spec_sets SET options = ?, set_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(stored, ensure_ascii=False), json.dumps(set_by, ensure_ascii=False), set_id))
+    return said
+
+
+def _unset_answers(set_id: int, section_id: int) -> list[str]:
+    """The answers adding this section by hand set, put back as they were
+    unless somebody has changed them since or another section still needs them."""
+    row = spec_set(set_id)
+    set_by = _set_by(row)
+    before = set_by.pop(str(section_id), None)
+    if not before:
+        return []
+    stored = json.loads(row["options"] or "{}")
+    kinds = {o["key"]: o for o in options()}
+    still = [s for s in (section(r["section_id"]) for r in query(
+        "SELECT section_id FROM spec_set_sections WHERE set_id = ? AND section_id IS NOT NULL",
+        (set_id,))) if s]
+    said = []
+    for key, was in before.items():
+        trial = {**chosen_for(row), key: was}
+        if any(fits(s["applies"], chosen_for(row)) and not fits(s["applies"], trial) for s in still):
+            continue
+        stored[key] = was
+        o = kinds.get(key)
+        said.append(f"{o['label'] if o else key}: {was or 'not answered'}")
+    execute("UPDATE spec_sets SET options = ?, set_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(stored, ensure_ascii=False), json.dumps(set_by, ensure_ascii=False), set_id))
+    return said
 
 
 def import_to_set(set_id: int, filename: str, data: bytes) -> tuple[int, str]:

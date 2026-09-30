@@ -1,0 +1,33 @@
+/* Specs Writer, one project's page: one step in view at a time (spec-steps.js).
+   Only with the script's class on the wrapper; without it every step shows. */
+
+.spec-flow-js[data-current="project"] [data-step]:not([data-step="project"]),
+.spec-flow-js[data-current="elements"] [data-step]:not([data-step="elements"]),
+.spec-flow-js[data-current="questions"] [data-step]:not([data-step="questions"]),
+.spec-flow-js[data-current="sections"] [data-step]:not([data-step="sections"]) { display: none; }
+
+/* One card at a time: no gap above it for the card that is not there. */
+.spec-flow-js [data-step] { margin-top: 0 !important; }
+.spec-flow-js [data-step].spec-step-more { margin-top: 16px !important; }
+
+/* The step in view, in the bar. */
+.spec-step[aria-current="step"] {
+  border-color: var(--series-1);
+  background: color-mix(in srgb, var(--series-1) 9%, var(--raised));
+  box-shadow: inset 0 -3px 0 var(--series-1);
+}
+.spec-step[aria-current="step"] strong { color: var(--series-1); }
+a.spec-step:hover { border-color: var(--axis); }
+a.spec-step[aria-current="step"]:hover { border-color: var(--series-1); }
+a.spec-step:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* The foot of a step: Back on the left, on to the next on the right. */
+.spec-step-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.spec-step-foot .spec-step-back { margin-right: auto; }
+.spec-steps-end { margin-top: 16px; }
+
+/* Only of use with the script (tick all). */
+.spec-flow:not(.spec-flow-js) .spec-js-only { display: none; }
+
+.spec-remove-row { white-space: nowrap; }
+.spec-remove-row .btn + .btn { margin-left: 4px; }

@@ -54,7 +54,7 @@
         {% else %}
         <details class="small muted spec-q-where">
           <summary>Fills {{ q['places'] | length }} place{{ 's' if q['places'] | length != 1 }} in {{ q['sections'] | join(', ') }}</summary>
-          <ul>{% for p in q['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['element'] %} · {{ element_labels.get(p['element'], p['element'] | replace('_', ' ')) }}{% endif %}</li>{% endfor %}</ul>
+          <ul>{% for p in q['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['article'] %} <span class="muted">{{ p['article'] }}</span>{% endif %}{% if p['element'] %} · {{ element_labels.get(p['element'], p['element'] | replace('_', ' ')) }}{% endif %}</li>{% endfor %}</ul>
         </details>
         {% endif %}
       </fieldset>

@@ -86,7 +86,7 @@
 
   {% if asked and asked['places'] %}
   <h3>Where it goes in this project</h3>
-  <ul class="small spec-explain-places">{% for p in asked['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a></li>{% endfor %}</ul>
+  <ul class="small spec-explain-places">{% for p in asked['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['article'] %} <span class="muted">{{ p['article'] }}</span>{% endif %}</li>{% endfor %}</ul>
   {% endif %}
 
   {% if admin %}

@@ -389,7 +389,8 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                         target.append(text)
                 if element and element not in q["elements"]:
                     q["elements"].append(element)
-                place = {"row_id": s["id"], "number": s["number"], "label": n["label"],
+                place = {"row_id": s["id"], "number": s["number"], "label": n.get("path") or n["label"],
+                         "article": re.sub(r"^\d+(\.\d+)?\s+", "", n.get("article") or "").strip().capitalize(),
                          "node_id": n["id"], "element": element}
                 if place not in q["places"]:
                     q["places"].append(place)

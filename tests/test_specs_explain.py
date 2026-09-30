@@ -118,3 +118,16 @@ def test_a_kind_can_word_the_definition_its_own_way(app, signed_in):
         assert d["definition"] == "Specified f'c at 28 days."
         assert specs_questions.definition_for(d, "15A") == "Only for 15A."
         assert specs_questions.definition_for(d, "03A").startswith("Strength class")
+
+
+def test_the_drawings_are_safe_to_put_in_the_page():
+    import xml.etree.ElementTree as ET
+
+    from app import specs_questions
+
+    names = specs_questions.drawings()
+    assert len(names) >= 60
+    for name in names:
+        svg = specs_questions.drawing(name)
+        assert svg.startswith("<svg") and "<script" not in svg.lower() and "href" not in svg.lower()
+        assert not any(a.startswith("on") for el in ET.fromstring(svg).iter() for a in el.attrib)

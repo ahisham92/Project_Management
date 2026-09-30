@@ -404,6 +404,8 @@ def test_ticked_sections_are_taken_out_of_the_library(app, signed_in):
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": [str(ids["033000"])]})
     page = text(signed_in.get("/specs/library?family=15A"))
     assert 'form="library-delete"' in page and "Take the ticked out" in page
+    # The ticks sit in the table, outside the form: they are counted through form.elements.
+    assert "this.elements" in page
     answer = text(signed_in.post("/specs/library/delete", data={
         "family": "15A", "section_id": [str(ids["033000"]), str(ids["033713"])]},
         follow_redirects=True))

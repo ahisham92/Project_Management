@@ -156,7 +156,7 @@
   </div>
   {% if is_admin and sections %}
   <form method="post" action="{{ url_for('specs.delete_library_sections') }}" id="library-delete"
-        onsubmit="var n = this.querySelectorAll('input[name=section_id]:checked').length; if (!n) { alert('Tick the sections to take out first.'); return false; } return confirm('Take ' + n + ' section' + (n === 1 ? '' : 's') + ' out of the {{ family }} library? Projects keep their own copies. Download the library file first if you may want them back.')">
+        onsubmit="var n = Array.prototype.filter.call(this.elements, function (e) { return e.name === 'section_id' && e.checked; }).length; if (!n) { alert('Tick the sections to take out first.'); return false; } return confirm('Take ' + n + ' section' + (n === 1 ? '' : 's') + ' out of the {{ family }} library? Projects keep their own copies. Download the library file first if you may want them back.')">
     <input type="hidden" name="family" value="{{ family }}">
   </form>
   {% endif %}

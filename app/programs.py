@@ -1,7 +1,7 @@
 """Which programs on this site an account may open.
 
-The site holds three programs — Project Management, the Comment Response Sheet
-and Triton. The administrator ticks which of them each account sees. A program
+The site holds four programs — Project Management, the Comment Response Sheet,
+Triton and the Specs Writer. The administrator ticks which of them each account sees. A program
 an account is not given is left off its front page and refused by address too,
 so knowing the URL does not get anybody in.
 
@@ -18,6 +18,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("pm", "Project Management"),
     ("crs", "Comment Response Sheet"),
     ("triton", "Triton"),
+    ("specs", "Specs Writer"),
 ]
 KEYS = [key for key, _ in PROGRAMS]
 NAMES = dict(PROGRAMS)
@@ -29,6 +30,7 @@ BLUEPRINTS = {
     "meetings": "pm",
     "assistant": "pm",
     "crs": "crs",
+    "specs": "specs",
 }
 
 

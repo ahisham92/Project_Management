@@ -6,8 +6,8 @@
   <div>
     <h1>Which one today?</h1>
     <p class="small muted" style="margin-top:2px">
-      One sign-in for all three: the programme, the client's comments on what it hands over, and
-      the design of the quay itself.
+      One sign-in for all of them: the programme, the client's comments on what it hands over,
+      the design of the quay itself, and the specification it is built to.
     </p>
   </div>
 </div>
@@ -58,6 +58,19 @@
       calculation reports and the AdSec force sets.
     </span>
     <span class="door-go">Open Triton →</span>
+  </a>
+  {% endif %}
+
+  {% if 'specs' in my_programs %}
+  <a class="door" href="{{ url_for('specs.index') }}">
+    <span class="door-mark door-mark-specs" aria-hidden="true">SPC</span>
+    <span class="door-name">Specs Writer</span>
+    <span class="door-what">
+      The office's master specification, section by section, and each project's copy of it:
+      the project's details and choices in, its amendments marked against the master, and every
+      section issued in the same Word format as the original.
+    </span>
+    <span class="door-go">Open the Specs Writer →</span>
   </a>
   {% endif %}
 </div>

@@ -642,6 +642,7 @@ input[type="checkbox"] { width: auto; }
 }
 .door-mark-crs { background: #1f9d76; font-size: 0.82rem; }
 .door-mark-triton { background: #0f4c81; }
+.door-mark-specs { background: #7a4fb5; font-size: 0.78rem; }
 .door-name { font-size: 1.15rem; font-weight: 650; }
 .door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
 .door-go { margin-top: 4px; color: var(--series-1); font-size: 0.9rem; font-weight: 600; }
@@ -1022,3 +1023,36 @@ tr.just-moved > td { animation: settle 0.7s ease-out; }
   }
   .crs-table details { display: none; }
 }
+
+/* --- the specification writer ------------------------------------------------ */
+
+/* A section reads as the issued document does: serif, justified, numbers in a
+   column of their own and each level stepped in, so what is checked here is
+   what goes out. */
+.spec-doc { font-family: "Times New Roman", Times, serif; font-size: 0.95rem; line-height: 1.45; }
+.spec-doc .spec-sct { font-weight: 600; margin: 0 0 12px; }
+.spec-p { display: flex; gap: 12px; padding: 3px 8px; border-radius: 6px; text-align: justify; }
+.spec-p + .spec-p { margin-top: 2px; }
+.spec-num { flex: 0 0 auto; min-width: 2.6em; color: var(--ink-2); }
+.spec-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.spec-PRT { margin-top: 18px; font-weight: 600; }
+.spec-ART { margin-top: 12px; font-weight: 600; }
+.spec-i0 { padding-left: 8px; } .spec-i1 { padding-left: 40px; } .spec-i2 { padding-left: 72px; }
+.spec-i3 { padding-left: 104px; } .spec-i4 { padding-left: 136px; }
+.spec-out { opacity: 0.45; }
+.spec-out .spec-text::after { content: " — not for this project"; font-family: system-ui, sans-serif; font-size: 0.75rem; }
+.spec-note { font-family: system-ui, sans-serif; font-size: 0.8rem; color: var(--series-7); font-style: italic; }
+.spec-added { background: var(--tint-good); }
+.spec-changed { background: var(--tint-warning); }
+.spec-removed { background: var(--tint-critical); text-decoration: line-through; }
+.spec-was { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--muted); text-decoration: line-through; }
+.spec-when { font-family: system-ui, sans-serif; font-size: 0.7rem; color: var(--series-7); background: var(--raised);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-right: 6px; white-space: nowrap; }
+.spec-var { background: var(--tint-serious); border-radius: 3px; padding: 0 2px; }
+.spec-table { margin: 6px 0; font-size: 0.85rem; }
+.spec-table td { border: 1px solid var(--grid); padding: 4px 8px; }
+.spec-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem;
+  line-height: 1.5; min-height: 60vh; white-space: pre-wrap; }
+.spec-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; }
+.spec-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.75rem; }
+.spec-legend span { padding: 1px 6px; border-radius: 4px; }

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "specs/_paragraph.html" import paragraph %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Amendments · {{ spec['name'] }} · Specs Writer{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <h1>Amendments to the master</h1>
+    <p class="small muted" style="margin-top:2px">Everything this project's specification says that the master it was copied from does not — for review before it is issued.</p>
+  </div>
+</div>
+
+<div class="spec-legend" style="margin-bottom:12px">
+  <span class="spec-added">added</span><span class="spec-changed">reworded (master's words beneath)</span><span class="spec-removed">dropped</span>
+</div>
+
+{% for item in report %}
+<div class="card" style="margin-bottom:12px">
+  <div class="card-head">
+    <h2><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=item['section']['id']) }}">{{ item['section']['number'] }} — {{ item['section']['title'] }}</a></h2>
+  </div>
+  <div class="card-body spec-doc">
+    {% if item['own'] %}
+      <p class="small muted">This project's own section ({{ item['count'] }} paragraphs); the library has no master for it.</p>
+    {% else %}
+      {% for m in item['marked'] %}{{ paragraph(dict(m, label='', included=true, indent=0), {}) }}{% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% else %}
+  {{ empty('No amendments', 'Every section reads as the master it was taken from.') }}
+{% endfor %}
+{% endblock %}

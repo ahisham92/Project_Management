@@ -20,7 +20,9 @@
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id']) }}#new" title="A new project with this one's choices, header and sections, amendments and all">Start a new project from this one</a>
     {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id']) }}" title="Every section as issued, as pages to turn">Read as a book</a>{% endif %}
-    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Issue all (.zip of .docx)</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='tracked') }}" title="Every change from the master as Word's tracked changes, one .docx per section">Issue all, tracked changes (.zip)</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt='pdf') }}" title="Every section in one PDF">Issue all as one PDF</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}" title="A clean copy, one .docx per section">Issue all (.zip of .docx)</a>
   </div>
 </div>
 

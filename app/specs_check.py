@@ -894,7 +894,7 @@ def _section_ref(number: str) -> re.Pattern:
     digits = re.escape((number or "").strip().lstrip("0") or (number or "").strip())
     return re.compile(
         r"(?:\{ref:\s*0*%s(?:/[^}]*)?\s*\}|\bSection\s+0*%s(?![\w/]))"
-        r"(?:\s*[-–,]?\s*[\"“](?P<title>[^\"“”{}]{3,160}?)(?P<comma>,?)[\"”])?" % (digits, digits),
+        r"(?:\s*[-–,]?\s*[\"“](?P<title>[^\"“”{}]{3,160}?)(?P<comma>[,.;]?)[\"”])?" % (digits, digits),
         re.I)
 
 
@@ -934,7 +934,7 @@ def without_section(text: str, number: str) -> str:
     for m in rule.finditer(text):
         before = "".join(out) + text[last:m.start()]
         lead = REQUIREMENTS_IN.search(before)
-        start_of_sentence = not before.strip() or re.search(r"[.:;!?]\s*$", before)
+        start_of_sentence = not re.search(r"[A-Za-z0-9]", before) or re.search(r"[.:;!?]\s*$", before)
         if lead:
             phrase = "the requirements of " + CODES
             if lead.group(0)[:1].isupper():

@@ -167,13 +167,13 @@ meet, so the Specs Writer reads across them:
   administrator loads the office's question library with *Add and update*, and a project that
   took a section before brings the new master in on the section's page.
 - **What a question means.** Clicking a question (or the *i* beside it) opens a panel on the
-  right with what it means and how to choose, a drawing of it, and **what the codes say**: each
-  code and clause that governs it, the project's own kind's codes first (ACI 318, ASTM, AISC and
-  so on for 15A; SBC for 16A; BS EN, BS 8500, NSSS and so on for 03A) and the others folded
-  below. An administrator adds **screenshots of the clauses** from the office's own copies of the
-  codes (choose a file or paste one with Ctrl+V), a picture of the item, or rewords the
-  explanation; every project then sees them. The explanations and screenshots travel in the
-  library file with the questions; the drawings are the app's own. Clause numbers are for the
+  right with what it means and how to choose, a drawing of it, and **what each code says**:
+  every code and clause that governs it and what that clause says, whatever the project's
+  basis, grouped by family (ACI, ASTM and AISC; BS and BS EN; SBC) with the project's own first.
+  Under each clause, an administrator adds a **screenshot of it** from the office's own copy of
+  the code (choose a file or paste one with Ctrl+V), and can reword the explanation or its list
+  of codes; every project then sees them. The explanations and screenshots travel in the library
+  file with the questions; the drawings are the app's own. Clause numbers are for the
   editions named, to be checked against the office's copy.
 - **Elements, as the project has them.** The elements tile list covers piles, foundations, slab
   on grade, columns, beams, floors, walls, basement walls, retaining walls, precast, deck and

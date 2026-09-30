@@ -1561,8 +1561,14 @@ def _load_paths(load_id: str):
     return folder / f"{load_id}.zip", folder / f"{load_id}.json"
 
 
+# The file of the load being stepped, as read, so each step need not read it
+# again (in this process; another one reads it from the pending file).
+_READ: dict[str, tuple] = {}
+
+
 def drop_load(load_id: str) -> None:
     """A pending load's files removed (finished, failed, or given up)."""
+    _READ.pop(load_id, None)
     try:
         paths = _load_paths(load_id)
     except specs.SpecError:
@@ -1629,12 +1635,16 @@ def step_load(load_id: str, seconds: float = 0.5, most: int | None = None) -> di
     held, state_path = _load_paths(load_id)
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        data = held.read_bytes()
+        read = _READ.get(load_id)
+        data = None if read else held.read_bytes()
     except (OSError, ValueError) as exc:
         drop_load(load_id)
         raise specs.SpecError("That load is not waiting any more: load the file again.") from exc
     try:
-        z, loaded = _library_file(data)
+        if not read:
+            _READ.clear()
+            read = _READ[load_id] = _library_file(data)
+        z, loaded = read
         sections = loaded.get("sections", [])
         counted, mode = state["counted"], state["mode"]
         in_file = {k: set(v) for k, v in state["in_file"].items()}

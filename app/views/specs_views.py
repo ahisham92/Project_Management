@@ -1542,7 +1542,7 @@ def step_library_load(load_id: str):
         store.drop_load(load_id)
         return jsonify(go=go, failed=True)
     try:
-        step = store.step_load(load_id)
+        step = store.step_load(load_id, seconds=0.5, most=8)
     except specs.SpecError as exc:
         flash(str(exc), "error")
         return jsonify(go=go, failed=True, message=str(exc))

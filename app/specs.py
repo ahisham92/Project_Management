@@ -216,6 +216,9 @@ def fill(text: str, values: Mapping[str, str]) -> str:
 
     out = VARIABLE.sub(one, text or "")
     if left_out:
+        # Words left out leave no stray separators: "A; ; B." and "A; ." read "A; B." and "A."
+        out = re.sub(r"(?:\s*;)+\s*(?=[.;,)]|$)", "", out)
+        out = re.sub(r"([:(])\s*(?:;\s*)+", r"\1 ", out)
         out = re.sub(r"[ \t]{2,}", " ", out)
         out = re.sub(r"\s+([.,;:)])", r"\1", out)
         out = re.sub(r"\(\s+", "(", out).strip()

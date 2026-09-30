@@ -50,7 +50,8 @@ KIND_LABELS = {"lightweight_slabs": "Lightweight concrete slabs", "stairs": "Sta
                "architectural_concrete": "Architectural concrete", "shotcrete": "Shotcrete",
                "bedding": "Bedding", "buried_structures": "Buried structures",
                "high_strength": "High-strength concrete", "cyclopean": "Cyclopean concrete",
-               "pond_lining": "Pond linings", "equipment_bases": "Equipment bases"}
+               "pond_lining": "Pond linings", "equipment_bases": "Equipment bases",
+               "hollow_core": "Hollow-core slabs", "double_tee": "Double tees"}
 
 
 # --- the library's questions ------------------------------------------------------
@@ -176,6 +177,7 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                         "per_element": bool(d.get("per_element")), "many": bool(d.get("many")),
                         "optional": bool(d.get("optional")), "position": d.get("position") or 0,
                         "choices": [], "free": [], "elements": [], "places": [], "all_single": True,
+                        "switch": False,
                     }
                 pieces = specs_blanks.pieces(m.group(3))
                 if len(pieces) != 1 or pieces[0]["free"]:
@@ -215,9 +217,48 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
             q["suggested"] = q["choices"][0]
         q["sections"] = sorted({p["number"] for p in q["places"]})
         out.append(q)
+    out += _switches(sections, spec_set)
     order = {g: i for i, g in enumerate(GROUPS + [OTHER])}
     out.sort(key=lambda q: (order[q["group"]], q["position"], q["label"]))
     return out
+
+
+def _switches(sections: Iterable[Mapping[str, Any]], spec_set: Mapping[str, Any] | None) -> list[dict]:
+    """The master's yes-or-no (and pick-one) questions that decide whether
+    paragraphs of these sections are issued at all, asked with the rest:
+    the ones written from the master's notes, which carry one of the groups
+    above (the project's basic questions have their own step)."""
+    from . import specs_store
+    used: set[str] = set()
+    for s in sections:
+        used |= specs.keys_used(specs.loads(s["body"]))
+    stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
+    out = []
+    for o in specs_store.options():
+        if o["key"] not in used or o.get("grp") not in GROUPS:
+            continue
+        out.append({
+            "key": o["key"], "label": o["label"] or _pretty(o["key"]), "group": o["grp"],
+            "help": "", "suggested": o["default_value"] or None, "per_element": False,
+            "many": o.get("kind") == "many", "optional": False, "position": -1, "switch": True,
+            "choices": o["choice_list"], "free": [], "elements": [], "places": [], "rows": [],
+            "split": False, "yes_no": False, "single_choice_optional": False,
+            "answer": stored.get(o["key"]), "answered": o["key"] in stored, "row_answers": {},
+            "sections": []})
+    return out
+
+
+def save_switches(set_id: int, given: Mapping[str, str | None]) -> None:
+    from .db import query_one
+    row = query_one("SELECT options FROM spec_sets WHERE id = ?", (set_id,))
+    stored = json.loads(row["options"] or "{}") if row else {}
+    for key, value in given.items():
+        if value is not None:
+            stored[key] = value
+    conn = get_db()
+    with conn:
+        conn.execute("UPDATE spec_sets SET options = ?, updated_at = datetime('now') WHERE id = ?",
+                     (json.dumps(stored, ensure_ascii=False), set_id))
 
 
 def grouped(questions: list[dict]) -> list[dict]:
@@ -264,6 +305,11 @@ def read_form(form, questions: list[dict]) -> tuple[dict[str, str | None], dict[
 
     for q in questions:
         key = q["key"]
+        if q.get("switch"):
+            picked = [p for p in form.getlist(f"q_{key}") if p in q["choices"]]
+            if picked:
+                given[key] = "|".join(picked) if q["many"] else picked[0]
+            continue
         value = one(key, q)
         if value is not None:
             given[key] = value

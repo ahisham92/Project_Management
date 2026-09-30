@@ -19,7 +19,7 @@
     
     {% endfor %}{# choices #}
     {% endif %}
-    {% if not q['yes_no'] %}
+    {% if not q['yes_no'] and not q['switch'] %}
     <label class="spec-pill spec-pill-free">{% if not q['many'] %}<input type="radio" name="q_{{ name }}" value="{{ FREE }}"{% if typed %} checked{% endif %} aria-label="Use the words typed">{% endif %}
       <input type="text" name="t_{{ name }}" value="{{ typed }}" placeholder="{{ (q['free'][0] if q['free'] else 'Specify') | replace('Insert ', '') | replace('insert ', '') | capitalize }}" aria-label="Specify" data-pick-free></label>
     {% endif %}
@@ -49,10 +49,14 @@
           {% endfor %}
         </div>
         {% endif %}
+        {% if q['switch'] %}
+        <p class="small muted spec-q-where">Decides which paragraphs of the sections are issued.</p>
+        {% else %}
         <details class="small muted spec-q-where">
           <summary>Fills {{ q['places'] | length }} place{{ 's' if q['places'] | length != 1 }} in {{ q['sections'] | join(', ') }}</summary>
           <ul>{% for p in q['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['element'] %} · {{ element_labels.get(p['element'], p['element'] | replace('_', ' ')) }}{% endif %}</li>{% endfor %}</ul>
         </details>
+        {% endif %}
       </fieldset>
 {% endmacro %}
 

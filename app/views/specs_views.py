@@ -803,10 +803,16 @@ def details(set_id: int):
         (i for i, g in enumerate(groups) if g["open"]), 0)
     if request.method == "POST" and groups:
         given, split = specs_questions.read_form(request.form, groups[here]["questions"])
-        specs_questions.save_answers(set_id, given, split)
+        switches = {q["key"] for q in groups[here]["questions"] if q.get("switch")}
+        before = store.ruled_out(set_id)
+        specs_questions.save_switches(set_id, {k: v for k, v in given.items() if k in switches})
+        specs_questions.save_answers(set_id, {k: v for k, v in given.items() if k not in switches},
+                                     split)
         answered = sum(1 for k, v in given.items() if "@" not in k and v is not None)
         flash(f"Saved {answered} answer{'s' if answered != 1 else ''} in "
               f"{groups[here]['name']}.", "success")
+        if switches:
+            _added(set_id, before)
         if request.form.get("go") == "back" and here:
             return redirect(url_for("specs.details", set_id=set_id, group=slugs[here - 1]))
         if here + 1 < len(groups) and request.form.get("go") != "stay":

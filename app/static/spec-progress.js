@@ -44,6 +44,25 @@
     closeEl = box.querySelector(".spec-progress-close");
     closeEl.addEventListener("click", hide);
     document.body.appendChild(box);
+    if (window.visualViewport) {
+      visualViewport.addEventListener("resize", place);
+      visualViewport.addEventListener("scroll", place);
+    }
+  }
+
+  // On a phone, a page wider than the screen (or zoomed in) puts the bottom of
+  // the window below what can be seen: the bar is kept in what can be seen.
+  function place() {
+    if (!box || box.hidden) return;
+    var vv = window.visualViewport;
+    if (!vv || (vv.width >= window.innerWidth - 1 && vv.height >= window.innerHeight - 1)) {
+      box.style.left = box.style.top = box.style.bottom = box.style.width = "";
+      return;
+    }
+    box.style.width = Math.min(440, vv.width - 32) + "px";
+    box.style.left = (vv.offsetLeft + vv.width / 2) + "px";
+    box.style.bottom = "auto";
+    box.style.top = Math.max(vv.offsetTop + 8, vv.offsetTop + vv.height - box.offsetHeight - 16) + "px";
   }
 
   // fraction: 0..1, or null while the server works and nothing can be measured.
@@ -68,6 +87,7 @@
       fillEl.style.width = pc + "%";
       track.setAttribute("aria-valuenow", String(pc));
     }
+    place();
   }
 
   function fail(message) {
@@ -235,7 +255,10 @@
     var names = chosenFiles(form);
     if (!names.length) return;
     var submitter = e.submitter || null;
-    var url = (submitter && submitter.getAttribute("formaction")) || form.action;
+    // The attribute, not form.action: a field named "action" (the model's
+    // Forget button) stands in for that property.
+    var url = new URL((submitter && submitter.getAttribute("formaction")) || form.getAttribute("action") || "",
+                      location.href).href;
     var begin = form.getAttribute("data-progress-begin");
     e.preventDefault();
     var data = formData(form, submitter);

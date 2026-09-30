@@ -2,7 +2,7 @@
 .spec-progress {
   position: fixed; z-index: 60; left: 50%; bottom: 16px; transform: translateX(-50%);
   width: min(440px, calc(100vw - 32px)); box-sizing: border-box;
-  padding: 10px 12px 10px 14px; border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px 10px 14px; border: 1px solid var(--axis); border-radius: 10px;
   background: var(--raised); color: var(--ink);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); font-size: 0.875rem;
 }
@@ -14,7 +14,7 @@
   line-height: 1; padding: 0 2px; cursor: pointer; }
 .spec-progress-close:hover { color: var(--ink); }
 .spec-progress-track { position: relative; height: 8px; margin-top: 8px; border-radius: 4px; overflow: hidden;
-  background: var(--grid); }
+  background: color-mix(in srgb, var(--ink) 12%, transparent); }
 .spec-progress-fill { height: 100%; width: 0; border-radius: 4px; background: var(--series-1);
   transition: width 0.2s ease-out; }
 .spec-progress-detail { margin-top: 6px; min-height: 1.1em; color: var(--muted); font-size: 0.8rem;

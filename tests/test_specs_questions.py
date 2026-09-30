@@ -173,3 +173,33 @@ def test_a_project_with_no_elements_named_keeps_every_element_paragraph():
     assert specs.applies("elements=Slab on grade", {})
     assert not specs.applies("elements=Slab on grade", {"elements": "Piles"})
     assert specs.applies("elements=Slab on grade|Deck", {"elements": "Piles|Deck"})
+
+
+def test_the_master_switches_are_asked_with_the_details(app, signed_in):
+    from app import specs_store
+    from app.db import execute
+
+    with app.app_context():
+        execute("INSERT INTO spec_options (key, label, choices, default_value, grp, kind, position) "
+                "VALUES ('vapor_retarder', 'Is there a vapour retarder under slabs on grade?', 'No|Yes', "
+                "'No', 'Placing, finishing and curing', 'one', 99)")
+        section_id = specs_store.save_section("033001", "SLABS", specs.align([], specs.from_text(
+            "# EXECUTION\n## SLABS\n- {if vapor_retarder=Yes} Lap the vapour retarder 150 mm.\n"
+            "- Cure for {{conc_curing_days|[7] [10] <Insert number>}} days.\n")), family="15A")
+    set_id = set_id_of(signed_in.post("/specs/sets", data={"name": "Mall", "family": "15A"}))
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": [str(section_id)]})
+    page = text(signed_in.get(f"/specs/sets/{set_id}/details?group=placing-finishing-and-curing"))
+    assert "Is there a vapour retarder under slabs on grade?" in page
+    assert "Decides which paragraphs of the sections are issued." in page
+    signed_in.post(f"/specs/sets/{set_id}/details", data={
+        "group": "placing-finishing-and-curing", "go": "stay", "q_vapor_retarder": "Yes"})
+    # A question the library does not describe is still asked, under "Other details".
+    signed_in.post(f"/specs/sets/{set_id}/details", data={
+        "group": "other-details", "go": "stay", "q_conc_curing_days": "7"})
+    body = _body(app, set_id)
+    with app.app_context():
+        chosen = specs_store.chosen_for(specs_store.spec_set(set_id))
+        nodes = specs.loads(specs_store.set_sections(set_id)[0]["body"])
+        issued = [n["text"] for n in specs.number(nodes, chosen) if n["included"]]
+    assert chosen["vapor_retarder"] == "Yes" and "Lap the vapour retarder 150 mm." in issued
+    assert "Cure for 7 days." in body

@@ -146,9 +146,35 @@ meet, so the Specs Writer reads across them:
 - **Choices inside a paragraph.** The alternatives MasterSpec writes in `[brackets]` become
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
-- **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Check*,
-  *Issue*, one step in view at a time, with Next and Back buttons and the state of each at the
-  top.
+- **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Details*,
+  *Check*, *Issue*, one step in view at a time, with Next and Back buttons and the state of each
+  at the top. The project's location sits beside its client.
+- **Details: the questions the sections ask.** Once the sections are chosen, *Details* asks
+  only what those sections need, grouped the way an engineer thinks (project information,
+  concrete materials, concrete mixes and properties, placing and curing, formwork,
+  reinforcement, post-tensioning and precast, structural steel, decking, stairs, waterproofing,
+  demolition and shoring, repair and so on), one group per page with *Save and next*. Each
+  question shows the master's own answers as buttons, a *Specify* box for a number or words of
+  your own, and *Leave out* where the words are optional; an optional phrase is a plain Yes/No.
+  One answer is written into every clause that asks it, in every section (*Fills 11 places in
+  033000* lists them). A question about an element (the concrete class, the cover) is answered
+  once for all elements or, with *Different for some elements*, per element the project has.
+  Questions the master already suggests an answer for are folded to one line each under
+  *Suggested from the master* and written in when the group is saved, so the engineer opens
+  only what differs and answers the few under *Needs your answer*. Until answered, a clause
+  keeps the master's words, and the check lists the groups not yet answered. The questions
+  themselves (wording, group, suggestion) come with the library file, not with the code: an
+  administrator loads the office's question library with *Add and update*, and a project that
+  took a section before brings the new master in on the section's page.
+- **Elements, as the project has them.** The elements tile list covers piles, foundations, slab
+  on grade, columns, beams, floors, walls, basement walls, retaining walls, precast, deck and
+  so on, ticked by hand or from the model; each project keeps its own list, and per-element
+  questions ask only about the elements it has.
+- **Progress while it loads.** Reading in a library file, uploading Word files or a model, and
+  downloading an issue show a bar with the percentage done; a library file is read section by
+  section so a large one never times out.
+- **The check, one group at a time.** The checker shows one group of items per view with the
+  group list beside it, so a long check reads as steps too.
 - **Blanks to fill.** The master's choices left in `[square brackets]` and its `<Insert ...>`
   places are listed section by section on *Fill the blanks* (step 4), each paragraph shown with
   its blanks numbered. Pick one of the bracketed answers, type your own, or leave it out; the

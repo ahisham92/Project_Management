@@ -44,7 +44,7 @@ import struct
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -97,11 +97,17 @@ def dumps(nodes: Sequence[Mapping[str, Any]]) -> str:
 # --- options and conditions -------------------------------------------------
 
 CONDITION = re.compile(r"^\{if\s+([^}]*)\}\s*", re.I)
-VARIABLE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\s*\}\}")
+# A word filled in per project: ``{{engineer}}``. A question from the master
+# carries the master's own words after a bar, kept until the project answers
+# it, and may be asked per element: ``{{conc_strength@foundations|[40MPa] [45MPa]}}``.
+VARIABLE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?\s*(?:\|([^{}]*))?\}\}")
 
 
 def _norm(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+
+ELEMENTS = "elements"
 
 
 def applies(when: str, chosen: Mapping[str, str]) -> bool:
@@ -126,6 +132,10 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
         negate = "!=" in part
         key, _, wanted = part.partition("!=" if negate else "=")
         have = {_norm(v) for v in str(chosen.get(key.strip()) or "").split("|")} - {""}
+        if key.strip() == ELEMENTS and not have:
+            # A project that has not said what its elements are keeps every
+            # paragraph written for one, rather than losing them all.
+            continue
         options = {_norm(v) for v in wanted.split("|")}
         hit = bool(have & options)
         if hit == negate:
@@ -165,21 +175,75 @@ def inline_conditions(text: str) -> list[str]:
     return [f"{m.group(1)}{m.group(2)}{m.group(3)}" for m in INLINE.finditer(text or "")]
 
 
-def fill(text: str, values: Mapping[str, str]) -> str:
-    """The text with every ``{{variable}}`` it has a value for filled in."""
-    def one(match: re.Match) -> str:
-        value = values.get(match.group(1))
-        return value if value not in (None, "") else match.group(0)
+def answer(match: re.Match, values: Mapping[str, str]) -> str | None:
+    """What a field says for a project, or None while it has no answer. A
+    question's answer for the element comes first, then its answer for all
+    elements; an answer of nothing (words left out) counts."""
+    name, element, fallback = match.group(1), match.group(2), match.group(3)
+    for key in ([f"{name}@{element}"] if element else []) + [name]:
+        value = values.get(key)
+        if value not in (None, "") or (value == "" and fallback is not None and key in values):
+            return value
+    return None
 
-    return VARIABLE.sub(one, text or "")
+
+# The answer to a question of optional words: keep the master's words, each
+# place its own (the same yes can keep ", piling" here and "or bolt" there).
+KEEP = "__keep__"
+
+
+def kept(fallback: str) -> str:
+    """The master's optional words without their brackets."""
+    return re.sub(r"^\[|\]$", "", fallback.strip()) if fallback.strip().startswith("[") else fallback
+
+
+def fill(text: str, values: Mapping[str, str]) -> str:
+    """The text with every ``{{variable}}`` it has a value for filled in, and
+    every question it has an answer for; an unanswered question keeps the
+    master's words."""
+    left_out = False
+
+    def one(match: re.Match) -> str:
+        nonlocal left_out
+        value = answer(match, values)
+        if value is None:
+            return match.group(3) if match.group(3) is not None else match.group(0)
+        if value == KEEP:
+            left_out = True
+            return kept(match.group(3) or "")
+        if match.group(3):
+            # One of the master's own choices goes in as the master wrote it,
+            # with the space or comma it starts with ("[, piling]", "[ or bolt]").
+            for raw in re.findall(r"\[([^\[\]]*)\]", match.group(3)):
+                if raw.strip(" ,;") == value and raw != value:
+                    return raw
+        left_out = left_out or value == ""
+        return value
+
+    out = VARIABLE.sub(one, text or "")
+    if left_out:
+        # Words left out leave no stray separators: "A; ; B." and "A; ." read "A; B." and "A."
+        out = re.sub(r"(?:\s*;)+\s*(?=[.;,)]|$)", "", out)
+        out = re.sub(r"([:(])\s*(?:;\s*)+", r"\1 ", out)
+        out = re.sub(r"[ \t]{2,}", " ", out)
+        out = re.sub(r"\s+([.,;:)])", r"\1", out)
+        out = re.sub(r"\(\s+", "(", out).strip()
+    return out
+
+
+def fields(text: str) -> Iterator[re.Match]:
+    """The words filled in per project, questions included."""
+    return VARIABLE.finditer(text or "")
 
 
 def unfilled(nodes: Iterable[Mapping[str, Any]], values: Mapping[str, str]) -> list[str]:
-    """Variables used in the text that have no value yet."""
+    """Variables used in the text that have no value yet (questions, which
+    keep the master's words until answered, are counted elsewhere)."""
     missing: list[str] = []
     for n in nodes:
-        for name in VARIABLE.findall(n.get("text", "")):
-            if not values.get(name) and name not in missing:
+        for m in VARIABLE.finditer(n.get("text", "")):
+            name = m.group(1)
+            if m.group(3) is None and not values.get(name) and name not in missing:
                 missing.append(name)
     return missing
 

@@ -117,7 +117,8 @@
     </div>
   </div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" id="library-load">
+    <form method="post" action="{{ url_for('specs.load_library_file') }}" enctype="multipart/form-data" id="library-load"
+          data-progress-begin="{{ url_for('specs.begin_library_load') }}">
       <input type="hidden" name="family" value="{{ family }}">
       <fieldset class="spec-load-modes">
         <legend class="field-label">For the sections already here</legend>

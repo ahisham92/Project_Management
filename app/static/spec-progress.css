@@ -1,0 +1,41 @@
+/* Specs Writer: the bar shown while something loads (spec-progress.js). */
+.spec-progress {
+  position: fixed; z-index: 60; left: 50%; bottom: 16px; transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px)); box-sizing: border-box;
+  padding: 10px 12px 10px 14px; border: 1px solid var(--axis); border-radius: 10px;
+  background: var(--raised); color: var(--ink);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); font-size: 0.875rem;
+}
+.spec-progress[hidden] { display: none; }
+.spec-progress-head { display: flex; align-items: baseline; gap: 10px; }
+.spec-progress-what { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.spec-progress-pc { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--series-1); }
+.spec-progress-close { flex: 0 0 auto; border: 0; background: none; color: var(--muted); font-size: 1.2rem;
+  line-height: 1; padding: 0 2px; cursor: pointer; }
+.spec-progress-close:hover { color: var(--ink); }
+.spec-progress-track { position: relative; height: 8px; margin-top: 8px; border-radius: 4px; overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.spec-progress-fill { height: 100%; width: 0; border-radius: 4px; background: var(--series-1);
+  transition: width 0.2s ease-out; }
+.spec-progress-detail { margin-top: 6px; min-height: 1.1em; color: var(--muted); font-size: 0.8rem;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* The server at work, nothing to measure yet: a band that moves, no figure. */
+.spec-progress-busy .spec-progress-fill { width: 35%; transition: none;
+  animation: spec-progress-slide 1.3s ease-in-out infinite; }
+@keyframes spec-progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spec-progress-busy .spec-progress-fill { animation: none; width: 100%; opacity: 0.35; }
+}
+
+.spec-progress-done .spec-progress-fill { background: var(--good); }
+.spec-progress-done .spec-progress-pc { color: var(--good-ink); }
+.spec-progress-failed { border-color: var(--critical); }
+.spec-progress-failed .spec-progress-what { color: var(--critical); font-weight: 500; }
+.spec-progress-failed .spec-progress-fill { background: var(--critical); opacity: 0.35; }
+
+/* A form being sent: its buttons wait. */
+form[data-sending] .btn { cursor: progress; }

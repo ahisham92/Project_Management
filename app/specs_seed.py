@@ -25,6 +25,10 @@ OPTIONS: list[tuple[str, str, str, str, str, str]] = [
      "Sustainability and compliance", "one"),
     ("structures", "What the project builds", "Buildings|Marine structures|Bridges", "Buildings",
      "Scope", "many"),
+    ("elements", "Structural elements",
+     "Piles|Pile caps|Foundations|Slab on grade|Columns|Beams|Suspended slabs and floors|Walls|"
+     "Basement walls|Retaining walls|Precast|Deck|Quay walls|Blinding|Topping|"
+     "Water-retaining structures", "", "Elements", "many"),
     ("cranes", "Crane rails and cranes", "No|Yes", "No", "Scope", "one"),
     ("demolition", "Demolition of existing structures", "No|Yes", "No", "Scope", "one"),
     ("shoring", "Shoring and facade retention", "No|Yes", "No", "Scope", "one"),
@@ -83,6 +87,7 @@ OPTIONS: list[tuple[str, str, str, str, str, str]] = [
 # Drawings are named in templates/specs/_icons.html; an answer with no
 # drawing of its own takes its question's.
 ELEMENT_GROUPS: list[tuple[str, str]] = [
+    ("elements", "Structural elements"),
     ("builds", "What the project builds"),
     ("concrete", "Concrete"),
     ("reinforcement", "Reinforcement and fixings"),
@@ -94,6 +99,7 @@ ELEMENT_GROUPS: list[tuple[str, str]] = [
 ]
 # key, tile group, "toggle" / "pick" / "many", drawing
 ELEMENTS: list[tuple[str, str, str, str]] = [
+    ("elements", "elements", "many", "element"),
     ("structures", "builds", "many", "building"),
     ("cast_in_place", "concrete", "toggle", "cast_in_place"),
     ("precast", "concrete", "many", "precast"),
@@ -183,6 +189,42 @@ ELEMENT_ICONS: dict[tuple[str, str], str] = {
     ("waterproofing", "Acrylic-modified cement"): "cementitious",
     ("waterproofing", "Bentonite"): "bentonite",
 }
+
+# The structural elements a project can say it has (the "elements" question):
+# slug, label, and the kinds of work it usually belongs to ("|"-joined answers
+# of "structures"). The slug is how the text names an element, in
+# {{key@slug|...}}, so it never changes once a library uses it; the label is
+# the answer stored. A project can add its own elements by name as well.
+ELEMENT_KINDS: list[tuple[str, str, str]] = [
+    ("piles", "Piles", "Buildings|Marine structures|Bridges"),
+    ("pile_caps", "Pile caps", "Buildings|Marine structures|Bridges"),
+    ("foundations", "Foundations", "Buildings|Bridges"),
+    ("slab_on_grade", "Slab on grade", "Buildings|Marine structures"),
+    ("columns", "Columns", "Buildings|Bridges"),
+    ("beams", "Beams", "Buildings|Marine structures|Bridges"),
+    ("slabs", "Suspended slabs and floors", "Buildings"),
+    ("walls", "Walls", "Buildings"),
+    ("basement_walls", "Basement walls", "Buildings"),
+    ("retaining_walls", "Retaining walls", "Buildings|Bridges"),
+    ("precast", "Precast", "Buildings|Marine structures|Bridges"),
+    ("deck", "Deck", "Marine structures|Bridges"),
+    ("quay_walls", "Quay walls", "Marine structures"),
+    ("blinding", "Blinding", "Buildings|Marine structures|Bridges"),
+    ("topping", "Topping", "Buildings"),
+    ("water_retaining", "Water-retaining structures", "Buildings"),
+]
+ELEMENT_ICONS.update({("elements", label): "el_" + slug for slug, label, _for in ELEMENT_KINDS})
+
+
+def element_slug(label: str) -> str:
+    """The slug of an element, by its label: the listed one for a listed
+    element (whatever its case), otherwise the label itself in lower case with
+    everything but letters and digits made "_"."""
+    wanted = " ".join((label or "").split()).lower()
+    for slug, known, _for in ELEMENT_KINDS:
+        if known.lower() == wanted or slug == wanted:
+            return slug
+    return "_".join(part for part in "".join(c if c.isalnum() else " " for c in wanted).split())
 
 # The kinds of specification the office keeps, each its own set of sections:
 # code, name, what it is for.

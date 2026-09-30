@@ -17,11 +17,11 @@ import re
 import zipfile
 
 from flask import (
-    Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for,
+    Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for,
 )
 from markupsafe import Markup, escape
 
-from .. import specs, specs_check, specs_export, specs_seed
+from .. import specs, specs_check, specs_export, specs_questions, specs_seed
 from .. import specs_store as store
 from ..auth import login_required
 
@@ -77,7 +77,17 @@ def _words(text: str, values: dict, reader) -> Markup:
     for match in specs.VARIABLE.finditer(text):
         out.append(_open(text[last:match.start()]))
         name = match.group(1)
-        if values.get(name):
+        if match.group(3) is not None:
+            # A question from the master: its answer, or the master's words
+            # with their choices marked until it has one.
+            said = specs.answer(match, values or {})
+            if said is None:
+                out.append(Markup('<span class="spec-ask" title="A question not answered yet">%s</span>')
+                           % _open(match.group(3)))
+            elif said:
+                out.append(Markup('<span class="spec-var spec-answered" title="Answered: %s">%s</span>')
+                           % (name, said))
+        elif values.get(name):
             out.append(Markup('<span class="spec-var" title="{{%s}}">%s</span>')
                        % (name, values[name]))
         else:
@@ -257,6 +267,23 @@ def _docx_response(data: bytes, name: str) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@bp.after_request
+def _progress_answer(response: Response) -> Response:
+    """A form sent, or a file fetched, by spec-progress.js (which says so in
+    the X-Specs-Progress header) is told where the server would have sent the
+    page, as {"go": url}, instead of being redirected there: a redirect the
+    browser followed inside the script would take the page's messages with
+    it. Every file sent back says how big it is, so its progress can be shown."""
+    if request.headers.get("X-Specs-Progress") and response.status_code in (301, 302, 303, 307, 308):
+        return jsonify(go=response.location)
+    if response.headers.get("Content-Disposition", "").startswith("attachment") \
+            and "Content-Length" not in response.headers:
+        size = response.calculate_content_length()
+        if size is not None:
+            response.headers["Content-Length"] = str(size)
+    return response
+
+
 # --- the front page -------------------------------------------------------------
 
 @bp.get("/")
@@ -363,15 +390,18 @@ def spec_set(set_id: int):
             if name not in missing:
                 missing.append(name)
     chosen = store.chosen_for(row)
+    asked = specs_questions.asked(sections, chosen, row, _element_slugs(chosen)) if sections else []
     report = store.check_set(set_id) if sections else None
     waiting = store.open_items(set_id, report) if report else None
     everything = store.options()
-    tiles = _tiles(everything)
+    tiles = _tiles(everything, chosen)
     library = store.library()
     model = store.model_for(row)
     return render_template(
         "specs/set.html", spec=row, sections=sections, tiles=tiles,
         blanks_n=len(store.blanks(set_id)) if sections else 0,
+        details_total=len(asked), details_open=sum(not q["answered"] for q in asked),
+        location=specs_questions.answers_of(row).get("proj_location", ""),
         groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS]),
         waiting=waiting, uncovered=store.uncovered(chosen, row["family"]),
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
@@ -394,7 +424,7 @@ GROUP_ICONS = {"Basis": "basis", "Sustainability and compliance": "sustainabilit
                "Bridges": "bridges"}
 
 
-def _tiles(options: list[dict]) -> list[dict]:
+def _tiles(options: list[dict], chosen: dict | None = None) -> list[dict]:
     """The element questions as tiles, under their headings: one tile a
     question, or one an answer for a question that takes several."""
     known = {o["key"]: o for o in options}
@@ -420,7 +450,29 @@ def _tiles(options: list[dict]) -> list[dict]:
         else:
             by_key[grp]["tiles"].append({"how": "pick", "option": o, "value": "", "label": o["label"],
                                          "icon": drawing})
+    if "elements" in known and "elements" in by_key:
+        _element_tiles(by_key["elements"], known["elements"], chosen or {})
     return [grp for grp in groups if grp["tiles"]]
+
+
+def _element_tiles(grp: dict, o: dict, chosen: dict) -> None:
+    """The structural elements: first the ones the kinds of work the project
+    builds usually have, with any it has ticked and the ones its engineer
+    added by name; the rest marked to go under a fold."""
+    builds = {specs._norm(v) for v in (chosen.get("structures") or "").split("|")} - {""}
+    usual = {specs._norm(label): {specs._norm(f) for f in fors.split("|")}
+             for _slug, label, fors in specs_seed.ELEMENT_KINDS}
+    have = [v for v in (chosen.get(o["key"]) or "").split("|") if v.strip()]
+    ticked = {specs._norm(v) for v in have}
+    for t in grp["tiles"]:
+        n = specs._norm(t["value"])
+        t["more"] = n not in ticked and n in usual and not usual[n] & builds
+    offered = {specs._norm(c) for c in o["choice_list"]}
+    for v in have:
+        if specs._norm(v) not in offered and v.strip().lower() != "none":
+            grp["tiles"].append({"how": "many", "option": o, "value": v, "label": v,
+                                 "icon": "element", "own": True, "more": False})
+    grp["tiles"].sort(key=lambda t: t["more"])
 
 
 def _grouped(options: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -447,6 +499,8 @@ def save_set(set_id: int):
             if not ticked and key in request.form.getlist("tile_shown"):
                 ticked = [c for c in o["choice_list"] if specs._norm(c) == "none"][:1]
             chosen[key] = "|".join(ticked)
+            if key == "elements":
+                chosen[key] = _with_element(o, chosen[key], request.form.get("element_new", ""))
         else:
             chosen[key] = request.form.get(f"opt_{key}", "")
     values = {v["key"]: request.form.get(f"var_{v['key']}", "") for v in store.variables()}
@@ -456,12 +510,29 @@ def save_set(set_id: int):
     except specs.SpecError as exc:
         flash(str(exc), "error")
     else:
+        if "proj_location" in request.form:
+            location = " ".join(request.form["proj_location"].split())
+            specs_questions.save_answers(set_id, {"proj_location": location or None}, {})
         flash("Saved.", "success")
         _added(set_id, before)
     step = request.form.get("next")
     if step in ("elements", "questions", "sections"):
         return redirect(url_for("specs.spec_set", set_id=set_id) + f"#step-{step}")
     return redirect(url_for("specs.spec_set", set_id=set_id))
+
+
+def _with_element(o: dict, have: str, name: str) -> str:
+    """A project's elements with one more its engineer typed: a listed one
+    by its label, whatever the case it was typed in; another as typed."""
+    name = " ".join(name.replace("|", " ").split())
+    if not name:
+        return have
+    listed = {specs_seed.element_slug(c): c for c in o["choice_list"]}
+    name = listed.get(specs_seed.element_slug(name), name)
+    now = [v for v in have.split("|") if v]
+    if specs._norm(name) not in {specs._norm(v) for v in now}:
+        now.append(name)
+    return "|".join(now)
 
 
 @bp.post("/sets/<int:set_id>/model")
@@ -705,6 +776,56 @@ def remove_item(set_id: int):
         return redirect(_back_to_check(set_id, done[0]["key"]) + f"#item-{done[0]['key']}")
     group = done[0]["group"] if done else request.form.get("group", "")
     return redirect(_back_to_check(set_id) + f"#group-{group}")
+
+
+def _element_slugs(chosen: dict) -> list[str]:
+    """The project's elements, as the text names them."""
+    slug = getattr(specs_seed, "element_slug", None) or (
+        lambda label: re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_"))
+    return [slug(e) for e in (chosen.get("elements") or "").split("|") if e.strip()]
+
+
+def _asked(set_id: int, row) -> list[dict]:
+    chosen = store.chosen_for(row)
+    return specs_questions.asked(store.set_sections(set_id), chosen, row, _element_slugs(chosen))
+
+
+@bp.route("/sets/<int:set_id>/details", methods=["GET", "POST"])
+@login_required
+def details(set_id: int):
+    """The master's questions for this project, one group at a time: each
+    answer is written into every clause it belongs to."""
+    row = _set_or_404(set_id)
+    groups = specs_questions.grouped(_asked(set_id, row))
+    slugs = [g["slug"] for g in groups]
+    asked_for = request.values.get("group", "")
+    here = slugs.index(asked_for) if asked_for in slugs else next(
+        (i for i, g in enumerate(groups) if g["open"]), 0)
+    if request.method == "POST" and groups:
+        given, split = specs_questions.read_form(request.form, groups[here]["questions"])
+        switches = {q["key"] for q in groups[here]["questions"] if q.get("switch")}
+        before = store.ruled_out(set_id)
+        specs_questions.save_switches(set_id, {k: v for k, v in given.items() if k in switches})
+        specs_questions.save_answers(set_id, {k: v for k, v in given.items() if k not in switches},
+                                     split)
+        answered = sum(1 for k, v in given.items() if "@" not in k and v is not None)
+        flash(f"Saved {answered} answer{'s' if answered != 1 else ''} in "
+              f"{groups[here]['name']}.", "success")
+        if switches:
+            _added(set_id, before)
+        if request.form.get("go") == "back" and here:
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here - 1]))
+        if here + 1 < len(groups) and request.form.get("go") != "stay":
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here + 1]))
+        return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
+    labels = dict(specs_questions.KIND_LABELS)
+    labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
+    return render_template(
+        "specs/details.html", spec=row, groups=groups, group=groups[here] if groups else None,
+        here=here, total=sum(len(g["questions"]) for g in groups),
+        open_n=sum(g["open"] for g in groups), need_n=sum(g["need"] for g in groups), element_labels=labels,
+        FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
+        picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
 
 
 @bp.route("/sets/<int:set_id>/blanks", methods=["GET", "POST"])
@@ -1368,20 +1489,75 @@ def load_library_file():
         except specs.SpecError as exc:
             flash(f"{filename}: {exc}", "error")
         else:
-            said = [f"{counted['added']} new section{'s' if counted['added'] != 1 else ''}"]
-            if counted["updated"]:
-                said.append(f"{counted['updated']} updated to a new version")
-            if counted["same"]:
-                said.append(f"{counted['same']} already the same")
-            if counted["kept"]:
-                said.append(f"{counted['kept']} already here and left as they are")
-            if counted["removed"]:
-                said.append(f"{len(counted['removed'])} taken out ({', '.join(counted['removed'])})")
-            flash(f"Read {filename}: " + "; ".join(said) + f". {counted['options']} questions, "
-                  f"{counted['variables']} words and {counted['standards']} new standards."
-                  + (" Projects keep their own copies of the sections taken out."
-                     if counted["removed"] else ""), "success")
+            flash(_loaded(filename, counted), "success")
     return redirect(url_for("specs.library", family=request.form.get("family") or None))
+
+
+def _loaded(filename: str, counted: dict) -> str:
+    """What a library file load did, as the page says it."""
+    said = [f"{counted['added']} new section{'s' if counted['added'] != 1 else ''}"]
+    if counted["updated"]:
+        said.append(f"{counted['updated']} updated to a new version")
+    if counted["same"]:
+        said.append(f"{counted['same']} already the same")
+    if counted["kept"]:
+        said.append(f"{counted['kept']} already here and left as they are")
+    if counted["removed"]:
+        said.append(f"{len(counted['removed'])} taken out ({', '.join(counted['removed'])})")
+    return (f"Read {filename}: " + "; ".join(said) + f". {counted['options']} questions, "
+            f"{counted['variables']} words and {counted['standards']} new standards."
+            + (" Projects keep their own copies of the sections taken out."
+               if counted["removed"] else ""))
+
+
+# The same load with its progress shown (spec-progress.js): the file is sent and
+# put by as a pending load, then read in a few sections per call. Each answer is
+# JSON; "go" is where the page goes next, with what happened flashed there.
+
+@bp.post("/library/file/begin")
+@login_required
+def begin_library_load():
+    go = url_for("specs.library", family=request.form.get("family") or None)
+    if not _admin_only():
+        return jsonify(go=go)
+    files = _uploads("library")
+    if not files:
+        if not request.files.get("library"):
+            flash("Choose the library file (.zip) first.", "error")
+        return jsonify(go=go)
+    filename, data = files[0]
+    mode = request.form.get("mode", "update")
+    if mode == "replace" and request.form.get("sure") != "yes":
+        flash("Tick that you mean to take out the sections the file does not have, "
+              "or choose another way to load it.", "error")
+        return jsonify(go=go)
+    try:
+        begun = store.begin_load(data, mode, filename)
+    except specs.SpecError as exc:
+        flash(f"{filename}: {exc}", "error")
+        return jsonify(go=go)
+    return jsonify(id=begun["id"], done=0, total=begun["total"], message="Reading the sections in.",
+                   step=url_for("specs.step_library_load", load_id=begun["id"],
+                                family=request.form.get("family") or None))
+
+
+@bp.post("/library/file/step/<load_id>")
+@login_required
+def step_library_load(load_id: str):
+    go = url_for("specs.library", family=request.args.get("family") or None)
+    if not _admin_only():
+        store.drop_load(load_id)
+        return jsonify(go=go, failed=True)
+    try:
+        step = store.step_load(load_id, seconds=0.5, most=8)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+        return jsonify(go=go, failed=True, message=str(exc))
+    answer = {k: step[k] for k in ("done", "total", "message", "finished")}
+    if step["finished"]:
+        flash(_loaded(step["filename"], step["counted"]), "success")
+        answer["go"] = go
+    return jsonify(answer)
 
 
 @bp.post("/library/delete")

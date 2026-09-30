@@ -192,7 +192,7 @@
 {% if spec and blocking and not spec['hold_issue'] %}
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>
-    (listed under Cross-references). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
+    (listed under <a href="#group-references">Cross-references</a>). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
   {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1, fmt=request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none) }}">Issue anyway</a>{% endif %}
 </div></div>
 {% endif %}
@@ -205,7 +205,59 @@
 </div></div>
 {% endif %}
 
+{# One group in view at a time (spec-check.js), chosen by the address
+   (#group-<key>, #item-<key>, #language) or else the first with anything open;
+   without JavaScript every group shows, one under another, and the bar is a
+   list of links down the page. #}
+{% set groups = [] %}
 {% for key, title, about in checks if key != 'model' or report.get(key) %}
+  {% set _ = groups.append({'key': key, 'title': title, 'open': report['open'][key] if report.get('open') else report[key] | length,
+                            'holds': key in ('model', 'references', 'outdated', 'discrepancies')}) %}
+{% endfor %}
+{% if language is defined %}
+  {% set _ = groups.append({'key': 'language', 'title': 'Language', 'open': language.values() | map('length') | sum, 'holds': false}) %}
+{% endif %}
+{% set first_open = groups | selectattr('open') | first %}
+<style>
+{% for g in groups %}.spec-check-js[data-current="{{ g['key'] }}"] [data-group]:not([data-group="{{ g['key'] }}"]),
+{% endfor %}.spec-check-js[data-current=""] [data-group] { display: none; }
+</style>
+<div class="spec-check-flow" data-check-flow data-groups="{{ groups | map(attribute='key') | join(' ') }}"
+     data-first="{{ (first_open or groups[0])['key'] if groups else '' }}">
+<script src="{{ url_for('static', filename='spec-check.js') }}"></script>
+<nav class="spec-groups" aria-label="Groups on the check">
+  {% for g in groups %}
+  <a class="spec-group-tab" href="#group-{{ g['key'] }}" data-group-link="{{ g['key'] }}">
+    <span class="spec-group-name">{{ g['title'] }}</span>
+    {% if g['open'] %}<span class="spec-group-n {{ 'spec-group-n-hold' if g['holds'] and spec else '' }}" title="{{ g['open'] }} {{ 'open' if spec else 'found' }}">{{ g['open'] }}</span>
+    {% else %}<span class="spec-group-n spec-group-n-clear" title="Nothing open">✓</span>{% endif %}
+  </a>
+  {% endfor %}
+</nav>
+
+{% macro group_foot(key) %}
+  {% set keys = groups | map(attribute='key') | list %}
+  {% set i = keys.index(key) %}
+  <div class="spec-step-foot spec-group-foot">
+    {% if i > 0 %}<a class="btn btn-ghost spec-step-back" href="#group-{{ keys[i - 1] }}">← Back: {{ groups[i - 1]['title'] }}</a>{% endif %}
+    {% if i + 1 < keys | length %}
+      <a class="btn btn-primary" href="#group-{{ keys[i + 1] }}">Next: {{ groups[i + 1]['title'] }} →</a>
+    {% elif spec %}
+      {% set issue_fmt = request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none %}
+      {% if spec['hold_issue'] and waiting['total'] %}
+        <span class="small muted">{{ waiting['total'] }} still to settle before it can be issued.</span>
+        <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: Issue all</span>
+      {% else %}
+        <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt=issue_fmt) }}">Next: Issue all ({{ {'tracked': 'Word with tracked changes', 'pdf': 'one PDF'}[issue_fmt] if issue_fmt else '.zip of .docx' }}) →</a>
+      {% endif %}
+    {% else %}
+      <a class="btn btn-primary" href="{{ url_for('specs.library') }}">Done: back to the library</a>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% for key, title, about in checks if key != 'model' or report.get(key) %}
+<div class="spec-group" data-group="{{ key }}">
 <div class="card" style="margin-top:12px" id="group-{{ key }}">
   <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
     {% set open_n = report['open'][key] if report.get('open') else report[key] | length %}
@@ -247,11 +299,14 @@
   </div>
   {% endif %}
 </div>
+{{ group_foot(key) }}
+</div>
 {% endfor %}
 
 {% if language is defined %}
 {% set action = url_for('specs.language_set', set_id=spec['id']) if spec else url_for('specs.language_library') %}
 {% set can = spec or is_admin %}
+<div class="spec-group" data-group="language" id="group-language">
 <div class="card" style="margin-top:12px" id="language">
   <div class="card-head">
     <div><h2>Language {% set total = language.values() | map('length') | sum %}{% if total %}{{ badge('neutral', total) }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
@@ -321,6 +376,8 @@
   {% endfor %}
   </div>
 </div>
+{{ group_foot('language') }}
+</div>
 {% endif %}
-{% if spec %}<script src="{{ url_for('static', filename='spec-check.js') }}"></script>{% endif %}
+</div>{# .spec-check-flow #}
 {% endblock %}

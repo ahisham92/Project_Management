@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% block title %}Details · {{ spec['name'] }} · Specs Writer{% endblock %}
+
+{% macro controls(name, q, current, answered, allow_same=false) %}
+  {%- set seen = picked(q, current, answered, allow_same) -%}
+  {%- set picks, typed = seen[0], seen[1] -%}
+  {%- set kind = 'checkbox' if q['many'] else 'radio' -%}
+  <div class="spec-pills" role="group">
+    {% if allow_same %}
+    <label class="spec-pill spec-pill-same"><input type="radio" name="q_{{ name }}" value="{{ SAME }}"{% if not answered %} checked{% endif %}> Same as all</label>
+    {% endif %}
+    {% if q['yes_no'] %}
+    <label class="spec-pill"><input type="radio" name="q_{{ name }}" value="{{ KEEP }}"{% if KEEP in picks %} checked{% endif %}> Yes{% if q['suggested'] == KEEP and not allow_same %} <span class="spec-suggested">suggested</span>{% endif %}</label>
+    <label class="spec-pill"><input type="radio" name="q_{{ name }}" value="{{ NONE }}"{% if '' in picks %} checked{% endif %}> No{% if q['suggested'] == '' and not allow_same %} <span class="spec-suggested">suggested</span>{% endif %}</label>
+    {% else %}
+    {% for c in q['choices'] %}
+    <label class="spec-pill"><input type="{{ kind }}" name="q_{{ name }}" value="{{ c }}"{% if c in picks %} checked{% endif %}> {{ c }}{% if c == q['suggested'] and not allow_same %} <span class="spec-suggested">suggested</span>{% endif %}</label>
+    
+    {% endfor %}{# choices #}
+    {% endif %}
+    {% if not q['yes_no'] and not q['switch'] %}
+    <label class="spec-pill spec-pill-free">{% if not q['many'] %}<input type="radio" name="q_{{ name }}" value="{{ FREE }}"{% if typed %} checked{% endif %} aria-label="Use the words typed">{% endif %}
+      <input type="text" name="t_{{ name }}" value="{{ typed }}" placeholder="{{ (q['free'][0] if q['free'] else 'Specify') | replace('Insert ', '') | replace('insert ', '') | capitalize }}" aria-label="Specify" data-pick-free></label>
+    {% endif %}
+    {% if q['optional'] and not q['yes_no'] %}
+    <label class="spec-pill spec-pill-none"><input type="{{ kind }}" name="q_{{ name }}" value="{{ NONE }}"{% if '' in picks %} checked{% endif %}> Leave out</label>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro question(q) %}
+      <fieldset class="spec-q{{ ' spec-q-answered' if q['answered'] }}" id="q-{{ q['key'] }}">
+        <legend class="spec-q-label">{{ q['label'] }}{% if q['answered'] %} <span class="spec-q-tick" title="Answered">✓</span>{% endif %}</legend>
+        {% if q['help'] %}<p class="small muted spec-q-help">{{ q['help'] }}</p>{% endif %}
+        {% if q['yes_no'] and q['example'] %}<p class="small muted spec-q-help">Yes keeps the words “{{ q['example'] | trim(' ,') }}”.</p>{% endif %}
+        {{ controls(q['key'], q, q['answer'], q['answered']) }}
+        {% if q['rows'] %}
+        <div class="spec-q-split" data-split>
+          <label><input type="radio" name="split_{{ q['key'] }}" value="0"{% if not q['split'] %} checked{% endif %}> Same for all elements</label>
+          <label><input type="radio" name="split_{{ q['key'] }}" value="1"{% if q['split'] %} checked{% endif %}> Different for some elements</label>
+        </div>
+        <div class="spec-q-rows" data-split-rows{% if not q['split'] %} hidden{% endif %}>
+          {% for e in q['rows'] %}
+          <div class="spec-q-row">
+            <span class="spec-q-el">{{ element_labels.get(e, e | replace('_', ' ') | capitalize) }}</span>
+            {{ controls(q['key'] ~ '@' ~ e, q, q['row_answers'][e], q['row_answers'][e] is not none, true) }}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if q['switch'] %}
+        <p class="small muted spec-q-where">Decides which paragraphs of the sections are issued.</p>
+        {% else %}
+        <details class="small muted spec-q-where">
+          <summary>Fills {{ q['places'] | length }} place{{ 's' if q['places'] | length != 1 }} in {{ q['sections'] | join(', ') }}</summary>
+          <ul>{% for p in q['places'] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }} {{ p['label'] }}</a>{% if p['element'] %} · {{ element_labels.get(p['element'], p['element'] | replace('_', ' ')) }}{% endif %}</li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+      </fieldset>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">Specs Writer</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <h1>Details</h1>
+    <p class="small muted" style="margin-top:2px">The questions this project's sections ask, with the master's own answers to pick from. Each answer is written into every clause it belongs to.</p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
+  </div>
+</div>
+
+{% if not group %}
+  {{ empty('No questions', 'None of this project\'s sections asks anything. Add sections first, or read in a library file that carries the questions.') }}
+{% else %}
+<div class="spec-q-progress">
+  <div class="spec-q-bar" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ total - open_n }}"><span style="width: {{ ((total - open_n) * 100 / total) | round | int if total else 100 }}%"></span></div>
+  <span class="small muted">{{ total - open_n }} of {{ total }} answered{% if need_n %} · {{ need_n }} need your answer, the rest are suggested{% endif %} · group {{ here + 1 }} of {{ groups | length }}</span>
+</div>
+<nav class="spec-blank-sections" aria-label="Groups of questions">
+  {% for g in groups %}
+  <a href="{{ url_for('specs.details', set_id=spec['id'], group=g['slug']) }}" class="{{ 'spec-blank-here' if loop.index0 == here }}{{ ' spec-q-done' if not g['open'] }}"{% if loop.index0 == here %} aria-current="page"{% endif %}>{{ g['name'] }} <span class="muted">{% if g['need'] %}{{ g['need'] }}{% elif not g['open'] %}✓{% endif %}</span></a>
+  {% endfor %}
+</nav>
+
+<form method="post" class="spec-details">
+  <input type="hidden" name="group" value="{{ group['slug'] }}">
+  <div class="card">
+    <div class="card-head">
+      <h2>{{ group['name'] }}</h2>
+      <span class="small muted">{{ group['questions'] | length }} question{{ 's' if group['questions'] | length != 1 }}{% if group['need'] %} · {{ group['need'] }} need{{ 's' if group['need'] == 1 }} your answer{% endif %}{% if group['open'] - group['need'] %} · {{ group['open'] - group['need'] }} suggested{% endif %}</span>
+    </div>
+    <div class="card-body spec-q-list">
+      {% set need = group['questions'] | rejectattr('answered') | selectattr('suggested', 'none') | list %}
+      {% set suggested = group['questions'] | rejectattr('answered') | rejectattr('suggested', 'none') | list %}
+      {% set done = group['questions'] | selectattr('answered') | list %}
+      {% if need %}
+      <h3 class="spec-q-part">Needs your answer <span class="muted small">{{ need | length }}</span></h3>
+      {% for q in need %}{{ question(q) }}{% endfor %}
+      {% endif %}
+      {% if suggested %}
+      <h3 class="spec-q-part">Suggested from the master <span class="muted small">{{ suggested | length }} · written in as shown when you save; open one to change it</span></h3>
+      {% for q in suggested %}
+      <details class="spec-q-compact">
+        <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{{ shown(q, q['suggested']) }}</span><span class="spec-q-change">Change</span></summary>
+        {{ question(q) }}
+      </details>
+      {% endfor %}
+      {% endif %}
+      {% if done %}
+      <h3 class="spec-q-part">Answered <span class="muted small">{{ done | length }}</span></h3>
+      {% for q in done %}
+      <details class="spec-q-compact spec-q-answered">
+        <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{% if q['split'] %}Different per element{% else %}{{ shown(q, q['answer']) }}{% endif %}</span><span class="spec-q-change">Change</span></summary>
+        {{ question(q) }}
+      </details>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  <div class="spec-blanks-foot inline-form">
+    {% if here %}<button type="submit" name="go" value="back" class="btn btn-ghost">← Save and back</button>{% endif %}
+    <button type="submit" name="go" value="stay" class="btn btn-ghost">Save</button>
+    {% if here + 1 < groups | length %}
+    <button type="submit" name="go" value="next" class="btn btn-primary">Save and next: {{ groups[here + 1]['name'] }} →</button>
+    {% else %}
+    <button type="submit" name="go" value="stay" class="btn btn-primary">Save</button>
+    <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check →</a>
+    {% endif %}
+    <span class="small muted">Suggested answers are written in when you save.</span>
+  </div>
+</form>
+<script>
+document.querySelectorAll('.spec-details [data-pick-free]').forEach(function (box) {
+  box.addEventListener('input', function () {
+    var pick = box.parentNode.querySelector('input[type=radio]');
+    if (pick && box.value) pick.checked = true;
+  });
+});
+document.querySelectorAll('.spec-details [data-split]').forEach(function (bar) {
+  var rows = bar.nextElementSibling;
+  bar.addEventListener('change', function (e) { rows.hidden = e.target.value !== '1'; });
+});
+</script>
+{% endif %}
+{% endblock %}

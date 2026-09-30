@@ -48,14 +48,20 @@
     <span><strong>Questions</strong><span class="small">{{ answered }} answered</span></span></a>
   <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections" data-step-link="sections"><span class="spec-step-n">4</span>
     <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncovered %} · {{ uncovered | length }} not covered{% endif %}</span></span></a>
+  {% if sections %}
+  <a class="spec-step {{ 'spec-step-done' if not details_open else 'spec-step-now' }}" href="{{ url_for('specs.details', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
+    <span><strong>Details</strong><span class="small">{% if details_total %}{{ details_total - details_open }} of {{ details_total }} answered{% else %}nothing to ask{% endif %}</span></span></a>
+  {% else %}
+  <span class="spec-step"><span class="spec-step-n">5</span><span><strong>Details</strong><span class="small">after sections are in</span></span></span>
+  {% endif %}
   {% if report %}
-  <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
+  <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
     <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to settle{% else %}all settled{% endif %}</span></span></a>
-  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
+  <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">7</span>
     <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% else %}ready{% endif %}</span></span></a>
   {% else %}
-  <span class="spec-step"><span class="spec-step-n">5</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
-  <span class="spec-step"><span class="spec-step-n">6</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">6</span><span><strong>Check</strong><span class="small">after sections are in</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">7</span><span><strong>Issue</strong><span class="small">after the check</span></span></span>
   {% endif %}
 </nav>
 
@@ -81,8 +87,13 @@
         <label class="field w-lg"><span class="field-label">Project code</span>
           <input type="text" name="code" value="{{ spec['code'] }}"></label>
       </div>
-      <label class="field"><span class="field-label">Client</span>
-        <input type="text" name="client" value="{{ spec['client'] }}"></label>
+      <div class="inline-form">
+        <label class="field flex1"><span class="field-label">Client</span>
+          <input type="text" name="client" value="{{ spec['client'] }}"></label>
+        <label class="field flex1"><span class="field-label">Location</span>
+          <input type="text" name="proj_location" value="{{ location }}" placeholder="City, country">
+          <span class="field-hint">Written wherever the sections ask for the project's location.</span></label>
+      </div>
       <label class="field"><span class="field-label">Kind of specification</span>
         <select name="family">
           {% for f in families %}<option value="{{ f['code'] }}"{% if f['code'] == spec['family'] %} selected{% endif %}>{{ f['code'] }} · {{ f['name'] }} ({{ f['sections'] }} sections)</option>{% endfor %}
@@ -193,7 +204,42 @@
     </div>
     {% endif %}
 
-    {% for grp in tiles %}
+    {% macro element_tile(t, picked, from_model) %}
+      {% set found = (t['option']['key'], t['value'] | lower) in from_model %}
+      <label class="spec-tile{{ ' spec-tile-model' if found }}" title="{{ t['option']['label'] }}: {{ t['value'] }}">
+        <input type="checkbox" name="opt_{{ t['option']['key'] }}" value="{{ t['value'] }}" {{ 'checked' if t['value'] in picked[t['option']['key']] }}>
+        {{ icon(t['icon']) }}
+        <span class="spec-tile-label">{{ t['label'] }}</span>
+        {% if found %}<span class="spec-tile-flag">In the model</span>{% elif t['own'] %}<span class="spec-tile-flag spec-tile-own">Added</span>{% endif %}
+      </label>
+    {% endmacro %}
+    {% for grp in tiles if grp['key'] == 'elements' %}
+      {% set main = grp['tiles'] | rejectattr('more') | list %}
+      {% set more = grp['tiles'] | selectattr('more') | list %}
+      <div class="spec-tile-group spec-elements">
+        <h3>{{ grp['title'] }}</h3>
+        <p class="small muted spec-elements-hint">What the structure is made of: only the questions and clauses for these come up.{% if more %} The usual ones for {{ chosen['structures'] | replace('|', ', ') | lower or 'this project' }} first.{% endif %}</p>
+        <input type="hidden" name="tile_shown" value="{{ grp['tiles'][0]['option']['key'] }}">
+        <div class="spec-tiles">
+          {% for t in main %}{{ element_tile(t, picked, from_model) }}{% endfor %}
+        </div>
+        {% if more %}
+        <details class="spec-elements-more">
+          <summary class="small">More elements ({{ more | length }})</summary>
+          <div class="spec-tiles">
+            {% for t in more %}{{ element_tile(t, picked, from_model) }}{% endfor %}
+          </div>
+        </details>
+        {% endif %}
+        <div class="inline-form spec-element-add">
+          <label class="field flex1"><span class="field-label">Add an element</span>
+            <input type="text" name="element_new" maxlength="80" placeholder="e.g. Piers, Culverts, Transfer slab"></label>
+          <button type="submit" name="next" value="elements" class="btn btn-ghost">Add</button>
+        </div>
+        <p class="small muted" style="margin-top:4px">Untick an element to take it off the project; one added here goes when it is unticked and saved.</p>
+      </div>
+    {% endfor %}
+    {% for grp in tiles if grp['key'] != 'elements' %}
       <div class="spec-tile-group">
         <h3>{{ grp['title'] }}</h3>
         <div class="spec-tiles">
@@ -414,7 +460,11 @@
   <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: questions</a>
   {% if sections %}
   {% if blanks_n %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id']) }}" title="The master's [choices] and &lt;Insert ...&gt; places, each with a box to answer">Fill the blanks ({{ blanks_n }})</a>{% endif %}
+  {% if details_total %}
+  <a class="btn btn-primary" href="{{ url_for('specs.details', set_id=spec['id']) }}">Next: details{% if details_open %} ({{ details_open }} to answer){% endif %} →</a>
+  {% else %}
   <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to settle){% endif %} →</a>
+  {% endif %}
   {% else %}
   <span class="small muted">The check comes once the project has sections.</span>
   {% endif %}

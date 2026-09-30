@@ -702,8 +702,9 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
 
     # Words used and never given a value.
     for s, n in issued:
-        for name in specs.VARIABLE.findall(n["text"]):
-            if not values.get(name):
+        for m in specs.VARIABLE.finditer(n["text"]):
+            name = m.group(1)
+            if m.group(3) is None and not values.get(name):
                 report["setup"].append(_item(s, n, f"{{{{{name}}}}} has no value for this project",
                                              words="{{" + name + "}}"))
 

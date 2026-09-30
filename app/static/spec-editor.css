@@ -125,3 +125,5 @@
   .se-canvas { max-height: none; overflow: visible; padding: 0; }
   .se-page { box-shadow: none; }
 }
+.se-ask { background: #fff4d6; color: #7a5200; }
+.se-ask b { font: 700 10px/1 system-ui, sans-serif; margin-right: 3px; }

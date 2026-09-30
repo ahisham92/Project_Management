@@ -560,6 +560,15 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         " PRIMARY KEY (set_id, key))")
     # An item amended or removed from the check: where, and what the text was and became.
     _ensure_column(conn, "spec_check_settled", "detail", "TEXT NOT NULL DEFAULT ''")
+    # The questions the master's text asks ({{key|master's words}}), and each
+    # project's answers to them.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS spec_questions ("
+        " key TEXT PRIMARY KEY, label TEXT NOT NULL DEFAULT '', grp TEXT NOT NULL DEFAULT '',"
+        " help TEXT NOT NULL DEFAULT '', suggested TEXT, per_element INTEGER NOT NULL DEFAULT 0,"
+        " many INTEGER NOT NULL DEFAULT 0, optional INTEGER NOT NULL DEFAULT 0,"
+        " position INTEGER NOT NULL DEFAULT 0)")
+    _ensure_column(conn, "spec_sets", "answers", "TEXT NOT NULL DEFAULT '{}'")
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -580,6 +589,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         conn.executemany(
             "INSERT OR IGNORE INTO spec_variables (key, label, default_value, position) "
             "VALUES (?, ?, ?, ?)", [(*row, i) for i, row in enumerate(VARIABLES, start=1)])
+    _ensure_elements_option(conn)
 
     # The standards: what each is on the other basis, and what has been
     # withdrawn. Seeded once, when the tables first appear.
@@ -684,6 +694,24 @@ def _spec_families(conn: sqlite3.Connection) -> None:
             """)
     finally:
         conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _ensure_elements_option(conn: sqlite3.Connection) -> None:
+    """The structural elements question, put into a library started before it
+    was one, once: nothing else in the library is touched, and one that
+    removes it afterwards is not given it back."""
+    if conn.execute("SELECT 1 FROM spec_meta WHERE key = 'elements_option'").fetchone():
+        return
+    from .specs_seed import OPTIONS
+
+    with conn:
+        row = next(r for r in OPTIONS if r[0] == "elements")
+        if conn.execute("SELECT 1 FROM spec_options WHERE key = 'elements'").fetchone() is None:
+            last = conn.execute("SELECT COALESCE(MAX(position), 0) FROM spec_options").fetchone()[0]
+            conn.execute(
+                "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, "
+                "position) VALUES (?, ?, ?, ?, ?, ?, ?)", (*row, last + 1))
+        conn.execute("INSERT OR REPLACE INTO spec_meta (key, value) VALUES ('elements_option', '1')")
 
 
 def merge_spec_seed(conn: sqlite3.Connection) -> int:

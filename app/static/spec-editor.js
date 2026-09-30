@@ -39,7 +39,7 @@
   ];
   var STYLE_NAME = {}; STYLES.forEach(function (s) { STYLE_NAME[s.level] = s.name; });
   STYLE_NAME.TBL = "Table";
-  var TOKEN = /\{ref:\s*([^}]+?)\s*\}|\{\{\s*([A-Za-z0-9_]+)\s*\}\}|\{([A-Za-z0-9_]+)\s*(!?=)\s*([^:{}]+?)\s*:\s?([^{}]*)\}/g;
+  var TOKEN = /\{ref:\s*([^}]+?)\s*\}|\{\{\s*([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?\s*(?:\|([^{}]*))?\}\}|\{([A-Za-z0-9_]+)\s*(!?=)\s*([^:{}]+?)\s*:\s?([^{}]*)\}/g;
   var varLabel = {}; data.variables.forEach(function (v) { varLabel[v.key] = v.label; });
   var optByKey = {}; data.options.forEach(function (o) { optByKey[o.key] = o; });
   var sectionTitle = {}; data.sections.forEach(function (s) { sectionTitle[s.number.toLowerCase()] = s.title; });
@@ -87,13 +87,19 @@
       title = "Cross-reference, written out as it stands when issued: " + raw;
       return '<span class="se-tok ' + cls + '" contenteditable="false" data-raw="' + esc(raw) + '" title="' + esc(title) + '">' + esc(label) + "</span>";
     }
+    if (m[2] !== undefined && m[4] !== undefined) {
+      title = "A question each project answers (" + m[2] + (m[3] ? ", for " + m[3].replace(/_/g, " ") : "") +
+        "); until it does, the master's words stand: " + m[4];
+      return '<span class="se-tok se-ask" contenteditable="false" data-raw="' + esc(raw) + '" title="' + esc(title) + '"><b>?</b>' +
+        esc(m[4]) + "</span>";
+    }
     if (m[2] !== undefined) {
       title = "Filled in for each project: " + (varLabel[m[2]] || m[2]);
       return '<span class="se-tok se-var" contenteditable="false" data-raw="' + esc(raw) + '" title="' + esc(title) + '">[' + esc(varLabel[m[2]] || m[2]) + "]</span>";
     }
-    title = "Issued only when " + m[3] + " " + (m[4] === "=" ? "is" : "is not") + " " + m[5];
+    title = "Issued only when " + m[5] + " " + (m[6] === "=" ? "is" : "is not") + " " + m[7];
     return '<span class="se-tok se-choice" contenteditable="false" data-raw="' + esc(raw) + '" title="' + esc(title) + '"><b>' +
-      esc(m[3] + m[4] + m[5]) + "</b>" + esc(m[6]) + "</span>";
+      esc(m[5] + m[6] + m[7]) + "</b>" + esc(m[8]) + "</span>";
   }
   function textHTML(text) {
     var out = "", last = 0, m;

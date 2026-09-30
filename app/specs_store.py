@@ -101,6 +101,10 @@ def values_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
     if spec_set:
         values.setdefault("project", spec_set["name"])
         values.setdefault("client", spec_set["client"])
+        # The answers to the master's questions fill its text the same way.
+        from . import specs_questions
+        for key, words in specs_questions.values(spec_set).items():
+            values.setdefault(key, words)
     return values
 
 
@@ -370,6 +374,8 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
                 "doc_code, body, updated_by) SELECT ?, section_id, base_version, number, title, "
                 "doc_code, body, ? FROM spec_set_sections WHERE set_id = ?",
                 (set_id, _who(), copy_from))
+            conn.execute("UPDATE spec_sets SET answers = ? WHERE id = ?",
+                         (source.get("answers") or "{}", set_id))
     return set_id
 
 
@@ -1183,6 +1189,17 @@ def _check_set(set_id: int) -> dict:
                                     "written for this answer: check the sections cover it, or add "
                                     "a section for it" + (f" ({', '.join(elsewhere)} has one to "
                                                           "borrow)" if elsewhere else "")})
+    # The master's questions not answered yet leave its [choices] in the text.
+    from . import specs_questions
+    slug = getattr(specs_seed, "element_slug", None)
+    elements = [slug(e) for e in (chosen.get("elements") or "").split("|") if e.strip()] if slug else []
+    for g in specs_questions.grouped(specs_questions.asked(set_sections(set_id), chosen, row, elements)):
+        if g["open"]:
+            report["setup"].append({
+                "section": "", "row_id": None, "path": "", "severity": "warning", "text": "",
+                "fix": None, "message": f"Details: questions in {g['name']} are not all answered yet, "
+                                        "so the master's choices are still in the text there "
+                                        f"({', '.join(q['label'] for q in g['questions'] if not q['answered'])})"})
     report["counts"] = {k: len(v) for k, v in report.items() if isinstance(v, list)}
     return report
 
@@ -1362,6 +1379,7 @@ def pack() -> bytes:
         "options": [{k: o[k] for k in ("key", "label", "choices", "default_value", "grp", "kind")}
                     for o in options()],
         "variables": [{k: v[k] for k in ("key", "label", "default_value")} for v in variables()],
+        "questions": _questions_packed(),
         "standards": [{k: r[k] for k in ("topic", "bs", "us")} for r in equivalents()],
         "withdrawn": [{k: r[k] for k in ("old", "new", "note")} for r in withdrawn()],
         "wording": [{k: r[k] for k in ("find", "replace", "note", "cond", "unless_next")}
@@ -1376,6 +1394,11 @@ def pack() -> bytes:
         for family in family_templates():
             z.writestr(f"templates/{family}.docx", template_bytes(family))
     return out.getvalue()
+
+
+def _questions_packed() -> list[dict]:
+    from . import specs_questions
+    return specs_questions.packed()
 
 
 LOAD_MODES = ("update", "add", "replace")
@@ -1393,6 +1416,17 @@ def unpack(data: bytes, mode: str = "update") -> dict:
     """
     if mode not in LOAD_MODES:
         mode = "update"
+    z, loaded = _library_file(data)
+    counted = _new_count()
+    in_file: dict[str, set[str]] = {}
+    for s in loaded.get("sections", []):
+        _load_section(s, loaded, mode, counted, in_file)
+    _load_the_rest(z, loaded, mode, counted, in_file)
+    return counted
+
+
+def _library_file(data: bytes):
+    """The file's zip and its library.json, or SpecError when it is not one."""
     import io
     import zipfile
 
@@ -1401,34 +1435,48 @@ def unpack(data: bytes, mode: str = "update") -> dict:
         loaded = json.loads(z.read("library.json").decode("utf-8"))
     except (zipfile.BadZipFile, KeyError, ValueError) as exc:
         raise specs.SpecError("That is not a Specs Writer library file.") from exc
-    if not str(loaded.get("format", "")).startswith("specs-writer-library/"):
+    if not isinstance(loaded, dict) or not str(loaded.get("format", "")).startswith(
+            "specs-writer-library/"):
         raise specs.SpecError("That is not a Specs Writer library file.")
-    counted = {"sections": 0, "options": 0, "variables": 0, "standards": 0,
-               "added": 0, "updated": 0, "same": 0, "kept": 0, "removed": []}
-    in_file: dict[str, set[str]] = {}
-    for s in loaded.get("sections", []):
-        nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
-                 for n in s.get("body", []) if n.get("level") in specs.KINDS]
-        family = clean_family(s.get("family") or loaded.get("family"))
-        in_file.setdefault(family, set()).add(s["number"].strip().upper())
-        have = section_by_number(s["number"], family)
-        counted["sections"] += 1
-        if have and mode == "add":
-            counted["kept"] += 1
-            continue
-        if have:
-            nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
-        section_id = save_section(s["number"], s.get("title", ""), nodes,
-                                  note="Read from a library file",
-                                  section_id=have["id"] if have else None, family=family)
-        if "applies" in s:
-            set_applies(section_id, s["applies"])
-        if not have:
-            counted["added"] += 1
-        elif section(section_id)["version"] != have["version"]:
-            counted["updated"] += 1
-        else:
-            counted["same"] += 1
+    return z, loaded
+
+
+def _new_count() -> dict:
+    return {"sections": 0, "options": 0, "variables": 0, "standards": 0,
+            "added": 0, "updated": 0, "same": 0, "kept": 0, "removed": []}
+
+
+def _load_section(s: Mapping[str, Any], loaded: Mapping[str, Any], mode: str, counted: dict,
+                  in_file: dict[str, set[str]]) -> None:
+    """One section of a library file read in (the part of a load that takes time)."""
+    nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
+             for n in s.get("body", []) if n.get("level") in specs.KINDS]
+    family = clean_family(s.get("family") or loaded.get("family"))
+    in_file.setdefault(family, set()).add(s["number"].strip().upper())
+    have = section_by_number(s["number"], family)
+    counted["sections"] += 1
+    if have and mode == "add":
+        counted["kept"] += 1
+        return
+    if have:
+        nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
+    section_id = save_section(s["number"], s.get("title", ""), nodes,
+                              note="Read from a library file",
+                              section_id=have["id"] if have else None, family=family)
+    if "applies" in s:
+        set_applies(section_id, s["applies"])
+    if not have:
+        counted["added"] += 1
+    elif section(section_id)["version"] != have["version"]:
+        counted["updated"] += 1
+    else:
+        counted["same"] += 1
+
+
+def _load_the_rest(z, loaded: Mapping[str, Any], mode: str, counted: dict,
+                   in_file: Mapping[str, set[str]]) -> None:
+    """The end of a load, once every section is in: what ``replace`` takes out,
+    then the questions, words, standards, wording and templates."""
     if mode == "replace":
         for family, numbers in in_file.items():
             for r in library(family):
@@ -1479,6 +1527,8 @@ def unpack(data: bytes, mode: str = "update") -> dict:
                                  "position) VALUES (?, ?, ?, ?, ?, 999)",
                                  (r["find"], r.get("replace", ""), r.get("note", ""),
                                   r.get("cond", ""), r.get("unless_next", "")))
+    from . import specs_questions
+    counted["questions"] = specs_questions.save_definitions(loaded.get("questions") or [], mode)
     if "template.docx" in z.namelist() and template_bytes() is None:
         save_template("house-template.docx", z.read("template.docx"))
     # A kind's own template comes with its sections: it is how they look.
@@ -1486,7 +1536,132 @@ def unpack(data: bytes, mode: str = "update") -> dict:
         m = re.fullmatch(r"templates/([0-9A-Za-z]{1,8})\.docx", name)
         if m and not (mode == "add" and template_row(clean_family(m.group(1)))):
             save_template(f"{m.group(1)}-template.docx", z.read(name), family=clean_family(m.group(1)))
-    return counted
+
+
+# A library file loaded a few sections at a time, so the page can show how far
+# it has got. The file waits in the data directory as a pending load (<id>.zip,
+# with <id>.json saying how far it is); each step reads the next few sections
+# in, and the last one does the rest of what `unpack` does. A load left waiting
+# longer than this (the page closed half way) is cleared by the next load.
+LOAD_STALE = 10 * 60
+
+
+def _loads_dir():
+    from .db import data_dir
+
+    folder = data_dir() / "specs-loads"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _load_paths(load_id: str):
+    if not re.fullmatch(r"[0-9a-f]{16,64}", load_id or ""):
+        raise specs.SpecError("That load is not waiting any more: load the file again.")
+    folder = _loads_dir()
+    return folder / f"{load_id}.zip", folder / f"{load_id}.json"
+
+
+def drop_load(load_id: str) -> None:
+    """A pending load's files removed (finished, failed, or given up)."""
+    try:
+        paths = _load_paths(load_id)
+    except specs.SpecError:
+        return
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
+def clear_stale_loads(older_than: float = LOAD_STALE) -> list[str]:
+    """Pending loads nobody has stepped for a while, removed; their ids."""
+    import time
+
+    cutoff, gone = time.time() - older_than, set()
+    for path in _loads_dir().iterdir():
+        if path.suffix in (".zip", ".json", ".tmp"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+                    gone.add(path.stem)
+            except OSError:
+                pass
+    return sorted(gone)
+
+
+def begin_load(data: bytes, mode: str = "update", filename: str = "") -> dict:
+    """A library file checked and put by as a pending load: its id and how
+    many sections it has. Nothing in the library changes yet."""
+    import secrets
+
+    if mode not in LOAD_MODES:
+        mode = "update"
+    _z, loaded = _library_file(data)
+    clear_stale_loads()
+    load_id = secrets.token_hex(12)
+    held, state = _load_paths(load_id)
+    total = len(loaded.get("sections", []))
+    held.write_bytes(data)
+    _save_state(state, {"mode": mode, "filename": filename, "done": 0, "total": total,
+                        "counted": _new_count(), "in_file": {}})
+    return {"id": load_id, "total": total}
+
+
+def _save_state(path, state: dict) -> None:
+    import os
+
+    part = path.with_suffix(".tmp")
+    part.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(part, path)
+
+
+def step_load(load_id: str, seconds: float = 0.5, most: int | None = None) -> dict:
+    """The next few sections of a pending load read in: as many as fit in
+    about ``seconds`` (at least one), or ``most``. The step that reads the
+    last one also does the rest, as `unpack` does, and clears the load.
+
+    Returns ``done`` and ``total`` sections, a ``message``, and ``finished``
+    with the ``counted`` `unpack` would return. A load that fails is cleared
+    and its error raised; the sections read in before it stay in, as they do
+    with `unpack`.
+    """
+    import os
+    import time
+
+    held, state_path = _load_paths(load_id)
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        data = held.read_bytes()
+    except (OSError, ValueError) as exc:
+        drop_load(load_id)
+        raise specs.SpecError("That load is not waiting any more: load the file again.") from exc
+    try:
+        z, loaded = _library_file(data)
+        sections = loaded.get("sections", [])
+        counted, mode = state["counted"], state["mode"]
+        in_file = {k: set(v) for k, v in state["in_file"].items()}
+        done, total = int(state["done"]), len(sections)
+        start, n, last = time.monotonic(), 0, None
+        while done < total and (most is None or n < most) and (
+                n == 0 or time.monotonic() - start < seconds):
+            last = sections[done]
+            _load_section(last, loaded, mode, counted, in_file)
+            done, n = done + 1, n + 1
+        if done >= total:
+            _load_the_rest(z, loaded, mode, counted, in_file)
+            drop_load(load_id)
+            return {"done": total, "total": total, "finished": True, "counted": counted,
+                    "filename": state.get("filename", ""), "mode": mode,
+                    "message": f"Read all {total} section{'s' if total != 1 else ''}, "
+                               "the questions, words and standards."}
+        state.update(done=done, counted=counted, in_file={k: sorted(v) for k, v in in_file.items()})
+        _save_state(state_path, state)
+        os.utime(held)
+    except BaseException:
+        drop_load(load_id)
+        raise
+    title = f"{last['number']} {last.get('title', '')}".strip() if last else ""
+    return {"done": done, "total": total, "finished": False, "counted": counted,
+            "filename": state.get("filename", ""), "mode": mode,
+            "message": f"Read {done} of {total} sections" + (f": {title}" if title else "") + "."}
 
 
 def _same_ids(have: Mapping[str, Any], nodes: list[dict]) -> bool:
@@ -1528,7 +1703,7 @@ def apply_model(set_id: int, found: Mapping[str, Any]) -> list[str]:
                    if v and specs._norm(v) not in ("none", "")]
             if specs._norm(e["value"]) in {specs._norm(v) for v in now}:
                 continue
-            stored[e["key"]] = "|".join(now + [e["value"]])
+            stored[e["key"]] = chosen[e["key"]] = "|".join(now + [e["value"]])
         else:
             if specs._norm(chosen.get(e["key"])) == specs._norm(e["value"]):
                 continue

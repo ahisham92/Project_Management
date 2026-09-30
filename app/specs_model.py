@@ -1201,6 +1201,28 @@ WATERPROOFING = [
 WP_ANY = _rx(r"waterproof|tanking|\bDPM\b|damp[- ]?proof")
 ROOFING = _rx(r"\broof")
 
+# The structural elements, by what the model calls them.
+PILE_CAP = _rx(r"pile ?caps?\b")
+PILE = _rx(r"\bpil(?:e|es|ing)\b")
+NOT_A_PILE = _rx(r"sheet ?pil|secant|contiguous|soldier|king ?post")
+SLAB_ON_GRADE = _rx(r"\bbaseslab\b|\bbase slab\b|slab[- ]on[- ](?:grade|ground)|\bSOG\b|on[- ]grade|"
+                    r"ground[- ]bearing|grade slab|ground slab")
+RAFT = _rx(r"\braft\b|\bmat (?:foundation|slab)|foundation slab")
+BLINDING = _rx(r"blinding|\blean (?:concrete|mix)|mud ?mat")
+TOPPING = _rx(r"topping|structural screed")
+LANDING = _rx(r"\blanding\b")
+FLOOR_FINISH = _rx(r"\bfinish|\btiles?\b|\btiling\b|carpet|vinyl|terrazzo|raised (?:access )?floor|"
+                   r"\bscreed\b|timber|wood")
+MARINE_DECK = _rx(r"\bdeck\b")
+RETAINING = _rx(r"retaining")
+BASEMENT = _rx(r"basement|\bbsmt\b|below[- ]grade")
+QUAY_WALL = _rx(r"quay ?wall|dock ?wall|wharf wall|berth(?:ing)? wall")
+NOT_STRUCTURAL_WALL = _rx(r"curtain|partition|gypsum|plasterboard|drywall|dry wall|glaz|glass|"
+                          r"cladding|\bfinish|\bstuds?\b")
+PRECAST_ROLES = {"PILE", "FOOTING", "SLAB", "COLUMN", "BEAM", "WALL", "MEMBER", "PLATE", "STAIR",
+                 "OTHER"}
+BRACING = _rx(r"\bbrac(?:e|es|ing)\b|truss|purlin|\bgirts?\b")
+
 CIP_ROLES = {"BEAM", "COLUMN", "SLAB", "WALL", "FOOTING", "PILE", "STAIR", "RAMP", "ROOF",
              "OTHER"}
 FRAME_ROLES = {"BEAM", "COLUMN", "MEMBER", "PLATE"}
@@ -1240,6 +1262,68 @@ def _where(g: Group, pattern: re.Pattern, text: str | None = None) -> str | None
 
 def _as_class(g: Group) -> str:
     return g.unit if g.unit.startswith("Ifc") else f"'{g.kind}' {g.unit}"
+
+
+def _structural(g: Group, water: bool, precast: bool) -> list[tuple[str, str]]:
+    """The structural elements a group is, each with why: by its IFC class or
+    Revit category first, then what its name, type and predefined type say."""
+    out: list[tuple[str, str]] = []
+    words = g.words
+
+    def say(value: str, pattern: re.Pattern | None = None) -> None:
+        out.append((value, (_where(g, pattern, words) if pattern else None) or _as_class(g)))
+
+    pile = PILE.search(PILE_CAP.sub(" ", words)) and not NOT_A_PILE.search(words)
+    if g.role == "PILE":
+        if not NOT_A_PILE.search(words):
+            say("Piles")
+    elif g.role == "FOOTING":
+        if PILE_CAP.search(words):
+            say("Pile caps", PILE_CAP)
+        if pile:
+            say("Piles", PILE)
+        if BLINDING.search(words):
+            say("Blinding", BLINDING)
+        elif not PILE_CAP.search(words) and not pile:
+            say("Foundations")
+    elif g.role == "COLUMN":
+        if pile:
+            say("Piles", PILE)
+        else:
+            say("Columns")
+    elif g.role == "BEAM":
+        if not BRACING.search(words):
+            say("Beams")
+    elif g.role == "SLAB":
+        if BLINDING.search(words):
+            say("Blinding", BLINDING)
+        elif TOPPING.search(words):
+            say("Topping", TOPPING)
+        elif PILE_CAP.search(words):
+            say("Pile caps", PILE_CAP)
+        elif LANDING.search(words) or FLOOR_FINISH.search(words):
+            pass                      # a stair's landing; a floor's finish
+        elif water and MARINE_DECK.search(words) and not DECK.search(words):
+            say("Deck", MARINE_DECK)
+        elif SLAB_ON_GRADE.search(words):
+            say("Slab on grade", SLAB_ON_GRADE)
+        elif RAFT.search(words):
+            say("Foundations", RAFT)
+        else:
+            say("Suspended slabs and floors")
+    elif g.role == "WALL" and not NOT_STRUCTURAL_WALL.search(words):
+        special = False
+        for value, pattern in (("Quay walls", QUAY_WALL), ("Retaining walls", RETAINING),
+                               ("Basement walls", BASEMENT)):
+            if pattern.search(words):
+                say(value, pattern)
+                special = True
+        if not special:
+            say("Walls")
+    if precast and g.role in PRECAST_ROLES:
+        out.append(("Precast", _where(g, PRECAST) or _where(g, PRECAST_PC)
+                    or f"{g.unit} named '{g.name}'"))
+    return out
 
 
 def _bollard_size(text: str) -> tuple[str, bool]:
@@ -1445,6 +1529,10 @@ def _judge(model: Model) -> tuple[Evidence, list[str]]:
         if not systems and g.role != "ROOF" and (WP_ANY.search(text) or membrane) \
                 and not ROOFING.search(text):
             wp_untyped[g.name] += n
+
+        # The structural elements (not the ones being demolished).
+        for value, why in ([] if g.phase else _structural(g, marine or bridge, bool(precast))):
+            ev.add("elements", value, n, why)
 
         # Other works.
         if g.phase:

@@ -1131,6 +1131,12 @@ mark.spec-mark { background: var(--tint-warning); color: inherit; border-radius:
 .spec-tile-pick select { width: 100%; font-size: 0.8rem; }
 .spec-tile-flag { position: absolute; top: 6px; right: 6px; font-size: 0.65rem; padding: 1px 5px; border-radius: 8px;
   background: var(--tint-good); color: var(--good-ink); }
+.spec-tile-flag.spec-tile-own { background: color-mix(in srgb, var(--series-1) 14%, transparent); color: var(--ink-2); }
+.spec-elements-hint { margin: -4px 0 8px; }
+.spec-elements-more { margin-top: 8px; }
+.spec-elements-more > summary { cursor: pointer; color: var(--ink-2); padding: 2px 0; }
+.spec-elements-more > .spec-tiles { margin-top: 8px; }
+.spec-element-add { margin-top: 12px; align-items: flex-end; max-width: 520px; }
 .spec-questions { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px 22px; align-items: start; }
 .spec-questions .spec-group { display: grid; gap: 10px; }
 .spec-questions .spec-group + .spec-group { margin-top: 0; }
@@ -1193,3 +1199,45 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-blank-free input[type=text] { width: min(320px, 60vw); }
 .spec-blank-all { display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; }
 .spec-blanks-foot { position: sticky; bottom: 0; padding: 10px 0; margin-top: 12px; background: var(--plane); border-top: 1px solid var(--border); }
+
+/* Details: the master's questions, one group at a time */
+.spec-q-progress { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.spec-q-bar { flex: 1 1 auto; height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.spec-q-bar span { display: block; height: 100%; background: var(--series-1); border-radius: 4px; }
+.spec-blank-sections a.spec-q-done { color: var(--good-ink); }
+.spec-q-list { display: grid; gap: 18px; }
+.spec-q { border: 0; margin: 0; padding: 14px 0 0; min-width: 0; border-top: 1px solid var(--border); }
+.spec-q:first-child { border-top: 0; padding-top: 0; }
+.spec-q-label { padding: 0; font-weight: 600; font-size: 0.98rem; }
+.spec-q-tick { color: var(--good-ink); font-weight: 700; margin-left: 4px; }
+.spec-q-help { margin: 2px 0 0; }
+.spec-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.spec-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 18px; background: var(--raised); font-size: 0.9rem; cursor: pointer; }
+.spec-pill:hover { border-color: var(--series-1); }
+.spec-pill input[type=radio], .spec-pill input[type=checkbox] { width: auto; margin: 0; accent-color: var(--series-1); }
+.spec-pill:has(input:checked) { border-color: var(--series-1); background: var(--tint-good); box-shadow: 0 0 0 1px var(--series-1) inset; }
+.spec-pill-free input[type=text] { width: min(240px, 55vw); padding: 3px 8px; border-radius: 12px; }
+.spec-pill-none, .spec-pill-same { color: var(--ink-2); }
+.spec-suggested { font-size: 0.7rem; color: var(--good-ink); border: 1px solid currentColor; border-radius: 8px; padding: 0 5px; }
+.spec-q-split { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 0.85rem; }
+.spec-q-split label { display: inline-flex; gap: 6px; align-items: center; }
+.spec-q-split input { width: auto; margin: 0; }
+.spec-q-rows { display: grid; gap: 8px; margin-top: 8px; padding-left: 12px; border-left: 3px solid var(--grid); }
+.spec-q-rows[hidden] { display: none; }
+.spec-q-row { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: 8px; align-items: center; }
+.spec-q-row .spec-pills { margin-top: 0; }
+.spec-q-el { font-size: 0.85rem; font-weight: 600; }
+.spec-q-where { margin-top: 6px; }
+.spec-q-where ul { margin: 4px 0 0; padding-left: 18px; }
+.spec-ask { background: var(--tint-warning); border-radius: 3px; }
+@media (max-width: 640px) { .spec-q-row { grid-template-columns: 1fr; } }
+.spec-q-part { font-size: 0.85rem; font-weight: 600; margin: 4px 0 -6px; color: var(--ink-2); }
+.spec-q-compact { border-top: 1px solid var(--border); padding-top: 8px; }
+.spec-q-compact > summary { display: flex; gap: 12px; align-items: baseline; cursor: pointer; list-style: none; }
+.spec-q-compact > summary::-webkit-details-marker { display: none; }
+.spec-q-name { flex: 1 1 auto; }
+.spec-q-value { font-weight: 600; text-align: right; max-width: 45%; overflow-wrap: anywhere; }
+.spec-q-change { font-size: 0.8rem; color: var(--series-1); }
+.spec-q-compact[open] > summary .spec-q-value, .spec-q-compact[open] > summary .spec-q-change { display: none; }
+.spec-q-compact > .spec-q { border-top: 0; padding-top: 6px; }
+.spec-q-compact > .spec-q > .spec-q-label { display: none; }

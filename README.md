@@ -170,9 +170,10 @@ meet, so the Specs Writer reads across them:
   right with what it means and how to choose, a drawing of it, and **what each code says**:
   every code and clause that governs it and what that clause says, whatever the project's
   basis, grouped by family (ACI, ASTM and AISC; BS and BS EN; SBC) with the project's own first.
-  An administrator can reword the explanation or its list of codes; every project then sees it.
-  The explanations travel in the library file with the questions; the drawings are the app's
-  own. Clause numbers are for the
+  Under each clause, an administrator adds a **screenshot of it** from the office's own copy of
+  the code (choose a file or paste one with Ctrl+V), and can reword the explanation or its list
+  of codes; every project then sees them. The explanations and screenshots travel in the library
+  file with the questions; the drawings are the app's own. Clause numbers are for the
   editions named, to be checked against the office's copy.
 - **Elements, as the project has them.** The elements tile list covers piles, foundations, slab
   on grade, columns, beams, floors, walls, basement walls, retaining walls, precast, deck and

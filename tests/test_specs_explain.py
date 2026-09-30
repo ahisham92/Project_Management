@@ -70,8 +70,8 @@ def test_screenshots_of_a_code_clause_are_added_shown_and_carried(app, signed_in
     assert got.data == PNG and got.mimetype == "image/png"
     panel = text(signed_in.get(f"/specs/sets/{set_id}/explain/conc_strength"))
     assert f"/specs/question-images/{shots[0]['id']}" in panel and "Table 19.2.1.1" in panel
-    # The codes' clauses are written out now: the panel offers no screenshot upload.
-    assert "Add a screenshot" not in panel and "data-paste-form" not in panel
+    # An administrator adds a screenshot under any code's clause, or pastes one.
+    assert "Add a screenshot" in panel and "data-paste-form" in panel
     # The same screenshot twice is kept once; the library file carries it.
     with app.app_context():
         assert specs_questions.add_image("conc_strength", PNG, "ACI 318-19", "19.2.1.1") == shots[0]["id"]

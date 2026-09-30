@@ -138,6 +138,16 @@ def save_answers(set_id: int, given: Mapping[str, str | None], split: Mapping[st
 
 # --- what a project is asked --------------------------------------------------------
 
+def _balanced(text: str) -> str:
+    """A choice without the stray bracket the master's typing left on it
+    ("0.38 mm)", "(38 mm")."""
+    if text.count("(") != text.count(")"):
+        text = text.strip("()").strip()
+        if text.count("(") != text.count(")"):
+            text = text.replace("(", "").replace(")", "")
+    return text
+
+
 def _pretty(key: str) -> str:
     words = re.sub(r"^[a-z]+_", "", key).replace("_", " ")
     return words[:1].upper() + words[1:]
@@ -183,7 +193,7 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                 if len(pieces) != 1 or pieces[0]["free"]:
                     q["all_single"] = False
                 for piece in pieces:
-                    text = piece["text"].strip(" ,;")
+                    text = _balanced(piece["text"].strip(" ,;"))
                     target = q["free"] if piece["free"] else q["choices"]
                     if text and text not in target:
                         target.append(text)
@@ -197,8 +207,9 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
     for q in found.values():
         # Optional words the master puts in one bracket wherever it asks: a
         # yes or no, and yes keeps each place's own words.
-        q["single_choice_optional"] = q["yes_no"] = q["all_single"] and (
-            q["optional"] or len(q["choices"]) == 1)
+        # A single word the master offers where it must be said ("[20 mm]") is
+        # not a yes or no: it keeps its box for other words.
+        q["single_choice_optional"] = q["yes_no"] = q["all_single"] and q["optional"]
         if q["yes_no"]:
             q["optional"] = True
             q["example"] = q["choices"][0] if q["choices"] else ""
@@ -213,7 +224,8 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
         q["answer"] = answers.get(q["key"])
         q["answered"] = q["key"] in answers
         q["row_answers"] = {e: answers.get(f"{q['key']}@{e}") for e in q["rows"]}
-        if q["suggested"] is None and q["choices"] and not q["optional"]:
+        if q["suggested"] is None and q["choices"] and not q["optional"] and q["key"] not in defs:
+            # A question the library does not describe: the master's first answer.
             q["suggested"] = q["choices"][0]
         q["sections"] = sorted({p["number"] for p in q["places"]})
         out.append(q)

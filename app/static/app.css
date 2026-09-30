@@ -1206,8 +1206,9 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-q-bar span { display: block; height: 100%; background: var(--series-1); border-radius: 4px; }
 .spec-blank-sections a.spec-q-done { color: var(--good-ink); }
 .spec-q-list { display: grid; gap: 18px; }
-.spec-q { border: 0; margin: 0; padding: 14px 0 0; min-width: 0; border-top: 1px solid var(--border); }
-.spec-q:first-child { border-top: 0; padding-top: 0; }
+.spec-q { border: 0; margin: 0; padding: 14px 0 0; min-width: 0; background: linear-gradient(var(--border), var(--border)) top / 100% 1px no-repeat; }
+.spec-q-label { float: left; width: 100%; margin-bottom: 2px; }
+.spec-q-label + * { clear: both; }
 .spec-q-label { padding: 0; font-weight: 600; font-size: 0.98rem; }
 .spec-q-tick { color: var(--good-ink); font-weight: 700; margin-left: 4px; }
 .spec-q-help { margin: 2px 0 0; }

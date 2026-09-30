@@ -34,6 +34,12 @@ def test_live_untitled_and_listed_references_are_rewritten_too():
         "Curing: see the applicable codes and standards."
     assert rewrite("Grout as specified in Sections 033000 and 034500.", "034500") == \
         "Grout as specified in Section 033000."
+    # A full stop typed inside the closing quote stays at the end of the sentence.
+    assert rewrite('Stone facing is specified in Section 044200 "Exterior Stone Cladding."',
+                   "044200") == "Stone facing is specified in the applicable codes and standards."
+    assert rewrite('[Section 099113 "Exterior Painting"] [and] [Section 099611 "Coatings"] for '
+                   'painting.', "099113") == \
+        '[The applicable codes and standards] [and] [Section 099611 "Coatings"] for painting.'
     # Another section is left as it is.
     assert rewrite('Bars to Section 033000 "Cast-in-Place Concrete".', "034500") == \
         'Bars to Section 033000 "Cast-in-Place Concrete".'

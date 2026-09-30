@@ -694,9 +694,12 @@ def remove_item(set_id: int):
         flash(f"Removed paragraph {store.label(places[0])}: it was its only sentence"
               + (f", and the {whole[0]['under']} paragraph{'s' if whole[0]['under'] != 1 else ''} "
                  "under it went with it." if whole[0]["under"] else "."), "success")
+    elif len(whole) == len(places):
+        flash(f"Removed paragraphs {store.labels(places)}: the sentence was all each one said.",
+              "success")
     else:
         flash(f"Removed the sentence from {store.labels(places)}."
-              + (f" {len(whole)} of them had no other sentence, so the paragraph went."
+              + (f" In {store.labels(whole)} it was the only sentence, so the paragraph went."
                  if whole else ""), "success")
     if len(done) == 1:
         return redirect(_back_to_check(set_id, done[0]["key"]) + f"#item-{done[0]['key']}")

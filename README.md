@@ -80,7 +80,12 @@ text** of each section and makes every project's copy of it **known**.
   (SCT, PRT, ART, PR1 to PR4, EOS), page, header and footer — with the numbers done by Word's
   own list, so they stay right when somebody edits the file. The built-in template is the
   MasterSpec layout; an administrator can upload one of the office's own sections as the house
-  template instead, and its formatting is used exactly.
+  template instead, and its formatting is used exactly. A project's sections can also be issued
+  as **Word with tracked changes** (every amendment to the master as Word's own insertions and
+  deletions, to accept or reject in Word) or as **one PDF**, section by section or all at once.
+- **Reading as a book.** *Read as a book* lays a project's sections (or one master section) out
+  as issued, two A4 pages side by side, and the page turns over like a book's: the arrows, the
+  page edges or a swipe. On a phone it shows one page at a time.
 
 **Editing** a section opens it as a page laid out the way it is issued, with a ribbon as in
 Word: *Home* (undo and redo, the paragraph styles PART to PR4, note and table, level in and out,
@@ -120,9 +125,13 @@ meet, so the Specs Writer reads across them:
 - **Choices** are grouped under headings, and a question can take several answers (tick all
   that apply); a condition holds when any of them matches. *Add the suggested questions* on the
   options page fills in the starting list without changing anything already there.
-- **Nothing is issued until the check is settled.** Each item on the checker, and each language
-  suggestion, is accepted (right, or dealt with) or rejected (the text stays as it is); a whole
-  group can be settled at once, and a settled item can be opened again. *Issue all* holds a
+- **Nothing is issued until the check is settled.** Each item on the checker is **kept** (the
+  text stays as it is), **amended** (a box opens under it with the paragraph and a proposed
+  amendment to edit and save; the amendment is shown under the item with what it said before,
+  and can be amended again) or **removed** (the sentence goes, or the paragraph if it was its
+  only sentence). A reference to a section the specification does not include is offered as a
+  reference to the applicable codes and standards instead. Each language suggestion is accepted
+  or rejected. A whole group can be kept at once, and a settled item can be opened again. *Issue all* holds a
   project while anything is open. The hold is a tick box on the project page; with it off,
   *Issue all* still stops when a reference points at a section the specification does not
   include, or at a paragraph its choices switch off, and it can be issued anyway from there.

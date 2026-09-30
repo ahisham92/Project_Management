@@ -50,7 +50,7 @@
     <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncovered %} · {{ uncovered | length }} not covered{% endif %}</span></span></a>
   {% if report %}
   <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
-    <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to accept or reject{% else %}all settled{% endif %}</span></span></a>
+    <span><strong>Check</strong><span class="small">{% if waiting['total'] %}{{ waiting['total'] }} to settle{% else %}all settled{% endif %}</span></span></a>
   <a class="spec-step {{ 'spec-step-held' if spec['hold_issue'] and waiting['total'] else 'spec-step-ready' }}" href="{{ url_for('specs.export_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
     <span><strong>Issue</strong><span class="small">{% if spec['hold_issue'] and waiting['total'] %}held until the check is settled{% else %}ready{% endif %}</span></span></a>
   {% else %}
@@ -414,7 +414,7 @@
   <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: questions</a>
   {% if sections %}
   {% if blanks_n %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id']) }}" title="The master's [choices] and &lt;Insert ...&gt; places, each with a box to answer">Fill the blanks ({{ blanks_n }})</a>{% endif %}
-  <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to accept or reject){% endif %} →</a>
+  <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to settle){% endif %} →</a>
   {% else %}
   <span class="small muted">The check comes once the project has sections.</span>
   {% endif %}

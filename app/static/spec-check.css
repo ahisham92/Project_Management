@@ -22,8 +22,8 @@
   background: var(--tint-good); border-radius: 0 4px 4px 0; }
 .spec-done-removed { text-decoration: line-through; text-decoration-color: var(--critical);
   border-left-color: var(--critical); background: var(--tint-critical); color: var(--ink-2); }
-.spec-was summary { cursor: pointer; color: var(--muted); }
-.spec-was div { color: var(--ink-2); padding: 4px 8px; }
+.spec-done-was summary { cursor: pointer; color: var(--muted); }
+.spec-done-was div { color: var(--ink-2); padding: 4px 8px; }
 
 /* An item just amended or removed stays readable among the settled ones. */
 .spec-check-item.spec-is-settled:has(.spec-done), .spec-check-item.spec-just { opacity: 1; }

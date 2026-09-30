@@ -48,7 +48,7 @@
       {% endif %}
       {% if act['can_remove'] %}
       <form method="post" action="{{ url_for('specs.remove_item', set_id=spec['id']) }}" class="inline-form"
-            data-confirm="{{ act['confirm'] }}" onsubmit="return confirm(this.dataset.confirm)">
+            data-confirm="{{ act['confirm'] }}">
         <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
         <button type="submit" class="btn btn-ghost btn-sm spec-remove" title="Take the sentence out{{ ' in every place' if act['places'] | length > 1 }}">Remove</button>
       </form>
@@ -69,7 +69,7 @@
     <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
     {% for p in act['places'] %}
     <div class="spec-amend-place">
-      {% if act['places'] | length > 1 or item.get('done') %}<div class="small">{{ where(p) }}</div>{% endif %}
+      {% if act['places'] | length > 1 %}<div class="small">{{ where(p) }}</div>{% endif %}
       <input type="hidden" name="row_id" value="{{ p['row_id'] }}"><input type="hidden" name="node_id" value="{{ p['node_id'] }}">
       {% if p['proposed'] != p['current'] %}
         <div class="small muted">Now</div>
@@ -97,11 +97,11 @@
   <div class="spec-done">
     {% for p in s['detail']['places'] %}
     <div class="spec-done-place">
-      {% if s['detail']['places'] | length > 1 or item.get('done') %}<div class="small">{{ where(p) }}</div>{% endif %}
+      {% if s['detail']['places'] | length > 1 %}<div class="small">{{ where(p) }}</div>{% endif %}
       {% if s['how'] == 'amended' %}
         <div class="small spec-done-label">Amended to</div>
         <div class="spec-done-text">{{ p['after'] }}</div>
-        {% if p['before'] != p['after'] %}<details class="small spec-was"><summary>What it said before</summary><div>{{ p['before'] }}</div></details>{% endif %}
+        {% if p['before'] != p['after'] %}<details class="small spec-done-was"><summary>What it said before</summary><div>{{ p['before'] }}</div></details>{% endif %}
       {% else %}
         <div class="small spec-done-label">{% if p['whole'] %}Removed the paragraph{% if p.get('under') %}, with the {{ p['under'] }} paragraph{{ 's' if p['under'] != 1 }} under it{% endif %}{% else %}Removed the sentence{% endif %}</div>
         <div class="spec-done-text spec-done-removed">{{ p['removed'] }}</div>
@@ -183,7 +183,8 @@
   {% if held %}
     <span class="btn btn-primary" aria-disabled="true" style="opacity:.45;cursor:not-allowed" title="Held until every item is settled">Next: Issue all</span>
   {% else %}
-    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id']) }}">Next: Issue all (.zip of .docx)</a>
+    {% set fmt = request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none %}
+    <a class="btn btn-primary" href="{{ url_for('specs.export_set', set_id=spec['id'], fmt=fmt) }}">Next: Issue all ({{ {'tracked': 'Word with tracked changes', 'pdf': 'one PDF'}[fmt] if fmt else '.zip of .docx' }})</a>
   {% endif %}
 </div></div>
 {% endif %}
@@ -192,7 +193,7 @@
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>
     (listed under Cross-references). Add those sections from the library, switch the paragraphs back on, or correct the references.</p>
-  {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1) }}">Issue anyway</a>{% endif %}
+  {% if issuing %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], anyway=1, fmt=request.args.get('fmt') if request.args.get('fmt') in ('tracked', 'pdf') else none) }}">Issue anyway</a>{% endif %}
 </div></div>
 {% endif %}
 
@@ -222,7 +223,7 @@
     </form>
     {% if key == 'references' and gone_missing | length > 1 %}
     <form method="post" action="{{ url_for('specs.remove_item', set_id=spec['id']) }}" class="inline-form"
-          data-confirm="Remove every sentence that refers to a section not in this specification? {{ gone_missing | length }} item{{ 's' if gone_missing | length != 1 }}, {{ gone_missing | map(attribute='act.places') | map('length') | sum }} place{{ 's' if (gone_missing | map(attribute='act.places') | map('length') | sum) != 1 }}. A paragraph with no other sentence goes whole. This cannot be undone from the check." onsubmit="return confirm(this.dataset.confirm)">
+          data-confirm="Remove every sentence that refers to a section not in this specification? {{ gone_missing | length }} item{{ 's' if gone_missing | length != 1 }}, {{ gone_missing | map(attribute='act.places') | map('length') | sum }} place{{ 's' if (gone_missing | map(attribute='act.places') | map('length') | sum) != 1 }}. A paragraph with no other sentence goes whole. This cannot be undone from the check.">
       <input type="hidden" name="group" value="{{ key }}">{{ back_fields() }}
       {% for item in gone_missing %}<input type="hidden" name="key" value="{{ item['key'] }}">{% endfor %}
       <button type="submit" class="btn btn-ghost btn-sm spec-remove" title="Take out every sentence that refers to a section not in this specification">Remove all {{ gone_missing | length }} to missing sections</button>

@@ -173,15 +173,19 @@ meet, so the Specs Writer reads across them:
   Each chapter takes whole groups and says in one line what it covers; *Show by group* goes
   back to the groups (`STORY` in `app/specs_questions.py`).
 - **The inputs at a glance.** *Inputs at a glance* on the project page (and on *Issue…*) draws
-  the works in 3D, isometric, in the browser: the site office, the cement silo, the sand and
-  stone heaps, the water tank, the admixture drums, the batching plant with its mixer turning,
-  the truck on the haul road, the formwork, the rebar cage, the pour, the steel frame, the
-  membrane, the testing lab. Each station carries a pin (green answered, amber suggested and
-  not accepted, red still to answer); click it to zoom in and read every answer it holds with
-  the words of the specification it goes into, and the mixer shows each element's concrete as
-  a table. *Play the story* walks the stations in the chapters' order. The same summary is
-  written out underneath as tables, for reading, printing and phones (`app/specs_inputs.py`,
-  `static/spec-inputs.js`, no library).
+  the works in 3D, isometric, in the browser, laid out the way the concrete goes: cement from
+  the silo, sand and stone up the belts, water and admixtures through their pipes into the
+  mixer; the truck takes the mix down the haul road to the pump, the boom fills the formwork
+  the rebar cage was lowered into, and cubes go to the testing lab. Each material moves once
+  its stage is answered, and the formwork shows the cage, the concrete and the curing water as
+  those stages are. Each station carries a pin (green answered, amber suggested and not
+  accepted, red still to answer, grey padlock locked); click it to zoom in and **answer or
+  change its questions there**, saved to the project as on *Details* (the mixer also shows
+  each element's concrete as a table). The **stages open in turn**: a chapter is locked until
+  every question before it is answered, a suggested answer counting only once the engineer
+  ticks to accept it; *Next* and *Play the story* stop at a locked stage and say what is left.
+  The same summary is written out underneath as tables, for reading, printing and phones
+  (`app/specs_inputs.py`, `templates/specs/_station.html`, `static/spec-inputs.js`, no library).
 - **What a question means.** Clicking a question (or the *i* beside it) opens a panel on the
   right with what it means and how to choose, a drawing of it, and **what each code says**:
   every code and clause that governs it and what that clause says, whatever the project's

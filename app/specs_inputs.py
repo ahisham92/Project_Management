@@ -118,11 +118,45 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
                     mix_rows.setdefault(r["element"], {})[q["key"]] = r["value"]
     shown_stations = [s for s in stations.values() if s["questions"]]
     totals = {k: sum(s[k] for s in shown_stations) for k in ("answered", "suggested", "needed")}
-    return {"stations": shown_stations,
-            "chapters": [{"slug": c["slug"], "number": c["number"], "name": c["name"], "lead": c["lead"],
-                          "stations": [s["id"] for s in shown_stations if s["chapter"] == c["slug"]],
-                          "needed": sum(s["needed"] for s in shown_stations if s["chapter"] == c["slug"]),
-                          "suggested": sum(s["suggested"] for s in shown_stations if s["chapter"] == c["slug"])}
-                         for c in chapters],
+    out_chapters = []
+    for c in chapters:
+        held = [s for s in shown_stations if s["chapter"] == c["slug"]]
+        needed, suggested = sum(s["needed"] for s in held), sum(s["suggested"] for s in held)
+        out_chapters.append({"slug": c["slug"], "number": c["number"], "name": c["name"], "lead": c["lead"],
+                             "stations": [s["id"] for s in held], "needed": needed, "suggested": suggested,
+                             "done": not needed and not suggested})
+    # The stages open in turn: a chapter opens once every one before it is
+    # answered, a suggestion counting once the engineer accepts it.
+    open_stage = next((i for i, c in enumerate(out_chapters) if not c["done"]), len(out_chapters))
+    for i, c in enumerate(out_chapters):
+        c["stage"] = i
+        c["locked"] = i > open_stage
+        for sid in c["stations"]:
+            stations[sid]["stage"] = i
+            stations[sid]["locked"] = c["locked"]
+    return {"stations": shown_stations, "chapters": out_chapters, "open_stage": open_stage,
             "mix": {"columns": mix_cols, "rows": [{"element": e, "values": v} for e, v in mix_rows.items()]},
             "totals": totals, "count": sum(totals.values())}
+
+
+def station_questions(questions: list[dict], station: str) -> tuple[dict | None, list[dict]]:
+    """The chapter a station stands in, and its questions as ``asked`` gives
+    them, to answer there."""
+    for c in specs_questions.story(questions):
+        held = [q for q in c["questions"] if station_of(q, c["slug"]) == station]
+        if held:
+            return c, held
+    return None, []
+
+
+def blocking(data: Mapping[str, Any], station: str) -> dict | None:
+    """What keeps a station locked: the first chapter not yet answered, with how
+    many are left there and a station of it to go to; None when it is open."""
+    st = next((s for s in data["stations"] if s["id"] == station), None)
+    if st is None or not st.get("locked"):
+        return None
+    c = data["chapters"][data["open_stage"]]
+    by_id = {s["id"]: s for s in data["stations"]}
+    first = next((sid for sid in c["stations"] if by_id[sid]["needed"] or by_id[sid]["suggested"]),
+                 c["stations"][0])
+    return {"number": c["number"], "name": c["name"], "left": c["needed"] + c["suggested"], "station": first}

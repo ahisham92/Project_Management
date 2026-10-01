@@ -1,14 +1,21 @@
-/* THEMIS: the project's inputs at a glance, drawn as the works being built.
+/* THEMIS: the project's inputs at a glance, drawn as the works being built,
+   and answered there.
 
    The page carries the data (#spec-scene-data): stations, each with its
-   questions and answers, and the chapters of the questions' story. Each
-   station is drawn in isometric 3D on the site (silos, heaps, the mixer, the
-   formwork...), with a pin saying how it stands. Clicking a station zooms in
-   and opens its answers with the words of the specification they go into;
-   "Play the story" walks through the stations in the story's order.
+   questions and answers, and the chapters of the questions' story as stages.
+   The plant is drawn in isometric 3D the way it works: cement, sand, stone,
+   water and admixtures go into the mixer, a truck takes the mix to the pump,
+   the pump fills the formwork the cage was lowered into, and cubes go to the
+   lab. Each material moves once its stage is answered.
 
-   Everything here is drawn in the browser as SVG, with no library; the page
-   shows the same summary as tables for reading without this file. */
+   Clicking a station zooms in and opens its questions to answer or change
+   there (the station's form, fetched from the server and saved back to it).
+   The stages open in turn: a stage is locked until every question before it
+   is answered, a suggestion counting once the engineer accepts it, and Next
+   and "Play the story" stop there.
+
+   Everything is drawn in the browser as SVG, with no library; the page shows
+   the same summary as tables for reading without this file. */
 (function () {
   "use strict";
 
@@ -117,13 +124,12 @@
       var out = "";
       for (var i = 0; i < 4; i++) out += line(P(x + (i % 2 ? 0.9 : -0.9), y + (i < 2 ? 0.9 : -0.9), 0), P(x + (i % 2 ? 0.7 : -0.7), y + (i < 2 ? 0.7 : -0.7), 2.4), "#6c6c6c", 2);
       out += hopper(x, y, 1.2, 1.3, 1.6, "#c9ccd1") + cyl(x, y, 2.8, 1.3, 5.2, "#c9ccd1");
-      out += line(P(x + 1.3, y, 8.0), P(x + 3.4, y + 2.0, 1.2), "#8a8f96", 2.5);
       return out;
     },
     sand: function (x, y) { return heap(x, y, 1.9, 1.7, "#e2c27a", "#b8913e", false); },
     gravel: function (x, y) { return heap(x, y, 1.8, 1.8, "#a7a59f", "#6e6b66", true); },
     water: function (x, y) {
-      return cyl(x, y, 0, 1.1, 2.6, "#4f8fd1") + line(P(x + 1.1, y + 0.2, 0.4), P(x + 3.0, y + 2.4, 0.4), "#4f8fd1", 2.5) +
+      return cyl(x, y, 0, 1.1, 2.6, "#4f8fd1") +
         '<path class="spec-scene-ripple" d="M' + (P(x, y, 2.6)[0] - 10) + "," + P(x, y, 2.6)[1] + ' q5,-3 10,0 t10,0" stroke="#fff" fill="none" stroke-width="1.2"/>';
     },
     admixtures: function (x, y) {
@@ -145,15 +151,26 @@
       out += '<ellipse cx="' + c[0] + '" cy="' + c[1] + '" rx="12" ry="15" transform="rotate(-30 ' + c[0] + " " + c[1] + ')" fill="#dfe6ee" stroke="#1d3b5c" stroke-width="1.5"/>';
       out += '<g class="spec-scene-drum" style="transform-origin:' + c[0] + "px " + c[1] + 'px">' +
         line([c[0] - 9, c[1]], [c[0] + 9, c[1]], "#d03b3b", 2.4) + line([c[0], c[1] - 9], [c[0], c[1] + 9], "#d03b3b", 2.4) + "</g>";
-      // The belt bringing sand and stone up from the heaps.
-      out += line(P(x - 4.2, y + 2.6, 0.6), P(x + 0.4, y + 1.2, 4.6), "#555", 4, "spec-scene-belt");
       return out;
     },
-    formwork: function (x, y) {
+    // The mould, with what the stages before it have put in: the cage once the
+    // steel is settled, concrete once the pour is, curing water on it after.
+    formwork: function (x, y, st) {
       var out = box(x, y, 0, 3.4, 2.4, 0.15, "#c8a36a");
       out += box(x, y, 0.15, 3.4, 0.12, 1.2, "#d9b47a") + box(x, y, 0.15, 0.12, 2.4, 1.2, "#d9b47a");
+      if (st && st.steel) {
+        for (var a = 0; a <= 5; a++) out += line(P(x + 0.4 + a * 0.52, y + 0.3, 0.35), P(x + 0.4 + a * 0.52, y + 2.1, 0.35), "#9a532a", 1.2);
+        for (var b = 0; b <= 3; b++) out += line(P(x + 0.3, y + 0.4 + b * 0.55, 0.45), P(x + 3.1, y + 0.4 + b * 0.55, 0.45), "#7a3e1d", 1.2);
+      }
+      if (st && st.poured) out += box(x + 0.12, y + 0.12, 0.15, 3.16, 2.16, 0.95, "#a9a9a6", "spec-scene-fill");
       out += box(x + 3.28, y, 0.15, 0.12, 2.4, 1.2, "#cfa96f") + box(x, y + 2.28, 0.15, 3.4, 0.12, 1.2, "#cfa96f");
       for (var i = 0; i < 3; i++) out += line(P(x + 0.6 + i, y - 0.2, 0.6), P(x + 0.6 + i, y - 1.0, 0), "#8a6d4b", 2);
+      if (st && st.cured) {
+        for (var d = 0; d < 7; d++) {
+          var w = P(x + 0.5 + (d % 4) * 0.8, y + 0.6 + Math.floor(d / 4) * 1.0, 1.9);
+          out += '<circle class="spec-scene-drop" style="animation-delay:' + (d * 0.23).toFixed(2) + 's" cx="' + w[0].toFixed(1) + '" cy="' + w[1].toFixed(1) + '" r="1.8" fill="#4f8fd1"/>';
+        }
+      }
       return out;
     },
     rebar: function (x, y) {
@@ -169,11 +186,13 @@
       }
       return out;
     },
-    pour: function (x, y) {
-      var out = box(x, y, 0, 4.0, 3.0, 0.4, "#a9a9a6");
-      out += box(x + 4.6, y - 0.4, 0, 1.4, 2.6, 1.2, "#e0a32a") + box(x + 4.8, y + 1.8, 1.2, 1.0, 0.6, 0.6, "#e0a32a");
-      var b0 = P(x + 5.2, y + 0.6, 1.4), b1 = P(x + 4.6, y + 0.4, 5.0), b2 = P(x + 1.6, y + 1.2, 4.2), b3 = P(x + 1.8, y + 1.4, 0.6);
-      out += line(b0, b1, "#e0a32a", 3) + line(b1, b2, "#e0a32a", 2.6) + line(b2, b3, "#555", 1.6, "spec-scene-belt");
+    // The concrete pump, its boom reaching over the formwork (st.to).
+    pour: function (x, y, st) {
+      var out = box(x, y, 0, 1.4, 2.8, 1.2, "#e0a32a") + box(x + 0.2, y + 2.0, 1.2, 1.0, 0.8, 0.6, "#e0a32a");
+      out += cyl(x + 0.7, y + 0.5, 1.2, 0.35, 0.5, "#c78d1f");
+      var to = st && st.to ? st.to : [x + 5, y + 1];
+      var b0 = P(x + 0.7, y + 0.5, 1.8), b1 = P((x + to[0]) / 2, (y + to[1]) / 2, 6.2), b2 = P(to[0], to[1], 4.0), b3 = P(to[0], to[1], 1.4);
+      out += line(b0, b1, "#e0a32a", 3.2) + line(b1, b2, "#e0a32a", 2.6) + line(b2, b3, "#555", 1.6);
       return out;
     },
     frame: function (x, y) {
@@ -206,92 +225,161 @@
     },
     other: function (x, y) { return box(x, y, 0, 1.6, 1.6, 1.3, "#b08a58") + box(x + 1.8, y + 0.4, 0, 1.0, 1.0, 0.8, "#c49a62"); }
   };
-  // Where each station stands on the site, in the order of the story: given
-  // as across (u) and back to front (v) on the screen, turned into metres.
+  // Where each station stands on the site: given as across (u) and back to
+  // front (v) on the screen, turned into metres. The plant is laid out the way
+  // the concrete goes: the silo, heaps, water and admixtures feed the mixer, a
+  // truck takes the mix down the road to the pump, the pump fills the formwork
+  // the cage was lowered into, and cubes from the pour go to the lab.
   var SCREEN = {
-    office: [-17, 3], documents: [-9.5, 4], shoring: [-2, 3.5],
-    cement: [5, 5], water: [12, 7], store: [21, 5], admixtures: [19, 12],
-    sand: [2, 12.5], gravel: [8, 14.5], mixer: [14, 18.5],
-    formwork: [5, 27], rebar: [-3, 28], pour: [-13, 24],
-    frame: [-21, 15], membrane: [-19, 34], bridge: [-9, 37], lab: [1, 38], repair: [10, 37.5], other: [19, 32]
+    office: [-19, 3], documents: [-12, 4], shoring: [-5, 3],
+    cement: [5, 3], water: [11, 5.5], admixtures: [16, 9], store: [21, 3], sand: [1, 10], gravel: [6, 12], mixer: [12, 14],
+    formwork: [-2, 24], rebar: [5, 25], pour: [-10, 21],
+    frame: [-23, 19], membrane: [-17, 31], bridge: [-8, 34], lab: [9, 35], repair: [20, 30], other: [24, 22]
   };
   var PLACE = {};
   Object.keys(SCREEN).forEach(function (id) { var u = SCREEN[id][0], v = SCREEN[id][1]; PLACE[id] = [(u + v) / 2, (v - u) / 2]; });
   var PIN = { office: 3.4, documents: 2.2, shoring: 3.6, cement: 8.6, sand: 2.4, gravel: 2.4, water: 3.2, admixtures: 2.0,
-    store: 3.2, mixer: 5.3, formwork: 1.8, rebar: 2.0, pour: 5.4, frame: 5.0, membrane: 1.4, bridge: 2.8, lab: 2.6, repair: 3.2, other: 1.8 };
+    store: 3.2, mixer: 5.6, formwork: 1.8, rebar: 2.0, pour: 2.4, frame: 5.0, membrane: 1.4, bridge: 2.8, lab: 2.6, repair: 3.2, other: 1.8 };
   var MID = { office: [1.6, 1.1], documents: [1.3, 0.8], shoring: [1.7, 0.8], cement: [0, 0], sand: [0, 0], gravel: [0, 0], water: [0, 0],
-    admixtures: [0.6, 0.6], store: [1.5, 1.2], mixer: [1.6, 1.3], formwork: [1.7, 1.2], rebar: [1.5, 1.2], pour: [2.6, 1.3],
-    frame: [1.6, 1.3], membrane: [1.8, 1.3], bridge: [2.2, 1.2], lab: [2, 1.1], repair: [1.6, 0.25], other: [1.4, 1] };
+    admixtures: [0.6, 0.6], store: [1.5, 1.2], mixer: [1.4, 1.2], formwork: [1.7, 1.2], rebar: [1.5, 1.2], pour: [0.7, 1.4],
+    frame: [1.6, 1.3], membrane: [1.8, 1.3], bridge: [2.2, 1.2], lab: [1.5, 1.1], repair: [1.6, 0.25], other: [1.4, 1] };
+  // The plant itself is always drawn, whether or not its station asks anything.
+  var PLANT = ["cement", "sand", "gravel", "water", "admixtures", "mixer", "formwork", "rebar", "pour", "lab"];
+  // The order of the story, for a station this project does not ask about.
+  var RANK = { office: 0, documents: 1, shoring: 2, cement: 3, sand: 3, gravel: 3, water: 3, admixtures: 3, store: 3, mixer: 4,
+    formwork: 5, rebar: 6, pour: 7, frame: 8, membrane: 9, bridge: 10, lab: 11, repair: 12, other: 13 };
 
-  // --- drawing the site -----------------------------------------------------------
+  // --- the project's state, and redrawing it -----------------------------------------
 
-  var order = [];
-  data.chapters.forEach(function (c) { c.stations.forEach(function (id) { order.push(id); }); });
-  var byId = {};
-  data.stations.forEach(function (s) { byId[s.id] = s; });
-
+  var byId, order, centre, whole;
+  function index() {
+    byId = {};
+    data.stations.forEach(function (s) { byId[s.id] = s; });
+    order = [];
+    data.chapters.forEach(function (c) { c.stations.forEach(function (id) { order.push(id); }); });
+  }
+  // A stage is done once every question in it is answered (a suggestion counting
+  // once accepted). A station the project does not ask about is done once
+  // everything before it in the story is.
+  function done(id) {
+    var s = byId[id];
+    if (s) return s.stage < data.open_stage;
+    return data.stations.every(function (o) { return RANK[o.id] > RANK[id] || o.stage < data.open_stage; });
+  }
+  function openCount(s) { return s.needed + s.suggested; }
   function stateOf(s) { return s.needed ? "needed" : s.suggested ? "suggested" : "answered"; }
   function esc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-  function grow(p, pad) { minX = Math.min(minX, p[0] - pad); maxX = Math.max(maxX, p[0] + pad); minY = Math.min(minY, p[1] - pad); maxY = Math.max(maxY, p[1] + pad); }
-  var used = data.stations.map(function (s) { return s.id; }).filter(function (id) { return PLACE[id]; });
-  var gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9;
-  used.concat(["mixer", "pour"]).forEach(function (id) {
-    gx0 = Math.min(gx0, PLACE[id][0]); gy0 = Math.min(gy0, PLACE[id][1]);
-    gx1 = Math.max(gx1, PLACE[id][0]); gy1 = Math.max(gy1, PLACE[id][1]);
-  });
-  gx0 = Math.floor(gx0 - 3); gy0 = Math.floor(gy0 - 3); gx1 = Math.ceil(gx1 + 7); gy1 = Math.ceil(gy1 + 6);
-  [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]].forEach(function (c) { grow(P(c[0], c[1], 0), 4); });
+  // A material moving along a path: the pipe or belt, and grains of it going
+  // along while its stage is done; dashed and still while it is not.
+  function flow(points, color, active, kind) {
+    var d = "M" + points.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" L");
+    var out = '<g class="spec-scene-flow' + (active ? " is-on" : "") + '">' +
+      '<path d="' + d + '" fill="none" stroke="' + (kind === "belt" ? "#4a4a4a" : kind === "lift" ? "rgba(90,90,90,.7)" : shade(color, -0.25)) +
+      '" stroke-width="' + (kind === "belt" ? 4.5 : kind === "lift" ? 1 : 3) + '" stroke-linecap="round" stroke-linejoin="round"' +
+      (active ? "" : ' stroke-dasharray="5 5" opacity=".45"') + (active && kind === "belt" ? ' class="spec-scene-belt"' : "") + "/>";
+    if (active && !still) {
+      var n = kind === "lift" ? 1 : kind === "cubes" ? 3 : 6, dur = kind === "lift" ? 5 : kind === "cubes" ? 6 : 3;
+      for (var i = 0; i < n; i++) {
+        var begin = "-" + (dur * i / n).toFixed(2) + "s";
+        var grain = kind === "cubes" ? '<rect x="-3" y="-3" width="6" height="6" fill="' + color + '" stroke="rgba(0,0,0,.3)" stroke-width=".5">'
+          : kind === "lift" ? '<rect x="-9" y="-5" width="18" height="10" fill="none" stroke="' + color + '" stroke-width="2">'
+          : '<circle r="' + (kind === "belt" ? 2.6 : 2.2) + '" fill="' + color + '" stroke="rgba(255,255,255,.7)" stroke-width=".6">';
+        out += grain + '<animateMotion dur="' + dur + 's" begin="' + begin + '" repeatCount="indefinite" path="' + d + '"/>' +
+          (kind === "cubes" || kind === "lift" ? "</rect>" : "</circle>");
+      }
+    }
+    return out + "</g>";
+  }
+  var W = P;
 
-  var parts = [];
-  // The ground and its grid.
-  parts.push('<polygon class="spec-scene-ground" points="' + pts([P(gx0, gy0, 0), P(gx1, gy0, 0), P(gx1, gy1, 0), P(gx0, gy1, 0)]) + '"/>');
-  for (var g = gx0; g <= gx1; g += 2) parts.push(line(P(g, gy0, 0), P(g, gy1, 0), "var(--scene-grid)", 0.5));
-  for (var h = gy0; h <= gy1; h += 2) parts.push(line(P(gx0, h, 0), P(gx1, h, 0), "var(--scene-grid)", 0.5));
-  // The haul road from the mixer to the pour, and the truck going back and forth on it.
-  var m = PLACE.mixer, q = PLACE.pour;
-  var r0 = [m[0] + 1.2, m[1] + 3.6], r1 = [q[0] + 6.6, q[1] + 1.2];
-  parts.push('<polyline class="spec-scene-road" points="' + pts([P(r0[0], r0[1], 0), P(r1[0], r1[1], 0)]) + '"/>');
-  var ux = r1[0] - r0[0], uy = r1[1] - r0[1], len = Math.sqrt(ux * ux + uy * uy);
-  var tA = [r0[0] + ux / len * 1.5, r0[1] + uy / len * 1.5], tB = [r1[0] - ux / len * 3, r1[1] - uy / len * 3];
-  var dA = P(tA[0], tA[1], 0), dB = P(tB[0], tB[1], 0);
-  parts.push('<g class="spec-scene-truck" style="--tx:' + (dB[0] - dA[0]).toFixed(0) + "px;--ty:" + (dB[1] - dA[1]).toFixed(0) + 'px">' +
-    box(tA[0] - 0.5, tA[1] - 0.5, 0.2, 1.0, 1.0, 1.0, "#2a78d6") + box(tA[0] - 0.5, tA[1] - 0.5 - 2.2, 0.2, 1.0, 2.2, 0.4, "#5a5a5a") +
-    cyl(tA[0], tA[1] - 1.6, 0.6, 0.55, 1.1, "#e8e8e8") + "</g>");
+  function draw() {
+    index();
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    function grow(p, pad) { minX = Math.min(minX, p[0] - pad); maxX = Math.max(maxX, p[0] + pad); minY = Math.min(minY, p[1] - pad); maxY = Math.max(maxY, p[1] + pad); }
+    var shown = Object.keys(PLACE).filter(function (id) { return byId[id] || PLANT.indexOf(id) >= 0; });
+    var gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9;
+    shown.forEach(function (id) {
+      gx0 = Math.min(gx0, PLACE[id][0]); gy0 = Math.min(gy0, PLACE[id][1]);
+      gx1 = Math.max(gx1, PLACE[id][0]); gy1 = Math.max(gy1, PLACE[id][1]);
+    });
+    gx0 = Math.floor(gx0 - 3); gy0 = Math.floor(gy0 - 3); gx1 = Math.ceil(gx1 + 6); gy1 = Math.ceil(gy1 + 5);
+    [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]].forEach(function (c) { grow(P(c[0], c[1], 0), 4); });
 
-  // Stations drawn back to front, so nearer ones hide farther ones.
-  var drawOrder = data.stations.map(function (s) { return s.id; }).filter(function (id) { return PLACE[id] && DRAW[id]; })
-    .sort(function (a, b) { return (PLACE[a][0] + PLACE[a][1]) - (PLACE[b][0] + PLACE[b][1]); });
-  var centre = {};
-  drawOrder.forEach(function (id) {
-    var s = byId[id], at = PLACE[id], mid = MID[id] || [0, 0];
-    var pin = P(at[0] + mid[0], at[1] + mid[1], PIN[id] + 0.8), foot = P(at[0] + mid[0], at[1] + mid[1], 0);
-    centre[id] = [(pin[0] + foot[0]) / 2, (pin[1] + foot[1]) / 2 + 10];
-    grow(pin, 40); grow(foot, 70);
-    var st = stateOf(s), open = s.needed || s.suggested;
-    parts.push('<g class="spec-scene-st spec-in-' + st + '" data-id="' + id + '" tabindex="0" role="button" aria-label="' +
-      esc(s.name + ": " + s.questions.length + " questions, " + (s.needed ? s.needed + " need an answer" : s.suggested ? s.suggested + " suggested" : "all answered")) + '">' +
-      '<ellipse class="spec-scene-halo" cx="' + foot[0] + '" cy="' + foot[1] + '" rx="70" ry="35"/>' +
-      DRAW[id](at[0], at[1]) +
-      line(foot, pin, "var(--scene-pin-line)", 0.8) +
-      '<g class="spec-scene-pin"><circle cx="' + pin[0] + '" cy="' + pin[1] + '" r="11"/><text x="' + pin[0] + '" y="' + (pin[1] + 4) + '" text-anchor="middle">' +
-      (open ? (s.needed || s.suggested) : "✓") + "</text></g>" +
-      '<text class="spec-scene-label" x="' + pin[0] + '" y="' + (pin[1] - 16) + '" text-anchor="middle">' + esc(s.name) + "</text></g>");
-  });
-  svg.innerHTML = parts.join("");
-  var whole = [minX, minY, maxX - minX, maxY - minY];
-  svg.setAttribute("viewBox", whole.join(" "));
-  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    var parts = [];
+    parts.push('<polygon class="spec-scene-ground" points="' + pts([P(gx0, gy0, 0), P(gx1, gy0, 0), P(gx1, gy1, 0), P(gx0, gy1, 0)]) + '"/>');
+    for (var g = gx0; g <= gx1; g += 2) parts.push(line(P(g, gy0, 0), P(g, gy1, 0), "var(--scene-grid)", 0.5));
+    for (var h = gy0; h <= gy1; h += 2) parts.push(line(P(gx0, h, 0), P(gx1, h, 0), "var(--scene-grid)", 0.5));
+
+    var m = PLACE.mixer, pump = PLACE.pour, form = PLACE.formwork, cage = PLACE.rebar, lab = PLACE.lab;
+    var fc = [form[0] + 1.7, form[1] + 1.2];           // the middle of the formwork
+    // The haul road from under the mixer to the pump.
+    var tA = [m[0] + 1.4, m[1] + 1.2], tB = [pump[0] + 2.6, pump[1] - 0.6];
+    parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
+
+    var mixed = done("mixer");
+    var st = { formwork: { steel: done("rebar"), poured: done("pour"), cured: done("pour") }, pour: { to: fc } };
+    var drawOrder = shown.slice().sort(function (a, b) { return (PLACE[a][0] + PLACE[a][1]) - (PLACE[b][0] + PLACE[b][1]); });
+    centre = {};
+    var truckAt = tA[0] + tA[1];
+    var truckDrawn = false;
+    function truck() {
+      var dA = P(tA[0], tA[1] + 0.5, 0), dB = P(tB[0], tB[1], 0);
+      return '<g class="spec-scene-truck' + (mixed ? " is-on" : "") + '" style="--tx:' + (dB[0] - dA[0]).toFixed(0) + "px;--ty:" + (dB[1] - dA[1]).toFixed(0) + 'px">' +
+        box(tA[0] - 0.5, tA[1] - 2.2, 0.2, 1.0, 2.2, 0.4, "#5a5a5a") + cyl(tA[0], tA[1] - 1.3, 0.6, 0.55, 1.1, "#e8e8e8", mixed ? "" : "") +
+        box(tA[0] - 0.5, tA[1], 0.2, 1.0, 1.0, 1.0, "#2a78d6") + "</g>";
+    }
+    drawOrder.forEach(function (id) {
+      if (!truckDrawn && PLACE[id][0] + PLACE[id][1] > truckAt) { parts.push(truck()); truckDrawn = true; }
+      var s = byId[id], at = PLACE[id], mid = MID[id] || [0, 0];
+      var art = DRAW[id](at[0], at[1], st[id]);
+      if (!s) { parts.push('<g class="spec-scene-prop">' + art + "</g>"); return; }
+      var pin = P(at[0] + mid[0], at[1] + mid[1], PIN[id] + 0.8), foot = P(at[0] + mid[0], at[1] + mid[1], 0);
+      centre[id] = [(pin[0] + foot[0]) / 2, (pin[1] + foot[1]) / 2 + 10];
+      grow(pin, 40); grow(foot, 70);
+      var state = stateOf(s), left = openCount(s);
+      var mark = s.locked
+        ? '<path d="M' + (pin[0] - 4.5) + "," + (pin[1] - 1) + "h9v7h-9z M" + (pin[0] - 2.8) + "," + (pin[1] - 1) + "v-2.5a2.8,2.8 0 0 1 5.6,0v2.5" + '" fill="none" stroke="#fff" stroke-width="1.6"/>'
+        : '<text x="' + pin[0] + '" y="' + (pin[1] + 4) + '" text-anchor="middle">' + (left ? left : "✓") + "</text>";
+      var words = s.name + ": " + s.questions.length + " questions, " + (s.locked ? "locked until the stage before is answered" :
+        s.needed ? s.needed + " need an answer" : s.suggested ? s.suggested + " suggested to accept" : "all answered");
+      parts.push('<g class="spec-scene-st spec-in-' + state + (s.locked ? " is-locked" : "") + (s.stage === data.open_stage ? " is-now" : "") +
+        (id === current ? " is-on" : "") + '" data-id="' + id + '" tabindex="0" role="button" aria-label="' + esc(words) + '">' +
+        '<ellipse class="spec-scene-halo" cx="' + foot[0] + '" cy="' + foot[1] + '" rx="70" ry="35"/>' + art +
+        line(foot, pin, "var(--scene-pin-line)", 0.8) +
+        '<g class="spec-scene-pin"><circle cx="' + pin[0] + '" cy="' + pin[1] + '" r="11"/>' + mark + "</g>" +
+        '<text class="spec-scene-label" x="' + pin[0] + '" y="' + (pin[1] - 16) + '" text-anchor="middle">' + esc(s.name) + "</text></g>");
+    });
+    if (!truckDrawn) parts.push(truck());
+
+    // How the materials go, each moving once its stage is answered.
+    var mt = [m[0] + 1.4, m[1] + 1.2, 5.1];             // the mixer's charging hopper
+    var c = PLACE.cement, wt = PLACE.water, ad = PLACE.admixtures, sd = PLACE.sand, gv = PLACE.gravel;
+    var flows = [
+      flow([W(c[0] + 1.1, c[1] + 0.2, 7.6), W(mt[0] - 0.4, mt[1] - 0.6, mt[2] + 0.5)], "#c9ccd1", done("cement")),
+      flow([W(wt[0] + 1.1, wt[1], 0.4), W(m[0] - 0.4, wt[1], 0.4), W(m[0] - 0.4, m[1] + 0.6, 0.4), W(m[0] - 0.4, m[1] + 0.6, 5.6), W(mt[0] - 0.3, mt[1], 5.6)], "#4f8fd1", done("water")),
+      flow([W(ad[0] + 0.5, ad[1] + 0.5, 1.3), W(ad[0] + 0.5, ad[1] + 0.5, 6.2), W(mt[0] + 0.3, mt[1] - 0.2, 6.2), W(mt[0] + 0.3, mt[1] - 0.2, 5.3)], "#e27a3a", done("admixtures")),
+      flow([W(sd[0] + 1.6, sd[1] - 0.2, 0.4), W(mt[0] - 0.3, mt[1] + 0.6, mt[2] + 0.2)], "#e2c27a", done("sand"), "belt"),
+      flow([W(gv[0] + 1.5, gv[1] - 0.3, 0.4), W(mt[0] + 0.2, mt[1] + 0.8, mt[2] + 0.2)], "#8f8c86", done("gravel"), "belt"),
+      flow([W(tA[0], tA[1], 2.0), W(tA[0], tA[1] - 0.6, 1.6)], "#9b9b97", mixed),
+      flow([W(pump[0] + 0.7, pump[1] + 0.5, 1.8), W((pump[0] + fc[0]) / 2, (pump[1] + fc[1]) / 2, 6.2), W(fc[0], fc[1], 4.0), W(fc[0], fc[1], 1.4)], "#8d8d89", done("pour")),
+      flow([W(cage[0] + 1.5, cage[1] + 1.2, 1.6), W(cage[0] + 1.5, cage[1] + 1.2, 6), W(fc[0], fc[1], 6), W(fc[0], fc[1], 1.2)], "#9a532a", done("rebar"), "lift"),
+      flow([W(form[0] + 3.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, lab[1] + 2.4, 0.25)], "#a9a9a6", done("pour"), "cubes")
+    ];
+    parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
+    svg.innerHTML = parts.join("");
+    whole = [minX, minY, maxX - minX, maxY - minY];
+    stageText();
+  }
 
   // --- zooming ----------------------------------------------------------------------
 
-  var view = whole.slice(), anim = null;
-  var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var view = null, anim = null;
   function setView(v) { view = v; svg.setAttribute("viewBox", v.map(function (n) { return n.toFixed(1); }).join(" ")); }
   function zoomTo(target) {
     if (anim) cancelAnimationFrame(anim);
-    if (still) { setView(target); return; }
+    if (still || !view) { setView(target); return; }
     var from = view.slice(), t0 = null, D = 750;
     function step(t) {
       if (t0 === null) t0 = t;
@@ -304,37 +392,52 @@
   function viewFor(id) {
     var c = centre[id], w = Math.max(260, Math.min(760, svg.clientWidth * 0.55)), h = w * (svg.clientHeight / Math.max(1, svg.clientWidth) || 0.6);
     // Leave room on the right for the panel when it sits over the picture.
-    var shift = panel && window.innerWidth > 900 ? w * 0.22 : 0;
+    var shift = window.innerWidth > 900 ? w * 0.22 : 0;
     return [c[0] - w / 2 + shift, c[1] - h / 2, w, h];
   }
 
-  // --- the panel ------------------------------------------------------------------
+  // --- the stage the project is at ---------------------------------------------------
 
-  var current = null;
-  var STATE_WORDS = { answered: "Answered", suggested: "Suggested, not accepted", needed: "Needs your answer" };
-  function questionHtml(q) {
-    var value = q.split ? q.rows.map(function (r) { return '<div><span class="muted">' + esc(r.element) + ":</span> " + esc(r.value || "—") + "</div>"; }).join("")
-      : (q.value ? esc(q.value) : '<span class="muted">—</span>');
-    var rows = !q.split && q.rows.length > 1 ? '<div class="small muted">Same for ' + q.rows.map(function (r) { return esc(r.element); }).join(", ") + "</div>" : "";
-    var places = q.places.map(function (p) {
-      return '<li><a href="' + esc(p.url) + '">' + esc(p.section + " " + p.label) + "</a>" + (p.article ? ' <span class="muted">' + esc(p.article) + "</span>" : "") +
-        '<div class="spec-scene-words">' + esc(p.words).replace(/(\[[^\[\]]{1,200}\])/g, "<mark>$1</mark>") + "</div></li>";
-    }).join("");
-    return '<li class="spec-scene-q spec-in-' + q.state + '"><div class="spec-scene-q-head"><strong>' + esc(q.label) + '</strong><span class="spec-in-chip spec-in-' + q.state + '">' + STATE_WORDS[q.state] + "</span></div>" +
-      '<div class="spec-scene-value">' + value + "</div>" + rows +
-      (places ? '<details><summary class="small">What the specification says (' + q.sections.join(", ") + ")</summary><ul class=\"spec-scene-places\">" + places + "</ul></details>" : "") + "</li>";
+  var stageEl = root.querySelector("[data-stage]");
+  function stageText() {
+    if (!stageEl) return;
+    var n = data.chapters.length, c = data.chapters[data.open_stage];
+    stageEl.classList.toggle("is-done", !c);
+    var next = data.chapters[data.open_stage + 1];
+    stageEl.textContent = !c ? "Every stage is answered." :
+      "Stage " + (data.open_stage + 1) + " of " + n + ", " + c.name + ": " + (c.needed + c.suggested) + " to answer or accept." +
+      (next ? " Next: " + next.name + "." : "");
   }
-  function mixHtml() {
-    var m = data.mix;
-    if (!m || !m.rows.length) return "";
-    return '<div class="table-scroll"><table class="spec-in-table spec-in-mix"><caption>Each element\'s concrete</caption><thead><tr><th>Element</th>' +
-      m.columns.map(function (c) { return "<th>" + esc(c.label) + "</th>"; }).join("") + "</tr></thead><tbody>" +
-      m.rows.map(function (r) { return '<tr><th scope="row">' + esc(r.element) + "</th>" + m.columns.map(function (c) { return "<td>" + (r.values[c.key] ? esc(r.values[c.key]) : '<span class="spec-in-miss">to answer</span>') + "</td>"; }).join("") + "</tr>"; }).join("") +
-      "</tbody></table></div>";
+  function firstOpen(c) {
+    return c.stations.filter(function (id) { return openCount(byId[id]); })[0] || c.stations[0];
   }
+  function hold(why) {
+    if (stageEl) {
+      stageEl.textContent = why;
+      stageEl.classList.add("is-held");
+      setTimeout(function () { stageEl.classList.remove("is-held"); stageText(); }, 4000);
+    }
+  }
+
+  // --- the panel: the station's questions, answered there ---------------------------
+
+  var current = null, loading = 0;
+  var stationUrl = root.getAttribute("data-station-url");
   function chapterOf(id) {
     for (var i = 0; i < data.chapters.length; i++) if (data.chapters[i].stations.indexOf(id) >= 0) return data.chapters[i];
     return null;
+  }
+  function load(id, note) {
+    var mine = ++loading;
+    if (!note) body.innerHTML = '<p class="small muted">Loading…</p>';
+    fetch(stationUrl.replace("STATION", encodeURIComponent(id)), { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw r; return r.text(); })
+      .then(function (html) {
+        if (mine !== loading) return;
+        body.innerHTML = (note || "") + html;
+        if (!note) panel.scrollTop = 0;
+      })
+      .catch(function () { if (mine === loading) body.innerHTML = '<p class="small muted">Could not load this station\'s questions. The summary below has them, and Details answers them.</p>'; });
   }
   function open(id, fromPlay) {
     var s = byId[id];
@@ -343,33 +446,97 @@
     if (!fromPlay) stop();
     Array.prototype.forEach.call(svg.querySelectorAll(".spec-scene-st"), function (g) { g.classList.toggle("is-on", g.getAttribute("data-id") === id); });
     svg.classList.add("is-zoomed");
-    var c = chapterOf(id);
-    var needed = s.questions.filter(function (q) { return q.state === "needed"; });
-    var rest = s.questions.filter(function (q) { return q.state !== "needed"; });
-    body.innerHTML = (c ? '<p class="small muted">Chapter ' + c.number + ": " + esc(c.name) + "</p>" : "") +
-      "<h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what) + "</p>" +
-      '<p class="small">' + s.questions.length + " question" + (s.questions.length === 1 ? "" : "s") + ": " + s.answered + " answered" +
-      (s.suggested ? ", " + s.suggested + " suggested" : "") + (s.needed ? ", <strong>" + s.needed + " need your answer</strong>" : "") + "</p>" +
-      (id === "mixer" ? mixHtml() : "") +
-      '<ul class="spec-scene-qs">' + needed.concat(rest).map(questionHtml).join("") + "</ul>";
     panel.hidden = false;
-    body.scrollTop = 0;
-    caption.textContent = (c ? "Chapter " + c.number + " · " : "") + s.name;
+    load(id);
+    var c = chapterOf(id);
+    caption.textContent = (c ? "Chapter " + c.number + " · " : "") + s.name + (s.locked ? " · locked" : "");
     zoomTo(viewFor(id));
   }
   function close() {
     current = null;
+    loading++;
     panel.hidden = true;
     svg.classList.remove("is-zoomed");
     Array.prototype.forEach.call(svg.querySelectorAll(".spec-scene-st"), function (g) { g.classList.remove("is-on"); });
     caption.textContent = "";
     zoomTo(whole);
   }
+  // Next goes on through the story, but not into a stage that is still locked.
   function move(by) {
     var i = current ? order.indexOf(current) : -1;
     var next = order[(i + by + order.length) % order.length];
+    if (by > 0 && byId[next].locked) {
+      var c = data.chapters[data.open_stage];
+      hold("Answer the " + (c.needed + c.suggested) + " left in " + c.name + " first: the next stage opens once it is done.");
+      if (current !== firstOpen(c)) open(firstOpen(c), !!timer);
+      return false;
+    }
     open(next, !!timer);
+    return true;
   }
+
+  // Saving from the panel: the answers go to the project, the picture and the
+  // summary below are redrawn from what was saved.
+  var summaryUrl = window.location.pathname;
+  function refreshSummary() {
+    fetch(summaryUrl, { credentials: "same-origin" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (html) {
+      if (!html) return;
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      ["[data-totals]", "[data-summary]"].forEach(function (sel) {
+        var fresh = doc.querySelector(sel), old = document.querySelector(sel);
+        if (fresh && old) old.innerHTML = fresh.innerHTML;
+      });
+    }).catch(function () {});
+  }
+  body.addEventListener("submit", function (e) {
+    var form = e.target.closest("[data-station-form]");
+    if (!form || !window.fetch || !window.FormData) return;
+    e.preventDefault();
+    var id = current, wasStage = data.open_stage;
+    var btn = form.querySelector("[type=submit]");
+    var label = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) {
+        var type = r.headers.get("Content-Type") || "";
+        if (!r.ok || type.indexOf("json") < 0) throw r;
+        return r.json();
+      })
+      .then(function (resp) {
+        data = resp.scene;
+        draw();
+        if (view) setView(view);
+        var note = resp.messages.map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + esc(m.text) + "</div>"; }).join("");
+        var c = data.chapters[data.open_stage];
+        if (data.open_stage > wasStage) {
+          note += '<div class="flash success spec-scene-opened"><strong>' + esc(data.chapters[wasStage].name) + " is done.</strong> " +
+            (c ? 'The next stage is open: <button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(firstOpen(c)) + '">Go to ' + esc(c.name) + " →</button>" : "Every stage is answered.") + "</div>";
+        }
+        load(id, note);
+        refreshSummary();
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+        var bad = form.querySelector("[data-save-note]");
+        if (bad) { bad.textContent = "Could not save. Check you are still signed in, then try again."; bad.classList.add("spec-scene-bad"); }
+      });
+  });
+  // The question controls, as on Details: typing an answer of your own picks
+  // it; "different for some elements" shows a row for each.
+  body.addEventListener("input", function (e) {
+    var box = e.target.closest("[data-pick-free]");
+    if (!box) return;
+    var pick = box.parentNode.querySelector("input[type=radio]");
+    if (pick && box.value) pick.checked = true;
+  });
+  body.addEventListener("change", function (e) {
+    var bar = e.target.closest("[data-split]");
+    if (bar && bar.nextElementSibling) bar.nextElementSibling.hidden = e.target.value !== "1";
+  });
+  body.addEventListener("click", function (e) {
+    var go = e.target.closest("[data-go-stage]");
+    if (go) { e.preventDefault(); open(go.getAttribute("data-go-stage")); }
+  });
 
   // --- playing the story ------------------------------------------------------------
 
@@ -384,9 +551,9 @@
     playBtn.textContent = "❚❚ Pause";
     timer = setInterval(function () {
       if (current === order[order.length - 1]) { stop(); close(); return; }
-      move(1);
+      if (!move(1)) stop();
     }, 6000);
-    if (!current) open(order[0], true); else move(1);
+    if (!current) open(order[0], true); else if (!move(1)) stop();
   }
 
   svg.addEventListener("click", function (e) {
@@ -398,7 +565,7 @@
     if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(g.getAttribute("data-id")); }
   });
   root.addEventListener("keydown", function (e) {
-    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target.tagName) || e.target.isContentEditable) return;
     if (e.key === "ArrowRight") { move(1); } else if (e.key === "ArrowLeft") { move(-1); } else if (e.key === "Escape") { stop(); close(); }
   });
   playBtn.addEventListener("click", play);
@@ -406,5 +573,37 @@
   root.querySelector("[data-prev]").addEventListener("click", function () { move(-1); });
   root.querySelector("[data-whole]").addEventListener("click", function () { stop(); close(); });
   root.querySelector("[data-close]").addEventListener("click", function () { stop(); close(); });
+
+  draw();
+  setView(whole);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   root.classList.add("is-live");
+  // Opened at a station (#st-id, as a save without scripts comes back to).
+  var at = (window.location.hash.match(/^#st-(\w+)$/) || [])[1];
+  if (at && byId[at]) open(at);
+})();
+
+// The panel explaining a question, as on Details: what it means, a drawing,
+// and what the project's codes say.
+(function () {
+  var panel = document.getElementById("spec-explain");
+  if (!panel || !window.fetch) return;
+  var body = panel.querySelector("[data-explain-body]"), current = "";
+  function open(key) {
+    if (current === key && !panel.hidden) return;
+    current = key;
+    panel.hidden = false;
+    body.innerHTML = '<p class="small muted">Loading…</p>';
+    fetch(panel.getAttribute("data-url").replace("KEY", encodeURIComponent(key)), { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw r; return r.text(); })
+      .then(function (html) { if (current === key) { body.innerHTML = html; body.scrollTop = 0; } })
+      .catch(function () { body.innerHTML = '<p class="small muted">Could not load this question\'s explanation.</p>'; });
+  }
+  function close() { panel.hidden = true; current = ""; }
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest && e.target.closest("[data-explain]");
+    if (t) { e.preventDefault(); e.stopPropagation(); open(t.getAttribute("data-explain")); return; }
+    if (e.target.closest && e.target.closest("[data-explain-close]")) close();
+  }, true);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) { e.stopPropagation(); close(); } }, true);
 })();

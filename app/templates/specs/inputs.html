@@ -13,7 +13,7 @@
   <div>
     <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>The inputs at a glance</h1>
-    <p class="small muted" style="margin-top:2px">Every answer this project gives, placed on the works as they are built, in the order of the questions' story. Click a station to zoom in and read what the specification says with that answer; <strong>Play the story</strong> walks through them in turn. The same summary is written out below.</p>
+    <p class="small muted" style="margin-top:2px">Every question this project asks, placed on the works as they are built: the materials go from the silo, heaps, water and admixtures into the mixer, on to the truck, the pump and the formwork, and cubes to the lab. Click a station to answer or change its questions there. The stages open in turn: each one opens once everything before it is answered, and a suggested answer counts once you tick to accept it. The same summary is written out below.</p>
   </div>
   <div class="inline-form">
     <a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}">Details</a>
@@ -26,20 +26,21 @@
 {% if not scene['count'] %}
   <div class="card"><div class="card-body">{{ empty('Nothing to show yet', 'None of this project\'s sections asks anything. Add sections, then answer their questions on Details.') }}</div></div>
 {% else %}
-<div class="spec-in-totals" role="list">
+<div class="spec-in-totals" role="list" data-totals>
   <div role="listitem"><strong>{{ scene['totals']['answered'] }}</strong> <span>answered</span></div>
   <div role="listitem" class="spec-in-suggested-n"><strong>{{ scene['totals']['suggested'] }}</strong> <span>suggested, not accepted</span></div>
   <div role="listitem" class="spec-in-needed-n"><strong>{{ scene['totals']['needed'] }}</strong> <span>need your answer</span></div>
   <div role="listitem" class="{{ 'spec-in-needed-n' if open_places }}"><strong>{{ open_places }}</strong> <span>place{{ 's' if open_places != 1 }} still to be specified in the files</span></div>
 </div>
 
-<div class="spec-scene" data-scene>
+<div class="spec-scene" data-scene data-station-url="{{ url_for('specs.inputs_station', set_id=spec['id'], station='STATION') }}">
   <div class="spec-scene-bar">
     <button type="button" class="btn btn-primary btn-sm" data-play>▶ Play the story</button>
     <button type="button" class="btn btn-ghost btn-sm" data-prev aria-label="Previous station">←</button>
     <button type="button" class="btn btn-ghost btn-sm" data-next aria-label="Next station">→</button>
     <button type="button" class="btn btn-ghost btn-sm" data-whole>Whole site</button>
-    <span class="spec-scene-legend small"><i class="spec-in-dot spec-in-answered"></i> answered <i class="spec-in-dot spec-in-suggested"></i> suggested <i class="spec-in-dot spec-in-needed"></i> needs an answer</span>
+    <span class="spec-scene-stagebar small" data-stage role="status"></span>
+    <span class="spec-scene-legend small"><i class="spec-in-dot spec-in-answered"></i> answered <i class="spec-in-dot spec-in-suggested"></i> suggested <i class="spec-in-dot spec-in-needed"></i> needs an answer <i class="spec-in-dot spec-in-locked"></i> locked</span>
   </div>
   <div class="spec-scene-stage">
     <svg class="spec-scene-svg" data-svg role="img" aria-label="The works as they are built, one station per part of the specification"></svg>
@@ -54,13 +55,22 @@
 <script type="application/json" id="spec-scene-data">{{ scene | tojson }}</script>
 <script src="{{ url_for('static', filename='spec-inputs.js') }}" defer></script>
 
+<aside class="spec-explain" id="spec-explain" hidden data-url="{{ url_for('specs.explain', set_id=spec['id'], key='KEY') }}">
+  <div class="spec-explain-head">
+    <span class="small muted">About this question</span>
+    <button type="button" class="btn btn-ghost btn-sm" data-explain-close aria-label="Close">✕ Close</button>
+  </div>
+  <div class="spec-explain-body" data-explain-body></div>
+</aside>
+
 <h2 class="spec-in-h">Summary, chapter by chapter</h2>
+<div data-summary>
 {% set by_id = {} %}{% for s in scene['stations'] %}{% set _ = by_id.update({s['id']: s}) %}{% endfor %}
 {% for c in scene['chapters'] %}
-<details class="card spec-in-chapter" id="ch-{{ c['slug'] }}"{% if loop.first %} open{% endif %}>
+<details class="card spec-in-chapter" id="ch-{{ c['slug'] }}"{% if c['stage'] == scene['open_stage'] or (loop.first and scene['open_stage'] >= scene['chapters'] | length) %} open{% endif %}>
   <summary class="card-head"><div><h3>Chapter {{ c['number'] }}: {{ c['name'] }}</h3><p class="small muted">{{ c['lead'] }}</p></div>
     {% set n_need, n_sug = c['needed'], c['suggested'] %}
-    <span class="small">{% if n_need %}<span class="spec-in-chip spec-in-needed">{{ n_need }} to answer</span>{% endif %}{% if n_sug %} <span class="spec-in-chip spec-in-suggested">{{ n_sug }} suggested</span>{% endif %}{% if not n_need and not n_sug %}<span class="spec-in-chip spec-in-answered">All answered</span>{% endif %}</span>
+    <span class="small">{% if n_need %}<span class="spec-in-chip spec-in-needed">{{ n_need }} to answer</span>{% endif %}{% if n_sug %} <span class="spec-in-chip spec-in-suggested">{{ n_sug }} suggested</span>{% endif %}{% if not n_need and not n_sug %}<span class="spec-in-chip spec-in-answered">All answered</span>{% endif %}{% if c['locked'] %} <span class="spec-in-chip spec-in-locked">Locked</span>{% endif %}</span>
   </summary>
   <div class="card-body flush table-scroll">
     {% for sid in c['stations'] %}{% set s = by_id[sid] %}
@@ -89,5 +99,6 @@
   </div>
 </details>
 {% endfor %}
+</div>
 {% endif %}
 {% endblock %}

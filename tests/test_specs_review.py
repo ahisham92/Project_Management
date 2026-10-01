@@ -138,7 +138,7 @@ def test_an_issue_is_registered_with_its_files_and_the_next_shows_what_changed(a
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "hold_shown": "1"})
     page = text(signed_in.get(f"/specs/sets/{set_id}/issues"))
     assert 'name="revision" value="0"' in page and "Nothing issued yet" in page
-    answer = signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1",
+    answer = signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1",
         "revision": "A", "issue_date": "2026-10-01", "purpose": "For tender", "fmt": "docx"})
     assert answer.status_code == 302
     with app.app_context():
@@ -150,7 +150,7 @@ def test_an_issue_is_registered_with_its_files_and_the_next_shows_what_changed(a
     assert got.mimetype == "application/zip" and "REV A" in got.headers["Content-Disposition"]
     assert zipfile.ZipFile(io.BytesIO(got.data)).namelist()
     # The same revision twice is refused; the next is suggested.
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "a"})
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1", "revision": "a"})
     with app.app_context():
         assert len(specs_review.issues(set_id)) == 1
     assert 'name="revision" value="B"' in text(signed_in.get(f"/specs/sets/{set_id}/issues"))
@@ -166,7 +166,7 @@ def test_an_issue_is_registered_with_its_files_and_the_next_shows_what_changed(a
     body = zipfile.ZipFile(io.BytesIO(doc.read(doc.namelist()[0]))).read("word/document.xml").decode()
     assert "<w:ins " in body and "Changes since Rev A" in body and "and cores" in body
     # Rev B issued with the changes marked; the register keeps both.
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "B", "fmt": "since",
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1", "revision": "B", "fmt": "since",
                                                         "purpose": "__other__", "purpose_other": "For client review"})
     with app.app_context():
         assert [(i["revision"], i["fmt"], i["purpose"]) for i in specs_review.issues(set_id)] == [
@@ -183,7 +183,7 @@ def test_an_issue_waits_for_sign_off_and_closed_comments_when_held(app, signed_i
     signed_in.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Sara')}": "approver"})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "hold_shown": "1", "signoff_shown": "1",
                                                    "need_signoff": "1"})
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "0"})
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1", "revision": "0"})
     with app.app_context():
         assert specs_review.issues(set_id) == []
     assert "not yet approved" in text(signed_in.get(f"/specs/sets/{set_id}/issues"))
@@ -191,12 +191,12 @@ def test_an_issue_waits_for_sign_off_and_closed_comments_when_held(app, signed_i
     sara.post(f"/specs/sets/{set_id}/signoff", data={"stage": "checked", "row_id": row_id})
     sara.post(f"/specs/sets/{set_id}/signoff", data={"stage": "approved", "row_id": row_id})
     sara.post(f"/specs/sets/{set_id}/comments", data={"row_id": row_id, "body": "Cover to be 50 mm"})
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "0"})
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1", "revision": "0"})
     with app.app_context():
         assert specs_review.issues(set_id) == []
         cid = specs_review.comments(set_id)[0]["id"]
     sara.post(f"/specs/sets/{set_id}/comments/{cid}/close")
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "0"})
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "open_ok": "1", "revision": "0"})
     with app.app_context():
         issued = specs_review.issues(set_id)
         assert [i["revision"] for i in issued] == ["0"]

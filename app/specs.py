@@ -197,16 +197,55 @@ def kept(fallback: str) -> str:
     return re.sub(r"^\[|\]$", "", fallback.strip()) if fallback.strip().startswith("[") else fallback
 
 
-def fill(text: str, values: Mapping[str, str]) -> str:
+# Words still to be specified in an issued text: a bracketed choice or prompt
+# the master left for the engineer ("[F0] [F1]", "<Insert rating>"). The issued
+# file shows each one highlighted, so none goes out unnoticed.
+_OPEN = r"\[(?:[^\[\]\n]|\[[^\[\]\n]{0,200}\]){1,400}\]|<[A-Za-z][^<>\n]{0,120}>"
+OPEN = re.compile(rf"(?:{_OPEN})(?:[ ,;/]*(?:{_OPEN}))*")
+# A choice the master offers after the standard it is taken from:
+# "[ACI 318 (ACI 318M)] [F0] [F1]" is ACI 318 with one of the classes.
+STANDARD = re.compile(r"(?:ACI|ASTM|AASHTO|ANSI|AWS|BS|EN|ISO|SASO|SBC|PCI|CRSI)\b[^\[\]]*")
+
+
+def open_prompt(name: str, fallback: str | None) -> str:
+    """An unanswered question as the issued file says it: plainly what is still
+    to be specified, not the master's raw brackets."""
+    fallback = (fallback or "").strip()
+    options = [o.strip(" ,;") for o in re.findall(r"\[([^\[\]]*)\]", fallback)]
+    options = [o for o in options if o]
+    asks = [a.strip() for a in re.findall(r"<([^<>]*)>", fallback) if a.strip()]
+    if len(options) == 1:
+        # An optional phrase: kept word for word, with the value it asks for.
+        phrase = re.search(r"\[([^\[\]]*)\]", fallback).group(1).strip()
+        if asks:
+            phrase += f" [{asks[0][0].upper()}{asks[0][1:]}]"
+        return f"[keep or delete: \u201c{phrase}\u201d]"
+    if options:
+        before = ""
+        if len(options) > 2 and STANDARD.fullmatch(options[0]):
+            before, options = options[0] + " ", options[1:]
+        return (before + "[choose: " + " / ".join(options)
+                + (f", or {asks[0][0].lower()}{asks[0][1:]}" if asks else "") + "]")
+    if asks:
+        return f"[{asks[0][0].upper()}{asks[0][1:]}]"
+    if fallback:
+        return f"[{fallback}]" if not OPEN.fullmatch(fallback) else fallback
+    return f"[{name.replace('_', ' ')}: to be specified]"
+
+
+def fill(text: str, values: Mapping[str, str], marked: bool = False) -> str:
     """The text with every ``{{variable}}`` it has a value for filled in, and
     every question it has an answer for; an unanswered question keeps the
-    master's words."""
+    master's words, or (``marked``, for the issued file) says plainly what is
+    still to be specified."""
     left_out = False
 
     def one(match: re.Match) -> str:
         nonlocal left_out
         value = answer(match, values)
         if value is None:
+            if marked:
+                return open_prompt(match.group(1), match.group(3))
             return match.group(3) if match.group(3) is not None else match.group(0)
         if value == KEEP:
             left_out = True
@@ -220,7 +259,13 @@ def fill(text: str, values: Mapping[str, str]) -> str:
         left_out = left_out or value == ""
         return value
 
-    out = VARIABLE.sub(one, text or "")
+    text = text or ""
+    if marked:
+        text = WRAPPED.sub(lambda m: f"{m.group(1).strip()} {m.group(2)}", text)
+    out = VARIABLE.sub(one, text)
+    if out != text:
+        # A choice taken with the comma it ends on, before the full stop: "view,." reads "view."
+        out = re.sub(r",(?=[.;])", "", out)
     if left_out:
         # Words left out leave no stray separators: "A; ; B." and "A; ." read "A; B." and "A."
         out = re.sub(r"(?:\s*;)+\s*(?=[.;,)]|$)", "", out)
@@ -228,7 +273,15 @@ def fill(text: str, values: Mapping[str, str]) -> str:
         out = re.sub(r"[ \t]{2,}", " ", out)
         out = re.sub(r"\s+([.,;:)])", r"\1", out)
         out = re.sub(r"\(\s+", "(", out).strip()
+    if marked:
+        # The master's own prompts said the issued file's way: "<Insert limits>" reads "[Insert limits]".
+        out = re.sub(r"<([A-Za-z])([^<>\n]{0,120})>", lambda m: f"[{m.group(1).upper()}{m.group(2)}]", out)
     return out
+
+
+# A question the master wrapped in brackets with its standard, the prompt after
+# it: "[ACI 318 (ACI 318M) {{exposure}}] <Specify>" is the standard and the answer.
+WRAPPED = re.compile(r"\[(" + STANDARD.pattern + r")\s*(\{\{[^{}]*\}\})\]\s*(?:<[A-Za-z][^<>\n]{0,120}>)?")
 
 
 def fields(text: str) -> Iterator[re.Match]:
@@ -930,10 +983,26 @@ def template_info(data: bytes) -> dict:
     return {"layout": "masterspec", "styles": ids, "num_id": num_id, "ilvl": levels}
 
 
+HIGHLIGHT = '<w:highlight w:val="yellow"/>'
+
+
+def _runs(text: str, props: str = "") -> str:
+    """The words as runs, what is still to be specified highlighted."""
+    out, last = [], 0
+    for m in OPEN.finditer(text):
+        if m.start() > last:
+            out.append(_run(text[last:m.start()], props))
+        out.append(_run(m.group(0), props + HIGHLIGHT))
+        last = m.end()
+    if last < len(text) or not out:
+        out.append(_run(text[last:], props))
+    return "".join(out)
+
+
 def _paragraph(style_id: str, text: str, num: tuple[str, int] | None = None) -> str:
     numpr = (f'<w:numPr><w:ilvl w:val="{num[1]}"/><w:numId w:val="{num[0]}"/></w:numPr>'
              if num and num[0] else "")
-    return f'<w:p><w:pPr><w:pStyle w:val="{style_id}"/>{numpr}</w:pPr>{_run(text)}</w:p>'
+    return f'<w:p><w:pPr><w:pStyle w:val="{style_id}"/>{numpr}</w:pPr>{_runs(text)}</w:p>'
 
 
 def _table(text: str, indent: int, room: int = 9026) -> str:
@@ -1030,7 +1099,7 @@ def _targets(z: zipfile.ZipFile, document: str) -> tuple[str | None, str | None]
 def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
                project: Mapping[str, Any], chosen: Mapping[str, str],
                values: Mapping[str, str], template: bytes | None = None,
-               resolve: Callable[[str], str] | None = None) -> bytes:
+               resolve: Callable[[str], str] | None = None, marked: bool = True) -> bytes:
     """One section as a Word document in the house template.
 
     ``section`` carries ``number``, ``title`` and ``doc_code``; ``project``
@@ -1059,7 +1128,7 @@ def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
     for n in number(nodes, chosen):
         if not n["included"] or n["level"] == NOTE:
             continue
-        text = fill(resolve(n["text"]) if resolve else choose(n["text"], chosen), values)
+        text = fill(resolve(n["text"]) if resolve else choose(n["text"], chosen), values, marked)
         if n["level"] == TABLE:
             body.append(_table(text, 576 * (n["indent"] + 1), room))
             continue
@@ -1098,12 +1167,32 @@ def write_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
             elif name == footer_part:
                 opened, closing = _part_root(content.decode("utf-8"), "ftr")
                 content = _footer_xml(opened, closing, title, number_, code_line, width).encode("utf-8")
+            elif name in EDITABLE_PARTS:
+                content = editable(name, content)
             elif name == "docProps/core.xml":
                 content = re.sub(r"<dc:title>.*?</dc:title>|<dc:title/>",
                                  f"<dc:title>{_x(f'SECTION {number_} - {title}')}</dc:title>",
                                  content.decode("utf-8"), flags=re.S).encode("utf-8")
             target.writestr(item, content)
     return out.getvalue()
+
+
+EDITABLE_PARTS = ("word/settings.xml", "[Content_Types].xml")
+
+
+def editable(name: str, content: bytes) -> bytes:
+    """A part of the issued file with nothing that stops it being edited: no
+    document protection, no read-only recommendation, and a Word document
+    rather than a template (a house template saved as .dotx stays one)."""
+    text = content.decode("utf-8")
+    if name == "word/settings.xml":
+        text = re.sub(r"<w:(?:documentProtection|writeProtection)\b[^>]*/>", "", text)
+        text = re.sub(r"<w:(?:documentProtection|writeProtection)\b.*?</w:(?:documentProtection|writeProtection)>",
+                      "", text, flags=re.S)
+    else:
+        text = re.sub(r"wordprocessingml\.template\.main\+xml|ms-word\.(?:document|template)\.macroEnabled(?:Template)?\.main\+xml",
+                      "wordprocessingml.document.main+xml", text)
+    return text.encode("utf-8")
 
 
 def file_name(pattern: str, section: Mapping[str, Any]) -> str:

@@ -30,7 +30,7 @@ def _two_projects(app, signed_in):
                                                  "proj_location": "Lagos, Nigeria"})
     for set_id in (jeddah, lagos):
         signed_in.post(f"/specs/sets/{set_id}/issues", data={
-            "revision": "A", "responsible": "1", "issue_date": "2026-10-01", "purpose": "For tender"})
+            "revision": "A", "responsible": "1", "open_ok": "1", "issue_date": "2026-10-01", "purpose": "For tender"})
     return jeddah, lagos
 
 

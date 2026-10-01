@@ -49,9 +49,10 @@ def fmt_of(value: str | None) -> str:
 
 
 def issued(text: str, chosen: Mapping[str, str], values: Mapping[str, str],
-           resolve: Resolve = None) -> str:
-    """A paragraph's words as they go out — exactly as write_docx writes them."""
-    return specs.fill(resolve(text) if resolve else specs.choose(text, chosen), values)
+           resolve: Resolve = None, marked: bool = False) -> str:
+    """A paragraph's words as they go out; ``marked``, exactly as write_docx
+    writes them, with what is still to be specified said plainly."""
+    return specs.fill(resolve(text) if resolve else specs.choose(text, chosen), values, marked)
 
 
 def _heading(nbs: bool, number_: str, title: str) -> str:
@@ -204,7 +205,7 @@ def _tracked_table(old: str | None, new: str | None, indent: int, room: int, mar
 
 def revisions(base: Sequence[Mapping[str, Any]] | None, nodes: Sequence[Mapping[str, Any]],
               chosen: Mapping[str, str], values: Mapping[str, str],
-              resolve: Resolve = None) -> list[dict]:
+              resolve: Resolve = None, marked: bool = False) -> list[dict]:
     """The paragraphs as issued, each marked against the master as issued.
 
     ``kind`` is ``same``, ``ins``, ``del`` or ``diff``; ``old`` and ``new`` are
@@ -227,8 +228,8 @@ def revisions(base: Sequence[Mapping[str, Any]] | None, nodes: Sequence[Mapping[
         new_on = bool(new_node) and in_new.get(m["id"], False)
         if not old_on and not new_on:
             continue
-        old_text = issued(old_node["text"], chosen, values, resolve) if old_on else None
-        new_text = issued(new_node["text"], chosen, values, resolve) if new_on else None
+        old_text = issued(old_node["text"], chosen, values, resolve, marked) if old_on else None
+        new_text = issued(new_node["text"], chosen, values, resolve, marked) if new_on else None
         if old_on and new_on:
             kind = ("same" if old_text == new_text and old_node["level"] == new_node["level"]
                     else "diff")
@@ -286,7 +287,7 @@ def write_tracked_docx(section: Mapping[str, Any], nodes: Sequence[Mapping[str, 
             + ("" if layout.nbs else _run("SECTION ")) + _run(number_) + _run(" - ") + _run(title)
             + "</w:p>"]
     changed = 0
-    for r in revisions(base, nodes, chosen, values, resolve):
+    for r in revisions(base, nodes, chosen, values, resolve, marked=True):
         changed += r["kind"] != "same"
         if r["level"] == TABLE or r["old_level"] == TABLE:
             indent = 576 * (r["indent"] + 1)
@@ -420,6 +421,17 @@ def _markup(text: str) -> str:
     return (_printable(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+def _marked(text: str) -> str:
+    """The words for the PDF, what is still to be specified highlighted."""
+    out, last = [], 0
+    for m in specs.OPEN.finditer(text):
+        out.append(_markup(text[last:m.start()]))
+        out.append(f'<font backColor="#fff176">{_markup(m.group(0))}</font>')
+        last = m.end()
+    out.append(_markup(text[last:]))
+    return "".join(out)
+
+
 def _header_lines(project: Mapping[str, Any]) -> list[tuple[str, str]]:
     left = [line.rstrip() for line in (project.get("header_left") or "").splitlines()]
     right = [line.rstrip() for line in (project.get("header_right") or "").splitlines()]
@@ -435,7 +447,7 @@ def _code_line(section: Mapping[str, Any], project: Mapping[str, Any]) -> str:
 
 def _section_flow(kit, section: Mapping[str, Any], nodes: Sequence[Mapping[str, Any]],
                   chosen: Mapping[str, str], values: Mapping[str, str], resolve: Resolve,
-                  nbs: bool, width: float) -> list:
+                  nbs: bool, width: float, marked: bool = True) -> list:
     """One section's paragraphs as reportlab flowables."""
     Paragraph, ParagraphStyle = kit["Paragraph"], kit["ParagraphStyle"]
     regular, bold, _ = _fonts()
@@ -464,7 +476,7 @@ def _section_flow(kit, section: Mapping[str, Any], nodes: Sequence[Mapping[str, 
     for n in specs.number(nodes, chosen):
         if not n["included"] or n["level"] == NOTE:
             continue
-        words = issued(n["text"], chosen, values, resolve)
+        words = issued(n["text"], chosen, values, resolve, marked)
         if n["level"] == TABLE:
             table = _table_flow(kit, words, n["indent"], width, regular)
             if table and flow:
@@ -473,7 +485,7 @@ def _section_flow(kit, section: Mapping[str, Any], nodes: Sequence[Mapping[str, 
             previous = TABLE
             continue
         label = n["label"] if (typed_nbs or not nbs) else NBS_MARKS[n["level"]]
-        text = _markup(words)
+        text = _marked(words) if marked else _markup(words)
         if n["level"] == "PRT" and label:
             text = f"{_markup(label)} {text}"
             label = ""
@@ -520,7 +532,7 @@ def _table_flow(kit, text: str, indent: int, width: float, font: str) -> list:
 
 def write_pdf(items: Iterable[tuple[Mapping[str, Any], Sequence[Mapping[str, Any]], Resolve]],
               project: Mapping[str, Any], chosen: Mapping[str, str], values: Mapping[str, str],
-              template: bytes | None = None, title: str = "") -> bytes:
+              template: bytes | None = None, title: str = "", marked: bool = True) -> bytes:
     """Sections as issued, as one A4 PDF: each ``(section, nodes, resolve)``
     starts on a new page and is numbered "Page X of Y" within itself."""
     from . import pdf as house_pdf
@@ -569,7 +581,7 @@ def write_pdf(items: Iterable[tuple[Mapping[str, Any], Sequence[Mapping[str, Any
         if i:
             story.append(kit["PageBreak"]())
         story.append(Start(i, heading))
-        story += _section_flow(kit, section, nodes, chosen, values, resolve, nbs, frame_w)
+        story += _section_flow(kit, section, nodes, chosen, values, resolve, nbs, frame_w, marked)
     if not story:
         raise ExportError("There is nothing to write: no sections.")
 

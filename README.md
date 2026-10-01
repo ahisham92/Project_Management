@@ -282,6 +282,16 @@ against the current codes and the project, and amended it as needed.
   Word with the changes since the last issue marked) with who prepared, checked and approved
   each. A revision cannot be issued twice. *Download a copy* on the project page still makes a
   copy at any time; that is not an issue.
+- **Nothing left in the master's brackets unnoticed.** The files never carry the master's raw
+  prompts: a question not answered says plainly what is still to be specified (*[Insert
+  designation]*, *ACI 318 [choose: F0 / F1 / S2, or specify]*, *[keep or delete: ", piling"]*),
+  highlighted in yellow, as is any choice the master left in brackets. *Issue…* lists each
+  such place with a link to its paragraph and holds the issue until they are answered, or the
+  engineer ticks to issue with them highlighted.
+- **Editable Word files.** Each .docx is a plain Word document: document protection and the
+  read-only recommendation are taken off, and a house template saved as a .dotx goes out as a
+  document. Open a section from the .zip after extracting it (Windows opens a file inside a
+  zip read-only), and click *Enable Editing* if Word shows the file in Protected View.
 - **Changes since an issue.** *Changes since last issue* shows, word by word, what each section
   says now that the chosen issue did not, and the answers changed since; *Word with these
   changes marked* gives each section with them as Word's tracked changes, for the revision marks.

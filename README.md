@@ -263,10 +263,11 @@ against the current codes and the project, and amended it as needed.
 
 **Review, approval and issue.** A project is written by a team and issued under control:
 
-- **The team.** The lead (whoever started the project, and administrators) names the team on
-  *Team and sign-off*, each as an **editor** (writes and prepares), **checker** (also checks) or
-  **approver** (also approves and issues). Anybody else can read the project and comment, but
-  not change it. A project with no team is open to everyone, as before.
+- **The team.** A specification is its owner's: whoever started it (and administrators) leads
+  it, and nobody else changes it until the owner names them on *Team and sign-off*, each as an
+  **editor** (writes and prepares), **checker** (also checks) or **approver** (also approves and
+  issues). Anybody else with THEMIS reads it, comments on it, reads what it issued, and can
+  start their own copy from it.
 - **Sign-off.** Each section is signed as **prepared**, **checked** and **approved**, in that
   order, several at once from the list or on the section's page. The checker and the approver
   must be someone other than the preparer. A sign-off is for the words as they stand: if the
@@ -292,6 +293,18 @@ against the current codes and the project, and amended it as needed.
   project page or the answers after someone else saved them does not overwrite their work: the
   section editor shows your version with a note to look at theirs first, and answers they
   changed meanwhile are kept.
+
+**Packages of one project.** A project specified in packages (package 1 by one team,
+package 2 by another) has one specification per package, each with its owner. Specifications
+with the same project code (spaces and case aside) are packages of one project; *Package* on the
+project page names each. *Start a new package or project from this one* gives a copy with the
+project's name and code filled in, yours to edit. Each package is checked against the latest
+issue of every other package of the project: a paragraph worded differently, one only one of
+them has (in the sections both have), an answer or a choice made another way. *Packages* shows
+each difference in red, with the other package's words struck through beside it, for the
+package's team to **accept** the other package's (this package is changed to say the same) or
+**keep** their own with a reason. Until decided, the project page, the THEMIS list and the
+issue page say how many are open; a kept difference is flagged again if either wording changes.
 
 **What the office has issued, and what it teaches the MTD.** Every issue is kept as a record
 of its own, with the project's data as issued, and the record outlives the project:

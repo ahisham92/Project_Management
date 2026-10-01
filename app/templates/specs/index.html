@@ -39,15 +39,19 @@
       <div class="inline-form">
         <label class="field flex1">
           <span class="field-label">Project name</span>
-          <input type="text" name="name" required placeholder="As it should read on the specification"{% if start_from %} autofocus{% endif %}>
+          <input type="text" name="name" required placeholder="As it should read on the specification" value="{{ source['name'] if source }}"{% if start_from and not source %} autofocus{% endif %}>
         </label>
         <label class="field w-lg">
           <span class="field-label">Project code</span>
-          <input type="text" name="code" placeholder="e.g. P1234">
+          <input type="text" name="code" placeholder="e.g. P1234" value="{{ source['code'] if source }}">
         </label>
         <label class="field w-lg">
           <span class="field-label">Client</span>
-          <input type="text" name="client">
+          <input type="text" name="client" value="{{ source['client'] if source }}">
+        </label>
+        <label class="field w-lg">
+          <span class="field-label">Package</span>
+          <input type="text" name="package" placeholder="e.g. Package 2"{% if source %} autofocus{% endif %}>
         </label>
       </div>
       <fieldset class="spec-families">
@@ -68,7 +72,7 @@
             {% if mine %}<optgroup label="My projects">{% for one in mine %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
             {% if others %}<optgroup label="Other people's">{% for one in others %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
           </select>
-          <span class="field-hint">A project started from another keeps that one's kind.</span>
+          <span class="field-hint">A project started from another keeps that one's kind, and its code when you leave the code blank: give a package name and it becomes another package of that project, yours to edit.</span>
         </label>
         {% endif %}
         <label class="field flex1">
@@ -90,7 +94,7 @@
       <tbody>
         {% for one in rows %}
         <tr>
-          <td><a href="{{ url_for('specs.spec_set', set_id=one['id']) }}">{{ one['name'] }}</a></td>
+          <td><a href="{{ url_for('specs.spec_set', set_id=one['id']) }}">{{ one['name'] }}</a>{% if one['package'] %} <span class="small muted">· {{ one['package'] }}</span>{% endif %}{% if flagged and flagged.get(one['id']) %} <a class="small spec-pkg-red-text" href="{{ url_for('specs.project_packages', set_id=one['id']) }}" title="Differences from the project's other issued packages not decided yet">{{ flagged[one['id']] }} to decide</a>{% endif %}</td>
           <td><span class="spec-key">{{ one['family'] }}</span></td>
           <td>{{ one['code'] }}</td>
           <td>{{ one['client'] }}</td>

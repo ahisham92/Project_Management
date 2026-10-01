@@ -588,6 +588,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS spec_question_images_key ON spec_question_images (key)")
     _spec_review(conn)
     _spec_issued(conn)
+    _spec_packages(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -731,6 +732,32 @@ def _spec_issued(conn: sqlite3.Connection) -> None:
         "SELECT i.id, i.set_id, s.name, s.code, s.family, s.client, i.revision, i.purpose, "
         "i.issue_date, i.issued_by, i.issued_at, i.snapshot "
         "FROM spec_issues i JOIN spec_sets s ON s.id = i.set_id")
+
+
+def _spec_packages(conn: sqlite3.Connection) -> None:
+    """Packages of one project (specifications with the same project code):
+    each package's name, and what its team decided on each difference from
+    another package's issue that it keeps."""
+    _ensure_column(conn, "spec_sets", "package", "TEXT NOT NULL DEFAULT ''")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_package_decisions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id      INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            peer_set_id INTEGER NOT NULL,              -- the other package (kept if it goes)
+            kind        TEXT NOT NULL DEFAULT 'text',  -- text, answer or choice
+            number      TEXT NOT NULL DEFAULT '',
+            key         TEXT NOT NULL DEFAULT '',      -- paragraph id or question key
+            mark        TEXT NOT NULL DEFAULT '',      -- the two wordings it was decided on
+            decision    TEXT NOT NULL DEFAULT 'kept',
+            note        TEXT NOT NULL DEFAULT '',
+            user_id     INTEGER,
+            decided_by  TEXT NOT NULL DEFAULT '',
+            decided_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (set_id, peer_set_id, kind, number, key)
+        );
+        """
+    )
 
 
 def _spec_review(conn: sqlite3.Connection) -> None:

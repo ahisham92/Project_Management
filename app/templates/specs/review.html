@@ -69,8 +69,7 @@
   <div class="card-head">
     <div><h2>Team</h2>
       <p class="small muted" style="margin-top:2px">
-        {% if is_open %}Nobody is listed yet, so everyone with THEMIS can change, sign and issue this project. List a team and only the team can.
-        {% else %}Only the people listed change this project; anyone with THEMIS can read it and comment on it.{% endif %}
+        Only its owner{% if owner %} ({{ owner }}){% endif %}, administrators and the people listed here change this specification. Anyone with THEMIS can read it, comment on it, read what it issued, and start a package of their own from it.
       </p></div>
   </div>
   {% if may['team'] %}

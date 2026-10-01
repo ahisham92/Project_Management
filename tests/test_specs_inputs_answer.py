@@ -338,3 +338,21 @@ def test_the_brief_asks_only_what_applies(app, signed_in):
     page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
     fenders = re.search(r'<div class="spec-decide-q" data-opt="fenders"[^>]*>', page).group(0)
     assert " hidden" not in fenders
+
+
+def test_where_the_project_is_is_asked_as_a_city_and_country(app, signed_in):
+    from app import specs_store
+
+    set_id = _project(app, signed_in)
+    _decided(signed_in, set_id)
+    with app.app_context():
+        specs_store.set_place(set_id, "Jeddah", "Saudi Arabia")
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/office?cards=1"))
+    assert "Where is the project?" in page and "as the specification names it" not in page
+    assert 'value="Jeddah" placeholder="e.g. Jeddah" data-place-city' in page
+    assert 'value="Saudi Arabia" placeholder="e.g. Saudi Arabia" data-place-country' in page
+    assert 'name="t_proj_site" value="Jeddah, Saudi Arabia"' in page and 'id="spec-countries"' in page
+    signed_in.post(f"/specs/sets/{set_id}/inputs/office", headers=FETCH, data={
+        "only": "proj_site", "suggest_shown": "1", "accept_suggested": "1",
+        "q_proj_site": "__free__", "t_proj_site": "Yanbu, Saudi Arabia"})
+    assert _answers(app, set_id)["proj_site"] == "Yanbu, Saudi Arabia"

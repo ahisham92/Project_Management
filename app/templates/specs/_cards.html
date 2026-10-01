@@ -24,12 +24,30 @@
       {% else %}<span class="spec-in-chip spec-in-answered">Answered</span>{% endif %}
     </p>
     <fieldset class="spec-scene-fields"{% if not may_edit or locked %} disabled{% endif %}>
+      {% if q['place'] %}
+      {% set where = split_location(q['answer'] if q['answered'] else (q['suggested'] or '')) %}
+      <fieldset class="spec-q" id="q-{{ q['key'] }}">
+        <legend class="spec-q-label">{{ q['label'] }}</legend>
+        <div class="spec-place-pick" data-place-pick>
+          <label>City <input type="text" list="spec-cities" value="{{ where[0] }}" placeholder="e.g. Jeddah" data-place-city autocomplete="off"></label>
+          <label>Country <input type="text" list="spec-countries" value="{{ where[1] }}" placeholder="e.g. Saudi Arabia" data-place-country autocomplete="off"></label>
+        </div>
+        <input type="hidden" name="q_{{ q['key'] }}" value="{{ FREE }}">
+        <input type="hidden" name="t_{{ q['key'] }}" value="{{ join_location(where[0], where[1]) }}" data-place-line>
+        <p class="small muted spec-q-help">Written into the specification as “{{ join_location(where[0], where[1]) or 'City, Country' }}”.</p>
+      </fieldset>
+      {% else %}
       {{ question(q) }}
+      {% endif %}
     </fieldset>
     {% if pic['definition'] %}<p class="small spec-card-def">{{ pic['definition'] | truncate(320) }}</p>{% endif %}
     {% if not q['switch'] %}<p class="small"><a href="#" data-explain="{{ q['key'] }}">What it means and what the codes say →</a></p>{% endif %}
     <p class="small spec-scene-bad" data-card-note></p>
   </form>
 {% endfor %}
+{% if questions | selectattr('place') | list %}
+<datalist id="spec-countries">{% for c in countries %}<option value="{{ c }}">{% endfor %}</datalist>
+<datalist id="spec-cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
+{% endif %}
 {% if not may_edit %}<p class="small muted">You can read this specification; only its owner and the people they add change its answers.</p>{% endif %}
 </div>

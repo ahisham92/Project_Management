@@ -12,7 +12,7 @@
 <div class="page-head">
   <div>
     <h1>The inputs at a glance</h1>
-    <p class="small muted" style="margin-top:2px">The project's story as levels you pass through, from deciding what it builds to the finished structure. The site is drawn from the brief: a building, a quay on the sea or a bridge, with its steel, precast, post-tensioning and cranes when it has them. Every question stands at its station on the way: the materials go from the silo, heaps, water and admixtures into the mixer, on to the truck, the pump and the formwork, and cubes to the lab. Click a station to answer or change its questions there. The levels open in turn: each one opens once everything before it is answered, and a suggested answer counts once you tick to accept it. The same summary is written out below.</p>
+    <p class="small muted" style="margin-top:2px">The project's story as levels you pass through, from deciding what it builds to the finished structure. The site is drawn from the brief: a building, a quay on the sea or a bridge, with its steel, precast, post-tensioning and cranes when it has them. Every question stands at its station on the way: the materials go from the silo, heaps, water and admixtures into the mixer, on to the truck, the pump and the formwork, and cubes to the lab. Click a station to see its answers; they are answered one question at a time on the story. The levels open in turn: each one opens once everything before it is answered, and a suggested answer counts once you tick to accept it. The same summary is written out below.</p>
   </div>
   <div class="inline-form">
     <a class="btn btn-ghost" href="{{ url_for('specs.story', set_id=spec['id']) }}">▶ The story</a>
@@ -33,7 +33,7 @@
   <div role="listitem" class="{{ 'spec-in-needed-n' if open_places }}"><strong>{{ open_places }}</strong> <span>place{{ 's' if open_places != 1 }} still to be specified in the files</span></div>
 </div>
 
-<div class="spec-scene" data-scene data-station-url="{{ url_for('specs.inputs_station', set_id=spec['id'], station='STATION') }}">
+<div class="spec-scene" data-scene data-station-url="{{ url_for('specs.inputs_station', set_id=spec['id'], station='STATION') }}" data-story-url="{{ url_for('specs.story', set_id=spec['id']) }}">
   <div class="spec-scene-bar">
     <button type="button" class="btn btn-primary btn-sm" data-play>▶ Play the story</button>
     <button type="button" class="btn btn-ghost btn-sm" data-prev aria-label="Previous station">←</button>

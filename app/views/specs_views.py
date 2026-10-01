@@ -1129,6 +1129,9 @@ def inputs_station(set_id: int, station: str):
             "specs/_cards.html", spec=row, station=st, questions=questions,
             locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
             element_labels=_labels(), pictures=_pictures(questions, row["family"]),
+            split_location=specs_places.split_location, join_location=specs_places.join_location,
+            countries=specs_places.country_names(),
+            cities=sorted({n.title() for n, *_rest in specs_places.CITIES}),
             was={q["key"]: json.dumps(_group_answers(row, {"questions": [q]}), ensure_ascii=False) for q in questions},
             FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
             picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)

@@ -751,6 +751,19 @@
       })
       .catch(function () { if (mine === loading) body.innerHTML = '<p class="small muted">Could not load this station\'s questions. The summary below has them, and Details answers them.</p>'; });
   }
+  // On the inputs at a glance a station shows its answers; they are answered,
+  // one question at a time, on the story.
+  var storyUrl = root.getAttribute("data-story-url");
+  function glance(id) {
+    var s = byId[id];
+    if (id === "decide") { load(id); return; }
+    body.innerHTML = '<p class="small muted">Level ' + s.level + "</p><h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what || "") + "</p>" +
+      (storyUrl ? '<p><a class="btn btn-primary" href="' + esc(storyUrl) + "#st-" + esc(id) + '">' + (s.locked ? "See it on the story →" : s.needed + s.suggested ? "Answer these one by one →" : "Change these one by one →") + "</a></p>" : "") +
+      '<ul class="spec-glance">' + s.questions.map(function (q) {
+        return '<li class="spec-in-' + esc(q.state) + '"><span>' + esc(q.label) + "</span><strong>" + (q.value ? esc(q.value) : '<span class="spec-in-miss">to answer</span>') + "</strong></li>";
+      }).join("") + "</ul>";
+    panel.scrollTop = 0;
+  }
   function showFindings(id) {
     var s = byId[id], list = findings(id);
     body.innerHTML = "<h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what || "") + "</p>" +
@@ -774,7 +787,7 @@
     Array.prototype.forEach.call(svg.querySelectorAll(".spec-scene-st"), function (g) { g.classList.toggle("is-on", g.getAttribute("data-id") === id); });
     svg.classList.add("is-zoomed");
     panel.hidden = false;
-    if (checks) showFindings(id); else if (!story || id === "decide") load(id);
+    if (checks) showFindings(id); else if (story) { if (id === "decide") load(id); } else glance(id);
     var c = chapterOf(id);
     caption.textContent = (c && !checks ? "Level " + c.level + " · " : "") + s.name + (s.locked && !checks ? " · locked" : "");
     if (story) {
@@ -866,6 +879,16 @@
   // The question controls, as on Details: typing an answer of your own picks
   // it; "different for some elements" shows a row for each.
   body.addEventListener("input", function (e) {
+    var place = e.target.closest("[data-place-pick]");
+    if (place) {
+      var q = place.parentNode, line = q.querySelector("[data-place-line]");
+      var words = [place.querySelector("[data-place-city]").value, place.querySelector("[data-place-country]").value]
+        .map(function (v) { return v.trim(); }).filter(Boolean).join(", ");
+      if (line) line.value = words;
+      var help = q.querySelector(".spec-q-help");
+      if (help) help.textContent = "Written into the specification as “" + (words || "City, Country") + "”.";
+      return;
+    }
     var box = e.target.closest("[data-pick-free]");
     if (!box) return;
     var pick = box.parentNode.querySelector("input[type=radio]");
@@ -880,6 +903,12 @@
     if (to) { e.preventDefault(); open(to.getAttribute("data-go-stage")); return; }
     var lv = e.target.closest("[data-go-level]");
     if (lv) { e.preventDefault(); go(+lv.getAttribute("data-go-level")); return; }
+    if (e.target.closest("[data-stay]")) {
+      e.preventDefault();
+      if (onward) { clearTimeout(onward); onward = null; }
+      var p0 = e.target.closest(".spec-card-onward"); if (p0) p0.parentNode.removeChild(p0);
+      return;
+    }
     if (e.target.closest("[data-card-next]")) { e.preventDefault(); next(); return; }
     if (e.target.closest("[data-card-back]")) { e.preventDefault(); step(-1); return; }
     if (e.target.closest("[data-card-skip]")) { e.preventDefault(); step(1); return; }
@@ -983,6 +1012,7 @@
     var c = data.chapters[i];
     if (!c) return;
     if (c.locked) { held(); return; }
+    if (onward) { clearTimeout(onward); onward = null; }
     level = i;
     current = null;
     cardsOf = null;
@@ -1115,7 +1145,7 @@
         var said = resp.messages.filter(function (m) { return m.kind !== "error" && m.kind !== "success"; })
           .map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + (m.html != null ? m.html : esc(m.text)) + "</div>"; }).join("");
         var list = levelKeys(), i = indexOf(list, key), to = list[i + 1];
-        if (data.open_stage > wasStage || !to) endOfLevel(said);
+        if (data.open_stage > wasStage || !to) endOfLevel(said, true);
         else showCard(to.key, said);
       })
       .catch(function () {
@@ -1125,7 +1155,9 @@
       });
   }
   // The end of a level: done, and on to the next; or what is still open on it.
-  function endOfLevel(note) {
+  var onward = null;
+  function endOfLevel(note, auto) {
+    if (onward) { clearTimeout(onward); onward = null; }
     var c = data.chapters[level], nx = data.chapters[level + 1], list = levelKeys();
     var left = list.filter(function (k) { return k.state !== "answered"; });
     cardsOf = null; cardKey = null;
@@ -1133,6 +1165,8 @@
     if (c.done) {
       html += '<p class="spec-story-eyebrow">Level ' + c.level + " complete</p><h3>" + esc(c.name) + " is answered.</h3>" +
         (nx ? '<p class="spec-story-tale">' + esc(nx.story || nx.lead) + "</p>" +
+          (auto && !nx.locked ? '<p class="small spec-card-onward">Going on to level ' + nx.level + " in a moment… " +
+            '<button type="button" class="btn btn-ghost btn-sm" data-stay>Stay on this level</button></p>' : "") +
           '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">On to level ' + nx.level + ": " + esc(nx.name) + " →</button>"
           : '<p>Every level is answered.</p><a class="btn btn-primary" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>');
     } else {
@@ -1144,6 +1178,11 @@
     body.innerHTML = (note || "") + html + '<div class="spec-card-nav">' + (list.length ? '<button type="button" class="btn btn-ghost" data-card-go="' + esc(list[list.length - 1].key) + '">← Back</button>' : "") + "</div>";
     panel.scrollTop = 0;
     tell();
+    // A level finished goes on to the next by itself, after a moment to see it done.
+    if (auto && c.done && nx && !nx.locked) {
+      var from = level;
+      onward = setTimeout(function () { onward = null; if (level === from) go(from + 1); }, still ? 1200 : 2400);
+    }
   }
   // The brief asks only what applies: a decision that hangs on another is
   // shown once that one says so, and left out of what is sent while it is not.

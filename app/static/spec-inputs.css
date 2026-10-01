@@ -271,3 +271,13 @@
 .spec-story-body .spec-decide-q { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: .92rem; }
 .spec-brief-kept { color: var(--good-ink, var(--in-answered)); font-size: .72rem; }
 .spec-decide-choices:not(.spec-decide-tiles) .spec-decide-choice { white-space: nowrap; }
+.spec-place-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.spec-place-pick label { display: grid; gap: 4px; font-size: .85rem; color: var(--ink-2); }
+.spec-place-pick input { font-size: 1rem; padding: 8px 10px; }
+.spec-card-onward { color: var(--ink-2); }
+.spec-glance { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; }
+.spec-glance li { display: flex; justify-content: space-between; gap: 10px; border-left: 3px solid var(--in-answered); padding: 4px 8px; font-size: .86rem; }
+.spec-glance li.spec-in-needed { border-left-color: var(--in-needed); }
+.spec-glance li.spec-in-suggested { border-left-color: var(--in-suggested); }
+.spec-glance strong { text-align: right; }
+@media (max-width: 600px) { .spec-place-pick { grid-template-columns: 1fr; } }

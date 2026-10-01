@@ -90,7 +90,7 @@ def test_the_questions_come_from_the_sections_with_their_choices(app, signed_in)
     assert asked["conc_class_a_piling"]["optional"] and asked["conc_class_a_piling"]["single_choice_optional"]
     page = text(signed_in.get(f"/specs/sets/{set_id}/details"))
     # The first chapter with anything open comes first: the project.
-    assert "Where the project site is" in page and "suggested" in page
+    assert "Where is the project?" in page and "suggested" in page
     assert "The mix" in page
 
 

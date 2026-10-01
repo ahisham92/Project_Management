@@ -850,6 +850,7 @@
     var form = e.target.closest("[data-station-form]");
     if (!form || !window.fetch || !window.FormData) return;
     e.preventDefault();
+    if (story && current === "decide") forget();          // the brief decides what the cards ask
     var id = current, wasStage = data.open_stage;
     var btn = form.querySelector("[type=submit]");
     var label = btn ? btn.textContent : "";
@@ -911,9 +912,16 @@
     var pick = box.parentNode.querySelector("input[type=radio]");
     if (pick && box.value) pick.checked = true;
   });
+  var picking = null;
   body.addEventListener("change", function (e) {
     var bar = e.target.closest("[data-split]");
     if (bar && bar.nextElementSibling) bar.nextElementSibling.hidden = e.target.value !== "1";
+    // On the story a single answer picked is the answer: on to the next card.
+    var card = story && e.target.closest("[data-card]");
+    if (!card || bar || e.target.type !== "radio" || e.target.value === "__free__" || e.target.name.indexOf("@") >= 0) return;
+    if (card.querySelector("[data-split] input[value='1']:checked, input[type=checkbox]:not([hidden])")) return;
+    if (picking) clearTimeout(picking);
+    picking = setTimeout(function () { picking = null; if (body.querySelector("[data-card]:not([hidden])") === card) next(); }, still ? 150 : 350);
   });
   body.addEventListener("click", function (e) {
     var to = e.target.closest("[data-go-stage]");
@@ -1035,8 +1043,9 @@
     if (onward) { clearTimeout(onward); onward = null; }
     level = i;
     current = null;
-    cardsOf = null;
+    stash();
     var key = firstOpenKey(), list = levelKeys();
+    prefetch(c.stations);
     if (!key || !list.length) { open(c.stations[0]); return; }
     open(list[indexOf(list, key)].station, false, key);
   }
@@ -1070,21 +1079,56 @@
     new FormData(form).forEach(function (v, k) { if (k !== "was") out.push(k + "=" + v); });
     return out.join("&");
   }
-  // A station's cards, fetched once and kept until one of them is saved.
+  // A station's cards, fetched once (the level's all at once, ahead of
+  // time) and kept on the page with the answers given, so the next card is
+  // there at once.
+  var shelf = {}, ahead = {};
+  function cardsUrl(id) {
+    var url = stationUrl.replace("STATION", encodeURIComponent(id));
+    return url + (url.indexOf("?") < 0 ? "?" : "&") + "cards=1";
+  }
+  function prefetch(ids) {
+    ids.forEach(function (id) {
+      if (id === "decide" || shelf[id] || ahead[id] || !byId[id]) return;
+      ahead[id] = fetch(cardsUrl(id), { credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw r; return r.text(); })
+        .catch(function (e) { delete ahead[id]; throw e; });
+    });
+  }
+  // The cards on the page put aside (kept, with their answers) before the panel shows something else.
+  function stash() {
+    var host = body.querySelector("[data-card-host]");
+    if (cardsOf && host) { host.parentNode.removeChild(host); shelf[cardsOf] = host; }
+    cardsOf = null;
+  }
+  // Fresh cards for every station next time (the brief changed what is asked).
+  function forget(keep) {
+    Object.keys(shelf).forEach(function (id) { if (id !== keep) delete shelf[id]; });
+    Object.keys(ahead).forEach(function (id) { if (id !== keep) delete ahead[id]; });
+  }
+  function mount(id, host) {
+    body.innerHTML = '<div data-card-flash></div><div data-card-saves class="spec-card-saves" aria-live="polite"></div><div class="spec-card-nav" data-card-nav></div>';
+    body.insertBefore(host, body.querySelector("[data-card-nav]"));
+    cardsOf = id;
+    Array.prototype.forEach.call(host.querySelectorAll("[data-card]"), function (f) { if (!f.hasAttribute("data-sig")) f.setAttribute("data-sig", sig(f)); });
+    savesNote();
+    return host;
+  }
   function withCards(id) {
     var host = body.querySelector("[data-card-host]");
     if (cardsOf === id && host) return Promise.resolve(host);
     var mine = ++cardLoading;
-    var url = stationUrl.replace("STATION", encodeURIComponent(id));
-    return fetch(url + (url.indexOf("?") < 0 ? "?" : "&") + "cards=1", { credentials: "same-origin" })
-      .then(function (r) { if (!r.ok) throw r; return r.text(); })
-      .then(function (html) {
-        if (mine !== cardLoading) throw "stale";
-        body.innerHTML = '<div data-card-flash></div><div data-card-host>' + html + '</div><div class="spec-card-nav" data-card-nav></div>';
-        cardsOf = id;
-        Array.prototype.forEach.call(body.querySelectorAll("[data-card]"), function (f) { f.setAttribute("data-sig", sig(f)); });
-        return body.querySelector("[data-card-host]");
-      });
+    stash();
+    if (shelf[id]) { var kept = shelf[id]; delete shelf[id]; return Promise.resolve(mount(id, kept)); }
+    prefetch([id]);
+    return ahead[id].then(function (html) {
+      if (mine !== cardLoading) throw "stale";
+      delete ahead[id];
+      var made = document.createElement("div");
+      made.setAttribute("data-card-host", "");
+      made.innerHTML = html;
+      return mount(id, made);
+    });
   }
   // A picture for a question with no drawing of its own: its station, drawn.
   function miniArt(el, id) {
@@ -1129,50 +1173,111 @@
   function step(by) {
     var list = levelKeys(), i = indexOf(list, cardKey);
     var to = list[i + by];
-    if (to) showCard(to.key); else if (by > 0) endOfLevel();
+    if (to) showCard(to.key); else if (by > 0) afterSaves(function () { endOfLevel(); }, true);
   }
-  // Next: the answer saved on its own, the picture redrawn from it, and the
-  // next question up; an answer unchanged since it was given just moves on.
-  var saving = false;
+  // Next: the next card comes up at once and the answer is saved behind it,
+  // in order, one at a time. An answer the save turns down is named, with a
+  // way back to it; an answer unchanged since it was given just moves on.
+  var queue = [], busy = false, waiting = [], refused = {}, said = "";
+  function picked(form) {
+    var any = false;
+    Array.prototype.forEach.call(form.querySelectorAll("input:not([type=hidden]), select, textarea"), function (i) {
+      if (i.disabled) return;
+      if ((i.type === "radio" || i.type === "checkbox") ? i.checked : (i.value || "").trim()) any = true;
+    });
+    return any;
+  }
+  function questionOf(key) {
+    var found = null;
+    data.stations.forEach(function (s) { (s.questions || []).forEach(function (q) { if (q.key === key) found = q; }); });
+    return found;
+  }
   function next() {
     var form = body.querySelector("[data-card]:not([hidden])");
-    if (!form || saving) return;
+    if (!form) return;
     var note = form.querySelector("[data-card-note]");
     if (form.querySelector("fieldset[disabled]") || (form.getAttribute("data-state") === "answered" && sig(form) === form.getAttribute("data-sig"))) { step(1); return; }
-    var key = form.getAttribute("data-key"), wasStage = data.open_stage, btn = body.querySelector("[data-card-next]");
-    saving = true;
-    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
+    if (!picked(form)) { note.textContent = "Pick or type an answer to go on, or Skip for now."; return; }
+    note.textContent = "";
+    var key = form.getAttribute("data-key");
+    queue.push({ form: form, key: key, station: form.getAttribute("data-station") || current, body: new FormData(form), sig: sig(form) });
+    form.setAttribute("data-sig", sig(form));
+    form.setAttribute("data-state", "answered");
+    var chip = form.querySelector(".spec-card-state");
+    if (chip) chip.innerHTML = '<span class="spec-in-chip spec-in-answered">Answered</span>';
+    delete refused[key];
+    var q = questionOf(key);
+    if (q) q.state = "answered";            // counted as answered until the save says otherwise
+    pump();
+    var list = levelKeys(), i = indexOf(list, key), to = list[i + 1];
+    if (to) { showCard(to.key); return; }
+    // The level's last: done at once, and on to the next once the saves are in.
+    endOfLevel("", false);
+    afterSaves(function () { if (!cardKey) endOfLevel("", true); });
+  }
+  function savesNote() {
+    var el = body.querySelector("[data-card-saves]");
+    if (!el) return;
+    var n = queue.length + (busy ? 1 : 0), bad = Object.keys(refused);
+    el.innerHTML = said + (n ? '<span class="small muted">Saving ' + n + " answer" + (n === 1 ? "" : "s") + "…</span>" : "") +
+      bad.map(function (k) {
+        return '<div class="flash error small">' + esc(refused[k].label) + ": " + refused[k].why +
+          ' <button type="button" class="btn btn-ghost btn-sm" data-card-go="' + esc(k) + '">Go back to it</button></div>';
+      }).join("");
+  }
+  function afterSaves(fn, say) {
+    if (!busy && !queue.length) { fn(); return; }
+    waiting.push(fn);
+    if (say) {
+      var nav = body.querySelector("[data-card-nav]");
+      if (nav) nav.innerHTML = '<span class="small muted">Saving the last answers…</span>';
+    }
+  }
+  function pump() {
+    savesNote();
+    if (busy) return;
+    if (!queue.length) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(); }); return; }
+    busy = true;
+    var job = queue.shift(), wasStage = data.open_stage;
+    fetch(job.form.action, { method: "POST", body: job.body, credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
       .then(function (r) {
         var type = r.headers.get("Content-Type") || "";
         if (!r.ok || type.indexOf("json") < 0) throw r;
         return r.json();
       })
       .then(function (resp) {
-        saving = false;
+        busy = false;
         data = resp.scene;
-        cardsOf = null;                       // its cards now carry the old answers
-        draw();
+        index();
+        queue.forEach(function (j) { var q2 = questionOf(j.key); if (q2) q2.state = "answered"; });
+        if (resp.was != null) { var w = job.form.querySelector('[name="was"]'); if (w) w.value = resp.was; }
         var errors = resp.messages.filter(function (m) { return m.kind === "error"; });
-        var q = null;
-        (byId[form.getAttribute("data-station")] || byId[current] || { questions: [] }).questions.forEach(function (o) { if (o.key === key) q = o; });
+        var q = questionOf(job.key);
         if (errors.length || (q && q.state === "needed")) {
-          if (btn) { btn.disabled = false; btn.textContent = "Next →"; }
-          note.innerHTML = errors.length ? errors.map(function (m) { return m.html != null ? m.html : esc(m.text); }).join(" ")
-            : "Pick or type an answer to go on, or Skip for now.";
-          return;
+          job.form.setAttribute("data-state", "needed");
+          refused[job.key] = { label: q ? q.label : job.key, why: errors.length ? errors.map(function (m) { return m.html != null ? m.html : esc(m.text); }).join(" ") : "not saved, it still needs an answer." };
         }
-        var said = resp.messages.filter(function (m) { return m.kind !== "error" && m.kind !== "success"; })
+        if (resp.messages.some(function (m) { return m.kind === "info"; })) forget(cardsOf);   // other levels now ask more
+        said += resp.messages.filter(function (m) { return m.kind !== "error" && m.kind !== "success"; })
           .map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + (m.html != null ? m.html : esc(m.text)) + "</div>"; }).join("");
-        var list = levelKeys(), i = indexOf(list, key), to = list[i + 1];
-        if (data.open_stage > wasStage || !to) endOfLevel(said, true);
-        else showCard(to.key, said);
+        redraw(data.open_stage !== wasStage);
+        tell();
+        pump();
       })
       .catch(function () {
-        saving = false;
-        if (btn) { btn.disabled = false; btn.textContent = "Next →"; }
-        note.textContent = "Could not save. Check you are still signed in, then try again.";
+        busy = false;
+        job.form.setAttribute("data-state", "needed");
+        refused[job.key] = { label: (questionOf(job.key) || {}).label || job.key, why: "could not be saved. Check you are still signed in." };
+        pump();
       });
+  }
+  // The picture follows the answers: redrawn once the saves have caught up,
+  // or at once when a level opens, never in the way of the next card.
+  var drawTimer = null;
+  function redraw(now) {
+    if (drawTimer) clearTimeout(drawTimer);
+    if (now) { drawTimer = null; draw(); return; }
+    drawTimer = setTimeout(function () { drawTimer = null; if (!busy && !queue.length) draw(); else redraw(false); }, 400);
   }
   // The end of a level: done, and on to the next; or what is still open on it.
   var onward = null;
@@ -1180,12 +1285,15 @@
     if (onward) { clearTimeout(onward); onward = null; }
     var c = data.chapters[level], nx = data.chapters[level + 1], list = levelKeys();
     var left = list.filter(function (k) { return k.state !== "answered"; });
-    cardsOf = null; cardKey = null;
+    // Answered here, with the last saves still on their way: shown done at once.
+    var saving = busy || queue.length > 0, done = c.done || (saving && list.length > 0 && !left.length);
+    stash(); cardKey = null;
     var html = '<div class="spec-card spec-card-end is-in">';
-    if (c.done) {
+    if (done) {
       html += '<p class="spec-story-eyebrow">Level ' + c.level + " complete</p><h3>" + esc(c.name) + " is answered.</h3>" +
         (nx ? '<p class="spec-story-tale">' + esc(nx.story || nx.lead) + "</p>" +
-          (auto && !nx.locked ? '<p class="small spec-card-onward">Going on to level ' + nx.level + " in a moment… " +
+          (saving ? '<p class="small muted spec-card-onward">Saving the last answers, then on to level ' + nx.level + "…</p>" :
+            auto && !nx.locked ? '<p class="small spec-card-onward">Going on to level ' + nx.level + " in a moment… " +
             '<button type="button" class="btn btn-ghost btn-sm" data-stay>Stay on this level</button></p>' : "") +
           '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">On to level ' + nx.level + ": " + esc(nx.name) + " →</button>"
           : '<p>Every level is answered.</p><a class="btn btn-primary" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>');
@@ -1200,8 +1308,10 @@
     tell();
     // A level finished goes on to the next by itself, after a moment to see it done.
     if (auto && c.done && nx && !nx.locked) {
+      // Its cards fetched while "complete" shows, so the next level is there at once.
+      prefetch(nx.stations);
       var from = level;
-      onward = setTimeout(function () { onward = null; if (level === from) go(from + 1); }, still ? 1200 : 2400);
+      onward = setTimeout(function () { onward = null; if (level === from) go(from + 1); }, still ? 600 : 1200);
     }
   }
   // The brief asks only what applies: a decision that hangs on another is

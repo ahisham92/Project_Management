@@ -160,8 +160,11 @@ meet, so the Specs Writer reads across them:
   level's stations, and an engineer in a hard hat walks from station to station as the questions
   are answered **one at a time**: each on its own card with its picture (the question's drawing,
   else a picture added to it, else its station drawn), what it means, and *What the codes say*.
-  *Next* saves that one answer in the background (`only=<key>` on the station's POST, no page
-  reload) and the next card comes up; a suggestion shown on its own card is accepted when it is
+  *Next* brings the next card up at once (a single answer picked moves on by itself; a typed
+  one with Enter or *Next*) and saves that answer behind it (`only=<key>` on the station's POST,
+  queued one at a time, no page reload; the level's cards are fetched ahead and kept with their
+  answers, and a card save leaves out the specification's sentences, so it is light). An answer
+  a save turns down is named under the card with *Go back to it*; a suggestion shown on its own card is accepted when it is
   moved past with *Next*, or changed first. *Back* goes to the card before, *Skip for now* leaves
   one open. After the level's last question the story goes on to the next level by itself after a
   moment (*Stay on this level* holds it; *On to level N* goes at once); *Next level* stays locked until the level is done. A new project opens straight on

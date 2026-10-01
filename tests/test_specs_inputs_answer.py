@@ -302,6 +302,17 @@ def test_the_story_asks_one_question_at_a_time(app, signed_in):
                          f"t_{second}": "Not this one"}, headers=FETCH)
     after = _answers(app, set_id)
     assert after[first] == "As agreed" and after.get(second) == before.get(second)
+    # Saved behind the next card: the answer comes back with what it now is, so
+    # changing it again on the same card is not taken for somebody else's change,
+    # and without the specification's sentences, which the cards do not show.
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/{station}", headers=FETCH, data={
+        "only": first, f"q_{first}": "__free__", f"t_{first}": "Changed once", "was": json.dumps({first: "As agreed"})}).get_json()
+    assert json.loads(answer["was"]) == {first: "Changed once"}
+    assert all(not p["words"] for s in answer["scene"]["stations"] for q in s["questions"] for p in q.get("places", []))
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/{station}", headers=FETCH, data={
+        "only": first, f"q_{first}": "__free__", f"t_{first}": "Changed twice", "was": answer["was"]}).get_json()
+    assert not [m for m in answer["messages"] if m["kind"] == "error"]
+    assert _answers(app, set_id)[first] == "Changed twice"
     # A key not at the station is not found.
     assert signed_in.post(f"/specs/sets/{set_id}/inputs/{station}", data={"only": "proj_site"},
                           headers=FETCH).status_code == 404

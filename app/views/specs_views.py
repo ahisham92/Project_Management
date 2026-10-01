@@ -874,9 +874,10 @@ def _element_slugs(chosen: dict) -> list[str]:
     return [slug(e) for e in (chosen.get("elements") or "").split("|") if e.strip()]
 
 
-def _asked(set_id: int, row) -> list[dict]:
+def _asked(set_id: int, row, sections=None) -> list[dict]:
     chosen = store.chosen_for(row)
-    return specs_questions.asked(store.set_sections(set_id), chosen, row, _element_slugs(chosen))
+    return specs_questions.asked(store.set_sections(set_id) if sections is None else sections,
+                                 chosen, row, _element_slugs(chosen))
 
 
 @bp.route("/sets/<int:set_id>/details", methods=["GET", "POST"])
@@ -978,15 +979,17 @@ def _labels() -> dict:
     return labels
 
 
-def _scene(set_id: int, row, sections, asked=None) -> dict:
+def _scene(set_id: int, row, sections, asked=None, words: bool = True) -> dict:
     """The picture of the works for a project: its decisions first, then its
-    questions station by station, as ``specs_inputs.scene`` gives them."""
+    questions station by station, as ``specs_inputs.scene`` gives them.
+    Without ``words`` the specification's sentences under each answer are
+    left out (the story's cards do not show them, and they are the slow part)."""
     from .. import specs_inputs
 
     stored = json.loads(row["options"] or "{}")
     return specs_inputs.scene(
-        asked if asked is not None else _asked(set_id, row),
-        review.issued_words(row, sections, marked=True), _labels(),
+        asked if asked is not None else _asked(set_id, row, sections),
+        review.issued_words(row, sections, marked=True) if words else [], _labels(),
         lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}",
         chosen=_brief_chosen(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
 
@@ -1067,7 +1070,8 @@ def inputs_station(set_id: int, station: str):
     from .. import specs_inputs
 
     row = _set_or_404(set_id)
-    asked = _asked(set_id, row)
+    sections = store.set_sections(set_id)
+    asked = _asked(set_id, row, sections)
     if station == "decide":
         chapter, questions = dict(specs_inputs.DECIDING), []
     else:
@@ -1080,10 +1084,12 @@ def inputs_station(set_id: int, station: str):
         questions = [q for q in questions if q["key"] == only]
         if not questions:
             abort(404)
-    sections = store.set_sections(set_id)
     wants_json = request.headers.get("X-Requested-With") == "fetch"
+    # A card saved from the story wants only the picture's state back, fast:
+    # the sentences of the specification are not drawn there.
+    light = bool(only) and wants_json
     if request.method == "POST":
-        data = _scene(set_id, row, sections, asked)
+        data = _scene(set_id, row, sections, asked, words=not light)
         messages = []
         if specs_inputs.blocking(data, station):
             messages.append(("error", "This level is locked until the one before it is answered."))
@@ -1121,7 +1127,9 @@ def inputs_station(set_id: int, station: str):
             back = "specs.story" if request.form.get("from") == "story" else "specs.review_inputs"
             return redirect(url_for(back, set_id=set_id) + f"#st-{station}")
         row = store.spec_set(set_id)
-        after = _scene(set_id, row, store.set_sections(set_id))
+        # An answer changes no section; a decision may put sections in.
+        same = light and not any(q.get("switch") for q in questions)
+        after = _scene(set_id, row, sections if same else store.set_sections(set_id), words=not light)
         # A change that puts new questions in a level reopens it: say where.
         was = {c["slug"]: c["needed"] + c["suggested"] for c in data["chapters"]}
         for c in after["chapters"]:
@@ -1134,8 +1142,12 @@ def inputs_station(set_id: int, station: str):
         out = [{"kind": k, "text": t} for k, t in messages]
         out += [{"kind": k, "html": str(t if isinstance(t, Markup) else escape(t))}
                 for k, t in get_flashed_messages(with_categories=True)]
-        return {"messages": out, "scene": after}
-    data = _scene(set_id, row, sections, asked)
+        reply = {"messages": out, "scene": after}
+        if only:
+            # What a card saved, for its next save to tell its own change from somebody else's.
+            reply["was"] = json.dumps(_group_answers(row, {"questions": questions}), ensure_ascii=False)
+        return reply
+    data = _scene(set_id, row, sections, asked, words=not request.args.get("cards"))
     st = next((s for s in data["stations"] if s["id"] == station), None)
     if st is None:
         abort(404)

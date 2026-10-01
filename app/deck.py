@@ -570,7 +570,8 @@ class Deck:
 
         biggest = max((_num(row.get("value")) for row in rows), default=0.0) or 1.0
         top = BODY_TOP + int(0.45 * EMU)
-        room = int(4.0 * EMU)
+        # A note under the bars takes room from them, so it stays above the footer.
+        room = int((3.6 if note else 4.0) * EMU)
         pitch = min(int(0.62 * EMU), room // max(1, len(rows)))
         thick = int(pitch * 0.46)
         names = int(COLUMN * 0.30)
@@ -600,8 +601,8 @@ class Deck:
 
         if note:
             shapes.append(_textbox(shape_id, "Note", MARGIN,
-                                   top + len(rows) * pitch + int(0.35 * EMU),
-                                   int(COLUMN * 0.8), int(0.9 * EMU),
+                                   top + len(rows) * pitch + int(0.25 * EMU),
+                                   int(COLUMN * 0.8), int(0.6 * EMU),
                                    [_para(note, 13, False, MUTED, line=140)]))
         return self._add(shapes)
 

@@ -187,6 +187,11 @@ def issue_set(set_id: int):
         flash("Not issued yet: some references point at sections or paragraphs this issue does not "
               "contain. Correct them on the check, or tick Issue anyway.", "error")
         return redirect(back)
+    if request.form.get("responsible") != "1":
+        flash("Not issued yet: tick to confirm that you, as the engineer responsible, have reviewed "
+              "the specification and amended it as needed. THEMIS only helps; the issue is yours.",
+              "error")
+        return redirect(back)
     try:
         revision = review.check_revision(set_id, request.form.get("revision", ""))
     except specs.SpecError as exc:

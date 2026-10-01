@@ -1347,3 +1347,9 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-change-changed ins, .spec-change-added ins { background: color-mix(in srgb, #2e7d32 18%, transparent); text-decoration: none; }
 .spec-history td { vertical-align: top; }
 .spec-history-was { color: var(--muted); }
+
+/* The engineer, not THEMIS, answers for the issued specification. */
+.spec-engineer-note { margin: 0 0 14px; padding: 10px 14px; border-left: 4px solid #a67c3a; background: color-mix(in srgb, #a67c3a 9%, transparent); border-radius: 6px; font-size: 0.86rem; line-height: 1.45; }
+.spec-engineer-note strong { display: block; margin-bottom: 2px; }
+.spec-engineer-confirm, .spec-accept { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; line-height: 1.4; }
+.spec-accept { margin: 10px 0 4px; padding: 10px 12px; border: 1px dashed var(--border, #c9ced8); border-radius: 6px; }

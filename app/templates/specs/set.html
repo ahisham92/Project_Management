@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import badge, empty %}
 {% from "specs/_icons.html" import icon %}
+{% from "specs/_engineer.html" import engineer_note %}
 {% block title %}{{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
@@ -34,6 +35,7 @@
     <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}" title="Issue a revision and keep it on the register">Issue…</a>
   </div>
 </div>
+{{ engineer_note() }}
 <p class="small muted" style="margin:-6px 0 12px">
   {% if team %}Team: {% for m in team %}{{ m['name'] or m['email'] }} ({{ m['role'] }}){{ ', ' if not loop.last }}{% endfor %}.{% else %}No team listed: anyone with THEMIS can change and issue it.{% endif %}
   {% if last_issue %} Last issued Rev {{ last_issue['revision'] }} on {{ last_issue['issue_date'] }}{% if last_issue['purpose'] %} ({{ last_issue['purpose'] | lower }}){% endif %}; <a href="{{ url_for('specs.changes', set_id=spec['id']) }}">changes since</a>.{% endif %}

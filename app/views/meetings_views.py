@@ -843,7 +843,8 @@ def set_item_status(project_id: int, item_id: int):
         abort(404)
 
     status = normalise_status(request.form.get("status"))
-    closed = today() if status == "closed" else ""
+    # The date it was closed on, when given; otherwise today.
+    closed = (from_input(request.form.get("closed_date")) or today()) if status == "closed" else ""
     execute(
         "UPDATE meeting_items SET status = ?, closed_date = ?, updated_at = datetime('now') WHERE id = ?",
         (status, closed, item_id),

@@ -205,7 +205,7 @@ def test_check_basis_and_references_through_the_pages(app, signed_in):
         "name": "Harbour Works", "opt_standards": "BS EN", "opt_rebar": ["Uncoated", "Galvanized"]})
 
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
-    assert "Check (" in page and 'value="Galvanized" checked' in page
+    assert "Check the text" in page and 'value="Galvanized" checked' in page
 
     shown = text(signed_in.get(f"/specs/sets/{set_id}/sections/1"))
     assert "Article 3.1" in shown and "BS EN 197-1" in shown and "ASTM C150" not in shown
@@ -603,7 +603,7 @@ def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
                          .read("library.json"))
     assert {s["number"]: s["applies"] for s in library["sections"]}["355913"] == "fenders!=None"
     # And a new project can start from this one.
-    start = signed_in.get(f"/specs/?start_from={set_id}").get_data(as_text=True)
+    start = signed_in.get(f"/specs/new?start_from={set_id}").get_data(as_text=True)
     assert f'value="{set_id}" selected' in start
 
 

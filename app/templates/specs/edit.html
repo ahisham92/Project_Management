@@ -5,13 +5,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='spec-editor.css') }}">
 <div class="page-head">
   <div>
-    <p class="small">
-      <a href="{{ url_for('specs.index') }}">THEMIS</a> ·
-      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a> ·
-        <a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) }}">{{ section['number'] }}</a>
-      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a> ·
-        <a href="{{ url_for('specs.library_section', section_id=section['id']) }}">{{ section['number'] }}</a>{% endif %}
-    </p>
+    <p class="small"><a href="{% if spec %}{{ url_for('specs.set_section', set_id=spec['id'], row_id=section['id']) }}{% else %}{{ url_for('specs.library_section', section_id=section['id']) }}{% endif %}">← Back to section {{ section['number'] }} without saving</a></p>
     <h1>{% if library %}Edit the master: {% else %}Amend for {{ spec['name'] }}: {% endif %}{{ section['number'] }}</h1>
   </div>
   <div class="inline-form">

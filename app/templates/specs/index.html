@@ -1,105 +1,82 @@
 {% extends "base.html" %}
-{% from "partials/bits.html" import empty %}
+{% from "partials/bits.html" import badge, empty %}
 {% import "partials/themis.html" as themis %}
 {% from "specs/_engineer.html" import engineer_note %}
 {% block title %}THEMIS · Structural Specifications{% endblock %}
 
 {% block content %}
-<div class="page-head">
+<div class="page-head themis-dash-head">
   <div>
     <div class="themis-hero">{{ themis.mark(label='') }}<div><h1>THEMIS</h1><span class="themis-tagline">Structural Specifications</span></div></div>
-    <p class="small muted" style="margin-top:2px">
-      One master text of every section, kept in the library. Each project takes a copy, fills in
-      its own details and choices, amends what it has to, and issues every section in the same
-      Word format as the original — with every amendment known.
+    <p class="small muted" style="margin-top:4px;max-width:70ch">
+      One master text of every section. Each project takes a copy, fills in its own details and
+      choices, amends what it has to, and issues every section in the company's Word format, with
+      every amendment known.
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-ghost" href="{{ url_for('specs.library') }}">Master library ({{ library | length }})</a>
-    <a class="btn btn-ghost" href="{{ url_for('specs.issued_list') }}" title="Every issued specification with its project's data, to compare">Issued specifications</a>
-    <a class="btn btn-ghost" href="{{ url_for('specs.standards_register') }}">Standards register</a>
-    {% if is_admin %}<a class="btn btn-ghost" href="{{ url_for('specs.from_projects') }}" title="What projects changed in the MTD, to write into it">Amendments for the MTD</a>{% endif %}
-    <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.new_project') }}">+ Start a new project</a>
   </div>
 </div>
-{{ engineer_note() }}
 
-<div class="card" id="new">
-  <div class="card-head">
-    <div>
-      <h2>Start a project specification</h2>
-      <p class="small muted" style="margin-top:2px">
-        From the library, or from an earlier project's — its header, answers and amended sections come with it.
-        Then tick the project's elements (or read them from the Revit model), answer the questions, and the sections follow.
-      </p>
+<div class="themis-stats">
+  <div class="themis-stat"><span class="themis-stat-n">{{ stats['projects'] }}</span><span class="themis-stat-l">Projects</span><span class="small muted">{{ stats['mine'] }} of them yours</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ stats['issued'] }}</span><span class="themis-stat-l">Issued</span><span class="small muted">{{ stats['issues'] }} revision{{ 's' if stats['issues'] != 1 }} in all</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ stats['countries'] }}</span><span class="themis-stat-l">Countries</span><span class="small muted">{% if stats['unplaced'] %}{{ stats['unplaced'] }} project{{ 's' if stats['unplaced'] != 1 }} with no place yet{% else %}every project placed{% endif %}</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ library | length }}</span><span class="themis-stat-l">Master sections</span>
+    <span class="small muted">{% for f in families %}<span class="themis-kind themis-kind-{{ f['code'] | lower }}">{{ f['code'] }}</span> {{ stats['families'].get(f['code'], 0) }} project{{ 's' if stats['families'].get(f['code'], 0) != 1 }}{{ ' · ' if not loop.last }}{% endfor %}</span></div>
+</div>
+
+<div class="themis-dash-grid">
+  <div class="card themis-map-card">
+    <div class="card-head">
+      <div><h2>Where the projects are</h2>
+        <p class="small muted" style="margin-top:2px">Each project at its city. Click one to open it.</p></div>
+      <div class="themis-legend small">{% for f in families %}<span><i class="themis-dot themis-kind-{{ f['code'] | lower }}"></i>{{ f['code'] }} {{ f['name'] }}</span>{% endfor %}</div>
+    </div>
+    <div class="themis-map" id="themis-map" data-points="{{ points | tojson | forceescape }}" data-unplaced="{{ unplaced | tojson | forceescape }}" data-save="{{ url_for('specs.save_points') }}">
+      <div class="themis-map-fallback">
+        {% if points or unplaced %}
+        <ul class="small">{% for p in points + unplaced %}<li><a href="{{ p['url'] }}">{{ p['name'] }}</a> · {{ [p['city'], p['country']] | select | join(', ') }}</li>{% endfor %}</ul>
+        {% else %}
+        {{ empty('No places yet', 'Give a project its city and country (on its Project step) and it shows here.') }}
+        {% endif %}
+      </div>
     </div>
   </div>
-  <div class="card-body">
-    <form method="post" action="{{ url_for('specs.new_set') }}" enctype="multipart/form-data" style="display:grid;gap:12px">
-      <div class="inline-form">
-        <label class="field flex1">
-          <span class="field-label">Project name</span>
-          <input type="text" name="name" required placeholder="As it should read on the specification" value="{{ source['name'] if source }}"{% if start_from and not source %} autofocus{% endif %}>
-        </label>
-        <label class="field w-lg">
-          <span class="field-label">Project code</span>
-          <input type="text" name="code" placeholder="e.g. P1234" value="{{ source['code'] if source }}">
-        </label>
-        <label class="field w-lg">
-          <span class="field-label">Client</span>
-          <input type="text" name="client" value="{{ source['client'] if source }}">
-        </label>
-        <label class="field w-lg">
-          <span class="field-label">Package</span>
-          <input type="text" name="package" placeholder="e.g. Package 2"{% if source %} autofocus{% endif %}>
-        </label>
-      </div>
-      <fieldset class="spec-families">
-        <legend class="field-label">Kind of specification</legend>
-        {% for f in families %}
-          <label class="spec-family">
-            <input type="radio" name="family" value="{{ f['code'] }}"{% if loop.first and not families | selectattr('code', 'equalto', '15A') | list or f['code'] == '15A' %} checked{% endif %}>
-            <span><strong>{{ f['code'] }}</strong> {{ f['name'] }}<span class="small muted">{{ f['note'] }} {{ f['sections'] }} section{{ 's' if f['sections'] != 1 }} in the library.</span></span>
-          </label>
-        {% endfor %}
-      </fieldset>
-      <div class="inline-form">
-        {% if sets %}
-        <label class="field w-lg">
-          <span class="field-label">Start from</span>
-          <select name="copy_from">
-            <option value="">The library</option>
-            {% if mine %}<optgroup label="My projects">{% for one in mine %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
-            {% if others %}<optgroup label="Other people's">{% for one in others %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
-          </select>
-          <span class="field-hint">A project started from another keeps that one's kind, and its code when you leave the code blank: give a package name and it becomes another package of that project, yours to edit.</span>
-        </label>
-        {% endif %}
-        <label class="field flex1">
-          <span class="field-label">Elements from the Revit model (optional)</span>
-          <input type="file" name="model" accept=".ifc,.ifczip,.txt,.csv,.tsv,.xlsx">
-          <span class="field-hint">An IFC export or an exported schedule. Or tick the elements by hand on the next page.</span>
-        </label>
-        <label class="check" style="align-self:end"><input type="checkbox" name="need_signoff" value="1" checked> Hold its issue for sign-off</label>
-        <button type="submit" class="btn btn-primary">Start</button>
-      </div>
-    </form>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Recently issued</h2>
+      <p class="small muted" style="margin-top:2px">The latest revisions sent out.</p></div>
+      <a class="small" href="{{ url_for('specs.issued_list') }}">All issued →</a></div>
+    {% if recent %}
+    <ul class="themis-recent">
+      {% for r in recent %}
+      <li><a href="{{ url_for('specs.issues', set_id=r['set_id']) }}"><strong>{{ r['name'] }}</strong>{% if r['package'] %} · {{ r['package'] }}{% endif %}</a>
+        <span class="small muted">Rev {{ r['revision'] }}{% if r['purpose'] %} · {{ r['purpose'] }}{% endif %} · {{ r['issue_date'] }}{% if r['issued_by'] %} · {{ r['issued_by'] }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card-body">{{ empty('Nothing issued yet', 'A revision issued from a project shows here.') }}</div>
+    {% endif %}
   </div>
 </div>
 
 {% macro project_table(rows, who=False) %}
   <div class="card-body flush table-scroll">
-    <table>
-      <thead><tr><th>Project</th><th>Kind</th><th>Code</th><th>Client</th><th class="right">Sections</th><th>Revision</th>{% if who %}<th>Started by</th>{% endif %}<th>Last changed</th></tr></thead>
+    <table class="themis-table" data-filter-rows>
+      <thead><tr><th>Project</th><th>Kind</th><th>Code</th><th>Client</th><th>Place</th><th class="right">Sections</th><th>State</th>{% if who %}<th>Started by</th>{% endif %}<th>Last changed</th></tr></thead>
       <tbody>
         {% for one in rows %}
-        <tr>
-          <td><a href="{{ url_for('specs.spec_set', set_id=one['id']) }}">{{ one['name'] }}</a>{% if one['package'] %} <span class="small muted">· {{ one['package'] }}</span>{% endif %}{% if flagged and flagged.get(one['id']) %} <a class="small spec-pkg-red-text" href="{{ url_for('specs.project_packages', set_id=one['id']) }}" title="Differences from the project's other issued packages not decided yet">{{ flagged[one['id']] }} to decide</a>{% endif %}</td>
-          <td><span class="spec-key">{{ one['family'] }}</span></td>
+        {% set city = one['city'] or '' %}{% set country = one['country'] or '' %}
+        <tr data-row-text="{{ [one['name'], one['package'], one['code'], one['client'], city, country, one['family']] | select | join(' ') | lower }}">
+          <td><a href="{{ url_for('specs.spec_set', set_id=one['id']) }}"><strong>{{ one['name'] }}</strong></a>{% if one['package'] %} <span class="small muted">· {{ one['package'] }}</span>{% endif %}{% if flagged and flagged.get(one['id']) %} <a class="small spec-pkg-red-text" href="{{ url_for('specs.project_packages', set_id=one['id']) }}" title="Differences from the project's other issued packages not decided yet">{{ flagged[one['id']] }} to decide</a>{% endif %}</td>
+          <td><span class="themis-kind themis-kind-{{ one['family'] | lower }}">{{ one['family'] }}</span></td>
           <td>{{ one['code'] }}</td>
           <td>{{ one['client'] }}</td>
+          <td class="small">{{ [city, country] | select | join(', ') or '—' }}</td>
           <td class="right">{{ one['sections'] }}</td>
-          <td>REV {{ one['revision'] }}</td>
+          <td>{% if one['id'] in issued_ids %}{{ badge('good', 'Issued · REV ' ~ one['revision']) }}{% else %}{{ badge('neutral', 'Not issued yet') }}{% endif %}</td>
           {% if who %}<td class="small">{{ one['creator'] or '—' }}</td>{% endif %}
           <td class="small muted">{{ one['updated_at'][:16] }}</td>
         </tr>
@@ -110,20 +87,31 @@
 {% endmacro %}
 
 <div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>My projects</h2></div>
+  <div class="card-head">
+    <h2>My projects</h2>
+    {% if mine | length > 5 or others %}<input type="search" class="themis-search" placeholder="Find a project, client or place" aria-label="Find a project" data-filter-for="themis-projects">{% endif %}
+  </div>
+  <div id="themis-projects">
   {% if not mine %}
     <div class="card-body">
-      {{ empty('None yet', 'Start one above. ' ~ ('The library has ' ~ (library | length) ~ ' sections for it to take.' if library else 'The library is empty too: an administrator loads the master sections into it first.')) }}
+      {{ empty('None yet', ('Start one with "Start a new project". The library has ' ~ (library | length) ~ ' sections for it to take.') if library else 'The library is empty too: an administrator loads the master sections into it first.') }}
     </div>
   {% else %}
     {{ project_table(mine) }}
   {% endif %}
+  {% if others %}
+  <details class="themis-others">
+    <summary class="card-head"><h2>Other people's projects ({{ others | length }})</h2></summary>
+    {{ project_table(others, who=True) }}
+  </details>
+  {% endif %}
+  </div>
 </div>
 
-{% if others %}
-<details class="card" style="margin-top:16px">
-  <summary class="card-head"><h2>Other people's projects ({{ others | length }})</h2></summary>
-  {{ project_table(others, who=True) }}
-</details>
-{% endif %}
+<div style="margin-top:16px">{{ engineer_note(compact=true) }}</div>
+
+{# Leaflet 1.9.4 (BSD-2-Clause), kept with the site so the map needs no other host. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}" defer></script>
+<script src="{{ url_for('static', filename='themis-dashboard.js') }}" defer></script>
 {% endblock %}

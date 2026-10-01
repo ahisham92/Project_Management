@@ -6,11 +6,6 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small">
-      <a href="{{ url_for('specs.index') }}">THEMIS</a> ·
-      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
-      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}
-    </p>
     <h1>SECTION {{ section['number'] }} - {{ section['title'] }}</h1>
     <p class="small muted" style="margin-top:2px">
       {% if spec %}

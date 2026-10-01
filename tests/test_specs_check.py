@@ -580,8 +580,10 @@ def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
     assert "fenders!=None" in text(signed_in.get("/specs/library"))
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
     set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
-    # Saving the answer puts in the section it calls for, and says so.
-    answer = signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "Cone"},
+    # Saving the answer puts in the section it calls for, and says so (fenders
+    # are asked of marine works only: on a building they are off).
+    answer = signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "Cone",
+                                                           "opt_structures": "Marine structures"},
                             follow_redirects=True)
     assert "Added 1 section the answers call for" in text(answer)
     from app import specs_store
@@ -596,7 +598,8 @@ def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
     check = text(signed_in.get(f"/specs/sets/{set_id}/check"))
     assert "Section 355913 Fenders: the choices call for it (fenders!=None), and it was taken out" in check
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["2"]})
-    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "None"})
+    signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "None",
+                                                  "opt_structures": "Marine structures"})
     assert "which the choices rule out" in text(signed_in.get(f"/specs/sets/{set_id}/check"))
     # The condition travels in the library file.
     library = json.loads(zipfile.ZipFile(io.BytesIO(signed_in.get("/specs/library/file").data))

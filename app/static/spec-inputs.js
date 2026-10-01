@@ -1327,11 +1327,16 @@
     Array.prototype.forEach.call(form.querySelectorAll("[data-opt]"), function (q) {
       var key = q.getAttribute("data-opt"), when = q.getAttribute("data-when"), on = true;
       if (when) {
+        // Alternatives, each a list of [on, how, value] that must all hold.
         try { when = JSON.parse(when); } catch (e) { when = null; }
-        if (when) {
-          var got = picks(form, when[0]);
-          on = asked[when[0]] !== false && (when[1] === "has" ? got.indexOf(when[2]) >= 0 : when[1] === "is" ? got[0] === when[2] :
-            got.some(function (v) { return !/^(none|no)$/i.test(v); }));
+        if (when && when.length) {
+          on = when.some(function (all) {
+            return all.every(function (c) {
+              var got = picks(form, c[0]);
+              return asked[c[0]] !== false && (c[1] === "has" ? got.indexOf(c[2]) >= 0 : c[1] === "is" ? got[0] === c[2] :
+                got.some(function (v) { return !/^(none|no)$/i.test(v); }));
+            });
+          });
         }
       }
       asked[key] = on;

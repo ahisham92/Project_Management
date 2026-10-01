@@ -95,7 +95,8 @@ def narrative(slug: str, site: Mapping[str, Any]) -> str:
     """A level's opening lines, told for this project's works."""
     built = [w for w, on in (("the building", site.get("building")), ("the quay", site.get("marine")),
                              ("the bridge", site.get("bridge"))) if on]
-    works = built[0] if len(built) == 1 else "the works"
+    # Before anything is picked the project is not yet a building or a quay.
+    works = "the project" if not site.get("builds") else built[0] if len(built) == 1 else "the works"
     elements = [e for e in site.get("elements") or [] if e and e != "none"]
     extras = [w for w, on in ((" with its post-tensioning tendons", site.get("pt")),
                               (" and the precast units from the yard", site.get("precast"))) if on]
@@ -177,12 +178,23 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
     }
 
 
-# The brief asks only what applies: a question here is asked once the answer
-# it depends on says so (marine furniture for marine structures, the steel's
+# The brief asks only what applies: a question here is asked once the answers
+# it depends on say so (marine furniture for marine structures, the steel's
 # details once there is a steel frame, and so on). key: (on, how, value), how
 # being "has" (that answer ticked), "is" (that answer picked) or "some" (any
-# answer but None or No).
-BRIEF_WHEN: dict[str, tuple[str, str, str]] = {}
+# answer but None or No); a list of them must all hold, and ANY([...], [...])
+# holds when one of its lists does.
+Condition = tuple[str, str, str]
+
+
+class ANY(tuple):
+    """Alternatives: any one of these lists of conditions will do."""
+
+    def __new__(cls, *alternatives: list):
+        return super().__new__(cls, alternatives)
+
+
+BRIEF_WHEN: dict[str, Any] = {}
 for _k in ("fenders", "bollards", "ladders", "floating_piers"):
     BRIEF_WHEN[_k] = ("structures", "has", "Marine structures")
 for _k in ("bridge_items", "bridge_segmental", "bridge_load_cells", "bridge_contractor_design",
@@ -192,40 +204,87 @@ for _k in ("steel_systems", "steel_protection", "fire", "aess", "steel_design"):
     BRIEF_WHEN[_k] = ("steel_framing", "is", "Yes")
 BRIEF_WHEN["deck_design"] = ("steel_systems", "has", "Steel deck")
 BRIEF_WHEN["cfs_delegated"] = ("steel_systems", "has", "Cold-formed framing")
-for _k in ("pt_delegated_design", "pt_vapor_inhibitor", "pt_transfer_girders"):
-    BRIEF_WHEN[_k] = ("post_tensioning", "some", "")
+BRIEF_WHEN["pt_delegated_design"] = ("post_tensioning", "some", "")
+# Vapour inhibitor in the ducts: post-tensioning, or a bridge's prestressed girders.
+BRIEF_WHEN["pt_vapor_inhibitor"] = ANY([("post_tensioning", "some", "")],
+                                       [("bridge_items", "has", "Prestressed girders")])
+# Transfer girders carry a building's columns: not a quay's or a bridge's.
+BRIEF_WHEN["pt_transfer_girders"] = [("post_tensioning", "some", ""), ("structures", "has", "Buildings")]
 BRIEF_WHEN["pt_encapsulation"] = ("post_tensioning", "has", "Unbonded")
-for _k in ("precast_delegated_design", "precast_hollowcore", "precast_double_tee", "precast_thin_brick",
-           "precast_stone_facing", "precast_insulated_panels", "precast_stadia"):
-    BRIEF_WHEN[_k] = ("precast", "some", "")
+BRIEF_WHEN["precast_delegated_design"] = ("precast", "some", "")
+# Hollow-core and double-tee floors, faced and insulated wall panels and
+# stadium risers are a building's precast, not a quay's or a bridge's.
+for _k in ("precast_hollowcore", "precast_double_tee", "precast_thin_brick", "precast_stone_facing",
+           "precast_insulated_panels", "precast_stadia"):
+    BRIEF_WHEN[_k] = [("precast", "some", ""), ("structures", "has", "Buildings")]
 for _k in ("demo_explosives", "demo_salvage", "demo_hazardous", "demo_prestressed"):
     BRIEF_WHEN[_k] = ("demolition", "is", "Yes")
 BRIEF_WHEN["monitor_digital_twin"] = ("monitoring", "is", "Yes")
-for _k in ("wp_installer_warranty", "wp_composite_system", "wp_plaza_pavers"):
+for _k in ("wp_installer_warranty", "wp_composite_system"):
     BRIEF_WHEN[_k] = ("waterproofing", "some", "")
+# Plaza pavers over the membrane: a building's podium or plaza deck.
+BRIEF_WHEN["wp_plaza_pavers"] = [("waterproofing", "some", ""), ("structures", "has", "Buildings")]
 for _k in ("stair_railings", "stair_delegated"):
     BRIEF_WHEN[_k] = ("stairs", "some", "")
+# Thermal-break connections cross a building's insulated envelope.
+BRIEF_WHEN["thermal_break"] = ("structures", "has", "Buildings")
+
+
+def brief_rule(key: str) -> list[list[Condition]]:
+    """What ``key`` hangs on, as alternatives each of conditions that must
+    all hold ([] when it is always asked)."""
+    when = BRIEF_WHEN.get(key)
+    if not when:
+        return []
+    if isinstance(when, ANY):
+        return [list(alt) for alt in when]
+    return [list(when)] if isinstance(when, list) else [[when]]
+
 
 # The answers others hang on: on a brief not yet decided they start unpicked,
 # so a steel frame, marine structures or precast are asked for, never assumed.
-BRIEF_GATES = frozenset(on for on, _how, _value in BRIEF_WHEN.values())
+BRIEF_GATES = frozenset(c[0] for k in BRIEF_WHEN for alt in brief_rule(k) for c in alt)
 
 
-def brief_applies(key: str, chosen: Mapping[str, str] | None, _seen: frozenset = frozenset()) -> bool:
-    """Whether the brief asks ``key`` for these choices: the answer it hangs
-    on says so, and that one is itself asked."""
-    when = BRIEF_WHEN.get(key)
-    if not when or key in _seen:
-        return True
-    on, how, value = when
-    if not brief_applies(on, chosen, _seen | {key}):
+def _holds(condition: Condition, chosen: Mapping[str, str], seen: frozenset) -> bool:
+    on, how, value = condition
+    if not brief_applies(on, chosen, seen):
         return False
-    picked = _picked(chosen or {}, on)
+    picked = _picked(chosen, on)
     if how == "has":
         return value in picked
     if how == "is":
-        return ((chosen or {}).get(on) or "").strip() == value
+        return (chosen.get(on) or "").strip() == value
     return any(p.lower() not in ("none", "no") for p in picked)
+
+
+def brief_applies(key: str, chosen: Mapping[str, str] | None, _seen: frozenset = frozenset()) -> bool:
+    """Whether the brief asks ``key`` for these choices: the answers it hangs
+    on say so, and they are themselves asked."""
+    rule = brief_rule(key)
+    if not rule or key in _seen:
+        return True
+    chosen = chosen or {}
+    return any(all(_holds(c, chosen, _seen | {key}) for c in alt) for alt in rule)
+
+
+def scoped(chosen: Mapping[str, str], options: list[dict]) -> dict[str, str]:
+    """The choices a project's text is written from: a decision the brief does
+    not ask (marine furniture on a building, hollow-core floors on a quay, the
+    steel's details with no steel) is off, whatever it was left at, so the
+    paragraphs and questions that hang on it are not there. Off is its "None"
+    or "No"; a decision with neither is not answered."""
+    out = dict(chosen)
+    for o in options:
+        key = o["key"]
+        if key not in BRIEF_WHEN or brief_applies(key, chosen):
+            continue
+        off = next((c for c in o.get("choice_list") or [] if c.strip().lower() in ("none", "no")), None)
+        if off is None:
+            out.pop(key, None)
+        else:
+            out[key] = off
+    return out
 
 
 def decisions(chosen: Mapping[str, str] | None, options: list[dict]) -> list[dict]:

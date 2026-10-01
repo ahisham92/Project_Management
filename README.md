@@ -176,7 +176,18 @@ meet, so the Specs Writer reads across them:
   waterproofing, stairs; `BRIEF_GATES`) start unpicked, so nothing is assumed. It asks only what applies (`BRIEF_WHEN` in
   `app/specs_inputs.py`): marine furniture once the project builds marine structures, the
   steel's protection, fire and design once it has a steel frame, the bridge items for a bridge,
-  the precast and post-tensioning details when it has them, and so on. Until the brief is first
+  the precast and post-tensioning details when it has them, and so on. A rule may need several
+  answers (hollow-core, double tees, faced and insulated panels and stadia: precast *and* a
+  building) or either of two (`ANY`). **What the brief does not ask is off for the text**
+  (`scoped`, through `chosen_for`): hollow-core left at Yes on a quay counts as No, so its
+  paragraphs and questions are not there. **Questions and options follow the works:** library
+  paragraphs carry conditions on what the project builds and its elements (a roof, a floor
+  hardener, interior cover for buildings; marine cover for marine structures or marine
+  exposure; `;` in a condition means *or*), and a question's options can too (`choice_when` on
+  a question, from the library file: "high towers" only for buildings, the splash zone
+  only for marine or bridge works or marine exposure; `"*"` leaves out a question of optional
+  words). A project with no buildings is asked about "the structure", not "the building".
+  Until the brief is first
   confirmed the site is a **bare plot**: the drawing board alone, and each choice adds its piece
   at once (the building, the quay on the sea, the bridge, the steel frame, the cranes), with no
   save and no reload; each part is kept in the background as it is chosen (`partial=1`, which

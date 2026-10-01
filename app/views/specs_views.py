@@ -911,23 +911,90 @@ def details(set_id: int):
         was=json.dumps(_group_answers(row, groups[here]) if groups else {}, ensure_ascii=False))
 
 
+def _labels() -> dict:
+    labels = dict(specs_questions.KIND_LABELS)
+    labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
+    return labels
+
+
+def _scene(set_id: int, row, sections, asked=None) -> dict:
+    from .. import specs_inputs
+
+    return specs_inputs.scene(
+        asked if asked is not None else _asked(set_id, row),
+        review.issued_words(row, sections, marked=True), _labels(),
+        lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}")
+
+
 @bp.get("/sets/<int:set_id>/inputs")
 @login_required
 def review_inputs(set_id: int):
-    """The project's inputs at a glance before it is issued: each answer on a
-    picture of the works as they are built, and as a plain summary."""
-    from .. import specs_inputs, specs_review
-
+    """The project's inputs at a glance before it is issued: every question on
+    a picture of the works as they are built, answered there stage by stage,
+    and the same as a plain summary."""
     row = _set_or_404(set_id)
     sections = store.set_sections(set_id)
-    labels = dict(specs_questions.KIND_LABELS)
-    labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
-    data = specs_inputs.scene(
-        _asked(set_id, row), specs_review.issued_words(row, sections, marked=True), labels,
-        lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}")
-    left = specs_review.still_open(row, sections) if sections else []
+    data = _scene(set_id, row, sections)
+    left = review.still_open(row, sections) if sections else []
     return render_template("specs/inputs.html", spec=row, scene=data, left=left,
                            open_places=sum(len(p["open"]) for p in left))
+
+
+@bp.route("/sets/<int:set_id>/inputs/<station>", methods=["GET", "POST"])
+@login_required
+def inputs_station(set_id: int, station: str):
+    """One station's questions, to answer or change from the picture: the
+    panel's form (GET), saved like a page of Details (POST, answered as JSON
+    with the picture's new data when the page asks for it)."""
+    from .. import specs_inputs
+
+    row = _set_or_404(set_id)
+    asked = _asked(set_id, row)
+    chapter, questions = specs_inputs.station_questions(asked, station)
+    if chapter is None:
+        abort(404)
+    sections = store.set_sections(set_id)
+    wants_json = request.headers.get("X-Requested-With") == "fetch"
+    if request.method == "POST":
+        data = _scene(set_id, row, sections, asked)
+        messages = []
+        if specs_inputs.blocking(data, station):
+            messages.append(("error", "This stage is locked until the one before it is answered."))
+        else:
+            given, split = specs_questions.read_form(request.form, questions)
+            held = _unaccepted(questions, given)
+            switches = {q["key"] for q in questions if q.get("switch")}
+            kept = _answered_meanwhile(row, given, switches)
+            before = store.ruled_out(set_id)
+            specs_questions.save_switches(set_id, {k: v for k, v in given.items() if k in switches})
+            specs_questions.save_answers(set_id, {k: v for k, v in given.items() if k not in switches}, split)
+            answered = sum(1 for k, v in given.items() if "@" not in k and v is not None)
+            messages.append(("success", f"Saved {answered} answer{'s' if answered != 1 else ''}."))
+            if held:
+                messages.append(("error", f"{held} suggested answer{'s were' if held != 1 else ' was'} not "
+                                          "written in: tick that you accept the suggestions, or change "
+                                          "each one."))
+            if kept:
+                messages.append(("error", "Somebody else answered " + "; ".join(kept) + " after you opened "
+                                          "this, so theirs was kept."))
+            if switches:
+                _added(set_id, before)
+        if not wants_json:
+            for kind, text in messages:
+                flash(text, kind)
+            return redirect(url_for("specs.review_inputs", set_id=set_id) + f"#st-{station}")
+        row = store.spec_set(set_id)
+        return {"messages": [{"kind": k, "text": t} for k, t in messages],
+                "scene": _scene(set_id, row, store.set_sections(set_id))}
+    data = _scene(set_id, row, sections, asked)
+    st = next(s for s in data["stations"] if s["id"] == station)
+    return render_template(
+        "specs/_station.html", spec=row, station=st, chapter=chapter, questions=questions,
+        locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
+        mix=data["mix"] if station == "mixer" else None, element_labels=_labels(),
+        was=json.dumps(_group_answers(row, {"questions": questions}), ensure_ascii=False),
+        FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
+        picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
 
 
 def _by(by: str) -> dict:

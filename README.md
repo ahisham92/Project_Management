@@ -269,8 +269,10 @@ against the current codes and the project, and amended it as needed.
   issues). Anybody else with THEMIS reads it, comments on it, reads what it issued, and can
   start their own copy from it.
 - **Sign-off.** Each section is signed as **prepared**, **checked** and **approved**, in that
-  order, several at once from the list or on the section's page. The checker and the approver
-  must be someone other than the preparer. A sign-off is for the words as they stand: if the
+  order, several at once from the list or on the section's page. For now one person may sign
+  all three, and anyone on the team signs any stage (`ONE_PERSON_SIGNS` in
+  `app/specs_review.py`; set it to False to have a checker and an approver other than the
+  preparer, each with the role for it). A sign-off is for the words as they stand: if the
   issued words of the section change afterwards (by an edit or by an answer), it shows
   *changed since* and must be signed again. Taking a stage back takes back the later ones too.
   With *Hold its issue for sign-off* ticked (the default for a new project), a project is not

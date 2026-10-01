@@ -44,6 +44,7 @@ OTHER = "Other details"
 FIELDS = ("key", "label", "grp", "help", "suggested", "per_element", "many", "optional", "position")
 # What explains a question: a file that lacks them never clears them.
 EXPLAINED = ("definition", "picture", "refs", "definition_kinds")
+SCOPED = ("choice_when",)
 # Which questions a project answers per element rather than once for all.
 SPLIT = "__split__"
 FREE, NONE, SAME = "__free__", "__none__", "__same__"
@@ -69,10 +70,10 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
     the file has one; a file without them leaves the ones here alone."""
     conn = get_db()
     count = 0
-    columns = FIELDS + EXPLAINED
+    columns = FIELDS + EXPLAINED + SCOPED
     keep = {f: f"COALESCE(NULLIF(excluded.{f}, {empty!r}), spec_questions.{f})"
             for f, empty in (("definition", ""), ("picture", ""), ("refs", "[]"),
-                             ("definition_kinds", "{}"))}
+                             ("definition_kinds", "{}"), ("choice_when", "[]"))}
     update = ", ".join(f"{f} = {keep.get(f, 'excluded.' + f)}" for f in columns[1:])
     with conn:
         for i, r in enumerate(rows):
@@ -86,7 +87,8 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
                       1 if r.get("optional") else 0, int(r.get("position", r.get("order", i)) or 0),
                       str(r.get("definition") or "").strip(), _slug(r.get("picture")),
                       json.dumps(clean_refs(r.get("refs")), ensure_ascii=False),
-                      json.dumps(clean_kinds(r.get("definition_kinds")), ensure_ascii=False))
+                      json.dumps(clean_kinds(r.get("definition_kinds")), ensure_ascii=False),
+                      json.dumps(clean_choice_when(r.get("choice_when")), ensure_ascii=False))
             conn.execute(
                 f"INSERT INTO spec_questions ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))}) "
                 "ON CONFLICT(key) DO " + ("NOTHING" if mode == "add" else "UPDATE SET " + update),
@@ -98,8 +100,35 @@ def save_definitions(rows: Iterable[Mapping[str, Any]], mode: str = "update") ->
 def packed() -> list[dict]:
     return [{**{k: d[k] for k in FIELDS}, "definition": d.get("definition") or "",
              "picture": d.get("picture") or "", "refs": refs_of(d),
-             "definition_kinds": clean_kinds(d.get("definition_kinds"))}
+             "definition_kinds": clean_kinds(d.get("definition_kinds")),
+             "choice_when": clean_choice_when(d.get("choice_when"))}
             for d in definitions().values()]
+
+
+def clean_choice_when(given: Any) -> list[dict]:
+    """A question's choices kept for some projects: each {"choice": words of
+    the choice (any part of them), "when": the condition, as a paragraph's}."""
+    if isinstance(given, str):
+        try:
+            given = json.loads(given or "[]")
+        except ValueError:
+            return []
+    out = []
+    for c in given if isinstance(given, list) else []:
+        if isinstance(c, Mapping):
+            choice, when = " ".join(str(c.get("choice") or "").split()), str(c.get("when") or "").strip()
+            if choice and when:
+                out.append({"choice": choice, "when": when})
+    return out
+
+
+def offered(choices: list[str], tags: list[dict], chosen: Mapping[str, str]) -> list[str]:
+    """The choices this project is offered: a choice tagged for other works
+    (high towers on a quay, the splash zone in a building) is not."""
+    off = [t["choice"].lower() for t in tags if not specs.applies(t["when"], chosen)]
+    if not off:
+        return choices
+    return [c for c in choices if not any(o in c.lower() for o in off)]
 
 
 # --- what explains a question ---------------------------------------------------------
@@ -319,8 +348,27 @@ def answers_of(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
 
 
 def values(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
-    """The answers as the text is filled from them."""
-    return {k: v for k, v in answers_of(spec_set).items() if k != SPLIT}
+    """The answers as the text is filled from them. Optional words not asked
+    of this project (a floor covering's bond on a quay) are left out."""
+    out = {k: v for k, v in answers_of(spec_set).items() if k != SPLIT}
+    if spec_set:
+        for key in not_asked(spec_set):
+            out.setdefault(key, "")
+    return out
+
+
+WHOLE = "*"     # a choice_when for the whole question: optional words only some works have
+
+
+def not_asked(spec_set: Mapping[str, Any]) -> set[str]:
+    """The questions of optional words this project's works do not have."""
+    rows = query("SELECT key, choice_when FROM spec_questions WHERE choice_when LIKE ?", ('%"*"%',))
+    if not rows:
+        return set()
+    from . import specs_store
+    chosen = specs_store.chosen_for(spec_set)
+    return {r["key"] for r in rows for t in clean_choice_when(r["choice_when"])
+            if t["choice"] == WHOLE and not specs.applies(t["when"], chosen)}
 
 
 def split_keys(answers: Mapping[str, str]) -> set[str]:
@@ -430,8 +478,17 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                          "node_id": n["id"], "element": element}
                 if place not in q["places"]:
                     q["places"].append(place)
+    builds = {b.strip().lower() for b in (chosen.get("structures") or "").split("|") if b.strip()}
+    no_buildings = bool(builds) and "buildings" not in builds
     out = []
     for q in found.values():
+        tags = clean_choice_when(defs.get(q["key"], {}).get("choice_when"))
+        if any(t["choice"] == WHOLE and not specs.applies(t["when"], chosen) for t in tags):
+            continue                     # optional words these works do not have: left out
+        _scope_choices(q, [t for t in tags if t["choice"] != WHOLE], chosen)
+        if no_buildings:
+            # A quay or a bridge is asked about "the structure", not "the building".
+            q["label"], q["help"] = structure_for_building(q["label"]), structure_for_building(q["help"])
         # Optional words the master puts in one bracket wherever it asks: a
         # yes or no, and yes keeps each place's own words.
         # A single word the master offers where it must be said ("[20 mm]") is
@@ -472,6 +529,39 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
     return out
 
 
+# Not "building code", "building official" or "building regulations": those are names.
+BUILDING = re.compile(r"\b(building)(s?)\b(?!\s+(?:codes?|officials?|regulations?|control|permits?|"
+                      r"authorit(?:y|ies)|research|standards?)\b)", re.I)
+
+
+def structure_for_building(text: str) -> str:
+    """"Building" said as "structure", in the case it was written."""
+    def one(m: re.Match) -> str:
+        word = "structure" + m.group(2).lower()
+        return word.upper() if m.group(1).isupper() else word.capitalize() if m.group(1)[0].isupper() else word
+    return BUILDING.sub(one, text or "")
+
+
+def _scope_choices(q: dict, tags: list[dict], chosen: Mapping[str, str]) -> None:
+    """A question with only the choices this project is offered, and its
+    suggestion without the ones it is not."""
+    if not tags:
+        return
+    kept = offered(q["choices"], tags, chosen)
+    gone = [c for c in q["choices"] if c not in kept]
+    if not gone or not (kept or q["free"]):
+        return                           # a question is never left with nothing to answer
+    q["choices"] = kept
+    said = q.get("suggested")
+    if not isinstance(said, str) or not any(c in said for c in gone):
+        return
+    if q.get("many"):
+        left = [c for c in kept if c in said]
+        q["suggested"] = joined(left) if left else None
+    else:
+        q["suggested"] = None
+
+
 def _switches(sections: Iterable[Mapping[str, Any]], spec_set: Mapping[str, Any] | None) -> list[dict]:
     """The master's yes-or-no (and pick-one) questions that decide whether
     paragraphs of these sections are issued at all, asked with the rest:
@@ -481,11 +571,15 @@ def _switches(sections: Iterable[Mapping[str, Any]], spec_set: Mapping[str, Any]
     used: set[str] = set()
     for s in sections:
         used |= specs.keys_used(specs.loads(s["body"]))
+    from . import specs_inputs
     stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
+    raw = specs_store.chosen_for(spec_set, scope=False)
     out = []
     for o in specs_store.options():
         if o["key"] not in used or o.get("grp") not in GROUPS:
             continue
+        if not specs_inputs.brief_applies(o["key"], raw):
+            continue                     # hollow-core floors on a quay, plaza pavers on a bridge
         out.append({
             "key": o["key"], "label": o["label"] or _pretty(o["key"]), "group": o["grp"],
             "help": "", "suggested": o["default_value"] or None, "per_element": False,

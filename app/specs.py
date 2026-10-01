@@ -121,10 +121,15 @@ def applies(when: str, chosen: Mapping[str, str]) -> bool:
 
     A question that takes several answers stores them joined by ``|``, and a
     condition holds when any of them is one it names.
+
+    Alternatives are joined with ``;``, any one of them holding will do:
+    ``structures=Marine structures;exposure=Marine`` (``&`` binds tighter).
     """
     when = (when or "").strip()
     if not when:
         return True
+    if ";" in when:
+        return any(applies(alt, chosen) for alt in when.split(";") if alt.strip())
     for part in when.split("&"):
         part = part.strip()
         if not part:
@@ -168,6 +173,11 @@ def choose(text: str, chosen: Mapping[str, str]) -> str:
         out = re.sub(r"\s+([.,;:)])", r"\1", out)
         out = re.sub(r"\(\s+", "(", out).strip()
     return out
+
+
+def condition_parts(when: str) -> list[str]:
+    """Each ``key=value`` of a condition, whether joined by ``&`` or ``;``."""
+    return [p for p in re.split(r"[&;]", when or "") if p.strip()]
 
 
 def inline_conditions(text: str) -> list[str]:
@@ -304,7 +314,7 @@ def unfilled(nodes: Iterable[Mapping[str, Any]], values: Mapping[str, str]) -> l
 def keys_used(nodes: Iterable[Mapping[str, Any]]) -> set[str]:
     used = set()
     for n in nodes:
-        for part in (n.get("when") or "").split("&") + inline_conditions(n.get("text", "")):
+        for part in condition_parts(n.get("when") or "") + inline_conditions(n.get("text", "")):
             key = re.split(r"!?=", part, maxsplit=1)[0].strip()
             if key:
                 used.add(key)

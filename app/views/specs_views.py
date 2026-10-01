@@ -981,7 +981,7 @@ def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
     return {"spec": row, "station": st, "level": st["level"], "may_edit": review.may(row, g.user, "edit"),
             "groups": _grouped(options), "chosen": chosen, "confirm": confirm,
             "picked": {k: set(v.split("|")) for k, v in chosen.items()},
-            "when": specs_inputs.BRIEF_WHEN,
+            "when": {k: specs_inputs.brief_rule(k) for k in specs_inputs.BRIEF_WHEN},
             "applies": {o["key"]: specs_inputs.brief_applies(o["key"], chosen) for o in options},
             "asked_keys": [o["key"] for o in options if specs_inputs.brief_applies(o["key"], chosen)],
             "icons": specs_seed.ELEMENT_ICONS, "group_icons": GROUP_ICONS,
@@ -996,7 +996,7 @@ def _brief_chosen(row) -> dict:
     start unpicked, and the site is a bare plot until they are picked."""
     from .. import specs_inputs
 
-    chosen = store.chosen_for(row)
+    chosen = store.chosen_for(row, scope=False)
     stored = json.loads(row["options"] or "{}")
     if stored.get(specs_inputs.DECIDED):
         return chosen
@@ -1049,7 +1049,7 @@ def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:
         # site follows, and the sections wait for the brief to be confirmed.
         specs_questions.save_switches(set_id, given)
         return [], None
-    proposed = {**store.chosen_for(row), **given}
+    proposed = store.scoped({**store.chosen_for(row, scope=False), **given})
     coming = store.would_add(set_id, proposed)
     asking = request.headers.get("X-Requested-With") == "fetch"
     if coming["added"] and asking and request.form.get("confirm") != "1":

@@ -535,7 +535,7 @@ def check(sections: Sequence[Mapping[str, Any]], chosen: Mapping[str, str],
             if n["included"]:
                 issued.append((s, n))
             # Conditions that name questions or answers nobody can give.
-            for part in (n.get("when") or "").split("&") + specs.inline_conditions(n["text"]):
+            for part in specs.condition_parts(n.get("when") or "") + specs.inline_conditions(n["text"]):
                 if not part.strip():
                     continue
                 key, _, wanted = part.partition("!=" if "!=" in part else "=")

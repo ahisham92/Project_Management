@@ -88,11 +88,22 @@ def save_variables(rows: Iterable[Mapping[str, str]]) -> None:
                  row.get("default_value", "").strip(), position))
 
 
-def chosen_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
-    """A set's choices, with the default for anything it has not answered."""
+def chosen_for(spec_set: Mapping[str, Any] | None, scope: bool = True) -> dict[str, str]:
+    """A set's choices, with the default for anything it has not answered.
+
+    Scoped (the default) to what the project builds: a decision its brief
+    does not ask is off (see ``scoped``). The brief itself shows them as
+    left (``scope=False``), to be on when what they hang on is picked."""
     stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
-    return {o["key"]: stored[o["key"]] if o["key"] in stored else o["default_value"]
-            for o in options()}
+    opts = options()
+    chosen = {o["key"]: stored[o["key"]] if o["key"] in stored else o["default_value"] for o in opts}
+    return scoped(chosen, opts) if scope else chosen
+
+
+def scoped(chosen: Mapping[str, str], opts: list[dict] | None = None) -> dict[str, str]:
+    """Choices with the decisions the brief does not ask for them turned off."""
+    from . import specs_inputs
+    return specs_inputs.scoped(chosen, options() if opts is None else opts)
 
 
 def values_for(spec_set: Mapping[str, Any] | None) -> dict[str, str]:
@@ -768,8 +779,9 @@ def _unset_answers(set_id: int, section_id: int) -> list[str]:
         (set_id,))) if s]
     said = []
     for key, was in before.items():
-        trial = {**chosen_for(row), key: was}
-        if any(fits(s["applies"], chosen_for(row)) and not fits(s["applies"], trial) for s in still):
+        now = chosen_for(row)
+        trial = scoped({**chosen_for(row, scope=False), key: was})
+        if any(fits(s["applies"], now) and not fits(s["applies"], trial) for s in still):
             continue
         stored[key] = was
         o = kinds.get(key)
@@ -1490,7 +1502,7 @@ def _covers() -> dict[str, list[tuple[str, bool, set[str]]]]:
             conditions += specs.inline_conditions(n.get("text", ""))
         parts = out.setdefault(row["family"], [])
         for condition in conditions:
-            for part in condition.split("&"):
+            for part in specs.condition_parts(condition):
                 if "=" not in part:
                     continue
                 negate = "!=" in part

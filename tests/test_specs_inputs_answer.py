@@ -252,7 +252,7 @@ def test_the_story_tells_each_level_for_the_works_it_builds(app, signed_in):
     assert f'href="/specs/sets/{set_id}/details"' in page and "List view" in page
     data = json.loads(re.search(r'id="spec-scene-data">(.*?)</script>', page, re.S).group(1))
     tale = {c["slug"]: c["story"] for c in data["chapters"]}
-    assert tale["deciding"].startswith("Every project starts at the drawing board. Decide what the building is")
+    assert tale["deciding"].startswith("Every project starts at the drawing board. Decide what the project is")
     assert "The mixer turns." in tale["the-mix"]
     # A quay on the sea is told as the quay.
     _decided(signed_in, set_id, structures="Marine structures")

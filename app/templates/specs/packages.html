@@ -36,7 +36,6 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>Packages of {{ found['key'] or 'this project' }}</h1>
     <p class="small muted" style="margin-top:2px">
       Every specification with the project code {{ found['key'] }} is a package of one project. This

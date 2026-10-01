@@ -22,7 +22,7 @@ from flask import (
 )
 from markupsafe import Markup, escape
 
-from .. import specs, specs_check, specs_export, specs_questions, specs_review as review, specs_seed
+from .. import specs, specs_check, specs_export, specs_places, specs_questions, specs_review as review, specs_seed
 from .. import specs_store as store
 from ..specs_inputs import DECIDED
 from ..auth import login_required
@@ -144,6 +144,12 @@ def spec_icon_for(choice: str, key: str, icons: dict) -> str:
 @bp.app_template_filter("spec_applies")
 def spec_applies(when: str, chosen: dict) -> bool:
     return (when or "").strip() == store.ALWAYS or specs.applies(when or "", chosen or {})
+
+
+@bp.app_template_filter("spec_why")
+def spec_why(when: str, family: str = "", opts: dict | None = None) -> str:
+    """Why a section is in, in plain words rather than its condition."""
+    return store.plain_condition(when, family, opts)
 
 
 @bp.app_template_filter("spec_rows")
@@ -291,14 +297,18 @@ def _progress_answer(response: Response) -> Response:
 @bp.get("/")
 @login_required
 def index():
+    from .specs_home_views import dashboard
+
     everything = store.sets()
     on = review.my_sets(g.user)
     mine = [s for s in everything if s["created_by"] == g.user["id"] or s["id"] in on]
+    if request.args.get("start_from"):
+        # The old way into a copy ("Start a new package or project from this one").
+        return redirect(url_for("specs.new_project", **request.args))
     return render_template("specs/index.html", sets=everything, mine=mine,
                            others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
-                           is_admin=_is_admin(), start_from=request.args.get("start_from", type=int),
-                           flagged=_flagged(mine), source=_package_source())
+                           is_admin=_is_admin(), flagged=_flagged(mine), **dashboard(everything, mine))
 
 
 def _package_source() -> dict | None:
@@ -330,7 +340,7 @@ def new_set():
         set_id = store.create_set(request.form, copy_from=request.form.get("copy_from", type=int))
     except specs.SpecError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("specs.index"))
+        return redirect(url_for("specs.new_project", start_from=request.form.get("copy_from") or None))
     models = _uploads("model", MOST_MODEL)
     if models and _read_model(set_id, *models[0]):
         _added(set_id)
@@ -428,8 +438,10 @@ def spec_set(set_id: int):
         blanks_n=len(store.blanks(set_id)) if sections else 0,
         details_total=len(asked), details_open=sum(not q["answered"] for q in asked),
         location=specs_questions.answers_of(row).get("proj_location", ""),
+        place=store.place_of(row), countries=specs_places.country_names(),
+        uncover=store.uncovered_for(row, chosen), opts={o["key"]: o for o in everything},
         groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS]),
-        waiting=waiting, uncovered=store.uncovered(chosen, row["family"]),
+        waiting=waiting,
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
         variables=store.variables(), values=values, families=store.families(),
         family=store.family_name(row["family"]),
@@ -561,7 +573,9 @@ def save_set(set_id: int):
     except specs.SpecError as exc:
         flash(str(exc), "error")
     else:
-        if "proj_location" in request.form:
+        if "city" in request.form or "country" in request.form:
+            store.set_place(set_id, request.form.get("city", ""), request.form.get("country", ""))
+        elif "proj_location" in request.form:
             location = " ".join(request.form["proj_location"].split())
             specs_questions.save_answers(set_id, {"proj_location": location or None}, {})
         flash("Saved.", "success")
@@ -699,6 +713,16 @@ def export_set(set_id: int):
     # hold and the reference check stop every one of them alike.
     fmt = specs_export.fmt_of(request.args.get("fmt"))
     keep_fmt = fmt if fmt != "docx" else None
+    if request.args.get("draft"):
+        # A working copy, as the text stands: nothing holds it, nothing records
+        # it, and every page says it was not issued.
+        draft = dict(row, revision=f"{row['revision']} WORKING COPY, NOT ISSUED")
+        data, name, mime = _bundle(draft, sections, fmt)
+        stem, dot, ext = name.rpartition(".")
+        stem = stem.replace(f" REV {draft['revision']}", f" REV {row['revision']}")
+        name = f"{stem} - working copy (not issued).{ext}"
+        return Response(data, mimetype=mime,
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
     report = store.check_set(set_id)
     if row["hold_issue"]:
         waiting = store.open_items(set_id, report)
@@ -1440,7 +1464,8 @@ def library():
                                                 store.DEFAULT_FAMILY)
     return render_template("specs/library.html", sections=store.library(family), family=family,
                            families=families, template=store.template_row(),
-                           family_templates=store.family_templates(), is_admin=_is_admin())
+                           family_templates=store.family_templates(), is_admin=_is_admin(),
+                           opts={o["key"]: o for o in store.options()})
 
 
 @bp.post("/library/upload")
@@ -2030,3 +2055,5 @@ from . import specs_review_views  # noqa: E402,F401
 from . import specs_issued_views  # noqa: E402,F401
 # Packages of one project, and the differences between what they issue.
 from . import specs_packages_views  # noqa: E402,F401
+# The start page's dashboard, a new project's page, and .themis files in and out.
+from . import specs_home_views  # noqa: E402,F401

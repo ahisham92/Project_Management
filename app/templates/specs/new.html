@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}New project · THEMIS{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if source %}A new package or project from {{ source['name'] }}{% else %}Start a new project{% endif %}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {% if source %}It takes {{ source['name'] }}'s kind, answers, page header and amended sections. Give it its own package name to make it another package of the same project, or a new name and code for a new project.
+      {% else %}Give the project's details. Next you tick its elements (or read them from the Revit model), answer the questions, and the sections it needs follow.{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.import_project') }}">Import a .themis file instead</a>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('specs.new_set') }}" enctype="multipart/form-data" class="themis-form">
+  <div class="card">
+    <div class="card-head"><div><h2><span class="spec-n">1</span> The project</h2>
+      <p class="small muted" style="margin-top:2px">What goes on every page of the issue. All but the name can be changed later.</p></div></div>
+    <div class="card-body themis-fields">
+      <label class="field themis-span-2"><span class="field-label">Project name <span class="themis-req">required</span></span>
+        <input type="text" name="name" required placeholder="As it should read on the specification" value="{{ source['name'] if source }}"{% if not source %} autofocus{% endif %}></label>
+      <label class="field"><span class="field-label">Project code</span>
+        <input type="text" name="code" placeholder="e.g. P1234" value="{{ source['code'] if source }}">
+        <span class="field-hint">Projects with the same code are packages of one project.</span></label>
+      <label class="field"><span class="field-label">Package</span>
+        <input type="text" name="package" placeholder="e.g. Package 2, Substructure"{% if source %} autofocus{% endif %}></label>
+      <label class="field themis-span-2"><span class="field-label">Client</span>
+        <input type="text" name="client" value="{{ source['client'] if source }}"></label>
+      <label class="field"><span class="field-label">City</span>
+        <input type="text" name="city" placeholder="e.g. Jeddah" value="{{ place[0] }}"></label>
+      <label class="field"><span class="field-label">Country</span>
+        <input type="text" name="country" list="themis-countries" placeholder="e.g. Saudi Arabia" value="{{ place[1] }}">
+        <span class="field-hint">Puts the project on the map, and fills the project's location in the text.</span></label>
+      <datalist id="themis-countries">{% for c in countries %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div><h2><span class="spec-n">2</span> Kind of specification</h2>
+      <p class="small muted" style="margin-top:2px">Which of the company's libraries its sections come from.{% if source %} A copy keeps {{ source['name'] }}'s kind ({{ source['family'] }}).{% endif %}</p></div></div>
+    <div class="card-body">
+      <fieldset class="spec-families"{% if source %} disabled{% endif %}>
+        <legend class="sr-only">Kind of specification</legend>
+        {% for f in families %}
+          <label class="spec-family">
+            <input type="radio" name="family" value="{{ f['code'] }}"{% if (source and f['code'] == source['family']) or (not source and (f['code'] == '15A' or (loop.first and not families | selectattr('code', 'equalto', '15A') | list))) %} checked{% endif %}>
+            <span><strong>{{ f['code'] }}</strong> {{ f['name'] }}<span class="small muted">{{ f['note'] }} {{ f['sections'] }} section{{ 's' if f['sections'] != 1 }} in the library.</span></span>
+          </label>
+        {% endfor %}
+      </fieldset>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div><h2><span class="spec-n">3</span> Where it starts from</h2>
+      <p class="small muted" style="margin-top:2px">The company's master library, or an earlier project's specification with its amendments.</p></div></div>
+    <div class="card-body themis-fields">
+      <label class="field themis-span-2"><span class="field-label">Start from</span>
+        <select name="copy_from">
+          <option value="">The master library</option>
+          {% if mine %}<optgroup label="My projects">{% for one in mine %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }}{% if one['package'] %} · {{ one['package'] }}{% endif %} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
+          {% if others %}<optgroup label="Other people's">{% for one in others %}<option value="{{ one['id'] }}"{% if one['id'] == start_from %} selected{% endif %}>{{ one['name'] }}{% if one['package'] %} · {{ one['package'] }}{% endif %} ({{ one['family'] }})</option>{% endfor %}</optgroup>{% endif %}
+        </select>
+        <span class="field-hint">A copy keeps the other's kind, and its code when you leave the code blank.</span></label>
+      <label class="field themis-span-2"><span class="field-label">Elements from the Revit model (optional)</span>
+        <input type="file" name="model" accept=".ifc,.ifczip,.txt,.csv,.tsv,.xlsx">
+        <span class="field-hint">An IFC export or an exported schedule. Or tick the elements by hand on the next page.</span></label>
+      <label class="check themis-span-2"><input type="checkbox" name="need_signoff" value="1" checked> Hold its issue until every section is prepared, checked and approved</label>
+    </div>
+  </div>
+
+  <div class="themis-form-foot">
+    <a class="btn btn-ghost" href="{{ url_for('specs.index') }}">Cancel</a>
+    <button type="submit" class="btn btn-primary">Start the project →</button>
+  </div>
+</form>
+{% endblock %}

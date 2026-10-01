@@ -156,7 +156,8 @@ def test_the_project_page_leads_to_the_details_and_keeps_the_location(app, signe
     assert "Next: details (6 to answer)" in page
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "proj_location": " Jeddah,  KSA "})
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
-    assert 'value="Jeddah, KSA"' in page
+    # An older project's one-line location reads as its city and country.
+    assert 'name="city" value="Jeddah"' in page and 'name="country" value="KSA"' in page
 
 
 def test_optional_words_are_a_yes_or_no_that_keeps_each_place_its_own(app, signed_in):

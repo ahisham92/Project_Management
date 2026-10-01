@@ -379,9 +379,94 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
                 "doc_code, body, updated_by) SELECT ?, section_id, base_version, number, title, "
                 "doc_code, body, ? FROM spec_set_sections WHERE set_id = ?",
                 (set_id, _who(), copy_from))
-            conn.execute("UPDATE spec_sets SET answers = ? WHERE id = ?",
-                         (source.get("answers") or "{}", set_id))
+            conn.execute("UPDATE spec_sets SET answers = ?, covered = ?, city = ?, country = ?, "
+                         "lat = ?, lng = ? WHERE id = ?",
+                         (source.get("answers") or "{}", source.get("covered") or "{}",
+                          source.get("city") or "", source.get("country") or "",
+                          source.get("lat"), source.get("lng"), set_id))
+    if (fields.get("city") or "").strip() or (fields.get("country") or "").strip():
+        set_place(set_id, fields.get("city") or "", fields.get("country") or "")
     return set_id
+
+
+def place_of(row: Mapping[str, Any] | None) -> tuple[str, str]:
+    """A project's city and country: its own fields, or for a project started
+    before they were asked, read from the one-line location it was given."""
+    from . import specs_places, specs_questions
+
+    if not row:
+        return "", ""
+    city, country = (row.get("city") or "").strip(), (row.get("country") or "").strip()
+    if city or country:
+        return city, country
+    return specs_places.split_location(specs_questions.answers_of(row).get("proj_location", ""))
+
+
+def set_place(set_id: int, city: str, country: str) -> None:
+    """The project's city and country, its point on the map, and the one-line
+    location the sections are written with."""
+    from . import specs_places, specs_questions
+
+    city, country = " ".join((city or "").split()), " ".join((country or "").split())
+    found = specs_places.locate(city, country)
+    execute("UPDATE spec_sets SET city = ?, country = ?, lat = ?, lng = ? WHERE id = ?",
+            (city, country, found[0] if found else None, found[1] if found else None, set_id))
+    line = specs_places.join_location(city, country)
+    specs_questions.save_answers(set_id, {"proj_location": line or None}, {})
+
+
+def set_point(set_id: int, lat: float, lng: float) -> None:
+    """A point the browser found for a city the site's own list does not have."""
+    execute("UPDATE spec_sets SET lat = ?, lng = ? WHERE id = ?", (lat, lng, set_id))
+
+
+def covered_of(row: Mapping[str, Any] | None) -> dict[str, dict]:
+    """How the engineer settled each answer the library has nothing written for."""
+    try:
+        out = json.loads((row or {}).get("covered") or "{}")
+        return out if isinstance(out, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+COVER_HOW = ("section", "own", "not_needed")
+
+
+def set_cover(set_id: int, key: str, value: str, how: str | None, section: str = "",
+              note: str = "") -> None:
+    """One uncovered answer settled (``how``: covered by a section already in,
+    by a section of the project's own, or not needed), or opened again (None)."""
+    row = spec_set(set_id)
+    if row is None:
+        return
+    covered = covered_of(row)
+    mark = f"{key}={specs._norm(value)}"
+    if how in COVER_HOW:
+        covered[mark] = {"how": how, "section": section.strip(), "note": note.strip(),
+                         "value": value.strip(), "by": _who()}
+    else:
+        covered.pop(mark, None)
+    execute("UPDATE spec_sets SET covered = ? WHERE id = ?",
+            (json.dumps(covered, ensure_ascii=False), set_id))
+
+
+def uncovered_for(row: Mapping[str, Any], chosen: Mapping[str, str]) -> dict[str, list[dict]]:
+    """The answers the project's library has nothing written for, split into
+    the ones still to settle and the ones the engineer settled, each with its
+    question's key so it can be settled."""
+    covered = covered_of(row)
+    labels = {o["label"]: o["key"] for o in options()}
+    out: dict[str, list[dict]] = {"open": [], "settled": []}
+    for label, value, elsewhere in uncovered(chosen, row["family"]):
+        key = labels.get(label, "")
+        one = {"key": key, "label": label, "value": value, "elsewhere": elsewhere,
+               "mark": f"{key}={specs._norm(value)}"}
+        if one["mark"] in covered:
+            one["settled"] = covered[one["mark"]]
+            out["settled"].append(one)
+        else:
+            out["open"].append(one)
+    return out
 
 
 def update_set(set_id: int, fields: Mapping[str, str], chosen: Mapping[str, str],
@@ -1212,12 +1297,17 @@ def _check_set(set_id: int) -> dict:
             report["setup"].append(_fit(s, "it is in this specification, but it is for "
                                            + s["applies"] + ", which the choices rule out"))
     report["model"] = model_items(model_for(row))
+    settled = covered_of(row)
+    labels = {o["label"]: o["key"] for o in options()}
     for label, value, elsewhere in uncovered(chosen, row["family"]):
+        if f"{labels.get(label, '')}={specs._norm(value)}" in settled:
+            continue
         report["setup"].append({
             "section": "", "row_id": None, "path": "", "severity": "warning", "text": "",
             "fix": None, "message": f"{label}: {value}. Nothing in the {row['family']} library is "
-                                    "written for this answer: check the sections cover it, or add "
-                                    "a section for it" + (f" ({', '.join(elsewhere)} has one to "
+                                    "written for this answer, so no section describes it yet. "
+                                    "On the project page's Sections step, say which section covers "
+                                    "it, write one of the project's own, or mark it not needed" + (f" ({', '.join(elsewhere)} has one to "
                                                           "borrow)" if elsewhere else "")})
     # The master's questions not answered yet leave its [choices] in the text.
     from . import specs_questions
@@ -1232,6 +1322,54 @@ def _check_set(set_id: int) -> dict:
                                         f"({', '.join(q['label'] for q in g['questions'] if not q['answered'])})"})
     report["counts"] = {k: len(v) for k, v in report.items() if isinstance(v, list)}
     return report
+
+
+def _lower(label: str) -> str:
+    """A question's label inside a sentence: lower case, bar its acronyms."""
+    return " ".join(w if (w.isupper() and len(w) > 1) else w.lower() for w in label.split())
+
+
+def _either(values: list[str]) -> str:
+    return values[0] if len(values) == 1 else ", ".join(values[:-1]) + " or " + values[-1]
+
+
+def plain_condition(when: str, family: str = "", labels: Mapping[str, dict] | None = None) -> str:
+    """Why a section or paragraph is in, in words the engineer reads rather
+    than the condition it is written with: ``cast_in_place=Yes`` reads "You
+    said the project has cast-in-place concrete"."""
+    when = (when or "").strip()
+    if not when:
+        return "Added by hand"
+    if when == ALWAYS:
+        return f"Every {family} project has it".replace("  ", " ")
+    labels = labels if labels is not None else {o["key"]: o for o in options()}
+    said = []
+    for part in when.split("&"):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        negate = "!=" in part
+        key, _, wanted = part.partition("!=" if negate else "=")
+        key = key.strip()
+        values = [w.strip() for w in wanted.split("|") if w.strip()]
+        o = labels.get(key) or {}
+        label = o.get("label") or key.replace("_", " ").capitalize()
+        yes_no = {specs._norm(c) for c in (o.get("choice_list") or [])} == {"yes", "no"} or \
+            {specs._norm(v) for v in values} <= {"yes", "no"}
+        if key == "elements":
+            things = _either([_lower(v) for v in values])
+            said.append(f"the project has no {things}" if negate else f"the project has {things}")
+        elif yes_no and len(values) == 1:
+            has = (specs._norm(values[0]) == "yes") != negate
+            said.append(f"the project has {'' if has else 'no '}{_lower(label)}")
+        elif negate:
+            said.append(f"{_lower(label)} is not {_either(values)}")
+        else:
+            said.append(f"you chose {_either(values)} for {_lower(label)}")
+    if not said:
+        return when
+    text = " and ".join([said[0]] + [p.replace("the project has", "it has", 1) for p in said[1:]])
+    return "You said " + text if text.startswith("the project") else text[0].upper() + text[1:]
 
 
 NOT_AN_ELEMENT = {"", "none", "no"}

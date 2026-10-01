@@ -155,9 +155,6 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='spec-check.css') }}">
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> ·
-      {% if spec %}<a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a>
-      {% else %}<a href="{{ url_for('specs.library') }}">Master library</a>{% endif %}</p>
     <h1>Check {{ 'the specification' if spec else 'the master library' }}</h1>
     <p class="small muted" style="margin-top:2px">
       {% if spec %}Read across every section this project issues, with its choices{% if chosen.get('standards') %} and on the {{ chosen['standards'] }} basis{% endif %}.

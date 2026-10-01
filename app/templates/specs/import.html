@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Import a project · THEMIS{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Import a .themis file</h1>
+    <p class="small muted" style="margin-top:2px">
+      A project or a template a colleague sent from their project's page (Send to a colleague).
+      It comes in as a new project of yours: its answers and sections as they sent them, each
+      section lined up against the master of the same number in this library.
+    </p>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('specs.import_project') }}" enctype="multipart/form-data" class="themis-form">
+  <div class="card">
+    <div class="card-head"><div><h2><span class="spec-n">1</span> The file</h2></div></div>
+    <div class="card-body themis-fields">
+      <label class="field themis-span-2"><span class="field-label">.themis file <span class="themis-req">required</span></span>
+        <input type="file" name="file" accept=".themis" required></label>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div><h2><span class="spec-n">2</span> This project's details</h2>
+      <p class="small muted" style="margin-top:2px">A template carries none of these, so give at least the name. For a whole project, leave them blank to keep what it was sent with.</p></div></div>
+    <div class="card-body themis-fields">
+      <label class="field themis-span-2"><span class="field-label">Project name</span>
+        <input type="text" name="name" placeholder="As it should read on the specification"></label>
+      <label class="field"><span class="field-label">Project code</span>
+        <input type="text" name="code" placeholder="e.g. P1234"></label>
+      <label class="field"><span class="field-label">Package</span>
+        <input type="text" name="package"></label>
+      <label class="field"><span class="field-label">Client</span>
+        <input type="text" name="client"></label>
+      <label class="field"><span class="field-label">City</span>
+        <input type="text" name="city"></label>
+      <label class="field"><span class="field-label">Country</span>
+        <input type="text" name="country" list="themis-countries"></label>
+      <datalist id="themis-countries">{% for c in countries %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+  </div>
+  <div class="themis-form-foot">
+    <a class="btn btn-ghost" href="{{ url_for('specs.index') }}">Cancel</a>
+    <button type="submit" class="btn btn-primary">Import it →</button>
+  </div>
+</form>
+{% endblock %}

@@ -3,7 +3,6 @@
 {% set admin = g.user and g.user['role'] == 'admin' %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a></p>
     <h1>{{ title }}</h1>
     {% if lead %}<p class="small muted" style="margin-top:2px">{{ lead }}</p>{% endif %}
   </div>

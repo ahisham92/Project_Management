@@ -5,7 +5,7 @@
 {% for q in questions %}
   {% set pic = pictures[q['key']] %}
   {% set state = 'answered' if q['answered'] else ('suggested' if q['suggested'] is not none else 'needed') %}
-  <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station=station['id']) }}" class="spec-card spec-details spec-in-{{ state }}" data-card data-key="{{ q['key'] }}" data-state="{{ state }}" hidden>
+  <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station=station['id']) }}" class="spec-card spec-details spec-in-{{ state }}" data-card data-key="{{ q['key'] }}" data-station="{{ station['id'] }}" data-state="{{ state }}" hidden>
     <input type="hidden" name="only" value="{{ q['key'] }}">
     <input type="hidden" name="was" value="{{ was[q['key']] }}">
     {% if state == 'suggested' %}

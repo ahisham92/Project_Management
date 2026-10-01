@@ -194,7 +194,7 @@ def issue_set(set_id: int):
     left = review.still_open(row, sections)
     if left and request.form.get("open_ok") != "1":
         flash(f"Not issued yet: {_places(left)} still to be specified (a question not answered, or "
-              "the master's brackets). Answer them on Details or fill the blanks, or tick to issue "
+              "the master's brackets). Answer them on the story or fill the blanks, or tick to issue "
               "with them highlighted.", "error")
         return redirect(back)
     try:

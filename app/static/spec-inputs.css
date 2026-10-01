@@ -281,3 +281,29 @@
 .spec-glance li.spec-in-suggested { border-left-color: var(--in-suggested); }
 .spec-glance strong { text-align: right; }
 @media (max-width: 600px) { .spec-place-pick { grid-template-columns: 1fr; } }
+
+/* The brief on the story: one question a card, with its picture, as the other levels. */
+.spec-decide-art { display: none; }
+.spec-story-body .spec-decide-intro, .spec-decide.is-cards .spec-scene-save,
+.spec-decide.is-cards .spec-decide-group > summary { display: none; }
+.spec-decide.is-cards .spec-decide-group { border: 0; padding: 0; }
+.spec-decide.is-cards .spec-decide-group:not(:has(.is-card)) { display: none; }
+.spec-decide.is-cards .spec-decide-q:not(.is-card) { display: none; }
+.spec-story-body .spec-decide.is-cards .spec-decide-q { border: 0; padding: 0; font-size: 1rem; }
+.spec-decide-q.is-card { display: grid; gap: 10px; }
+.spec-decide-q.is-card.is-in { animation: spec-card-in .35s ease-out both; }
+.spec-decide-q.is-card::before { content: attr(data-part); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.spec-decide-q.is-card .spec-decide-art { display: grid; place-items: center; height: 180px; border-radius: 10px; color: #2a78d6; background: linear-gradient(180deg, var(--scene-sky-1), var(--scene-sky-2)); border: 1px solid var(--border); }
+.spec-decide-q.is-card .spec-decide-pic { display: none; }
+.spec-decide-q.is-card .spec-decide-label { font-size: 1.12rem; font-weight: 700; line-height: 1.35; }
+.spec-decide-q.is-card .spec-decide-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.spec-decide-q.is-card .spec-decide-tiles { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.spec-decide-q.is-card .spec-decide-choice { justify-content: flex-start; gap: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; white-space: normal; background: var(--surface, #fff); font-size: .92rem; }
+.spec-decide-q.is-card .spec-decide-choice:hover { border-color: #2a78d6; }
+.spec-decide-q.is-card .spec-decide-choice:has(input:checked) { border-color: #2a78d6; box-shadow: 0 0 0 2px rgba(42, 120, 214, .25); background: rgba(42, 120, 214, .06); font-weight: 600; }
+.spec-decide-q.is-card .spec-decide-tiles .spec-decide-choice { justify-content: center; }
+.spec-decide-q.is-card .spec-decide-tiles .spec-icon { width: 64px; height: 64px; }
+.spec-decide.is-cards.is-confirm .spec-scene-fields, .spec-decide.is-cards.is-confirm .spec-scene-save { display: none; }
+.spec-decide.is-confirm .spec-decide-confirm { border-radius: 12px; padding: 14px; }
+@media (prefers-reduced-motion: reduce) { .spec-decide-q.is-card.is-in { animation: none; } }
+.spec-decide-q.is-card .spec-decide-choice input { width: auto; flex: 0 0 auto; margin: 0; }

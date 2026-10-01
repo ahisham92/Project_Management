@@ -747,7 +747,7 @@
         if (mine !== loading) return;
         body.innerHTML = (note || "") + html;
         if (!note) panel.scrollTop = 0;
-        if (story && id === "decide") stepBrief(0);
+        if (story && id === "decide") stepBrief(-1);
       })
       .catch(function () { if (mine === loading) body.innerHTML = '<p class="small muted">Could not load this station\'s questions. The summary below has them, and Details answers them.</p>'; });
   }
@@ -756,7 +756,17 @@
   var storyUrl = root.getAttribute("data-story-url");
   function glance(id) {
     var s = byId[id];
-    if (id === "decide") { load(id); return; }
+    if (id === "decide") {
+      // The brief as decided; it is answered, one question at a time, on the story.
+      var ds = s.decisions || [];
+      body.innerHTML = '<p class="small muted">Level ' + s.level + "</p><h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what || "") + "</p>" +
+        (storyUrl ? '<p><a class="btn btn-primary" href="' + esc(storyUrl) + '#level-1">' + (s.needed ? "Answer the brief one by one →" : "Change the brief one by one →") + "</a></p>" : "") +
+        (s.needed ? '<p class="small">Not decided yet.</p>' : '<ul class="spec-glance">' + ds.map(function (d) {
+          return '<li class="spec-in-answered"><span>' + esc(d.label) + "</span><strong>" + esc(d.value) + "</strong></li>";
+        }).join("") + "</ul>");
+      panel.scrollTop = 0;
+      return;
+    }
     body.innerHTML = '<p class="small muted">Level ' + s.level + "</p><h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what || "") + "</p>" +
       (storyUrl ? '<p><a class="btn btn-primary" href="' + esc(storyUrl) + "#st-" + esc(id) + '">' + (s.locked ? "See it on the story →" : s.needed + s.suggested ? "Answer these one by one →" : "Change these one by one →") + "</a></p>" : "") +
       '<ul class="spec-glance">' + s.questions.map(function (q) {
@@ -867,6 +877,13 @@
             '<button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(nx) + '">' + esc(byId[nx].name) + " →</button></div>";
         }
         if (resp.html) { body.innerHTML = note + resp.html; panel.scrollTop = 0; if (story) stepBrief(0); return; }   // asked to confirm first
+        if (story && id === "decide" && data.chapters[0] && data.chapters[0].done) {
+          // The brief answered: the level done, and on to the next by itself.
+          level = 0;
+          endOfLevel("", true);
+          refreshSummary();
+          return;
+        }
         load(id, note);
         refreshSummary();
       })
@@ -914,6 +931,7 @@
     if (e.target.closest("[data-card-skip]")) { e.preventDefault(); step(1); return; }
     var cg = e.target.closest("[data-card-go]");
     if (cg) { e.preventDefault(); showCard(cg.getAttribute("data-card-go")); return; }
+    if (e.target.closest("[data-brief-next]")) { e.preventDefault(); briefNext(); return; }
     var bg = e.target.closest("[data-brief-go]");
     if (bg) { e.preventDefault(); stepBrief(+bg.getAttribute("data-brief-go")); panel.scrollTop = 0; }
   });
@@ -981,7 +999,7 @@
       "<h2>" + esc(c.name) + "</h2>" +
       '<p class="spec-story-tale">' + esc(c.story || c.lead) + "</p>" +
       '<div class="spec-story-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
-      '<p class="small spec-story-count">' + (c.slug === "deciding" ? (c.done ? "The brief is decided. Change it here if the project changes." : "Confirm the brief to start the story.") :
+      '<p class="small spec-story-count">' + (c.slug === "deciding" ? (c.done ? "The brief is decided. Change it here if the project changes." : "Answer the brief one question at a time: the site is built as you go.") :
         doneN + " of " + total + " answered on this level" + (c.suggested ? ", " + c.suggested + " suggested to accept" : "") + (c.needed ? ", " + c.needed + " need your answer" : "") + ".") + "</p>" +
       (c.stations.length > 1 ? '<div class="spec-story-stops" role="tablist" aria-label="Stops on this level">' + c.stations.map(function (id) {
         var s = byId[id], n = openCount(s);
@@ -995,6 +1013,8 @@
         ? '<span class="small muted spec-story-wait">' + (c.slug === "deciding" ? "Confirm the brief" : "Answer the " + left + " left here") + " to open level " + next.level + ", " + esc(next.name) + ".</span>" +
           '<button type="button" class="btn btn-primary" disabled>Next level 🔒︎</button>'
         : '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">Next level: ' + esc(next.name) + " →</button>";
+    } else if (c.slug === "deciding" && !c.done) {
+      right = '<span class="small muted spec-story-wait">Finish the brief: the levels it calls for open after it.</span>';
     } else {
       right = data.open_stage >= data.chapters.length
         ? '<span class="small spec-story-ok">Every level is answered.</span> <a class="btn btn-primary" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>'
@@ -1222,7 +1242,7 @@
     function some(k) { return picks(form, k).filter(function (v) { return !/^(none|no)$/i.test(v); })[0] || ""; }
     var builds = picks(form, "structures").map(function (b) { return b.toLowerCase(); });
     return {
-      building: builds.some(function (b) { return b.indexOf("building") >= 0; }) || !builds.length,
+      building: builds.some(function (b) { return b.indexOf("building") >= 0; }),
       builds: builds.length > 0,
       marine: builds.some(function (b) { return b.indexOf("marine") >= 0; }) || one("exposure").toLowerCase() === "marine",
       bridge: builds.some(function (b) { return b.indexOf("bridge") >= 0; }),
@@ -1251,7 +1271,7 @@
     // with the sections it calls for; until then only the picture follows.
     if (data.chapters[0] && data.chapters[0].done) {
       var held = body.querySelector("[data-brief-kept]");
-      if (held) held.textContent = "Confirm at the last part to keep this";
+      if (held) held.textContent = "Kept once you finish the changes";
       return;
     }
     keepTimer = setTimeout(function () {
@@ -1266,32 +1286,69 @@
   }
   if (story) body.addEventListener("change", function (e) { if (e.target.closest(".spec-decide")) briefChanged(); });
 
-  // The brief, one part at a time; the last part confirms it.
-  function stepBrief(g) {
+  // The brief, one question at a time on its own card, as the other levels
+  // are; Next keeps it (in the background, no reload) and the last one
+  // finishes the brief.
+  function briefList(form) {
+    return Array.prototype.filter.call(form.querySelectorAll("[data-opt]"), function (q) { return !q.hidden; });
+  }
+  function stepBrief(i) {
+    var form = body.querySelector(".spec-decide");
+    if (!form) return;
     applyWhen();
-    var groups = Array.prototype.filter.call(body.querySelectorAll(".spec-decide-group"), function (d) { return !d.hasAttribute("data-unasked"); });
-    Array.prototype.forEach.call(body.querySelectorAll(".spec-decide-group[data-unasked]"), function (d) { d.hidden = true; });
-    if (!groups.length) return;
-    var form = body.querySelector(".spec-decide"), save = form && form.querySelector(".spec-scene-save");
+    form.classList.add("is-cards");
     var old = body.querySelector("[data-brief-nav]");
     if (old) old.parentNode.removeChild(old);
-    if (body.querySelector(".spec-decide-confirm")) {
-      Array.prototype.forEach.call(groups, function (d) { d.hidden = true; });
-      if (save) save.style.display = "none";
-      return;
+    if (form.querySelector(".spec-decide-confirm")) { form.classList.add("is-confirm"); return; }
+    var list = briefList(form);
+    if (!list.length) return;
+    Array.prototype.forEach.call(form.querySelectorAll(".spec-decide-group"), function (d) { d.hidden = false; d.open = true; });
+    if (i < 0) {
+      // Opened again part-way: at the first question not answered yet (a new
+      // brief, nothing it hangs on picked, from its first question).
+      i = 0;
+      var begun = list.some(function (q) { return q.hasAttribute("data-gate") && q.querySelector("input:checked"); });
+      if (begun) for (var n = 0; n < list.length; n++) if (!list[n].querySelector("input:checked")) { i = n; break; }
     }
-    g = briefPart = Math.max(0, Math.min(groups.length - 1, g));
-    Array.prototype.forEach.call(groups, function (d, i) { d.hidden = i !== g; d.open = true; });
-    var lastPart = g === groups.length - 1;
-    if (save) save.style.display = lastPart ? "" : "none";
+    var was = briefPart;
+    i = briefPart = Math.max(0, Math.min(list.length - 1, i));
+    list.forEach(function (q, n) { q.classList.toggle("is-card", n === i); });
+    Array.prototype.forEach.call(form.querySelectorAll("[data-opt][hidden]"), function (q) { q.classList.remove("is-card"); });
+    var q = list[i];
+    if (i !== was || !q.classList.contains("is-in")) { q.classList.remove("is-in"); void q.offsetWidth; q.classList.add("is-in"); }
+    var last = i === list.length - 1, decided = form.getAttribute("data-decided") === "1";
     var nav = document.createElement("div");
     nav.className = "spec-card-nav";
     nav.setAttribute("data-brief-nav", "");
-    nav.innerHTML = '<button type="button" class="btn btn-ghost" data-brief-go="' + (g - 1) + '"' + (g ? "" : " disabled") + ">← Back</button>" +
-      '<span class="small spec-card-count">Part <strong>' + (g + 1) + "</strong> of " + groups.length + "<br>" + esc(groups[g].querySelector("summary").textContent) + ' <span class="spec-brief-kept" data-brief-kept></span></span>' +
-      (lastPart ? "<span></span>" : '<button type="button" class="btn btn-primary" data-brief-go="' + (g + 1) + '">Next →</button>');
+    nav.innerHTML = '<button type="button" class="btn btn-ghost" data-brief-go="' + (i - 1) + '"' + (i ? "" : " disabled") + ">← Back</button>" +
+      '<span class="small spec-card-count">Question <strong>' + (i + 1) + "</strong> of " + list.length + " in the brief<br>" + esc(q.getAttribute("data-part") || "") +
+      ' <span class="spec-brief-kept" data-brief-kept></span></span>' +
+      '<button type="button" class="btn btn-primary" data-brief-next>' + (last ? (decided ? "Finish the changes →" : "Finish the brief →") : "Next →") + "</button>";
     var fields = form.querySelector(".spec-scene-fields");
     fields.parentNode.insertBefore(nav, fields.nextSibling);
+    var bad = form.querySelector("[data-brief-bad]");
+    if (bad) bad.textContent = "";
+  }
+  function briefNext() {
+    var form = body.querySelector(".spec-decide");
+    if (!form) return;
+    var list = briefList(form), q = list[briefPart];
+    if (q && !q.querySelector("input:checked")) {
+      var bad = form.querySelector("[data-brief-bad]");
+      if (!bad) { bad = document.createElement("p"); bad.className = "small spec-scene-bad"; bad.setAttribute("data-brief-bad", ""); }
+      q.appendChild(bad);
+      bad.textContent = "Pick " + (q.querySelector("input[type=checkbox]") ? "at least one" : "one") + " to go on.";
+      return;
+    }
+    if (briefPart >= list.length - 1) {
+      var btn = body.querySelector("[data-brief-next]");
+      if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+      if (keepTimer) { clearTimeout(keepTimer); keepTimer = null; }
+      if (form.requestSubmit) form.requestSubmit(); else form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+      return;
+    }
+    stepBrief(briefPart + 1);
+    panel.scrollTop = 0;
   }
 
   if (story) foot.addEventListener("click", function (e) {
@@ -1317,7 +1374,16 @@
     level = start;
     if (at && byId[at] && byId[at].stage === start) open(at); else go(start);
     // The story fills the screen: the path at the top of it.
-    if (root.getBoundingClientRect().top > 80 && window.innerWidth > 900) try { root.scrollIntoView({ block: "start" }); } catch (e) { /* old browsers */ }
+    if (root.getBoundingClientRect().top > 80 && window.innerWidth > 900) {
+      // At the top of the screen, below whatever menu stays over it, with the path in view.
+      window.scrollTo(0, root.getBoundingClientRect().top + window.pageYOffset);
+      var over = 0, el = document.elementFromPoint(window.innerWidth / 2, 2);
+      for (; el && el !== document.body; el = el.parentElement) {
+        var pos = getComputedStyle(el).position;
+        if (pos === "sticky" || pos === "fixed") { over = el.getBoundingClientRect().bottom; break; }
+      }
+      if (over > 0) window.scrollBy(0, -(over + 8));
+    }
   } else if (at && byId[at]) open(at);
 })();
 

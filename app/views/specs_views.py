@@ -835,6 +835,36 @@ def amend_item(set_id: int):
     return redirect(_back_to_check(set_id, detail["key"]) + f"#item-{detail['key']}")
 
 
+@bp.post("/sets/<int:set_id>/check/conflict")
+@login_required
+def settle_conflict(set_id: int):
+    """A clause that says otherwise than an answer: the answer put in the clause,
+    the answer changed to match, or the clause kept with a reason."""
+    _set_or_404(set_id)
+    key, how = request.form.get("key", ""), request.form.get("how", "")
+    pick = int(request.form.get("pick") or 0) if (request.form.get("pick") or "0").isdigit() else 0
+    try:
+        if how == "use":
+            detail = store.conflict_use_answer(set_id, key, pick)
+            flash(f"The answer is back in {store.labels(detail['places'])}: the clause follows it from now on.",
+                  "success")
+            key = detail["key"]
+        elif how == "change":
+            detail = store.conflict_change_answer(set_id, key, pick)
+            a = detail["answer_changed"]
+            flash(f"“{a['label']}” is now {a['to']} (it was {a['from']}), in every clause that uses it.",
+                  "success")
+        elif how == "keep":
+            store.conflict_keep(set_id, key, request.form.get("reason", ""))
+            flash("Kept as written, with your reason.", "success")
+        else:
+            abort(400)
+    except specs.SpecError as exc:
+        flash(str(exc), "error")
+        return redirect(_back_to_check(set_id) + f"#item-{key}")
+    return redirect(_back_to_check(set_id, key) + f"#item-{key}")
+
+
 @bp.post("/sets/<int:set_id>/check/remove")
 @login_required
 def remove_item(set_id: int):
@@ -1843,6 +1873,10 @@ CHECKS = [
     ("model", "The model's grades",
      "Concrete and steel grades read from the Revit model that do not look realistic, need a "
      "second look, or could not be read."),
+    ("answers", "Against the answers",
+     "Clauses you amended or wrote yourself that give a different value from the answer to the "
+     "question they belong to (40 mm typed where cover is answered as 50 mm). Use the answer, "
+     "change the answer, or keep your words with a reason."),
     ("references", "Cross-references",
      "References to sections, articles and paragraphs that are not there, or not issued."),
     ("outdated", "Outdated standards", "Standards cited that have been withdrawn or superseded."),

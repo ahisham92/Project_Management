@@ -23,7 +23,7 @@
 </div>
 {{ engineer_note() }}
 
-{% if not scene['count'] %}
+{% if not scene['stations'] %}
   <div class="card"><div class="card-body">{{ empty('Nothing to show yet', 'None of this project\'s sections asks anything. Add sections, then answer their questions on Details.') }}</div></div>
 {% else %}
 <div class="spec-in-totals" role="list" data-totals>

@@ -169,3 +169,76 @@ def test_the_check_pins_its_findings_on_the_works(app, signed_in):
     assert specs_inputs.station_of_section("051200", {}) == "frame"
     assert specs_inputs.station_of_section("071326", {}) == "membrane"
     assert specs_inputs.station_of_section("E20", {}) == "formwork"
+
+
+def test_a_saved_project_goes_back_to_its_brief(app, signed_in):
+    from app import specs_store
+    from .test_specs_kinds import applies, load
+
+    set_id = _project(app, signed_in)
+    assert f'/specs/sets/{set_id}/inputs#st-decide' in text(signed_in.get(f"/specs/sets/{set_id}"))
+    _decided(signed_in, set_id)
+    signed_in.post(f"/specs/sets/{set_id}/inputs/office", data={**SITE, "accept_suggested": "1"}, headers=FETCH)
+    load(signed_in, "STD15A_SPC_033816_ST_PT.docx", "# GENERAL\n## SUMMARY\n- PT.\n", "033816",
+         "UNBONDED POST-TENSIONED CONCRETE")
+    applies(app, "033816", "15A", "post_tensioning=Unbonded")
+    load(signed_in, "STD15A_SPC_034100_ST_PC.docx", "# GENERAL\n## SUMMARY\n- Precast.\n", "034100",
+         "PRECAST STRUCTURAL CONCRETE")
+    applies(app, "034100", "15A", "precast=Plant precast")
+    with app.app_context():
+        pt = specs_store.section_by_number("033816", "15A")["id"]
+        pc = specs_store.section_by_number("034100", "15A")["id"]
+
+    def numbers():
+        with app.app_context():
+            return sorted(r["number"] for r in specs_store.set_sections(set_id))
+    # Changed from the brief, the sections the choices call for are asked
+    # about first: nothing is saved until the engineer confirms.
+    answer = _decided(signed_in, set_id, post_tensioning="Unbonded", precast="Plant precast")
+    assert "Nothing is saved yet" in answer["messages"][0]["text"]
+    assert 'name="add_section"' in answer["html"] and "033816" in answer["html"] and "034100" in answer["html"]
+    assert numbers() == ["033000"]
+    with app.app_context():
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["post_tensioning"] in ("", "None")
+    # Confirmed with one ticked: that one is put in, the other stays out for good.
+    data = {"shown_opt": ["post_tensioning", "precast"], "opt_post_tensioning": "Unbonded",
+            "opt_precast": "Plant precast", "confirm": "1", "add_section": [str(pt)]}
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/decide", data=data, headers=FETCH).get_json()
+    assert numbers() == ["033000", "033816"]
+    with app.app_context():
+        row = specs_store.spec_set(set_id)
+        assert pc in specs_store.declined(row) and specs_store.chosen_for(row)["post_tensioning"] == "Unbonded"
+    assert any("033816" in (m.get("html") or "") for m in answer["messages"])
+    # The levels already answered stay open: only the ones with new questions
+    # wait to be answered.
+    assert not {c["slug"]: c for c in answer["scene"]["chapters"]}["the-project"]["locked"]
+    # Taken back out of the brief, a section is named, not taken out.
+    data = {"shown_opt": ["post_tensioning"], "opt_post_tensioning": "None"}
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/decide", data=data, headers=FETCH).get_json()
+    assert numbers() == ["033000", "033816"]
+    assert any("no longer call for" in (m.get("html") or "") for m in answer["messages"])
+
+
+def test_an_answered_level_after_the_open_one_stays_open(app, signed_in):
+    from .test_specs_story import _asked
+
+    set_id = _project(app, signed_in)
+    _decided(signed_in, set_id)
+    # The mix answered on Details while the project's level is still open.
+    mix = next(s for s in _scene(signed_in, set_id)["stations"] if s["id"] == "mixer")
+    asked = {q["key"]: q for q in _asked(app, set_id)}
+    form = {}
+    for q in mix["questions"]:
+        a = asked[q["key"]]
+        if a.get("switch") or a.get("choices"):
+            form[f"q_{q['key']}"] = (a.get("choices") or ["Yes"])[0]
+        else:
+            form[f"q_{q['key']}"], form[f"t_{q['key']}"] = "__free__", "40MPa"
+        form[f"split_{q['key']}"] = "0"
+    signed_in.post(f"/specs/sets/{set_id}/details?group=concrete-mixes-and-properties", data=form)
+    data = _scene(signed_in, set_id)
+    chapters = {c["slug"]: c for c in data["chapters"]}
+    assert data["open_stage"] == 1 and chapters["the-mix"]["done"], [(q["key"], q["state"]) for q in mix["questions"]]
+    # Answered, it stays open to change; the unanswered level between stays locked.
+    assert not chapters["the-mix"]["locked"] and chapters["the-ingredients"]["locked"]
+    assert "Locked." not in text(signed_in.get(f"/specs/sets/{set_id}/inputs/mixer"))

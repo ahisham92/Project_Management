@@ -515,6 +515,22 @@ def auto_add(set_id: int) -> dict[str, list[dict]]:
     return {"added": wanted, "out": [s for s in called["out"] if s["id"] in have]}
 
 
+def would_add(set_id: int, chosen: Mapping[str, str]) -> dict[str, list[dict]]:
+    """What ``auto_add`` would do were the project's choices ``chosen``: the
+    sections it would put in, and the ones it has that they would rule out.
+    Nothing is changed."""
+    row = spec_set(set_id)
+    called = called_for(chosen, row["family"])
+    have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
+                                           "WHERE set_id = ?", (set_id,)) if r["section_id"]}
+    numbers = {r["number"].lower() for r in query("SELECT number FROM spec_set_sections "
+                                                  "WHERE set_id = ?", (set_id,))}
+    skip = declined(row)
+    return {"added": [s for s in called["in"] if s["id"] not in have and s["id"] not in skip
+                      and s["number"].lower() not in numbers],
+            "out": [s for s in called["out"] if s["id"] in have]}
+
+
 def ruled_out(set_id: int) -> set[int]:
     """The library sections this project has that its answers rule out."""
     row = spec_set(set_id)

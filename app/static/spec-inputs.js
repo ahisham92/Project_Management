@@ -367,8 +367,9 @@
   // everything before it in the story is.
   function done(id) {
     var s = byId[id];
-    if (s) return s.stage < data.open_stage;
-    return data.stations.every(function (o) { return RANK[o.id] > RANK[id] || o.stage < data.open_stage; });
+    function ok(o) { var c = data.chapters[o.stage]; return c ? c.done : true; }
+    if (s) return ok(s);
+    return data.stations.every(function (o) { return RANK[o.id] > RANK[id] || ok(o); });
   }
   function openCount(s) { return s.needed + s.suggested; }
   function stateOf(s) { return s.needed ? "needed" : s.suggested ? "suggested" : "answered"; }
@@ -769,6 +770,7 @@
           note += '<div class="flash success spec-scene-opened"><strong>' + esc(data.chapters[wasStage].name) + " is done.</strong> " +
             (c ? 'The next level is open: <button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(firstOpen(c)) + '">Go to ' + esc(c.name) + " →</button>" : "Every stage is answered.") + "</div>";
         }
+        if (resp.html) { body.innerHTML = note + resp.html; panel.scrollTop = 0; return; }   // asked to confirm first
         load(id, note);
         refreshSummary();
       })

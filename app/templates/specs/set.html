@@ -22,6 +22,7 @@
     {% if packages['key'] %}<a class="btn btn-ghost" href="{{ url_for('specs.project_packages', set_id=spec['id']) }}" title="The other packages of this project, and where this one differs from what they issued">Packages{% if packages['peers'] %} ({{ packages['peers'] | length + 1 }}){% endif %}{% if packages['open'] %} · <span class="spec-pkg-red-text">{{ packages['open'] }} to decide</span>{% endif %}</a>{% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id'], package=1) }}#new" title="A copy with this one's choices, header and sections, amendments and all: another package of the project, or a new project">Start a new package or project from this one</a>
     {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id']) }}" title="Every section as issued, as pages to turn">Read as a book</a>{% endif %}
+    {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}" title="Every answer on a picture of the works as they are built, to review before issuing">Inputs at a glance</a>{% endif %}
     <details class="spec-menu">
       <summary class="btn btn-ghost" title="A copy to read or send round; not recorded as an issue">Download a copy</summary>
       <div class="spec-menu-list">

@@ -69,6 +69,9 @@
     <p class="small muted" style="margin-top:2px">The questions this project's sections ask, with the master's own answers to pick from. Each answer is written into every clause it belongs to.</p>
   </div>
   <div class="inline-form">
+    {% if by == 'group' %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}">Tell it as a story</a>
+    {% else %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id'], by='group') }}">Show by group</a>{% endif %}
+    <a class="btn btn-ghost" href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}">See the inputs</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
   </div>
 </div>
@@ -79,20 +82,22 @@
 {% else %}
 <div class="spec-q-progress">
   <div class="spec-q-bar" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ total - open_n }}"><span style="width: {{ ((total - open_n) * 100 / total) | round | int if total else 100 }}%"></span></div>
-  <span class="small muted">{{ total - open_n }} of {{ total }} answered{% if need_n %} · {{ need_n }} need your answer, the rest are suggested{% endif %} · group {{ here + 1 }} of {{ groups | length }}</span>
+  <span class="small muted">{{ total - open_n }} of {{ total }} answered{% if need_n %} · {{ need_n }} need your answer, the rest are suggested{% endif %} · {{ 'group' if by == 'group' else 'chapter' }} {{ here + 1 }} of {{ groups | length }}</span>
 </div>
-<nav class="spec-blank-sections" aria-label="Groups of questions">
+<nav class="spec-blank-sections{{ ' spec-story-nav' if by != 'group' }}" aria-label="{{ 'Groups' if by == 'group' else 'Chapters' }} of questions">
   {% for g in groups %}
-  <a href="{{ url_for('specs.details', set_id=spec['id'], group=g['slug']) }}" class="{{ 'spec-blank-here' if loop.index0 == here }}{{ ' spec-q-done' if not g['open'] }}"{% if loop.index0 == here %} aria-current="page"{% endif %}>{{ g['name'] }} <span class="muted">{% if g['need'] %}{{ g['need'] }}{% elif not g['open'] %}✓{% endif %}</span></a>
+  <a href="{{ url_for('specs.details', set_id=spec['id'], group=g['slug'], by=('group' if by == 'group' else none)) }}" class="{{ 'spec-blank-here' if loop.index0 == here }}{{ ' spec-q-done' if not g['open'] }}"{% if loop.index0 == here %} aria-current="page"{% endif %}{% if g['lead'] %} title="{{ g['lead'] }}"{% endif %}>{% if g['number'] %}<span class="spec-story-n">{{ g['number'] }}</span> {% endif %}{{ g['name'] }} <span class="muted">{% if g['need'] %}{{ g['need'] }}{% elif not g['open'] %}✓{% endif %}</span></a>
   {% endfor %}
 </nav>
 
 <form method="post" class="spec-details">
   <input type="hidden" name="was" value="{{ was }}">
   <input type="hidden" name="group" value="{{ group['slug'] }}">
+  {% if by == 'group' %}<input type="hidden" name="by" value="group">{% endif %}
   <div class="card">
     <div class="card-head">
-      <h2>{{ group['name'] }}</h2>
+      <div><h2>{% if group['number'] %}Chapter {{ group['number'] }}: {% endif %}{{ group['name'] }}</h2>
+        {% if group['lead'] %}<p class="small muted" style="margin-top:2px">{{ group['lead'] }}{% if group['groups'] | length > 1 %} ({{ group['groups'] | join(', ') }}){% endif %}</p>{% endif %}</div>
       <span class="small muted">{{ group['questions'] | length }} question{{ 's' if group['questions'] | length != 1 }}{% if group['need'] %} · {{ group['need'] }} need{{ 's' if group['need'] == 1 }} your answer{% endif %}{% if group['open'] - group['need'] %} · {{ group['open'] - group['need'] }} suggested{% endif %}</span>
     </div>
     <div class="card-body spec-q-list">

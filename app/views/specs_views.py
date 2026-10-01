@@ -344,10 +344,11 @@ def new_set():
     models = _uploads("model", MOST_MODEL)
     if models and _read_model(set_id, *models[0]):
         _added(set_id)
-    elif not request.form.get("copy_from"):
-        flash("Specification started. Tick what the project has, or read it from the Revit model, "
-              "and save: the sections each element needs are added then.", "success")
-    return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
+    if request.form.get("copy_from"):
+        return redirect(url_for("specs.spec_set", set_id=set_id) + "#step-elements")
+    # A new project starts on the story: its brief, one question at a time,
+    # on a bare plot that is built up as it is answered.
+    return redirect(url_for("specs.story", set_id=set_id) + "#level-1")
 
 
 def _added(set_id: int, before: set[int] | None = None) -> None:
@@ -942,7 +943,8 @@ def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
     sent, while their sections wait to be confirmed)."""
     from .. import specs_inputs
 
-    chosen = confirm["chosen"] if confirm else store.chosen_for(row)
+    chosen = confirm["chosen"] if confirm else _brief_chosen(row)
+    stored = json.loads(row["options"] or "{}")
     st = next(s for s in data["stations"] if s["id"] == "decide")
     options = store.options()
     return {"spec": row, "station": st, "level": st["level"], "may_edit": review.may(row, g.user, "edit"),
@@ -952,7 +954,22 @@ def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
             "applies": {o["key"]: specs_inputs.brief_applies(o["key"], chosen) for o in options},
             "asked_keys": [o["key"] for o in options if specs_inputs.brief_applies(o["key"], chosen)],
             "icons": specs_seed.ELEMENT_ICONS, "group_icons": GROUP_ICONS,
-            "key_icons": {key: drawing for key, _g, _how, drawing in specs_seed.ELEMENTS}}
+            "key_icons": {key: drawing for key, _g, _how, drawing in specs_seed.ELEMENTS},
+            "decided": bool(stored.get(specs_inputs.DECIDED)), "gates": specs_inputs.BRIEF_GATES}
+
+
+def _brief_chosen(row) -> dict:
+    """The project's choices as the brief shows them. A brief not yet decided
+    asks what the project builds and what it uses with nothing assumed: the
+    answers others hang on (a steel frame, marine structures, precast...)
+    start unpicked, and the site is a bare plot until they are picked."""
+    from .. import specs_inputs
+
+    chosen = store.chosen_for(row)
+    stored = json.loads(row["options"] or "{}")
+    if stored.get(specs_inputs.DECIDED):
+        return chosen
+    return {k: v for k, v in chosen.items() if k in stored or k not in specs_inputs.BRIEF_GATES}
 
 
 def _labels() -> dict:
@@ -971,7 +988,7 @@ def _scene(set_id: int, row, sections, asked=None) -> dict:
         asked if asked is not None else _asked(set_id, row),
         review.issued_words(row, sections, marked=True), _labels(),
         lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}",
-        chosen=store.chosen_for(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
+        chosen=_brief_chosen(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
 
 
 def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:

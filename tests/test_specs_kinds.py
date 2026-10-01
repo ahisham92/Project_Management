@@ -16,7 +16,7 @@ W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 
 def set_id_of(answer) -> int:
-    return int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    return int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
 
 
 def load(client, filename, body, number, title, family=""):
@@ -332,10 +332,12 @@ def test_a_project_started_from_the_model_ticks_adds_and_flags(app, signed_in):
         "name": "Quay", "family": "15A", "model": [(io.BytesIO(ifc.encode()), "Quay.ifc")]},
         content_type="multipart/form-data")
     set_id = set_id_of(answer)
-    assert answer.headers["Location"].endswith("#step-elements")
-    page = text(signed_in.get(f"/specs/sets/{set_id}"))
+    # A new project opens on the story, which says what the model gave.
+    assert answer.headers["Location"].endswith(f"/specs/sets/{set_id}/story#level-1")
+    page = text(signed_in.get(answer.headers["Location"]))
     assert "Read Quay.ifc" in page and "does not look realistic" in page
     assert "Added 1 section the answers call for" in page
+    page = text(signed_in.get(f"/specs/sets/{set_id}"))
     assert "From the model: Quay.ifc" in page and "In the model" in page
     with app.app_context():
         row = specs_store.spec_set(set_id)

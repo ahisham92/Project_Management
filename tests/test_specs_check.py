@@ -199,7 +199,7 @@ def test_check_basis_and_references_through_the_pages(app, signed_in):
     load(signed_in, "033000", CONCRETE.replace("{ref:#tol}", "{ref:PLACING}"), "CAST-IN-PLACE CONCRETE")
     load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1", "2"]})
     signed_in.post(f"/specs/sets/{set_id}", data={
         "name": "Harbour Works", "opt_standards": "BS EN", "opt_rebar": ["Uncoated", "Galvanized"]})
@@ -339,7 +339,7 @@ def test_the_scope_rewords_only_where_it_applies():
 def test_nothing_changes_until_it_is_accepted(signed_in):
     load(signed_in, "033000", LANGUAGE, "CAST-IN-PLACE CONCRETE")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_english": "UK",
                                                   "opt_structures": ["Marine structures"]})
@@ -372,7 +372,7 @@ def _grammar_project(signed_in):
     load(signed_in, "033000", "# GENERAL\n## SUMMARY\n- Paths below :\n- Test Construction :\n"
                               "- Fly ash , or slag , as specified.\n", "CAST-IN-PLACE CONCRETE")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     return set_id
 
@@ -419,7 +419,7 @@ def test_every_grammar_suggestion_rejected_at_once(signed_in):
 def test_an_issue_that_refers_to_a_section_not_in_it_is_held(signed_in):
     load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "hold_shown": "1"})
     held = signed_in.get(f"/specs/sets/{set_id}/export")
@@ -452,7 +452,7 @@ def test_all_the_unit_suggestions_accepted_at_once(signed_in):
     load(signed_in, "033000", "# GENERAL\n## SUMMARY\n- Cure at 20 deg. C (68 deg. F) with 4000 psi grout.\n"
                               "- Keep below 25 deg. C (68 deg. F).\n", "CAST-IN-PLACE CONCRETE")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "all", "kind": "units"})
     edit = text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
@@ -579,7 +579,7 @@ def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
         "applies": "fenders != None"})
     assert "fenders!=None" in text(signed_in.get("/specs/library"))
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     # Saving the answer puts in the section it calls for, and says so.
     answer = signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_fenders": "Cone"},
                             follow_redirects=True)
@@ -610,7 +610,7 @@ def test_sections_are_ticked_and_checked_by_the_choices(app, signed_in):
 def test_an_issue_waits_until_every_item_is_accepted_or_rejected(signed_in):
     load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works", "opt_english": "UK",
                                                   "hold_shown": "1", "hold_issue": "1"})
@@ -653,7 +653,7 @@ def test_an_issue_waits_until_every_item_is_accepted_or_rejected(signed_in):
 def test_an_answer_nothing_is_written_for_is_said(signed_in):
     load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Harbour Works",
                                                   "opt_waterproofing": ["Liquid membrane"]})
     assert "Waterproofing: Liquid membrane" in text(signed_in.get(f"/specs/sets/{set_id}"))

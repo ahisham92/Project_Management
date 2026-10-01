@@ -224,7 +224,7 @@ def test_the_whole_round(app, signed_in):
     assert "CONCRETE REINFORCING" in text(signed_in.get("/specs/library"))
 
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works", "code": "HW-001"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     signed_in.post(f"/specs/sets/{set_id}", data={
         "name": "Harbour Works", "code": "HW-001", "header_left": "Port Works", "doc_code": "N1",
         "revision": "1", "file_pattern": "SPC-FD-{number}-ST", "opt_leed": "v4.1",
@@ -264,7 +264,7 @@ def test_the_whole_round(app, signed_in):
 def test_an_old_project_file_shows_up_as_amendments(signed_in):
     upload(signed_in, "/specs/library/upload", [("SPC-032000.docx", docx_of(master_nodes()))])
     answer = signed_in.post("/specs/sets", data={"name": "Old job"})
-    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("#")[0].split("/")[0])
     upload(signed_in, f"/specs/sets/{set_id}/upload", [("old.docx", drifted_docx())])
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
     assert "CONCRETE REINFORCING" in page and "added" in page and "dropped" in page

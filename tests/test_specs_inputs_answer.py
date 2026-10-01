@@ -340,6 +340,47 @@ def test_the_brief_asks_only_what_applies(app, signed_in):
     assert " hidden" not in fenders
 
 
+def test_a_new_project_starts_on_the_story_with_nothing_assumed(app, signed_in):
+    from app import specs_inputs, specs_store
+
+    answer = signed_in.post("/specs/sets", data={"name": "Jeddah Tower", "family": "15A"})
+    set_id = int(answer.headers["Location"].split("/sets/")[1].split("/")[0])
+    # Straight into the story, at the brief: no page in between.
+    assert answer.headers["Location"].endswith(f"/specs/sets/{set_id}/story#level-1")
+    assert "the story of the works" in text(signed_in.get(f"/specs/sets/{set_id}/story"))
+
+    def question(page, key):
+        return re.search(r'<div class="spec-decide-q" data-opt="%s".*?</div>' % key, page, re.S).group(0)
+
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    # What the project builds and whether it has a steel frame are asked, not
+    # assumed: nothing picked, so neither marine furniture nor the steel's
+    # details are asked, and the site is a bare plot.
+    for key in ("structures", "steel_framing", "precast", "post_tensioning"):
+        assert "data-gate" in question(page, key) and "checked" not in question(page, key)
+    for key in ("fenders", "bollards", "steel_protection", "fire"):
+        assert re.search(r'data-opt="%s"[^>]*hidden' % key, page), key
+    assert "spec-decide-art" in question(page, "seismic")          # a picture on every question
+    scene = _scene(signed_in, set_id)
+    assert scene["site"]["builds"] is False and scene["site"]["steel"] is False
+    # Picked on the way, each brings its own questions, and unpicked takes them away.
+    signed_in.post(f"/specs/sets/{set_id}/inputs/decide", headers=FETCH, data={
+        "partial": "1", "shown_opt": ["structures", "steel_framing"],
+        "opt_structures": ["Buildings"], "opt_steel_framing": "No"})
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    assert 'value="Buildings" checked' in question(page, "structures")
+    assert re.search(r'data-opt="fenders"[^>]*hidden', page) and re.search(r'data-opt="aess"[^>]*hidden', page)
+    signed_in.post(f"/specs/sets/{set_id}/inputs/decide", headers=FETCH, data={
+        "partial": "1", "shown_opt": ["steel_framing"], "opt_steel_framing": "Yes"})
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    assert not re.search(r'data-opt="aess"[^>]*hidden', page)
+    # The brief as decided names only what applies: no fenders on a building.
+    with app.app_context():
+        chosen = specs_store.chosen_for(specs_store.spec_set(set_id))
+        named = [d["key"] for d in specs_inputs.decisions(chosen, specs_store.options())]
+    assert "fenders" not in named and "aess" in named
+
+
 def test_where_the_project_is_is_asked_as_a_city_and_country(app, signed_in):
     from app import specs_store
 

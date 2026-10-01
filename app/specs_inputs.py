@@ -206,6 +206,10 @@ for _k in ("wp_installer_warranty", "wp_composite_system", "wp_plaza_pavers"):
 for _k in ("stair_railings", "stair_delegated"):
     BRIEF_WHEN[_k] = ("stairs", "some", "")
 
+# The answers others hang on: on a brief not yet decided they start unpicked,
+# so a steel frame, marine structures or precast are asked for, never assumed.
+BRIEF_GATES = frozenset(on for on, _how, _value in BRIEF_WHEN.values())
+
 
 def brief_applies(key: str, chosen: Mapping[str, str] | None, _seen: frozenset = frozenset()) -> bool:
     """Whether the brief asks ``key`` for these choices: the answer it hangs
@@ -229,6 +233,8 @@ def decisions(chosen: Mapping[str, str] | None, options: list[dict]) -> list[dic
     chosen = chosen or {}
     out = []
     for o in options:
+        if not brief_applies(o["key"], chosen):
+            continue                     # fenders on a building, steel details with no steel
         value = " · ".join(_picked(chosen, o["key"]))
         if value:
             out.append({"key": o["key"], "label": o["label"], "group": o.get("grp") or "", "value": value})

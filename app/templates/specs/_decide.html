@@ -2,6 +2,7 @@
    before any question, and the site drawn from them. A decision is asked only
    when the one it hangs on says it applies (data-when, specs_inputs.BRIEF_WHEN). #}
 {% from "specs/_icons.html" import icon %}
+<div class="spec-decide-intro">
 <p class="small muted spec-station-level">Level {{ level }}: Deciding the project</p>
 <h2>{{ station['name'] }}</h2>
 <p class="small muted">{{ station['what'] }}</p>
@@ -10,7 +11,8 @@
 {% else %}
 <p class="small">Decided. Change anything here and save: the site and the questions follow. Sections the change calls for are put in only once you confirm them; ones it no longer calls for are named, not taken out; and only the levels that get new questions open again.</p>
 {% endif %}
-<form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="spec-scene-form spec-decide" data-station-form>
+</div>
+<form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="spec-scene-form spec-decide" data-station-form data-decided="{{ 1 if decided else 0 }}">
   {% if confirm %}
   <div class="spec-scene-lock spec-decide-confirm">
     <input type="hidden" name="confirm" value="1">
@@ -32,8 +34,9 @@
     {% for o in opts %}
     {% set w = when.get(o['key']) %}
     {% set tiles = o['choice_list'] | map('spec_icon_for', o['key'], icons) | select | list %}
-    <div class="spec-decide-q" data-opt="{{ o['key'] }}"{% if w %} data-when='{{ w | tojson }}'{% endif %}{% if not applies[o['key']] %} hidden{% endif %}>
+    <div class="spec-decide-q" data-opt="{{ o['key'] }}" data-part="{{ name }}"{% if o['key'] in gates %} data-gate{% endif %}{% if w %} data-when='{{ w | tojson }}'{% endif %}{% if not applies[o['key']] %} hidden{% endif %}>
       <input type="hidden" name="shown_opt" value="{{ o['key'] }}"{% if not applies[o['key']] %} disabled{% endif %}>
+      {% if not tiles %}<span class="spec-decide-art" aria-hidden="true">{{ icon(key_icons.get(o['key']) or group_icons.get(name) or 'element', 132) }}</span>{% endif %}
       <span class="spec-decide-label">{% if key_icons.get(o['key']) and not tiles %}<span class="spec-decide-pic">{{ icon(key_icons[o['key']], 34) }}</span>{% endif %}{{ o['label'] or o['key'] }}</span>
       <span class="spec-decide-choices{{ ' spec-decide-tiles' if tiles }}">
       {% for c in o['choice_list'] %}

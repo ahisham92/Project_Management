@@ -160,7 +160,7 @@ meet, so the Specs Writer reads across them:
   033000* lists them). A question about an element (the concrete class, the cover) is answered
   once for all elements or, with *Different for some elements*, per element the project has.
   Questions the master already suggests an answer for are folded to one line each under
-  *Suggested from the master* and written in when the group is saved, so the engineer opens
+  *Suggested from the master* and written in when the group is saved with the suggestions ticked as reviewed, so the engineer opens
   only what differs and answers the few under *Needs your answer*. Until answered, a clause
   keeps the master's words, and the check lists the groups not yet answered. The questions
   themselves (wording, group, suggestion) come with the library file, not with the code: an
@@ -252,6 +252,14 @@ meet, so the Specs Writer reads across them:
   that it lacks are taken out, after a tick to say so).
 - **Taking sections out.** Tick sections on the library page and *Take the ticked out*, or use
   the button on a section's own page. Projects that took a section keep their own copy.
+
+**The engineer answers for the specification.** THEMIS helps to write and review a
+specification; it does not replace the engineer's judgement. Its suggested answers, checks,
+wording suggestions, code references and clause summaries are aids and can be wrong or out of
+date, and every working page says so. A suggested answer is written in only when the engineer
+ticks that they have reviewed and accept the suggestions (one they change is their own answer),
+and an issue asks the engineer to confirm they have reviewed the specification, checked it
+against the current codes and the project, and amended it as needed.
 
 **Review, approval and issue.** A project is written by a team and issued under control:
 

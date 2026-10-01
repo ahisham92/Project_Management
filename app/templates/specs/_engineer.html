@@ -1,0 +1,11 @@
+{# The engineer, not THEMIS, answers for what is issued. Shown wherever the
+   tool suggests, checks or issues. #}
+{% macro engineer_note(compact=false) %}
+<aside class="spec-engineer-note{{ ' spec-engineer-note-compact' if compact }}" role="note">
+  <strong>The engineer issuing the specification is responsible for it.</strong>
+  THEMIS only helps to write and review it: its suggested answers, checks, wording suggestions,
+  code references and clause summaries are aids, and can be wrong or out of date.
+  {% if not compact %}Review every section, check it against the current codes and this project, and
+  amend it as needed before it is issued.{% endif %}
+</aside>
+{% endmacro %}

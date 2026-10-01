@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
+{% from "specs/_engineer.html" import engineer_note %}
 {% block title %}Details · {{ spec['name'] }} · THEMIS{% endblock %}
 
 {% macro controls(name, q, current, answered, allow_same=false) %}
@@ -71,6 +72,7 @@
     <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
   </div>
 </div>
+{{ engineer_note() }}
 
 {% if not group %}
   {{ empty('No questions', 'None of this project\'s sections asks anything. Add sections first, or read in a library file that carries the questions.') }}
@@ -102,13 +104,16 @@
       {% for q in need %}{{ question(q) }}{% endfor %}
       {% endif %}
       {% if suggested %}
-      <h3 class="spec-q-part">Suggested from the master <span class="muted small">{{ suggested | length }} · written in as shown when you save; open one to change it</span></h3>
+      <h3 class="spec-q-part">Suggested from the master <span class="muted small">{{ suggested | length }} · written in only when you accept them below; open one to change it</span></h3>
       {% for q in suggested %}
       <details class="spec-q-compact">
         <summary><span class="spec-q-name">{{ q['label'] }}{% if not q['switch'] %} <button type="button" class="spec-q-info" data-explain="{{ q['key'] }}" aria-label="What this means and what the codes say">i</button>{% endif %}</span><span class="spec-q-value">{{ shown(q, q['suggested']) }}</span><span class="spec-q-change">Change</span></summary>
         {{ question(q) }}
       </details>
       {% endfor %}
+      <input type="hidden" name="suggest_shown" value="1">
+      <label class="check spec-accept"><input type="checkbox" name="accept_suggested" value="1">
+        I have reviewed {{ 'this suggestion' if suggested | length == 1 else 'these ' ~ (suggested | length) ~ ' suggestions' }} and accept {{ 'it' if suggested | length == 1 else 'them' }} as shown for this project</label>
       {% endif %}
       {% if done %}
       <h3 class="spec-q-part">Answered <span class="muted small">{{ done | length }}</span></h3>
@@ -130,7 +135,7 @@
     <button type="submit" name="go" value="stay" class="btn btn-primary">Save</button>
     <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check →</a>
     {% endif %}
-    <span class="small muted">Suggested answers are written in when you save.</span>
+    <span class="small muted">Suggested answers are written in only when you tick to accept them; one you change is your own answer.</span>
   </div>
 </form>
 <aside class="spec-explain" id="spec-explain" hidden aria-labelledby="spec-explain-title" data-url="{{ url_for('specs.explain', set_id=spec['id'], key='KEY') }}?group={{ group['slug'] }}" data-open="{{ explain_key }}">

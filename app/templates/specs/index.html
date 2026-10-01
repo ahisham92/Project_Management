@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
 {% import "partials/themis.html" as themis %}
+{% from "specs/_engineer.html" import engineer_note %}
 {% block title %}THEMIS · Structural Specifications{% endblock %}
 
 {% block content %}
@@ -18,6 +19,7 @@
     <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
   </div>
 </div>
+{{ engineer_note() }}
 
 <div class="card" id="new">
   <div class="card-head">

@@ -831,6 +831,7 @@ def details(set_id: int):
         (i for i, g in enumerate(groups) if g["open"]), 0)
     if request.method == "POST" and groups:
         given, split = specs_questions.read_form(request.form, groups[here]["questions"])
+        held = _unaccepted(groups[here]["questions"], given)
         switches = {q["key"] for q in groups[here]["questions"] if q.get("switch")}
         kept = _answered_meanwhile(row, given, switches)
         before = store.ruled_out(set_id)
@@ -840,6 +841,12 @@ def details(set_id: int):
         answered = sum(1 for k, v in given.items() if "@" not in k and v is not None)
         flash(f"Saved {answered} answer{'s' if answered != 1 else ''} in "
               f"{groups[here]['name']}.", "success")
+        if held:
+            flash(f"{held} suggested answer{'s were' if held != 1 else ' was'} not written in: tick "
+                  "that you have reviewed the suggestions to accept them, or change each one. The "
+                  "engineer decides every answer; THEMIS only suggests.", "error")
+            if not kept:
+                return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
         if kept:
             flash("Somebody else answered " + "; ".join(kept) + " after you opened this page, so "
                   "theirs was kept; change it again if yours should stand.", "error")
@@ -861,6 +868,22 @@ def details(set_id: int):
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP,
         explain_key=request.args.get("explain", ""),
         was=json.dumps(_group_answers(row, groups[here]) if groups else {}, ensure_ascii=False))
+
+
+def _unaccepted(questions: list[dict], given: dict) -> int:
+    """Suggested answers left as suggested, taken out of ``given`` unless the
+    engineer ticked that they reviewed and accept them: THEMIS suggests, the
+    engineer decides. One the engineer changed is their own answer and stays."""
+    if request.form.get("suggest_shown") != "1" or request.form.get("accept_suggested") == "1":
+        return 0
+    held = 0
+    for q in questions:
+        if q.get("answered") or q.get("suggested") is None or q["key"] not in given:
+            continue
+        if " ".join(str(given[q["key"]]).split()) == " ".join(str(q["suggested"]).split()):
+            given.pop(q["key"])
+            held += 1
+    return held
 
 
 def _group_answers(row: dict, group: dict) -> dict:

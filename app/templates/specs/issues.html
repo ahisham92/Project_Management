@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% from "partials/bits.html" import empty %}
 {% from "specs/_review.html" import review_head %}
+{% from "specs/_engineer.html" import engineer_note %}
 {% block title %}Issues · {{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
 {{ review_head(spec, 'issues', 'Issues', 'Every issue of this specification: its revision, purpose and date, who prepared, checked and approved it, and the files exactly as they were sent.') }}
+
+{{ engineer_note() }}
 
 {% if may_issue and sections %}
 <div class="card" id="issue-new">
@@ -41,6 +44,9 @@
     {% if missing and not spec['hold_issue'] %}
     <label class="check"><input type="checkbox" name="anyway" value="1"> Issue anyway: {{ missing | length }} reference{{ 's' if missing | length != 1 }} point at sections or paragraphs this issue does not contain</label>
     {% endif %}
+    <label class="check spec-engineer-confirm"><input type="checkbox" name="responsible" value="1" required>
+      I am the engineer responsible for this specification. I have reviewed it, checked it against the
+      current codes and this project, and amended it as needed; it is fit to issue.</label>
     <div class="inline-form" style="justify-content:flex-end">
       <button type="submit" class="btn btn-primary">Issue Rev <span data-rev>{{ suggested }}</span></button>
     </div>

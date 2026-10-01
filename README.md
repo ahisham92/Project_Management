@@ -146,9 +146,27 @@ meet, so the Specs Writer reads across them:
 - **Choices inside a paragraph.** The alternatives MasterSpec writes in `[brackets]` become
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
-- **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Details*,
+- **Steps.** A project page runs *Project*, *Elements*, *The brief*, *Sections*, *The story*,
   *Check*, *Review*, *Issue*, one step in view at a time, with Next and Back buttons and the state of each
   at the top. The project's location sits beside its client.
+- **The story: the questions answered in 3D, level by level.** *The story* (step 5, *Next: the
+  story*, and *▶ The story* at the top of the project page) is where the questions are answered:
+  `/specs/sets/<id>/story`. The levels run as a path across the top, from deciding the project to
+  looking after the finished structure, each a stop (✓ answered, the open one with what is left,
+  a padlock while locked) with *You are here* over the one shown. Beside the site in 3D, each
+  level opens with a few lines of the story of the works told for this project (the building, the
+  quay or the bridge, its elements, its post-tensioning and precast; `NARRATIVE` in
+  `app/specs_inputs.py`), how much of it is answered, and its stops; the picture zooms to the
+  level's stations, and an engineer in a hard hat walks from station to station as the questions
+  are answered **one at a time**: each on its own card with its picture (the question's drawing,
+  else a picture added to it, else its station drawn), what it means, and *What the codes say*.
+  *Next* saves that one answer in the background (`only=<key>` on the station's POST, no page
+  reload) and the next card comes up; a suggestion shown on its own card is accepted when it is
+  moved past with *Next*, or changed first. *Back* goes to the card before, *Skip for now* leaves
+  one open. After the level's last question, *On to level N* moves the camera on to the next
+  level; *Next level* stays locked until the level is done. The brief (level 1) is asked part by
+  part the same way, and confirmed at the end.
+  *Details* is kept as the **list view** of the same questions, linked from the story.
 - **Details: the questions the sections ask.** Once the sections are chosen, *Details* asks
   only what those sections need, grouped the way an engineer thinks (project information,
   concrete materials, concrete mixes and properties, placing and curing, formwork,

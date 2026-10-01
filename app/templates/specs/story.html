@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% from "specs/_engineer.html" import engineer_note %}
+{% block title %}The story · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-inputs.css') }}">
+<div class="page-head">
+  <div>
+    <h1>{{ spec['name'] }}: the story of the works</h1>
+    <p class="small muted" style="margin-top:2px">The questions as levels along a path through the site, from deciding the project to the finished structure. Each level opens once the one before it is answered.</p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.details', set_id=spec['id']) }}" title="The same questions as plain lists, chapter by chapter">List view</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}">Inputs at a glance</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Check</a>
+  </div>
+</div>
+{{ engineer_note() }}
+
+{% if not scene['stations'] %}
+  <div class="card"><div class="card-body">{{ empty('Nothing to answer yet', 'None of this project\'s sections asks anything.') }}</div></div>
+{% else %}
+<div class="spec-scene spec-story" data-scene data-mode="story"
+     data-station-url="{{ url_for('specs.inputs_station', set_id=spec['id'], station='STATION') }}"
+     data-check-url="{{ url_for('specs.check_set', set_id=spec['id']) }}"
+     data-list-url="{{ url_for('specs.details', set_id=spec['id']) }}"
+     data-brief-list-url="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-questions">
+  <ol class="spec-path" data-levels aria-label="The levels of the story"></ol>
+  <div class="spec-story-grid">
+    <div class="spec-scene-stage">
+      <svg class="spec-scene-svg" data-svg role="img" aria-label="The site, with the stations of this level along the path"></svg>
+      <p class="spec-scene-caption small" data-caption></p>
+      <span class="spec-scene-stagebar small" data-stage role="status"></span>
+    </div>
+    <section class="spec-story-panel" aria-live="polite">
+      <header class="spec-story-head" data-story-head></header>
+      <div class="spec-story-body" data-panel>
+        <div data-panel-body></div>
+      </div>
+      <footer class="spec-story-foot" data-story-foot></footer>
+    </section>
+  </div>
+  <noscript><p class="small muted" style="padding:12px">The story needs JavaScript. The <a href="{{ url_for('specs.details', set_id=spec['id']) }}">list view</a> has the same questions.</p></noscript>
+</div>
+<script type="application/json" id="spec-scene-data">{{ scene | tojson }}</script>
+<script src="{{ url_for('static', filename='spec-inputs.js') }}" defer></script>
+
+<aside class="spec-explain" id="spec-explain" hidden data-url="{{ url_for('specs.explain', set_id=spec['id'], key='KEY') }}">
+  <div class="spec-explain-head">
+    <span class="small muted">About this question</span>
+    <button type="button" class="btn btn-ghost btn-sm" data-explain-close aria-label="Close">✕ Close</button>
+  </div>
+  <div class="spec-explain-body" data-explain-body></div>
+</aside>
+{% endif %}
+{% endblock %}

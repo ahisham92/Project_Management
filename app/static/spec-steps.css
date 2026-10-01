@@ -37,3 +37,7 @@ a.spec-step:focus-visible { outline: 2px solid var(--series-1); outline-offset: 
 #step-sections > .card-head { flex-wrap: wrap; gap: 8px; }
 #step-sections > .card-head > div { flex: 1 1 320px; }
 #step-sections > .card-head .btn { white-space: nowrap; }
+
+/* The brief's call to answer it on the story path instead. */
+.spec-story-call { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: rgba(42, 120, 214, .07); border-bottom: 1px solid var(--border); border-left: 4px solid #2a78d6; }
+.spec-story-call p { margin: 0; flex: 1 1 320px; }

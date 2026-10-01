@@ -168,3 +168,88 @@
 .spec-scene-flags { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
 .spec-scene-flag { border: 1px solid var(--border); border-left: 4px solid var(--in-needed); border-radius: 8px; padding: 6px 9px; display: grid; gap: 2px; font-size: .86rem; }
 .spec-scene-flag.spec-sev-info { border-left-color: var(--in-suggested); }
+
+/* The story (specs/story.html): the levels as a path, the site beside the
+   level's lines and its questions. */
+.spec-path { list-style: none; margin: 0; padding: 26px 10px 12px; display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: thin; background: var(--raised); }
+.spec-path-stop { flex: 1 0 92px; position: relative; text-align: center; }
+.spec-path-stop::before { content: ""; position: absolute; top: 15px; right: 50%; width: 100%; height: 6px; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--border) 0 10px, transparent 10px 16px); }
+.spec-path-stop:first-child::before { display: none; }
+.spec-path-stop.is-done::before, .spec-path-stop.is-now::before { background: var(--in-answered); }
+.spec-path-stop button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; background: none; border: 0; padding: 0 2px; font: inherit; color: var(--ink); cursor: pointer; }
+.spec-path-n { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .9rem; background: var(--raised); border: 3px solid var(--in-locked); color: var(--ink-2); transition: transform .2s; }
+.spec-path-stop.is-done .spec-path-n { background: var(--in-answered); border-color: var(--in-answered); color: #fff; }
+.spec-path-stop.is-now .spec-path-n { border-color: var(--in-needed); color: var(--in-needed); background: var(--raised); }
+.spec-path-stop.is-locked button { opacity: .6; }
+.spec-path-stop.is-here .spec-path-n { transform: scale(1.18); box-shadow: 0 0 0 5px rgba(42, 120, 214, .28); }
+.spec-path-stop.is-here .spec-path-name { font-weight: 700; }
+.spec-path-name { font-size: .74rem; line-height: 1.2; max-width: 96px; }
+.spec-path-left { font-size: .68rem; color: var(--in-needed); }
+.spec-path-here { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: .66rem; font-weight: 700; color: #fff; background: #2a78d6; border-radius: 8px; padding: 1px 7px; }
+.spec-path-here::after { content: ""; position: absolute; left: 50%; bottom: -4px; margin-left: -4px; border: 4px solid transparent; border-bottom: 0; border-top-color: #2a78d6; }
+.spec-story-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr); }
+.spec-story .spec-scene-svg { height: min(74vh, 700px); }
+.spec-story .spec-scene-stagebar { position: absolute; top: 10px; left: 10px; right: 10px; background: var(--raised); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+.spec-story .spec-scene-stagebar:not(.is-held) { display: none; }
+.spec-story-panel { display: flex; flex-direction: column; height: min(74vh, 700px); border-left: 1px solid var(--border); background: var(--raised); min-width: 0; }
+.spec-story-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+.spec-story-head h2 { margin: 0 0 6px; font-size: 1.35rem; }
+.spec-story-eyebrow { margin: 0 0 2px; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #2a78d6; }
+.spec-story-tale { margin: 0 0 10px; font-size: .95rem; line-height: 1.5; font-style: italic; color: var(--ink); border-left: 3px solid #e0a32a; padding-left: 10px; }
+.spec-story-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.spec-story-bar span { display: block; height: 100%; background: var(--in-answered); transition: width .5s; }
+.spec-story-count { margin: 5px 0 0; color: var(--ink-2); }
+.spec-story-ok { color: var(--good-ink, var(--in-answered)); font-weight: 600; }
+.spec-story-stops { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.spec-story-stop { border: 1px solid var(--border); background: var(--raised); color: var(--ink); border-radius: 14px; padding: 2px 4px 2px 10px; font-size: .78rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.spec-story-stop.is-on { border-color: #2a78d6; box-shadow: 0 0 0 2px rgba(42, 120, 214, .22); font-weight: 600; }
+.spec-story-stop-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; font-size: .68rem; font-weight: 700; color: #fff; background: var(--in-answered); padding: 0 4px; }
+.spec-story-stop.spec-in-needed .spec-story-stop-n { background: var(--in-needed); }
+.spec-story-stop.spec-in-suggested .spec-story-stop-n { background: var(--in-suggested); }
+.spec-story-body { flex: 1 1 auto; overflow: auto; padding: 10px 16px 14px; min-height: 0; }
+.spec-story-body h2 { font-size: 1.05rem; margin: 2px 0; }
+.spec-story-body .flash { margin: 0 0 8px; }
+.spec-story-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--border); }
+.spec-story-next { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.spec-story-wait { max-width: 260px; text-align: right; }
+.spec-story-road { fill: none; stroke: rgba(196, 170, 120, .55); stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+.spec-scene-svg.is-story .spec-scene-walk { stroke: rgba(110, 90, 60, .55); stroke-width: 2.4; stroke-dasharray: 2 7; }
+.spec-scene-svg.is-story .spec-scene-walk.is-done { stroke: var(--in-answered); stroke-dasharray: none; stroke-width: 3; opacity: .8; }
+.spec-scene-svg.is-story.is-zoomed .spec-scene-st.is-here { opacity: 1; }
+.spec-scene-svg.is-story.is-zoomed .spec-scene-st:not(.is-here), .spec-scene-svg.is-story .spec-scene-st:not(.is-here) { opacity: .3; }
+.spec-scene-svg.is-story .spec-scene-st.is-here .spec-scene-halo { fill: rgba(42, 120, 214, .08); stroke: rgba(42, 120, 214, .55); stroke-dasharray: 5 4; }
+.spec-story-walker { pointer-events: none; animation: spec-bob 1.2s ease-in-out infinite; }
+@keyframes spec-bob { 50% { transform: translateY(-2px); } }
+.spec-story .spec-scene-caption { left: 12px; bottom: 10px; background: var(--scene-label-bg); padding: 2px 8px; border-radius: 6px; }
+@media (max-width: 900px) {
+  .spec-story-grid { grid-template-columns: 1fr; }
+  .spec-story .spec-scene-svg { height: 46vh; min-height: 280px; }
+  .spec-story-panel { height: auto; border-left: 0; border-top: 1px solid var(--border); }
+  .spec-story-body { overflow: visible; }
+  .spec-story-wait { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .spec-story-walker { animation: none; } }
+.spec-story-body .spec-station-level { display: none; }
+
+/* The story's questions, one card at a time. */
+.spec-card { display: block; }
+.spec-card.is-in { animation: spec-card-in .35s ease-out both; }
+@keyframes spec-card-in { from { opacity: 0; transform: translateX(18px); } }
+.spec-card-pic { color: var(--ink); display: grid; place-items: center; height: 180px; margin: 2px 0 10px; border-radius: 10px; overflow: hidden; background: linear-gradient(180deg, var(--scene-sky-1), var(--scene-sky-2)); border: 1px solid var(--border); }
+.spec-card-pic:empty { display: none; }
+.spec-card-pic > svg, .spec-card-pic > img { max-width: 100%; max-height: 172px; width: auto; height: 100%; display: block; }
+.spec-card-pic > img { object-fit: contain; background: #fff; }
+.spec-card-art { width: 100%; height: 100%; }
+.spec-card-state { margin: 0 0 6px; color: var(--ink-2); }
+.spec-card .spec-q { border: 0; padding: 0; margin: 0; }
+.spec-card .spec-q-label { font-size: 1.12rem; font-weight: 700; line-height: 1.35; margin-bottom: 8px; }
+.spec-card .spec-pills { gap: 8px; }
+.spec-card .spec-pill { font-size: .95rem; padding: 6px 12px; }
+.spec-card-def { color: var(--ink-2); border-left: 3px solid var(--border); padding-left: 8px; margin: 10px 0 4px; }
+.spec-card-nav { position: sticky; bottom: -14px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0 12px; margin-top: 12px; background: var(--raised); border-top: 1px solid var(--border); }
+.spec-card-count { text-align: center; color: var(--ink-2); line-height: 1.3; }
+.spec-card-go { display: inline-flex; gap: 6px; align-items: center; }
+.spec-card-end { padding: 18px 4px 8px; }
+.spec-card-end h3 { margin: 2px 0 10px; font-size: 1.2rem; }
+.spec-decide .spec-card-nav { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .spec-card.is-in { animation: none; } }

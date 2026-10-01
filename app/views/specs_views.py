@@ -1016,6 +1016,18 @@ def review_inputs(set_id: int):
                            open_places=sum(len(p["open"]) for p in left))
 
 
+@bp.get("/sets/<int:set_id>/story")
+@login_required
+def story(set_id: int):
+    """The questions answered as the story of the works: level by level along
+    a path through the site, from deciding the project to the finished
+    structure, each level told in a few lines and its questions answered at
+    its stations in the picture. The list of Details is its list view."""
+    row = _set_or_404(set_id)
+    data = _scene(set_id, row, store.set_sections(set_id))
+    return render_template("specs/story.html", spec=row, scene=data)
+
+
 @bp.route("/sets/<int:set_id>/inputs/<station>", methods=["GET", "POST"])
 @login_required
 def inputs_station(set_id: int, station: str):
@@ -1032,6 +1044,12 @@ def inputs_station(set_id: int, station: str):
         chapter, questions = specs_inputs.station_questions(asked, station)
     if chapter is None:
         abort(404)
+    # The story asks one question at a time: its card saves only that one.
+    only = request.form.get("only") if request.method == "POST" else None
+    if only:
+        questions = [q for q in questions if q["key"] == only]
+        if not questions:
+            abort(404)
     sections = store.set_sections(set_id)
     wants_json = request.headers.get("X-Requested-With") == "fetch"
     if request.method == "POST":
@@ -1070,7 +1088,8 @@ def inputs_station(set_id: int, station: str):
         if not wants_json:
             for kind, text in messages:
                 flash(text, kind)
-            return redirect(url_for("specs.review_inputs", set_id=set_id) + f"#st-{station}")
+            back = "specs.story" if request.form.get("from") == "story" else "specs.review_inputs"
+            return redirect(url_for(back, set_id=set_id) + f"#st-{station}")
         row = store.spec_set(set_id)
         after = _scene(set_id, row, store.set_sections(set_id))
         # A change that puts new questions in a level reopens it: say where.
@@ -1092,6 +1111,14 @@ def inputs_station(set_id: int, station: str):
         abort(404)
     if station == "decide":
         return render_template("specs/_decide.html", **_decide_page(row, data))
+    if request.args.get("cards"):
+        return render_template(
+            "specs/_cards.html", spec=row, station=st, questions=questions,
+            locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
+            element_labels=_labels(), pictures=_pictures(questions, row["family"]),
+            was={q["key"]: json.dumps(_group_answers(row, {"questions": [q]}), ensure_ascii=False) for q in questions},
+            FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
+            picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
     return render_template(
         "specs/_station.html", spec=row, station=st, chapter=chapter, questions=questions, level=st["level"],
         locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
@@ -1099,6 +1126,18 @@ def inputs_station(set_id: int, station: str):
         was=json.dumps(_group_answers(row, {"questions": questions}), ensure_ascii=False),
         FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
+
+
+def _pictures(questions: list[dict], family: str) -> dict[str, dict]:
+    """What each question's card shows above it: its drawing, or the first
+    picture added to it, and what it means in a line or two."""
+    out = {}
+    for q in questions:
+        found = specs_questions.explained(q["key"], family) or {}
+        shots = found.get("pictures") or []
+        out[q["key"]] = {"drawing": found.get("drawing") or "", "image": shots[0] if shots else None,
+                         "definition": found.get("definition") or ""}
+    return out
 
 
 def _by(by: str) -> dict:

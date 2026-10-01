@@ -8,17 +8,19 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Details</h1>
+    <h1>Details <span class="muted" style="font-weight:400">· list view</span></h1>
     <p class="small muted" style="margin-top:2px">The questions this project's sections ask, with the master's own answers to pick from. Each answer is written into every clause it belongs to.</p>
   </div>
   <div class="inline-form">
     {% if by == 'group' %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}">Tell it as a story</a>
     {% else %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id'], by='group') }}">Show by group</a>{% endif %}
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}">▶ The story</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}">See the inputs</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
   </div>
 </div>
 {{ engineer_note() }}
+<div class="flashes"><div class="flash notice">This is the list view of the questions. They are answered as <a href="{{ url_for('specs.story', set_id=spec['id']) }}">the story of the works</a>: level by level along a path through the site, in 3D, from deciding the project to the finished structure.</div></div>
 
 {% if not group %}
   {{ empty('No questions', 'None of this project\'s sections asks anything. Add sections first, or read in a library file that carries the questions.') }}

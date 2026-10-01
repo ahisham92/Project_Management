@@ -33,7 +33,10 @@
   var playBtn = root.querySelector("[data-play]");
   // On the check the same works carry the findings, each at its station.
   var checks = root.getAttribute("data-mode") === "checks";
-  var playWords = playBtn.textContent;
+  // The story: one level at a time, told in a few lines beside the picture,
+  // its stations' questions answered there, and on along the path.
+  var story = root.getAttribute("data-mode") === "story";
+  var playWords = playBtn ? playBtn.textContent : "";
   var NS = "http://www.w3.org/2000/svg";
   var S = 22;                       // pixels per metre of the drawing
   var C30 = Math.cos(Math.PI / 6), S30 = 0.5;
@@ -346,7 +349,7 @@
 
   // --- the project's state, and redrawing it -----------------------------------------
 
-  var byId, order, centre, whole;
+  var byId, order, centre, whole, lastSt = {};
   function index() {
     byId = {};
     data.stations.forEach(function (s) { byId[s.id] = s; });
@@ -513,9 +516,12 @@
     // The way through the site, level by level, from the brief to the last station.
     var walk = [];
     order.forEach(function (id) { if (PLACE[id] && shown.indexOf(id) >= 0) { var at = PLACE[id], mid = MID[id] || [0, 0]; walk.push(P(at[0] + mid[0], at[1] + mid[1] + 1.6, 0)); } });
+    var walkAt = {};
+    order.forEach(function (id) { if (PLACE[id] && shown.indexOf(id) >= 0) { var at = PLACE[id], mid = MID[id] || [0, 0]; walkAt[id] = P(at[0] + mid[0], at[1] + mid[1] + 1.6, 0); } });
     if (walk.length > 1) {
       var reached = 0;
       order.forEach(function (id, i) { if (byId[id] && byId[id].stage <= data.open_stage) reached = i; });
+      if (story) parts.push('<polyline class="spec-story-road" points="' + pts(walk) + '"/>');
       parts.push('<polyline class="spec-scene-walk" points="' + pts(walk) + '"/>');
       parts.push('<polyline class="spec-scene-walk is-done" points="' + pts(walk.slice(0, reached + 1)) + '"/>');
     }
@@ -528,7 +534,7 @@
 
     var mixed = done("mixer");
     var bar = BAR[(site.rebar || [])[0]] || BAR.Uncoated;
-    var st = { formwork: { steel: done("rebar"), poured: done("pour"), cured: done("pour"), elements: site.elements || [], bar: bar, pt: done("tendons") && site.pt },
+    var st = lastSt = { formwork: { steel: done("rebar"), poured: done("pour"), cured: done("pour"), elements: site.elements || [], bar: bar, pt: done("tendons") && site.pt },
       pour: { to: fc }, rebar: { kinds: site.rebar }, tendons: { pt: site.pt }, precast: { kind: site.precast } };
     var drawOrder = shown.slice().sort(function (a, b) { return (PLACE[a][0] + PLACE[a][1]) - (PLACE[b][0] + PLACE[b][1]); });
     centre = {};
@@ -557,7 +563,7 @@
         s.name + ": " + s.questions.length + " questions, " + (s.locked ? "locked until the stage before is answered" :
         s.needed ? s.needed + " need an answer" : s.suggested ? s.suggested + " suggested to accept" : "all answered");
       parts.push('<g class="spec-scene-st spec-in-' + state + (s.locked && !checks ? " is-locked" : "") + (s.stage === data.open_stage && !checks ? " is-now" : "") +
-        (id === current ? " is-on" : "") + '" data-id="' + id + '" tabindex="0" role="button" aria-label="' + esc(words) + '">' +
+        (id === current ? " is-on" : "") + (story && s.stage === level ? " is-here" : "") + '" data-id="' + id + '" tabindex="0" role="button" aria-label="' + esc(words) + '">' +
         '<ellipse class="spec-scene-halo" cx="' + foot[0] + '" cy="' + foot[1] + '" rx="70" ry="35"/>' + art +
         line(foot, pin, "var(--scene-pin-line)", 0.8) +
         '<g class="spec-scene-pin"><circle cx="' + pin[0] + '" cy="' + pin[1] + '" r="11"/>' + mark + "</g>" +
@@ -589,10 +595,22 @@
       flow([W(form[0] + 3.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, lab[1] + 2.4, 0.25)], "#a9a9a6", done("pour"), "cubes")
     ];
     parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
+    // Where the story has got to: the engineer walking the site, at the
+    // station open now, or the first of the level shown.
+    if (story) {
+      var c0 = data.chapters[level], here = current || (c0 && c0.stations[0]), wp = here && walkAt[here];
+      if (wp) parts.push('<g transform="translate(' + wp[0].toFixed(1) + "," + wp[1].toFixed(1) + ') scale(1.5)"><g class="spec-story-walker">' +
+        '<ellipse rx="9" ry="3.5" fill="rgba(0,0,0,.25)"/>' + line([-2.5, 0], [-1.5, -9], "#2b3a4a", 2.6) + line([2.5, 0], [1.5, -9], "#2b3a4a", 2.6) +
+        '<rect x="-4.5" y="-20" width="9" height="12" rx="3" fill="#ff7a1a"/>' + line([-4, -18], [-8, -11], "#ff7a1a", 2.4) + line([4, -18], [8, -11], "#ff7a1a", 2.4) +
+        '<circle cy="-24" r="4.2" fill="#e8b98c"/><path d="M-5.6,-25.2 a5.6,5.6 0 0 1 11.2,0 h1.6 v1.4 h-14.4 v-1.4 z" fill="#ffd21a" stroke="#c99a00" stroke-width=".6"/>' +
+        "<title>You are here</title></g></g>");
+    }
     svg.innerHTML = parts.join("");
+    svg.classList.toggle("is-story", story);
     whole = [minX, minY, maxX - minX, maxY - minY];
     stageText();
     levels();
+    if (story) tell();
   }
 
   // --- zooming ----------------------------------------------------------------------
@@ -614,8 +632,21 @@
   function viewFor(id) {
     var c = centre[id], w = Math.max(260, Math.min(760, svg.clientWidth * 0.55)), h = w * (svg.clientHeight / Math.max(1, svg.clientWidth) || 0.6);
     // Leave room on the right for the panel when it sits over the picture.
-    var shift = window.innerWidth > 900 ? w * 0.22 : 0;
+    var shift = window.innerWidth > 900 && !story ? w * 0.22 : 0;
     return [c[0] - w / 2 + shift, c[1] - h / 2, w, h];
+  }
+
+  // A level's stations together in view, the one open now in the middle of it.
+  function viewForLevel(i) {
+    var c = data.chapters[i], ids = c ? c.stations.filter(function (id) { return centre[id]; }) : [];
+    if (!ids.length) return whole;
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    ids.forEach(function (id) { var p = centre[id]; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); });
+    var ratio = (svg.clientHeight / Math.max(1, svg.clientWidth)) || 0.7;
+    var w = Math.max(svg.clientWidth < 600 ? 360 : 760, (x1 - x0) + 300, ((y1 - y0) + 220) / ratio);
+    w = Math.min(w, whole[2]);
+    var h = w * ratio;
+    return [(x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - h / 2, w, h];
   }
 
   // --- the stage the project is at ---------------------------------------------------
@@ -640,6 +671,20 @@
   var levelsEl = root.querySelector("[data-levels]");
   function levels() {
     if (!levelsEl) return;
+    if (story) {
+      levelsEl.innerHTML = data.chapters.map(function (c, i) {
+        var state = c.locked ? "locked" : c.done ? "done" : "now";
+        var left = c.needed + c.suggested;
+        return '<li class="spec-path-stop is-' + state + (i === level ? " is-here" : "") + '"><button type="button" data-level="' + i + '"' +
+          (i === level ? ' aria-current="step"' : "") + ' title="' + esc("Level " + c.level + ": " + c.name + (c.locked ? " (locked)" : left ? " (" + left + " to answer)" : " (answered)")) + '">' +
+          (i === level ? '<span class="spec-path-here">You are here</span>' : "") +
+          '<span class="spec-path-n">' + (state === "done" ? "✓" : state === "locked" ? "🔒︎" : c.level) + "</span>" +
+          '<span class="spec-path-name">' + esc(c.name) + "</span>" + (state === "now" && left ? '<span class="spec-path-left">' + left + " to answer</span>" : "") + "</button></li>";
+      }).join("");
+      var on = levelsEl.querySelector(".is-here");
+      if (on && on.scrollIntoView && levelsEl.scrollWidth > levelsEl.clientWidth) levelsEl.scrollLeft = on.offsetLeft - levelsEl.clientWidth / 2 + on.clientWidth / 2;
+      return;
+    }
     levelsEl.innerHTML = data.chapters.map(function (c, i) {
       var state = c.locked ? "locked" : i === data.open_stage ? "now" : "done";
       var left = c.needed + c.suggested;
@@ -652,6 +697,7 @@
     var b = e.target.closest("[data-level]");
     if (!b) return;
     var c = data.chapters[+b.getAttribute("data-level")];
+    if (story) { go(+b.getAttribute("data-level")); return; }
     if (c && c.stations.length) open(firstOpen(c));
   });
   function firstOpen(c) {
@@ -682,6 +728,7 @@
         if (mine !== loading) return;
         body.innerHTML = (note || "") + html;
         if (!note) panel.scrollTop = 0;
+        if (story && id === "decide") stepBrief(0);
       })
       .catch(function () { if (mine === loading) body.innerHTML = '<p class="small muted">Could not load this station\'s questions. The summary below has them, and Details answers them.</p>'; });
   }
@@ -696,20 +743,30 @@
         : '<p class="small">Nothing open here.</p>');
     panel.scrollTop = 0;
   }
-  function open(id, fromPlay) {
+  function open(id, fromPlay, key) {
     var s = byId[id];
     if (!s) return;
+    if (story && s.stage !== level) {
+      if (s.locked) { held(); return; }
+      level = s.stage;
+    }
     current = id;
     if (!fromPlay) stop();
     Array.prototype.forEach.call(svg.querySelectorAll(".spec-scene-st"), function (g) { g.classList.toggle("is-on", g.getAttribute("data-id") === id); });
     svg.classList.add("is-zoomed");
     panel.hidden = false;
-    if (checks) showFindings(id); else load(id);
+    if (checks) showFindings(id); else if (!story || id === "decide") load(id);
     var c = chapterOf(id);
     caption.textContent = (c && !checks ? "Level " + c.level + " · " : "") + s.name + (s.locked && !checks ? " · locked" : "");
+    if (story) {
+      draw(); zoomTo(viewForLevel(level)); remember();
+      if (id !== "decide") showCard(key || firstKey(id));
+      return;
+    }
     zoomTo(viewFor(id));
   }
   function close() {
+    if (story) { zoomTo(viewForLevel(level)); return; }
     current = null;
     loading++;
     panel.hidden = true;
@@ -747,6 +804,7 @@
     }).catch(function () {});
   }
   body.addEventListener("submit", function (e) {
+    if (e.target.closest("[data-card]")) { e.preventDefault(); next(); return; }
     var form = e.target.closest("[data-station-form]");
     if (!form || !window.fetch || !window.FormData) return;
     e.preventDefault();
@@ -768,9 +826,15 @@
         var c = data.chapters[data.open_stage];
         if (data.open_stage > wasStage) {
           note += '<div class="flash success spec-scene-opened"><strong>' + esc(data.chapters[wasStage].name) + " is done.</strong> " +
-            (c ? 'The next level is open: <button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(firstOpen(c)) + '">Go to ' + esc(c.name) + " →</button>" : "Every stage is answered.") + "</div>";
+            (c ? 'The next level is open: <button type="button" class="btn btn-primary btn-sm" ' + (story ? 'data-go-level="' + data.open_stage + '"' : 'data-go-stage="' + esc(firstOpen(c)) + '"') + '>' + (story ? "On to level " + c.level + ", " : "Go to ") + esc(c.name) + " →</button>" :
+              "Every level is answered." + (story ? ' <a class="btn btn-primary btn-sm" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>' : "")) + "</div>";
+        } else if (story && byId[id] && !openCount(byId[id])) {
+          // This stop is answered: on to the next one on the level that is not.
+          var lv = data.chapters[level], nx = lv && lv.stations.filter(function (o) { return o !== id && openCount(byId[o]); })[0];
+          if (nx) note += '<div class="flash success spec-scene-opened"><strong>' + esc(byId[id].name) + " is answered.</strong> Next stop on this level: " +
+            '<button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(nx) + '">' + esc(byId[nx].name) + " →</button></div>";
         }
-        if (resp.html) { body.innerHTML = note + resp.html; panel.scrollTop = 0; return; }   // asked to confirm first
+        if (resp.html) { body.innerHTML = note + resp.html; panel.scrollTop = 0; if (story) stepBrief(0); return; }   // asked to confirm first
         load(id, note);
         refreshSummary();
       })
@@ -793,8 +857,17 @@
     if (bar && bar.nextElementSibling) bar.nextElementSibling.hidden = e.target.value !== "1";
   });
   body.addEventListener("click", function (e) {
-    var go = e.target.closest("[data-go-stage]");
-    if (go) { e.preventDefault(); open(go.getAttribute("data-go-stage")); }
+    var to = e.target.closest("[data-go-stage]");
+    if (to) { e.preventDefault(); open(to.getAttribute("data-go-stage")); return; }
+    var lv = e.target.closest("[data-go-level]");
+    if (lv) { e.preventDefault(); go(+lv.getAttribute("data-go-level")); return; }
+    if (e.target.closest("[data-card-next]")) { e.preventDefault(); next(); return; }
+    if (e.target.closest("[data-card-back]")) { e.preventDefault(); step(-1); return; }
+    if (e.target.closest("[data-card-skip]")) { e.preventDefault(); step(1); return; }
+    var cg = e.target.closest("[data-card-go]");
+    if (cg) { e.preventDefault(); showCard(cg.getAttribute("data-card-go")); return; }
+    var bg = e.target.closest("[data-brief-go]");
+    if (bg) { e.preventDefault(); stepBrief(+bg.getAttribute("data-brief-go")); panel.scrollTop = 0; }
   });
 
   // --- playing the story ------------------------------------------------------------
@@ -824,14 +897,269 @@
     if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(g.getAttribute("data-id")); }
   });
   root.addEventListener("keydown", function (e) {
+    if (story) return;
     if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target.tagName) || e.target.isContentEditable) return;
     if (e.key === "ArrowRight") { move(1); } else if (e.key === "ArrowLeft") { move(-1); } else if (e.key === "Escape") { stop(); close(); }
   });
-  playBtn.addEventListener("click", play);
-  root.querySelector("[data-next]").addEventListener("click", function () { move(1); });
-  root.querySelector("[data-prev]").addEventListener("click", function () { move(-1); });
-  root.querySelector("[data-whole]").addEventListener("click", function () { stop(); close(); });
-  root.querySelector("[data-close]").addEventListener("click", function () { stop(); close(); });
+  function on(sel, fn) { var el = root.querySelector(sel); if (el) el.addEventListener("click", fn); }
+  on("[data-play]", play);
+  on("[data-next]", function () { move(1); });
+  on("[data-prev]", function () { move(-1); });
+  on("[data-whole]", function () { stop(); close(); });
+  on("[data-close]", function () { stop(); close(); });
+
+  // --- the story: a level told, its stops, and on to the next ----------------------
+
+  var level = 0;
+  var head = root.querySelector("[data-story-head]"), foot = root.querySelector("[data-story-foot]");
+  function asked(c) {
+    var n = 0;
+    c.stations.forEach(function (id) { n += id === "decide" ? 1 : byId[id].questions.length; });
+    return n;
+  }
+  function held() {
+    var c = data.chapters[data.open_stage];
+    hold(!c ? "" : c.slug === "deciding" ? "Decide the brief first: the next level opens once it is confirmed." :
+      "Finish level " + c.level + ", " + c.name + ", first: " + (c.needed + c.suggested) + " still to answer or accept there.");
+  }
+  // The level shown: its lines of the story, how far it is answered, its
+  // stops, and the way on.
+  function tell() {
+    var c = data.chapters[level];
+    if (!c || !head) return;
+    var total = asked(c), left = c.needed + c.suggested, doneN = Math.max(0, total - left);
+    var pct = total ? Math.round(100 * doneN / total) : 100;
+    head.innerHTML = '<p class="spec-story-eyebrow">Level ' + c.level + " of " + data.chapters.length + (c.done ? ' · <span class="spec-story-ok">answered</span>' : "") + "</p>" +
+      "<h2>" + esc(c.name) + "</h2>" +
+      '<p class="spec-story-tale">' + esc(c.story || c.lead) + "</p>" +
+      '<div class="spec-story-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
+      '<p class="small spec-story-count">' + (c.slug === "deciding" ? (c.done ? "The brief is decided. Change it here if the project changes." : "Confirm the brief to start the story.") :
+        doneN + " of " + total + " answered on this level" + (c.suggested ? ", " + c.suggested + " suggested to accept" : "") + (c.needed ? ", " + c.needed + " need your answer" : "") + ".") + "</p>" +
+      (c.stations.length > 1 ? '<div class="spec-story-stops" role="tablist" aria-label="Stops on this level">' + c.stations.map(function (id) {
+        var s = byId[id], n = openCount(s);
+        return '<button type="button" role="tab" class="spec-story-stop spec-in-' + stateOf(s) + (id === current ? " is-on" : "") + '" aria-selected="' + (id === current) + '" data-go-stage="' + esc(id) + '">' +
+          esc(s.name) + ' <span class="spec-story-stop-n">' + (n ? n : "✓") + "</span></button>";
+      }).join("") + "</div>" : "");
+    var prev = data.chapters[level - 1], next = data.chapters[level + 1];
+    var right;
+    if (next) {
+      right = next.locked
+        ? '<span class="small muted spec-story-wait">' + (c.slug === "deciding" ? "Confirm the brief" : "Answer the " + left + " left here") + " to open level " + next.level + ", " + esc(next.name) + ".</span>" +
+          '<button type="button" class="btn btn-primary" disabled>Next level 🔒︎</button>'
+        : '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">Next level: ' + esc(next.name) + " →</button>";
+    } else {
+      right = data.open_stage >= data.chapters.length
+        ? '<span class="small spec-story-ok">Every level is answered.</span> <a class="btn btn-primary" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>'
+        : '<span class="small muted spec-story-wait">The last level. Answer what is left on the levels before to finish.</span>';
+    }
+    foot.innerHTML = (prev ? '<button type="button" class="btn btn-ghost" data-go-level="' + (level - 1) + '">← ' + esc(prev.name) + "</button>" : "<span></span>") +
+      '<div class="spec-story-next">' + right + "</div>";
+  }
+  function remember() {
+    try { history.replaceState(null, "", "#level-" + (level + 1)); } catch (e) { /* file:// */ }
+  }
+  // Going to a level: its stops in view, and the first with something left
+  // open in the panel.
+  function go(i) {
+    var c = data.chapters[i];
+    if (!c) return;
+    if (c.locked) { held(); return; }
+    level = i;
+    current = null;
+    cardsOf = null;
+    var key = firstOpenKey(), list = levelKeys();
+    if (!key || !list.length) { open(c.stations[0]); return; }
+    open(list[indexOf(list, key)].station, false, key);
+  }
+  // --- the questions one at a time ---------------------------------------------------
+  // Each question of the level shown on its own card with its picture: Next
+  // saves it (in the background, no reload) and the next one comes up; after
+  // the level's last, Next moves on to the next level.
+
+  var cardKey = null, cardsOf = null, cardLoading = 0;
+  function levelKeys() {
+    var c = data.chapters[level], out = [];
+    if (!c) return out;
+    c.stations.forEach(function (id) {
+      if (id === "decide" || !byId[id]) return;
+      byId[id].questions.forEach(function (q) { out.push({ key: q.key, station: id, state: q.state }); });
+    });
+    return out;
+  }
+  function indexOf(list, key) { for (var i = 0; i < list.length; i++) if (list[i].key === key) return i; return -1; }
+  function firstKey(id) {
+    var qs = byId[id] ? byId[id].questions : [];
+    var open = qs.filter(function (q) { return q.state !== "answered"; })[0] || qs[0];
+    return open ? open.key : null;
+  }
+  function firstOpenKey() {
+    var list = levelKeys(), open = list.filter(function (k) { return k.state !== "answered"; })[0] || list[0];
+    return open ? open.key : null;
+  }
+  function sig(form) {
+    var out = [];
+    new FormData(form).forEach(function (v, k) { if (k !== "was") out.push(k + "=" + v); });
+    return out.join("&");
+  }
+  // A station's cards, fetched once and kept until one of them is saved.
+  function withCards(id) {
+    var host = body.querySelector("[data-card-host]");
+    if (cardsOf === id && host) return Promise.resolve(host);
+    var mine = ++cardLoading;
+    var url = stationUrl.replace("STATION", encodeURIComponent(id));
+    return fetch(url + (url.indexOf("?") < 0 ? "?" : "&") + "cards=1", { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw r; return r.text(); })
+      .then(function (html) {
+        if (mine !== cardLoading) throw "stale";
+        body.innerHTML = '<div data-card-flash></div><div data-card-host>' + html + '</div><div class="spec-card-nav" data-card-nav></div>';
+        cardsOf = id;
+        Array.prototype.forEach.call(body.querySelectorAll("[data-card]"), function (f) { f.setAttribute("data-sig", sig(f)); });
+        return body.querySelector("[data-card-host]");
+      });
+  }
+  // A picture for a question with no drawing of its own: its station, drawn.
+  function miniArt(el, id) {
+    if (!el || el.children.length || !DRAW[id] || !PLACE[id]) return;
+    var at = PLACE[id];
+    el.innerHTML = '<svg class="spec-card-art" role="img" aria-label="' + esc(byId[id] ? byId[id].name : id) + '"><g>' + DRAW[id](at[0], at[1], lastSt[id]) + "</g></svg>";
+    var art = el.firstChild, b = art.firstChild.getBBox();
+    if (b.width) art.setAttribute("viewBox", [b.x - 12, b.y - 12, b.width + 24, b.height + 24].map(function (n) { return n.toFixed(1); }).join(" "));
+  }
+  function showCard(key, note) {
+    var list = levelKeys(), i = indexOf(list, key);
+    if (i < 0) { endOfLevel(note); return; }
+    var item = list[i];
+    cardKey = key;
+    if (current !== item.station) { current = item.station; draw(); }
+    caption.textContent = "Level " + data.chapters[level].level + " · " + byId[item.station].name;
+    withCards(item.station).then(function (host) {
+      var shown = null;
+      Array.prototype.forEach.call(host.querySelectorAll("[data-card]"), function (f) {
+        var on = f.getAttribute("data-key") === key;
+        f.hidden = !on;
+        if (on) shown = f;
+      });
+      if (!shown) { endOfLevel(note); return; }
+      shown.classList.remove("is-in"); void shown.offsetWidth; shown.classList.add("is-in");
+      miniArt(shown.querySelector("[data-card-pic]"), item.station);
+      body.querySelector("[data-card-flash]").innerHTML = note || "";
+      var last = i === list.length - 1, ro = !!shown.querySelector("fieldset[disabled]");
+      body.querySelector("[data-card-nav]").innerHTML =
+        '<button type="button" class="btn btn-ghost" data-card-back' + (i ? "" : " disabled") + ">← Back</button>" +
+        '<span class="small spec-card-count">Question <strong>' + (i + 1) + "</strong> of " + list.length + " on this level<br>" + esc(byId[item.station].name) + "</span>" +
+        '<span class="spec-card-go">' + (ro ? "" : '<button type="button" class="btn btn-ghost btn-sm" data-card-skip>Skip for now</button>') +
+        '<button type="button" class="btn btn-primary" data-card-next>' + (last ? "Finish the level →" : "Next →") + "</button></span>";
+      panel.scrollTop = 0;
+      var first = shown.querySelector("input:not([type=hidden]):checked, input:not([type=hidden])");
+      if (first && window.innerWidth > 900) try { first.focus({ preventScroll: true }); } catch (e) { /* old browsers */ }
+      tell();
+    }).catch(function (e) {
+      if (e !== "stale") body.innerHTML = '<p class="small muted">Could not load this question. The list view has it.</p>';
+    });
+  }
+  function step(by) {
+    var list = levelKeys(), i = indexOf(list, cardKey);
+    var to = list[i + by];
+    if (to) showCard(to.key); else if (by > 0) endOfLevel();
+  }
+  // Next: the answer saved on its own, the picture redrawn from it, and the
+  // next question up; an answer unchanged since it was given just moves on.
+  var saving = false;
+  function next() {
+    var form = body.querySelector("[data-card]:not([hidden])");
+    if (!form || saving) return;
+    var note = form.querySelector("[data-card-note]");
+    if (form.querySelector("fieldset[disabled]") || (form.getAttribute("data-state") === "answered" && sig(form) === form.getAttribute("data-sig"))) { step(1); return; }
+    var key = form.getAttribute("data-key"), wasStage = data.open_stage, btn = body.querySelector("[data-card-next]");
+    saving = true;
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) {
+        var type = r.headers.get("Content-Type") || "";
+        if (!r.ok || type.indexOf("json") < 0) throw r;
+        return r.json();
+      })
+      .then(function (resp) {
+        saving = false;
+        data = resp.scene;
+        cardsOf = null;                       // its cards now carry the old answers
+        draw();
+        var errors = resp.messages.filter(function (m) { return m.kind === "error"; });
+        var q = null;
+        (byId[form.getAttribute("data-station")] || byId[current] || { questions: [] }).questions.forEach(function (o) { if (o.key === key) q = o; });
+        if (errors.length || (q && q.state === "needed")) {
+          if (btn) { btn.disabled = false; btn.textContent = "Next →"; }
+          note.innerHTML = errors.length ? errors.map(function (m) { return m.html != null ? m.html : esc(m.text); }).join(" ")
+            : "Pick or type an answer to go on, or Skip for now.";
+          return;
+        }
+        var said = resp.messages.filter(function (m) { return m.kind !== "error" && m.kind !== "success"; })
+          .map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + (m.html != null ? m.html : esc(m.text)) + "</div>"; }).join("");
+        var list = levelKeys(), i = indexOf(list, key), to = list[i + 1];
+        if (data.open_stage > wasStage || !to) endOfLevel(said);
+        else showCard(to.key, said);
+      })
+      .catch(function () {
+        saving = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Next →"; }
+        note.textContent = "Could not save. Check you are still signed in, then try again.";
+      });
+  }
+  // The end of a level: done, and on to the next; or what is still open on it.
+  function endOfLevel(note) {
+    var c = data.chapters[level], nx = data.chapters[level + 1], list = levelKeys();
+    var left = list.filter(function (k) { return k.state !== "answered"; });
+    cardsOf = null; cardKey = null;
+    var html = '<div class="spec-card spec-card-end is-in">';
+    if (c.done) {
+      html += '<p class="spec-story-eyebrow">Level ' + c.level + " complete</p><h3>" + esc(c.name) + " is answered.</h3>" +
+        (nx ? '<p class="spec-story-tale">' + esc(nx.story || nx.lead) + "</p>" +
+          '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">On to level ' + nx.level + ": " + esc(nx.name) + " →</button>"
+          : '<p>Every level is answered.</p><a class="btn btn-primary" href="' + esc(root.getAttribute("data-check-url")) + '">Next: the check →</a>');
+    } else {
+      html += '<p class="spec-story-eyebrow">Level ' + c.level + "</p><h3>" + left.length + " question" + (left.length === 1 ? "" : "s") + " on this level still " + (left.length === 1 ? "needs" : "need") + " an answer.</h3>" +
+        "<p class=\"small\">The next level opens once every question here is answered, a suggestion counting once you go past it with Next.</p>" +
+        '<button type="button" class="btn btn-primary" data-card-go="' + esc(left[0].key) + '">Go to the first one →</button>';
+    }
+    html += "</div>";
+    body.innerHTML = (note || "") + html + '<div class="spec-card-nav">' + (list.length ? '<button type="button" class="btn btn-ghost" data-card-go="' + esc(list[list.length - 1].key) + '">← Back</button>' : "") + "</div>";
+    panel.scrollTop = 0;
+    tell();
+  }
+  // The brief, one part at a time; the last part confirms it.
+  function stepBrief(g) {
+    var groups = body.querySelectorAll(".spec-decide-group");
+    if (!groups.length) return;
+    var form = body.querySelector(".spec-decide"), save = form && form.querySelector(".spec-scene-save");
+    var old = body.querySelector("[data-brief-nav]");
+    if (old) old.parentNode.removeChild(old);
+    if (body.querySelector(".spec-decide-confirm")) {
+      Array.prototype.forEach.call(groups, function (d) { d.hidden = true; });
+      if (save) save.style.display = "none";
+      return;
+    }
+    g = Math.max(0, Math.min(groups.length - 1, g));
+    Array.prototype.forEach.call(groups, function (d, i) { d.hidden = i !== g; d.open = true; });
+    var lastPart = g === groups.length - 1;
+    if (save) save.style.display = lastPart ? "" : "none";
+    var nav = document.createElement("div");
+    nav.className = "spec-card-nav";
+    nav.setAttribute("data-brief-nav", "");
+    nav.innerHTML = '<button type="button" class="btn btn-ghost" data-brief-go="' + (g - 1) + '"' + (g ? "" : " disabled") + ">← Back</button>" +
+      '<span class="small spec-card-count">Part <strong>' + (g + 1) + "</strong> of " + groups.length + "<br>" + esc(groups[g].querySelector("summary").textContent) + "</span>" +
+      (lastPart ? "<span></span>" : '<button type="button" class="btn btn-primary" data-brief-go="' + (g + 1) + '">Next →</button>');
+    var fields = form.querySelector(".spec-scene-fields");
+    fields.parentNode.insertBefore(nav, fields.nextSibling);
+  }
+
+  if (story) foot.addEventListener("click", function (e) {
+    var lv = e.target.closest("[data-go-level]");
+    if (lv) go(+lv.getAttribute("data-go-level"));
+  });
+  if (story) head.addEventListener("click", function (e) {
+    var to = e.target.closest("[data-go-stage]");
+    if (to) open(to.getAttribute("data-go-stage"));
+  });
 
   draw();
   setView(whole);
@@ -839,7 +1167,16 @@
   root.classList.add("is-live");
   // Opened at a station (#st-id, as a save without scripts comes back to).
   var at = (window.location.hash.match(/^#st-(\w+)$/) || [])[1];
-  if (at && byId[at]) open(at);
+  if (story) {
+    var asked_ = (window.location.hash.match(/^#level-(\d+)$/) || [])[1];
+    var start = asked_ ? +asked_ - 1 : Math.min(data.open_stage, data.chapters.length - 1);
+    if (at && byId[at]) start = byId[at].stage;
+    if (!data.chapters[start] || data.chapters[start].locked) start = Math.min(data.open_stage, data.chapters.length - 1);
+    level = start;
+    if (at && byId[at] && byId[at].stage === start) open(at); else go(start);
+    // The story fills the screen: the path at the top of it.
+    if (root.getBoundingClientRect().top > 80 && window.innerWidth > 900) try { root.scrollIntoView({ block: "start" }); } catch (e) { /* old browsers */ }
+  } else if (at && byId[at]) open(at);
 })();
 
 // The panel explaining a question, as on Details: what it means, a drawing,

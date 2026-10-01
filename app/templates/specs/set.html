@@ -15,6 +15,7 @@
     </p>
   </div>
   <div class="inline-form">
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}" title="The questions level by level along a path through the site, answered in the 3D">▶ The story</a>
     <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}" title="Issue a new revision and keep it on the register of issued revisions">Issue a revision…</a>
   </div>
 </div>
@@ -28,7 +29,7 @@
     {% if report %}{{ tool(url_for('specs.check_set', set_id=spec['id']), 'Check the text', 'Wrong or old codes, broken references, open blanks and wording: accept, amend or remove each.', (waiting['total'] ~ ' open') if waiting['total'] else '') }}{% endif %}
     {{ tool(url_for('specs.amendments', set_id=spec['id']), 'Changes from the master', "Every paragraph this project added, changed or dropped from the company's master text.") }}
     {% if sections %}{{ tool(url_for('specs.review_inputs', set_id=spec['id']), 'Inputs at a glance', 'Every answer on a picture of the works, to review before issuing.') }}{% endif %}
-    {{ tool(url_for('specs.review_inputs', set_id=spec['id']) ~ '#st-decide', 'Start from the brief', 'Go back to what the project builds, its elements and systems: the sections it calls for are listed to confirm, and only the levels with new questions reopen.') }}
+    {{ tool(url_for('specs.story', set_id=spec['id']) ~ '#level-1', 'Start from the brief', 'Go back to what the project builds, its elements and systems: the sections it calls for are listed to confirm, and only the levels with new questions reopen.') }}
     {% if packages['key'] %}{{ tool(url_for('specs.project_packages', set_id=spec['id']), 'Other packages of this project', 'Specifications with the same project code, and where this one says something different from what they issued.', (packages['open'] ~ ' to decide') if packages['open'] else ('' if not packages['peers'] else (packages['peers'] | length + 1) ~ ' packages'), 'spec-tool-red' if packages['open'] else '') }}{% endif %}
   </section>
   <section>
@@ -92,14 +93,14 @@
   <a class="spec-step {{ 'spec-step-done' if ticked.n else 'spec-step-now' }}" href="#step-elements" data-step-link="elements"><span class="spec-step-n">2</span>
     <span><strong>Elements</strong><span class="small">{{ ticked.n }} ticked{% if model %} · from the model{% endif %}</span></span></a>
   <a class="spec-step spec-step-done" href="#step-questions" data-step-link="questions"><span class="spec-step-n">3</span>
-    <span><strong>Questions</strong><span class="small">{{ answered }} answered</span></span></a>
+    <span><strong>The brief</strong><span class="small">{{ answered }} decided · level 1 of the story</span></span></a>
   <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections" data-step-link="sections"><span class="spec-step-n">4</span>
     <span><strong>Sections</strong><span class="small">{{ sections | length }} in{% if suggested_n %} · {{ suggested_n }} suggested{% endif %}{% if uncover['open'] %} · {{ uncover['open'] | length }} with no section{% endif %}</span></span></a>
   {% if sections %}
-  <a class="spec-step {{ 'spec-step-done' if not details_open else 'spec-step-now' }}" href="{{ url_for('specs.details', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
-    <span><strong>Details</strong><span class="small">{% if details_total %}{{ details_total - details_open }} of {{ details_total }} answered{% else %}nothing to ask{% endif %}</span></span></a>
+  <a class="spec-step {{ 'spec-step-done' if not details_open else 'spec-step-now' }}" href="{{ url_for('specs.story', set_id=spec['id']) }}"><span class="spec-step-n">5</span>
+    <span><strong>The story</strong><span class="small">{% if details_total %}the questions in 3D · {{ details_total - details_open }} of {{ details_total }} answered{% else %}nothing to ask{% endif %}</span></span></a>
   {% else %}
-  <span class="spec-step"><span class="spec-step-n">5</span><span><strong>Details</strong><span class="small">after sections are in</span></span></span>
+  <span class="spec-step"><span class="spec-step-n">5</span><span><strong>The story</strong><span class="small">after sections are in</span></span></span>
   {% endif %}
   {% if report %}
   <a class="spec-step {{ 'spec-step-done' if not waiting['total'] else 'spec-step-held' }}" href="{{ url_for('specs.check_set', set_id=spec['id']) }}"><span class="spec-step-n">6</span>
@@ -259,7 +260,7 @@
         </table>
       </div>
       {% endif %}
-      {% if model['concrete_class'] %}<p class="small" style="margin-top:6px">Concrete class taken for the project's words: <strong>{{ model['concrete_class'] }}</strong> (the most used grade that looks right). Change it under Questions.</p>{% endif %}
+      {% if model['concrete_class'] %}<p class="small" style="margin-top:6px">Concrete class taken for the project's words: <strong>{{ model['concrete_class'] }}</strong> (the most used grade that looks right). Change it under the brief.</p>{% endif %}
       {% for note in model['notes'] %}<p class="small muted">{{ note }}</p>{% endfor %}
     </div>
     {% endif %}
@@ -338,16 +339,20 @@
   </div>
   <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
     <a class="btn btn-ghost spec-step-back" href="#step-project">← Back: project</a>
-    <button type="submit" name="next" value="questions" class="btn btn-primary">Save and next: questions →</button>
+    <button type="submit" name="next" value="questions" class="btn btn-primary">Save and next: the brief →</button>
   </div>
 </div>
 
 <div class="card" style="margin-top:16px" id="step-questions" data-step="questions">
   <div class="card-head">
     <div>
-      <h2><span class="spec-n">3</span> Questions</h2>
+      <h2><span class="spec-n">3</span> The brief</h2>
       <p class="small muted" style="margin-top:2px">They switch the master's conditional paragraphs in and out of every section. An answer that needs a section of its own adds it, and says so.</p>
     </div>
+  </div>
+  <div class="card-body spec-story-call">
+    <p><strong>The brief is level 1 of the story.</strong> Decide it on the 3D path, where the site is drawn from your choices, and go on from there level by level. This list is the same brief to save from here.</p>
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}#level-1">▶ Decide it on the story path</a>
   </div>
   <div class="card-body spec-questions">
     {% for group, questions in groups %}
@@ -559,11 +564,12 @@
 </div>
 
 <div class="spec-step-foot spec-steps-end spec-step-more" data-step="sections">
-  <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: questions</a>
+  <a class="btn btn-ghost spec-step-back" href="#step-questions">← Back: the brief</a>
   {% if sections %}
   {% if blanks_n %}<a class="btn btn-ghost" href="{{ url_for('specs.blanks', set_id=spec['id']) }}" title="The master's [choices] and &lt;Insert ...&gt; places, each with a box to answer">Fill the blanks ({{ blanks_n }})</a>{% endif %}
   {% if details_total %}
-  <a class="btn btn-primary" href="{{ url_for('specs.details', set_id=spec['id']) }}">Next: details{% if details_open %} ({{ details_open }} to answer){% endif %} →</a>
+  <a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}" title="The same questions as plain lists">List view</a>
+  <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}">Next: the story{% if details_open %} ({{ details_open }} to answer){% endif %} →</a>
   {% else %}
   <a class="btn btn-primary" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Next: check{% if waiting and waiting['total'] %} ({{ waiting['total'] }} to settle){% endif %} →</a>
   {% endif %}

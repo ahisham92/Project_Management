@@ -53,6 +53,60 @@ STEEL_INSIDE = [
     ("tendons", re.compile(r"post.?tension|tendon|strand|duct|anchorage|stress|grout|sheath", re.I)),
     ("precast", re.compile(r"precast|pre.?cast|hollow.?core|tilt|double.?tee|prestress|plant.?cast", re.I)),
 ]
+# Each level told as the story of the works: what is happening on site when
+# its questions come up. {works} is what the project builds ("the building",
+# "the quay", "the bridge" or "the works"), {elements} its elements.
+NARRATIVE = {
+    "deciding": "Every project starts at the drawing board. Decide what {works} is, the elements it "
+                "has and the systems it uses: the site in the picture is drawn from these choices, "
+                "and every level after follows from them.",
+    "the-project": "The site office opens. Here the specification learns where {works} stands, who "
+                   "the client, the engineer and the contractor are, and what this package covers.",
+    "before-work-starts": "Nothing is built yet. The contractor brings the drawings, method statements, "
+                          "samples and programme, and they are agreed before the first work on site.",
+    "preparing-the-site": "The ground is made ready for {works}: what stays is held up, what goes is "
+                          "taken down, and every movement is watched while the work goes on.",
+    "the-moulds": "The formwork goes up for {elements}. Its shape, its finish and what is cast into it "
+                  "are settled here, before any steel or concrete arrives.",
+    "the-steel-inside": "The steel goes into the moulds: the bars and the cage{extras}. What the steel "
+                        "is, how it is fixed and how much cover it gets are settled before the concrete.",
+    "the-ingredients": "At the batch plant the cement silo, the sand and stone heaps, the water and the "
+                       "admixtures are stocked. Each ingredient is specified before anything is mixed.",
+    "the-mix": "The mixer turns. Each element's concrete gets its class, strength, exposure, "
+               "water/cement ratio, slump and air, and the truck takes it down the road to the pump.",
+    "the-pour": "The pump reaches over the formwork and the concrete goes in. How it is placed, "
+                "compacted, finished and cured decides the surface {works} will keep.",
+    "proving-it": "{specimens} go to the lab. Tests and inspections prove what was built, and this "
+                  "level says what happens when a result falls short.",
+    "the-steel-frame": "The steel frame rises on the concrete: the members and their connections, "
+                       "decking, stairs and railings, and how they are protected.",
+    "keeping-water-out": "Membranes and waterstops keep {works} dry: where water could get in, this "
+                         "level says what stops it.",
+    "bridges": "Out on the bridge: its bearings, joints and parapets, and what a bridge asks beyond "
+               "the rest.",
+    "looking-after-it": "{Works} is in service. Repairs and maintenance are planned so it keeps doing "
+                        "its job for its design life.",
+    "other-details": "A few questions the library does not place on the way. Answer them to finish "
+                     "the story.",
+}
+
+
+def narrative(slug: str, site: Mapping[str, Any]) -> str:
+    """A level's opening lines, told for this project's works."""
+    built = [w for w, on in (("the building", site.get("building")), ("the quay", site.get("marine")),
+                             ("the bridge", site.get("bridge"))) if on]
+    works = built[0] if len(built) == 1 else "the works"
+    elements = [e for e in site.get("elements") or [] if e and e != "none"]
+    extras = [w for w, on in ((" with its post-tensioning tendons", site.get("pt")),
+                              (" and the precast units from the yard", site.get("precast"))) if on]
+    text = NARRATIVE.get(slug) or ""
+    return text.format(
+        works=works, Works=works[:1].upper() + works[1:],
+        elements=specs_questions.joined(elements[:4]) if elements else "each element",
+        extras="".join(extras),
+        specimens="Cylinders" if site.get("specimens") == "cylinders" else "Cubes")
+
+
 # The level before the questions: what the project is, decided first.
 DECIDING = {"slug": "deciding", "number": 0, "name": "Deciding the project",
             "lead": "What the project builds, its elements, and the systems it uses: the site is "
@@ -203,6 +257,9 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
     # answered, a suggestion counting once the engineer accepts it. One that is
     # answered stays open to change, wherever it is: a change to the brief
     # reopens only the levels it puts new questions in.
+    site = site_of(chosen) if chosen is not None else site_of({})
+    for c in out_chapters:
+        c["story"] = narrative(c["slug"], site)
     open_stage = next((i for i, c in enumerate(out_chapters) if not c["done"]), len(out_chapters))
     for i, c in enumerate(out_chapters):
         c["stage"] = i
@@ -213,7 +270,7 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
             stations[sid]["level"] = i + 1
             stations[sid]["locked"] = c["locked"]
     return {"stations": shown_stations, "chapters": out_chapters, "open_stage": open_stage,
-            "site": site_of(chosen) if chosen is not None else site_of({}),
+            "site": site,
             "mix": {"columns": mix_cols, "rows": [{"element": e, "values": v} for e, v in mix_rows.items()]},
             "totals": totals, "count": sum(totals.values())}
 

@@ -47,7 +47,7 @@
     {% if left %}
     {% set n_open = left | map(attribute='open') | map('length') | sum %}
     <div class="spec-open-list">
-      <p class="small"><strong>{{ n_open }} place{{ 's' if n_open != 1 }} still to be specified</strong> in {{ left | length }} paragraph{{ 's' if left | length != 1 }}: a question not answered yet, or a choice or prompt the master left in brackets. Answer them on <a href="{{ url_for('specs.details', set_id=spec['id']) }}">Details</a> or <a href="{{ url_for('specs.check_set', set_id=spec['id']) }}">fill the blanks</a>; anything left goes out highlighted in yellow.</p>
+      <p class="small"><strong>{{ n_open }} place{{ 's' if n_open != 1 }} still to be specified</strong> in {{ left | length }} paragraph{{ 's' if left | length != 1 }}: a question not answered yet, or a choice or prompt the master left in brackets. Answer them on <a href="{{ url_for('specs.story', set_id=spec['id']) }}">the story</a> or <a href="{{ url_for('specs.check_set', set_id=spec['id']) }}">fill the blanks</a>; anything left goes out highlighted in yellow.</p>
       <details class="small"><summary>Where they are</summary>
         <ul>{% for p in left[:60] %}<li><a href="{{ url_for('specs.set_section', set_id=spec['id'], row_id=p['row_id']) }}#p-{{ p['node_id'] }}">{{ p['number'] }}{% if p['path'] %} {{ p['path'] }}{% endif %}</a>: <mark>{{ p['open'] | join('</mark> <mark>' | safe) }}</mark></li>{% endfor %}
         {% if left | length > 60 %}<li class="muted">and {{ left | length - 60 }} more paragraphs</li>{% endif %}</ul>

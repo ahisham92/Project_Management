@@ -10,7 +10,7 @@
 <div class="inline-form" style="justify-content:space-between;margin:12px 0">
   <form method="get" class="inline-form">
     {% if family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
-    <label class="field w-lg"><span class="field-label">Find</span>
+    <label class="field" style="min-width:260px"><span class="field-label">Find</span>
       <input type="search" name="q" value="{{ search }}" placeholder="Project, location, client, revision"></label>
     <label class="check"><input type="checkbox" name="all" value="1"{% if not latest %} checked{% endif %} onchange="this.form.submit()"> Every revision, not only each project's latest</label>
     <button type="submit" class="btn btn-ghost btn-sm">Show</button>

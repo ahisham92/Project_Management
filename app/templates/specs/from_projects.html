@@ -15,7 +15,7 @@
 
 <form method="get" class="inline-form" style="margin:12px 0">
   {% if family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
-  <label class="field w-lg"><span class="field-label">From</span>
+  <label class="field" style="min-width:240px"><span class="field-label">From</span>
     <select name="source" onchange="this.form.submit()">
       <option value="issued"{% if not live %} selected{% endif %}>Each project as last issued</option>
       <option value="live"{% if live %} selected{% endif %}>Each project as it stands now, issued or not</option>

@@ -187,14 +187,14 @@ def answers_table(family: str = "") -> dict:
     project, one row per question, the differences marked."""
     labels = specs_questions.definitions()
     latest = [record(r["id"]) for r in records(family=family, latest=True)]
-    latest = [r for r in latest if r and (r["snapshot"].get("data") or {}).get("answers")]
+    latest = [r for r in latest if r and r["snapshot"].get("data")]
     keys: set[str] = set()
     for r in latest:
-        keys.update(k for k in r["snapshot"]["data"]["answers"] if k != "proj_location")
+        keys.update(k for k in r["snapshot"]["data"].get("answers") or {} if k != "proj_location")
     rows = []
     for key in sorted(keys, key=lambda k: (((labels.get(k.partition("@")[0]) or {}).get("grp") or "~"),
                                            _label(k, labels).lower())):
-        values = [_shown(key, r["snapshot"]["data"]["answers"].get(key), labels) for r in latest]
+        values = [_shown(key, (r["snapshot"]["data"].get("answers") or {}).get(key), labels) for r in latest]
         rows.append({"key": key, "label": _label(key, labels),
                      "group": (labels.get(key.partition("@")[0]) or {}).get("grp") or "",
                      "values": values, "differ": len({v for v in values if v}) > 1})

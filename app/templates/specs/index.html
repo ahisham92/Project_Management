@@ -16,6 +16,9 @@
   </div>
   <div class="inline-form">
     <a class="btn btn-ghost" href="{{ url_for('specs.library') }}">Master library ({{ library | length }})</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.issued_list') }}" title="Every issued specification with its project's data, to compare">Issued specifications</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards_register') }}">Standards register</a>
+    {% if is_admin %}<a class="btn btn-ghost" href="{{ url_for('specs.from_projects') }}" title="What projects changed in the MTD, to write into it">Amendments for the MTD</a>{% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
   </div>
 </div>

@@ -951,7 +951,7 @@ def reader(sections: list[dict], chosen: Mapping[str, str],
 
 
 ADVICE = ("repeated",)
-GROUPS = ("model", "references", "outdated", "standards", "discrepancies", "repeated", "setup")
+GROUPS = ("model", "answers", "references", "outdated", "standards", "discrepancies", "repeated", "setup")
 
 
 def check_set(set_id: int) -> dict:
@@ -967,6 +967,11 @@ def check_set(set_id: int) -> dict:
         for item in report[group]:
             item["key"] = _item_key(group, item)
             item["settled"] = settled.get(item["key"])
+            if group == "answers" and item["settled"] and item["settled"]["how"] != "kept":
+                # The answer was used or changed and the clause says otherwise again:
+                # it is open again, and what was done before no longer holds.
+                settle(set_id, item["key"], "")
+                item["settled"] = None
             seen.add(item["key"])
         report["open"][group] = sum(1 for i in report[group] if not i["settled"])
     # What was amended or removed and is no longer found: kept, to show what was done.
@@ -981,6 +986,16 @@ def check_set(set_id: int) -> dict:
             "row_id": detail.get("row_id"), "message": detail.get("message") or row["message"],
             "severity": "info", "text": "", "words": "", "fix": None, "key": key,
             "settled": row, "done": True})
+    # A clause the answer was put back in reads as filled, not as its field.
+    if report["done"]["answers"]:
+        values = values_for(spec_set(set_id))
+        for item in report["done"]["answers"]:
+            item["answer_used"] = item["settled"]["how"] == "amended" and \
+                not item["settled"]["detail"].get("answer_changed")
+            for p in item["settled"]["detail"].get("places") or []:
+                for k in ("before", "after"):
+                    if p.get(k):
+                        p[k] = specs.fill(p[k], values)
     return report
 
 
@@ -1275,6 +1290,94 @@ def remove_items(set_id: int, keys: Iterable[str]) -> list[dict]:
     return done
 
 
+# --- the engineer's own words against the answers -------------------------------------
+
+def conflicts(set_id: int, row: Mapping[str, Any] | None = None,
+              chosen: Mapping[str, str] | None = None) -> list[dict]:
+    """Paragraphs the engineer amended or wrote that give a value the answers
+    give otherwise (40 mm typed where cover is answered as 50 mm)."""
+    from . import specs_conflicts, specs_questions
+
+    row = row or spec_set(set_id)
+    chosen = chosen if chosen is not None else chosen_for(row)
+    rows = set_sections(set_id)
+    bases = {r["id"]: base_of(r) for r in rows}
+    labels = {k: d.get("label") or k for k, d in specs_questions.definitions().items()}
+    return specs_conflicts.find(_whole(rows), bases, chosen, specs_questions.values(row), labels)
+
+
+def _conflict_item(set_id: int, key: str) -> tuple[dict, dict, dict]:
+    report = check_set(set_id)
+    group, item = _find(report, key)
+    if item is None or group != "answers" or item.get("done"):
+        raise specs.SpecError("That item is no longer on the check: the words or the answer have "
+                              "changed since. Here is the check as it stands.")
+    s = next((x for x in set_whole(set_id) if x["id"] == item["row_id"]), None)
+    n = _node(s, item["node_id"]) if s else None
+    if n is None:
+        raise specs.SpecError("That paragraph is not in the section any more.")
+    return item, s, n
+
+
+def conflict_use_answer(set_id: int, key: str, pick: int = 0) -> dict:
+    """The answer put back in the clause in place of the words typed: the
+    question's own field, so the clause follows the answer from now on."""
+    from . import specs_conflicts
+
+    item, s, n = _conflict_item(set_id, key)
+    c = item["conflict"]
+    chosen = None
+    if c["kind"] == "topic":
+        if not 0 <= pick < len(c["answers"]):
+            raise specs.SpecError("Say which answer to use.")
+        chosen = c["answers"][pick]
+    text = specs_conflicts.with_answer(n["text"], c, chosen)
+    return amend_item(set_id, key, [(s["id"], n["id"], text)])
+
+
+def conflict_change_answer(set_id: int, key: str, pick: int = 0) -> dict:
+    """The answer changed to what the clause says, everywhere it is used. Where
+    the clause then reads the same filled from its field, the field goes back
+    in, so the clause follows the answer from now on."""
+    from . import specs_questions
+
+    item, s, n = _conflict_item(set_id, key)
+    c = item["conflict"]
+    if c["kind"] == "topic":
+        if not 0 <= pick < len(c["answers"]):
+            raise specs.SpecError("Say which answer to change.")
+        a = c["answers"][pick]
+        answer_key, old, new, label = (f"{a['key']}@{a['element']}" if a["element"] else a["key"],
+                                       a["answer"], a["new_answer"], a["label"])
+        element, said = a["element"], (a["answer_shown"], a["new_answer_shown"])
+    else:
+        answer_key = f"{c['key']}@{c['element']}" if c["element"] else c["key"]
+        old, new, label, element = c["answer"], c["new_answer"], c["label"], c["element"]
+        said = (c["answer_shown"], c["new_answer_shown"])
+    if not new.strip():
+        raise specs.SpecError("There is no value in the clause to make the answer.")
+    specs_questions.save_answers(set_id, {answer_key: new}, {})
+    before = n["text"]
+    if c["kind"] == "field" and c.get("restores"):
+        n["text"] = n["text"][:c["start"]] + c["field"] + n["text"][c["end"]:]
+        save_set_section(set_id, s["id"], s["nodes"])
+    detail = {"group": "answers", "message": item["message"],
+              **{k: item.get(k) or "" for k in WHERE_KEYS + ("node_id",)}, "row_id": item.get("row_id"),
+              "places": [{**_place(item, s, n), "before": before, "after": n["text"]}],
+              "answer_changed": {"label": label, "element": element, "from": said[0], "to": said[1]}}
+    settle(set_id, key, "amended", item["message"], detail)
+    return {**detail, "key": key}
+
+
+def conflict_keep(set_id: int, key: str, reason: str) -> None:
+    """The clause kept as written, with the engineer's reason for it differing."""
+    item, _s, _n = _conflict_item(set_id, key)
+    reason = re.sub(r"\s+", " ", reason or "").strip()
+    if not reason:
+        raise specs.SpecError("Say why the clause keeps its own value: the reason is kept with it.")
+    settle(set_id, key, "kept", item["message"], {"group": "answers", "reason": reason[:500]})
+
+
 def _check_set(set_id: int) -> dict:
     row = spec_set(set_id)
     chosen = chosen_for(row)
@@ -1297,6 +1400,7 @@ def _check_set(set_id: int) -> dict:
             report["setup"].append(_fit(s, "it is in this specification, but it is for "
                                            + s["applies"] + ", which the choices rule out"))
     report["model"] = model_items(model_for(row))
+    report["answers"] = conflicts(set_id, row, chosen)
     settled = covered_of(row)
     labels = {o["label"]: o["key"] for o in options()}
     for label, value, elsewhere in uncovered(chosen, row["family"]):

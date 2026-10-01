@@ -247,7 +247,8 @@ def test_the_check_is_laid_out_one_group_at_a_time(app, signed_in):
                      r'data-first="([^"]*)">', page)
     assert flow, "the groups' wrapper"
     groups = flow.group(1).split()
-    assert groups[0] == "references" and groups[-1] == "language"
+    # Clauses against the answers come first, then the references.
+    assert groups[:2] == ["answers", "references"] and groups[-1] == "language"
     assert "model" not in groups                              # no model read
     assert flow.group(2) == "references"                      # the first with anything open
     # The script comes straight after the wrapper opens, then the bar of groups.

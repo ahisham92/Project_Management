@@ -27,7 +27,7 @@
   <div class="inline-form spec-settle">
     {% if item['settled'] %}
       {% set how = item['settled']['how'] %}
-      {{ badge('good', {'kept': 'Kept', 'amended': 'Amended', 'removed': 'Removed'}[how]) }}
+      {{ badge('good', 'Answer used' if item.get('answer_used') else {'kept': 'Kept', 'amended': 'Amended', 'removed': 'Removed'}[how]) }}
       <span class="small muted">{{ item['settled']['settled_by'] }} · {{ item['settled']['settled_at'][:16] }}</span>
       {% if how == 'amended' and act['places'] %}
         <a class="btn btn-ghost btn-sm spec-amend-open" href="{{ amend_url }}" data-key="{{ item['key'] }}" aria-controls="amend-{{ item['key'] }}">Amend again</a>
@@ -132,6 +132,69 @@
   {% endif %}
 {% endmacro %}
 
+{# A clause against an answer: both values side by side, and the three ways to
+   settle it. Nothing changes until the engineer picks one. #}
+{% macro conflict_box(item) %}
+  {% set c = item['conflict'] %}
+  {% set s = item.get('settled') %}
+  <div class="spec-conflict">
+    <div class="spec-conflict-side">
+      <div class="small muted">Your clause says</div>
+      <div class="spec-conflict-value">{{ c['typed_shown'] }}</div>
+    </div>
+    <div class="spec-conflict-vs" aria-hidden="true">≠</div>
+    <div class="spec-conflict-side">
+      {% if c['kind'] == 'field' %}
+        <div class="small muted">The answer to “{{ c['label'] }}”{% if c['element'] %} for {{ c['element'] | replace('_', ' ') | capitalize }}{% elif c['place_element'] %} (for every element){% endif %}</div>
+        <div class="spec-conflict-value">{{ c['answer_shown'] }}</div>
+      {% else %}
+        <div class="small muted">{{ 'The answers' if c['answers'] | length > 1 else 'The answer' }} for {{ c['property'] | lower }}</div>
+        {% for a in c['answers'] %}<div><span class="spec-conflict-value">{{ a['answer_shown'] }}</span> <span class="small muted">{{ a['label'] }}{% if a['element'] %}, for {{ a['element'] | replace('_', ' ') | capitalize }}{% endif %}</span></div>{% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% if spec and not s %}
+  <div class="spec-conflict-actions">
+    {% for a in (c['answers'][:4] if c['kind'] == 'topic' else [{'answer_shown': c['answer_shown'], 'new_answer_shown': c['new_answer_shown'], 'label': c['label']}]) %}
+    <div class="inline-form">
+      <form method="post" action="{{ url_for('specs.settle_conflict', set_id=spec['id']) }}" class="inline-form">
+        <input type="hidden" name="key" value="{{ item['key'] }}"><input type="hidden" name="pick" value="{{ loop.index0 }}">{{ back_fields() }}
+        <button type="submit" name="how" value="use" class="btn btn-primary btn-sm spec-conflict-use"
+                title="The clause takes the answer{{ ' and follows it from now on' if c['kind'] == 'field' }}">Use the answer, {{ a['answer_shown'] }}{% if c['kind'] == 'topic' and c['answers'] | length > 1 %} ({{ a['label'] }}){% endif %}</button>
+      </form>
+      <form method="post" action="{{ url_for('specs.settle_conflict', set_id=spec['id']) }}" class="inline-form"
+            data-confirm="Change the answer to “{{ a['label'] }}” from {{ a['answer_shown'] }} to {{ a['new_answer_shown'] }}? Every clause that uses this answer will say {{ a['new_answer_shown'] }}.">
+        <input type="hidden" name="key" value="{{ item['key'] }}"><input type="hidden" name="pick" value="{{ loop.index0 }}">{{ back_fields() }}
+        <button type="submit" name="how" value="change" class="btn btn-ghost btn-sm spec-conflict-change"
+                title="The answer changes to what your clause says, in every clause that uses it">Change the answer to {{ a['new_answer_shown'] }}</button>
+      </form>
+    </div>
+    {% endfor %}
+    <form method="post" action="{{ url_for('specs.settle_conflict', set_id=spec['id']) }}" class="inline-form spec-conflict-keep">
+      <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
+      <label class="small muted" for="reason-{{ item['key'] }}">Or keep {{ c['typed_shown'] }}, because</label>
+      <input type="text" name="reason" id="reason-{{ item['key'] }}" class="spec-conflict-reason" required maxlength="500"
+             placeholder="Why this clause differs from the answer, e.g. a client requirement">
+      <button type="submit" name="how" value="keep" class="btn btn-ghost btn-sm spec-keep">Keep with this reason</button>
+    </form>
+  </div>
+  {% elif spec and s %}
+  <div class="inline-form spec-settle">
+    {% if s['detail'].get('answer_changed') %}{{ badge('good', 'Answer changed') }}
+    {% elif s['how'] == 'amended' %}{{ badge('good', 'Answer used') }}
+    {% else %}{{ badge('good', 'Kept') }}{% endif %}
+    <span class="small muted">{{ s['settled_by'] }} · {{ s['settled_at'][:16] }}</span>
+    {% if s['detail'].get('reason') %}<span class="small">Reason: {{ s['detail']['reason'] }}</span>{% endif %}
+    {% if not item.get('done') %}
+    <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form">
+      <input type="hidden" name="key" value="{{ item['key'] }}">{{ back_fields() }}
+      <button type="submit" name="state" value="" class="btn btn-ghost btn-sm">Open again</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
 {% macro check_item(item) %}
     <div class="spec-check-item spec-sev-{{ item['severity'] }}{% if item.get('settled') %} spec-is-settled{% endif %}{% if item.get('key') and item['key'] in [amending, shown] %} spec-just{% endif %}" id="item-{{ item.get('key', '') }}">
       {% if item['section'] %}<div class="small">{{ where(item) }}</div>{% endif %}
@@ -142,12 +205,22 @@
           {% for p in item['places'] %}<li>{{ where(p) }}{% if p.get('value') %} <strong>{{ p['value'] }}</strong>{% endif %} <div class="spec-check-text">{{ p['text'] | spec_mark(p.get('words', '')) }}</div></li>{% endfor %}
         </ul>
       {% endif %}
+      {% if item.get('conflict') %}
+        {{ conflict_box(item) }}
+        {{ done_note(item) }}
+      {% elif item.get('done') and item['settled']['detail'].get('answer_changed') %}
+        {% set a = item['settled']['detail']['answer_changed'] %}
+        <div class="spec-done"><div class="small spec-done-label">Answer changed</div>
+          <div class="spec-done-text">“{{ a['label'] }}”{% if a['element'] %} for {{ a['element'] | replace('_', ' ') | capitalize }}{% endif %}: {{ a['from'] }} → <strong>{{ a['to'] }}</strong>, in every clause that uses it.</div></div>
+        <div class="inline-form spec-settle">{{ badge('good', 'Answer changed') }} <span class="small muted">{{ item['settled']['settled_by'] }} · {{ item['settled']['settled_at'][:16] }}</span></div>
+      {% else %}
       {{ done_note(item) }}
       <div class="inline-form spec-actions">
         {% if not item.get('settled') %}{{ fix_form(item.get('fix')) }}{% endif %}
         {{ settle_form(item) }}
       </div>
       {{ amend_box(item) }}
+      {% endif %}
     </div>
 {% endmacro %}
 
@@ -233,9 +306,9 @@
    without JavaScript every group shows, one under another, and the bar is a
    list of links down the page. #}
 {% set groups = [] %}
-{% for key, title, about in checks if key != 'model' or report.get(key) %}
+{% for key, title, about in checks if (key != 'model' or report.get(key)) and key in report %}
   {% set _ = groups.append({'key': key, 'title': title, 'open': report['open'][key] if report.get('open') else report[key] | length,
-                            'holds': key in ('model', 'references', 'outdated', 'discrepancies')}) %}
+                            'holds': key in ('model', 'answers', 'references', 'outdated', 'discrepancies')}) %}
 {% endfor %}
 {% if language is defined %}
   {% set _ = groups.append({'key': 'language', 'title': 'Language', 'open': language.values() | map('length') | sum, 'holds': false}) %}
@@ -279,16 +352,16 @@
   </div>
 {% endmacro %}
 
-{% for key, title, about in checks if key != 'model' or report.get(key) %}
+{% for key, title, about in checks if (key != 'model' or report.get(key)) and key in report %}
 <div class="spec-group" data-group="{{ key }}">
 <div class="card" style="margin-top:12px" id="group-{{ key }}">
   <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
     {% set open_n = report['open'][key] if report.get('open') else report[key] | length %}
-    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] or (report.get('done') or {}).get(key) %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
+    <div><h2>{{ title }} {% if open_n %}{{ badge('critical' if key == 'model' else 'warning' if key in ('answers', 'references', 'outdated', 'discrepancies') else 'neutral', open_n ~ ((' open' if key != 'repeated' else ' to look at') if spec else '')) }}{% elif report[key] or (report.get('done') or {}).get(key) %}{{ badge('good', 'All settled') }}{% else %}{{ badge('good', 'None') }}{% endif %}</h2>
       <p class="small muted" style="margin-top:2px">{{ about }}</p></div>
     {% set open_items = report[key] | rejectattr('settled') | list %}
     {% set gone_missing = open_items | selectattr('act', 'defined') | selectattr('act.can_remove') | selectattr('act.missing') | list if spec else [] %}
-    {% if spec and open_items | length > 1 %}
+    {% if spec and open_items | length > 1 and key != 'answers' %}
     <div class="inline-form spec-settle">
     <form method="post" action="{{ url_for('specs.settle', set_id=spec['id']) }}" class="inline-form"
           onsubmit="return confirm('Keep all ' + {{ open_items | length }} + ' open items under {{ title }} as they stand? Each can be opened again.')">

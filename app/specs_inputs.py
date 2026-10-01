@@ -396,6 +396,9 @@ def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[
     that are only ``advice`` are left off, and a language change is counted
     once, at the first place it is in, as the check counts them."""
     known = section_stations(questions)
+    # A clause against an answer stands where the question is asked.
+    asked_at = {q["key"]: station_of(q, c["slug"])
+                for c in specs_questions.story(questions) for q in c["questions"]}
     out: dict[str, list[dict]] = {}
     titles = {k: t for k, t, _a in checks}
     for key, _title, _about in checks:
@@ -404,7 +407,9 @@ def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[
         for item in report.get(key) or []:
             if item.get("settled") or item.get("done"):
                 continue
-            sid = station_of_section(item.get("section") or "", known)
+            c = item.get("conflict") or {}
+            question = c.get("key") or next((a["key"] for a in c.get("answers") or []), "")
+            sid = asked_at.get(question) or station_of_section(item.get("section") or "", known)
             out.setdefault(sid, []).append({
                 "group": titles[key], "kind": key, "severity": item.get("severity") or "",
                 "text": item.get("message") or "", "section": item.get("section") or "",

@@ -161,6 +161,7 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
     elements = [e.lower() for e in _picked(chosen, "elements")]
     return {
         "building": any("building" in b for b in builds) or not builds,
+        "builds": bool(builds),
         "marine": any("marine" in b for b in builds) or (chosen.get("exposure") or "").lower() == "marine",
         "bridge": any("bridge" in b for b in builds),
         "elements": elements,
@@ -174,6 +175,53 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
         "underwater": _yes(chosen, "underwater"),
         "repair": _yes(chosen, "repair"),
     }
+
+
+# The brief asks only what applies: a question here is asked once the answer
+# it depends on says so (marine furniture for marine structures, the steel's
+# details once there is a steel frame, and so on). key: (on, how, value), how
+# being "has" (that answer ticked), "is" (that answer picked) or "some" (any
+# answer but None or No).
+BRIEF_WHEN: dict[str, tuple[str, str, str]] = {}
+for _k in ("fenders", "bollards", "ladders", "floating_piers"):
+    BRIEF_WHEN[_k] = ("structures", "has", "Marine structures")
+for _k in ("bridge_items", "bridge_segmental", "bridge_load_cells", "bridge_contractor_design",
+           "bridge_bespoke_parapet", "bridge_deck_surfacing"):
+    BRIEF_WHEN[_k] = ("structures", "has", "Bridges")
+for _k in ("steel_systems", "steel_protection", "fire", "aess", "steel_design"):
+    BRIEF_WHEN[_k] = ("steel_framing", "is", "Yes")
+BRIEF_WHEN["deck_design"] = ("steel_systems", "has", "Steel deck")
+BRIEF_WHEN["cfs_delegated"] = ("steel_systems", "has", "Cold-formed framing")
+for _k in ("pt_delegated_design", "pt_vapor_inhibitor", "pt_transfer_girders"):
+    BRIEF_WHEN[_k] = ("post_tensioning", "some", "")
+BRIEF_WHEN["pt_encapsulation"] = ("post_tensioning", "has", "Unbonded")
+for _k in ("precast_delegated_design", "precast_hollowcore", "precast_double_tee", "precast_thin_brick",
+           "precast_stone_facing", "precast_insulated_panels", "precast_stadia"):
+    BRIEF_WHEN[_k] = ("precast", "some", "")
+for _k in ("demo_explosives", "demo_salvage", "demo_hazardous", "demo_prestressed"):
+    BRIEF_WHEN[_k] = ("demolition", "is", "Yes")
+BRIEF_WHEN["monitor_digital_twin"] = ("monitoring", "is", "Yes")
+for _k in ("wp_installer_warranty", "wp_composite_system", "wp_plaza_pavers"):
+    BRIEF_WHEN[_k] = ("waterproofing", "some", "")
+for _k in ("stair_railings", "stair_delegated"):
+    BRIEF_WHEN[_k] = ("stairs", "some", "")
+
+
+def brief_applies(key: str, chosen: Mapping[str, str] | None, _seen: frozenset = frozenset()) -> bool:
+    """Whether the brief asks ``key`` for these choices: the answer it hangs
+    on says so, and that one is itself asked."""
+    when = BRIEF_WHEN.get(key)
+    if not when or key in _seen:
+        return True
+    on, how, value = when
+    if not brief_applies(on, chosen, _seen | {key}):
+        return False
+    picked = _picked(chosen or {}, on)
+    if how == "has":
+        return value in picked
+    if how == "is":
+        return ((chosen or {}).get(on) or "").strip() == value
+    return any(p.lower() not in ("none", "no") for p in picked)
 
 
 def decisions(chosen: Mapping[str, str] | None, options: list[dict]) -> list[dict]:

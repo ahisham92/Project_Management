@@ -305,3 +305,36 @@ def test_the_story_asks_one_question_at_a_time(app, signed_in):
     # A key not at the station is not found.
     assert signed_in.post(f"/specs/sets/{set_id}/inputs/{station}", data={"only": "proj_site"},
                           headers=FETCH).status_code == 404
+
+
+def test_the_brief_asks_only_what_applies(app, signed_in):
+    from app import specs_inputs
+
+    # Marine furniture only for marine structures, the steel's details only
+    # with a steel frame, and a detail of a detail only when both apply.
+    assert not specs_inputs.brief_applies("fenders", {"structures": "Buildings"})
+    assert specs_inputs.brief_applies("fenders", {"structures": "Buildings|Marine structures"})
+    assert not specs_inputs.brief_applies("steel_protection", {"steel_framing": "No"})
+    assert specs_inputs.brief_applies("steel_protection", {"steel_framing": "Yes"})
+    assert not specs_inputs.brief_applies("deck_design", {"steel_framing": "No", "steel_systems": "Steel deck"})
+    assert specs_inputs.brief_applies("pt_encapsulation", {"post_tensioning": "Unbonded"})
+    assert not specs_inputs.brief_applies("pt_delegated_design", {"post_tensioning": "None"})
+    assert specs_inputs.brief_applies("standards", {})
+    set_id = _project(app, signed_in)
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    fenders = re.search(r'<div class="spec-decide-q" data-opt="fenders"[^>]*>\s*<input[^>]*>', page).group(0)
+    assert "data-when=" in fenders and " hidden" in fenders and "disabled" in fenders
+    # A part saved on the way is kept without deciding the brief or adding a section.
+    from app import specs_store
+
+    with app.app_context():
+        sections = len(specs_store.set_sections(set_id))
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/decide", headers=FETCH, data={
+        "partial": "1", "shown_opt": ["structures"], "opt_structures": ["Marine structures"]}).get_json()
+    assert answer["scene"]["chapters"][0]["done"] is False
+    with app.app_context():
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["structures"] == "Marine structures"
+        assert len(specs_store.set_sections(set_id)) == sections
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    fenders = re.search(r'<div class="spec-decide-q" data-opt="fenders"[^>]*>', page).group(0)
+    assert " hidden" not in fenders

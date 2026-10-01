@@ -1,5 +1,7 @@
 {# The first level of the inputs at a glance: the project's decisions, made
-   before any question, and the site drawn from them. #}
+   before any question, and the site drawn from them. A decision is asked only
+   when the one it hangs on says it applies (data-when, specs_inputs.BRIEF_WHEN). #}
+{% from "specs/_icons.html" import icon %}
 <p class="small muted spec-station-level">Level {{ level }}: Deciding the project</p>
 <h2>{{ station['name'] }}</h2>
 <p class="small muted">{{ station['what'] }}</p>
@@ -24,15 +26,19 @@
   {% endif %}
   <fieldset class="spec-scene-fields"{% if not may_edit %} disabled{% endif %}>
   {% for name, opts in groups %}
-  <details class="spec-decide-group" open>
-    <summary>{{ name }}</summary>
+  {% set asked_here = opts | selectattr('key', 'in', asked_keys) | list %}
+  <details class="spec-decide-group" open data-group{% if not asked_here %} hidden{% endif %}>
+    <summary>{% if group_icons.get(name) %}{{ icon(group_icons[name], 22) }} {% endif %}{{ name }}</summary>
     {% for o in opts %}
-    <div class="spec-decide-q">
-      <input type="hidden" name="shown_opt" value="{{ o['key'] }}">
-      <span class="spec-decide-label">{{ o['label'] or o['key'] }}</span>
-      <span class="spec-decide-choices">
+    {% set w = when.get(o['key']) %}
+    {% set tiles = o['choice_list'] | map('spec_icon_for', o['key'], icons) | select | list %}
+    <div class="spec-decide-q" data-opt="{{ o['key'] }}"{% if w %} data-when='{{ w | tojson }}'{% endif %}{% if not applies[o['key']] %} hidden{% endif %}>
+      <input type="hidden" name="shown_opt" value="{{ o['key'] }}"{% if not applies[o['key']] %} disabled{% endif %}>
+      <span class="spec-decide-label">{% if key_icons.get(o['key']) and not tiles %}<span class="spec-decide-pic">{{ icon(key_icons[o['key']], 34) }}</span>{% endif %}{{ o['label'] or o['key'] }}</span>
+      <span class="spec-decide-choices{{ ' spec-decide-tiles' if tiles }}">
       {% for c in o['choice_list'] %}
-        <label class="spec-decide-choice"><input type="{{ 'checkbox' if o['kind'] == 'many' else 'radio' }}" name="opt_{{ o['key'] }}" value="{{ c }}"{% if c in picked.get(o['key'], ()) %} checked{% endif %}> {{ c }}</label>
+        {% set pic = icons.get((o['key'], c)) %}
+        <label class="spec-decide-choice"><input type="{{ 'checkbox' if o['kind'] == 'many' else 'radio' }}" name="opt_{{ o['key'] }}" value="{{ c }}"{% if c in picked.get(o['key'], ()) %} checked{% endif %}>{% if pic %} {{ icon(pic, 36) }}{% endif %} {{ c }}</label>
       {% endfor %}
       </span>
     </div>

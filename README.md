@@ -165,7 +165,15 @@ meet, so the Specs Writer reads across them:
   moved past with *Next*, or changed first. *Back* goes to the card before, *Skip for now* leaves
   one open. After the level's last question, *On to level N* moves the camera on to the next
   level; *Next level* stays locked until the level is done. The brief (level 1) is asked part by
-  part the same way, and confirmed at the end.
+  part the same way, and confirmed at the end. It asks only what applies (`BRIEF_WHEN` in
+  `app/specs_inputs.py`): marine furniture once the project builds marine structures, the
+  steel's protection, fire and design once it has a steel frame, the bridge items for a bridge,
+  the precast and post-tensioning details when it has them, and so on. Until the brief is first
+  confirmed the site is a **bare plot**: the drawing board alone, and each choice adds its piece
+  at once (the building, the quay on the sea, the bridge, the steel frame, the cranes), with no
+  save and no reload; each part is kept in the background as it is chosen (`partial=1`, which
+  neither decides the brief nor puts in a section). Confirming it puts in the sections it calls
+  for, as before, and the whole site appears. Every brief choice that has a drawing shows it.
   *Details* is kept as the **list view** of the same questions, linked from the story.
 - **Details: the questions the sections ask.** Once the sections are chosen, *Details* asks
   only what those sections need, grouped the way an engineer thinks (project information,

@@ -253,3 +253,21 @@
 .spec-card-end h3 { margin: 2px 0 10px; font-size: 1.2rem; }
 .spec-decide .spec-card-nav { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .spec-card.is-in { animation: none; } }
+
+/* The bare plot before the brief is confirmed, and the works added to it. */
+.spec-scene-ground.is-bare { fill: #e6d3a3; }
+.spec-scene-dune { fill: rgba(170, 135, 70, .18); }
+.spec-scene-works.is-new { animation: spec-rise .7s cubic-bezier(.2, 1.4, .4, 1) both; transform-box: fill-box; transform-origin: bottom; }
+@keyframes spec-rise { from { transform: scaleY(.05); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .spec-scene-works.is-new { animation: none; } }
+:root[data-theme="dark"] .spec-scene-ground.is-bare { fill: #5a4d33; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .spec-scene-ground.is-bare { fill: #5a4d33; } }
+.spec-decide-label { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); }
+.spec-decide-pic { color: #2a78d6; flex: 0 0 auto; }
+.spec-decide-tiles { gap: 8px; }
+.spec-decide-tiles .spec-decide-choice { flex-direction: column; border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; min-width: 84px; text-align: center; font-size: .8rem; cursor: pointer; }
+.spec-decide-tiles .spec-decide-choice:has(input:checked) { border-color: #2a78d6; box-shadow: 0 0 0 2px rgba(42, 120, 214, .25); }
+.spec-decide-tiles .spec-icon { color: #2a78d6; }
+.spec-story-body .spec-decide-q { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: .92rem; }
+.spec-brief-kept { color: var(--good-ink, var(--in-answered)); font-size: .72rem; }
+.spec-decide-choices:not(.spec-decide-tiles) .spec-decide-choice { white-space: nowrap; }

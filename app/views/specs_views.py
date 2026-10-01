@@ -940,11 +940,19 @@ def details(set_id: int):
 def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
     """What the brief's panel shows: the project's choices (or the ones just
     sent, while their sections wait to be confirmed)."""
+    from .. import specs_inputs
+
     chosen = confirm["chosen"] if confirm else store.chosen_for(row)
     st = next(s for s in data["stations"] if s["id"] == "decide")
+    options = store.options()
     return {"spec": row, "station": st, "level": st["level"], "may_edit": review.may(row, g.user, "edit"),
-            "groups": _grouped(store.options()), "chosen": chosen, "confirm": confirm,
-            "picked": {k: set(v.split("|")) for k, v in chosen.items()}}
+            "groups": _grouped(options), "chosen": chosen, "confirm": confirm,
+            "picked": {k: set(v.split("|")) for k, v in chosen.items()},
+            "when": specs_inputs.BRIEF_WHEN,
+            "applies": {o["key"]: specs_inputs.brief_applies(o["key"], chosen) for o in options},
+            "asked_keys": [o["key"] for o in options if specs_inputs.brief_applies(o["key"], chosen)],
+            "icons": specs_seed.ELEMENT_ICONS, "group_icons": GROUP_ICONS,
+            "key_icons": {key: drawing for key, _g, _how, drawing in specs_seed.ELEMENTS}}
 
 
 def _labels() -> dict:
@@ -986,6 +994,11 @@ def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:
             given[key] = "|".join(ticked)
         else:
             given[key] = request.form.get(f"opt_{key}", "")
+    if request.form.get("partial") == "1":
+        # Kept as the engineer goes through the brief, part by part: the
+        # site follows, and the sections wait for the brief to be confirmed.
+        specs_questions.save_switches(set_id, given)
+        return [], None
     proposed = {**store.chosen_for(row), **given}
     coming = store.would_add(set_id, proposed)
     asking = request.headers.get("X-Requested-With") == "fetch"

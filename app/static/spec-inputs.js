@@ -349,7 +349,7 @@
 
   // --- the project's state, and redrawing it -----------------------------------------
 
-  var byId, order, centre, whole, lastSt = {};
+  var byId, order, centre, whole, lastSt = {}, lastWorks = {};
   function index() {
     byId = {};
     data.stations.forEach(function (s) { byId[s.id] = s; });
@@ -480,8 +480,14 @@
     var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     function grow(p, pad) { minX = Math.min(minX, p[0] - pad); maxX = Math.max(maxX, p[0] + pad); minY = Math.min(minY, p[1] - pad); maxY = Math.max(maxY, p[1] + pad); }
     var site = data.site || {};
-    var shown = Object.keys(PLACE).filter(function (id) { return byId[id] || PLANT.indexOf(id) >= 0 || wanted(id); });
-    var works = Object.keys(WORKS).filter(function (k) { return k === "building" ? site.building : k === "quay" ? site.marine : site.bridge; });
+    // Before the brief is confirmed the story's site is a bare plot: the
+    // drawing board, and what the brief builds added to it as it is chosen.
+    var bare = story && data.chapters[0] && data.chapters[0].slug === "deciding" && !data.chapters[0].done;
+    var shown = Object.keys(PLACE).filter(function (id) { return bare ? id === "decide" : byId[id] || PLANT.indexOf(id) >= 0 || wanted(id); });
+    var works = Object.keys(WORKS).filter(function (k) {
+      if (bare && !site.builds) return false;
+      return k === "building" ? site.building : k === "quay" ? site.marine : site.bridge;
+    });
     // A bridge project's questions stand on the bridge it builds.
     PLACE.bridge = site.bridge ? [WORKS.span[0] + 4.6, WORKS.span[1] + 2.4] : BRIDGE_AT;
     PIN.bridge = site.bridge ? 4.4 : 2.8;
@@ -499,7 +505,7 @@
     [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]].forEach(function (c) { grow(P(c[0], c[1], 0), 4); });
 
     var parts = [];
-    parts.push('<polygon class="spec-scene-ground" points="' + pts([P(gx0, gy0, 0), P(gx1, gy0, 0), P(gx1, gy1, 0), P(gx0, gy1, 0)]) + '"/>');
+    parts.push('<polygon class="spec-scene-ground' + (bare ? " is-bare" : "") + '" points="' + pts([P(gx0, gy0, 0), P(gx1, gy0, 0), P(gx1, gy1, 0), P(gx0, gy1, 0)]) + '"/>');
     for (var g = gx0; g <= gx1; g += 2) parts.push(line(P(g, gy0, 0), P(g, gy1, 0), "var(--scene-grid)", 0.5));
     for (var h = gy0; h <= gy1; h += 2) parts.push(line(P(gx0, h, 0), P(gx1, h, 0), "var(--scene-grid)", 0.5));
     // A marine project's site runs down to the sea.
@@ -514,6 +520,13 @@
       }
     }
     // The way through the site, level by level, from the brief to the last station.
+    if (bare) {
+      // A few stones and tufts on the empty plot.
+      for (var d0 = 0; d0 < 14; d0++) {
+        var dx = gx0 + 3 + ((d0 * 7.3) % (gx1 - gx0 - 6)), dy = gy0 + 3 + ((d0 * 11.7) % (gy1 - gy0 - 6)), dp = P(dx, dy, 0);
+        parts.push('<ellipse class="spec-scene-dune" cx="' + dp[0].toFixed(1) + '" cy="' + dp[1].toFixed(1) + '" rx="' + (10 + (d0 % 4) * 6) + '" ry="' + (4 + (d0 % 3) * 2) + '"/>');
+      }
+    }
     var walk = [];
     order.forEach(function (id) { if (PLACE[id] && shown.indexOf(id) >= 0) { var at = PLACE[id], mid = MID[id] || [0, 0]; walk.push(P(at[0] + mid[0], at[1] + mid[1] + 1.6, 0)); } });
     var walkAt = {};
@@ -526,11 +539,12 @@
       parts.push('<polyline class="spec-scene-walk is-done" points="' + pts(walk.slice(0, reached + 1)) + '"/>');
     }
 
+    if (bare) order = order.filter(function (id) { return id === "decide"; });
     var m = PLACE.mixer, pump = PLACE.pour, form = PLACE.formwork, cage = PLACE.rebar, lab = PLACE.lab;
     var fc = [form[0] + 1.7, form[1] + 1.2];           // the middle of the formwork
     // The haul road from under the mixer to the pump.
     var tA = [m[0] + 1.4, m[1] + 1.2], tB = [pump[0] + 2.6, pump[1] - 0.6];
-    parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
+    if (!bare) parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
 
     var mixed = done("mixer");
     var bar = BAR[(site.rebar || [])[0]] || BAR.Uncoated;
@@ -547,7 +561,7 @@
         box(tA[0] - 0.5, tA[1], 0.2, 1.0, 1.0, 1.0, "#2a78d6") + "</g>";
     }
     drawOrder.forEach(function (id) {
-      if (!truckDrawn && PLACE[id][0] + PLACE[id][1] > truckAt) { parts.push(truck()); truckDrawn = true; }
+      if (!truckDrawn && !bare && PLACE[id][0] + PLACE[id][1] > truckAt) { parts.push(truck()); truckDrawn = true; }
       var s = byId[id], at = PLACE[id], mid = MID[id] || [0, 0];
       var art = DRAW[id](at[0], at[1], st[id]);
       if (!s) { parts.push('<g class="spec-scene-prop">' + art + "</g>"); return; }
@@ -569,13 +583,16 @@
         '<g class="spec-scene-pin"><circle cx="' + pin[0] + '" cy="' + pin[1] + '" r="11"/>' + mark + "</g>" +
         '<text class="spec-scene-label" x="' + pin[0] + '" y="' + (pin[1] - 16) + '" text-anchor="middle">' + esc(s.name) + "</text></g>");
     });
-    if (!truckDrawn) parts.push(truck());
+    if (!truckDrawn && !bare) parts.push(truck());
     // What the project builds: drawn faint until the pour is answered, then in
     // concrete; the steel frame on it once that is.
-    var built = done("pour");
+    var built = done("pour") || bare;
+    var drawnKey = {};
     works.forEach(function (k) {
       var w = WORKS[k];
-      parts.push('<g class="spec-scene-works' + (built ? " is-built" : "") + '">' + BUILD[k](w[0], w[1], site, built) + "</g>");
+      var key = k + (site.steel ? "s" : "") + (site.cranes ? "c" : "") + (site.elements || []).length;
+      drawnKey[k] = key;
+      parts.push('<g class="spec-scene-works' + (built ? " is-built" : "") + (bare && lastWorks[k] !== key ? " is-new" : "") + '">' + BUILD[k](w[0], w[1], site, built) + "</g>");
       grow(P(w[0], w[1], 12), 30); grow(P(w[0] + w[2], w[1] + w[3], 0), 30);
       grow(P(w[0] + w[2], w[1], 0), 30); grow(P(w[0], w[1] + w[3], 0), 30);
     });
@@ -594,7 +611,8 @@
       flow([W(cage[0] + 1.5, cage[1] + 1.2, 1.6), W(cage[0] + 1.5, cage[1] + 1.2, 6), W(fc[0], fc[1], 6), W(fc[0], fc[1], 1.2)], "#9a532a", done("rebar"), "lift"),
       flow([W(form[0] + 3.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, lab[1] + 2.4, 0.25)], "#a9a9a6", done("pour"), "cubes")
     ];
-    parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
+    lastWorks = drawnKey;
+    if (!bare) parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
     // Where the story has got to: the engineer walking the site, at the
     // station open now, or the first of the level shown.
     if (story) {
@@ -638,6 +656,7 @@
 
   // A level's stations together in view, the one open now in the middle of it.
   function viewForLevel(i) {
+    if (data.chapters[i] && data.chapters[i].slug === "deciding") return whole;
     var c = data.chapters[i], ids = c ? c.stations.filter(function (id) { return centre[id]; }) : [];
     if (!ids.length) return whole;
     var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -1126,9 +1145,93 @@
     panel.scrollTop = 0;
     tell();
   }
+  // The brief asks only what applies: a decision that hangs on another is
+  // shown once that one says so, and left out of what is sent while it is not.
+  var briefPart = 0;
+  function picks(form, key) {
+    return Array.prototype.filter.call(form.querySelectorAll('[name="opt_' + key + '"]'), function (i) { return i.checked; }).map(function (i) { return i.value; });
+  }
+  function applyWhen() {
+    var form = body.querySelector(".spec-decide");
+    if (!form) return;
+    var asked = {};
+    Array.prototype.forEach.call(form.querySelectorAll("[data-opt]"), function (q) {
+      var key = q.getAttribute("data-opt"), when = q.getAttribute("data-when"), on = true;
+      if (when) {
+        try { when = JSON.parse(when); } catch (e) { when = null; }
+        if (when) {
+          var got = picks(form, when[0]);
+          on = asked[when[0]] !== false && (when[1] === "has" ? got.indexOf(when[2]) >= 0 : when[1] === "is" ? got[0] === when[2] :
+            got.some(function (v) { return !/^(none|no)$/i.test(v); }));
+        }
+      }
+      asked[key] = on;
+      q.hidden = !on;
+      var shownOpt = q.querySelector('[name="shown_opt"]');
+      if (shownOpt) shownOpt.disabled = !on;
+    });
+    Array.prototype.forEach.call(form.querySelectorAll("[data-group]"), function (d) {
+      var any = Array.prototype.some.call(d.querySelectorAll("[data-opt]"), function (q) { return !q.hidden; });
+      if (any) d.removeAttribute("data-unasked"); else d.setAttribute("data-unasked", "");
+    });
+  }
+  // The site drawn from the brief as it is being filled in.
+  function siteFromForm() {
+    var form = body.querySelector(".spec-decide");
+    if (!form) return data.site;
+    function one(k) { return picks(form, k)[0] || ""; }
+    function some(k) { return picks(form, k).filter(function (v) { return !/^(none|no)$/i.test(v); })[0] || ""; }
+    var builds = picks(form, "structures").map(function (b) { return b.toLowerCase(); });
+    return {
+      building: builds.some(function (b) { return b.indexOf("building") >= 0; }) || !builds.length,
+      builds: builds.length > 0,
+      marine: builds.some(function (b) { return b.indexOf("marine") >= 0; }) || one("exposure").toLowerCase() === "marine",
+      bridge: builds.some(function (b) { return b.indexOf("bridge") >= 0; }),
+      elements: picks(form, "elements").map(function (e) { return e.toLowerCase(); }),
+      steel: one("steel_framing") === "Yes", precast: some("precast"), pt: some("post_tensioning"),
+      cranes: one("cranes") === "Yes",
+      shoring: one("shoring") === "Yes" || one("demolition") === "Yes" || one("monitoring") === "Yes",
+      rebar: picks(form, "rebar").length ? picks(form, "rebar") : ["Uncoated"],
+      specimens: one("testing").toLowerCase() === "cylinders" ? "cylinders" : "cubes",
+      underwater: one("underwater") === "Yes", repair: one("repair") === "Yes"
+    };
+  }
+  // A change to the brief: what it asks follows, the site is built up at
+  // once, and the choice is kept in the background.
+  var keepTimer = null, keepNote = null;
+  function briefChanged() {
+    var form = body.querySelector(".spec-decide");
+    if (!form || form.querySelector(".spec-decide-confirm")) return;
+    applyWhen();
+    stepBrief(briefPart);
+    data.site = siteFromForm();
+    draw();
+    zoomTo(viewForLevel(level));
+    if (keepTimer) clearTimeout(keepTimer);
+    // A brief already decided is changed only once the change is confirmed,
+    // with the sections it calls for; until then only the picture follows.
+    if (data.chapters[0] && data.chapters[0].done) {
+      var held = body.querySelector("[data-brief-kept]");
+      if (held) held.textContent = "Confirm at the last part to keep this";
+      return;
+    }
+    keepTimer = setTimeout(function () {
+      var fd = new FormData(form);
+      fd.append("partial", "1");
+      var said = body.querySelector("[data-brief-kept]");
+      if (said) said.textContent = "Saving…";
+      fetch(form.action, { method: "POST", body: fd, credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
+        .then(function (r) { if (!r.ok) throw r; var s2 = body.querySelector("[data-brief-kept]"); if (s2) s2.textContent = "Saved"; })
+        .catch(function () { var s3 = body.querySelector("[data-brief-kept]"); if (s3) s3.textContent = "Not saved: check you are signed in"; });
+    }, 700);
+  }
+  if (story) body.addEventListener("change", function (e) { if (e.target.closest(".spec-decide")) briefChanged(); });
+
   // The brief, one part at a time; the last part confirms it.
   function stepBrief(g) {
-    var groups = body.querySelectorAll(".spec-decide-group");
+    applyWhen();
+    var groups = Array.prototype.filter.call(body.querySelectorAll(".spec-decide-group"), function (d) { return !d.hasAttribute("data-unasked"); });
+    Array.prototype.forEach.call(body.querySelectorAll(".spec-decide-group[data-unasked]"), function (d) { d.hidden = true; });
     if (!groups.length) return;
     var form = body.querySelector(".spec-decide"), save = form && form.querySelector(".spec-scene-save");
     var old = body.querySelector("[data-brief-nav]");
@@ -1138,7 +1241,7 @@
       if (save) save.style.display = "none";
       return;
     }
-    g = Math.max(0, Math.min(groups.length - 1, g));
+    g = briefPart = Math.max(0, Math.min(groups.length - 1, g));
     Array.prototype.forEach.call(groups, function (d, i) { d.hidden = i !== g; d.open = true; });
     var lastPart = g === groups.length - 1;
     if (save) save.style.display = lastPart ? "" : "none";
@@ -1146,7 +1249,7 @@
     nav.className = "spec-card-nav";
     nav.setAttribute("data-brief-nav", "");
     nav.innerHTML = '<button type="button" class="btn btn-ghost" data-brief-go="' + (g - 1) + '"' + (g ? "" : " disabled") + ">← Back</button>" +
-      '<span class="small spec-card-count">Part <strong>' + (g + 1) + "</strong> of " + groups.length + "<br>" + esc(groups[g].querySelector("summary").textContent) + "</span>" +
+      '<span class="small spec-card-count">Part <strong>' + (g + 1) + "</strong> of " + groups.length + "<br>" + esc(groups[g].querySelector("summary").textContent) + ' <span class="spec-brief-kept" data-brief-kept></span></span>' +
       (lastPart ? "<span></span>" : '<button type="button" class="btn btn-primary" data-brief-go="' + (g + 1) + '">Next →</button>');
     var fields = form.querySelector(".spec-scene-fields");
     fields.parentNode.insertBefore(nav, fields.nextSibling);

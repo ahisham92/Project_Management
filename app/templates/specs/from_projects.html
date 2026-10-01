@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_issued.html" import issued_head, family_tabs %}
+{% block title %}Amendments for the MTD · THEMIS{% endblock %}
+
+{% macro words(e) %}
+  {% if e['state'] == 'changed' %}{% for kind, x, y in e['diff'] %}{% if kind == 'equal' %}{{ x }}{% else %}{% if x %}<del>{{ x }}</del>{% endif %}{% if y %}<ins>{{ y }}</ins>{% endif %}{% endif %}{% endfor %}
+  {% elif e['state'] == 'added' %}<ins>{{ e['text'] }}</ins>
+  {% else %}<del>{{ e['text'] }}</del>{% endif %}
+{% endmacro %}
+
+{% block content %}
+{{ issued_head('amendments', 'Amendments for the MTD', 'What each project changed in the MTD\'s sections, gathered paragraph by paragraph, so you can see where several projects made the same change and write it into the MTD. Writing one in makes a new version of the master section; projects that took it are offered it as for any change to the master.') }}
+{{ family_tabs(families, family, 'specs.from_projects', {'source': 'live'} if live else {}) }}
+
+<form method="get" class="inline-form" style="margin:12px 0">
+  {% if family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
+  <label class="field w-lg"><span class="field-label">From</span>
+    <select name="source" onchange="this.form.submit()">
+      <option value="issued"{% if not live %} selected{% endif %}>Each project as last issued</option>
+      <option value="live"{% if live %} selected{% endif %}>Each project as it stands now, issued or not</option>
+    </select></label>
+  <label class="check"><input type="checkbox" name="decided" value="1"{% if decided %} checked{% endif %} onchange="this.form.submit()"> Show ones already decided or in the MTD</label>
+  <noscript><button type="submit" class="btn btn-ghost btn-sm">Show</button></noscript>
+</form>
+
+{% set back = request.full_path %}
+{% for s in found['sections'] %}
+<div class="card" style="margin-bottom:14px">
+  <div class="card-head">
+    <div><h2>{{ s['family'] }} · {{ s['number'] }} — {{ s['title'] }}</h2>
+      <p class="small muted" style="margin-top:2px">{% if s['master'] %}MTD version {{ s['master']['version'] }} · <a href="{{ url_for('specs.library_section', section_id=s['master']['id']) }}">open the master section</a>{% else %}No longer in the MTD{% endif %}</p></div>
+    {% if s['open'] %}{{ badge('warning', s['open'] ~ ' to decide') }}{% endif %}
+  </div>
+  <div class="card-body" style="display:grid;gap:14px">
+  {% for p in s['paragraphs'] %}
+    <section class="spec-amend" id="a-{{ s['family'] }}-{{ s['number'] }}-{{ p['id'] }}">
+      <header class="small"><strong>{{ p['label'] or 'Paragraph' }}</strong>
+        {% if p['projects'] > 1 %} · {{ badge('good', p['projects'] ~ ' projects changed it') }}{% endif %}</header>
+      <p class="spec-amend-mtd small"><span class="muted">The MTD now:</span> {{ p['mtd'] or '(not in the MTD)' }}</p>
+      {% for e in p['entries'] %}
+      <div class="spec-amend-entry{{ ' spec-amend-done' if not e['open'] }}">
+        <p class="small"><strong>{{ e['name'] }}</strong>{% if e['location'] %} · {{ e['location'] }}{% endif %}{% if e['revision'] %} · Rev {{ e['revision'] }}{% endif %}{% if e['issue_date'] %} · {{ e['issue_date'] }}{% endif %}{% if e['live'] %} · <span class="muted">as it stands</span>{% endif %}
+          · {{ {'changed': 'reworded', 'added': 'added', 'removed': 'taken out'}[e['state']] }}
+          {% if e['in_mtd'] %} · {{ badge('good', 'the MTD says this now') }}{% elif e['decision'] and e['decision']['decision'] == 'adopted' %} · {{ badge('good', 'written into the MTD') }}{% elif e['decision'] %} · {{ badge('neutral', 'kept as the project\'s own') }}{% if e['decision']['note'] %} <span class="muted">{{ e['decision']['note'] }}</span>{% endif %}{% endif %}</p>
+        <p class="spec-amend-words">{{ words(e) }}</p>
+        {% if e['open'] or (e['decision'] and e['decision']['decision'] == 'kept') %}
+        <div class="inline-form">
+          {% if e['open'] %}
+          <details class="spec-amend-act"><summary class="btn btn-primary btn-sm">Write into the MTD…</summary>
+            <form method="post" action="{{ url_for('specs.adopt_amendment') }}">
+              {% for k in ('family', 'number') %}<input type="hidden" name="{{ k }}" value="{{ s[k] }}">{% endfor %}
+              <input type="hidden" name="node_id" value="{{ p['id'] }}"><input type="hidden" name="set_id" value="{{ e['set_id'] }}">
+              <input type="hidden" name="record_id" value="{{ e['record_id'] or '' }}"><input type="hidden" name="back" value="{{ back }}">
+              {% if e['state'] != 'removed' %}<label class="field"><span class="field-label">The MTD's words (edit before writing in if needed)</span>
+                <textarea name="text" rows="3">{{ e['text'] }}</textarea></label>{% else %}<p class="small">The paragraph is taken out of the MTD.</p>{% endif %}
+              <button type="submit" class="btn btn-primary btn-sm">Write into {{ s['number'] }}</button>
+            </form>
+          </details>
+          <details class="spec-amend-act"><summary class="btn btn-ghost btn-sm">Keep it the project's own…</summary>
+            <form method="post" action="{{ url_for('specs.keep_amendment') }}" class="inline-form">
+              {% for k in ('family', 'number') %}<input type="hidden" name="{{ k }}" value="{{ s[k] }}">{% endfor %}
+              <input type="hidden" name="node_id" value="{{ p['id'] }}"><input type="hidden" name="set_id" value="{{ e['set_id'] }}">
+              <input type="hidden" name="record_id" value="{{ e['record_id'] or '' }}"><input type="hidden" name="back" value="{{ back }}">
+              <input type="text" name="note" placeholder="Why (optional), e.g. client-specific" aria-label="Why">
+              <button type="submit" class="btn btn-ghost btn-sm">Keep out of the MTD</button>
+            </form>
+          </details>
+          {% else %}
+          <form method="post" action="{{ url_for('specs.reopen_amendment') }}">
+            {% for k in ('family', 'number') %}<input type="hidden" name="{{ k }}" value="{{ s[k] }}">{% endfor %}
+            <input type="hidden" name="node_id" value="{{ p['id'] }}"><input type="hidden" name="set_id" value="{{ e['set_id'] }}"><input type="hidden" name="back" value="{{ back }}">
+            <button type="submit" class="btn btn-ghost btn-sm">Decide again</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+  {% endfor %}
+  </div>
+</div>
+{% else %}
+  {{ empty('Nothing to decide', 'No project has an amendment to the MTD waiting for a decision' ~ ('' if live else ' in what it issued') ~ '.') }}
+{% endfor %}
+
+{% if found['own'] %}
+<div class="card">
+  <div class="card-head"><h2>Sections projects wrote that the MTD lacks</h2></div>
+  <div class="card-body flush table-scroll"><table>
+    <thead><tr><th>Section</th><th>Kind</th><th>Project</th><th class="right">Paragraphs</th><th></th></tr></thead>
+    <tbody>{% for o in found['own'] %}<tr><td>{{ o['number'] }} — {{ o['title'] }}</td><td>{{ o['family'] }}</td><td>{{ o['name'] }}{% if o['location'] %} · {{ o['location'] }}{% endif %}{% if o['revision'] %} · Rev {{ o['revision'] }}{% endif %}</td><td class="right">{{ o['paragraphs'] }}</td>
+      <td class="right small">{% if o['live'] or o['set_id'] %}<a href="{{ url_for('specs.spec_set', set_id=o['set_id']) }}#step-sections">Open the project; its section page has <em>Make this the master</em></a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

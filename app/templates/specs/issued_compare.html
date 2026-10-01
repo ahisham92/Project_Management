@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_issued.html" import issued_head, issue_option %}
+{% block title %}Compare issues · THEMIS{% endblock %}
+
+{% block content %}
+{{ issued_head('issued', a['name'] ~ ' Rev ' ~ a['revision'] ~ ' and ' ~ b['name'] ~ ' Rev ' ~ b['revision'], 'Two issued specifications side by side: what each project is, how each answered, and section by section what the second says that the first does not.') }}
+
+<form method="get" class="inline-form" style="margin:12px 0">
+  <label class="field"><span class="field-label">Compare</span><select name="a">{% for r in every %}{{ issue_option(r, a['id']) }}{% endfor %}</select></label>
+  <label class="field"><span class="field-label">with</span><select name="b">{% for r in every %}{{ issue_option(r, b['id']) }}{% endfor %}</select></label>
+  <button type="submit" class="btn btn-primary">Compare</button>
+</form>
+{% if not found['recorded'] %}<p class="small muted">One of these was issued before projects' data was kept with each issue, so only its words are compared.</p>{% endif %}
+
+<div class="card" style="margin-bottom:12px"><div class="card-body flush table-scroll">
+  <table class="spec-compare">
+    <thead><tr><th></th><th>{{ a['name'] }} · Rev {{ a['revision'] }}</th><th>{{ b['name'] }} · Rev {{ b['revision'] }}</th></tr></thead>
+    <tbody>{% for label, x, y in found['facts'] %}<tr{% if x != y %} class="spec-differ"{% endif %}><th scope="row">{{ label }}</th><td>{{ x or '—' }}</td><td>{{ y or '—' }}</td></tr>{% endfor %}</tbody>
+  </table>
+</div></div>
+
+{% set differ = found['answers'] | rejectattr('same') | list %}
+<details class="card" style="margin-bottom:12px"{% if differ %} open{% endif %}>
+  <summary class="card-head"><h2>Answers <span class="small muted">{{ differ | length }} differ of {{ found['answers'] | length }}</span></h2></summary>
+  <div class="card-body flush table-scroll"><table class="spec-compare">
+    <thead><tr><th>Question</th><th>{{ a['name'] }}</th><th>{{ b['name'] }}</th></tr></thead>
+    <tbody>{% for r in found['answers'] %}<tr{% if not r['same'] %} class="spec-differ"{% endif %}><td>{{ r['label'] }}</td><td class="small">{{ r['a'] or '—' }}</td><td class="small">{{ r['b'] or '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+
+{% if found['choices'] %}
+<details class="card" style="margin-bottom:12px">
+  <summary class="card-head"><h2>Choices <span class="small muted">{{ found['choices'] | rejectattr('same') | list | length }} differ</span></h2></summary>
+  <div class="card-body flush table-scroll"><table class="spec-compare">
+    <tbody>{% for r in found['choices'] %}<tr{% if not r['same'] %} class="spec-differ"{% endif %}><td>{{ r['label'] }}</td><td class="small">{{ r['a'] or '—' }}</td><td class="small">{{ r['b'] or '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+
+<h2 style="margin:18px 0 8px">The words, section by section</h2>
+{% for s in found['sections'] %}
+<div class="card" style="margin-bottom:12px">
+  <div class="card-head">
+    <h2>{{ s['number'] }} — {{ s['title'] }}</h2>
+    {% if s['state'] == 'added' %}{{ badge('warning', 'Only in ' ~ b['name']) }}
+    {% elif s['state'] == 'removed' %}{{ badge('serious', 'Only in ' ~ a['name']) }}
+    {% else %}{{ badge('warning', s['count'] ~ ' paragraph' ~ ('s' if s['count'] != 1 else '') ~ ' differ') }}{% endif %}
+  </div>
+  {% if s['state'] == 'changed' %}
+  <div class="card-body spec-doc">
+    {% for p in s['paragraphs'] %}
+    <div class="spec-p spec-{{ p['level'] }} spec-change-{{ p['state'] }}">
+      <span class="spec-num">{{ p['label'] }}</span>
+      <span class="spec-text">{% if p['state'] == 'changed' %}{% for kind, x, y in p['diff'] %}{% if kind == 'equal' %}{{ x }}{% else %}{% if x %}<del>{{ x }}</del>{% endif %}{% if y %}<ins>{{ y }}</ins>{% endif %}{% endif %}{% endfor %}{% elif p['state'] == 'added' %}<ins>{{ p['new'] }}</ins>{% else %}<del>{{ p['old'] }}</del>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+  {{ empty('The same words', 'Every section the two share reads the same in both.') }}
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge %}
+{% from "specs/_issued.html" import issued_head %}
+{% block title %}Load a standards check · THEMIS{% endblock %}
+
+{% block content %}
+{{ issued_head('register', 'Load a standards check', 'From ' ~ filename ~ ': tick what the register takes. Rows that would change what the check flags come first. Edition checks are made from publishers\' pages and can be wrong, so look at the source of anything surprising.') }}
+<form method="post" action="{{ url_for('specs.apply_standards_check') }}">
+  <input type="hidden" name="rows" value="{{ rows | tojson | forceescape }}">
+  <div class="card"><div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th><input type="checkbox" data-all aria-label="Tick all"></th><th>Standard</th><th>Register now</th><th>The check says</th><th>Effect</th><th>Source</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><input type="checkbox" name="take" value="{{ r['key'] }}"{% if r['take'] %} checked{% endif %} aria-label="Take {{ r['standard'] }}"></td>
+          <td><strong>{{ r['standard'] }}</strong>{% if r['cited'] %}<div class="small muted">cited in {{ r['places'] }} place{{ 's' if r['places'] != 1 }}</div>{% else %}<div class="small muted">not cited at present</div>{% endif %}</td>
+          <td class="small">{% if r['was'] %}{{ r['was'].get('current') or '—' }} · {{ r['was'].get('status') }}<div class="muted">{{ r['was'].get('checked') }}</div>{% else %}<span class="muted">not in the register</span>{% endif %}</td>
+          <td>{{ r['current'] or '—' }} {% if r['status'] == 'withdrawn' %}{{ badge('critical', 'withdrawn') }}{% elif r['status'] == 'unknown' %}{{ badge('neutral', 'not confirmed') }}{% endif %}{% if r['replaced_by'] %}<div class="small">replaced by {{ r['replaced_by'] }}</div>{% endif %}{% if r['note'] %}<div class="small muted">{{ r['note'] }}</div>{% endif %}</td>
+          <td class="small">{{ r['effect'] or ('No change to what is flagged' if r['changed'] else 'Same as the register') }}</td>
+          <td class="small">{% if r['source'][:4] == 'http' %}<a href="{{ r['source'] }}" rel="noopener noreferrer" target="_blank">open</a>{% endif %}<div class="muted">{{ r['checked'] }}</div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  <div class="inline-form" style="justify-content:flex-end;margin-top:12px">
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards_register') }}">Cancel</a>
+    <button type="submit" class="btn btn-primary">Take the ticked into the register</button>
+  </div>
+</form>
+<script>
+(function () {
+  var all = document.querySelector('[data-all]');
+  if (all) all.addEventListener('change', function () {
+    document.querySelectorAll('input[name=take]').forEach(function (b) { b.checked = all.checked; });
+  });
+})();
+</script>
+{% endblock %}

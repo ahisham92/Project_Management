@@ -24,6 +24,7 @@ from flask import g
 
 from . import specs, specs_export, specs_questions
 from . import specs_store as store
+from . import specs_issued as issued_data
 from .db import execute, get_db, insert, query, query_one
 
 ROLES = ("editor", "checker", "approver", "lead")
@@ -359,7 +360,8 @@ def record_issue(row: Mapping[str, Any], fields: Mapping[str, str], fmt: str, fi
     """An issue put on the register, with the files as sent and the words as issued."""
     prints = {s["row_id"]: fingerprint(s) for s in words}
     snapshot = {"project": {k: row[k] for k in store.SET_FIELDS + ("family",)},
-                "sections": words}
+                "sections": words, "data": issued_data.project_data(row),
+                "amendments": issued_data.amendments_of(row)}
     mark = query_one("SELECT COALESCE(MAX(id), 0) AS n FROM spec_history WHERE set_id = ?",
                      (row["id"],))["n"]
     issue_id = insert(
@@ -371,6 +373,7 @@ def record_issue(row: Mapping[str, Any], fields: Mapping[str, str], fmt: str, fi
          json.dumps(snapshot, ensure_ascii=False),
          json.dumps(signed_by(row["id"], prints), ensure_ascii=False), mark, _user_id(),
          store._who()))
+    issued_data.keep(issue_id, row, fields, snapshot)
     note(row["id"], "issue", f"Rev {fields['revision']}", "",
          " · ".join(x for x in (fields.get("purpose", ""), fields.get("issue_date", "")) if x))
     return issue_id

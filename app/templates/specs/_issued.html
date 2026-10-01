@@ -1,0 +1,27 @@
+{# The head and tabs shared by the issued specifications' pages. #}
+{% macro issued_head(here, title, lead='') %}
+{% set admin = g.user and g.user['role'] == 'admin' %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a></p>
+    <h1>{{ title }}</h1>
+    {% if lead %}<p class="small muted" style="margin-top:2px">{{ lead }}</p>{% endif %}
+  </div>
+</div>
+<nav class="spec-review-tabs" aria-label="What the office has issued">
+  {% for key, label, endpoint in [('issued', 'Issued specifications', 'specs.issued_list'), ('answers', 'Answers across projects', 'specs.issued_answers'), ('register', 'Standards register', 'specs.standards_register')] + ([('amendments', 'Amendments for the MTD', 'specs.from_projects')] if admin else []) %}
+  <a href="{{ url_for(endpoint) }}"{% if key == here %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}
+
+{% macro family_tabs(families, family, endpoint, extra={}) %}
+<nav class="spec-tabs" aria-label="Kinds of specification">
+  <a class="spec-tab{{ ' spec-tab-on' if not family }}" href="{{ url_for(endpoint, **extra) }}">All kinds</a>
+  {% for f in families %}
+  <a class="spec-tab{{ ' spec-tab-on' if f['code'] == family }}" href="{{ url_for(endpoint, family=f['code'], **extra) }}"><strong>{{ f['code'] }}</strong> {{ f['name'] }}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}
+
+{% macro issue_option(r, picked) %}<option value="{{ r['id'] }}"{% if r['id'] == picked %} selected{% endif %}>{{ r['name'] }}{% if r['location'] %} · {{ r['location'] }}{% endif %} · Rev {{ r['revision'] }} · {{ r['issue_date'] }}</option>{% endmacro %}

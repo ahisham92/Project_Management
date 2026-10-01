@@ -1789,3 +1789,5 @@ def delete_library_sections():
 
 # Review, approval and issue control: its routes join this blueprint.
 from . import specs_review_views  # noqa: E402,F401
+# The issued specifications, amendments for the MTD and the standards register.
+from . import specs_issued_views  # noqa: E402,F401

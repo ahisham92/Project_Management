@@ -587,6 +587,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
         " added_at TEXT NOT NULL DEFAULT (datetime('now')))")
     conn.execute("CREATE INDEX IF NOT EXISTS spec_question_images_key ON spec_question_images (key)")
     _spec_review(conn)
+    _spec_issued(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -668,6 +669,68 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
 # Raised whenever the starting list of questions and words gains something an
 # existing library should be offered.
 SPEC_SEED_VERSION = 4
+
+
+def _spec_issued(conn: sqlite3.Connection) -> None:
+    """What the office learns from its issued specifications: an administrator's
+    decision on each amendment a project made to the MTD, and the standards
+    register, each standard's current edition as last checked."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_amendment_reviews (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            family     TEXT NOT NULL DEFAULT '',
+            number     TEXT NOT NULL DEFAULT '',
+            node_id    TEXT NOT NULL DEFAULT '',
+            set_id     INTEGER,
+            issue_id   INTEGER,
+            decision   TEXT NOT NULL DEFAULT '',   -- adopted or kept
+            note       TEXT NOT NULL DEFAULT '',
+            version    INTEGER,                    -- the MTD version it went into
+            user_id    INTEGER,
+            decided_by TEXT NOT NULL DEFAULT '',
+            decided_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS spec_amendment_reviews_at
+            ON spec_amendment_reviews (family, number, node_id);
+        -- Every issue kept for the office, apart from its project: deleting a
+        -- project takes its register and files, never what it issued.
+        CREATE TABLE IF NOT EXISTS spec_issue_records (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            issue_id    INTEGER UNIQUE,
+            set_id      INTEGER,
+            name        TEXT NOT NULL DEFAULT '',
+            code        TEXT NOT NULL DEFAULT '',
+            family      TEXT NOT NULL DEFAULT '',
+            location    TEXT NOT NULL DEFAULT '',
+            client      TEXT NOT NULL DEFAULT '',
+            revision    TEXT NOT NULL DEFAULT '',
+            purpose     TEXT NOT NULL DEFAULT '',
+            issue_date  TEXT NOT NULL DEFAULT '',
+            issued_by   TEXT NOT NULL DEFAULT '',
+            issued_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            snapshot    TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE IF NOT EXISTS spec_standard_status (
+            key         TEXT PRIMARY KEY,
+            standard    TEXT NOT NULL DEFAULT '',
+            current     TEXT NOT NULL DEFAULT '',
+            status      TEXT NOT NULL DEFAULT 'unknown',
+            replaced_by TEXT NOT NULL DEFAULT '',
+            source      TEXT NOT NULL DEFAULT '',
+            note        TEXT NOT NULL DEFAULT '',
+            checked     TEXT NOT NULL DEFAULT '',
+            checked_by  TEXT NOT NULL DEFAULT ''
+        );
+        """
+    )
+    # Issues made before the record was kept.
+    conn.execute(
+        "INSERT OR IGNORE INTO spec_issue_records (issue_id, set_id, name, code, family, client, "
+        "revision, purpose, issue_date, issued_by, issued_at, snapshot) "
+        "SELECT i.id, i.set_id, s.name, s.code, s.family, s.client, i.revision, i.purpose, "
+        "i.issue_date, i.issued_by, i.issued_at, i.snapshot "
+        "FROM spec_issues i JOIN spec_sets s ON s.id = i.set_id")
 
 
 def _spec_review(conn: sqlite3.Connection) -> None:

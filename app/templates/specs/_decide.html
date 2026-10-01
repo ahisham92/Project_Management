@@ -1,0 +1,38 @@
+{# The first level of the inputs at a glance: the project's decisions, made
+   before any question, and the site drawn from them. #}
+<p class="small muted">Level {{ level }}: Deciding the project</p>
+<h2>{{ station['name'] }}</h2>
+<p class="small muted">{{ station['what'] }}</p>
+{% if station['needed'] %}
+<p class="small"><strong>Start here.</strong> Say what the project builds and what it uses, then confirm: the next level opens, and the site changes to match (a quay on the sea, a bridge, a steel frame, precast, post-tensioning, crane rails).</p>
+{% else %}
+<p class="small">Decided. Change anything here and save: the site and the questions follow.</p>
+{% endif %}
+<form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="spec-scene-form spec-decide" data-station-form>
+  <fieldset class="spec-scene-fields"{% if not may_edit %} disabled{% endif %}>
+  {% for name, opts in groups %}
+  <details class="spec-decide-group" open>
+    <summary>{{ name }}</summary>
+    {% for o in opts %}
+    <div class="spec-decide-q">
+      <input type="hidden" name="shown_opt" value="{{ o['key'] }}">
+      <span class="spec-decide-label">{{ o['label'] or o['key'] }}</span>
+      <span class="spec-decide-choices">
+      {% for c in o['choice_list'] %}
+        <label class="spec-decide-choice"><input type="{{ 'checkbox' if o['kind'] == 'many' else 'radio' }}" name="opt_{{ o['key'] }}" value="{{ c }}"{% if c in picked.get(o['key'], ()) %} checked{% endif %}> {{ c }}</label>
+      {% endfor %}
+      </span>
+    </div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+  </fieldset>
+  {% if may_edit %}
+  <div class="spec-scene-save">
+    <button type="submit" class="btn btn-primary">{{ 'Confirm the brief' if station['needed'] else 'Save the brief' }}</button>
+    <span class="small muted" data-save-note>Sections these call for are put in; ones they rule out are named for you to take out.</span>
+  </div>
+  {% else %}
+  <p class="small muted">You can read this specification; only its owner and the people they add change it.</p>
+  {% endif %}
+</form>

@@ -191,6 +191,30 @@
 </div></div>
 {% endif %}
 
+{% if spec and scene is defined and scene['stations'] %}
+<link rel="stylesheet" href="{{ url_for('static', filename='spec-inputs.css') }}">
+<div class="spec-scene" data-scene data-mode="checks">
+  <div class="spec-scene-bar">
+    <button type="button" class="btn btn-primary btn-sm" data-play>▶ Walk the findings</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-prev aria-label="Previous station">←</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-next aria-label="Next station">→</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-whole>Whole site</button>
+    <span class="spec-scene-stagebar small" data-stage role="status"></span>
+    <span class="spec-scene-legend small"><i class="spec-in-dot spec-in-needed"></i> findings to settle <i class="spec-in-dot spec-in-answered"></i> nothing open</span>
+  </div>
+  <div class="spec-scene-stage">
+    <svg class="spec-scene-svg spec-scene-svg-short" data-svg role="img" aria-label="The works, each open finding at the part of the works it concerns"></svg>
+    <aside class="spec-scene-panel" data-panel hidden aria-live="polite">
+      <button type="button" class="spec-scene-close" data-close aria-label="Close">×</button>
+      <div data-panel-body></div>
+    </aside>
+    <p class="spec-scene-caption small" data-caption></p>
+  </div>
+</div>
+<script type="application/json" id="spec-scene-data">{{ scene | tojson }}</script>
+<script src="{{ url_for('static', filename='spec-inputs.js') }}" defer></script>
+{% endif %}
+
 {% if spec and blocking and not spec['hold_issue'] %}
 <div class="card" style="margin-bottom:12px"><div class="card-body inline-form" style="justify-content:space-between">
   <p class="small"><strong>{{ blocking | length }} reference{{ 's' if blocking | length != 1 }} point{{ 's' if blocking | length == 1 }} at sections or paragraphs this specification does not issue</strong>

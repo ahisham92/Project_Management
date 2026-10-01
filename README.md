@@ -178,7 +178,7 @@ meet, so the Specs Writer reads across them:
   starts, the site, the moulds, the steel inside, the ingredients, the mix, the pour, the tests,
   then the steel frame, waterproofing, bridges and maintenance. **Level 1 is the brief**: what the
   project builds and the systems it uses, decided there (or on the project page) before any
-  question opens. **The site is drawn from it**: a building, a quay on the sea with its piles and
+  question opens. A saved project goes back to it with *Start from the brief* on the project page: a change there lists the sections it calls for to tick and confirm before any is put in, names (and leaves in) the ones it no longer calls for, and reopens only the levels it puts new questions in, since a level fully answered is never locked. **The site is drawn from it**: a building, a quay on the sea with its piles and
   fenders, a bridge over its river; the steel frame when it has steel framing, the precast yard
   with its casting bed, post-tensioning tendons, crane rails and the crane, shoring; the moulds
   for its elements (a footing, a column, a wall, a slab on its props) and the cage in the colour

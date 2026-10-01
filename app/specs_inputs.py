@@ -200,12 +200,14 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
                              "stations": [s["id"] for s in held], "needed": needed, "suggested": suggested,
                              "done": not needed and not suggested})
     # The stages open in turn: a chapter opens once every one before it is
-    # answered, a suggestion counting once the engineer accepts it.
+    # answered, a suggestion counting once the engineer accepts it. One that is
+    # answered stays open to change, wherever it is: a change to the brief
+    # reopens only the levels it puts new questions in.
     open_stage = next((i for i, c in enumerate(out_chapters) if not c["done"]), len(out_chapters))
     for i, c in enumerate(out_chapters):
         c["stage"] = i
         c["level"] = i + 1
-        c["locked"] = i > open_stage
+        c["locked"] = i > open_stage and not c["done"]
         for sid in c["stations"]:
             stations[sid]["stage"] = i
             stations[sid]["level"] = i + 1

@@ -937,6 +937,16 @@ def details(set_id: int):
         was=json.dumps(_group_answers(row, groups[here]) if groups else {}, ensure_ascii=False))
 
 
+def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
+    """What the brief's panel shows: the project's choices (or the ones just
+    sent, while their sections wait to be confirmed)."""
+    chosen = confirm["chosen"] if confirm else store.chosen_for(row)
+    st = next(s for s in data["stations"] if s["id"] == "decide")
+    return {"spec": row, "station": st, "level": st["level"], "may_edit": review.may(row, g.user, "edit"),
+            "groups": _grouped(store.options()), "chosen": chosen, "confirm": confirm,
+            "picked": {k: set(v.split("|")) for k, v in chosen.items()}}
+
+
 def _labels() -> dict:
     labels = dict(specs_questions.KIND_LABELS)
     labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
@@ -956,9 +966,11 @@ def _scene(set_id: int, row, sections, asked=None) -> dict:
         chosen=store.chosen_for(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
 
 
-def _decide(set_id: int, row) -> list[tuple[str, str]]:
+def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:
     """The project's decisions as the brief's form sent them, each kept with
-    the project's choices; the sections they call for put in. What to say."""
+    the project's choices; the sections they call for put in. What to say,
+    and, when they call for sections and the engineer has not yet said which
+    to put in, those sections to confirm (nothing is saved until then)."""
     from .. import specs_inputs
 
     shown = set(request.form.getlist("shown_opt"))
@@ -974,10 +986,20 @@ def _decide(set_id: int, row) -> list[tuple[str, str]]:
             given[key] = "|".join(ticked)
         else:
             given[key] = request.form.get(f"opt_{key}", "")
+    proposed = {**store.chosen_for(row), **given}
+    coming = store.would_add(set_id, proposed)
+    asking = request.headers.get("X-Requested-With") == "fetch"
+    if coming["added"] and asking and request.form.get("confirm") != "1":
+        return [], {"chosen": proposed, **coming}
+    if request.form.get("confirm") == "1":
+        # The ones the engineer left unticked stay out, now and when the
+        # answers are saved again.
+        keep = {int(i) for i in request.form.getlist("add_section") if i.isdigit()}
+        store._decline(set_id, add=[s["id"] for s in coming["added"] if s["id"] not in keep])
     before = store.ruled_out(set_id)
     specs_questions.save_switches(set_id, {**given, specs_inputs.DECIDED: "1"})
     _added(set_id, before)
-    return [("success", "Decided. The site is drawn from these, and the questions follow from them.")]
+    return [("success", "Decided. The site is drawn from these, and the questions follow from them.")], None
 
 
 @bp.get("/sets/<int:set_id>/inputs")
@@ -1018,7 +1040,14 @@ def inputs_station(set_id: int, station: str):
         if specs_inputs.blocking(data, station):
             messages.append(("error", "This level is locked until the one before it is answered."))
         elif station == "decide":
-            messages += _decide(set_id, row)
+            said, confirm = _decide(set_id, row)
+            messages += said
+            if confirm:
+                n = len(confirm["added"])
+                return {"messages": [{"kind": "info", "text": f"These choices call for {n} more section{'s' if n != 1 else ''}. "
+                                                              "Nothing is saved yet: tick the ones to put in, then confirm."}],
+                        "scene": data,
+                        "html": render_template("specs/_decide.html", **_decide_page(row, data, confirm))}
         else:
             given, split = specs_questions.read_form(request.form, questions)
             held = _unaccepted(questions, given)
@@ -1043,21 +1072,26 @@ def inputs_station(set_id: int, station: str):
                 flash(text, kind)
             return redirect(url_for("specs.review_inputs", set_id=set_id) + f"#st-{station}")
         row = store.spec_set(set_id)
+        after = _scene(set_id, row, store.set_sections(set_id))
+        # A change that puts new questions in a level reopens it: say where.
+        was = {c["slug"]: c["needed"] + c["suggested"] for c in data["chapters"]}
+        for c in after["chapters"]:
+            more = c["needed"] + c["suggested"] - was.get(c["slug"], 0)
+            if more > 0 and c["slug"] != "deciding":
+                messages.append(("info", f"Level {c['level']}, {c['name']}, has {more} new question"
+                                         f"{'s' if more != 1 else ''} to answer."))
         # What the save flashed for the next page (sections put in or ruled
         # out) is said in the panel instead.
         out = [{"kind": k, "text": t} for k, t in messages]
         out += [{"kind": k, "html": str(t if isinstance(t, Markup) else escape(t))}
                 for k, t in get_flashed_messages(with_categories=True)]
-        return {"messages": out, "scene": _scene(set_id, row, store.set_sections(set_id))}
+        return {"messages": out, "scene": after}
     data = _scene(set_id, row, sections, asked)
     st = next((s for s in data["stations"] if s["id"] == station), None)
     if st is None:
         abort(404)
     if station == "decide":
-        return render_template(
-            "specs/_decide.html", spec=row, station=st, level=st["level"], may_edit=review.may(row, g.user, "edit"),
-            groups=_grouped(store.options()), chosen=store.chosen_for(row),
-            picked={k: set(v.split("|")) for k, v in store.chosen_for(row).items()})
+        return render_template("specs/_decide.html", **_decide_page(row, data))
     return render_template(
         "specs/_station.html", spec=row, station=st, chapter=chapter, questions=questions, level=st["level"],
         locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),

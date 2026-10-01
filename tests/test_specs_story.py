@@ -112,9 +112,11 @@ def test_the_ingredients_stand_where_they_go_in():
     assert specs_inputs.station_of({"key": "x", "label": "x"}, "the-pour") == "pour"
 
 
-def test_a_project_with_nothing_asked_says_so(app, signed_in):
+def test_a_project_with_nothing_asked_starts_at_its_brief(app, signed_in):
     from .test_specs_kinds import set_id_of
 
     set_id = set_id_of(signed_in.post("/specs/sets", data={"name": "Empty", "family": "15A"}))
     page = text(signed_in.get(f"/specs/sets/{set_id}/inputs"))
-    assert "Nothing to show yet" in page and "spec-scene-data" not in page
+    # Only the brief: what the project builds is decided before any question.
+    data = json.loads(re.search(r'id="spec-scene-data">(.*?)</script>', page, re.S).group(1))
+    assert [s["id"] for s in data["stations"]] == ["decide"] and data["count"] == 0

@@ -6,9 +6,22 @@
 {% if station['needed'] %}
 <p class="small"><strong>Start here.</strong> Say what the project builds and what it uses, then confirm: the next level opens, and the site changes to match (a quay on the sea, a bridge, a steel frame, precast, post-tensioning, crane rails).</p>
 {% else %}
-<p class="small">Decided. Change anything here and save: the site and the questions follow.</p>
+<p class="small">Decided. Change anything here and save: the site and the questions follow. Sections the change calls for are put in only once you confirm them; ones it no longer calls for are named, not taken out; and only the levels that get new questions open again.</p>
 {% endif %}
 <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="spec-scene-form spec-decide" data-station-form>
+  {% if confirm %}
+  <div class="spec-scene-lock spec-decide-confirm">
+    <input type="hidden" name="confirm" value="1">
+    <p><strong>These choices call for {{ confirm['added'] | length }} more section{{ 's' if confirm['added'] | length != 1 }}.</strong> Tick the ones to put in; one left unticked stays out (you can add it from the library later).</p>
+    {% for s in confirm['added'] %}
+    <label class="check"><input type="checkbox" name="add_section" value="{{ s['id'] }}" checked> <strong>{{ s['number'] }}</strong> {{ s['title'] | title }} <span class="muted small">({{ s['applies'] }})</span></label>
+    {% endfor %}
+    {% if confirm['out'] %}
+    <p class="small" style="margin-top:6px">No longer called for: {% for s in confirm['out'] %}<strong>{{ s['number'] }}</strong> {{ s['title'] | title }}{{ '; ' if not loop.last }}{% endfor %}. {{ 'They stay' if confirm['out'] | length != 1 else 'It stays' }} in, with any amendments, until you take {{ 'them' if confirm['out'] | length != 1 else 'it' }} out.</p>
+    {% endif %}
+    <div class="inline-form" style="margin-top:6px"><button type="submit" class="btn btn-primary btn-sm">Confirm the brief and put in the ticked sections</button></div>
+  </div>
+  {% endif %}
   <fieldset class="spec-scene-fields"{% if not may_edit %} disabled{% endif %}>
   {% for name, opts in groups %}
   <details class="spec-decide-group" open>
@@ -30,7 +43,7 @@
   {% if may_edit %}
   <div class="spec-scene-save">
     <button type="submit" class="btn btn-primary">{{ 'Confirm the brief' if station['needed'] else 'Save the brief' }}</button>
-    <span class="small muted" data-save-note>Sections these call for are put in; ones they rule out are named for you to take out.</span>
+    <span class="small muted" data-save-note>Sections these call for are listed for you to confirm before they are put in.</span>
   </div>
   {% else %}
   <p class="small muted">You can read this specification; only its owner and the people they add change it.</p>

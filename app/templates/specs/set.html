@@ -28,6 +28,7 @@
     {% if report %}{{ tool(url_for('specs.check_set', set_id=spec['id']), 'Check the text', 'Wrong or old codes, broken references, open blanks and wording: accept, amend or remove each.', (waiting['total'] ~ ' open') if waiting['total'] else '') }}{% endif %}
     {{ tool(url_for('specs.amendments', set_id=spec['id']), 'Changes from the master', "Every paragraph this project added, changed or dropped from the company's master text.") }}
     {% if sections %}{{ tool(url_for('specs.review_inputs', set_id=spec['id']), 'Inputs at a glance', 'Every answer on a picture of the works, to review before issuing.') }}{% endif %}
+    {{ tool(url_for('specs.review_inputs', set_id=spec['id']) ~ '#st-decide', 'Start from the brief', 'Go back to what the project builds, its elements and systems: the sections it calls for are listed to confirm, and only the levels with new questions reopen.') }}
     {% if packages['key'] %}{{ tool(url_for('specs.project_packages', set_id=spec['id']), 'Other packages of this project', 'Specifications with the same project code, and where this one says something different from what they issued.', (packages['open'] ~ ' to decide') if packages['open'] else ('' if not packages['peers'] else (packages['peers'] | length + 1) ~ ' packages'), 'spec-tool-red' if packages['open'] else '') }}{% endif %}
   </section>
   <section>

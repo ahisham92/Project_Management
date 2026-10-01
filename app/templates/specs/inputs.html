@@ -13,7 +13,7 @@
   <div>
     <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>The inputs at a glance</h1>
-    <p class="small muted" style="margin-top:2px">Every question this project asks, placed on the works as they are built: the materials go from the silo, heaps, water and admixtures into the mixer, on to the truck, the pump and the formwork, and cubes to the lab. Click a station to answer or change its questions there. The stages open in turn: each one opens once everything before it is answered, and a suggested answer counts once you tick to accept it. The same summary is written out below.</p>
+    <p class="small muted" style="margin-top:2px">The project's story as levels you pass through, from deciding what it builds to the finished structure. The site is drawn from the brief: a building, a quay on the sea or a bridge, with its steel, precast, post-tensioning and cranes when it has them. Every question stands at its station on the way: the materials go from the silo, heaps, water and admixtures into the mixer, on to the truck, the pump and the formwork, and cubes to the lab. Click a station to answer or change its questions there. The levels open in turn: each one opens once everything before it is answered, and a suggested answer counts once you tick to accept it. The same summary is written out below.</p>
   </div>
   <div class="inline-form">
     <a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}">Details</a>
@@ -42,6 +42,7 @@
     <span class="spec-scene-stagebar small" data-stage role="status"></span>
     <span class="spec-scene-legend small"><i class="spec-in-dot spec-in-answered"></i> answered <i class="spec-in-dot spec-in-suggested"></i> suggested <i class="spec-in-dot spec-in-needed"></i> needs an answer <i class="spec-in-dot spec-in-locked"></i> locked</span>
   </div>
+  <ol class="spec-levels" data-levels aria-label="Levels"></ol>
   <div class="spec-scene-stage">
     <svg class="spec-scene-svg" data-svg role="img" aria-label="The works as they are built, one station per part of the specification"></svg>
     <aside class="spec-scene-panel" data-panel hidden aria-live="polite">
@@ -68,12 +69,19 @@
 {% set by_id = {} %}{% for s in scene['stations'] %}{% set _ = by_id.update({s['id']: s}) %}{% endfor %}
 {% for c in scene['chapters'] %}
 <details class="card spec-in-chapter" id="ch-{{ c['slug'] }}"{% if c['stage'] == scene['open_stage'] or (loop.first and scene['open_stage'] >= scene['chapters'] | length) %} open{% endif %}>
-  <summary class="card-head"><div><h3>Chapter {{ c['number'] }}: {{ c['name'] }}</h3><p class="small muted">{{ c['lead'] }}</p></div>
+  <summary class="card-head"><div><h3>Level {{ c['level'] }}: {{ c['name'] }}</h3><p class="small muted">{{ c['lead'] }}</p></div>
     {% set n_need, n_sug = c['needed'], c['suggested'] %}
     <span class="small">{% if n_need %}<span class="spec-in-chip spec-in-needed">{{ n_need }} to answer</span>{% endif %}{% if n_sug %} <span class="spec-in-chip spec-in-suggested">{{ n_sug }} suggested</span>{% endif %}{% if not n_need and not n_sug %}<span class="spec-in-chip spec-in-answered">All answered</span>{% endif %}{% if c['locked'] %} <span class="spec-in-chip spec-in-locked">Locked</span>{% endif %}</span>
   </summary>
   <div class="card-body flush table-scroll">
     {% for sid in c['stations'] %}{% set s = by_id[sid] %}
+    {% if s['id'] == 'decide' %}
+    <table class="spec-in-table" id="st-decide">
+      <caption>{{ s['name'] }} <span class="muted small">{% if s['needed'] %}Not decided yet: confirm it in the picture or on the project page.{% else %}Decided.{% endif %}</span></caption>
+      <thead><tr><th>Decision</th><th>For this project</th></tr></thead>
+      <tbody>{% for d in s['decisions'] %}<tr><td>{{ d['label'] }}</td><td>{{ d['value'] }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}
     <table class="spec-in-table" id="st-{{ s['id'] }}">
       <caption>{{ s['name'] }} <span class="muted small">{{ s['what'] }}</span></caption>
       <thead><tr><th>Question</th><th>Answer</th><th>State</th><th>In the specification</th></tr></thead>
@@ -88,6 +96,7 @@
       {% endfor %}
       </tbody>
     </table>
+    {% endif %}
     {% if s['id'] == 'mixer' and scene['mix']['rows'] %}
     <table class="spec-in-table spec-in-mix">
       <caption>Each element's concrete</caption>

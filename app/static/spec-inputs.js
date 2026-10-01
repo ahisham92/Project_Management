@@ -31,6 +31,9 @@
   var body = root.querySelector("[data-panel-body]");
   var caption = root.querySelector("[data-caption]");
   var playBtn = root.querySelector("[data-play]");
+  // On the check the same works carry the findings, each at its station.
+  var checks = root.getAttribute("data-mode") === "checks";
+  var playWords = playBtn.textContent;
   var NS = "http://www.w3.org/2000/svg";
   var S = 22;                       // pixels per metre of the drawing
   var C30 = Math.cos(Math.PI / 6), S30 = 0.5;
@@ -153,19 +156,53 @@
         line([c[0] - 9, c[1]], [c[0] + 9, c[1]], "#d03b3b", 2.4) + line([c[0], c[1] - 9], [c[0], c[1] + 9], "#d03b3b", 2.4) + "</g>";
       return out;
     },
-    // The mould, with what the stages before it have put in: the cage once the
-    // steel is settled, concrete once the pour is, curing water on it after.
+    // The moulds for the project's elements (a footing, a column, a wall, a
+    // slab on its props), with what the levels before have put in: the cage
+    // once the steel is settled, concrete once the pour is, curing water after.
     formwork: function (x, y, st) {
+      st = st || {};
+      var ply = "#d9b47a", ply2 = "#cfa96f", wet = "#a9a9a6", steel = st.bar || "#7a3e1d";
       var out = box(x, y, 0, 3.4, 2.4, 0.15, "#c8a36a");
-      out += box(x, y, 0.15, 3.4, 0.12, 1.2, "#d9b47a") + box(x, y, 0.15, 0.12, 2.4, 1.2, "#d9b47a");
-      if (st && st.steel) {
-        for (var a = 0; a <= 5; a++) out += line(P(x + 0.4 + a * 0.52, y + 0.3, 0.35), P(x + 0.4 + a * 0.52, y + 2.1, 0.35), "#9a532a", 1.2);
-        for (var b = 0; b <= 3; b++) out += line(P(x + 0.3, y + 0.4 + b * 0.55, 0.45), P(x + 3.1, y + 0.4 + b * 0.55, 0.45), "#7a3e1d", 1.2);
+      out += box(x, y, 0.15, 3.4, 0.12, 1.2, ply) + box(x, y, 0.15, 0.12, 2.4, 1.2, ply);
+      if (st.steel) {
+        for (var a = 0; a <= 5; a++) out += line(P(x + 0.4 + a * 0.52, y + 0.3, 0.35), P(x + 0.4 + a * 0.52, y + 2.1, 0.35), steel, 1.2);
+        for (var b = 0; b <= 3; b++) out += line(P(x + 0.3, y + 0.4 + b * 0.55, 0.45), P(x + 3.1, y + 0.4 + b * 0.55, 0.45), shade(steel, -0.2), 1.2);
       }
-      if (st && st.poured) out += box(x + 0.12, y + 0.12, 0.15, 3.16, 2.16, 0.95, "#a9a9a6", "spec-scene-fill");
-      out += box(x + 3.28, y, 0.15, 0.12, 2.4, 1.2, "#cfa96f") + box(x, y + 2.28, 0.15, 3.4, 0.12, 1.2, "#cfa96f");
+      if (st.pt) for (var t = 0; t < 2; t++) out += '<path d="M' + pts([P(x + 0.2, y + 0.8 + t * 0.8, 0.9)]) + " Q" + pts([P(x + 1.7, y + 0.8 + t * 0.8, 0.2)]) + " " + pts([P(x + 3.2, y + 0.8 + t * 0.8, 0.9)]) + '" fill="none" stroke="' + (st.pt === "Unbonded" ? "#222" : "#8d99a6") + '" stroke-width="2"/>';
+      if (st.poured) out += box(x + 0.12, y + 0.12, 0.15, 3.16, 2.16, 0.95, wet, "spec-scene-fill");
+      out += box(x + 3.28, y, 0.15, 0.12, 2.4, 1.2, ply2) + box(x, y + 2.28, 0.15, 3.4, 0.12, 1.2, ply2);
       for (var i = 0; i < 3; i++) out += line(P(x + 0.6 + i, y - 0.2, 0.6), P(x + 0.6 + i, y - 1.0, 0), "#8a6d4b", 2);
-      if (st && st.cured) {
+      var el = st.elements || [];
+      function has(re) { return el.some(function (e) { return re.test(e); }); }
+      // A column's mould, standing on its kicker, propped both ways.
+      if (has(/column|pier/)) {
+        var cx = x + 4.4, cy = y + 0.4;
+        if (st.steel) for (var k = 0; k < 4; k++) out += line(P(cx + 0.15 + (k % 2) * 0.4, cy + 0.15 + (k > 1 ? 0.4 : 0), 0), P(cx + 0.15 + (k % 2) * 0.4, cy + 0.15 + (k > 1 ? 0.4 : 0), 3.6), steel, 1.3);
+        out += box(cx, cy, 0, 0.7, 0.7, st.poured ? 3.0 : 0, wet);
+        out += box(cx, cy, 0, 0.7, 0.08, 3.0, ply) + box(cx, cy, 0, 0.08, 0.7, 3.0, ply);
+        if (!st.poured) out += box(cx + 0.62, cy, 0, 0.08, 0.7, 3.0, ply2) + box(cx, cy + 0.62, 0, 0.7, 0.08, 3.0, ply2);
+        else out += box(cx, cy, 0, 0.7, 0.7, 3.0, wet, "spec-scene-fill");
+        out += line(P(cx + 0.35, cy + 0.7, 2.2), P(cx + 0.35, cy + 2.0, 0), "#8a6d4b", 2) + line(P(cx + 0.7, cy + 0.35, 2.2), P(cx + 2.0, cy + 0.35, 0), "#8a6d4b", 2);
+      }
+      // A wall's two faces of panels, walers across, the steel between.
+      if (has(/wall/)) {
+        var wx = x, wy = y + 3.4;
+        if (st.steel) for (var m = 0; m <= 6; m++) out += line(P(wx + 0.2 + m * 0.5, wy + 0.3, 0), P(wx + 0.2 + m * 0.5, wy + 0.3, 2.6), steel, 1.1);
+        out += box(wx, wy, 0, 3.4, 0.12, 2.4, ply);
+        out += st.poured ? box(wx, wy + 0.12, 0, 3.4, 0.4, 2.3, wet, "spec-scene-fill") : "";
+        out += box(wx, wy + 0.55, 0, 3.4, 0.12, 2.4, ply2);
+        for (var n = 0; n < 2; n++) out += box(wx - 0.1, wy + 0.67, 0.6 + n * 1.2, 3.6, 0.1, 0.12, "#8a6d4b");
+      }
+      // A slab or deck: the soffit on its props.
+      if (has(/slab|deck|beam|floor|topping/)) {
+        var sx = x + 4.2, sy = y + 3.2;
+        for (var r = 0; r < 4; r++) out += line(P(sx + 0.3 + (r % 2) * 2.4, sy + 0.3 + (r > 1 ? 1.6 : 0), 0), P(sx + 0.3 + (r % 2) * 2.4, sy + 0.3 + (r > 1 ? 1.6 : 0), 2.2), "#9a9a9a", 1.6);
+        out += box(sx, sy, 2.2, 3.0, 2.2, 0.1, ply);
+        if (st.steel) for (var q = 0; q <= 4; q++) out += line(P(sx + 0.3 + q * 0.6, sy + 0.2, 2.45), P(sx + 0.3 + q * 0.6, sy + 2.0, 2.45), steel, 1.1);
+        if (st.poured) out += box(sx, sy, 2.3, 3.0, 2.2, 0.25, wet, "spec-scene-fill");
+        out += box(sx, sy + 2.1, 2.3, 3.0, 0.1, 0.3, ply2);
+      }
+      if (st.cured) {
         for (var d = 0; d < 7; d++) {
           var w = P(x + 0.5 + (d % 4) * 0.8, y + 0.6 + Math.floor(d / 4) * 1.0, 1.9);
           out += '<circle class="spec-scene-drop" style="animation-delay:' + (d * 0.23).toFixed(2) + 's" cx="' + w[0].toFixed(1) + '" cy="' + w[1].toFixed(1) + '" r="1.8" fill="#4f8fd1"/>';
@@ -173,17 +210,61 @@
       }
       return out;
     },
-    rebar: function (x, y) {
+    // The cage, in the colour of the project's bars (uncoated, epoxy-coated,
+    // galvanized, stainless, GFRP), with a second for a second kind.
+    rebar: function (x, y, st) {
+      var out = "", kinds = (st && st.kinds) || ["Uncoated"];
+      kinds.slice(0, 2).forEach(function (kind, n) {
+        var c = BAR[kind] || BAR.Uncoated, ox = x + n * 3.6;
+        out += box(ox - 0.2, y - 0.2, 0, 0.3, 2.8, 0.2, "#6b4b2a") + box(ox + 2.9, y - 0.2, 0, 0.3, 2.8, 0.2, "#6b4b2a");
+        for (var i = 0; i <= 6; i++) {
+          out += line(P(ox + i * 0.5, y, 0.2), P(ox + i * 0.5, y + 2.4, 0.2), c, 1.6);
+          out += line(P(ox + i * 0.5, y, 1.4), P(ox + i * 0.5, y + 2.4, 1.4), c, 1.6);
+          out += line(P(ox + i * 0.5, y, 0.2), P(ox + i * 0.5, y, 1.4), shade(c, 0.15), 1.2);
+        }
+        for (var j = 0; j <= 4; j++) {
+          out += line(P(ox, y + j * 0.6, 0.2), P(ox + 3, y + j * 0.6, 0.2), shade(c, 0.15), 1.3);
+          out += line(P(ox, y + j * 0.6, 1.4), P(ox + 3, y + j * 0.6, 1.4), shade(c, 0.15), 1.3);
+        }
+      });
+      return out;
+    },
+    // Post-tensioning: a slab's tendons draped in their profile between the
+    // anchorages, the jack at one end.
+    tendons: function (x, y, st) {
+      var bonded = !(st && st.pt === "Unbonded"), duct = bonded ? "#8d99a6" : "#222831";
+      var out = box(x, y, 0, 4.0, 2.6, 0.5, "#c8c6c0");
+      for (var i = 0; i < 4; i++) {
+        var yy = y + 0.4 + i * 0.6;
+        out += '<path d="M' + pts([P(x - 0.2, yy, 0.9)]) + " Q" + pts([P(x + 2, yy, 0.45)]) + " " + pts([P(x + 4.2, yy, 0.9)]) + '" fill="none" stroke="' + duct + '" stroke-width="2.4"/>';
+        out += box(x + 4.0, yy - 0.15, 0.7, 0.1, 0.3, 0.3, "#555");
+      }
+      out += box(x + 4.15, y + 0.2, 0.6, 0.9, 0.5, 0.5, "#d03b3b") + line(P(x + 5.05, y + 0.45, 0.85), P(x + 5.8, y + 0.45, 0.85), "#d03b3b", 2);
+      return out;
+    },
+    // The precast yard: units stacked on bearers, the casting bed with its
+    // strands when they are prestressed, the gantry over them.
+    precast: function (x, y, st) {
+      var out = "", pre = st && /prestress/i.test(st.kind || "");
+      out += box(x, y, 0, 6.0, 1.2, 0.3, "#b8b5ae");
+      if (pre) for (var s = 0; s < 3; s++) out += line(P(x - 0.4, y + 0.3 + s * 0.3, 0.32), P(x + 6.4, y + 0.3 + s * 0.3, 0.32), "#5a5a5a", 1);
+      for (var i = 0; i < 4; i++) {
+        out += box(x + 0.5, y + 2.0, i * 0.45, 0.2, 2.2, 0.15, "#6b4b2a");
+        out += box(x + 0.2, y + 2.0, 0.15 + i * 0.45, 4.6, 2.2, 0.3, i % 2 ? "#b0aea8" : "#c2c0ba");
+      }
+      out += box(x - 0.6, y - 0.4, 0, 0.3, 0.3, 3.6, "#e0a32a") + box(x + 6.3, y - 0.4, 0, 0.3, 0.3, 3.6, "#e0a32a") +
+        box(x - 0.6, y - 0.4, 3.6, 7.2, 0.3, 0.3, "#e0a32a") + line(P(x + 2.5, y - 0.25, 3.6), P(x + 2.5, y - 0.25, 1.4), "#333", 1);
+      return out;
+    },
+    // The brief: the drawing board where the project is decided, its sheets out.
+    decide: function (x, y) {
       var out = "";
-      for (var i = 0; i <= 6; i++) {
-        out += line(P(x + i * 0.5, y, 0.2), P(x + i * 0.5, y + 2.4, 0.2), "#7a3e1d", 1.6);
-        out += line(P(x + i * 0.5, y, 1.4), P(x + i * 0.5, y + 2.4, 1.4), "#7a3e1d", 1.6);
-        out += line(P(x + i * 0.5, y, 0.2), P(x + i * 0.5, y, 1.4), "#9a532a", 1.2);
-      }
-      for (var j = 0; j <= 4; j++) {
-        out += line(P(x, y + j * 0.6, 0.2), P(x + 3, y + j * 0.6, 0.2), "#9a532a", 1.3);
-        out += line(P(x, y + j * 0.6, 1.4), P(x + 3, y + j * 0.6, 1.4), "#9a532a", 1.3);
-      }
+      [[0, 0], [2.4, 0], [0, 1.6], [2.4, 1.6]].forEach(function (c) { out += box(x + c[0], y + c[1], 0, 0.15, 0.15, 1.1, "#6b6b6b"); });
+      out += box(x - 0.1, y - 0.1, 1.1, 2.8, 2.0, 0.12, "#e9e4d6");
+      out += box(x + 0.2, y + 0.2, 1.22, 1.3, 0.9, 0.02, "#ffffff") + box(x + 1.4, y + 0.9, 1.22, 1.1, 0.8, 0.02, "#dfeaf6");
+      var a = P(x + 0.4, y + 0.4, 1.25), b = P(x + 1.3, y + 0.9, 1.25);
+      out += line(a, b, "#2a78d6", 1) + line(P(x + 0.4, y + 0.9, 1.25), P(x + 1.3, y + 0.4, 1.25), "#2a78d6", 1);
+      out += box(x + 3.0, y + 0.2, 0, 0.6, 0.6, 1.6, "#c49a62") + cyl(x + 3.3, y + 0.5, 1.6, 0.25, 0.3, "#2a78d6");
       return out;
     },
     // The concrete pump, its boom reaching over the formwork (st.to).
@@ -208,6 +289,7 @@
         box(x + 1.8, y - 0.05, 0.68, 0.08, 2.7, 0.04, "#e0a32a");
     },
     bridge: function (x, y) {
+      if (data.site && data.site.bridge) return "";
       return box(x + 0.4, y + 0.8, 0, 0.6, 0.8, 1.8, "#a9a9a6") + box(x + 3.4, y + 0.8, 0, 0.6, 0.8, 1.8, "#a9a9a6") +
         box(x - 0.6, y + 0.6, 1.8, 5.6, 1.2, 0.35, "#b9b9b5") + '<path d="M' + P(x - 1, y + 2.6, 0)[0] + "," + P(x - 1, y + 2.6, 0)[1] + " L" + P(x + 5, y + 2.6, 0)[0] + "," + P(x + 5, y + 2.6, 0)[1] + '" stroke="#4f8fd1" stroke-width="5" opacity=".6"/>';
     },
@@ -231,23 +313,36 @@
   // truck takes the mix down the road to the pump, the pump fills the formwork
   // the cage was lowered into, and cubes from the pour go to the lab.
   var SCREEN = {
-    office: [-19, 3], documents: [-12, 4], shoring: [-5, 3],
+    decide: [-27, 3], office: [-19, 3], documents: [-12, 4], shoring: [-5, 3],
     cement: [5, 3], water: [11, 5.5], admixtures: [16, 9], store: [21, 3], sand: [1, 10], gravel: [6, 12], mixer: [12, 14],
-    formwork: [-2, 24], rebar: [5, 25], pour: [-10, 21],
-    frame: [-23, 19], membrane: [-17, 31], bridge: [-8, 34], lab: [9, 35], repair: [20, 30], other: [24, 22]
+    formwork: [-2, 24], rebar: [8, 24], tendons: [-13, 31], precast: [-20, 14], pour: [-10, 21],
+    frame: [-25, 21], membrane: [-21, 32], bridge: [-6, 36], lab: [9, 35], repair: [20, 30], other: [24, 22]
   };
+  // What the project builds, standing at the front of the site: the building,
+  // the quay on the sea, the bridge over its river.
+  // In metres: where each stands, and how far it reaches.
+  var SEA = 41;                     // the shore: the sea is beyond x = SEA
+  var WORKS = { building: [29, 29, 8, 7], span: [10, 36, 13, 6], quay: [SEA - 2, 13, 12, 6] };
+  var BAR = { Uncoated: "#7a3e1d", "Epoxy-coated": "#3f8f3a", Galvanized: "#a9b0b6", "Stainless steel": "#d5d8dc", "GFRP bars": "#e3c13b" };
   var PLACE = {};
   Object.keys(SCREEN).forEach(function (id) { var u = SCREEN[id][0], v = SCREEN[id][1]; PLACE[id] = [(u + v) / 2, (v - u) / 2]; });
-  var PIN = { office: 3.4, documents: 2.2, shoring: 3.6, cement: 8.6, sand: 2.4, gravel: 2.4, water: 3.2, admixtures: 2.0,
+  var BRIDGE_AT = PLACE.bridge;
+  var PIN = { decide: 2.4, tendons: 1.6, precast: 4.2, office: 3.4, documents: 2.2, shoring: 3.6, cement: 8.6, sand: 2.4, gravel: 2.4, water: 3.2, admixtures: 2.0,
     store: 3.2, mixer: 5.6, formwork: 1.8, rebar: 2.0, pour: 2.4, frame: 5.0, membrane: 1.4, bridge: 2.8, lab: 2.6, repair: 3.2, other: 1.8 };
-  var MID = { office: [1.6, 1.1], documents: [1.3, 0.8], shoring: [1.7, 0.8], cement: [0, 0], sand: [0, 0], gravel: [0, 0], water: [0, 0],
+  var MID = { decide: [1.3, 0.9], tendons: [2, 1.3], precast: [3, 1.5], office: [1.6, 1.1], documents: [1.3, 0.8], shoring: [1.7, 0.8], cement: [0, 0], sand: [0, 0], gravel: [0, 0], water: [0, 0],
     admixtures: [0.6, 0.6], store: [1.5, 1.2], mixer: [1.4, 1.2], formwork: [1.7, 1.2], rebar: [1.5, 1.2], pour: [0.7, 1.4],
     frame: [1.6, 1.3], membrane: [1.8, 1.3], bridge: [2.2, 1.2], lab: [1.5, 1.1], repair: [1.6, 0.25], other: [1.4, 1] };
   // The plant itself is always drawn, whether or not its station asks anything.
   var PLANT = ["cement", "sand", "gravel", "water", "admixtures", "mixer", "formwork", "rebar", "pour", "lab"];
   // The order of the story, for a station this project does not ask about.
-  var RANK = { office: 0, documents: 1, shoring: 2, cement: 3, sand: 3, gravel: 3, water: 3, admixtures: 3, store: 3, mixer: 4,
-    formwork: 5, rebar: 6, pour: 7, frame: 8, membrane: 9, bridge: 10, lab: 11, repair: 12, other: 13 };
+  var RANK = { decide: 0, office: 1, documents: 2, shoring: 3, formwork: 4, rebar: 5, tendons: 5, precast: 5,
+    cement: 6, sand: 6, gravel: 6, water: 6, admixtures: 6, store: 6, mixer: 7, pour: 8, lab: 9,
+    frame: 10, membrane: 11, bridge: 12, repair: 13, other: 14 };
+  // Stations the project's decisions put on the site, asked about or not.
+  function wanted(id) {
+    var site = data.site || {};
+    return { frame: site.steel, precast: !!site.precast, tendons: !!site.pt, shoring: site.shoring, bridge: site.bridge }[id];
+  }
 
   // --- the project's state, and redrawing it -----------------------------------------
 
@@ -257,7 +352,16 @@
     data.stations.forEach(function (s) { byId[s.id] = s; });
     order = [];
     data.chapters.forEach(function (c) { c.stations.forEach(function (id) { order.push(id); }); });
+    if (checks) {
+      var f = data.flags.stations;
+      Object.keys(f).forEach(function (id) {
+        if (!byId[id] && PLACE[id]) { byId[id] = { id: id, name: data.flags.names[id] || id, what: "", questions: [], needed: 0, suggested: 0, answered: 0, stage: -1 }; }
+      });
+      var flagged = Object.keys(RANK).sort(function (a, b) { return RANK[a] - RANK[b]; }).filter(function (id) { return f[id] && byId[id]; });
+      order = flagged.length ? flagged : order;
+    }
   }
+  function findings(id) { return checks ? (data.flags.stations[id] || []) : []; }
   // A stage is done once every question in it is answered (a suggestion counting
   // once accepted). A station the project does not ask about is done once
   // everything before it in the story is.
@@ -293,17 +397,100 @@
     return out + "</g>";
   }
   var W = P;
+  // The part of a ground polygon beyond x = v (the sea).
+  function clip(poly, v) {
+    var out = [];
+    for (var i = 0; i < poly.length; i++) {
+      var a = poly[i], b = poly[(i + 1) % poly.length], ia = a[0] >= v, ib = b[0] >= v;
+      if (ia) out.push(a);
+      if (ia !== ib) { var t = (v - a[0]) / (b[0] - a[0]); out.push([v, a[1] + (b[1] - a[1]) * t]); }
+    }
+    return out;
+  }
+  function has(site, re) { return (site.elements || []).some(function (e) { return re.test(e); }); }
+  var CONC = "#bdbcb6";
+  var BUILD = {
+    // A frame of three floors: its foundations (on piles when it has them),
+    // columns, slabs and a core wall, as its elements say.
+    building: function (x, y, site, built) {
+      var out = "", piles = has(site, /pile/), cols = has(site, /column/) || !site.elements.length, walls = has(site, /wall/);
+      if (piles) for (var p = 0; p < 6; p++) out += cyl(x + 0.6 + (p % 3) * 3, y + 0.6 + Math.floor(p / 3) * 4, -0.1, 0.25, 0.1, "#8d8a80");
+      out += box(x - 0.3, y - 0.3, 0, 7.6, 5.6, 0.5, "#a9a7a0");
+      for (var f = 0; f < 3; f++) {
+        var z = 0.5 + f * 3;
+        if (cols) for (var c = 0; c < 6; c++) out += box(x + 0.3 + (c % 3) * 3, y + 0.3 + Math.floor(c / 3) * 4.2, z, 0.4, 0.4, 2.7, CONC);
+        if (walls) out += box(x + 5.4, y + 1.6, z, 1.4, 1.6, 2.7, shade(CONC, -0.06));
+        if (f < 2 || !site.steel) out += box(x, y, z + 2.7, 7.0, 5.0, 0.3, shade(CONC, 0.08));
+      }
+      if (site.steel) {
+        var z2 = 6.5 + 2.7;
+        for (var s2 = 0; s2 < 6; s2++) out += box(x + 0.35 + (s2 % 3) * 3, y + 0.35 + Math.floor(s2 / 3) * 4.2, z2 - 2.7 + 0.3, 0.25, 0.25, 2.6, "#365e8c");
+        out += box(x, y, z2 + 0.2, 7.0, 0.25, 0.3, "#4673a6") + box(x, y + 4.75, z2 + 0.2, 7.0, 0.25, 0.3, "#4673a6");
+        out += '<polygon points="' + pts([P(x, y, z2 + 0.5), P(x + 7, y, z2 + 0.5), P(x + 7, y + 5, z2 + 0.5), P(x, y + 5, z2 + 0.5)]) + '" fill="#8d99a6" opacity=".85"/>';
+      }
+      // Crane rails on corbels along the frame, the travelling crane across them.
+      if (site.cranes) {
+        out += box(x, y + 0.05, 6.2, 7.0, 0.35, 0.35, "#555") + box(x, y + 4.6, 6.2, 7.0, 0.35, 0.35, "#555");
+        out += box(x + 3.2, y - 0.1, 6.55, 0.6, 5.2, 0.55, "#e0a32a") + box(x + 3.25, y + 2.2, 6.0, 0.5, 0.6, 0.5, "#555");
+      }
+      return out;
+    },
+    // A quay on its piles at the sea's edge: fenders on its face, bollards on
+    // its deck, the quay wall behind, and crane rails with the crane on them.
+    quay: function (x, y, site) {
+      var out = "";
+      for (var p = 0; p < 10; p++) out += box(x + 2.5 + (p % 5) * 2.2, y + 0.4 + Math.floor(p / 5) * 3.4, -1.6, 0.4, 0.4, 3.4, "#9a9890");
+      if (has(site, /quay/)) out += box(x, y - 0.6, 0, 2.2, 5.6, 1.8, shade(CONC, -0.1));
+      out += box(x, y, 1.8, 12, 4.4, 0.5, CONC);
+      for (var f = 0; f < 4; f++) out += box(x + 3 + f * 2.4, y + 4.4, 1.0, 0.8, 0.25, 1.0, "#222831");
+      for (var b = 0; b < 3; b++) out += cyl(x + 3.4 + b * 3.4, y + 3.9, 2.3, 0.15, 0.35, "#333");
+      if (site.cranes) {
+        out += line(P(x, y + 0.6, 2.32), P(x + 12, y + 0.6, 2.32), "#555", 1.4) + line(P(x, y + 3.2, 2.32), P(x + 12, y + 3.2, 2.32), "#555", 1.4);
+        out += crane(x + 5, y + 0.6, 2.3, 2.6);
+      }
+      return out;
+    },
+    // A bridge: piers up from the river on their piles, the deck across.
+    span: function (x, y, site) {
+      var out = '<polygon class="spec-scene-river" points="' + pts([P(x - 2, y + 2.2, 0), P(x + 11, y + 2.2, 0), P(x + 11, y + 4.6, 0), P(x - 2, y + 4.6, 0)]) + '"/>';
+      [0.6, 4.6, 8.6].forEach(function (px) {
+        out += box(x + px - 0.4, y + 2.6, 0, 1.4, 1.4, 0.5, "#a9a7a0") + box(x + px, y + 3.0, 0.5, 0.6, 0.6, 2.8, CONC);
+      });
+      out += box(x - 1.4, y + 2.4, 3.3, 11.6, 1.8, 0.45, shade(CONC, 0.06));
+      out += box(x - 1.4, y + 2.4, 3.75, 11.6, 0.1, 0.4, "#8a8f96") + box(x - 1.4, y + 4.1, 3.75, 11.6, 0.1, 0.4, "#8a8f96");
+      return out;
+    }
+  };
+  // A gantry crane on its rails: legs, the beam across, the hoist and its hook.
+  function crane(x, y, z, gauge) {
+    gauge = gauge || 2.6;
+    var c = "#e0a32a", out = "";
+    out += box(x, y, z, 0.3, 0.3, 5.5, c) + box(x, y + gauge, z, 0.3, 0.3, 5.5, c) + box(x + 2.4, y, z, 0.3, 0.3, 5.5, c) + box(x + 2.4, y + gauge, z, 0.3, 0.3, 5.5, c);
+    out += box(x, y - 2.5, z + 5.5, 0.4, gauge + 4.5, 0.5, c) + box(x + 2.3, y - 2.5, z + 5.5, 0.4, gauge + 4.5, 0.5, c);
+    out += box(x + 0.6, y + gauge + 0.8, z + 5.2, 1.5, 0.8, 0.4, "#555") + line(P(x + 1.35, y + gauge + 1.2, z + 5.2), P(x + 1.35, y + gauge + 1.2, z + 2.6), "#333", 1);
+    return out;
+  }
 
   function draw() {
     index();
     var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     function grow(p, pad) { minX = Math.min(minX, p[0] - pad); maxX = Math.max(maxX, p[0] + pad); minY = Math.min(minY, p[1] - pad); maxY = Math.max(maxY, p[1] + pad); }
-    var shown = Object.keys(PLACE).filter(function (id) { return byId[id] || PLANT.indexOf(id) >= 0; });
+    var site = data.site || {};
+    var shown = Object.keys(PLACE).filter(function (id) { return byId[id] || PLANT.indexOf(id) >= 0 || wanted(id); });
+    var works = Object.keys(WORKS).filter(function (k) { return k === "building" ? site.building : k === "quay" ? site.marine : site.bridge; });
+    // A bridge project's questions stand on the bridge it builds.
+    PLACE.bridge = site.bridge ? [WORKS.span[0] + 4.6, WORKS.span[1] + 2.4] : BRIDGE_AT;
+    PIN.bridge = site.bridge ? 4.4 : 2.8;
     var gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9;
     shown.forEach(function (id) {
       gx0 = Math.min(gx0, PLACE[id][0]); gy0 = Math.min(gy0, PLACE[id][1]);
       gx1 = Math.max(gx1, PLACE[id][0]); gy1 = Math.max(gy1, PLACE[id][1]);
     });
+    works.forEach(function (k) {
+      var w = WORKS[k];
+      gx0 = Math.min(gx0, w[0] - 2); gy0 = Math.min(gy0, w[1] - 2); gx1 = Math.max(gx1, w[0] + w[2]); gy1 = Math.max(gy1, w[1] + w[3]);
+    });
+    if (site.marine) gx1 = Math.max(gx1, SEA + 10);
     gx0 = Math.floor(gx0 - 3); gy0 = Math.floor(gy0 - 3); gx1 = Math.ceil(gx1 + 6); gy1 = Math.ceil(gy1 + 5);
     [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]].forEach(function (c) { grow(P(c[0], c[1], 0), 4); });
 
@@ -311,6 +498,26 @@
     parts.push('<polygon class="spec-scene-ground" points="' + pts([P(gx0, gy0, 0), P(gx1, gy0, 0), P(gx1, gy1, 0), P(gx0, gy1, 0)]) + '"/>');
     for (var g = gx0; g <= gx1; g += 2) parts.push(line(P(g, gy0, 0), P(g, gy1, 0), "var(--scene-grid)", 0.5));
     for (var h = gy0; h <= gy1; h += 2) parts.push(line(P(gx0, h, 0), P(gx1, h, 0), "var(--scene-grid)", 0.5));
+    // A marine project's site runs down to the sea.
+    if (site.marine) {
+      var sea = clip([[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]], SEA);
+      if (sea.length) {
+        parts.push('<polygon class="spec-scene-sea" points="' + pts(sea.map(function (c) { return P(c[0], c[1], 0); })) + '"/>');
+        for (var wv = 0; wv < 12; wv++) {
+          var wp = P(SEA + 2 + (wv % 4) * 2.2, gy0 + 3 + Math.floor(wv / 4) * ((gy1 - gy0 - 6) / 2) + (wv % 2) * 1.5, 0);
+          parts.push('<path class="spec-scene-wave" style="animation-delay:' + (wv * 0.35).toFixed(2) + 's" d="M' + (wp[0] - 12).toFixed(1) + "," + wp[1].toFixed(1) + ' q6,-4 12,0 t12,0" fill="none"/>');
+        }
+      }
+    }
+    // The way through the site, level by level, from the brief to the last station.
+    var walk = [];
+    order.forEach(function (id) { if (PLACE[id] && shown.indexOf(id) >= 0) { var at = PLACE[id], mid = MID[id] || [0, 0]; walk.push(P(at[0] + mid[0], at[1] + mid[1] + 1.6, 0)); } });
+    if (walk.length > 1) {
+      var reached = 0;
+      order.forEach(function (id, i) { if (byId[id] && byId[id].stage <= data.open_stage) reached = i; });
+      parts.push('<polyline class="spec-scene-walk" points="' + pts(walk) + '"/>');
+      parts.push('<polyline class="spec-scene-walk is-done" points="' + pts(walk.slice(0, reached + 1)) + '"/>');
+    }
 
     var m = PLACE.mixer, pump = PLACE.pour, form = PLACE.formwork, cage = PLACE.rebar, lab = PLACE.lab;
     var fc = [form[0] + 1.7, form[1] + 1.2];           // the middle of the formwork
@@ -319,7 +526,9 @@
     parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
 
     var mixed = done("mixer");
-    var st = { formwork: { steel: done("rebar"), poured: done("pour"), cured: done("pour") }, pour: { to: fc } };
+    var bar = BAR[(site.rebar || [])[0]] || BAR.Uncoated;
+    var st = { formwork: { steel: done("rebar"), poured: done("pour"), cured: done("pour"), elements: site.elements || [], bar: bar, pt: done("tendons") && site.pt },
+      pour: { to: fc }, rebar: { kinds: site.rebar }, tendons: { pt: site.pt }, precast: { kind: site.precast } };
     var drawOrder = shown.slice().sort(function (a, b) { return (PLACE[a][0] + PLACE[a][1]) - (PLACE[b][0] + PLACE[b][1]); });
     centre = {};
     var truckAt = tA[0] + tA[1];
@@ -338,13 +547,15 @@
       var pin = P(at[0] + mid[0], at[1] + mid[1], PIN[id] + 0.8), foot = P(at[0] + mid[0], at[1] + mid[1], 0);
       centre[id] = [(pin[0] + foot[0]) / 2, (pin[1] + foot[1]) / 2 + 10];
       grow(pin, 40); grow(foot, 70);
-      var state = stateOf(s), left = openCount(s);
-      var mark = s.locked
+      var state = checks ? (findings(id).length ? "needed" : "answered") : stateOf(s);
+      var left = checks ? findings(id).length : openCount(s);
+      var mark = s.locked && !checks
         ? '<path d="M' + (pin[0] - 4.5) + "," + (pin[1] - 1) + "h9v7h-9z M" + (pin[0] - 2.8) + "," + (pin[1] - 1) + "v-2.5a2.8,2.8 0 0 1 5.6,0v2.5" + '" fill="none" stroke="#fff" stroke-width="1.6"/>'
         : '<text x="' + pin[0] + '" y="' + (pin[1] + 4) + '" text-anchor="middle">' + (left ? left : "✓") + "</text>";
-      var words = s.name + ": " + s.questions.length + " questions, " + (s.locked ? "locked until the stage before is answered" :
+      var words = checks ? s.name + ": " + (left ? left + " finding" + (left === 1 ? "" : "s") + " to settle" : "nothing open") :
+        s.name + ": " + s.questions.length + " questions, " + (s.locked ? "locked until the stage before is answered" :
         s.needed ? s.needed + " need an answer" : s.suggested ? s.suggested + " suggested to accept" : "all answered");
-      parts.push('<g class="spec-scene-st spec-in-' + state + (s.locked ? " is-locked" : "") + (s.stage === data.open_stage ? " is-now" : "") +
+      parts.push('<g class="spec-scene-st spec-in-' + state + (s.locked && !checks ? " is-locked" : "") + (s.stage === data.open_stage && !checks ? " is-now" : "") +
         (id === current ? " is-on" : "") + '" data-id="' + id + '" tabindex="0" role="button" aria-label="' + esc(words) + '">' +
         '<ellipse class="spec-scene-halo" cx="' + foot[0] + '" cy="' + foot[1] + '" rx="70" ry="35"/>' + art +
         line(foot, pin, "var(--scene-pin-line)", 0.8) +
@@ -352,6 +563,15 @@
         '<text class="spec-scene-label" x="' + pin[0] + '" y="' + (pin[1] - 16) + '" text-anchor="middle">' + esc(s.name) + "</text></g>");
     });
     if (!truckDrawn) parts.push(truck());
+    // What the project builds: drawn faint until the pour is answered, then in
+    // concrete; the steel frame on it once that is.
+    var built = done("pour");
+    works.forEach(function (k) {
+      var w = WORKS[k];
+      parts.push('<g class="spec-scene-works' + (built ? " is-built" : "") + '">' + BUILD[k](w[0], w[1], site, built) + "</g>");
+      grow(P(w[0], w[1], 12), 30); grow(P(w[0] + w[2], w[1] + w[3], 0), 30);
+      grow(P(w[0] + w[2], w[1], 0), 30); grow(P(w[0], w[1] + w[3], 0), 30);
+    });
 
     // How the materials go, each moving once its stage is answered.
     var mt = [m[0] + 1.4, m[1] + 1.2, 5.1];             // the mixer's charging hopper
@@ -371,6 +591,7 @@
     svg.innerHTML = parts.join("");
     whole = [minX, minY, maxX - minX, maxY - minY];
     stageText();
+    levels();
   }
 
   // --- zooming ----------------------------------------------------------------------
@@ -401,13 +622,37 @@
   var stageEl = root.querySelector("[data-stage]");
   function stageText() {
     if (!stageEl) return;
+    if (checks) {
+      var n = data.flags.total, at = Object.keys(data.flags.stations).length;
+      stageEl.classList.toggle("is-done", !n);
+      stageEl.textContent = n ? n + " finding" + (n === 1 ? "" : "s") + " to settle, at " + at + " part" + (at === 1 ? "" : "s") + " of the works." : "Nothing on the check is open.";
+      return;
+    }
     var n = data.chapters.length, c = data.chapters[data.open_stage];
     stageEl.classList.toggle("is-done", !c);
     var next = data.chapters[data.open_stage + 1];
     stageEl.textContent = !c ? "Every stage is answered." :
-      "Stage " + (data.open_stage + 1) + " of " + n + ", " + c.name + ": " + (c.needed + c.suggested) + " to answer or accept." +
+      "Level " + (data.open_stage + 1) + " of " + n + ", " + c.name + ": " + (c.slug === "deciding" ? "decide the brief first." : (c.needed + c.suggested) + " to answer or accept.") +
       (next ? " Next: " + next.name + "." : "");
   }
+  // The levels as a row above the picture: done, the one open now, locked.
+  var levelsEl = root.querySelector("[data-levels]");
+  function levels() {
+    if (!levelsEl) return;
+    levelsEl.innerHTML = data.chapters.map(function (c, i) {
+      var state = c.locked ? "locked" : i === data.open_stage ? "now" : "done";
+      var left = c.needed + c.suggested;
+      return '<li class="spec-level is-' + state + '"><button type="button" data-level="' + i + '" title="' + esc(c.lead || "") + '">' +
+        '<span class="spec-level-n">' + (state === "done" ? "✓" : state === "locked" ? "🔒︎" : c.level) + "</span>" +
+        '<span class="spec-level-name">' + esc(c.name) + "</span>" + (state === "now" && left ? '<span class="spec-level-left">' + left + "</span>" : "") + "</button></li>";
+    }).join("");
+  }
+  if (levelsEl) levelsEl.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-level]");
+    if (!b) return;
+    var c = data.chapters[+b.getAttribute("data-level")];
+    if (c && c.stations.length) open(firstOpen(c));
+  });
   function firstOpen(c) {
     return c.stations.filter(function (id) { return openCount(byId[id]); })[0] || c.stations[0];
   }
@@ -439,6 +684,17 @@
       })
       .catch(function () { if (mine === loading) body.innerHTML = '<p class="small muted">Could not load this station\'s questions. The summary below has them, and Details answers them.</p>'; });
   }
+  function showFindings(id) {
+    var s = byId[id], list = findings(id);
+    body.innerHTML = "<h2>" + esc(s.name) + '</h2><p class="small muted">' + esc(s.what || "") + "</p>" +
+      (list.length ? '<p class="small"><strong>' + list.length + " to settle</strong> here. Each opens on the check below.</p>" +
+        '<ul class="spec-scene-flags">' + list.map(function (f) {
+          return '<li class="spec-scene-flag spec-sev-' + esc(f.severity) + '"><span class="small muted">' + esc(f.group) + (f.section ? " · " + esc(f.section) : "") + "</span>" +
+            '<a href="' + esc(f.url) + '" data-flag>' + esc(f.text) + "</a></li>";
+        }).join("") + "</ul>"
+        : '<p class="small">Nothing open here.</p>');
+    panel.scrollTop = 0;
+  }
   function open(id, fromPlay) {
     var s = byId[id];
     if (!s) return;
@@ -447,9 +703,9 @@
     Array.prototype.forEach.call(svg.querySelectorAll(".spec-scene-st"), function (g) { g.classList.toggle("is-on", g.getAttribute("data-id") === id); });
     svg.classList.add("is-zoomed");
     panel.hidden = false;
-    load(id);
+    if (checks) showFindings(id); else load(id);
     var c = chapterOf(id);
-    caption.textContent = (c ? "Chapter " + c.number + " · " : "") + s.name + (s.locked ? " · locked" : "");
+    caption.textContent = (c && !checks ? "Level " + c.level + " · " : "") + s.name + (s.locked && !checks ? " · locked" : "");
     zoomTo(viewFor(id));
   }
   function close() {
@@ -465,9 +721,10 @@
   function move(by) {
     var i = current ? order.indexOf(current) : -1;
     var next = order[(i + by + order.length) % order.length];
-    if (by > 0 && byId[next].locked) {
+    if (by > 0 && byId[next].locked && !checks) {
       var c = data.chapters[data.open_stage];
-      hold("Answer the " + (c.needed + c.suggested) + " left in " + c.name + " first: the next stage opens once it is done.");
+      hold(c.slug === "deciding" ? "Decide the brief first: the next level opens once it is confirmed." :
+        "Answer the " + (c.needed + c.suggested) + " left in " + c.name + " first: the next level opens once it is done.");
       if (current !== firstOpen(c)) open(firstOpen(c), !!timer);
       return false;
     }
@@ -506,11 +763,11 @@
         data = resp.scene;
         draw();
         if (view) setView(view);
-        var note = resp.messages.map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + esc(m.text) + "</div>"; }).join("");
+        var note = resp.messages.map(function (m) { return '<div class="flash ' + esc(m.kind) + '">' + (m.html != null ? m.html : esc(m.text)) + "</div>"; }).join("");
         var c = data.chapters[data.open_stage];
         if (data.open_stage > wasStage) {
           note += '<div class="flash success spec-scene-opened"><strong>' + esc(data.chapters[wasStage].name) + " is done.</strong> " +
-            (c ? 'The next stage is open: <button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(firstOpen(c)) + '">Go to ' + esc(c.name) + " →</button>" : "Every stage is answered.") + "</div>";
+            (c ? 'The next level is open: <button type="button" class="btn btn-primary btn-sm" data-go-stage="' + esc(firstOpen(c)) + '">Go to ' + esc(c.name) + " →</button>" : "Every stage is answered.") + "</div>";
         }
         load(id, note);
         refreshSummary();
@@ -544,7 +801,7 @@
   function stop() {
     if (!timer) return;
     clearInterval(timer); timer = null;
-    playBtn.textContent = "▶ Play the story";
+    playBtn.textContent = playWords;
   }
   function play() {
     if (timer) { stop(); return; }

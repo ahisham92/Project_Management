@@ -17,12 +17,14 @@ import re
 import zipfile
 
 from flask import (
-    Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for,
+    Blueprint, Response, abort, flash, g, get_flashed_messages, jsonify, redirect, render_template,
+    request, url_for,
 )
 from markupsafe import Markup, escape
 
 from .. import specs, specs_check, specs_export, specs_questions, specs_review as review, specs_seed
 from .. import specs_store as store
+from ..specs_inputs import DECIDED
 from ..auth import login_required
 
 bp = Blueprint("specs", __name__, url_prefix="/specs")
@@ -536,7 +538,7 @@ def save_set(set_id: int):
         step = request.form.get("next")
         return redirect(url_for("specs.spec_set", set_id=set_id)
                         + (f"#step-{step}" if step in ("elements", "questions", "sections") else ""))
-    chosen = {}
+    chosen = {DECIDED: "1"}            # saving the project's choices is deciding them
     toggles = {key for key, _g, how, _i in specs_seed.ELEMENTS if how == "toggle"}
     for o in store.options():
         key = o["key"]
@@ -918,12 +920,40 @@ def _labels() -> dict:
 
 
 def _scene(set_id: int, row, sections, asked=None) -> dict:
+    """The picture of the works for a project: its decisions first, then its
+    questions station by station, as ``specs_inputs.scene`` gives them."""
     from .. import specs_inputs
 
+    stored = json.loads(row["options"] or "{}")
     return specs_inputs.scene(
         asked if asked is not None else _asked(set_id, row),
         review.issued_words(row, sections, marked=True), _labels(),
-        lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}")
+        lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}",
+        chosen=store.chosen_for(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
+
+
+def _decide(set_id: int, row) -> list[tuple[str, str]]:
+    """The project's decisions as the brief's form sent them, each kept with
+    the project's choices; the sections they call for put in. What to say."""
+    from .. import specs_inputs
+
+    shown = set(request.form.getlist("shown_opt"))
+    given = {}
+    for o in store.options():
+        key = o["key"]
+        if key not in shown:
+            continue
+        if o["kind"] == "many":
+            ticked = [v for v in request.form.getlist(f"opt_{key}") if v]
+            if not ticked:
+                ticked = [c for c in o["choice_list"] if specs._norm(c) == "none"][:1]
+            given[key] = "|".join(ticked)
+        else:
+            given[key] = request.form.get(f"opt_{key}", "")
+    before = store.ruled_out(set_id)
+    specs_questions.save_switches(set_id, {**given, specs_inputs.DECIDED: "1"})
+    _added(set_id, before)
+    return [("success", "Decided. The site is drawn from these, and the questions follow from them.")]
 
 
 @bp.get("/sets/<int:set_id>/inputs")
@@ -950,7 +980,10 @@ def inputs_station(set_id: int, station: str):
 
     row = _set_or_404(set_id)
     asked = _asked(set_id, row)
-    chapter, questions = specs_inputs.station_questions(asked, station)
+    if station == "decide":
+        chapter, questions = dict(specs_inputs.DECIDING), []
+    else:
+        chapter, questions = specs_inputs.station_questions(asked, station)
     if chapter is None:
         abort(404)
     sections = store.set_sections(set_id)
@@ -959,7 +992,9 @@ def inputs_station(set_id: int, station: str):
         data = _scene(set_id, row, sections, asked)
         messages = []
         if specs_inputs.blocking(data, station):
-            messages.append(("error", "This stage is locked until the one before it is answered."))
+            messages.append(("error", "This level is locked until the one before it is answered."))
+        elif station == "decide":
+            messages += _decide(set_id, row)
         else:
             given, split = specs_questions.read_form(request.form, questions)
             held = _unaccepted(questions, given)
@@ -984,12 +1019,23 @@ def inputs_station(set_id: int, station: str):
                 flash(text, kind)
             return redirect(url_for("specs.review_inputs", set_id=set_id) + f"#st-{station}")
         row = store.spec_set(set_id)
-        return {"messages": [{"kind": k, "text": t} for k, t in messages],
-                "scene": _scene(set_id, row, store.set_sections(set_id))}
+        # What the save flashed for the next page (sections put in or ruled
+        # out) is said in the panel instead.
+        out = [{"kind": k, "text": t} for k, t in messages]
+        out += [{"kind": k, "html": str(t if isinstance(t, Markup) else escape(t))}
+                for k, t in get_flashed_messages(with_categories=True)]
+        return {"messages": out, "scene": _scene(set_id, row, store.set_sections(set_id))}
     data = _scene(set_id, row, sections, asked)
-    st = next(s for s in data["stations"] if s["id"] == station)
+    st = next((s for s in data["stations"] if s["id"] == station), None)
+    if st is None:
+        abort(404)
+    if station == "decide":
+        return render_template(
+            "specs/_decide.html", spec=row, station=st, level=st["level"], may_edit=review.may(row, g.user, "edit"),
+            groups=_grouped(store.options()), chosen=store.chosen_for(row),
+            picked={k: set(v.split("|")) for k, v in store.chosen_for(row).items()})
     return render_template(
-        "specs/_station.html", spec=row, station=st, chapter=chapter, questions=questions,
+        "specs/_station.html", spec=row, station=st, chapter=chapter, questions=questions, level=st["level"],
         locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
         mix=data["mix"] if station == "mixer" else None, element_labels=_labels(),
         was=json.dumps(_group_answers(row, {"questions": questions}), ensure_ascii=False),
@@ -1672,15 +1718,23 @@ CHECKS = [
 @bp.get("/sets/<int:set_id>/check")
 @login_required
 def check_set(set_id: int):
+    from .. import specs_inputs
+
     row = _set_or_404(set_id)
     report = store.check_set(set_id)
     store.check_actions(set_id, report)
-    return render_template("specs/check.html", spec=row, report=report, checks=CHECKS,
+    language = _language(store.language_set(set_id))
+    # The same picture of the works as the inputs at a glance, each open
+    # finding pinned at the station of the section it concerns.
+    asked = _asked(set_id, row)
+    scene = _scene(set_id, row, store.set_sections(set_id), asked)
+    scene["flags"] = specs_inputs.flags(report, language, CHECKS, KINDS, asked, store.ADVICE)
+    return render_template("specs/check.html", spec=row, report=report, checks=CHECKS, scene=scene,
                            chosen=store.chosen_for(row), is_admin=_is_admin(),
                            amending=request.args.get("amend", ""), shown=request.args.get("shown", ""),
                            fmt=request.args.get("fmt") or "",
                            issuing=request.args.get("issuing"), blocking=_not_issued(report),
-                           language=_language(store.language_set(set_id)), kinds=KINDS,
+                           language=language, kinds=KINDS,
                            waiting=store.open_items(set_id, report))
 
 

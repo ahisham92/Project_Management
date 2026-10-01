@@ -76,7 +76,7 @@ def test_the_inputs_page_puts_each_answer_on_its_station(app, signed_in):
     assert "The inputs at a glance" in page and "Play the story" in page
     data = json.loads(re.search(r'id="spec-scene-data">(.*?)</script>', page, re.S).group(1))
     stations = {s["id"]: s for s in data["stations"]}
-    assert set(stations) == {"office", "admixtures", "mixer"}
+    assert set(stations) == {"decide", "office", "admixtures", "mixer"}
     strength = next(q for q in stations["mixer"]["questions"] if q["key"] == "conc_strength")
     assert strength["state"] == "answered" and strength["value"] == "45MPa"
     assert strength["places"][0]["url"].endswith("#p-" + strength["places"][0]["url"].split("#p-")[1])
@@ -89,8 +89,11 @@ def test_the_inputs_page_puts_each_answer_on_its_station(app, signed_in):
     assert {"conc_strength", "conc_designation"} <= {c["key"] for c in data["mix"]["columns"]}
     assert {r["element"] for r in data["mix"]["rows"]} == {"Foundations", "Basement walls"}
     assert data["totals"]["answered"] == 1 and data["count"] == sum(len(s["questions"]) for s in data["stations"])
+    # The brief comes first: what the project builds, decided before any question.
+    assert data["chapters"][0]["slug"] == "deciding" and stations["decide"]["needed"] == 1
+    assert data["site"]["building"] and not data["site"]["marine"]
     # The plain summary carries the same.
-    assert "Chapter 3: The mix" in page and "Each element&#39;s concrete" in page or "Each element's concrete" in page
+    assert "Level 4: The mix" in page and "Each element&#39;s concrete" in page or "Each element's concrete" in page
     assert "Needs your answer" in page
 
 

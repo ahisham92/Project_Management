@@ -1,12 +1,12 @@
 {# One station of the inputs at a glance, as the panel beside the picture shows
    it: its questions to answer or change there, saved to the project. #}
 {% from "specs/_question.html" import controls, question with context %}
-<p class="small muted">Chapter {{ chapter['number'] }}: {{ chapter['name'] }}</p>
+<p class="small muted">Level {{ level }}: {{ chapter['name'] }}</p>
 <h2>{{ station['name'] }}</h2>
 <p class="small muted">{{ station['what'] }}</p>
 {% if locked %}
   <div class="spec-scene-lock">
-    <p><strong>Locked.</strong> Finish chapter {{ locked['number'] }}, {{ locked['name'] }}, first: {{ locked['left'] }} question{{ 's' if locked['left'] != 1 }} there still to answer or accept.</p>
+    <p><strong>Locked.</strong> Finish level {{ locked['level'] }}, {{ locked['name'] }}, first: {% if locked['slug'] == 'deciding' %}decide what the project builds and the systems it uses.{% else %}{{ locked['left'] }} question{{ 's' if locked['left'] != 1 }} there still to answer or accept.{% endif %}</p>
     <button type="button" class="btn btn-primary btn-sm" data-go-stage="{{ locked['station'] }}">Go to {{ locked['name'] }}</button>
   </div>
 {% endif %}

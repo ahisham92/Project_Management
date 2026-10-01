@@ -17,6 +17,8 @@
   <div class="inline-form">
     <a class="btn btn-ghost" href="{{ url_for('specs.check_library', family=family) }}">Check {{ family }}</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.standards') }}">Standards</a>
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards_register') }}">Standards register</a>
+    {% if is_admin %}<a class="btn btn-ghost" href="{{ url_for('specs.from_projects', family=family) }}">Amendments from projects</a>{% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.options') }}">Options and variables</a>
   </div>
 </div>

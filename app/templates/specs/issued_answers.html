@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import empty %}
+{% from "specs/_issued.html" import issued_head, family_tabs %}
+{% block title %}Answers across projects · THEMIS{% endblock %}
+
+{% block content %}
+{{ issued_head('answers', 'Answers across projects', 'How each project answered every question, as it was last issued: concrete classes, covers, exposure, steel grades and the rest, one column per project.') }}
+{{ family_tabs(families, family, 'specs.issued_answers') }}
+<div class="inline-form" style="justify-content:space-between;margin:12px 0">
+  <form method="get" class="inline-form">
+    {% if family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
+    <label class="check"><input type="checkbox" name="differ" value="1"{% if only_differ %} checked{% endif %} onchange="this.form.submit()"> Only the questions answered differently</label>
+  </form>
+  {% if table['rows'] %}<a class="btn btn-ghost" href="{{ url_for('specs.issued_answers', family=family, format='csv') }}">Download (.csv for Excel)</a>{% endif %}
+</div>
+{% if not table['rows'] %}
+  {{ empty('No answers recorded yet', 'Each project\'s answers are kept from its first issue on.') }}
+{% else %}
+<div class="card"><div class="card-body flush table-scroll spec-matrix">
+  <table>
+    <thead><tr><th>Question</th>{% for p in table['projects'] %}<th>{{ p['name'] }}<div class="small muted">{{ p['location'] or 'no location' }} · {{ p['family'] }} · Rev {{ p['revision'] }}</div></th>{% endfor %}</tr></thead>
+    <tbody>
+    {% set ns = namespace(group=None) %}
+    {% for r in table['rows'] if r['differ'] or not only_differ %}
+      {% if r['group'] != ns.group %}{% set ns.group = r['group'] %}<tr class="spec-matrix-group"><th colspan="{{ table['projects'] | length + 1 }}">{{ r['group'] or 'Other' }}</th></tr>{% endif %}
+      <tr{% if r['differ'] %} class="spec-differ"{% endif %}><td>{{ r['label'] }}</td>{% for v in r['values'] %}<td class="small">{{ v or '—' }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endif %}
+{% endblock %}

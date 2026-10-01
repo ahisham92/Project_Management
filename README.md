@@ -293,6 +293,38 @@ against the current codes and the project, and amended it as needed.
   section editor shows your version with a note to look at theirs first, and answers they
   changed meanwhile are kept.
 
+**What the office has issued, and what it teaches the MTD.** Every issue is kept as a record
+of its own, with the project's data as issued, and the record outlives the project:
+
+- **Issued specifications.** The list of every issue across projects: project, kind, location,
+  client, revision, date and who issued it, found by name, code, place or client. Each record
+  holds the issued words of every section, the project's answers, choices and elements, and
+  every amendment it made to the master text. A deleted project's record stays; only its files
+  go with it.
+- **Compare.** Any two issues side by side (the Jeddah job against the Lagos one): their facts,
+  the answers and choices where they differ, and each section's words, word by word.
+- **Answers across projects.** How every project answered every question as last issued, one
+  column a project, to see what the office usually picks; with *Only where they differ* and a
+  CSV for Excel.
+- **Amendments for the MTD** (administrators). Every paragraph projects reworded, added or took
+  out, grouped by section with how many projects made it and the words against the master's.
+  An administrator writes one into the MTD (as the project wrote it, or edited first; it becomes
+  the section's next version, and projects that took the section are offered it as usual), or
+  keeps it out as that project's own, with a note; either can be reopened. By default it reads
+  the issued records; *as they stand now* reads the projects' live words. Only administrators
+  amend the MTD, there or on the library pages.
+
+**The standards register.** Every standard the MTD and the projects cite, with its current
+edition as last checked: *current*, *older edition cited*, *withdrawn*, *not checked*, and
+*checked over a year ago*. The site cannot reach the publishers, so the check runs outside it:
+a monthly check looks up the current editions and writes a CSV (`standard, current, status,
+replaced_by, source, checked, note`) into the project's shared folder; *Download the list to
+check* gives the same columns for a check by hand. An administrator loads the file, sees what
+each line will do, and ticks what the register takes; a row can also be edited on the page.
+What the register takes feeds the existing check: citations of an older edition, or of a
+withdrawn standard, are flagged on each project with the newer one offered, and the engineer
+decides whether to take it.
+
 The Specs Writer is a program like the others: the administrator gives it to each account on
 the Admin page. Only administrators change the library, the options and the house template;
 anybody given the program writes project specifications.

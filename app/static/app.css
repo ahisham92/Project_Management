@@ -1353,3 +1353,18 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-engineer-note strong { display: block; margin-bottom: 2px; }
 .spec-engineer-confirm, .spec-accept { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; line-height: 1.4; }
 .spec-accept { margin: 10px 0 4px; padding: 10px 12px; border: 1px dashed var(--border, #c9ced8); border-radius: 6px; }
+
+/* What the office has issued: compare, answers across projects, amendments for the MTD. */
+.spec-differ td, .spec-differ th { background: color-mix(in srgb, #a67c3a 10%, transparent); }
+.spec-compare th[scope=row] { text-align: left; font-weight: 600; white-space: nowrap; }
+.spec-matrix td:first-child, .spec-matrix th:first-child { position: sticky; left: 0; background: var(--surface, #fff); z-index: 1; min-width: 220px; }
+.spec-matrix-group th { text-align: left; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #667); }
+.spec-amend { border-left: 3px solid var(--border, #c9ced8); padding-left: 12px; }
+.spec-amend-mtd { margin: 4px 0 8px; }
+.spec-amend-entry { padding: 8px 0; border-top: 1px dashed var(--border, #c9ced8); }
+.spec-amend-entry.spec-amend-done { opacity: .72; }
+.spec-amend-words { font-family: Georgia, "Times New Roman", serif; margin: 4px 0 8px; }
+.spec-amend-words ins, .spec-compare ins { background: color-mix(in srgb, #2e8b57 18%, transparent); text-decoration: none; }
+.spec-amend-words del { background: color-mix(in srgb, #c0392b 15%, transparent); }
+.spec-amend-act form { display: grid; gap: 8px; margin-top: 8px; min-width: min(560px, 90vw); }
+.spec-std-form { display: grid; gap: 8px; padding: 12px; min-width: 280px; }

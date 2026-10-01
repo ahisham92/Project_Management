@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_issued.html" import issued_head %}
+{% block title %}Standards register · THEMIS{% endblock %}
+
+{% block content %}
+{{ issued_head('register', 'Standards register', 'Every standard the MTD and the projects cite, with its current edition as last checked. A standard cited in an older edition, or withdrawn, is flagged on every project\'s check with the current one offered; the engineer decides each. Nothing here changes a specification by itself.') }}
+
+<div class="inline-form" style="justify-content:space-between;margin:12px 0">
+  <nav class="spec-tabs" aria-label="Which standards">
+    {% for key, label in [('attention', 'Needs a look'), ('all', 'All')] %}
+    <a class="spec-tab{{ ' spec-tab-on' if show == key }}" href="{{ url_for('specs.standards_register', show=key) }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <p class="small muted">{{ counts['all'] }} cited · {{ counts.get('current', 0) }} up to date · {{ counts.get('older', 0) }} cited in an older edition · {{ counts.get('withdrawn', 0) }} withdrawn · {{ counts.get('unchecked', 0) + counts.get('unknown', 0) }} not confirmed{% if counts['stale'] %} · {{ counts['stale'] }} last checked over a year ago{% endif %}</p>
+</div>
+
+{% if is_admin %}
+<div class="card" style="margin-bottom:12px">
+  <div class="card-head"><div><h2>Check the editions</h2>
+    <p class="small muted" style="margin-top:2px">Download the list, have each standard's current edition checked (a routine checks the most-cited ones every month and leaves its file in the project), then load the file: you see what would change and tick what the register takes.</p></div></div>
+  <div class="card-body inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.standards_register_csv') }}">Download the list to check (.csv)</a>
+    <form method="post" action="{{ url_for('specs.load_standards_check') }}" enctype="multipart/form-data" class="inline-form">
+      <input type="file" name="file" accept=".csv,text/csv" required aria-label="Check file">
+      <button type="submit" class="btn btn-primary">Load a check…</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if not rows %}
+  {{ empty('Nothing needs a look', 'Every cited standard is up to date as last checked.') }}
+{% else %}
+<div class="card"><div class="card-body flush table-scroll">
+  <table>
+    <thead><tr><th>Standard</th><th>Cited as</th><th>Current edition</th><th>State</th><th>Checked</th><th class="right">Places</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set k = r['status'] %}
+      <tr id="std-{{ r['key'] }}">
+        <td><strong>{{ r['standard'] }}</strong><div class="small muted">{{ r['masters'] | length }} MTD section{{ 's' if r['masters'] | length != 1 }} · {{ r['projects'] | length }} project{{ 's' if r['projects'] | length != 1 }}</div></td>
+        <td class="small">{% for e, n in r['editions'][:4] %}{{ e }}{% if n > 1 %} <span class="muted">×{{ n }}</span>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if r['editions'] | length > 4 %}<br><span class="muted">and {{ r['editions'] | length - 4 }} more</span>{% endif %}</td>
+        <td>{{ k.get('current') or '—' }}{% if k.get('replaced_by') %}<div class="small">replaced by {{ k['replaced_by'] }}</div>{% endif %}{% if k.get('note') %}<div class="small muted">{{ k['note'] }}</div>{% endif %}</td>
+        <td>{% if r['state'] == 'current' %}{{ badge('good', 'Up to date') }}{% elif r['state'] == 'older' %}{{ badge('warning', 'Older edition cited: ' ~ r['older'] | join(', ')) }}{% elif r['state'] == 'withdrawn' %}{{ badge('critical', 'Withdrawn') }}{% elif r['state'] == 'unknown' %}{{ badge('neutral', 'Not confirmed') }}{% else %}{{ badge('neutral', 'Not checked') }}{% endif %}</td>
+        <td class="small">{% if k.get('checked') %}{{ k['checked'] }}{% if r['stale'] %} <span class="spec-bad">over a year ago</span>{% endif %}{% if (k.get('source') or '')[:4] == 'http' %}<div><a href="{{ k['source'] }}" rel="noopener noreferrer" target="_blank">source</a></div>{% endif %}{% else %}—{% endif %}</td>
+        <td class="right">{{ r['places'] }}</td>
+        {% if is_admin %}<td>
+          <details class="spec-menu"><summary class="btn btn-ghost btn-sm">Edit</summary>
+            <form method="post" action="{{ url_for('specs.save_standard_status') }}" class="spec-menu-list spec-std-form">
+              <input type="hidden" name="key" value="{{ r['key'] }}"><input type="hidden" name="standard" value="{{ r['standard'] }}"><input type="hidden" name="show" value="{{ show }}">
+              <label class="field"><span class="field-label">Current edition</span><input type="text" name="current" value="{{ k.get('current', '') }}" placeholder="e.g. ACI 318-25"></label>
+              <label class="field"><span class="field-label">State</span><select name="status">{% for st in statuses %}<option value="{{ st }}"{% if k.get('status', 'unknown') == st %} selected{% endif %}>{{ st }}</option>{% endfor %}</select></label>
+              <label class="field"><span class="field-label">Replaced by (if withdrawn)</span><input type="text" name="replaced_by" value="{{ k.get('replaced_by', '') }}"></label>
+              <label class="field"><span class="field-label">Source</span><input type="url" name="source" value="{{ k.get('source', '') }}" placeholder="https://"></label>
+              <label class="field"><span class="field-label">Note</span><input type="text" name="note" value="{{ k.get('note', '') }}"></label>
+              <button type="submit" class="btn btn-primary btn-sm">Save, checked today</button>
+            </form>
+          </details>
+        </td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endif %}
+{% endblock %}

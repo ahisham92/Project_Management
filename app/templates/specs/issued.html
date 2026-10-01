@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_issued.html" import issued_head, family_tabs, issue_option %}
+{% block title %}Issued specifications · THEMIS{% endblock %}
+
+{% block content %}
+{{ issued_head('issued', 'Issued specifications', 'Every specification the office has issued, each kept with its project\'s data: where it is, for whom, the kind, every answer and choice, and each amendment it made to the MTD. The record stays when a project is deleted.') }}
+{{ family_tabs(families, family, 'specs.issued_list') }}
+
+<div class="inline-form" style="justify-content:space-between;margin:12px 0">
+  <form method="get" class="inline-form">
+    {% if family %}<input type="hidden" name="family" value="{{ family }}">{% endif %}
+    <label class="field" style="min-width:260px"><span class="field-label">Find</span>
+      <input type="search" name="q" value="{{ search }}" placeholder="Project, location, client, revision"></label>
+    <label class="check"><input type="checkbox" name="all" value="1"{% if not latest %} checked{% endif %} onchange="this.form.submit()"> Every revision, not only each project's latest</label>
+    <button type="submit" class="btn btn-ghost btn-sm">Show</button>
+  </form>
+  {% if every | length > 1 %}
+  <form method="get" action="{{ url_for('specs.issued_compare') }}" class="inline-form">
+    <label class="field"><span class="field-label">Compare</span>
+      <select name="a">{% for r in every %}{{ issue_option(r, every[1]['id']) }}{% endfor %}</select></label>
+    <label class="field"><span class="field-label">with</span>
+      <select name="b">{% for r in every %}{{ issue_option(r, every[0]['id']) }}{% endfor %}</select></label>
+    <button type="submit" class="btn btn-primary">Compare</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not rows %}
+  {{ empty('Nothing issued yet', 'A specification issued from its project\'s Issues page is recorded here.') }}
+{% else %}
+<div class="card"><div class="card-body flush table-scroll">
+  <table>
+    <thead><tr><th>Project</th><th>Location</th><th>Kind</th><th>Client</th><th>Rev</th><th>Date</th><th>Purpose</th><th class="right">Sections</th><th class="right">Amendments to the MTD</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{% if r['alive'] %}<a href="{{ url_for('specs.spec_set', set_id=r['set_id']) }}">{{ r['name'] }}</a>{% else %}{{ r['name'] }} <span class="small muted">(project deleted)</span>{% endif %}{% if r['code'] %}<div class="small muted">{{ r['code'] }}</div>{% endif %}</td>
+        <td>{{ r['location'] or '—' }}</td>
+        <td>{{ r['family'] }}</td>
+        <td class="small">{{ r['client'] or '—' }}</td>
+        <td><strong>{{ r['revision'] }}</strong></td>
+        <td class="small">{{ r['issue_date'] }}</td>
+        <td class="small">{{ r['purpose'] }}</td>
+        <td class="right">{{ r['sections'] }}</td>
+        <td class="right">{% if r['recorded'] %}{{ r['amended'] }}{% if r['own'] %} <span class="small muted">+ {{ r['own'] }} own section{{ 's' if r['own'] != 1 }}</span>{% endif %}{% else %}<span class="small muted" title="Issued before projects' data was recorded with each issue">not recorded</span>{% endif %}</td>
+        <td class="right" style="white-space:nowrap">{% if r['alive'] and r['has_files'] %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.issued_file', record_id=r['id']) }}">Files as issued</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endif %}
+{% endblock %}

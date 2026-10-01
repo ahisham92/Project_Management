@@ -98,11 +98,9 @@ def test_sections_are_prepared_checked_and_approved_for_their_words(app, signed_
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "hold_shown": "1",
                                                    "signoff_shown": "1", "need_signoff": "1"})
     signed_in.post(f"/specs/sets/{set_id}/signoff", data={"stage": "prepared", "row_id": row_id})
-    # Whoever prepared it does not check it too.
-    signed_in.post(f"/specs/sets/{set_id}/signoff", data={"stage": "checked", "row_id": row_id})
-    assert "someone else signs it as checked" in text(signed_in.get(f"/specs/sets/{set_id}/review"))
+    # Approved only once checked; for now whoever prepared it may check it too.
     sara.post(f"/specs/sets/{set_id}/signoff", data={"stage": "approved", "row_id": row_id})
-    sara.post(f"/specs/sets/{set_id}/signoff", data={"stage": "checked", "row_id": row_id})
+    signed_in.post(f"/specs/sets/{set_id}/signoff", data={"stage": "checked", "row_id": row_id})
     with app.app_context():
         row = specs_store.spec_set(set_id)
         ready = specs_review.readiness(row)
@@ -287,3 +285,30 @@ def test_two_engineers_do_not_save_over_each_other(app, signed_in):
                    data={"q_proj_site": "Project site", "was": was})
     with app.app_context():
         assert specs_questions.answers_of(specs_store.spec_set(set_id))["proj_site"] == "Jeddah"
+
+
+def test_one_person_signs_all_three_stages_for_now(app, signed_in, monkeypatch):
+    from app import specs_review, specs_store
+
+    set_id = _project(app, signed_in)
+    row_id = _row_id(app, set_id)
+    sara = _person(app, signed_in, "Sara")
+    signed_in.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Sara')}": "editor"})
+    # An editor on the team prepares, checks and approves alone.
+    for stage in ("prepared", "checked", "approved"):
+        sara.post(f"/specs/sets/{set_id}/signoff", data={"stage": stage, "row_id": row_id})
+    with app.app_context():
+        assert specs_review.readiness(specs_store.spec_set(set_id))["rows"][0]["standing"] == "approved"
+    # Turned off, the checker is someone other than the preparer, with the role for it.
+    from .test_specs_kinds import set_id_of
+
+    other = set_id_of(signed_in.post("/specs/sets", data={"name": "Quay", "family": "15A"}))
+    with app.app_context():
+        section_id = specs_store.section_by_number("033000", "15A")["id"]
+    signed_in.post(f"/specs/sets/{other}/sections", data={"section_id": [str(section_id)]})
+    other_row = _row_id(app, other)
+    monkeypatch.setattr(specs_review, "ONE_PERSON_SIGNS", False)
+    monkeypatch.setitem(specs_review.NEEDS, "checked", "checker")
+    signed_in.post(f"/specs/sets/{other}/signoff", data={"stage": "prepared", "row_id": other_row})
+    signed_in.post(f"/specs/sets/{other}/signoff", data={"stage": "checked", "row_id": other_row})
+    assert "someone else signs it as checked" in text(signed_in.get(f"/specs/sets/{other}/review"))

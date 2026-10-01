@@ -39,8 +39,15 @@ ROLE_HINTS = {
 RANK = {r: i + 1 for i, r in enumerate(ROLES)}
 STAGES = ("prepared", "checked", "approved")
 STAGE_NAMES = {"prepared": "Prepared", "checked": "Checked", "approved": "Approved"}
+# For now (Ahmed, 2026-10-01) one person may sign a section as prepared,
+# checked and approved, and anybody who may change the project signs all three.
+# Set to False to have the checker and approver be someone else again, each
+# with the role for it.
+ONE_PERSON_SIGNS = True
 # The least role that signs each stage, and does each thing.
-NEEDS = {"edit": "editor", "prepared": "editor", "checked": "checker", "approved": "approver",
+NEEDS = {"edit": "editor", "prepared": "editor",
+         "checked": "editor" if ONE_PERSON_SIGNS else "checker",
+         "approved": "editor" if ONE_PERSON_SIGNS else "approver",
          "issue": "approver"}
 PURPOSES = ("For information", "For review and comment", "For tender", "For construction",
             "As built")
@@ -241,7 +248,7 @@ def sign(row: Mapping[str, Any], row_ids: Iterable[int], stage: str) -> tuple[li
                                + (" for its words as they stand" if before else ""))
                 continue
             prepared = stages.get("prepared")
-            if prepared and prepared["user_id"] == user["id"]:
+            if not ONE_PERSON_SIGNS and prepared and prepared["user_id"] == user["id"]:
                 refused.append(f"{s['number']} was prepared by you: someone else "
                                f"signs it as {stage}")
                 continue

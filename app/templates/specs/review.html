@@ -24,7 +24,7 @@
         {% if last %} · last issued Rev {{ last['revision'] }} on {{ last['issue_date'] }}{% endif %}
       </p>
     </div>
-    <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}">Issues →</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}">Issued revisions →</a>
   </div>
 </div>
 

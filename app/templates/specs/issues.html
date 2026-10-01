@@ -2,10 +2,10 @@
 {% from "partials/bits.html" import empty %}
 {% from "specs/_review.html" import review_head %}
 {% from "specs/_engineer.html" import engineer_note %}
-{% block title %}Issues · {{ spec['name'] }} · THEMIS{% endblock %}
+{% block title %}Issued revisions · {{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
-{{ review_head(spec, 'issues', 'Issues', 'Every issue of this specification: its revision, purpose and date, who prepared, checked and approved it, and the files exactly as they were sent.') }}
+{{ review_head(spec, 'issues', 'Issued revisions', 'Issue a new revision of this specification, and see every revision issued so far: its purpose and date, who prepared, checked and approved it, and the files exactly as they were sent.') }}
 
 {{ engineer_note() }}
 {% if package_differences %}
@@ -72,24 +72,28 @@
 {% endif %}
 
 <div class="card" style="margin-top:16px">
-  <div class="card-head"><h2>Register</h2></div>
+  <div class="card-head"><div><h2>Register of issued revisions</h2>
+    <p class="small muted" style="margin-top:2px">Newest first. The files are kept exactly as they were sent.</p></div>
+    {% if sections %}<a class="btn btn-ghost btn-sm" href="{{ url_for('specs.export_set', set_id=spec['id'], draft=1) }}" title="A working copy of the text as it stands, marked not issued; not put on this register">Download as it is now (not issued)</a>{% endif %}</div>
   {% if not issues %}
-    <div class="card-body">{{ empty('Nothing issued yet', 'Each issue made here is listed with its files.') }}</div>
+    <div class="card-body">{{ empty('Nothing issued yet', 'Each revision issued above is listed here with its files.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
-    <table>
-      <thead><tr><th>Rev</th><th>Date</th><th>Purpose</th><th>Prepared</th><th>Checked</th><th>Approved</th><th>Issued by</th><th></th></tr></thead>
+    <table class="themis-table spec-issue-register">
+      <thead><tr><th>Revision</th><th>Issued on</th><th>Purpose</th><th>Sign-off</th><th>Issued by</th><th class="right">Files</th></tr></thead>
       <tbody>
       {% for i in issues %}
-        <tr id="issue-{{ i['id'] }}">
-          <td><strong>{{ i['revision'] }}</strong></td>
-          <td class="small">{{ i['issue_date'] }}</td>
-          <td>{{ i['purpose'] }}{% if i['note'] %}<div class="small muted">{{ i['note'] }}</div>{% endif %}</td>
-          {% for stage in ('prepared', 'checked', 'approved') %}<td class="small">{{ (i['signed'].get(stage) or []) | join(', ') or '—' }}</td>{% endfor %}
+        <tr id="issue-{{ i['id'] }}"{% if loop.first %} class="spec-issue-latest"{% endif %}>
+          <td><span class="spec-rev">REV {{ i['revision'] }}</span>{% if loop.first %}<div class="small muted">latest</div>{% endif %}</td>
+          <td>{{ i['issue_date'] or i['issued_at'][:10] }}</td>
+          <td>{{ i['purpose'] or '—' }}{% if i['note'] %}<div class="small muted">{{ i['note'] }}</div>{% endif %}</td>
+          <td class="small"><dl class="spec-signed">
+            {% for stage, label in (('prepared', 'Prepared'), ('checked', 'Checked'), ('approved', 'Approved')) %}<dt>{{ label }}</dt><dd>{{ (i['signed'].get(stage) or []) | join(', ') or '—' }}</dd>{% endfor %}
+          </dl></td>
           <td class="small">{{ i['issued_by'] }}<div class="muted">{{ i['issued_at'][:16] }}</div></td>
           <td class="right" style="white-space:nowrap">
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.issue_file', set_id=spec['id'], issue_id=i['id']) }}" title="{{ i['filename'] }}">{{ {'pdf': 'PDF', 'since': 'Word, changes marked'}.get(i['fmt'], 'Word') }} as issued</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.changes', set_id=spec['id'], since=i['id']) }}">Changes since</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.issue_file', set_id=spec['id'], issue_id=i['id']) }}" title="{{ i['filename'] }}">Download {{ {'pdf': 'PDF', 'since': 'Word, changes marked'}.get(i['fmt'], 'Word') }}</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.changes', set_id=spec['id'], since=i['id']) }}" title="What has changed in the project since this revision was issued">What changed since</a>
           </td>
         </tr>
       {% endfor %}

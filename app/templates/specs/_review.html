@@ -2,13 +2,12 @@
 {% macro review_head(spec, here, title, lead='') %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
     <h1>{{ title }}</h1>
     {% if lead %}<p class="small muted" style="margin-top:2px">{{ lead }}</p>{% endif %}
   </div>
 </div>
 <nav class="spec-review-tabs" aria-label="Review and issue">
-  {% for key, label, endpoint in [('review', 'Team and sign-off', 'specs.review_set'), ('comments', 'Comments', 'specs.comments'), ('issues', 'Issues', 'specs.issues'), ('changes', 'Changes since last issue', 'specs.changes'), ('history', 'History', 'specs.history')] %}
+  {% for key, label, endpoint in [('review', 'Team and sign-off', 'specs.review_set'), ('comments', 'Comments', 'specs.comments'), ('issues', 'Issued revisions', 'specs.issues'), ('changes', 'Changes since last issue', 'specs.changes'), ('history', 'History', 'specs.history')] %}
   <a href="{{ url_for(endpoint, set_id=spec['id']) }}"{% if key == here %} aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>

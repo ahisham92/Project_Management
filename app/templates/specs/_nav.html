@@ -1,0 +1,35 @@
+{#- THEMIS's own navigation, the same on every one of its pages: the app's
+    sections, and on any page of one project a way back to that project. -#}
+{% set ep = request.endpoint or '' %}
+{% set admin = current_user and current_user['role'] == 'admin' %}
+{% set here_project = spec is defined and spec and spec['id'] is defined and spec.get('name') is not none %}
+{% set sections_nav = [
+  ('Projects', 'specs.index', ep in ('specs.index', 'specs.new_project', 'specs.import_project') or (here_project and ep.startswith('specs.'))),
+  ('Master library', 'specs.library', ep.startswith('specs.library') or ep in ('specs.check_library', 'specs.language_library', 'specs.fix_library', 'specs.library_file') or (not here_project and ep in ('specs.edit_library_section',))),
+  ('Issued specifications', 'specs.issued_list', ep in ('specs.issued_list', 'specs.issued_compare', 'specs.issued_answers')),
+  ('Standards register', 'specs.standards_register', ep.startswith('specs.standards_register')),
+] + ([('Amendments for the MTD', 'specs.from_projects', ep == 'specs.from_projects')] if admin else []) + [
+  ('Options and variables', 'specs.options', ep in ('specs.options', 'specs.standards')),
+] %}
+<nav class="themis-nav" aria-label="THEMIS">
+  {% for label, endpoint, on in sections_nav %}
+  <a href="{{ url_for(endpoint) }}"{% if on %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+  <span class="themis-nav-end">
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.import_project') }}">Import a .themis file</a>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('specs.new_project') }}">+ New project</a>
+  </span>
+</nav>
+{% if here_project and ep != 'specs.spec_set' %}
+<div class="themis-project-bar">
+  <a class="themis-back" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}"><span aria-hidden="true">←</span> Back to the project</a>
+  <span class="themis-project-name"><strong>{{ spec['name'] }}</strong>{% if spec.get('package') %} · {{ spec['package'] }}{% endif %}{% if spec.get('code') %} <span class="muted">{{ spec['code'] }}</span>{% endif %}{% if spec.get('family') %} <span class="spec-key">{{ spec['family'] }}</span>{% endif %}</span>
+</div>
+{% elif ep not in ('specs.index', 'specs.library', 'specs.issued_list', 'specs.standards_register', 'specs.from_projects', 'specs.options') %}
+{% set to_library = ep.startswith('specs.library_') or ep in ('specs.edit_library_section', 'specs.check_library', 'specs.language_library', 'specs.standards') %}
+<div class="themis-project-bar">
+  {% if to_library and ep != 'specs.standards' %}<a class="themis-back" href="{{ url_for('specs.library') }}"><span aria-hidden="true">←</span> Back to the master library</a>
+  {% elif ep == 'specs.standards' %}<a class="themis-back" href="{{ url_for('specs.options') }}"><span aria-hidden="true">←</span> Back to options and variables</a>
+  {% else %}<a class="themis-back" href="{{ url_for('specs.index') }}"><span aria-hidden="true">←</span> Back to all projects</a>{% endif %}
+</div>
+{% endif %}

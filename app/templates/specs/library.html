@@ -5,7 +5,6 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a></p>
     <h1>Master library</h1>
     <p class="small muted" style="margin-top:2px">
       The office's own text of each section — what every project starts from and is compared
@@ -176,7 +175,7 @@
           <td><a href="{{ url_for('specs.library_section', section_id=s['id']) }}">{{ s['number'] }}</a></td>
           <td>{{ s['title'] }}</td>
           <td class="right">{{ s['paragraphs'] }}</td>
-          <td class="small">{% if s['applies'] == '*' %}every {{ family }} project{% elif s['applies'] %}{{ s['applies'] }}{% else %}<span class="muted">added by hand</span>{% endif %}</td>
+          <td class="small">{% if s['applies'] == '*' %}every {{ family }} project{% elif s['applies'] %}<span title="{{ s['applies'] }}">{{ s['applies'] | spec_why(family, opts) | replace('You said', 'When') | replace('You chose', 'When you choose') }}</span>{% else %}<span class="muted">added by hand</span>{% endif %}</td>
           <td class="small">{{ s['uses'] | join(', ') }}</td>
           <td>v{{ s['version'] }}</td>
           <td class="small muted">{{ s['updated_at'][:16] }} · {{ s['updated_by'] }}</td>

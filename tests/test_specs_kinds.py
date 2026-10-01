@@ -282,7 +282,7 @@ def test_an_answer_no_section_of_the_kind_covers_is_said(app, signed_in):
         "tile_shown": ["structures"]})
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
     # 16A has no fender section: the answer is flagged, and 15A's is on offer to borrow.
-    assert "Fender type: Cell" in page
+    assert "<strong>Cell</strong> <span class=\"small muted\">Fender type</span>" in page
     assert "Sections of the other kinds" in page and "355913" in page
 
 

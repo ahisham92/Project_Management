@@ -55,7 +55,7 @@ def test_a_specification_is_changed_only_by_its_owner_and_the_people_they_add(ap
         issue_id = __import__("app.specs_review", fromlist=["x"]).last_issue(one)["id"]
     assert sara.get(f"/specs/sets/{one}/issues/{issue_id}/file").status_code == 200
     # Starting a package from it: the form comes filled with the project.
-    form = text(sara.get(f"/specs/?start_from={one}&package=1"))
+    form = text(sara.get(f"/specs/new?start_from={one}&package=1"))
     assert 'value="P100"' in form and 'value="Jeddah Tower"' in form
     # Sara's own package is hers: Omar, not on its team, is refused until she adds him.
     omar = _person(app, signed_in, "Omar")

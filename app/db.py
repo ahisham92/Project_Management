@@ -589,6 +589,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _spec_review(conn)
     _spec_issued(conn)
     _spec_packages(conn)
+    _spec_places(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -758,6 +759,17 @@ def _spec_packages(conn: sqlite3.Connection) -> None:
         );
         """
     )
+
+
+def _spec_places(conn: sqlite3.Connection) -> None:
+    """Where a project is (its city and country, and the point on the start
+    page's map), and how the engineer settled each answer the library has
+    nothing written for (JSON: "key=value" -> {how, section, note, by, at})."""
+    _ensure_column(conn, "spec_sets", "city", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_sets", "country", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_sets", "lat", "REAL")
+    _ensure_column(conn, "spec_sets", "lng", "REAL")
+    _ensure_column(conn, "spec_sets", "covered", "TEXT NOT NULL DEFAULT '{}'")
 
 
 def _spec_review(conn: sqlite3.Connection) -> None:

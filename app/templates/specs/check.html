@@ -323,11 +323,20 @@
   {% for kind, title, bulk in kinds if language[kind] %}
     <div class="inline-form" style="justify-content:space-between;margin-top:{{ '0' if loop.first else '14px' }}">
       <h3>{{ title }} <span class="muted small">{{ language[kind] | length }}</span></h3>
-      {% if can and kind in ('english', 'spelling', 'units') %}
-      <form method="post" action="{{ action }}" onsubmit="return confirm('Accept every suggestion in {{ title }}? Figures that disagree are left for you to decide.')">
-        <input type="hidden" name="kind" value="{{ kind }}">
-        <button type="submit" name="action" value="all" class="btn btn-ghost btn-sm">Accept all {{ title }}</button>
-      </form>
+      {% if can %}
+      {% set takeable = language[kind] | selectattr('new') | list | length %}
+      <div class="inline-form">
+        {% if takeable %}
+        <form method="post" action="{{ action }}" onsubmit="return confirm('Accept every suggestion in {{ title }}? Each is changed as suggested; figures that disagree and wording with no suggestion are left for you. Review the result: you are responsible for the words.')">
+          <input type="hidden" name="kind" value="{{ kind }}">
+          <button type="submit" name="action" value="all" class="btn btn-ghost btn-sm">Accept all</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ action }}" onsubmit="return confirm('Reject every suggestion in {{ title }}? Nothing changes, and they are not suggested again {{ 'in this specification' if spec else 'in the library' }}.')">
+          <input type="hidden" name="kind" value="{{ kind }}">
+          <button type="submit" name="action" value="reject_all" class="btn btn-ghost btn-sm">Reject all</button>
+        </form>
+      </div>
       {% endif %}
     </div>
     {% for g in language[kind] %}
@@ -338,10 +347,18 @@
         {% if g['places'] | length > 1 %}<span class="muted small">· {{ g['places'] | length }} places</span>{% endif %}
       </div>
       {% if can and g['old'] and not bulk and g['places'] | length > 1 %}
-      <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">
-        <input type="hidden" name="old" value="{{ g['old'] }}">
-        <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Reject in all {{ g['places'] | length }}</button>
-      </form>
+      <div class="inline-form" style="margin-top:4px">
+        {% if g['new'] %}
+        <form method="post" action="{{ action }}">
+          <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="old" value="{{ g['old'] }}"><input type="hidden" name="new" value="{{ g['new'] }}">
+          <button type="submit" name="action" value="all" class="btn btn-ghost btn-sm">Accept in all {{ g['places'] | length }}</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ action }}">
+          <input type="hidden" name="old" value="{{ g['old'] }}">
+          <button type="submit" name="action" value="leave" class="btn btn-ghost btn-sm">Reject in all {{ g['places'] | length }}</button>
+        </form>
+      </div>
       {% endif %}
       {% if can and g['old'] and bulk and g['places'] | length > 1 %}
       <form method="post" action="{{ action }}" class="inline-form" style="margin-top:4px">

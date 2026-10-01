@@ -368,6 +368,54 @@ def test_nothing_changes_until_it_is_accepted(signed_in):
     assert "aluminum" in text(signed_in.get("/specs/library/1"))
 
 
+def _grammar_project(signed_in):
+    load(signed_in, "033000", "# GENERAL\n## SUMMARY\n- Paths below :\n- Test Construction :\n"
+                              "- Fly ash , or slag , as specified.\n", "CAST-IN-PLACE CONCRETE")
+    answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})
+    set_id = int(answer.headers["Location"].split("#")[0].rstrip("/").rsplit("/", 1)[1])
+    signed_in.post(f"/specs/sets/{set_id}/sections", data={"section_id": ["1"]})
+    return set_id
+
+
+def _grammar(signed_in, set_id):
+    from app import specs_store
+
+    with signed_in.application.test_request_context():
+        return [(f["old"], f["new"]) for f in specs_store.language_set(set_id) if f["kind"] == "grammar"]
+
+
+def test_a_space_before_the_colon_rejected_in_every_place_is_not_suggested_again(signed_in):
+    set_id = _grammar_project(signed_in)
+    assert _grammar(signed_in, set_id).count((" :", ":")) == 2
+    # The form sends the words as they stand, space and all.
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "leave", "old": " :"})
+    assert (" :", ":") not in _grammar(signed_in, set_id)
+    assert (" ,", ",") in _grammar(signed_in, set_id)
+
+
+def test_every_grammar_suggestion_accepted_or_rejected_at_once(signed_in):
+    set_id = _grammar_project(signed_in)
+    page = text(signed_in.get(f"/specs/sets/{set_id}/check"))
+    assert "Accept all" in page and "Reject all" in page and "Accept in all 2" in page
+    # One group taken in all its places.
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "all", "kind": "grammar",
+                                                           "old": " ,", "new": ","})
+    edit = text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
+    assert "Fly ash, or slag, as specified." in edit and "Paths below :" in edit
+    # Then every other grammar suggestion.
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "all", "kind": "grammar"})
+    edit = text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
+    assert "Paths below:" in edit and "Test Construction:" in edit
+    assert _grammar(signed_in, set_id) == []
+
+
+def test_every_grammar_suggestion_rejected_at_once(signed_in):
+    set_id = _grammar_project(signed_in)
+    signed_in.post(f"/specs/sets/{set_id}/language", data={"action": "reject_all", "kind": "grammar"})
+    assert _grammar(signed_in, set_id) == []
+    assert "Paths below :" in text(signed_in.get(f"/specs/sets/{set_id}/sections/1/edit"))
+
+
 def test_an_issue_that_refers_to_a_section_not_in_it_is_held(signed_in):
     load(signed_in, "032000", REBAR, "CONCRETE REINFORCING")
     answer = signed_in.post("/specs/sets", data={"name": "Harbour Works"})

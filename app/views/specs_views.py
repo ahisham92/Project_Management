@@ -1658,13 +1658,19 @@ def _language(found: list[dict]) -> dict[str, list[dict]]:
 def language_set(set_id: int):
     _set_or_404(set_id)
     back = url_for("specs.check_set", set_id=set_id) + "#language"
-    if request.form.get("action") == "all":
-        count = store.accept_all_set(set_id, request.form.get("kind", ""))
+    action, kind = request.form.get("action"), request.form.get("kind", "")
+    old, new = request.form.get("old") or None, request.form.get("new")
+    if action == "all":
+        count = store.accept_all_set(set_id, kind, old, new if old else None)
         flash(_fixed(count), "success" if count else "error")
         return redirect(back)
-    if request.form.get("action") == "leave":
+    if action == "reject_all":
+        n = store.reject_all(set_id, store.language_set(set_id), kind)
+        flash(_rejected(n, "this specification"), "success")
+        return redirect(back)
+    if action == "leave":
         store.ignore(set_id, request.form.get("old", ""))
-        flash(f"\"{request.form.get('old')}\" is left as it is in this specification.", "success")
+        flash(f"\"{request.form.get('old', '').strip()}\" is left as it is in this specification.", "success")
         return redirect(back)
     try:
         count = store.accept_set(set_id, request.form)
@@ -1682,14 +1688,20 @@ def language_library():
     back = url_for("specs.check_library") + "#language"
     if not _admin_only():
         return redirect(back)
-    if request.form.get("action") == "all":
-        count = store.accept_all_library(request.form.get("kind", ""))
+    action, kind = request.form.get("action"), request.form.get("kind", "")
+    old, new = request.form.get("old") or None, request.form.get("new")
+    if action == "all":
+        count = store.accept_all_library(kind, old, new if old else None)
         flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
               "success" if count else "error")
         return redirect(back)
-    if request.form.get("action") == "leave":
+    if action == "reject_all":
+        n = store.reject_all(0, store.language_library(), kind)
+        flash(_rejected(n, "the library"), "success")
+        return redirect(back)
+    if action == "leave":
         store.ignore(0, request.form.get("old", ""))
-        flash(f"\"{request.form.get('old')}\" is left as it is in the library.", "success")
+        flash(f"\"{request.form.get('old', '').strip()}\" is left as it is in the library.", "success")
         return redirect(back)
     try:
         count = store.accept_library(request.form)
@@ -1699,6 +1711,11 @@ def language_library():
         flash(_fixed(count) + (" Each section changed was saved as a new version." if count else ""),
               "success" if count else "error")
     return redirect(back)
+
+
+def _rejected(n: int, where: str) -> str:
+    return (f"Rejected: {n} suggestion{'s' if n != 1 else ''} will not be made again in {where}."
+            if n else "There was nothing to reject.")
 
 
 def _fixed(count: int) -> str:

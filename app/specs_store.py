@@ -1804,9 +1804,21 @@ def ignored(scope: int) -> list[str]:
 
 
 def ignore(scope: int, words: str) -> None:
+    """Words whose suggestion is rejected. Kept as they stand, spaces and all:
+    the grammar check's " :" (a space before the colon) is not the ":" the
+    comma check suggests, and stripping it made the rejection match nothing."""
     if words.strip():
         execute("INSERT OR IGNORE INTO spec_ignored (scope, words) VALUES (?, ?)",
-                (scope, words.strip().lower()))
+                (scope, words.lower()))
+
+
+def reject_all(scope: int, found: list[dict], kind: str, old: str | None = None) -> int:
+    """Every suggestion of a kind (or of one group of it) rejected; how many words."""
+    words = {f["old"] for f in found if f["kind"] == kind and f["old"]
+             and (old is None or f["old"] == old)}
+    for w in words:
+        ignore(scope, w)
+    return len(words)
 
 
 def _rules() -> list[dict]:
@@ -1877,18 +1889,16 @@ def accept_library(how: Mapping[str, str]) -> int:
     return count
 
 
-# Kinds of suggestion that can be taken all at once: each is one word or one
-# quantity, where the suggestion is the whole answer. Grammar is read one by one.
-BULK = ("english", "spelling", "units")
-
-
-def _accept_found(rows: list[dict], found: list[dict], kind: str) -> int:
+def _accept_found(rows: list[dict], found: list[dict], kind: str, old: str | None = None,
+                  new: str | None = None) -> int:
+    """Every suggestion of a kind taken (or of one group of it: the same words
+    with the same suggestion), where there is a suggestion to take. Figures
+    that disagree, and wording only the engineer can write, are left."""
     from . import specs_language
 
-    if kind not in BULK:
-        raise specs.SpecError("Those are taken one at a time.")
     todo = [f for f in found if f["kind"] == kind and f["old"] and f["new"]
-            and "disagree" not in f["message"]]
+            and "disagree" not in f["message"]
+            and (old is None or f["old"] == old) and (new is None or f["new"] == new)]
     count = 0
     for s in rows:
         for n in s["nodes"]:
@@ -1902,18 +1912,18 @@ def _accept_found(rows: list[dict], found: list[dict], kind: str) -> int:
     return count
 
 
-def accept_all_set(set_id: int, kind: str) -> int:
+def accept_all_set(set_id: int, kind: str, old: str | None = None, new: str | None = None) -> int:
     rows = set_whole(set_id)
-    count = _accept_found(rows, language_set(set_id), kind)
+    count = _accept_found(rows, language_set(set_id), kind, old, new)
     for s in rows:
         if s.get("changed"):
             save_set_section(set_id, s["id"], s["nodes"])
     return count
 
 
-def accept_all_library(kind: str) -> int:
+def accept_all_library(kind: str, old: str | None = None, new: str | None = None) -> int:
     rows = library_whole()
-    count = _accept_found(rows, language_library(), kind)
+    count = _accept_found(rows, language_library(), kind, old, new)
     for s in rows:
         if s.get("changed"):
             master = section(s["id"])

@@ -161,6 +161,7 @@ def issues(set_id: int):
         suggested=review.next_revision(row["revision"], [i["revision"] for i in listed]),
         today=review.clean_date(""), purposes=review.PURPOSES,
         may_issue=review.may(row, g.user, "issue"),
+        left=review.still_open(row, sections) if ready else [],
         package_differences=review.packages.open_count(row))
 
 
@@ -190,6 +191,12 @@ def issue_set(set_id: int):
               "the specification and amended it as needed. THEMIS only helps; the issue is yours.",
               "error")
         return redirect(back)
+    left = review.still_open(row, sections)
+    if left and request.form.get("open_ok") != "1":
+        flash(f"Not issued yet: {_places(left)} still to be specified (a question not answered, or "
+              "the master's brackets). Answer them on Details or fill the blanks, or tick to issue "
+              "with them highlighted.", "error")
+        return redirect(back)
     try:
         revision = review.check_revision(set_id, request.form.get("revision", ""))
     except specs.SpecError as exc:
@@ -214,6 +221,11 @@ def issue_set(set_id: int):
     flash(Markup("Issued Rev {rev}. <a href=\"{url}\">Download the files as issued</a>.").format(
         rev=revision, url=url_for("specs.issue_file", set_id=set_id, issue_id=issue_id)), "success")
     return redirect(back + f"#issue-{issue_id}")
+
+
+def _places(left: list[dict]) -> str:
+    n = sum(len(p["open"]) for p in left)
+    return f"{n} place{'s' if n != 1 else ''} in {len(left)} paragraph{'s' if len(left) != 1 else ''}"
 
 
 @bp.get("/sets/<int:set_id>/issues/<int:issue_id>/file")

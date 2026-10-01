@@ -1390,10 +1390,11 @@ def library_docx(section_id: int):
     if request.args.get("fmt") == "pdf":
         data = specs_export.write_pdf([(s, specs.loads(s["body"]), reader.issued(s["number"]))],
                                       {"revision": ""}, chosen, values,
-                                      store.template_bytes(s["family"]))
+                                      store.template_bytes(s["family"]), marked=False)
         return _pdf_response(data, specs_export.pdf_name("SPC-{number}", s))
     data = specs.write_docx(s, specs.loads(s["body"]), {"revision": ""}, chosen, values,
-                            store.template_bytes(s["family"]), resolve=reader.issued(s["number"]))
+                            store.template_bytes(s["family"]), resolve=reader.issued(s["number"]),
+                            marked=False)
     return _docx_response(data, specs.file_name("SPC-{number}", s))
 
 

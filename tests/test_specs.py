@@ -50,12 +50,13 @@ def master_nodes():
 
 
 def docx_of(nodes, number="032000", title="CONCRETE REINFORCING", project=None, chosen=None,
-            values=None) -> bytes:
+            values=None, marked=False) -> bytes:
     return specs.write_docx({"number": number, "title": title}, nodes,
                             project or {"header_left": "Port Works\nPhase 2",
                                         "header_right": "Final Design\nHarbour",
                                         "doc_code": "N1-SPC-01", "revision": "0"},
-                            chosen or {"leed": "v4.1"}, values or {"engineer": "Engineer"})
+                            chosen or {"leed": "v4.1"}, values or {"engineer": "Engineer"},
+                            marked=marked)
 
 
 def part(data: bytes, name: str) -> str:

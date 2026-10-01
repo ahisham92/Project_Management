@@ -12,7 +12,7 @@ from .test_specs_questions import _project
 
 def _issue(client, set_id, revision="A"):
     return client.post(f"/specs/sets/{set_id}/issues", data={
-        "revision": revision, "responsible": "1", "issue_date": "2026-10-01", "purpose": "For tender"})
+        "revision": revision, "responsible": "1", "open_ok": "1", "issue_date": "2026-10-01", "purpose": "For tender"})
 
 
 def _packages(app, signed_in):

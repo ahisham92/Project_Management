@@ -161,9 +161,11 @@ def _sections(set_id: int) -> list[dict]:
         "ORDER BY number", (set_id,))]
 
 
-def issued_words(row: Mapping[str, Any], sections: list[dict] | None = None) -> list[dict]:
+def issued_words(row: Mapping[str, Any], sections: list[dict] | None = None,
+                 marked: bool = False) -> list[dict]:
     """Each section as it would go out now: its title, document code and the
-    paragraphs it issues, each with its number and its words written out."""
+    paragraphs it issues, each with its number and its words written out
+    (``marked``, exactly as the files say them, what is still open said plainly)."""
     sections = sections if sections is not None else _sections(row["id"])
     chosen, values = store.chosen_for(row), store.values_for(row)
     reader = store.reader([{"id": s["id"], "number": s["number"], "title": s["title"],
@@ -177,9 +179,23 @@ def issued_words(row: Mapping[str, Any], sections: list[dict] | None = None) -> 
                 continue
             paragraphs.append({"id": n["id"], "level": n["level"], "label": n["label"],
                                "path": n["path"],
-                               "text": specs_export.issued(n["text"], chosen, values, resolve)})
+                               "text": specs_export.issued(n["text"], chosen, values, resolve, marked)})
         out.append({"row_id": s["id"], "number": s["number"], "title": s["title"],
                     "doc_code": s["doc_code"], "nodes": paragraphs})
+    return out
+
+
+def still_open(row: Mapping[str, Any], sections: list[dict] | None = None) -> list[dict]:
+    """The places an issue would still leave to be specified, as its files
+    say them: a question not answered, or a choice or prompt the master left
+    in brackets."""
+    out = []
+    for s in issued_words(row, sections, marked=True):
+        for n in s["nodes"]:
+            found = [m.group(0) for m in specs.OPEN.finditer(n["text"])]
+            if found:
+                out.append({"number": s["number"], "row_id": s["row_id"], "path": n.get("path") or "",
+                            "node_id": n["id"], "open": found, "text": n["text"]})
     return out
 
 

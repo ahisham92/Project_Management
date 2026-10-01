@@ -58,6 +58,6 @@ def test_an_issue_needs_the_engineer_to_confirm_the_review(app, signed_in):
     assert "the issue is yours" in text(answer)
     with app.app_context():
         assert specs_review.issues(set_id) == []
-    signed_in.post(f"/specs/sets/{set_id}/issues", data={"revision": "A", "responsible": "1"})
+    signed_in.post(f"/specs/sets/{set_id}/issues", data={"revision": "A", "responsible": "1", "open_ok": "1"})
     with app.app_context():
         assert [i["revision"] for i in specs_review.issues(set_id)] == ["A"]

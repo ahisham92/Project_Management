@@ -295,7 +295,30 @@ def index():
     return render_template("specs/index.html", sets=everything, mine=mine,
                            others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
-                           is_admin=_is_admin(), start_from=request.args.get("start_from", type=int))
+                           is_admin=_is_admin(), start_from=request.args.get("start_from", type=int),
+                           flagged=_flagged(mine), source=_package_source())
+
+
+def _package_source() -> dict | None:
+    """Starting another package of a project: its name, code and client to begin with."""
+    start_from = request.args.get("start_from", type=int)
+    if not start_from or request.args.get("package") != "1":
+        return None
+    return store.spec_set(start_from)
+
+
+def _flagged(rows) -> dict[int, int]:
+    """For the user's own packages, the differences from the project's other
+    issued packages they have not decided."""
+    from .. import specs_packages as packages
+
+    out = {}
+    for one in rows:
+        if packages.project_key(one["code"]):
+            n = packages.open_count(one)
+            if n:
+                out[one["id"]] = n
+    return out
 
 
 @bp.post("/sets")
@@ -416,7 +439,18 @@ def spec_set(set_id: int):
         labels={o["key"]: o["label"] for o in everything},
         missing=missing, is_admin=_is_admin(), report=report, seen=review.project_mark(row),
         team=review.team(set_id), may_edit=review.may(row, g.user, "edit"),
-        open_comments=review.open_comments(set_id), last_issue=review.last_issue(set_id))
+        open_comments=review.open_comments(set_id), last_issue=review.last_issue(set_id),
+        owner=review.owner_name(row), packages=_packages_summary(row))
+
+
+def _packages_summary(row) -> dict:
+    """The other packages of the project, and how many differences from what
+    they issued this package has not decided."""
+    from .. import specs_packages as packages
+
+    found = packages.discrepancies(row) if packages.project_key(row["code"]) else None
+    return {"peers": found["peers"] if found else [], "open": found["open"] if found else 0,
+            "key": packages.project_key(row["code"])}
 
 
 TILE_KEYS = {key for key, _g, _how, _icon in specs_seed.ELEMENTS}
@@ -1791,3 +1825,5 @@ def delete_library_sections():
 from . import specs_review_views  # noqa: E402,F401
 # The issued specifications, amendments for the MTD and the standards register.
 from . import specs_issued_views  # noqa: E402,F401
+# Packages of one project, and the differences between what they issue.
+from . import specs_packages_views  # noqa: E402,F401

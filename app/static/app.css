@@ -1368,3 +1368,11 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-amend-words del { background: color-mix(in srgb, #c0392b 15%, transparent); }
 .spec-amend-act form { display: grid; gap: 8px; margin-top: 8px; min-width: min(560px, 90vw); }
 .spec-std-form { display: grid; gap: 8px; padding: 12px; min-width: 280px; }
+
+/* Packages of one project: what this package says that another did not issue, in red. */
+.spec-pkg-red { background: color-mix(in srgb, var(--critical, #c0392b) 14%, transparent); color: var(--critical, #c0392b); font-weight: 600; padding: 0 2px; border-radius: 2px; }
+.spec-pkg-red-text { color: var(--critical, #c0392b); font-weight: 600; }
+.spec-pkg-item { border-left: 3px solid var(--critical, #c0392b); padding: 4px 0 4px 12px; }
+.spec-pkg-item.spec-amend-done { border-left-color: var(--border, #c9ced8); }
+.spec-pkg-item .spec-amend-words del { color: var(--muted, #6b7280); }
+.spec-pkg-banner { border-left: 4px solid var(--critical, #c0392b); }

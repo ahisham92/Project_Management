@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% from "specs/_engineer.html" import engineer_note %}
+{% block title %}Packages · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% macro ours(i) %}
+  {%- if i['state'] == 'changed' %}{% for kind, x, y in i['diff'] %}{% if kind == 'equal' %}{{ x }}{% elif y %}<mark class="spec-pkg-red">{{ y }}</mark>{% endif %}{% endfor %}
+  {%- elif i['state'] == 'ours' %}<mark class="spec-pkg-red">{{ i['ours'] }}</mark>
+  {%- else %}<span class="muted">(not in this package)</span>{% endif -%}
+{% endmacro %}
+{% macro theirs(i) %}
+  {%- if i['state'] == 'changed' %}{% for kind, x, y in i['diff'] %}{% if kind == 'equal' %}{{ x }}{% elif x %}<del>{{ x }}</del>{% endif %}{% endfor %}
+  {%- elif i['state'] == 'theirs' %}<del>{{ i['theirs'] }}</del>
+  {%- else %}<span class="muted">(not in that package)</span>{% endif -%}
+{% endmacro %}
+
+{% macro actions(i, peer, anchor) %}
+  {% set hidden %}<input type="hidden" name="peer" value="{{ peer['set_id'] }}"><input type="hidden" name="kind" value="{{ i['kind'] }}"><input type="hidden" name="number" value="{{ i['number'] }}"><input type="hidden" name="key" value="{{ i['key'] }}"><input type="hidden" name="anchor" value="{{ anchor }}">{% endset %}
+  {% if i['decision'] %}
+    <p class="small">{{ badge('neutral', 'Kept as this package has it') }} {{ i['decision']['decided_by'] }}, {{ i['decision']['decided_at'][:10] }}{% if i['decision']['note'] %}: <span class="muted">{{ i['decision']['note'] }}</span>{% endif %}</p>
+    {% if may_edit %}<form method="post" action="{{ url_for('specs.reopen_package_difference', set_id=spec['id']) }}">{{ hidden }}<button type="submit" class="btn btn-ghost btn-sm">Open it again</button></form>{% endif %}
+  {% elif may_edit %}
+  <div class="inline-form">
+    <form method="post" action="{{ url_for('specs.accept_package_difference', set_id=spec['id']) }}">{{ hidden }}
+      <button type="submit" class="btn btn-primary btn-sm" title="This package is changed to say what {{ peer['package'] }} issued">Accept {{ peer['package'] }}'s</button></form>
+    <details class="spec-amend-act"><summary class="btn btn-ghost btn-sm">Reject: keep ours…</summary>
+      <form method="post" action="{{ url_for('specs.keep_package_difference', set_id=spec['id']) }}">{{ hidden }}
+        <label class="field"><span class="field-label">Why this package differs (kept with the decision)</span>
+          <input type="text" name="note" maxlength="500" placeholder="e.g. Marine exposure in this package only"></label>
+        <button type="submit" class="btn btn-ghost btn-sm">Keep ours</button></form>
+    </details>
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a> · <a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">{{ spec['name'] }}</a></p>
+    <h1>Packages of {{ found['key'] or 'this project' }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      Every specification with the project code {{ found['key'] }} is a package of one project. This
+      package ({{ package }}{% if owner %}, owned by {{ owner }}{% endif %}) is checked against the
+      latest issue of each of the others: where it says something else, or answers a question
+      another way, it is shown in <mark class="spec-pkg-red">red</mark>, for its team to accept the
+      other package's or keep their own, with the reason.
+    </p>
+  </div>
+  <div class="inline-form">
+    <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id'], package=1) }}#new">Start another package from this one</a>
+  </div>
+</div>
+{{ engineer_note() }}
+
+{% if not found['key'] %}
+  <div class="card"><div class="card-body">{{ empty('No project code', 'Give this specification its project code on its page: every specification with the same code is a package of that project.') }}</div></div>
+{% else %}
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head"><h2>The packages</h2>
+    {% if found['open'] %}{{ badge('critical', found['open'] ~ ' difference' ~ ('s' if found['open'] != 1) ~ ' to decide') }}{% elif found['against'] %}{{ badge('good', 'No difference left to decide') }}{% endif %}</div>
+  <div class="card-body flush table-scroll">
+    <table>
+      <thead><tr><th>Package</th><th>Owner</th><th>Last issued</th><th class="right">To decide</th><th class="right">Kept</th><th></th></tr></thead>
+      <tbody>
+        <tr class="muted"><td><strong>{{ package }}</strong> (this one)</td><td>{{ owner }}</td><td>{{ ('Rev ' ~ spec['revision']) if spec['issue_date'] else 'Not issued' }}</td><td></td><td></td><td></td></tr>
+        {% for p in found['peers'] %}
+        {% set a = found['against'] | selectattr('set_id', 'equalto', p['set_id']) | first %}
+        <tr>
+          <td>{% if p['alive'] %}<a href="{{ url_for('specs.spec_set', set_id=p['set_id']) }}">{{ p['package'] }}</a>{% else %}{{ p['package'] }} <span class="small muted">(deleted; its issue is kept)</span>{% endif %}</td>
+          <td>{{ p['owner'] }}</td>
+          <td>{% if p['record'] %}Rev {{ p['revision'] }}{% if p['issue_date'] %} · {{ p['issue_date'] }}{% endif %}{% else %}<span class="muted">Not issued yet: nothing to check against</span>{% endif %}</td>
+          <td class="right">{% if a %}{% if a['open'] %}<a href="#peer-{{ p['set_id'] }}" class="spec-pkg-red-text">{{ a['open'] }}</a>{% else %}0{% endif %}{% endif %}</td>
+          <td class="right">{{ a['kept'] if a else '' }}</td>
+          <td>{% if p['record'] %}<a class="small" href="{{ url_for('specs.issued_list', q=p['name']) }}">Read what it issued</a>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No other specification has the code {{ found['key'] }} yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if found['kept'] %}
+<p class="small" style="margin:-4px 0 12px">{% if show_kept %}<a href="{{ url_for('specs.project_packages', set_id=spec['id']) }}">Hide the {{ found['kept'] }} kept as ours</a>{% else %}<a href="{{ url_for('specs.project_packages', set_id=spec['id'], kept=1) }}">Show the {{ found['kept'] }} kept as ours</a>{% endif %}</p>
+{% endif %}
+
+{% for peer in found['against'] %}
+{% if peer['open'] or (show_kept and peer['kept']) %}
+<div class="card" style="margin-bottom:16px" id="peer-{{ peer['set_id'] }}">
+  <div class="card-head"><div><h2>Against {{ peer['package'] }}, Rev {{ peer['revision'] }}</h2>
+    <p class="small muted" style="margin-top:2px">Red: what this package says that {{ peer['package'] }} did not issue. Struck through: what {{ peer['package'] }} issued instead.</p></div>
+    {% if peer['open'] %}{{ badge('critical', peer['open'] ~ ' to decide') }}{% endif %}</div>
+  <div class="card-body" style="display:grid;gap:14px">
+    {% set answers = peer['answers'] if show_kept else peer['answers'] | rejectattr('decision') | list %}
+    {% if answers %}
+    <section>
+      <h3 class="small">Answers and choices</h3>
+      {% for i in answers %}
+      {% set anchor = 'd-' ~ peer['set_id'] ~ '-' ~ i['kind'] ~ '-' ~ i['key'] %}
+      <div class="spec-pkg-item{{ ' spec-amend-done' if i['decision'] }}" id="{{ anchor }}">
+        <p class="small"><strong>{{ i['label'] }}</strong></p>
+        <p class="small">This package: <mark class="spec-pkg-red">{{ i['ours'] }}</mark> · {{ peer['package'] }}: {{ i['theirs'] }}</p>
+        {{ actions(i, peer, anchor) }}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% for s in peer['sections'] %}
+    {% set items = s['items'] if show_kept else s['items'] | rejectattr('decision') | list %}
+    {% if items %}
+    <section>
+      <h3 class="small">{{ s['number'] }} — {{ s['title'] }}</h3>
+      {% for i in items %}
+      {% set anchor = 'd-' ~ peer['set_id'] ~ '-' ~ s['number'] ~ '-' ~ i['key'] %}
+      <div class="spec-pkg-item{{ ' spec-amend-done' if i['decision'] }}" id="{{ anchor }}">
+        <p class="small"><strong>{{ i['label'] or 'Paragraph' }}</strong> · {{ {'changed': 'worded differently', 'ours': 'only in this package', 'theirs': 'only in ' ~ peer['package']}[i['state']] }}</p>
+        <p class="spec-amend-words"><span class="small muted">This package:</span> {{ ours(i) }}</p>
+        <p class="spec-amend-words"><span class="small muted">{{ peer['package'] }}:</span> {{ theirs(i) }}</p>
+        {% if not i['raw'] and i['state'] != 'ours' %}<p class="small muted">{{ peer['package'] }}'s issue kept its words as issued only, so accepting writes them in with its answers already filled.</p>{% endif %}
+        {{ actions(i, peer, anchor) }}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if found['against'] and not found['open'] and not show_kept %}
+  <div class="card"><div class="card-body">{{ empty('Nothing to decide', 'This package says what the project\'s other issued packages say, or its team has kept each difference with a reason.') }}</div></div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -25,6 +25,7 @@ from flask import g
 from . import specs, specs_export, specs_questions
 from . import specs_store as store
 from . import specs_issued as issued_data
+from . import specs_packages as packages
 from .db import execute, get_db, insert, query, query_one
 
 ROLES = ("editor", "checker", "approver", "lead")
@@ -66,8 +67,18 @@ def team(set_id: int) -> list[dict]:
 
 
 def is_open(set_id: int) -> bool:
-    """No team listed: anyone with THEMIS may change and issue it, as before."""
-    return query_one("SELECT 1 FROM spec_set_members WHERE set_id = ? LIMIT 1", (set_id,)) is None
+    """Whether anybody with THEMIS may change it. Never: a specification is
+    its owner's (whoever started it) and administrators', and the team's they
+    add; everybody else reads it, comments on it and may copy it."""
+    return False
+
+
+def owner_name(row: Mapping[str, Any]) -> str:
+    """Whoever started the specification, who owns it."""
+    if not row.get("created_by"):
+        return ""
+    u = query_one("SELECT name, email FROM users WHERE id = ?", (row["created_by"],))
+    return (u["name"] or u["email"]) if u else ""
 
 
 def role_of(row: Mapping[str, Any], user: Any) -> str | None:
@@ -361,7 +372,7 @@ def record_issue(row: Mapping[str, Any], fields: Mapping[str, str], fmt: str, fi
     prints = {s["row_id"]: fingerprint(s) for s in words}
     snapshot = {"project": {k: row[k] for k in store.SET_FIELDS + ("family",)},
                 "sections": words, "data": issued_data.project_data(row),
-                "amendments": issued_data.amendments_of(row)}
+                "amendments": issued_data.amendments_of(row), "bodies": packages.bodies(row)}
     mark = query_one("SELECT COALESCE(MAX(id), 0) AS n FROM spec_history WHERE set_id = ?",
                      (row["id"],))["n"]
     issue_id = insert(
@@ -542,7 +553,7 @@ def close_comment(row: Mapping[str, Any], comment_id: int, open_again: bool = Fa
 
 # --- history ---------------------------------------------------------------------------------
 
-FIELD_NAMES = {"name": "Project name", "code": "Project code", "client": "Client",
+FIELD_NAMES = {"name": "Project name", "package": "Package", "code": "Project code", "client": "Client",
                "header_left": "Page header, left", "header_right": "Page header, right",
                "doc_code": "Document code", "revision": "Revision", "issue_date": "Issue date",
                "file_pattern": "File names", "family": "Kind of specification",

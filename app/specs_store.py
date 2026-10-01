@@ -325,7 +325,7 @@ def delete_sections(section_ids: Iterable[int]) -> list[dict]:
 # --- sets -----------------------------------------------------------------------
 
 SET_FIELDS = ("name", "code", "client", "header_left", "header_right", "doc_code",
-              "revision", "issue_date", "file_pattern")
+              "revision", "issue_date", "file_pattern", "package")
 
 
 def sets() -> list[dict]:
@@ -352,6 +352,8 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
     source = spec_set(copy_from) if copy_from else None
     values = {k: (fields.get(k) or (source[k] if source else "") or "").strip() for k in SET_FIELDS}
     values["name"] = name
+    # A copy is a package of its own: it does not take the other's package name.
+    values["package"] = (fields.get("package") or "").strip()
     values["file_pattern"] = values["file_pattern"] or "SPC-{number}"
     values["revision"] = values["revision"] or "0"
     family = clean_family(fields.get("family") or (source["family"] if source else ""))

@@ -34,8 +34,8 @@ def _guard_and_watch():
     if row is None:
         return None
     if request.endpoint not in SELF_CHECKED and not review.may(row, g.user, "edit"):
-        flash("Only this project's team changes it. Ask its lead to add you on the Review page.",
-              "error")
+        flash("Only this specification's owner and the people they add change it. You can read it, "
+              "comment on it, and start your own package from it.", "error")
         return redirect(url_for("specs.spec_set", set_id=set_id))
     g.spec_before = review.state(set_id)
     return None
@@ -66,7 +66,7 @@ def review_set(set_id: int):
     people = review.candidates()
     return render_template(
         "specs/review.html", spec=row, ready=ready, team=review.team(set_id), members=members,
-        people=people, is_open=review.is_open(set_id), my_role=review.role_of(row, g.user),
+        people=people, owner=review.owner_name(row), my_role=review.role_of(row, g.user),
         may={w: review.may(row, g.user, w) for w in ("edit", "prepared", "checked", "approved",
                                                      "issue", "team")},
         open_by_section=review.open_by_section(set_id), last=review.last_issue(set_id),
@@ -95,9 +95,6 @@ def save_team(set_id: int):
     said = review.save_team(set_id, roles)
     flash(("Team saved: " + "; ".join(said) + ".") if said else "Nothing changed in the team.",
           "success")
-    if said and review.is_open(set_id):
-        flash("Nobody is listed, so everyone with THEMIS can change and issue this project again.",
-              "notice")
     return redirect(url_for("specs.review_set", set_id=set_id) + "#team")
 
 
@@ -163,7 +160,8 @@ def issues(set_id: int):
         missing=_not_issued(report) if report else [], last=last,
         suggested=review.next_revision(row["revision"], [i["revision"] for i in listed]),
         today=review.clean_date(""), purposes=review.PURPOSES,
-        may_issue=review.may(row, g.user, "issue"))
+        may_issue=review.may(row, g.user, "issue"),
+        package_differences=review.packages.open_count(row))
 
 
 @bp.post("/sets/<int:set_id>/issues")

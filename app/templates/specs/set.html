@@ -8,7 +8,7 @@
 <div class="page-head">
   <div>
     <p class="small"><a href="{{ url_for('specs.index') }}">THEMIS</a></p>
-    <h1>{{ spec['name'] }}</h1>
+    <h1>{{ spec['name'] }}{% if spec['package'] %} <span class="muted" style="font-weight:400">· {{ spec['package'] }}</span>{% endif %}</h1>
     <p class="small muted" style="margin-top:2px">
       {{ spec['code'] }}{% if spec['client'] %} · {{ spec['client'] }}{% endif %} · REV {{ spec['revision'] }}
       · {{ sections | length }} section{{ 's' if sections | length != 1 }}
@@ -19,7 +19,8 @@
       <a class="btn btn-ghost" href="{{ url_for('specs.check_set', set_id=spec['id']) }}">Check{% if waiting['total'] %} ({{ waiting['total'] }} open){% endif %}</a>
     {% endif %}
     <a class="btn btn-ghost" href="{{ url_for('specs.amendments', set_id=spec['id']) }}">Amendments to the master</a>
-    <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id']) }}#new" title="A new project with this one's choices, header and sections, amendments and all">Start a new project from this one</a>
+    {% if packages['key'] %}<a class="btn btn-ghost" href="{{ url_for('specs.project_packages', set_id=spec['id']) }}" title="The other packages of this project, and where this one differs from what they issued">Packages{% if packages['peers'] %} ({{ packages['peers'] | length + 1 }}){% endif %}{% if packages['open'] %} · <span class="spec-pkg-red-text">{{ packages['open'] }} to decide</span>{% endif %}</a>{% endif %}
+    <a class="btn btn-ghost" href="{{ url_for('specs.index', start_from=spec['id'], package=1) }}#new" title="A copy with this one's choices, header and sections, amendments and all: another package of the project, or a new project">Start a new package or project from this one</a>
     {% if sections %}<a class="btn btn-ghost" href="{{ url_for('specs.set_book', set_id=spec['id']) }}" title="Every section as issued, as pages to turn">Read as a book</a>{% endif %}
     <details class="spec-menu">
       <summary class="btn btn-ghost" title="A copy to read or send round; not recorded as an issue">Download a copy</summary>
@@ -37,11 +38,14 @@
 </div>
 {{ engineer_note() }}
 <p class="small muted" style="margin:-6px 0 12px">
-  {% if team %}Team: {% for m in team %}{{ m['name'] or m['email'] }} ({{ m['role'] }}){{ ', ' if not loop.last }}{% endfor %}.{% else %}No team listed: anyone with THEMIS can change and issue it.{% endif %}
+  {% if team %}Team: {% for m in team %}{{ m['name'] or m['email'] }} ({{ m['role'] }}){{ ', ' if not loop.last }}{% endfor %}.{% else %}No team listed: only its owner{% if owner %} ({{ owner }}){% endif %} and administrators change and issue it.{% endif %}
   {% if last_issue %} Last issued Rev {{ last_issue['revision'] }} on {{ last_issue['issue_date'] }}{% if last_issue['purpose'] %} ({{ last_issue['purpose'] | lower }}){% endif %}; <a href="{{ url_for('specs.changes', set_id=spec['id']) }}">changes since</a>.{% endif %}
 </p>
+{% if packages['open'] %}
+<div class="flashes"><div class="flash error spec-pkg-banner"><strong>{{ packages['open'] }} difference{{ 's' if packages['open'] != 1 }} from the project's other issued packages</strong> not decided yet: this package says something else than what {{ 'another package' if packages['peers'] | length == 1 else 'other packages' }} of {{ packages['key'] }} issued. <a href="{{ url_for('specs.project_packages', set_id=spec['id']) }}">See them in red, and accept or keep each</a>.</div></div>
+{% endif %}
 {% if not may_edit %}
-<div class="flashes"><div class="flash notice">You can read and comment on this project; only its team changes it. Its lead can add you on <a href="{{ url_for('specs.review_set', set_id=spec['id']) }}#team">Team and sign-off</a>.</div></div>
+<div class="flashes"><div class="flash notice">You can read this specification, comment on it and read what it issued; only its owner{% if owner %} ({{ owner }}){% endif %} and the people they add change it. To write your own, <a href="{{ url_for('specs.index', start_from=spec['id'], package=1) }}#new">start a package from it</a>.</div></div>
 {% endif %}
 
 {% set answered = chosen.values() | select | list | length %}
@@ -109,6 +113,9 @@
         <label class="field w-lg"><span class="field-label">Project code</span>
           <input type="text" name="code" value="{{ spec['code'] }}"></label>
       </div>
+      <label class="field"><span class="field-label">Package</span>
+        <input type="text" name="package" value="{{ spec['package'] }}" placeholder="e.g. Package 1, Substructure">
+        <span class="field-hint">Specifications with the same project code are packages of one project, checked against each other's issues.</span></label>
       <div class="inline-form">
         <label class="field flex1"><span class="field-label">Client</span>
           <input type="text" name="client" value="{{ spec['client'] }}"></label>

@@ -8,6 +8,9 @@
 {{ review_head(spec, 'issues', 'Issues', 'Every issue of this specification: its revision, purpose and date, who prepared, checked and approved it, and the files exactly as they were sent.') }}
 
 {{ engineer_note() }}
+{% if package_differences %}
+<div class="flashes"><div class="flash error spec-pkg-banner">This package differs from what the project's other packages issued in {{ package_differences }} place{{ 's' if package_differences != 1 }} nobody has decided. <a href="{{ url_for('specs.project_packages', set_id=spec['id']) }}">Look at them in red</a> and accept or keep each before you issue; issuing with them open is your decision as the engineer responsible.</div></div>
+{% endif %}
 
 {% if may_issue and sections %}
 <div class="card" id="issue-new">

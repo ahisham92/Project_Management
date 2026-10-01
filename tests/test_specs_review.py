@@ -58,18 +58,23 @@ def test_a_team_decides_who_changes_signs_and_issues(app, signed_in):
     row_id = _row_id(app, set_id)
     sara = _person(app, signed_in, "Sara")
     omar = _person(app, signed_in, "Omar")
-    # No team yet: anyone with THEMIS changes it, as before.
-    assert "No team listed" in text(signed_in.get(f"/specs/sets/{set_id}"))
-    omar.post(f"/specs/sets/{set_id}/details?group=project-information", data={"q_proj_site": "Jeddah"})
+    # No team yet: only its owner (and administrators) change it; others read it.
+    assert "No team listed: only its owner" in text(signed_in.get(f"/specs/sets/{set_id}"))
+    omar.post(f"/specs/sets/{set_id}/details?group=project-information",
+              data={"q_proj_site": "__free__", "t_proj_site": "Jeddah"})
+    from app import specs_questions, specs_store
+
+    with app.app_context():
+        assert "proj_site" not in specs_questions.answers_of(specs_store.spec_set(set_id))
     signed_in.post(f"/specs/sets/{set_id}/team", data={
         f"role_{_user_id(app, 'Sara')}": "checker", f"role_{_user_id(app, 'Omar')}": ""})
     page = text(signed_in.get(f"/specs/sets/{set_id}/review"))
-    assert "Only the people listed change this project" in page
+    assert "and the people listed here change this specification" in page
     # Omar is not on the team: he reads and comments, but his changes are refused.
     answer = omar.post(f"/specs/sets/{set_id}/sections/{row_id}/edit", data={"mode": "text", "text": "# X"})
-    assert answer.status_code == 302 and "Only this project" in text(omar.get(f"/specs/sets/{set_id}"))
+    assert answer.status_code == 302 and "Only this specification" in text(omar.get(f"/specs/sets/{set_id}"))
     assert omar.post(f"/specs/sets/{set_id}/comments", data={"row_id": row_id, "body": "Why 40?"}).status_code == 302
-    assert "You can read and comment" in text(omar.get(f"/specs/sets/{set_id}"))
+    assert "You can read this specification, comment on it" in text(omar.get(f"/specs/sets/{set_id}"))
     # Only the lead changes the team, and a checker does not issue.
     sara.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Omar')}": "lead"})
     from app import specs_review
@@ -89,6 +94,7 @@ def test_sections_are_prepared_checked_and_approved_for_their_words(app, signed_
     set_id = _project(app, signed_in)
     row_id = _row_id(app, set_id)
     sara = _person(app, signed_in, "Sara")
+    signed_in.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Sara')}": "approver"})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "hold_shown": "1",
                                                    "signoff_shown": "1", "need_signoff": "1"})
     signed_in.post(f"/specs/sets/{set_id}/signoff", data={"stage": "prepared", "row_id": row_id})
@@ -176,6 +182,7 @@ def test_an_issue_waits_for_sign_off_and_closed_comments_when_held(app, signed_i
     set_id = _project(app, signed_in)
     row_id = _row_id(app, set_id)
     sara = _person(app, signed_in, "Sara")
+    signed_in.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Sara')}": "approver"})
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "hold_shown": "1", "signoff_shown": "1",
                                                    "need_signoff": "1"})
     signed_in.post(f"/specs/sets/{set_id}/issues", data={"responsible": "1", "revision": "0"})
@@ -249,6 +256,7 @@ def test_two_engineers_do_not_save_over_each_other(app, signed_in):
     set_id = _project(app, signed_in)
     row_id = _row_id(app, set_id)
     sara = _person(app, signed_in, "Sara")
+    signed_in.post(f"/specs/sets/{set_id}/team", data={f"role_{_user_id(app, 'Sara')}": "approver"})
     # Both open the editor; Sara is told the other has it open.
     mine = text(signed_in.get(f"/specs/sets/{set_id}/sections/{row_id}/edit"))
     assert "opened this section in the editor" in text(sara.get(f"/specs/sets/{set_id}/sections/{row_id}/edit"))

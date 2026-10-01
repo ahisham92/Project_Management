@@ -373,6 +373,12 @@ def _pretty(key: str) -> str:
     return words[:1].upper() + words[1:]
 
 
+# Questions asked as a place (a city and a country), and the plain words they
+# are asked in on the story's cards.
+PLACE_KEYS = {"proj_site", "proj_location"}
+PLAIN_LABELS = {"proj_site": "Where is the project?", "proj_location": "Where is the project?"}
+
+
 def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
           spec_set: Mapping[str, Any] | None, elements: Iterable[str] = ()) -> list[dict]:
     """The questions a project's sections ask, grouped, each with the master's
@@ -449,6 +455,16 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
             # A question the library does not describe: the master's first answer.
             q["suggested"] = q["choices"][0]
         q["sections"] = sorted({p["number"] for p in q["places"]})
+        if q["key"] in PLACE_KEYS:
+            # Asked as a place: a city and a country, the project's own to start from.
+            from . import specs_places
+
+            q["place"] = True
+            q["label"] = PLAIN_LABELS.get(q["key"], q["label"])
+            if not q["answered"] and spec_set:
+                city, country = (spec_set.get("city") or "").strip(), (spec_set.get("country") or "").strip()
+                if city or country:
+                    q["suggested"] = specs_places.join_location(city, country)
         out.append(q)
     out += _switches(sections, spec_set)
     order = {g: i for i, g in enumerate(GROUPS + [OTHER])}

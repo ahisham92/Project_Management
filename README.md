@@ -146,9 +146,38 @@ meet, so the Specs Writer reads across them:
 - **Choices inside a paragraph.** The alternatives MasterSpec writes in `[brackets]` become
   `{anchor_rods=A325M: ASTM F3125, Grade A325M}`: the words after the colon are issued only for
   projects that chose that answer. Brackets left in the text are listed by the checker.
-- **Steps.** A project page runs *Project*, *Elements*, *Questions*, *Sections*, *Details*,
+- **Steps.** A project page runs *Project*, *Elements*, *The brief*, *Sections*, *The story*,
   *Check*, *Review*, *Issue*, one step in view at a time, with Next and Back buttons and the state of each
   at the top. The project's location sits beside its client.
+- **The story: the questions answered in 3D, level by level.** *The story* (step 5, *Next: the
+  story*, and *▶ The story* at the top of the project page) is where the questions are answered:
+  `/specs/sets/<id>/story`. The levels run as a path across the top, from deciding the project to
+  looking after the finished structure, each a stop (✓ answered, the open one with what is left,
+  a padlock while locked) with *You are here* over the one shown. Beside the site in 3D, each
+  level opens with a few lines of the story of the works told for this project (the building, the
+  quay or the bridge, its elements, its post-tensioning and precast; `NARRATIVE` in
+  `app/specs_inputs.py`), how much of it is answered, and its stops; the picture zooms to the
+  level's stations, and an engineer in a hard hat walks from station to station as the questions
+  are answered **one at a time**: each on its own card with its picture (the question's drawing,
+  else a picture added to it, else its station drawn), what it means, and *What the codes say*.
+  *Next* saves that one answer in the background (`only=<key>` on the station's POST, no page
+  reload) and the next card comes up; a suggestion shown on its own card is accepted when it is
+  moved past with *Next*, or changed first. *Back* goes to the card before, *Skip for now* leaves
+  one open. After the level's last question the story goes on to the next level by itself after a
+  moment (*Stay on this level* holds it; *On to level N* goes at once); *Next level* stays locked until the level is done. The brief (level 1) is asked part by
+  part the same way, and confirmed at the end. It asks only what applies (`BRIEF_WHEN` in
+  `app/specs_inputs.py`): marine furniture once the project builds marine structures, the
+  steel's protection, fire and design once it has a steel frame, the bridge items for a bridge,
+  the precast and post-tensioning details when it has them, and so on. Until the brief is first
+  confirmed the site is a **bare plot**: the drawing board alone, and each choice adds its piece
+  at once (the building, the quay on the sea, the bridge, the steel frame, the cranes), with no
+  save and no reload; each part is kept in the background as it is chosen (`partial=1`, which
+  neither decides the brief nor puts in a section). Confirming it puts in the sections it calls
+  for, as before, and the whole site appears. Every brief choice that has a drawing shows it.
+  *Where is the project?* (`PLACE_KEYS` in `app/specs_questions.py`) is asked as a city and a
+  country to pick, filled in from the project's own. On *Inputs at a glance* a station shows its
+  answers, with a button to answer them one by one on the story.
+  *Details* is kept as the **list view** of the same questions, linked from the story.
 - **Details: the questions the sections ask.** Once the sections are chosen, *Details* asks
   only what those sections need, grouped the way an engineer thinks (project information,
   concrete materials, concrete mixes and properties, placing and curing, formwork,

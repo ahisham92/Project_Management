@@ -53,6 +53,60 @@ STEEL_INSIDE = [
     ("tendons", re.compile(r"post.?tension|tendon|strand|duct|anchorage|stress|grout|sheath", re.I)),
     ("precast", re.compile(r"precast|pre.?cast|hollow.?core|tilt|double.?tee|prestress|plant.?cast", re.I)),
 ]
+# Each level told as the story of the works: what is happening on site when
+# its questions come up. {works} is what the project builds ("the building",
+# "the quay", "the bridge" or "the works"), {elements} its elements.
+NARRATIVE = {
+    "deciding": "Every project starts at the drawing board. Decide what {works} is, the elements it "
+                "has and the systems it uses: the site in the picture is drawn from these choices, "
+                "and every level after follows from them.",
+    "the-project": "The site office opens. Here the specification learns where {works} stands, who "
+                   "the client, the engineer and the contractor are, and what this package covers.",
+    "before-work-starts": "Nothing is built yet. The contractor brings the drawings, method statements, "
+                          "samples and programme, and they are agreed before the first work on site.",
+    "preparing-the-site": "The ground is made ready for {works}: what stays is held up, what goes is "
+                          "taken down, and every movement is watched while the work goes on.",
+    "the-moulds": "The formwork goes up for {elements}. Its shape, its finish and what is cast into it "
+                  "are settled here, before any steel or concrete arrives.",
+    "the-steel-inside": "The steel goes into the moulds: the bars and the cage{extras}. What the steel "
+                        "is, how it is fixed and how much cover it gets are settled before the concrete.",
+    "the-ingredients": "At the batch plant the cement silo, the sand and stone heaps, the water and the "
+                       "admixtures are stocked. Each ingredient is specified before anything is mixed.",
+    "the-mix": "The mixer turns. Each element's concrete gets its class, strength, exposure, "
+               "water/cement ratio, slump and air, and the truck takes it down the road to the pump.",
+    "the-pour": "The pump reaches over the formwork and the concrete goes in. How it is placed, "
+                "compacted, finished and cured decides the surface {works} will keep.",
+    "proving-it": "{specimens} go to the lab. Tests and inspections prove what was built, and this "
+                  "level says what happens when a result falls short.",
+    "the-steel-frame": "The steel frame rises on the concrete: the members and their connections, "
+                       "decking, stairs and railings, and how they are protected.",
+    "keeping-water-out": "Membranes and waterstops keep {works} dry: where water could get in, this "
+                         "level says what stops it.",
+    "bridges": "Out on the bridge: its bearings, joints and parapets, and what a bridge asks beyond "
+               "the rest.",
+    "looking-after-it": "{Works} is in service. Repairs and maintenance are planned so it keeps doing "
+                        "its job for its design life.",
+    "other-details": "A few questions the library does not place on the way. Answer them to finish "
+                     "the story.",
+}
+
+
+def narrative(slug: str, site: Mapping[str, Any]) -> str:
+    """A level's opening lines, told for this project's works."""
+    built = [w for w, on in (("the building", site.get("building")), ("the quay", site.get("marine")),
+                             ("the bridge", site.get("bridge"))) if on]
+    works = built[0] if len(built) == 1 else "the works"
+    elements = [e for e in site.get("elements") or [] if e and e != "none"]
+    extras = [w for w, on in ((" with its post-tensioning tendons", site.get("pt")),
+                              (" and the precast units from the yard", site.get("precast"))) if on]
+    text = NARRATIVE.get(slug) or ""
+    return text.format(
+        works=works, Works=works[:1].upper() + works[1:],
+        elements=specs_questions.joined(elements[:4]) if elements else "each element",
+        extras="".join(extras),
+        specimens="Cylinders" if site.get("specimens") == "cylinders" else "Cubes")
+
+
 # The level before the questions: what the project is, decided first.
 DECIDING = {"slug": "deciding", "number": 0, "name": "Deciding the project",
             "lead": "What the project builds, its elements, and the systems it uses: the site is "
@@ -107,6 +161,7 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
     elements = [e.lower() for e in _picked(chosen, "elements")]
     return {
         "building": any("building" in b for b in builds) or not builds,
+        "builds": bool(builds),
         "marine": any("marine" in b for b in builds) or (chosen.get("exposure") or "").lower() == "marine",
         "bridge": any("bridge" in b for b in builds),
         "elements": elements,
@@ -120,6 +175,53 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
         "underwater": _yes(chosen, "underwater"),
         "repair": _yes(chosen, "repair"),
     }
+
+
+# The brief asks only what applies: a question here is asked once the answer
+# it depends on says so (marine furniture for marine structures, the steel's
+# details once there is a steel frame, and so on). key: (on, how, value), how
+# being "has" (that answer ticked), "is" (that answer picked) or "some" (any
+# answer but None or No).
+BRIEF_WHEN: dict[str, tuple[str, str, str]] = {}
+for _k in ("fenders", "bollards", "ladders", "floating_piers"):
+    BRIEF_WHEN[_k] = ("structures", "has", "Marine structures")
+for _k in ("bridge_items", "bridge_segmental", "bridge_load_cells", "bridge_contractor_design",
+           "bridge_bespoke_parapet", "bridge_deck_surfacing"):
+    BRIEF_WHEN[_k] = ("structures", "has", "Bridges")
+for _k in ("steel_systems", "steel_protection", "fire", "aess", "steel_design"):
+    BRIEF_WHEN[_k] = ("steel_framing", "is", "Yes")
+BRIEF_WHEN["deck_design"] = ("steel_systems", "has", "Steel deck")
+BRIEF_WHEN["cfs_delegated"] = ("steel_systems", "has", "Cold-formed framing")
+for _k in ("pt_delegated_design", "pt_vapor_inhibitor", "pt_transfer_girders"):
+    BRIEF_WHEN[_k] = ("post_tensioning", "some", "")
+BRIEF_WHEN["pt_encapsulation"] = ("post_tensioning", "has", "Unbonded")
+for _k in ("precast_delegated_design", "precast_hollowcore", "precast_double_tee", "precast_thin_brick",
+           "precast_stone_facing", "precast_insulated_panels", "precast_stadia"):
+    BRIEF_WHEN[_k] = ("precast", "some", "")
+for _k in ("demo_explosives", "demo_salvage", "demo_hazardous", "demo_prestressed"):
+    BRIEF_WHEN[_k] = ("demolition", "is", "Yes")
+BRIEF_WHEN["monitor_digital_twin"] = ("monitoring", "is", "Yes")
+for _k in ("wp_installer_warranty", "wp_composite_system", "wp_plaza_pavers"):
+    BRIEF_WHEN[_k] = ("waterproofing", "some", "")
+for _k in ("stair_railings", "stair_delegated"):
+    BRIEF_WHEN[_k] = ("stairs", "some", "")
+
+
+def brief_applies(key: str, chosen: Mapping[str, str] | None, _seen: frozenset = frozenset()) -> bool:
+    """Whether the brief asks ``key`` for these choices: the answer it hangs
+    on says so, and that one is itself asked."""
+    when = BRIEF_WHEN.get(key)
+    if not when or key in _seen:
+        return True
+    on, how, value = when
+    if not brief_applies(on, chosen, _seen | {key}):
+        return False
+    picked = _picked(chosen or {}, on)
+    if how == "has":
+        return value in picked
+    if how == "is":
+        return ((chosen or {}).get(on) or "").strip() == value
+    return any(p.lower() not in ("none", "no") for p in picked)
 
 
 def decisions(chosen: Mapping[str, str] | None, options: list[dict]) -> list[dict]:
@@ -203,6 +305,9 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
     # answered, a suggestion counting once the engineer accepts it. One that is
     # answered stays open to change, wherever it is: a change to the brief
     # reopens only the levels it puts new questions in.
+    site = site_of(chosen) if chosen is not None else site_of({})
+    for c in out_chapters:
+        c["story"] = narrative(c["slug"], site)
     open_stage = next((i for i, c in enumerate(out_chapters) if not c["done"]), len(out_chapters))
     for i, c in enumerate(out_chapters):
         c["stage"] = i
@@ -213,7 +318,7 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
             stations[sid]["level"] = i + 1
             stations[sid]["locked"] = c["locked"]
     return {"stations": shown_stations, "chapters": out_chapters, "open_stage": open_stage,
-            "site": site_of(chosen) if chosen is not None else site_of({}),
+            "site": site,
             "mix": {"columns": mix_cols, "rows": [{"element": e, "values": v} for e, v in mix_rows.items()]},
             "totals": totals, "count": sum(totals.values())}
 

@@ -176,7 +176,7 @@ def test_a_saved_project_goes_back_to_its_brief(app, signed_in):
     from .test_specs_kinds import applies, load
 
     set_id = _project(app, signed_in)
-    assert f'/specs/sets/{set_id}/inputs#st-decide' in text(signed_in.get(f"/specs/sets/{set_id}"))
+    assert f'/specs/sets/{set_id}/story#level-1' in text(signed_in.get(f"/specs/sets/{set_id}"))
     _decided(signed_in, set_id)
     signed_in.post(f"/specs/sets/{set_id}/inputs/office", data={**SITE, "accept_suggested": "1"}, headers=FETCH)
     load(signed_in, "STD15A_SPC_033816_ST_PT.docx", "# GENERAL\n## SUMMARY\n- PT.\n", "033816",
@@ -242,3 +242,117 @@ def test_an_answered_level_after_the_open_one_stays_open(app, signed_in):
     # Answered, it stays open to change; the unanswered level between stays locked.
     assert not chapters["the-mix"]["locked"] and chapters["the-ingredients"]["locked"]
     assert "Locked." not in text(signed_in.get(f"/specs/sets/{set_id}/inputs/mixer"))
+
+
+def test_the_story_tells_each_level_for_the_works_it_builds(app, signed_in):
+    set_id = _project(app, signed_in)
+    page = text(signed_in.get(f"/specs/sets/{set_id}/story"))
+    assert 'data-mode="story"' in page and "the story of the works" in page
+    # Details stays as the list view of the same questions.
+    assert f'href="/specs/sets/{set_id}/details"' in page and "List view" in page
+    data = json.loads(re.search(r'id="spec-scene-data">(.*?)</script>', page, re.S).group(1))
+    tale = {c["slug"]: c["story"] for c in data["chapters"]}
+    assert tale["deciding"].startswith("Every project starts at the drawing board. Decide what the building is")
+    assert "The mixer turns." in tale["the-mix"]
+    # A quay on the sea is told as the quay.
+    _decided(signed_in, set_id, structures="Marine structures")
+    data = json.loads(re.search(r'id="spec-scene-data">(.*?)</script>',
+                                text(signed_in.get(f"/specs/sets/{set_id}/story")), re.S).group(1))
+    assert "Decide what the quay is" in data["chapters"][0]["story"]
+    # The details page points to the story.
+    assert f'href="/specs/sets/{set_id}/story"' in text(signed_in.get(f"/specs/sets/{set_id}/details"))
+
+
+def test_the_story_needs_a_project_and_a_sign_in(app, signed_in):
+    set_id = _project(app, signed_in)
+    assert signed_in.get("/specs/sets/999/story").status_code == 404
+    signed_in.post("/logout")
+    assert signed_in.get(f"/specs/sets/{set_id}/story").status_code in (302, 401)
+
+
+def test_the_story_asks_one_question_at_a_time(app, signed_in):
+    set_id = _project(app, signed_in)
+    _decided(signed_in, set_id)
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/office?cards=1"))
+    # A card for the question, with its own form: Next saves only that one,
+    # a suggestion shown on its own card being accepted as it is moved past.
+    assert page.count("data-card ") == 1 and 'name="only" value="proj_site"' in page
+    assert 'name="accept_suggested" value="1"' in page and "Suggested from the master" in page
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/office",
+                            data={**SITE, "only": "proj_site", "accept_suggested": "1"}, headers=FETCH).get_json()
+    assert _answers(app, set_id)["proj_site"] == "Project site" and answer["scene"]["open_stage"] == 2
+    # A station of several questions: saving one card leaves the others as they were.
+    from app import specs_questions
+
+    data = answer["scene"]
+    with app.app_context():
+        specs_questions.save_answers(set_id, {q["key"]: "As agreed" for s in data["stations"] if s["id"] in
+                                              data["chapters"][2]["stations"] for q in s["questions"]}, {})
+    data = _scene(signed_in, set_id)
+    assert data["open_stage"] == 3
+    station = "mixer"
+    questions = {s["id"]: s for s in data["stations"]}[station]["questions"]
+    assert len(questions) >= 2
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/{station}?cards=1"))
+    assert page.count("data-card ") == len(questions)
+    first, second = questions[0]["key"], questions[1]["key"]
+    before = _answers(app, set_id)
+    signed_in.post(f"/specs/sets/{set_id}/inputs/{station}",
+                   data={"only": first, f"q_{first}": "__free__", f"t_{first}": "As agreed", f"q_{second}": "__free__",
+                         f"t_{second}": "Not this one"}, headers=FETCH)
+    after = _answers(app, set_id)
+    assert after[first] == "As agreed" and after.get(second) == before.get(second)
+    # A key not at the station is not found.
+    assert signed_in.post(f"/specs/sets/{set_id}/inputs/{station}", data={"only": "proj_site"},
+                          headers=FETCH).status_code == 404
+
+
+def test_the_brief_asks_only_what_applies(app, signed_in):
+    from app import specs_inputs
+
+    # Marine furniture only for marine structures, the steel's details only
+    # with a steel frame, and a detail of a detail only when both apply.
+    assert not specs_inputs.brief_applies("fenders", {"structures": "Buildings"})
+    assert specs_inputs.brief_applies("fenders", {"structures": "Buildings|Marine structures"})
+    assert not specs_inputs.brief_applies("steel_protection", {"steel_framing": "No"})
+    assert specs_inputs.brief_applies("steel_protection", {"steel_framing": "Yes"})
+    assert not specs_inputs.brief_applies("deck_design", {"steel_framing": "No", "steel_systems": "Steel deck"})
+    assert specs_inputs.brief_applies("pt_encapsulation", {"post_tensioning": "Unbonded"})
+    assert not specs_inputs.brief_applies("pt_delegated_design", {"post_tensioning": "None"})
+    assert specs_inputs.brief_applies("standards", {})
+    set_id = _project(app, signed_in)
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    fenders = re.search(r'<div class="spec-decide-q" data-opt="fenders"[^>]*>\s*<input[^>]*>', page).group(0)
+    assert "data-when=" in fenders and " hidden" in fenders and "disabled" in fenders
+    # A part saved on the way is kept without deciding the brief or adding a section.
+    from app import specs_store
+
+    with app.app_context():
+        sections = len(specs_store.set_sections(set_id))
+    answer = signed_in.post(f"/specs/sets/{set_id}/inputs/decide", headers=FETCH, data={
+        "partial": "1", "shown_opt": ["structures"], "opt_structures": ["Marine structures"]}).get_json()
+    assert answer["scene"]["chapters"][0]["done"] is False
+    with app.app_context():
+        assert specs_store.chosen_for(specs_store.spec_set(set_id))["structures"] == "Marine structures"
+        assert len(specs_store.set_sections(set_id)) == sections
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/decide"))
+    fenders = re.search(r'<div class="spec-decide-q" data-opt="fenders"[^>]*>', page).group(0)
+    assert " hidden" not in fenders
+
+
+def test_where_the_project_is_is_asked_as_a_city_and_country(app, signed_in):
+    from app import specs_store
+
+    set_id = _project(app, signed_in)
+    _decided(signed_in, set_id)
+    with app.app_context():
+        specs_store.set_place(set_id, "Jeddah", "Saudi Arabia")
+    page = text(signed_in.get(f"/specs/sets/{set_id}/inputs/office?cards=1"))
+    assert "Where is the project?" in page and "as the specification names it" not in page
+    assert 'value="Jeddah" placeholder="e.g. Jeddah" data-place-city' in page
+    assert 'value="Saudi Arabia" placeholder="e.g. Saudi Arabia" data-place-country' in page
+    assert 'name="t_proj_site" value="Jeddah, Saudi Arabia"' in page and 'id="spec-countries"' in page
+    signed_in.post(f"/specs/sets/{set_id}/inputs/office", headers=FETCH, data={
+        "only": "proj_site", "suggest_shown": "1", "accept_suggested": "1",
+        "q_proj_site": "__free__", "t_proj_site": "Yanbu, Saudi Arabia"})
+    assert _answers(app, set_id)["proj_site"] == "Yanbu, Saudi Arabia"

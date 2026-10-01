@@ -90,7 +90,7 @@ def test_the_questions_come_from_the_sections_with_their_choices(app, signed_in)
     assert asked["conc_class_a_piling"]["optional"] and asked["conc_class_a_piling"]["single_choice_optional"]
     page = text(signed_in.get(f"/specs/sets/{set_id}/details"))
     # The first chapter with anything open comes first: the project.
-    assert "Where the project site is" in page and "suggested" in page
+    assert "Where is the project?" in page and "suggested" in page
     assert "The mix" in page
 
 
@@ -149,11 +149,14 @@ def test_the_library_file_carries_the_questions(app, signed_in):
     assert io.BytesIO(data).read(2) == b"PK"
 
 
-def test_the_project_page_leads_to_the_details_and_keeps_the_location(app, signed_in):
+def test_the_project_page_leads_to_the_story_and_keeps_the_location(app, signed_in):
     set_id = _project(app, signed_in)
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
-    assert "<strong>Details</strong>" in page and "0 of 6 answered" in page
-    assert "Next: details (6 to answer)" in page
+    # The questions are answered on the story; Details stays as its list view.
+    assert "<strong>The story</strong>" in page and "0 of 6 answered" in page
+    assert f'href="/specs/sets/{set_id}/story">Next: the story (6 to answer)' in page
+    assert f'href="/specs/sets/{set_id}/details"' in page and "List view" in page
+    assert f'href="/specs/sets/{set_id}/story#level-1"' in page
     signed_in.post(f"/specs/sets/{set_id}", data={"name": "Tower", "proj_location": " Jeddah,  KSA "})
     page = text(signed_in.get(f"/specs/sets/{set_id}"))
     # An older project's one-line location reads as its city and country.

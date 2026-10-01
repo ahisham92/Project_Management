@@ -1,0 +1,53 @@
+{# One station's questions as the story asks them: a card each, one shown at a
+   time, with its picture, saved on its own when Next is clicked. #}
+{% from "specs/_question.html" import controls, question with context %}
+<div class="spec-cards" data-cards data-station="{{ station['id'] }}">
+{% for q in questions %}
+  {% set pic = pictures[q['key']] %}
+  {% set state = 'answered' if q['answered'] else ('suggested' if q['suggested'] is not none else 'needed') %}
+  <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station=station['id']) }}" class="spec-card spec-details spec-in-{{ state }}" data-card data-key="{{ q['key'] }}" data-state="{{ state }}" hidden>
+    <input type="hidden" name="only" value="{{ q['key'] }}">
+    <input type="hidden" name="was" value="{{ was[q['key']] }}">
+    {% if state == 'suggested' %}
+    {# Shown on its own and moved on from with Next, a suggestion is reviewed
+       one by one: Next accepts it as shown, or the answer it was changed to. #}
+    <input type="hidden" name="suggest_shown" value="1"><input type="hidden" name="accept_suggested" value="1">
+    {% endif %}
+    <div class="spec-card-pic" data-card-pic="{{ station['id'] }}">
+      {%- if pic['drawing'] %}{{ pic['drawing'] | safe }}
+      {%- elif pic['image'] %}<img src="{{ url_for('specs.question_image', image_id=pic['image']['id']) }}" alt="{{ pic['image']['caption'] or q['label'] }}" loading="lazy">
+      {%- endif -%}
+    </div>
+    <p class="spec-card-state small">
+      {% if state == 'needed' %}<span class="spec-in-chip spec-in-needed">Needs your answer</span>
+      {% elif state == 'suggested' %}<span class="spec-in-chip spec-in-suggested">Suggested from the master</span> Check it and change it if this project needs something else: Next accepts what is picked.
+      {% else %}<span class="spec-in-chip spec-in-answered">Answered</span>{% endif %}
+    </p>
+    <fieldset class="spec-scene-fields"{% if not may_edit or locked %} disabled{% endif %}>
+      {% if q['place'] %}
+      {% set where = split_location(q['answer'] if q['answered'] else (q['suggested'] or '')) %}
+      <fieldset class="spec-q" id="q-{{ q['key'] }}">
+        <legend class="spec-q-label">{{ q['label'] }}</legend>
+        <div class="spec-place-pick" data-place-pick>
+          <label>City <input type="text" list="spec-cities" value="{{ where[0] }}" placeholder="e.g. Jeddah" data-place-city autocomplete="off"></label>
+          <label>Country <input type="text" list="spec-countries" value="{{ where[1] }}" placeholder="e.g. Saudi Arabia" data-place-country autocomplete="off"></label>
+        </div>
+        <input type="hidden" name="q_{{ q['key'] }}" value="{{ FREE }}">
+        <input type="hidden" name="t_{{ q['key'] }}" value="{{ join_location(where[0], where[1]) }}" data-place-line>
+        <p class="small muted spec-q-help">Written into the specification as “{{ join_location(where[0], where[1]) or 'City, Country' }}”.</p>
+      </fieldset>
+      {% else %}
+      {{ question(q) }}
+      {% endif %}
+    </fieldset>
+    {% if pic['definition'] %}<p class="small spec-card-def">{{ pic['definition'] | truncate(320) }}</p>{% endif %}
+    {% if not q['switch'] %}<p class="small"><a href="#" data-explain="{{ q['key'] }}">What it means and what the codes say →</a></p>{% endif %}
+    <p class="small spec-scene-bad" data-card-note></p>
+  </form>
+{% endfor %}
+{% if questions | selectattr('place') | list %}
+<datalist id="spec-countries">{% for c in countries %}<option value="{{ c }}">{% endfor %}</datalist>
+<datalist id="spec-cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
+{% endif %}
+{% if not may_edit %}<p class="small muted">You can read this specification; only its owner and the people they add change its answers.</p>{% endif %}
+</div>

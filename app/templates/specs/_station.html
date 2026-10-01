@@ -1,7 +1,7 @@
 {# One station of the inputs at a glance, as the panel beside the picture shows
    it: its questions to answer or change there, saved to the project. #}
 {% from "specs/_question.html" import controls, question with context %}
-<p class="small muted">Level {{ level }}: {{ chapter['name'] }}</p>
+<p class="small muted spec-station-level">Level {{ level }}: {{ chapter['name'] }}</p>
 <h2>{{ station['name'] }}</h2>
 <p class="small muted">{{ station['what'] }}</p>
 {% if locked %}

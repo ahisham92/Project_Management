@@ -166,6 +166,22 @@ meet, so the Specs Writer reads across them:
   themselves (wording, group, suggestion) come with the library file, not with the code: an
   administrator loads the office's question library with *Add and update*, and a project that
   took a section before brings the new master in on the section's page.
+- **Told as a story.** By default *Details* walks through the questions as chapters in the
+  order the works are built: the project, before work starts, preparing the site, the
+  ingredients (cement, sand, aggregate, water, admixtures), the mix, the moulds, the steel
+  inside, the pour, the steel frame, keeping water out, bridges, proving it, looking after it.
+  Each chapter takes whole groups and says in one line what it covers; *Show by group* goes
+  back to the groups (`STORY` in `app/specs_questions.py`).
+- **The inputs at a glance.** *Inputs at a glance* on the project page (and on *Issue…*) draws
+  the works in 3D, isometric, in the browser: the site office, the cement silo, the sand and
+  stone heaps, the water tank, the admixture drums, the batching plant with its mixer turning,
+  the truck on the haul road, the formwork, the rebar cage, the pour, the steel frame, the
+  membrane, the testing lab. Each station carries a pin (green answered, amber suggested and
+  not accepted, red still to answer); click it to zoom in and read every answer it holds with
+  the words of the specification it goes into, and the mixer shows each element's concrete as
+  a table. *Play the story* walks the stations in the chapters' order. The same summary is
+  written out underneath as tables, for reading, printing and phones (`app/specs_inputs.py`,
+  `static/spec-inputs.js`, no library).
 - **What a question means.** Clicking a question (or the *i* beside it) opens a panel on the
   right with what it means and how to choose, a drawing of it, and **what each code says**:
   every code and clause that governs it and what that clause says, whatever the project's

@@ -89,9 +89,9 @@ def test_the_questions_come_from_the_sections_with_their_choices(app, signed_in)
     assert strength["rows"] == ["foundations", "basement_walls"] and strength["suggested"] == "40MPa"
     assert asked["conc_class_a_piling"]["optional"] and asked["conc_class_a_piling"]["single_choice_optional"]
     page = text(signed_in.get(f"/specs/sets/{set_id}/details"))
-    # The first group with anything open comes first: project information.
+    # The first chapter with anything open comes first: the project.
     assert "Where the project site is" in page and "suggested" in page
-    assert "Concrete mixes and properties" in page
+    assert "The mix" in page
 
 
 def test_answers_fill_every_clause_and_can_differ_per_element(app, signed_in):

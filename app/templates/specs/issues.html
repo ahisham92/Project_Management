@@ -15,7 +15,7 @@
 {% if may_issue and sections %}
 <div class="card" id="issue-new">
   <div class="card-head"><div><h2>Issue a new revision</h2>
-    <p class="small muted" style="margin-top:2px">The files carry the revision and date given here; a copy is kept below exactly as sent.</p></div></div>
+    <p class="small muted" style="margin-top:2px">The files carry the revision and date given here; a copy is kept below exactly as sent. Before you issue, <a href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}">see the inputs at a glance</a>.</p></div></div>
   {% if ready and ready['reasons'] %}
   <div class="card-body">
     <p><strong>Held:</strong> {{ ready['reasons'] | join('; ') }}.</p>

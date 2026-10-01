@@ -858,9 +858,16 @@ def details(set_id: int):
     """The master's questions for this project, one group at a time: each
     answer is written into every clause it belongs to."""
     row = _set_or_404(set_id)
-    groups = specs_questions.grouped(_asked(set_id, row))
+    # As a story (the default: chapters in the order the project is built) or
+    # by the library's groups.
+    by = "group" if request.values.get("by") == "group" else "story"
+    asked = _asked(set_id, row)
+    groups = specs_questions.grouped(asked) if by == "group" else specs_questions.story(asked)
     slugs = [g["slug"] for g in groups]
     asked_for = request.values.get("group", "")
+    if asked_for not in slugs:
+        # A group named while the questions are told as a story: its chapter.
+        asked_for = next((g["slug"] for g in groups if asked_for in g.get("group_slugs", ())), asked_for)
     here = slugs.index(asked_for) if asked_for in slugs else next(
         (i for i, g in enumerate(groups) if g["open"]), 0)
     if request.method == "POST" and groups:
@@ -880,28 +887,51 @@ def details(set_id: int):
                   "that you have reviewed the suggestions to accept them, or change each one. The "
                   "engineer decides every answer; THEMIS only suggests.", "error")
             if not kept:
-                return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
+                return redirect(url_for("specs.details", set_id=set_id, group=slugs[here], **_by(by)))
         if kept:
             flash("Somebody else answered " + "; ".join(kept) + " after you opened this page, so "
                   "theirs was kept; change it again if yours should stand.", "error")
-            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here], **_by(by)))
         if switches:
             _added(set_id, before)
         if request.form.get("go") == "back" and here:
-            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here - 1]))
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here - 1], **_by(by)))
         if here + 1 < len(groups) and request.form.get("go") != "stay":
-            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here + 1]))
-        return redirect(url_for("specs.details", set_id=set_id, group=slugs[here]))
+            return redirect(url_for("specs.details", set_id=set_id, group=slugs[here + 1], **_by(by)))
+        return redirect(url_for("specs.details", set_id=set_id, group=slugs[here], **_by(by)))
     labels = dict(specs_questions.KIND_LABELS)
     labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
     return render_template(
-        "specs/details.html", spec=row, groups=groups, group=groups[here] if groups else None,
+        "specs/details.html", spec=row, groups=groups, group=groups[here] if groups else None, by=by,
         here=here, total=sum(len(g["questions"]) for g in groups),
         open_n=sum(g["open"] for g in groups), need_n=sum(g["need"] for g in groups), element_labels=labels,
         FREE=specs_questions.FREE, NONE=specs_questions.NONE, SAME=specs_questions.SAME,
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP,
         explain_key=request.args.get("explain", ""),
         was=json.dumps(_group_answers(row, groups[here]) if groups else {}, ensure_ascii=False))
+
+
+@bp.get("/sets/<int:set_id>/inputs")
+@login_required
+def review_inputs(set_id: int):
+    """The project's inputs at a glance before it is issued: each answer on a
+    picture of the works as they are built, and as a plain summary."""
+    from .. import specs_inputs, specs_review
+
+    row = _set_or_404(set_id)
+    sections = store.set_sections(set_id)
+    labels = dict(specs_questions.KIND_LABELS)
+    labels.update({e[0]: e[1] for e in getattr(specs_seed, "ELEMENT_KINDS", [])})
+    data = specs_inputs.scene(
+        _asked(set_id, row), specs_review.issued_words(row, sections, marked=True), labels,
+        lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}")
+    left = specs_review.still_open(row, sections) if sections else []
+    return render_template("specs/inputs.html", spec=row, scene=data, left=left,
+                           open_places=sum(len(p["open"]) for p in left))
+
+
+def _by(by: str) -> dict:
+    return {"by": "group"} if by == "group" else {}
 
 
 def _unaccepted(questions: list[dict], given: dict) -> int:

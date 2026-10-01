@@ -516,23 +516,23 @@ STORY = [
      "before anything is built.", ["General requirements and submittals"]),
     ("preparing-the-site", "Preparing the site", "Taking down what is there, holding up what stays, "
      "and watching it move.", ["Demolition, shoring and monitoring"]),
-    ("the-ingredients", "The ingredients", "Cement, sand, coarse aggregate, water and admixtures: "
-     "what goes into the batch plant.", ["Concrete materials"]),
-    ("the-mix", "The mix", "Each element's concrete: its class, strength, exposure, water/cement "
-     "ratio, slump and air.", ["Concrete mixes and properties"]),
     ("the-moulds", "The moulds", "The formwork the concrete takes its shape from, and what is cast "
      "into it.", ["Formwork and accessories"]),
     ("the-steel-inside", "The steel inside", "Reinforcement, post-tensioning and the precast units.",
      ["Reinforcement", "Post-tensioning and precast"]),
+    ("the-ingredients", "The ingredients", "Cement, sand, coarse aggregate, water and admixtures: "
+     "what goes into the batch plant.", ["Concrete materials"]),
+    ("the-mix", "The mix", "Each element's concrete: its class, strength, exposure, water/cement "
+     "ratio, slump and air.", ["Concrete mixes and properties"]),
     ("the-pour", "The pour", "Placing, finishing and curing: from the truck to the hardened "
      "surface.", ["Placing, finishing and curing"]),
+    ("proving-it", "Proving it", "Tests, inspections and what happens when a result falls short.",
+     ["Quality, testing and inspection"]),
     ("the-steel-frame", "The steel frame", "Structural steel, decking and joists, stairs and "
      "railings.", ["Structural steel", "Decking, framing and joists", "Stairs and railings"]),
     ("keeping-water-out", "Keeping water out", "Membranes, waterstops and how the structure stays "
      "dry.", ["Waterproofing"]),
     ("bridges", "Bridges", "What a bridge asks beyond the rest.", ["Bridges"]),
-    ("proving-it", "Proving it", "Tests, inspections and what happens when a result falls short.",
-     ["Quality, testing and inspection"]),
     ("looking-after-it", "Looking after it", "Repairs and maintenance once the structure is in "
      "service.", ["Repair and maintenance"]),
     ("other-details", OTHER, "Questions the library does not place in a chapter.", [OTHER]),
@@ -543,7 +543,12 @@ CHAPTER_OF = {g: c[0] for c in STORY for g in c[3]}
 def story(questions: list[dict]) -> list[dict]:
     """The questions as chapters of the project's story, in the order it is
     built; each chapter as ``grouped`` gives a group, with its lead line and
-    the groups it holds. Chapters with nothing asked are left out."""
+    the groups it holds. Chapters with nothing asked are left out.
+
+    The order is the order the works are built in: the project and what is
+    agreed first, the site, the moulds and the steel set in them, then the
+    concrete from its ingredients to the pour and its tests, and what comes
+    after."""
     by_group = {g["name"]: g for g in grouped(questions)}
     out = []
     for slug, name, lead, groups in STORY:

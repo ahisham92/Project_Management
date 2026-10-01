@@ -1,0 +1,60 @@
+{# One station of the inputs at a glance, as the panel beside the picture shows
+   it: its questions to answer or change there, saved to the project. #}
+{% from "specs/_question.html" import controls, question with context %}
+<p class="small muted">Level {{ level }}: {{ chapter['name'] }}</p>
+<h2>{{ station['name'] }}</h2>
+<p class="small muted">{{ station['what'] }}</p>
+{% if locked %}
+  <div class="spec-scene-lock">
+    <p><strong>Locked.</strong> Finish level {{ locked['level'] }}, {{ locked['name'] }}, first: {% if locked['slug'] == 'deciding' %}decide what the project builds and the systems it uses.{% else %}{{ locked['left'] }} question{{ 's' if locked['left'] != 1 }} there still to answer or accept.{% endif %}</p>
+    <button type="button" class="btn btn-primary btn-sm" data-go-stage="{{ locked['station'] }}">Go to {{ locked['name'] }}</button>
+  </div>
+{% endif %}
+{% set need = questions | rejectattr('answered') | selectattr('suggested', 'none') | list %}
+{% set suggested = questions | rejectattr('answered') | rejectattr('suggested', 'none') | list %}
+{% set done = questions | selectattr('answered') | list %}
+<p class="small">{{ questions | length }} question{{ 's' if questions | length != 1 }}: {{ done | length }} answered{% if suggested %}, {{ suggested | length }} suggested{% endif %}{% if need %}, <strong>{{ need | length }} need your answer</strong>{% endif %}</p>
+{% if mix and mix['rows'] %}
+<div class="table-scroll"><table class="spec-in-table spec-in-mix"><caption>Each element's concrete</caption>
+  <thead><tr><th>Element</th>{% for c in mix['columns'] %}<th>{{ c['label'] }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for r in mix['rows'] %}<tr><th scope="row">{{ r['element'] }}</th>{% for c in mix['columns'] %}<td>{% if r['values'].get(c['key']) %}{{ r['values'][c['key']] }}{% else %}<span class="spec-in-miss">to answer</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station=station['id']) }}" class="spec-details spec-scene-form" data-station-form>
+  <input type="hidden" name="was" value="{{ was }}">
+  <fieldset class="spec-scene-fields"{% if not may_edit or locked %} disabled{% endif %}>
+  {% if need %}
+  <h3 class="spec-q-part">Needs your answer <span class="muted small">{{ need | length }}</span></h3>
+  {% for q in need %}{{ question(q) }}{% endfor %}
+  {% endif %}
+  {% if suggested %}
+  <h3 class="spec-q-part">Suggested from the master <span class="muted small">{{ suggested | length }} · written in only when you accept them</span></h3>
+  {% for q in suggested %}
+  <details class="spec-q-compact">
+    <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{{ shown(q, q['suggested']) }}</span><span class="spec-q-change">Change</span></summary>
+    {{ question(q) }}
+  </details>
+  {% endfor %}
+  <input type="hidden" name="suggest_shown" value="1">
+  <label class="check spec-accept"><input type="checkbox" name="accept_suggested" value="1">
+    I have reviewed {{ 'this suggestion' if suggested | length == 1 else 'these ' ~ (suggested | length) ~ ' suggestions' }} and accept {{ 'it' if suggested | length == 1 else 'them' }} as shown for this project</label>
+  {% endif %}
+  {% if done %}
+  <h3 class="spec-q-part">Answered <span class="muted small">{{ done | length }}</span></h3>
+  {% for q in done %}
+  <details class="spec-q-compact spec-q-answered">
+    <summary><span class="spec-q-name">{{ q['label'] }}</span><span class="spec-q-value">{% if q['split'] %}Different per element{% else %}{{ shown(q, q['answer']) }}{% endif %}</span><span class="spec-q-change">Change</span></summary>
+    {{ question(q) }}
+  </details>
+  {% endfor %}
+  {% endif %}
+  </fieldset>
+  {% if may_edit and not locked %}
+  <div class="spec-scene-save">
+    <button type="submit" class="btn btn-primary">Save {{ station['name'] | lower }}</button>
+    <span class="small muted" data-save-note>A suggestion counts as answered once you tick that you accept it.</span>
+  </div>
+  {% elif not may_edit %}
+  <p class="small muted">You can read this specification; only its owner and the people they add change its answers.</p>
+  {% endif %}
+</form>

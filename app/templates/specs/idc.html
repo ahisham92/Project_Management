@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}IDC · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+{% set trade = themis_trade_name(spec['trade']) %}
+<div class="page-head">
+  <div>
+    <h1>IDC of the {{ trade | lower }} specification</h1>
+    <p class="small muted" style="margin-top:2px;max-width:80ch">
+      The inter-disciplinary check: the {{ it['trade_names'] | join(' and ') | lower }} engineers read this
+      specification and put their input in as tracked changes. Nothing changes in it until its own engineers
+      accept a change; a rejected one stays here with the answer given.
+    </p>
+  </div>
+  {% if it['state'] == 'open' and may_decide %}
+  <form method="post" action="{{ url_for('specs.idc_close', set_id=spec['id']) }}" class="inline-form"
+        onsubmit="return {{ 'confirm(' ~ (('Close the IDC with ' ~ it['open'] ~ ' change' ~ ('s' if it['open'] != 1 else '') ~ ' still undecided?') | tojson) ~ ')' if it['open'] else 'true' }}">
+    <button type="submit" class="btn btn-ghost">Close the IDC</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="themis-stats idc-stats">
+  <div class="themis-stat"><span class="themis-stat-n">{{ it['n'] }}</span><span class="themis-stat-l">Changes put in</span>
+    <span class="small muted">by {{ it['trade_names'] | join(', ') }}</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ it['open'] }}</span><span class="themis-stat-l">To decide</span>
+    <span class="small muted">{% if may_decide %}accept or reject each{% else %}by the {{ trade | lower }} team{% endif %}</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ it['accepted'] }}</span><span class="themis-stat-l">Accepted</span>
+    <span class="small muted">{{ it['rejected'] }} rejected</span></div>
+  <div class="themis-stat"><span class="themis-stat-n">{{ between | length if it['state'] == 'open' else '—' }}</span><span class="themis-stat-l">Between the documents</span>
+    <span class="small muted">{% if it['state'] != 'open' %}checked while an IDC is open{% elif between %}to align{% else %}they agree{% endif %}</span></div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div><h2>{% if it['state'] == 'open' %}{{ badge('warning', 'Open') }}{% else %}{{ badge('good', 'Closed') }}{% endif %}
+      Sent to {{ it['trade_names'] | join(' and ') }}</h2>
+      <p class="small muted" style="margin-top:2px">By {{ it['sent_by_name'] }} on {{ it['sent_at'][:16] }}{% if it['closed_at'] %} · closed by {{ it['closed_by_name'] }} on {{ it['closed_at'][:16] }}{% endif %}</p></div>
+  </div>
+  {% if it['note'] %}<div class="card-body"><p class="idc-note">{{ it['note'] }}</p></div>{% endif %}
+  {% if may_propose %}
+  <div class="card-body"><div class="flash notice" style="margin:0">Open a section below, then use <strong>Change</strong>, <strong>Add after</strong> or <strong>Take out</strong> on any paragraph. Each change is marked as yours.</div></div>
+  {% endif %}
+</div>
+
+{% if it['state'] == 'open' %}
+<div class="card" style="margin-top:16px" id="between">
+  <div class="card-head">
+    <div><h2>Between the documents {% if between %}{{ badge('warning', between | length ~ ' to align') }}{% else %}{{ badge('good', 'Aligned') }}{% endif %}</h2>
+      <p class="small muted" style="margin-top:2px">Where this specification and the project's other trades' say different things: what the project is, the questions both answer and the sections both put in. Change whichever is wrong on its own project page or story.</p></div>
+  </div>
+  {% if between %}
+  <div class="card-body flush table-scroll">
+    <table class="themis-table">
+      <thead><tr><th>What</th><th>This specification ({{ trade }})</th><th>The other</th><th></th></tr></thead>
+      <tbody>
+      {% for b in between %}
+        <tr>
+          <td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both'}[b['kind']] }}</span></td>
+          <td>{{ b['here'] }}</td>
+          <td><span class="themis-trade-chip themis-trade-{{ 'geotechnical' if b['trade'] == 'Geotechnical' else 'structures' }}">{{ b['trade'] }}</span> {{ b['there'] }}</td>
+          <td class="small">{% if b['kind'] == 'section' %}<span class="muted">One should refer to the other</span>{% else %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>The sections</h2>
+    <p class="small muted" style="margin-top:2px">{% if may_propose %}Open one to put your input in.{% elif may_decide %}Open one to see its changes in place and accept or reject each.{% else %}Open one to see its changes.{% endif %}</p></div></div>
+  <div class="card-body flush table-scroll">
+    <table class="themis-table">
+      <thead><tr><th>Section</th><th class="right">Changes</th><th>State</th></tr></thead>
+      <tbody>
+      {% for s in sections %}
+        {% set c = counts.get(s['id']) %}
+        <tr>
+          <td><a href="{{ url_for('specs.idc_section', set_id=spec['id'], row_id=s['id']) }}"><strong>{{ s['number'] }}</strong> {{ s['title'] }}</a></td>
+          <td class="right">{{ c['n'] if c else '' }}</td>
+          <td>{% if c and c['open'] %}{{ badge('warning', c['open'] ~ ' to decide') }}{% elif c %}{{ badge('good', 'All decided') }}{% else %}<span class="small muted">No input</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if history | length > 1 %}
+<details class="card" style="margin-top:16px">
+  <summary class="card-head"><h2>Earlier IDCs ({{ history | length - 1 }})</h2></summary>
+  <ul class="card-body small">
+    {% for h in history[1:] %}<li>Sent to {{ h['trade_names'] | join(', ') }} by {{ h['sent_by_name'] }} on {{ h['sent_at'][:10] }}: {{ h['accepted'] }} accepted, {{ h['rejected'] }} rejected{% if h['open'] %}, {{ h['open'] }} left undecided{% endif %}.</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endblock %}

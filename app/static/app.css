@@ -1490,3 +1490,44 @@ details.card > summary::-webkit-details-marker { display: none; }
 .themis-trade-pick { display: grid; gap: 8px; align-content: start; }
 .themis-trade-lead { margin: 0 0 0 28px; }
 .themis-trade-pick:not(:has(input[data-trade-pick]:checked)) .themis-trade-lead { display: none; }
+
+/* IDC: another trade's input on a specification, as tracked changes */
+.idc-note { white-space: pre-wrap; margin: 0; }
+.idc-doc .idc-p { position: relative; }
+.idc-doc .idc-p.idc-has > .spec-text { text-decoration: underline dotted color-mix(in srgb, #b7791f 70%, transparent); text-underline-offset: 3px; }
+.idc-propose { display: inline-block; margin-left: 6px; vertical-align: top; }
+.idc-propose > summary { list-style: none; cursor: pointer; padding: 1px 8px; font-size: 12px; opacity: .55; }
+.idc-p:hover .idc-propose > summary, .idc-propose[open] > summary { opacity: 1; }
+.idc-propose > summary::-webkit-details-marker { display: none; }
+.idc-form { display: grid; gap: 8px; margin: 8px 0 12px; padding: 12px; border: 1px solid var(--border, #d9dce1); border-radius: 10px; background: var(--surface, #fff); min-width: min(560px, 80vw); }
+.idc-form textarea { width: 100%; font: inherit; }
+.idc-kinds { display: flex; flex-wrap: wrap; gap: 4px 16px; border: 0; padding: 0; margin: 0; font-size: 13px; }
+.idc-change { margin: 4px 0 12px 48px; padding: 10px 12px; border-left: 4px solid #b7791f; border-radius: 6px; background: color-mix(in srgb, #b7791f 7%, var(--surface, #fff)); }
+.idc-change.idc-accepted { border-left-color: #2e7d32; background: color-mix(in srgb, #2e7d32 6%, var(--surface, #fff)); }
+.idc-change.idc-rejected { border-left-color: #9aa0a6; opacity: .8; }
+.idc-change-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.idc-change-state { margin-left: auto; }
+.idc-change-words { line-height: 1.55; }
+.idc-change-words del { background: color-mix(in srgb, #c0392b 16%, transparent); text-decoration: line-through; }
+.idc-change-words ins { background: color-mix(in srgb, #2e7d32 18%, transparent); text-decoration: none; }
+.idc-why { margin: 6px 0 0; }
+.idc-change-go { margin-top: 8px; gap: 6px; align-items: flex-start; }
+.idc-reject { display: inline-block; }
+.idc-reject > summary { list-style: none; cursor: pointer; }
+.idc-reject > summary::-webkit-details-marker { display: none; }
+.idc-reject[open] form { margin-top: 6px; }
+.idc-reject input[type=text] { min-width: 260px; }
+.idc-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; justify-content: space-between; margin-top: 12px; padding: 12px 16px; border-radius: 10px; border: 1px solid color-mix(in srgb, #b7791f 45%, transparent); background: color-mix(in srgb, #b7791f 9%, var(--surface, #fff)); }
+.idc-banner p { margin: 0; }
+.idc-send { margin-top: 8px; display: grid; gap: 8px; }
+.idc-send textarea { width: 100%; font: inherit; }
+@media (max-width: 640px) { .idc-change { margin-left: 0; } .idc-form { min-width: 0; } }
+.idc-doc .idc-p { flex-wrap: wrap; align-items: baseline; }
+.idc-doc .idc-p > .spec-text { flex: 1 1 0; min-width: 0; }
+.idc-propose { margin-left: auto; }
+.idc-propose[open] { flex-basis: 100%; margin-left: 0; }
+.idc-propose[open] > summary { display: none; }
+.idc-kinds label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.idc-kinds input, .idc-reject input[type=hidden] { width: auto; margin: 0; }
+.idc-form, .idc-propose > summary, .idc-change-head, .idc-change-go, .idc-why { font-family: system-ui, sans-serif; }
+.idc-form textarea { font-family: "Times New Roman", Times, serif; font-size: 0.95rem; }

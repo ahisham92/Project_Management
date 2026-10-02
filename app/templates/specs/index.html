@@ -19,6 +19,19 @@
   </div>
 </div>
 
+{% if idcs_waiting %}
+<div class="card idc-waiting" style="margin-bottom:16px">
+  <div class="card-head"><div><h2>Sent to you for IDC</h2>
+    <p class="small muted" style="margin-top:2px">Another trade's specification waiting for your input, as tracked changes.</p></div></div>
+  <ul class="themis-recent">
+    {% for i in idcs_waiting %}
+    <li><a href="{{ url_for('specs.idc_page', set_id=i['set_id']) }}"><strong>{{ i['set_name'] }}</strong> · {{ i['from_trade'] }} IDC</a>
+      <span class="small muted">From {{ i['sent_by_name'] }} · {{ i['sent_at'][:10] }} · {{ i['n'] }} change{{ 's' if i['n'] != 1 }} put in so far{% if i['note'] %} · “{{ i['note'] }}”{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="themis-stats">
   <div class="themis-stat"><span class="themis-stat-n">{{ stats['projects'] }}</span><span class="themis-stat-l">Projects</span><span class="small muted">{{ stats['mine'] }} of them yours</span></div>
   <div class="themis-stat"><span class="themis-stat-n">{{ stats['issued'] }}</span><span class="themis-stat-l">Issued</span><span class="small muted">{{ stats['issues'] }} revision{{ 's' if stats['issues'] != 1 }} in all</span></div>

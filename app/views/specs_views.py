@@ -309,7 +309,13 @@ def index():
                            others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
                            is_admin=_is_admin(), flagged=_flagged(mine), **dashboard(everything, mine),
-                           trades_of=_trades_of(everything))
+                           trades_of=_trades_of(everything), idcs_waiting=_idcs_waiting())
+
+
+def _idcs_waiting() -> list[dict]:
+    from .. import specs_idc
+
+    return specs_idc.waiting_for(g.user)
 
 
 def _trades_of(rows) -> dict:
@@ -1975,7 +1981,18 @@ def check_set(set_id: int):
                            fmt=request.args.get("fmt") or "",
                            issuing=request.args.get("issuing"), blocking=_not_issued(report),
                            language=language, kinds=KINDS,
-                           waiting=store.open_items(set_id, report))
+                           waiting=store.open_items(set_id, report), between=_between_trades(row))
+
+
+def _between_trades(row) -> list[dict] | None:
+    """While an IDC is open between this specification and another trade's,
+    where the two say different things; None when there is no IDC open."""
+    from .. import specs_idc, specs_trades
+
+    group = specs_trades.siblings(row)
+    if not any(specs_idc.open_idc(s["id"]) for s in group):
+        return None
+    return specs_idc.between(row)
 
 
 @bp.post("/sets/<int:set_id>/fix")
@@ -2240,3 +2257,5 @@ from . import specs_packages_views  # noqa: E402,F401
 from . import specs_home_views  # noqa: E402,F401
 # A project's trades (structures, geotechnical) and the tabs between them.
 from . import specs_trades_views  # noqa: E402,F401
+# IDCs: a specification sent to the project's other trades for their input.
+from . import specs_idc_views  # noqa: E402,F401

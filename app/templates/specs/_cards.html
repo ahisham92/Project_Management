@@ -19,7 +19,8 @@
       {%- endif -%}
     </div>
     <p class="spec-card-state small">
-      {% if state == 'needed' %}<span class="spec-in-chip spec-in-needed">Needs your answer</span>
+      {% if q['off_scope'] %}<span class="spec-in-chip spec-in-needed">Answer again</span> It was “{{ q['off_scope'] }}”, which mentions “{{ q['off_scope_words'] }}”, and this project does not build that.
+      {% elif state == 'needed' %}<span class="spec-in-chip spec-in-needed">Needs your answer</span>
       {% elif state == 'suggested' %}<span class="spec-in-chip spec-in-suggested">Suggested from the master</span> Check it and change it if this project needs something else: Next accepts what is picked.
       {% else %}<span class="spec-in-chip spec-in-answered">Answered</span>{% endif %}
     </p>

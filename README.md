@@ -187,6 +187,10 @@ meet, so the Specs Writer reads across them:
   a question, from the library file: "high towers" only for buildings, the splash zone
   only for marine or bridge works or marine exposure; `"*"` leaves out a question of optional
   words). A project with no buildings is asked about "the structure", not "the building".
+  Words that name other works (a tower or transfer slab, a bridge pier, a quay or berth;
+  `OFF_WORDS` in `specs_questions.py`) also take out untagged options, the suggestion and
+  the "such as" examples in a question's help and explanation, on new and existing projects
+  alike; a suggestion or option of that kind accepted before is shown as **Answer again**.
   Until the brief is first
   confirmed the site is a **bare plot**: the drawing board alone, and each choice adds its piece
   at once (the building, the quay on the sea, the bridge, the steel frame, the cranes), with no

@@ -122,13 +122,68 @@ def clean_choice_when(given: Any) -> list[dict]:
     return out
 
 
-def offered(choices: list[str], tags: list[dict], chosen: Mapping[str, str]) -> list[str]:
+def offered(choices: list[str], tags: list[dict], chosen: Mapping[str, str],
+            off_words: re.Pattern | None = None) -> list[str]:
     """The choices this project is offered: a choice tagged for other works
-    (high towers on a quay, the splash zone in a building) is not."""
-    off = [t["choice"].lower() for t in tags if not specs.applies(t["when"], chosen)]
-    if not off:
-        return choices
-    return [c for c in choices if not any(o in c.lower() for o in off)]
+    (high towers on a quay, the splash zone in a building) is not, and nor is
+    one that names other works (``off_words``) unless a tag keeps it."""
+    out = []
+    for c in choices:
+        low = c.lower()
+        mine = [t for t in tags if t["choice"].lower() in low]
+        if any(not specs.applies(t["when"], chosen) for t in mine):
+            continue
+        if not mine and off_words is not None and off_words.search(c):
+            continue
+        out.append(c)
+    return out
+
+
+# Words that name works of one kind, for a project that does not build them:
+# its choices, suggestions and examples leave them out (a quay is not asked
+# about the tallest tower, a building about a bridge pier).
+OFF_WORDS = {
+    "buildings": r"\btall(?:est)?\s+(?:buildings?|towers?)\b|\bhigh[- ]rise\b|\bhigh\s+towers?\b"
+                 r"|(?<!vertical )(?<!shoring )\btowers?\b(?!\s+cranes?)|\btransfer\s+(?:slabs?|beams?|girders?)\b",
+    "bridges": r"\b(?:tall\s+|long\s+|highly loaded\s+)?bridges?\s+(?:long\s+)?(?:piers?|decks?|bearings?|"
+               r"abutments?|structural elements|deck expansion joints?)\b|\bbridges?\s+flexible decks?\b",
+    "marine structures": r"\b(?:quays?|berths?|jett(?:y|ies)|wharf|wharves)\b",
+}
+
+
+def off_scope(chosen: Mapping[str, str]) -> re.Pattern | None:
+    """The words of works this project does not build, or None while it has
+    not said what it builds."""
+    builds = {b.strip().lower() for b in (chosen.get("structures") or "").split("|") if b.strip()}
+    if not builds:
+        return None
+    if (chosen.get("exposure") or "").strip().lower() == "marine":
+        builds.add("marine structures")
+    parts = [rx for kind, rx in OFF_WORDS.items() if kind not in builds]
+    return re.compile("|".join(parts), re.I) if parts else None
+
+
+SUCH_AS = re.compile(r"(,?\s*(?:such as|for example|e\.g\.,?)\s+)([^.;:()]+)", re.I)
+
+
+def scope_examples(text: str, off_words: re.Pattern | None) -> str:
+    """Words that explain a question with only the examples that fit the
+    project: "such as the top of the tallest tower, a critical expansion joint
+    or the top of a tall bridge pier" on a quay is "such as a critical
+    expansion joint"; with none left the examples go."""
+    if not text or off_words is None or not off_words.search(text):
+        return text
+
+    def one(m: re.Match) -> str:
+        items = [i.strip() for i in re.split(r",\s*(?:or\s+|and\s+)?|\s+or\s+", m.group(2)) if i.strip()]
+        kept = [i for i in items if not off_words.search(i)]
+        if len(kept) == len(items):
+            return m.group(0)
+        if not kept:
+            return ""
+        lead = m.group(1)
+        return lead + (kept[0] if len(kept) == 1 else ", ".join(kept[:-1]) + " or " + kept[-1])
+    return SUCH_AS.sub(one, text)
 
 
 # --- what explains a question ---------------------------------------------------------
@@ -480,15 +535,29 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                     q["places"].append(place)
     builds = {b.strip().lower() for b in (chosen.get("structures") or "").split("|") if b.strip()}
     no_buildings = bool(builds) and "buildings" not in builds
+    off_words = off_scope(chosen)
     out = []
     for q in found.values():
         tags = clean_choice_when(defs.get(q["key"], {}).get("choice_when"))
         if any(t["choice"] == WHOLE and not specs.applies(t["when"], chosen) for t in tags):
             continue                     # optional words these works do not have: left out
-        _scope_choices(q, [t for t in tags if t["choice"] != WHOLE], chosen)
+        master = (q.get("suggested"), list(q["choices"]))
+        _scope_choices(q, [t for t in tags if t["choice"] != WHOLE], chosen, off_words)
+        q["help"] = scope_examples(q["help"], off_words)
         if no_buildings:
             # A quay or a bridge is asked about "the structure", not "the building".
             q["label"], q["help"] = structure_for_building(q["label"]), structure_for_building(q["help"])
+        # The master's suggestion or a choice for other works, accepted
+        # before the project said what it builds, is asked again; words the
+        # engineer typed are theirs and stay.
+        q["off_scope"] = ""
+        if off_words is not None and q["key"] in answers:
+            was = answers.get(q["key"]) or ""
+            hit = off_words.search(was)
+            gone = [c for c in master[1] if c not in q["choices"]]
+            if hit and (was == master[0] or any(c in was for c in gone)):
+                q["off_scope"] = was
+                q["off_scope_words"] = hit.group(0)
         # Optional words the master puts in one bracket wherever it asks: a
         # yes or no, and yes keeps each place's own words.
         # A single word the master offers where it must be said ("[20 mm]") is
@@ -506,7 +575,7 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                      if q["per_element"] or q["elements"] else [])
         q["split"] = q["key"] in split and bool(q["rows"])
         q["answer"] = answers.get(q["key"])
-        q["answered"] = q["key"] in answers
+        q["answered"] = q["key"] in answers and not q["off_scope"]
         q["row_answers"] = {e: answers.get(f"{q['key']}@{e}") for e in q["rows"]}
         if q["suggested"] is None and q["choices"] and not q["optional"] and q["key"] not in defs:
             # A question the library does not describe: the master's first answer.
@@ -542,21 +611,25 @@ def structure_for_building(text: str) -> str:
     return BUILDING.sub(one, text or "")
 
 
-def _scope_choices(q: dict, tags: list[dict], chosen: Mapping[str, str]) -> None:
+def _scope_choices(q: dict, tags: list[dict], chosen: Mapping[str, str],
+                   off_words: re.Pattern | None = None) -> None:
     """A question with only the choices this project is offered, and its
-    suggestion without the ones it is not."""
-    if not tags:
-        return
-    kept = offered(q["choices"], tags, chosen)
-    gone = [c for c in q["choices"] if c not in kept]
-    if not gone or not (kept or q["free"]):
-        return                           # a question is never left with nothing to answer
-    q["choices"] = kept
+    suggestion without the ones it is not: a suggestion that names other
+    works is no suggestion (nothing is filled in for the engineer that the
+    project does not have)."""
+    gone: list[str] = []
+    if tags or off_words is not None:
+        kept = offered(q["choices"], tags, chosen, off_words)
+        if kept != q["choices"] and (kept or q["free"]):     # never left with nothing to answer
+            gone = [c for c in q["choices"] if c not in kept]
+            q["choices"] = kept
     said = q.get("suggested")
-    if not isinstance(said, str) or not any(c in said for c in gone):
+    if not isinstance(said, str) or not said:
+        return
+    if not (any(c in said for c in gone) or (off_words is not None and off_words.search(said))):
         return
     if q.get("many"):
-        left = [c for c in kept if c in said]
+        left = [c for c in q["choices"] if c in said]
         q["suggested"] = joined(left) if left else None
     else:
         q["suggested"] = None

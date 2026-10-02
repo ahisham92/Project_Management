@@ -393,7 +393,7 @@ def record_issue(row: Mapping[str, Any], fields: Mapping[str, str], fmt: str, fi
                  mime: str, content: bytes, words: list[dict]) -> int:
     """An issue put on the register, with the files as sent and the words as issued."""
     prints = {s["row_id"]: fingerprint(s) for s in words}
-    snapshot = {"project": {k: row[k] for k in store.SET_FIELDS + ("family",)},
+    snapshot = {"project": {**{k: row[k] for k in store.SET_FIELDS + ("family",)}, "trade": row.get("trade") or "structures"},
                 "sections": words, "data": issued_data.project_data(row),
                 "amendments": issued_data.amendments_of(row), "bodies": packages.bodies(row)}
     mark = query_one("SELECT COALESCE(MAX(id), 0) AS n FROM spec_history WHERE set_id = ?",

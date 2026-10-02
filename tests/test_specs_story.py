@@ -30,7 +30,10 @@ def test_the_questions_are_told_in_the_order_the_project_is_built(app, signed_in
     assert {q["key"] for q in chapters[2]["questions"]} >= {"conc_strength", "conc_designation"}
     # Every chapter is a whole group, in the order of the build.
     order = [g for c in specs_questions.STORY for g in c[3]]
-    assert sorted(order) == sorted(specs_questions.GROUPS + [specs_questions.OTHER])
+    assert sorted(order) == sorted(specs_questions.STRUCTURAL_GROUPS + [specs_questions.OTHER])
+    # The ground works' story tells its own groups and the materials the ground works use.
+    geo = {g for c in specs_questions.GEO_STORY for g in c[3]}
+    assert set(specs_questions.GEO_GROUPS) <= geo
     assert order.index("Concrete materials") < order.index("Concrete mixes and properties") < \
         order.index("Placing, finishing and curing") < order.index("Quality, testing and inspection")
 

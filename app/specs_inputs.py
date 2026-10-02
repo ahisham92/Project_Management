@@ -41,6 +41,27 @@ STATIONS = [
     ("lab", "proving-it", "Testing lab", "Tests, inspections and results."),
     ("repair", "looking-after-it", "Maintenance", "Repair and maintenance in service."),
     ("other", "other-details", "Other details", "Questions placed in no chapter."),
+    # The geotechnical works, along the geotechnical story.
+    ("g_investigation", "knowing-the-ground", "Boreholes and surveys", "The drilling rig, the boreholes, "
+     "in-situ tests and the surveys of the ground and the seabed."),
+    ("g_earthworks", "preparing-the-ground", "Earthworks", "Clearing, excavation, fill, compaction, "
+     "blasting and the liners and drains in the ground."),
+    ("g_improvement", "improving-the-ground", "Ground improvement", "Vertical drains, compaction, "
+     "stone columns, soil mixing, jet grouting and rigid inclusions."),
+    ("g_retaining", "holding-the-ground", "Retaining and excavation support", "Diaphragm and embedded "
+     "walls, soil nails, anchors, MSE walls, gabions and slopes."),
+    ("g_piles", "into-the-ground", "Piling rig", "Bored, driven and micro piles, and their load and "
+     "integrity tests."),
+    ("g_marine", "by-the-sea", "Marine works", "Dredging, reclamation, revetments, breakwaters, "
+     "jetties, groynes, scour protection and buoys."),
+    ("g_tunnels", "through-the-ground", "Tunnel", "The TBM or mined heading, the support, the lining "
+     "and the grouting."),
+    ("g_dams", "holding-water", "Dam", "The dam's foundation, fill, protection, grouting and RCC."),
+    ("g_pavements", "on-the-ground", "Pavements", "Subbase, base, asphalt and concrete paving."),
+    ("g_materials", "ground-materials", "Materials store", "Concrete, grout, steel, aggregates and "
+     "geosynthetics for the ground works."),
+    ("g_monitoring", "watching-it", "Instruments", "Piezometers, inclinometers, settlement plates "
+     "and survey points."),
 ]
 INGREDIENT = [
     ("admixtures", re.compile(r"admix|fibre|fiber|pigment|retard|plastici|accelerat|air.?entrain|inhibit", re.I)),
@@ -88,6 +109,28 @@ NARRATIVE = {
                         "its job for its design life.",
     "other-details": "A few questions the library does not place on the way. Answer them to finish "
                      "the story.",
+    "knowing-the-ground": "The drilling rig arrives before anything else. Boreholes, in-situ tests and "
+                          "surveys say what the ground under {works} is, and how it is to be reported.",
+    "preparing-the-ground": "The site is cleared and the ground is dug, filled and compacted for {works}: "
+                            "what goes in, in what layers, and how dense it must be.",
+    "improving-the-ground": "Where the ground is too weak for {works}, it is made stronger: drains, "
+                            "compaction, columns, mixing or grouting, and how much better it must be.",
+    "holding-the-ground": "Walls, nails and anchors hold the sides of the excavation and the slopes "
+                          "while {works} is built, and every movement is watched.",
+    "into-the-ground": "The piling rig goes in. The piles that carry {works} down to firm ground are "
+                       "drilled or driven, and loaded to prove they carry what they must.",
+    "by-the-sea": "Out at the shore the dredgers and the barges work: the seabed is dredged, the land is "
+                  "reclaimed, and armour rock protects the edge of {works}.",
+    "through-the-ground": "The tunnel goes through the ground: how it is excavated, supported, lined "
+                          "and grouted.",
+    "holding-water": "The dam holds the water back: its foundation, its fill and its faces, and how "
+                     "the rock under it is grouted.",
+    "on-the-ground": "The roads and hardstandings go down in layers: the subbase, the base and the "
+                     "surface, each with its materials and its tests.",
+    "ground-materials": "The materials store holds what goes into the ground works: concrete and grout, "
+                        "steel, aggregates and geosynthetics, each specified before it is used.",
+    "watching-it": "Instruments in the ground show how it and {works} move: what is installed, how "
+                   "often it is read and when the readings call for action.",
 }
 
 
@@ -101,6 +144,10 @@ def narrative(slug: str, site: Mapping[str, Any]) -> str:
     extras = [w for w, on in ((" with its post-tensioning tendons", site.get("pt")),
                               (" and the precast units from the yard", site.get("precast"))) if on]
     text = NARRATIVE.get(slug) or ""
+    if slug == "deciding" and site.get("trade") == "geotechnical":
+        text = ("Every project starts at the drawing board. Decide what the ground works under {works} "
+                "are and the ground they are in: the site in the picture is drawn from these choices, "
+                "and every level after follows from them.")
     return text.format(
         works=works, Works=works[:1].upper() + works[1:],
         elements=specs_questions.joined(elements[:4]) if elements else "each element",
@@ -118,6 +165,18 @@ SENTENCE_CHARS = 320
 
 
 def station_of(q: Mapping[str, Any], chapter: str) -> str:
+    """Where a question stands on the picture."""
+    if chapter == "ground-materials" or chapter in GEO_CHAPTERS:
+        return next((s[0] for s in STATIONS if s[1] == chapter), "other")
+    return _structural_station(q, chapter)
+
+
+GEO_CHAPTERS = {"knowing-the-ground", "preparing-the-ground", "improving-the-ground", "holding-the-ground",
+                "into-the-ground", "by-the-sea", "through-the-ground", "holding-water", "on-the-ground",
+                "watching-it"}
+
+
+def _structural_station(q: Mapping[str, Any], chapter: str) -> str:
     """Where a question stands on the picture."""
     if chapter == "the-ingredients":
         said = f"{q['key']} {q['label']}"
@@ -152,7 +211,7 @@ def _some(chosen: Mapping[str, str], key: str) -> str:
     return next((v for v in _picked(chosen, key) if v.lower() != "none"), "")
 
 
-def site_of(chosen: Mapping[str, str] | None) -> dict:
+def site_of(chosen: Mapping[str, str] | None, trade: str = "structures") -> dict:
     """What the picture of the works is drawn with, from the project's
     decisions: what it builds (a building, a quay on the sea, a bridge), its
     elements, and whether it has steel framing, precast, post-tensioning,
@@ -175,6 +234,12 @@ def site_of(chosen: Mapping[str, str] | None) -> dict:
         "specimens": "cylinders" if (chosen.get("testing") or "").lower() == "cylinders" else "cubes",
         "underwater": _yes(chosen, "underwater"),
         "repair": _yes(chosen, "repair"),
+        # The geotechnical works the brief picked, drawn on the ground.
+        "trade": trade,
+        "geo": {k: [v for v in _picked(chosen, f"ge_{k}") if v.lower() != "none"]
+                for k in ("investigation", "earthworks", "improvement", "piles", "pile_tests", "retaining",
+                          "pavements", "tunnels", "dams", "marine")},
+        "groundwater": (chosen.get("ge_groundwater") or "").lower(),
     }
 
 
@@ -228,6 +293,13 @@ for _k in ("stair_railings", "stair_delegated"):
     BRIEF_WHEN[_k] = ("stairs", "some", "")
 # Thermal-break connections cross a building's insulated envelope.
 BRIEF_WHEN["thermal_break"] = ("structures", "has", "Buildings")
+# The geotechnical brief: marine works for marine projects, pile tests once
+# there are piles.
+BRIEF_WHEN["ge_marine"] = ("structures", "has", "Marine structures")
+BRIEF_WHEN["ge_pile_tests"] = ("ge_piles", "some", "")
+for _k in ("ge_mar_si_by", "ge_mar_survey_by"):
+    BRIEF_WHEN[_k] = ("ge_marine", "some", "")
+BRIEF_WHEN["ge_ret_mse_design_basis"] = ("ge_retaining", "has", "Mechanically stabilised earth walls")
 
 
 def brief_rule(key: str) -> list[list[Condition]]:
@@ -302,7 +374,7 @@ def decisions(chosen: Mapping[str, str] | None, options: list[dict]) -> list[dic
 
 def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str, str],
           place_url, chosen: Mapping[str, str] | None = None, decided: bool | None = None,
-          options: list[dict] | None = None) -> dict:
+          options: list[dict] | None = None, trade: str = "structures") -> dict:
     """The picture's data: its stations with their questions and answers, the
     chapters they follow, the per-element table of the mix and the totals.
 
@@ -370,7 +442,7 @@ def scene(questions: list[dict], words: list[dict], element_labels: Mapping[str,
     # answered, a suggestion counting once the engineer accepts it. One that is
     # answered stays open to change, wherever it is: a change to the brief
     # reopens only the levels it puts new questions in.
-    site = site_of(chosen) if chosen is not None else site_of({})
+    site = site_of(chosen if chosen is not None else {}, trade)
     for c in out_chapters:
         c["story"] = narrative(c["slug"], site)
     open_stage = next((i for i, c in enumerate(out_chapters) if not c["done"]), len(out_chapters))
@@ -440,11 +512,22 @@ def section_stations(questions: list[dict]) -> dict[str, str]:
     return {n: max(c, key=c.get) for n, c in counts.items()}
 
 
-def station_of_section(number: str, known: Mapping[str, str]) -> str:
+# The geotechnical library's sections, by number, when no question says.
+GEO_BY_NUMBER = [
+    (re.compile(r"^02"), "g_investigation"), (re.compile(r"^3108|^316|^D30", re.I), "g_piles"),
+    (re.compile(r"^31[12]|^3105|^3131|^3341|^D20", re.I), "g_earthworks"),
+    (re.compile(r"^313[24]|^3145"), "g_improvement"),
+    (re.compile(r"^313[3-7]|^315|^D4", re.I), "g_retaining"), (re.compile(r"^317|^3305"), "g_tunnels"),
+    (re.compile(r"^32|^Q", re.I), "g_pavements"), (re.compile(r"^357"), "g_dams"), (re.compile(r"^35"), "g_marine"),
+]
+
+
+def station_of_section(number: str, known: Mapping[str, str], trade: str = "structures") -> str:
     number = (number or "").strip()
     if number in known:
         return known[number]
-    return next((sid for words, sid in BY_NUMBER if words.match(number)), "other")
+    table = GEO_BY_NUMBER if trade == "geotechnical" else BY_NUMBER
+    return next((sid for words, sid in table if words.match(number)), "other")
 
 
 def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[tuple],
@@ -455,6 +538,7 @@ def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[
     that are only ``advice`` are left off, and a language change is counted
     once, at the first place it is in, as the check counts them."""
     known = section_stations(questions)
+    trade = next((q.get("trade") for q in questions if q.get("trade")), "structures")
     # A clause against an answer stands where the question is asked.
     asked_at = {q["key"]: station_of(q, c["slug"])
                 for c in specs_questions.story(questions) for q in c["questions"]}
@@ -468,7 +552,7 @@ def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[
                 continue
             c = item.get("conflict") or {}
             question = c.get("key") or next((a["key"] for a in c.get("answers") or []), "")
-            sid = asked_at.get(question) or station_of_section(item.get("section") or "", known)
+            sid = asked_at.get(question) or station_of_section(item.get("section") or "", known, trade)
             out.setdefault(sid, []).append({
                 "group": titles[key], "kind": key, "severity": item.get("severity") or "",
                 "text": item.get("message") or "", "section": item.get("section") or "",
@@ -477,7 +561,7 @@ def flags(report: Mapping[str, Any], language: Mapping[str, list], checks: list[
     for kind, found in (language or {}).items():
         for g in found:
             if g["places"]:
-                sid = station_of_section(g["places"][0].get("section") or "", known)
+                sid = station_of_section(g["places"][0].get("section") or "", known, trade)
                 out.setdefault(sid, []).append({
                     "group": "Language: " + names.get(kind, kind), "kind": "language", "severity": "",
                     "text": (f"{g['old']} → {g['new']}: " if g["old"] and g["new"] else

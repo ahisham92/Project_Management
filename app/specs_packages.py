@@ -52,14 +52,22 @@ def _latest_records(key: str, but: int) -> dict[int, dict]:
 def peers(row: Mapping[str, Any]) -> list[dict]:
     """The other packages of this project: those still here, issued or not,
     and those deleted after they were issued (what they issued still binds)."""
+    from . import specs_trades
+
     key = project_key(row.get("code"))
     if not key:
         return []
+    # Packages are of one trade: the project's other trades' specifications
+    # are not packages of this one (they are checked against it in an IDC).
+    trade = specs_trades.clean(row.get("trade"))
     issued = _latest_records(key, row["id"])
     out, seen = [], set()
     for s in query("SELECT s.*, u.name AS owner FROM spec_sets s LEFT JOIN users u "
                    "ON u.id = s.created_by WHERE s.id != ? ORDER BY s.id", (row["id"],)):
         if project_key(s["code"]) != key:
+            continue
+        if specs_trades.clean(s["trade"]) != trade:
+            seen.add(s["id"])
             continue
         seen.add(s["id"])
         rec = issued.get(s["id"])
@@ -70,6 +78,8 @@ def peers(row: Mapping[str, Any]) -> list[dict]:
         if set_id in seen:
             continue
         shot = json.loads(rec["snapshot"] or "{}")
+        if specs_trades.clean((shot.get("project") or {}).get("trade")) != trade:
+            continue
         out.append({"set_id": set_id, "name": rec["name"],
                     "package": ((shot.get("project") or {}).get("package") or "").strip() or rec["name"],
                     "owner": rec["issued_by"], "alive": False, "record": rec,

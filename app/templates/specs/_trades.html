@@ -1,0 +1,25 @@
+{#- A project's trades as tabs: each trade's specification of it, and the
+    trades it could still be given. -#}
+{% macro trade_tabs(spec, may_add=true) %}
+{% set tabs = themis_trade_tabs(spec) %}
+<nav class="themis-trade-tabs" aria-label="Trades of this project">
+  {% for t in tabs if t['set_id'] %}
+  <a class="themis-trade-tab{% if t['here'] %} is-here{% endif %}" href="{{ url_for('specs.spec_set', set_id=t['set_id']) }}"{% if t['here'] %} aria-current="page"{% endif %}>
+    <span class="themis-trade-chip themis-trade-{{ t['code'] }}">{{ t['mark'] }}</span> {{ t['name'] }}{% if t['owner'] and not t['here'] %} <span class="small muted">· {{ t['owner'] }}</span>{% endif %}</a>
+  {% endfor %}
+  {% if may_add %}
+  {% for t in tabs if not t['set_id'] %}
+  <details class="themis-trade-add">
+    <summary class="themis-trade-tab is-add">+ Add {{ t['name'] | lower }}</summary>
+    <form method="post" action="{{ url_for('specs.add_trade', set_id=spec['id']) }}" class="themis-trade-add-form">
+      <input type="hidden" name="trade" value="{{ t['code'] }}">
+      <p class="small muted" style="margin:0 0 8px">A {{ t['name'] | lower }} specification of this project, with the project's details and the answers the trades share.</p>
+      <label class="field"><span class="field-label">Led by</span>
+        <select name="lead"><option value="">Me</option>{% for u in themis_trade_leads(t['code']) %}<option value="{{ u['id'] }}">{{ u['name'] }}</option>{% endfor %}</select></label>
+      <button type="submit" class="btn btn-primary btn-sm">Add the {{ t['name'] | lower }} specification</button>
+    </form>
+  </details>
+  {% endfor %}
+  {% endif %}
+</nav>
+{% endmacro %}

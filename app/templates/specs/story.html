@@ -8,7 +8,7 @@
 <div class="page-head">
   <div>
     <h1>{{ spec['name'] }}: the story of the works</h1>
-    <p class="small muted" style="margin-top:2px">The questions as levels along a path through the site, from deciding the project to the finished structure. Each level opens once the one before it is answered.</p>
+    <p class="small muted" style="margin-top:2px">The questions as levels along a path through the site, from deciding the project to {{ 'the instruments that watch the ground works' if spec['trade'] == 'geotechnical' else 'the finished structure' }}. Each level opens once the one before it is answered.</p>
   </div>
   <div class="inline-form">
     <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.details', set_id=spec['id']) }}" title="The same questions as plain lists, chapter by chapter">List view</a>

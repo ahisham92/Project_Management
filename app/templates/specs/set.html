@@ -2,6 +2,7 @@
 {% from "partials/bits.html" import badge, empty %}
 {% from "specs/_icons.html" import icon %}
 {% from "specs/_engineer.html" import engineer_note %}
+{% from "specs/_trades.html" import trade_tabs %}
 {% block title %}{{ spec['name'] }} · THEMIS{% endblock %}
 
 {% block content %}
@@ -10,6 +11,7 @@
     <h1>{{ spec['name'] }}{% if spec['package'] %} <span class="muted" style="font-weight:400">· {{ spec['package'] }}</span>{% endif %}</h1>
     <p class="small muted" style="margin-top:2px">
       <span class="spec-key">{{ spec['family'] }}</span>
+      <span class="themis-trade-chip themis-trade-{{ spec['trade'] }}" title="This specification's trade">{{ themis_trade_name(spec['trade']) }}</span>
       {% if spec['code'] %}{{ spec['code'] }} · {% endif %}{% if spec['client'] %}{{ spec['client'] }} · {% endif %}{% if place[0] or place[1] %}{{ place | select | join(', ') }} · {% endif %}REV {{ spec['revision'] }}
       · {{ sections | length }} section{{ 's' if sections | length != 1 }}
     </p>
@@ -19,6 +21,8 @@
     <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}" title="Issue a new revision and keep it on the register of issued revisions">Issue a revision…</a>
   </div>
 </div>
+
+{{ trade_tabs(spec, may_add=may_edit) }}
 
 {% macro tool(href, title, hint, extra='', cls='') -%}
 <a class="spec-tool {{ cls }}" href="{{ href }}"><strong>{{ title }}{% if extra %} <span class="spec-tool-count">{{ extra }}</span>{% endif %}</strong><span>{{ hint }}</span></a>
@@ -91,7 +95,7 @@
   <a class="spec-step spec-step-done" href="#step-project" data-step-link="project"><span class="spec-step-n">1</span>
     <span><strong>Project</strong><span class="small">{{ family }}</span></span></a>
   <a class="spec-step {{ 'spec-step-done' if ticked.n else 'spec-step-now' }}" href="#step-elements" data-step-link="elements"><span class="spec-step-n">2</span>
-    <span><strong>Elements</strong><span class="small">{{ ticked.n }} ticked{% if model %} · from the model{% endif %}</span></span></a>
+    <span><strong>{{ 'Ground works' if spec['trade'] == 'geotechnical' else 'Elements' }}</strong><span class="small">{{ ticked.n }} ticked{% if model %} · from the model{% endif %}</span></span></a>
   <a class="spec-step spec-step-done" href="#step-questions" data-step-link="questions"><span class="spec-step-n">3</span>
     <span><strong>The brief</strong><span class="small">{{ answered }} decided · level 1 of the story</span></span></a>
   <a class="spec-step {{ 'spec-step-done' if sections and not suggested_n else 'spec-step-now' }}" href="#step-sections" data-step-link="sections"><span class="spec-step-n">4</span>
@@ -186,18 +190,24 @@
     </div>
   </div>
   <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
-    <button type="submit" name="next" value="elements" class="btn btn-primary">Save and next: elements →</button>
+    <button type="submit" name="next" value="elements" class="btn btn-primary">Save and next: {{ 'ground works' if spec['trade'] == 'geotechnical' else 'elements' }} →</button>
   </div>
 </div>
 
 <div class="card" style="margin-top:16px" id="step-elements" data-step="elements">
   <div class="card-head">
     <div>
+      {% if spec['trade'] == 'geotechnical' %}
+      <h2><span class="spec-n">2</span> Ground works</h2>
+      <p class="small muted" style="margin-top:2px">Tick the ground works the project has. The sections each one needs are added when you save.</p>
+      {% else %}
       <h2><span class="spec-n">2</span> Elements</h2>
       <p class="small muted" style="margin-top:2px">Tick what the project has, or read it from the Revit model. The sections each one needs are added when you save.</p>
+      {% endif %}
     </div>
   </div>
   <div class="card-body">
+    {% if spec['trade'] == 'geotechnical' %}{% set model = none %}{% else %}
     <div class="spec-model">
       <div class="spec-model-head">
         {{ icon('model', 40) }}
@@ -218,6 +228,7 @@
         </ul>
       </details>
     </div>
+    {% endif %}
 
     {% if model %}
     {% set bad = model['concrete'] | selectattr('state', 'equalto', 'unrealistic') | list %}
@@ -401,7 +412,7 @@
     {% endif %}
   </div>
   <div class="card-body inline-form spec-step-foot" style="justify-content:flex-end">
-    <a class="btn btn-ghost spec-step-back" href="#step-elements">← Back: elements</a>
+    <a class="btn btn-ghost spec-step-back" href="#step-elements">← Back: {{ 'ground works' if spec['trade'] == 'geotechnical' else 'elements' }}</a>
     <button type="submit" class="btn btn-ghost">Save</button>
     <button type="submit" name="next" value="sections" class="btn btn-primary">Save and next: sections →</button>
   </div>

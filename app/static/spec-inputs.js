@@ -308,7 +308,98 @@
       out += line(P(x + 2.6, y - 1.2, 0), P(x + 2.6, y - 0.1, 2.4), "#c2742b", 2) + line(P(x + 3.1, y - 1.2, 0), P(x + 3.1, y - 0.1, 2.4), "#c2742b", 2);
       return out;
     },
-    other: function (x, y) { return box(x, y, 0, 1.6, 1.6, 1.3, "#b08a58") + box(x + 1.8, y + 0.4, 0, 1.0, 1.0, 0.8, "#c49a62"); }
+    other: function (x, y) { return box(x, y, 0, 1.6, 1.6, 1.3, "#b08a58") + box(x + 1.8, y + 0.4, 0, 1.0, 1.0, 0.8, "#c49a62"); },
+
+    // --- the geotechnical works ---
+    // A drilling rig over its borehole, the cores laid out in their boxes, and a CPT truck.
+    g_investigation: function (x, y) {
+      var out = box(x, y, 0, 2.4, 1.4, 0.6, "#d0a12a") + box(x + 0.2, y + 0.2, 0.6, 0.8, 1.0, 0.9, "#e0b43a");
+      out += box(x + 1.7, y + 0.55, 0.6, 0.25, 0.25, 5.2, "#c2742b") + line(P(x + 1.82, y + 0.67, 5.8), P(x + 1.82, y + 0.67, -0.4), "#444", 1.4);
+      out += '<ellipse cx="' + P(x + 1.82, y + 0.67, 0)[0] + '" cy="' + P(x + 1.82, y + 0.67, 0)[1] + '" rx="6" ry="3" fill="#5a4630"/>';
+      for (var i = 0; i < 3; i++) out += box(x + 3.0, y - 0.4 + i * 0.7, 0, 1.6, 0.55, 0.25, "#8a6d4b") + box(x + 3.1, y - 0.33 + i * 0.7, 0.25, 1.4, 0.4, 0.06, ["#b8913e", "#7d6a55", "#9c8f80"][i]);
+      out += box(x - 0.2, y + 2.4, 0, 2.4, 1.1, 1.1, "#e8e8e8") + box(x + 1.4, y + 2.4, 1.1, 0.9, 1.1, 0.6, "#2a78d6");
+      return out;
+    },
+    // An excavator digging, its spoil heap beside it.
+    g_earthworks: function (x, y) {
+      var out = box(x, y, 0, 2.6, 0.5, 0.45, "#333") + box(x, y + 1.3, 0, 2.6, 0.5, 0.45, "#333");
+      out += box(x + 0.4, y + 0.3, 0.45, 1.8, 1.4, 0.4, "#f0b323") + box(x + 0.5, y + 0.4, 0.85, 0.9, 1.0, 1.0, "#f0b323") + box(x + 0.55, y + 0.45, 1.3, 0.8, 0.02, 0.5, "#5b8bb5");
+      out += line(P(x + 1.8, y + 0.9, 1.3), P(x + 3.4, y + 0.9, 3.0), "#e0a020", 4) + line(P(x + 3.4, y + 0.9, 3.0), P(x + 4.4, y + 0.9, 0.9), "#e0a020", 3.4);
+      out += box(x + 4.1, y + 0.6, 0.3, 0.6, 0.6, 0.6, "#555");
+      out += heap(x + 6.2, y + 2.2, 1.6, 1.3, "#9c7a4f", "#6e5236", false);
+      return out;
+    },
+    // A vibro rig on its mast over the stone columns already in the ground.
+    g_improvement: function (x, y) {
+      var out = "";
+      for (var i = 0; i < 9; i++) { var c = P(x + 3 + (i % 3) * 1.1, y + 0.2 + Math.floor(i / 3) * 1.1, 0); out += '<ellipse cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" rx="7" ry="3.5" fill="#a7a59f" stroke="#6e6b66" stroke-width=".8"/>'; }
+      out += box(x, y, 0, 2.4, 1.6, 0.6, "#3a7d44") + box(x + 0.3, y + 0.3, 0.6, 1.0, 1.0, 0.9, "#3a7d44");
+      out += box(x + 1.9, y + 0.65, 0.6, 0.3, 0.3, 6.4, "#c2742b") + box(x + 1.95, y + 0.7, 2.2, 0.2, 0.2, 2.0, "#888");
+      return out;
+    },
+    // A wall holding the ground, its tie-back anchors going into the soil behind.
+    g_retaining: function (x, y) {
+      var out = '<polygon points="' + pts([P(x, y - 0.2, 0), P(x + 4, y - 0.2, 0), P(x + 4, y - 0.2, -2.2), P(x, y - 0.2, -2.2)]) + '" fill="#7d6a55" opacity=".55"/>';
+      out += box(x, y, -2.2, 4, 0.5, 5.0, "#b5b3ab");
+      for (var i = 0; i < 4; i++) { out += line(P(x + 0.5 + i * 1, y, 1.8), P(x + 0.5 + i * 1, y - 2.4, 0.4), "#555", 1.6); out += box(x + 0.35 + i * 1, y + 0.5, 1.6, 0.3, 0.1, 0.3, "#333"); }
+      return out;
+    },
+    // A piling rig, a reinforcement cage waiting, and pile heads already in.
+    g_piles: function (x, y) {
+      var out = "";
+      for (var i = 0; i < 6; i++) out += cyl(x + 3.2 + (i % 3) * 1.2, y + 0.4 + Math.floor(i / 3) * 1.4, 0, 0.35, 0.25, "#a9a7a0");
+      out += box(x, y, 0, 2.6, 0.5, 0.45, "#333") + box(x, y + 1.3, 0, 2.6, 0.5, 0.45, "#333") + box(x + 0.3, y + 0.3, 0.45, 2.0, 1.2, 1.1, "#d03b3b");
+      out += box(x + 2.2, y + 0.75, 0.45, 0.35, 0.35, 8.0, "#d03b3b") + line(P(x + 2.38, y + 0.92, 8.4), P(x + 2.38, y + 0.92, 0.2), "#333", 1.2);
+      out += box(x + 2.15, y + 0.7, 2.0, 0.45, 0.45, 1.4, "#555");
+      out += box(x - 0.6, y + 2.4, 0.1, 4.0, 0.5, 0.5, "#9a532a");
+      return out;
+    },
+    // Armour rock along the shore, and a dredger out on the water.
+    g_marine: function (x, y) {
+      var out = "";
+      for (var i = 0; i < 12; i++) out += box(x + (i % 6) * 0.75, y + Math.floor(i / 6) * 0.8, Math.floor(i / 6) * 0.3, 0.7, 0.7, 0.55, i % 3 ? "#8f8c86" : "#a7a59f");
+      out += box(x + 5.5, y + 2.4, -0.2, 3.4, 1.4, 0.6, "#d03b3b") + box(x + 6.0, y + 2.6, 0.4, 1.0, 1.0, 1.0, "#f4f4f4") + line(P(x + 8.2, y + 3.1, 0.4), P(x + 9.6, y + 3.1, 2.4), "#555", 2);
+      return out;
+    },
+    // A tunnel portal cut into a mound, its lining rings inside.
+    g_tunnels: function (x, y) {
+      var out = '<polygon points="' + pts([P(x - 0.5, y + 3.2, 0), P(x + 4.5, y + 3.2, 0), P(x + 4.5, y - 0.4, 3.0), P(x - 0.5, y - 0.4, 3.0)]) + '" fill="#8a7a5c"/>';
+      var c = P(x + 2, y + 3.2, 1.2);
+      out += '<ellipse cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" rx="26" ry="20" fill="#3a3a3a" stroke="#b5b3ab" stroke-width="5"/>';
+      out += '<ellipse cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" rx="16" ry="12" fill="none" stroke="#777" stroke-width="2"/>';
+      return out;
+    },
+    // A dam across a valley, the water held behind it.
+    g_dams: function (x, y) {
+      var out = '<polygon points="' + pts([P(x - 1, y - 0.6, 0), P(x + 5, y - 0.6, 0), P(x + 5, y - 0.6, 0.1), P(x - 1, y - 0.6, 0.1)]) + '" fill="#4f8fd1"/>';
+      out += '<polygon class="spec-scene-river" points="' + pts([P(x - 1, y - 3, 0), P(x + 5, y - 3, 0), P(x + 5, y - 0.4, 0), P(x - 1, y - 0.4, 0)]) + '"/>';
+      out += '<polygon points="' + pts([P(x - 1, y - 0.4, 0), P(x + 5, y - 0.4, 0), P(x + 5, y + 0.9, 2.4), P(x - 1, y + 0.9, 2.4)]) + '" fill="#9c8f80"/>';
+      out += '<polygon points="' + pts([P(x - 1, y + 0.9, 2.4), P(x + 5, y + 0.9, 2.4), P(x + 5, y + 1.4, 2.4), P(x - 1, y + 1.4, 2.4)]) + '" fill="#c7bba5"/>';
+      out += '<polygon points="' + pts([P(x - 1, y + 1.4, 2.4), P(x + 5, y + 1.4, 2.4), P(x + 5, y + 3.0, 0), P(x - 1, y + 3.0, 0)]) + '" fill="#b4a68e"/>';
+      return out;
+    },
+    // A road cut open to show its layers.
+    g_pavements: function (x, y) {
+      return box(x, y, 0, 5, 2.2, 0.35, "#b8913e") + box(x + 0.3, y, 0.35, 4.7, 2.2, 0.3, "#a7a59f") +
+        box(x + 0.6, y, 0.65, 4.4, 2.2, 0.2, "#5d5d5d") + box(x + 0.9, y, 0.85, 4.1, 2.2, 0.1, "#2f2f2f") +
+        box(x + 2.4, y + 1.05, 0.95, 1.2, 0.1, 0.01, "#f4f4f4");
+    },
+    // Bags of cement and grout, aggregate, and rolls of geotextile.
+    g_materials: function (x, y) {
+      var out = box(x, y, 0, 2.6, 1.8, 0.2, "#8a6d4b");
+      for (var i = 0; i < 6; i++) out += box(x + 0.2 + (i % 3) * 0.8, y + 0.2 + Math.floor(i / 3) * 0.8, 0.2, 0.7, 0.6, 0.35, "#e9e6df");
+      for (var j = 0; j < 3; j++) out += cyl(x + 3.3 + j * 0.8, y + 0.8, 0, 0.35, 1.4, j === 1 ? "#2f2f2f" : "#e8e8e8");
+      out += heap(x + 1.2, y + 3.0, 1.2, 0.9, "#a7a59f", "#6e6b66", true);
+      return out;
+    },
+    // Instruments in the ground: inclinometer and piezometer heads, a survey prism.
+    g_monitoring: function (x, y) {
+      var out = "";
+      for (var i = 0; i < 3; i++) { out += cyl(x + i * 1.3, y + (i % 2) * 0.8, 0, 0.2, 0.7, "#e0a32a"); out += line(P(x + i * 1.3, y + (i % 2) * 0.8, 0), P(x + i * 1.3, y + (i % 2) * 0.8, -1.8), "#555", 1); }
+      out += line(P(x + 4, y + 0.5, 0), P(x + 4, y + 0.5, 2.2), "#777", 1.4) + box(x + 3.85, y + 0.35, 2.2, 0.3, 0.3, 0.3, "#333");
+      out += '<circle cx="' + P(x + 4, y + 0.5, 2.6)[0] + '" cy="' + P(x + 4, y + 0.5, 2.6)[1] + '" r="3" fill="#0ca30c" class="spec-scene-blink"/>';
+      return out;
+    }
   };
   // Where each station stands on the site: given as across (u) and back to
   // front (v) on the screen, turned into metres. The plant is laid out the way
@@ -327,6 +418,15 @@
   var SEA = 41;                     // the shore: the sea is beyond x = SEA
   var WORKS = { building: [29, 29, 8, 7], span: [10, 36, 13, 6], quay: [SEA - 2, 13, 12, 6] };
   var BAR = { Uncoated: "#7a3e1d", "Epoxy-coated": "#3f8f3a", Galvanized: "#a9b0b6", "Stainless steel": "#d5d8dc", "GFRP bars": "#e3c13b" };
+  // The geotechnical story's site: the ground known, prepared, improved and
+  // held, the piles into it, the marine works at the shore, and what is
+  // built on and through it.
+  var GEO = (data.site || {}).trade === "geotechnical";
+  if (GEO) SCREEN = {
+    decide: [-27, 3], office: [-19, 3], documents: [-12, 4], g_investigation: [-4, 4], g_earthworks: [5, 5],
+    g_improvement: [14, 8], g_retaining: [-3, 15], g_piles: [8, 17], g_marine: [24, 12], g_tunnels: [-17, 18],
+    g_dams: [-26, 25], g_pavements: [-12, 28], g_materials: [17, 23], lab: [5, 31], g_monitoring: [19, 32], other: [27, 24]
+  };
   var PLACE = {};
   Object.keys(SCREEN).forEach(function (id) { var u = SCREEN[id][0], v = SCREEN[id][1]; PLACE[id] = [(u + v) / 2, (v - u) / 2]; });
   var BRIDGE_AT = PLACE.bridge;
@@ -334,16 +434,29 @@
     store: 3.2, mixer: 5.6, formwork: 1.8, rebar: 2.0, pour: 2.4, frame: 5.0, membrane: 1.4, bridge: 2.8, lab: 2.6, repair: 3.2, other: 1.8 };
   var MID = { decide: [1.3, 0.9], tendons: [2, 1.3], precast: [3, 1.5], office: [1.6, 1.1], documents: [1.3, 0.8], shoring: [1.7, 0.8], cement: [0, 0], sand: [0, 0], gravel: [0, 0], water: [0, 0],
     admixtures: [0.6, 0.6], store: [1.5, 1.2], mixer: [1.4, 1.2], formwork: [1.7, 1.2], rebar: [1.5, 1.2], pour: [0.7, 1.4],
-    frame: [1.6, 1.3], membrane: [1.8, 1.3], bridge: [2.2, 1.2], lab: [1.5, 1.1], repair: [1.6, 0.25], other: [1.4, 1] };
+    frame: [1.6, 1.3], membrane: [1.8, 1.3], bridge: [2.2, 1.2], lab: [1.5, 1.1], repair: [1.6, 0.25], other: [1.4, 1],
+    g_investigation: [1.6, 0.7], g_earthworks: [1.6, 0.9], g_improvement: [2.0, 0.8], g_retaining: [2, 0.3], g_piles: [2.2, 0.9],
+    g_marine: [2.2, 0.6], g_tunnels: [2, 1.4], g_dams: [2, 0.6], g_pavements: [2.5, 1.1], g_materials: [1.3, 0.9], g_monitoring: [2, 0.4] };
+  ["g_investigation", "g_earthworks", "g_improvement", "g_retaining", "g_piles", "g_marine", "g_tunnels", "g_dams", "g_pavements", "g_materials", "g_monitoring"].forEach(function (id, i) {
+    PIN[id] = [6.2, 3.4, 7.0, 3.2, 8.6, 2.6, 3.4, 3.0, 1.4, 2.0, 3.0][i];
+  });
   // The plant itself is always drawn, whether or not its station asks anything.
-  var PLANT = ["cement", "sand", "gravel", "water", "admixtures", "mixer", "formwork", "rebar", "pour", "lab"];
+  var PLANT = GEO ? [] : ["cement", "sand", "gravel", "water", "admixtures", "mixer", "formwork", "rebar", "pour", "lab"];
   // The order of the story, for a station this project does not ask about.
   var RANK = { decide: 0, office: 1, documents: 2, shoring: 3, formwork: 4, rebar: 5, tendons: 5, precast: 5,
     cement: 6, sand: 6, gravel: 6, water: 6, admixtures: 6, store: 6, mixer: 7, pour: 8, lab: 9,
-    frame: 10, membrane: 11, bridge: 12, repair: 13, other: 14 };
+    frame: 10, membrane: 11, bridge: 12, repair: 13, other: 14,
+    g_investigation: 3, g_earthworks: 4, g_improvement: 5, g_retaining: 6, g_piles: 7, g_marine: 8, g_tunnels: 9,
+    g_dams: 10, g_pavements: 11, g_materials: 12, g_monitoring: 14 };
   // Stations the project's decisions put on the site, asked about or not.
   function wanted(id) {
     var site = data.site || {};
+    if (GEO) {
+      var gw = site.geo || {};
+      return { g_investigation: (gw.investigation || []).length, g_earthworks: (gw.earthworks || []).length, g_improvement: (gw.improvement || []).length,
+        g_piles: (gw.piles || []).length, g_retaining: (gw.retaining || []).length, g_pavements: (gw.pavements || []).length,
+        g_tunnels: (gw.tunnels || []).length, g_dams: (gw.dams || []).length, g_marine: (gw.marine || []).length }[id];
+    }
     return { frame: site.steel, precast: !!site.precast, tendons: !!site.pt, shoring: site.shoring, bridge: site.bridge }[id];
   }
 
@@ -540,11 +653,12 @@
     }
 
     if (bare) order = order.filter(function (id) { return id === "decide"; });
-    var m = PLACE.mixer, pump = PLACE.pour, form = PLACE.formwork, cage = PLACE.rebar, lab = PLACE.lab;
+    function spot(k) { return PLACE[k] || [0, 0]; }   // the ground works have no batching plant
+    var m = spot("mixer"), pump = spot("pour"), form = spot("formwork"), cage = spot("rebar"), lab = spot("lab");
     var fc = [form[0] + 1.7, form[1] + 1.2];           // the middle of the formwork
     // The haul road from under the mixer to the pump.
     var tA = [m[0] + 1.4, m[1] + 1.2], tB = [pump[0] + 2.6, pump[1] - 0.6];
-    if (!bare) parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
+    if (!bare && !GEO) parts.push('<polyline class="spec-scene-road" points="' + pts([P(tA[0], tA[1] - 3, 0), P(tA[0], tA[1] + 1.5, 0), P(tB[0], tB[1] + 1, 0)]) + '"/>');
 
     var mixed = done("mixer");
     var bar = BAR[(site.rebar || [])[0]] || BAR.Uncoated;
@@ -561,7 +675,7 @@
         box(tA[0] - 0.5, tA[1], 0.2, 1.0, 1.0, 1.0, "#2a78d6") + "</g>";
     }
     drawOrder.forEach(function (id) {
-      if (!truckDrawn && !bare && PLACE[id][0] + PLACE[id][1] > truckAt) { parts.push(truck()); truckDrawn = true; }
+      if (!truckDrawn && !bare && !GEO && PLACE[id][0] + PLACE[id][1] > truckAt) { parts.push(truck()); truckDrawn = true; }
       var s = byId[id], at = PLACE[id], mid = MID[id] || [0, 0];
       var art = DRAW[id](at[0], at[1], st[id]);
       if (!s) { parts.push('<g class="spec-scene-prop">' + art + "</g>"); return; }
@@ -583,10 +697,10 @@
         '<g class="spec-scene-pin"><circle cx="' + pin[0] + '" cy="' + pin[1] + '" r="11"/>' + mark + "</g>" +
         '<text class="spec-scene-label" x="' + pin[0] + '" y="' + (pin[1] - 16) + '" text-anchor="middle">' + esc(s.name) + "</text></g>");
     });
-    if (!truckDrawn && !bare) parts.push(truck());
+    if (!truckDrawn && !bare && !GEO) parts.push(truck());
     // What the project builds: drawn faint until the pour is answered, then in
     // concrete; the steel frame on it once that is.
-    var built = done("pour") || bare;
+    var built = (GEO ? done("g_piles") || done("g_earthworks") : done("pour")) || bare;
     var drawnKey = {};
     works.forEach(function (k) {
       var w = WORKS[k];
@@ -599,7 +713,7 @@
 
     // How the materials go, each moving once its stage is answered.
     var mt = [m[0] + 1.4, m[1] + 1.2, 5.1];             // the mixer's charging hopper
-    var c = PLACE.cement, wt = PLACE.water, ad = PLACE.admixtures, sd = PLACE.sand, gv = PLACE.gravel;
+    var c = spot("cement"), wt = spot("water"), ad = spot("admixtures"), sd = spot("sand"), gv = spot("gravel");
     var flows = [
       flow([W(c[0] + 1.1, c[1] + 0.2, 7.6), W(mt[0] - 0.4, mt[1] - 0.6, mt[2] + 0.5)], "#c9ccd1", done("cement")),
       flow([W(wt[0] + 1.1, wt[1], 0.4), W(m[0] - 0.4, wt[1], 0.4), W(m[0] - 0.4, m[1] + 0.6, 0.4), W(m[0] - 0.4, m[1] + 0.6, 5.6), W(mt[0] - 0.3, mt[1], 5.6)], "#4f8fd1", done("water")),
@@ -612,7 +726,7 @@
       flow([W(form[0] + 3.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, form[1] + 2.0, 0.25), W(lab[0] + 1.5, lab[1] + 2.4, 0.25)], "#a9a9a6", done("pour"), "cubes")
     ];
     lastWorks = drawnKey;
-    if (!bare) parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
+    if (!bare && !GEO) parts.push('<g class="spec-scene-flows">' + flows.join("") + "</g>");
     // Where the story has got to: the engineer walking the site, at the
     // station open now, or the first of the level shown.
     if (story) {

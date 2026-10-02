@@ -85,6 +85,9 @@ def create_user():
         # The email column must hold something unique; the username does when none is given.
         (email or username, username, name or username, hash_password(password), role, chosen),
     )
+    from ..specs_trades import clean as clean_trade
+    execute("UPDATE users SET themis_trade = ? WHERE username = ? COLLATE NOCASE",
+            (clean_trade(request.form.get("themis_trade"), ""), username))
     flash(f"Account {username} created. Give them the username and password.", "success")
     return redirect(url_for("admin.index"))
 
@@ -123,6 +126,9 @@ def edit_user(user_id: int):
             (username or None, name or username or email, email or username, role,
              pack(request.form.getlist("programs")), user_id),
         )
+        if "themis_trade" in request.form:
+            from ..specs_trades import set_user_trade
+            set_user_trade(user_id, request.form.get("themis_trade"))
         flash("Account saved", "success")
         return redirect(url_for("admin.index"))
     return render_template("admin_user.html", account=user, can_open=allowed(user), programs=PROGRAMS)

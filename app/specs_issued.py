@@ -115,7 +115,10 @@ def records(family: str = "", search: str = "", latest: bool = False) -> list[di
         "FROM spec_issue_records r ORDER BY r.issue_date DESC, r.id DESC")
     out, seen = [], set()
     needle = search.strip().lower()
+    hidden = _hidden()
     for r in rows:
+        if r["set_id"] in hidden:
+            continue
         if family and r["family"] != family:
             continue
         if needle and not any(needle in (r[k] or "").lower()
@@ -129,11 +132,20 @@ def records(family: str = "", search: str = "", latest: bool = False) -> list[di
     return out
 
 
+def _hidden() -> set[int]:
+    """The projects the signed-in engineer does not see: another trade's."""
+    from flask import g, has_request_context
+
+    from .specs_trades import hidden_ids
+
+    return hidden_ids(g.get("user")) if has_request_context() else set()
+
+
 def record(record_id: int) -> dict | None:
     r = query_one("SELECT r.*, (SELECT COUNT(*) FROM spec_sets s WHERE s.id = r.set_id) AS live, "
                   "(SELECT COUNT(*) FROM spec_issues i WHERE i.id = r.issue_id) AS has_files "
                   "FROM spec_issue_records r WHERE r.id = ?", (record_id,))
-    return _record(r, snapshot=True) if r else None
+    return _record(r, snapshot=True) if r and r["set_id"] not in _hidden() else None
 
 
 def _label(key: str, labels: Mapping[str, dict]) -> str:
@@ -226,6 +238,8 @@ def _sources(family: str, live: bool) -> list[dict]:
     out = []
     if live:
         for s in store.sets():
+            if s["id"] in _hidden():
+                continue
             if family and s.get("family") != family:
                 continue
             row = store.spec_set(s["id"])

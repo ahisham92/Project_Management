@@ -1557,3 +1557,4 @@ details.card > summary::-webkit-details-marker { display: none; }
 .ask-team > input { flex: 0 0 auto; width: auto; }
 .ask-team > span { flex: 1 1 auto; min-width: 0; }
 .ask-readonly .spec-q, .ask-answer .spec-q { border-top: 0; padding-top: 0; }
+.themis-trade-tab.is-closed { opacity: .55; cursor: default; }

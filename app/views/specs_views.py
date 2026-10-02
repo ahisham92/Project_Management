@@ -299,7 +299,9 @@ def _progress_answer(response: Response) -> Response:
 def index():
     from .specs_home_views import dashboard
 
-    everything = store.sets()
+    from .. import specs_trades
+
+    everything = specs_trades.visible(store.sets(), g.user)
     on = review.my_sets(g.user)
     mine = [s for s in everything if s["created_by"] == g.user["id"] or s["id"] in on]
     if request.args.get("start_from"):

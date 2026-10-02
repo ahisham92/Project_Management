@@ -264,3 +264,54 @@ def called_for(row: Mapping[str, Any]) -> list[dict]:
                         "why": f"The {name(them).lower()} specification says {why}.", "from_trade": name(them),
                         "from_id": other["id"]})
     return out
+
+
+# --- who sees which specifications ------------------------------------------------
+
+def sees_all(user: Mapping[str, Any] | None) -> bool:
+    """An administrator sees every trade's specifications, and so does an
+    account no trade has been given yet."""
+    if user is None:
+        return False
+    try:
+        if user["role"] == "admin":
+            return True
+    except (KeyError, IndexError):
+        pass
+    return not of_user(user)
+
+
+def may_see(row: Mapping[str, Any], user: Mapping[str, Any] | None) -> bool:
+    """Whether the account sees this specification: one of its own trade's, or
+    one whose team it is on (put there by its lead)."""
+    if user is None:
+        return False
+    if sees_all(user) or clean(row.get("trade")) == of_user(user):
+        return True
+    return query_one("SELECT 1 FROM spec_set_members WHERE set_id = ? AND user_id = ?",
+                     (row["id"], user["id"])) is not None
+
+
+def hidden_ids(user: Mapping[str, Any] | None) -> set[int]:
+    """The specifications the account does not see, kept for the request."""
+    from flask import g, has_request_context
+
+    if user is None or sees_all(user):
+        return set()
+    if has_request_context() and "themis_hidden" in g:
+        return g.themis_hidden
+    mine = of_user(user)
+    on = {r["set_id"] for r in query("SELECT set_id FROM spec_set_members WHERE user_id = ?", (user["id"],))}
+    out = {r["id"] for r in query("SELECT id, trade FROM spec_sets")
+           if clean(r["trade"]) != mine and r["id"] not in on}
+    if has_request_context():
+        g.themis_hidden = out
+    return out
+
+
+def visible(rows: Iterable[Mapping[str, Any]], user: Mapping[str, Any] | None,
+            key: str = "id") -> list:
+    """The rows (specifications, or anything carrying one's id under ``key``)
+    the account sees."""
+    hidden = hidden_ids(user)
+    return [r for r in rows if r[key] not in hidden]

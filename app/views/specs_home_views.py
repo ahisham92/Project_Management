@@ -42,7 +42,9 @@ def dashboard(everything: list[dict], mine: list[dict]) -> dict:
             unplaced.append(one)        # the browser looks these up
     recent = [dict(r) for r in query(
         "SELECT i.id, i.set_id, i.revision, i.purpose, i.issue_date, i.issued_by, s.name, s.package "
-        "FROM spec_issues i JOIN spec_sets s ON s.id = i.set_id ORDER BY i.issued_at DESC LIMIT 6")]
+        "FROM spec_issues i JOIN spec_sets s ON s.id = i.set_id ORDER BY i.issued_at DESC LIMIT 60")]
+    from .. import specs_trades
+    recent = specs_trades.visible(recent, g.get("user"), key="set_id")[:6]
     countries = Counter(c for c in (store.place_of(s)[1] for s in everything) if c)
     return {
         "points": points, "unplaced": unplaced, "recent": recent,
@@ -61,7 +63,9 @@ def dashboard(everything: list[dict], mine: list[dict]) -> dict:
 @bp.get("/new")
 @login_required
 def new_project():
-    everything = store.sets()
+    from .. import specs_trades as _trades
+
+    everything = _trades.visible(store.sets(), g.user)
     on = review.my_sets(g.user)
     mine = [s for s in everything if s["created_by"] == g.user["id"] or s["id"] in on]
     start_from = request.args.get("start_from", type=int)

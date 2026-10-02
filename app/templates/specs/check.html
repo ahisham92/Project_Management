@@ -419,7 +419,7 @@
       <tbody>{% for b in between %}
         <tr><td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both', 'called': 'Called for by the other trade'}[b['kind']] }}</span></td>
           <td>{{ b['here'] }}</td><td>{{ b['trade'] }}: {{ b['there'] }}</td>
-          <td class="small">{% if b['kind'] != 'section' %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% endif %}</td></tr>
+          <td class="small">{% if b['kind'] != 'section' %}{% if themis_may_see(b['other_id']) %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% else %}<span class="muted">Agree it with the {{ b['trade'] | lower }} engineers</span>{% endif %}{% endif %}</td></tr>
       {% endfor %}</tbody>
     </table>
   </div>

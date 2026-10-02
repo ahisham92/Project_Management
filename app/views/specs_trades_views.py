@@ -11,6 +11,60 @@ from ..auth import login_required
 from .specs_views import _set_or_404, bp
 
 
+# The pages another trade's engineer opens on a specification not of their
+# trade: the IDC they were sent, and the questions asked of their team.
+IDC_PAGES = {"specs.idc_page", "specs.idc_section", "specs.idc_propose", "specs.idc_decide"}
+ASK_PAGES = {"specs.ask_page", "specs.ask_answer", "specs.explain"}
+
+
+@bp.before_request
+def _trade_wall():
+    """An engineer sees their own trade's specifications only (an
+    administrator sees every one): another trade's is opened only for the IDC
+    sent to them, or for a question asked of their team."""
+    set_id = (request.view_args or {}).get("set_id")
+    user = g.get("user")
+    if not set_id or user is None or specs_trades.sees_all(user):
+        return None
+    from .. import specs_store as store
+
+    row = store.spec_set(set_id)
+    if row is None or specs_trades.may_see(row, user):
+        return None
+    if request.endpoint in IDC_PAGES and _in_idc(row, user):
+        return None
+    if request.endpoint in ASK_PAGES and _team_asked(row, user):
+        return None
+    flash(f"{row['name']}'s {specs_trades.name(specs_trades.clean(row.get('trade'))).lower()} specification "
+          f"is for its own trade's engineers. Ask its lead to add you to its team if you need it.", "error")
+    return redirect(url_for("specs.index"))
+
+
+def _in_idc(row, user) -> bool:
+    from .. import specs_idc
+    from ..db import query_one
+
+    if specs_idc.may_propose(row, specs_idc.open_idc(row["id"]), user):
+        return True
+    # Their own input stays theirs to read once the IDC is closed.
+    return query_one("SELECT 1 FROM spec_idc_changes WHERE set_id = ? AND by_user = ?",
+                     (row["id"], user["id"])) is not None
+
+
+def _team_asked(row, user) -> bool:
+    from .. import specs_asks
+    from ..db import query_one
+
+    team = specs_asks.of_user(user)
+    return bool(team) and query_one("SELECT 1 FROM spec_asks WHERE set_id = ? AND team = ?",
+                                    (row["id"], team)) is not None
+
+
+@bp.app_template_global("themis_may_see")
+def themis_may_see(set_id: int) -> bool:
+    return set_id not in specs_trades.hidden_ids(g.get("user"))
+
+
 @bp.app_template_global("themis_trade_tabs")
 def themis_trade_tabs(spec) -> list[dict]:
     try:

@@ -48,6 +48,13 @@
           {% for t in themis_trades() %}<option value="{{ t['code'] }}">{{ t['name'] }}</option>{% endfor %}
         </select>
       </label>
+      <label class="field">
+        <span class="field-label">Team in THEMIS</span>
+        <select name="themis_team">
+          <option value="">None</option>
+          {% for t in themis_teams() %}<option value="{{ t['code'] }}">{{ t['name'] }} ({{ t['trade_name'] }})</option>{% endfor %}
+        </select>
+      </label>
       <fieldset class="field" style="border:0;padding:0;margin:0">
         <span class="field-label">Programs they can see</span>
         {% for key, label in programs %}
@@ -84,7 +91,7 @@
                 {% for key, label in programs if key in a['can_open'] %}{{ label }}{% if not loop.last %}, {% endif %}{% endfor %}
               {% else %}<span class="muted">None</span>{% endif %}
             </td>
-            <td>{% if a['themis_trade'] %}<span class="themis-trade-chip themis-trade-{{ a['themis_trade'] }}">{{ themis_trade_name(a['themis_trade']) }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if a['themis_trade'] %}<span class="themis-trade-chip themis-trade-{{ a['themis_trade'] }}">{{ themis_trade_name(a['themis_trade']) }}</span>{% if a['themis_team'] %} <span class="small muted">{{ themis_team_name(a['themis_team']) }}</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{{ short_date(a['created_at'][:10]) }}</td>
           </tr>
         {% endfor %}

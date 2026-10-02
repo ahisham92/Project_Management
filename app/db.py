@@ -595,6 +595,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _spec_places(conn)
     _spec_trades(conn)
     _spec_idc(conn)
+    _spec_asks(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -830,6 +831,40 @@ def _spec_idc(conn: sqlite3.Connection) -> None:
             decided_at TEXT
         );
         CREATE INDEX IF NOT EXISTS spec_idc_changes_idc ON spec_idc_changes(idc_id, row_id);
+        """)
+
+
+def _spec_asks(conn: sqlite3.Connection) -> None:
+    """Questions handed to a team (the materials team, the marine unit) before
+    the IDC, each account's team, and the team's answer waiting for the
+    specification's engineers to accept it (see specs_asks)."""
+    _ensure_column(conn, "users", "themis_team", "TEXT NOT NULL DEFAULT ''")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_asks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            qkey TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            team TEXT NOT NULL,
+            to_user INTEGER,
+            to_name TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            asked_by INTEGER,
+            asked_by_name TEXT NOT NULL DEFAULT '',
+            asked_at TEXT NOT NULL DEFAULT (datetime('now')),
+            state TEXT NOT NULL DEFAULT 'asked',
+            answer TEXT NOT NULL DEFAULT '',
+            why TEXT NOT NULL DEFAULT '',
+            answered_by INTEGER,
+            answered_by_name TEXT NOT NULL DEFAULT '',
+            answered_at TEXT,
+            decided_by_name TEXT NOT NULL DEFAULT '',
+            decided_at TEXT,
+            thread TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE INDEX IF NOT EXISTS spec_asks_set ON spec_asks(set_id, state);
+        CREATE INDEX IF NOT EXISTS spec_asks_team ON spec_asks(team, state);
         """)
 
 

@@ -88,6 +88,9 @@ def create_user():
     from ..specs_trades import clean as clean_trade
     execute("UPDATE users SET themis_trade = ? WHERE username = ? COLLATE NOCASE",
             (clean_trade(request.form.get("themis_trade"), ""), username))
+    from ..specs_asks import clean as clean_team
+    execute("UPDATE users SET themis_team = ? WHERE username = ? COLLATE NOCASE",
+            (clean_team(request.form.get("themis_team")), username))
     flash(f"Account {username} created. Give them the username and password.", "success")
     return redirect(url_for("admin.index"))
 
@@ -129,6 +132,9 @@ def edit_user(user_id: int):
         if "themis_trade" in request.form:
             from ..specs_trades import set_user_trade
             set_user_trade(user_id, request.form.get("themis_trade"))
+        if "themis_team" in request.form:
+            from ..specs_asks import set_user_team
+            set_user_team(user_id, request.form.get("themis_team"))
         flash("Account saved", "success")
         return redirect(url_for("admin.index"))
     return render_template("admin_user.html", account=user, can_open=allowed(user), programs=PROGRAMS)

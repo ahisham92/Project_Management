@@ -36,6 +36,14 @@
           </select>
           <span class="field-hint">Which trade's specifications they write. Their new projects start on it, and an IDC from another trade reaches them.</span>
         </label>
+        <label class="field">
+          <span class="field-label">Team in THEMIS</span>
+          <select name="themis_team">
+            <option value="">None</option>
+            {% for t in themis_teams() %}<option value="{{ t['code'] }}"{% if account['themis_team'] == t['code'] %} selected{% endif %}>{{ t['name'] }} ({{ t['trade_name'] }})</option>{% endfor %}
+          </select>
+          <span class="field-hint">The questions engineers hand to this team reach them on their THEMIS start page to answer.</span>
+        </label>
         <fieldset class="field" style="border:0;padding:0;margin:0">
           <span class="field-label">Programs they can see</span>
           {% for key, label in programs %}

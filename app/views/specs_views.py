@@ -2277,3 +2277,5 @@ from . import specs_home_views  # noqa: E402,F401
 from . import specs_trades_views  # noqa: E402,F401
 # IDCs: a specification sent to the project's other trades for their input.
 from . import specs_idc_views  # noqa: E402,F401
+# Questions handed to a team (materials, marine) before the IDC, for the owner to accept.
+from . import specs_asks_views  # noqa: E402,F401

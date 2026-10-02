@@ -315,3 +315,9 @@ def visible(rows: Iterable[Mapping[str, Any]], user: Mapping[str, Any] | None,
     the account sees."""
     hidden = hidden_ids(user)
     return [r for r in rows if r[key] not in hidden]
+
+
+def of_trade(row: Mapping[str, Any], user: Mapping[str, Any] | None) -> bool:
+    """Whether the account is of this specification's trade, so may write,
+    sign and issue it: an administrator and an account with no trade yet are."""
+    return user is not None and (sees_all(user) or clean(row.get("trade")) == of_user(user))

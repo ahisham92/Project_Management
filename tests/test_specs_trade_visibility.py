@@ -86,3 +86,28 @@ def test_another_trades_specification_opens_for_its_idc_and_for_a_team_ask(app, 
     assert signed_in.get(f"/specs/sets/{one}").status_code == 302
     with app.app_context():
         assert specs_asks.of_set(one, live=True)
+
+
+def test_only_a_trades_own_engineers_write_sign_and_issue_its_specification(app, signed_in):
+    from app import specs_review, specs_store
+    from app.db import query_one
+
+    one, geo, _row, layla = _project(app, signed_in)
+    sami = _engineer(app, signed_in, "Sami", "structures")
+    with app.app_context():
+        structural, geotechnical = specs_store.spec_set(one), specs_store.spec_set(geo)
+        user = lambda i: query_one("SELECT * FROM users WHERE id = ?", (i,))  # noqa: E731
+        admin = query_one("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")
+        # Even on the structural team, Layla reads it but does not sign or issue it.
+        from app.db import execute
+        execute("INSERT INTO spec_set_members (set_id, user_id, role) VALUES (?, ?, 'lead')", (one, layla))
+        execute("INSERT INTO spec_set_members (set_id, user_id, role) VALUES (?, ?, 'lead')", (geo, sami))
+        for what in ("edit", "prepared", "checked", "approved", "issue"):
+            assert not specs_review.may(structural, user(layla), what)
+            assert not specs_review.may(geotechnical, user(sami), what)
+            assert specs_review.may(geotechnical, user(layla), what)
+            assert specs_review.may(structural, admin, what) and specs_review.may(geotechnical, admin, what)
+    _as(app, signed_in, sami)
+    signed_in.post(f"/specs/sets/{geo}", data={"name": "Renamed by structures"})
+    with app.app_context():
+        assert specs_store.spec_set(geo)["name"] != "Renamed by structures"

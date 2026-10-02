@@ -108,6 +108,12 @@ def may(row: Mapping[str, Any], user: Any, what: str) -> bool:
     role = role_of(row, user)
     if what == "team":
         return role == "lead"
+    # A trade's specification is written, signed and issued by its own
+    # trade's engineers (an administrator aside); the others give their input
+    # through the IDC.
+    from .specs_trades import of_trade
+    if not of_trade(row, user):
+        return False
     if is_open(row["id"]):
         return True
     return role is not None and RANK[role] >= RANK[NEEDS[what]]

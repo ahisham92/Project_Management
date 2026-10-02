@@ -23,6 +23,42 @@
 </div>
 
 {{ trade_tabs(spec, may_add=may_edit) }}
+{% set idc = themis_idc(spec) %}
+{% if idc %}
+<div class="idc-banner">
+  <p><strong>IDC open:</strong> sent to {{ idc['trade_names'] | join(' and ') }} by {{ idc['sent_by_name'] }} on {{ idc['sent_at'][:10] }}.
+    {{ idc['n'] }} change{{ 's' if idc['n'] != 1 }} put in{% if idc['open'] %}, <strong>{{ idc['open'] }} to decide</strong>{% endif %}.</p>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('specs.idc_page', set_id=spec['id']) }}">{{ 'Accept or reject the changes' if may_edit and idc['open'] else 'Open the IDC' }} →</a>
+</div>
+{% endif %}
+{% set calls = themis_called_for(spec) %}
+{% if calls %}
+<div class="idc-banner idc-calls">
+  <div>
+    <p><strong>{{ calls | length }} item{{ 's' if calls | length != 1 }} to add from the project's other trade{{ 's' if calls | map(attribute='from_trade') | unique | list | length > 1 }}</strong></p>
+    <ul class="idc-call-list">
+      {% for c in calls %}
+      <li><span><strong>{{ c['label'] }}</strong>: {{ c['why'] }}</span>
+        {% if may_edit %}
+        <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="inline-form">
+          <input type="hidden" name="shown_opt" value="{{ c['key'] }}"><input type="hidden" name="from" value="project">
+          {% for v in c['values'] %}<input type="hidden" name="opt_{{ c['key'] }}" value="{{ v }}">{% endfor %}
+          <button type="submit" class="btn btn-primary btn-sm" title="Adds the answer and the sections it calls for">Add {{ c['suggest'] | lower }}</button>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.story', set_id=spec['id']) }}#level-1">Choose in the brief</a>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+{% for asked in themis_idc_of_project(spec) %}
+<div class="idc-banner">
+  <p><strong>The {{ asked['of_trade'] | lower }} specification is sent to you for IDC</strong> by {{ asked['sent_by_name'] }} on {{ asked['sent_at'][:10] }}{% if asked['note'] %}: “{{ asked['note'] }}”{% endif %}. Put your input in as tracked changes.</p>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('specs.idc_page', set_id=asked['of']['id']) }}">Add your input →</a>
+</div>
+{% endfor %}
 
 {% macro tool(href, title, hint, extra='', cls='') -%}
 <a class="spec-tool {{ cls }}" href="{{ href }}"><strong>{{ title }}{% if extra %} <span class="spec-tool-count">{{ extra }}</span>{% endif %}</strong><span>{{ hint }}</span></a>
@@ -63,6 +99,18 @@
     {{ tool(url_for('specs.review_set', set_id=spec['id']), 'Team and sign-off', 'Who works on it, and each section prepared, checked and approved.') }}
     {{ tool(url_for('specs.comments', set_id=spec['id']), 'Review comments', 'Comments on the text, answered and closed.', (open_comments ~ ' open') if open_comments else '') }}
     {{ tool(url_for('specs.issues', set_id=spec['id']), 'Issued revisions', 'Issue a revision, and every revision issued so far with its files.') }}
+    {% set idc_to = themis_trades() | rejectattr('code', 'equalto', spec['trade']) | list %}
+    {% if idc %}{{ tool(url_for('specs.idc_page', set_id=spec['id']), 'IDC', 'Open: the other trades\' input as tracked changes, and where the documents disagree.', (idc['open'] ~ ' to decide') if idc['open'] else 'open') }}
+    {% elif may_edit and idc_to %}
+    <details class="spec-tool spec-tool-menu">
+      <summary><strong>Send for IDC</strong><span>The inter-disciplinary check: the project's other trades put their input in as tracked changes for you to accept or reject.</span></summary>
+      <form method="post" action="{{ url_for('specs.send_idc', set_id=spec['id']) }}" class="idc-send">
+        {% for t in idc_to %}<label class="check"><input type="checkbox" name="trade" value="{{ t['code'] }}" checked> {{ t['name'] }}</label>{% endfor %}
+        <textarea name="note" rows="2" maxlength="1000" placeholder="A note for them (optional): what to look at"></textarea>
+        <div><button type="submit" class="btn btn-primary btn-sm">Send the IDC</button></div>
+      </form>
+    </details>
+    {% endif %}
     {{ tool(url_for('specs.history', set_id=spec['id']), 'History', 'Every change made to the project, by whom and when.') }}
   </section>
 </div>

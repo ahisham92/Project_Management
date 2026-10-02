@@ -583,7 +583,7 @@ FIELD_NAMES = {"name": "Project name", "package": "Package", "code": "Project co
                "hold_issue": "Hold the issue for the check",
                "need_signoff": "Hold the issue for sign-off"}
 KIND_NAMES = {"project": "Project", "answer": "Answer", "text": "Text", "section": "Section",
-              "signoff": "Sign-off", "issue": "Issue", "comment": "Comment", "team": "Team"}
+              "signoff": "Sign-off", "issue": "Issue", "comment": "Comment", "team": "Team", "idc": "IDC"}
 
 
 def note(set_id: int, kind: str, what: str, before: str = "", after: str = "",

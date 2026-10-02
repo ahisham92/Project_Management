@@ -594,6 +594,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _spec_packages(conn)
     _spec_places(conn)
     _spec_trades(conn)
+    _spec_idc(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -787,6 +788,49 @@ def _spec_trades(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "spec_sets", "trade_group", "INTEGER")
     _ensure_column(conn, "spec_sections", "trade", "TEXT NOT NULL DEFAULT 'structures'")
     _ensure_column(conn, "spec_options", "trade", "TEXT NOT NULL DEFAULT ''")
+
+
+def _spec_idc(conn: sqlite3.Connection) -> None:
+    """IDCs: one trade's specification sent to the project's other trades,
+    and their input on it as tracked changes, each accepted or rejected by
+    the specification's own engineers (see specs_idc)."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS spec_idcs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id INTEGER NOT NULL REFERENCES spec_sets(id) ON DELETE CASCADE,
+            trades TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            state TEXT NOT NULL DEFAULT 'open',
+            sent_by INTEGER,
+            sent_by_name TEXT NOT NULL DEFAULT '',
+            sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+            closed_by_name TEXT NOT NULL DEFAULT '',
+            closed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS spec_idcs_set ON spec_idcs(set_id, state);
+        CREATE TABLE IF NOT EXISTS spec_idc_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            idc_id INTEGER NOT NULL REFERENCES spec_idcs(id) ON DELETE CASCADE,
+            set_id INTEGER NOT NULL,
+            row_id INTEGER NOT NULL,
+            node_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            level TEXT NOT NULL DEFAULT '',
+            old_text TEXT NOT NULL DEFAULT '',
+            new_text TEXT NOT NULL DEFAULT '',
+            why TEXT NOT NULL DEFAULT '',
+            by_user INTEGER,
+            by_name TEXT NOT NULL DEFAULT '',
+            trade TEXT NOT NULL DEFAULT '',
+            at TEXT NOT NULL DEFAULT (datetime('now')),
+            state TEXT NOT NULL DEFAULT 'open',
+            answer TEXT NOT NULL DEFAULT '',
+            decided_by_name TEXT NOT NULL DEFAULT '',
+            decided_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS spec_idc_changes_idc ON spec_idc_changes(idc_id, row_id);
+        """)
 
 
 def _spec_review(conn: sqlite3.Connection) -> None:

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge %}
+{% block title %}IDC · {{ section['number'] }} · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% macro decided(c) %}
+  {% if c['state'] == 'accepted' %}{{ badge('good', 'Accepted by ' ~ c['decided_by_name']) }}
+  {% elif c['state'] == 'rejected' %}{{ badge('serious', 'Rejected by ' ~ c['decided_by_name']) }}{% if c['answer'] %} <span class="small">{{ c['answer'] }}</span>{% endif %}
+  {% else %}{{ badge('warning', 'To decide') }}{% endif %}
+{% endmacro %}
+
+{% macro change_box(c, p) %}
+<div class="idc-change idc-{{ c['state'] }}" id="c-{{ c['id'] }}">
+  <div class="idc-change-head small">
+    <span class="themis-trade-chip themis-trade-{{ c['trade'] or 'geotechnical' }}">{{ c['trade_name'] or 'Input' }}</span>
+    <strong>{{ c['by_name'] }}</strong> <span class="muted">{{ c['kind_name'] | lower }}{% if c['kind'] == 'add' %} this paragraph{% endif %} · {{ c['at'][:16] }}</span>
+    <span class="idc-change-state">{{ decided(c) }}</span>
+  </div>
+  <div class="idc-change-words spec-change-{{ 'changed' if c['kind'] == 'reword' else ('added' if c['kind'] == 'add' else 'removed') }}">
+    {% if c['kind'] == 'reword' %}{% for kind, a, b in c['diff'] %}{% if kind == 'equal' %}{{ a }}{% else %}{% if a %}<del>{{ a }}</del>{% endif %}{% if b %}<ins>{{ b }}</ins>{% endif %}{% endif %}{% endfor %}
+    {% elif c['kind'] == 'add' %}<ins>{{ c['new_text'] }}</ins>
+    {% else %}<del>{{ c['old_text'] }}</del>{% endif %}
+  </div>
+  {% if c['why'] %}<p class="small idc-why"><span class="muted">Why:</span> {{ c['why'] }}</p>{% endif %}
+  {% if c['state'] == 'open' %}
+  <div class="inline-form idc-change-go">
+    {% if may_decide %}
+    <form method="post" action="{{ url_for('specs.idc_decide', set_id=spec['id'], change_id=c['id']) }}">
+      <input type="hidden" name="how" value="accept"><button type="submit" class="btn btn-primary btn-sm">Accept</button>
+    </form>
+    <details class="idc-reject">
+      <summary class="btn btn-ghost btn-sm">Reject…</summary>
+      <form method="post" action="{{ url_for('specs.idc_decide', set_id=spec['id'], change_id=c['id']) }}" class="inline-form">
+        <input type="hidden" name="how" value="reject">
+        <input type="text" name="answer" required maxlength="500" placeholder="Why, for {{ c['by_name'] }}" aria-label="Why it is rejected">
+        <button type="submit" class="btn btn-ghost btn-sm">Reject</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if current_user and c['by_user'] == current_user['id'] %}
+    <form method="post" action="{{ url_for('specs.idc_decide', set_id=spec['id'], change_id=c['id']) }}">
+      <input type="hidden" name="how" value="withdraw"><button type="submit" class="btn btn-ghost btn-sm">Take it back</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+{% set trade = themis_trade_name(spec['trade']) %}
+<div class="page-head">
+  <div>
+    <h1>{{ section['number'] }} {{ section['title'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      <a href="{{ url_for('specs.idc_page', set_id=spec['id']) }}">IDC of the {{ trade | lower }} specification</a>
+      · {% if it['state'] == 'open' %}open, sent to {{ it['trade_names'] | join(' and ') }}{% else %}closed{% endif %}
+      · {{ found | length }} change{{ 's' if found | length != 1 }} here.
+      {% if may_propose %}Put a change in on any paragraph: it shows as yours, for the {{ trade | lower }} team to accept or reject.{% endif %}
+    </p>
+  </div>
+  <div class="inline-form">
+    {% if may_decide and it['state'] == 'open' and found | selectattr('state', 'equalto', 'open') | list %}
+    <form method="post" action="{{ url_for('specs.idc_accept_all', set_id=spec['id'], row_id=section['id']) }}"
+          onsubmit="return confirm('Accept every open change in this section?')">
+      <button type="submit" class="btn btn-ghost">Accept all here</button>
+    </form>
+    {% endif %}
+    {% if prev %}<a class="btn btn-ghost" href="{{ url_for('specs.idc_section', set_id=spec['id'], row_id=prev['id']) }}" title="{{ prev['number'] }} {{ prev['title'] }}">← {{ prev['number'] }}</a>{% endif %}
+    {% if next %}<a class="btn btn-ghost" href="{{ url_for('specs.idc_section', set_id=spec['id'], row_id=next['id']) }}" title="{{ next['number'] }} {{ next['title'] }}">{{ next['number'] }} →</a>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body spec-doc idc-doc">
+    {% for p in paragraphs %}
+      {% set mine = by_node.get(p['id'], []) %}
+      {% set open_reword = mine | selectattr('state', 'equalto', 'open') | selectattr('kind', 'in', ['reword', 'remove']) | list %}
+      <div class="spec-p spec-{{ p['level'] }} idc-p{{ ' idc-has' if mine }}" id="p-{{ p['id'] }}">
+        <span class="spec-num">{{ p['label'] }}</span>
+        <span class="spec-text">{{ p['text'] }}</span>
+        {% if may_propose and p['level'] != 'TBL' %}
+        <details class="idc-propose">
+          <summary class="btn btn-ghost btn-sm" title="Put in a change to this paragraph">Change…</summary>
+          <form method="post" action="{{ url_for('specs.idc_propose', set_id=spec['id'], row_id=section['id']) }}" class="idc-form">
+            <input type="hidden" name="node" value="{{ p['id'] }}">
+            <fieldset class="idc-kinds">
+              <label><input type="radio" name="kind" value="reword" checked data-idc-kind> Reword it</label>
+              <label><input type="radio" name="kind" value="add" data-idc-kind> Add a paragraph after it</label>
+              <label><input type="radio" name="kind" value="remove" data-idc-kind> Take it out</label>
+            </fieldset>
+            <textarea name="text" rows="3" data-idc-text data-was="{{ p['text'] }}" aria-label="The words">{{ p['text'] }}</textarea>
+            <label class="small idc-level" hidden data-idc-level>As a
+              <select name="level">{% for k, name in levels %}<option value="{{ k }}"{% if k == p['level'] %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+            <input type="text" name="why" maxlength="500" placeholder="Why (the code, the ground conditions, the design)" aria-label="Why">
+            <div><button type="submit" class="btn btn-primary btn-sm">Put the change in</button></div>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+      {% for c in mine %}{{ change_box(c, p) }}{% endfor %}
+    {% endfor %}
+  </div>
+</div>
+<script>
+  // The words box follows the kind of change: the paragraph's words to
+  // reword, empty for one to add after it, none to take it out.
+  document.querySelectorAll(".idc-form").forEach(function (f) {
+    var text = f.querySelector("[data-idc-text]"), level = f.querySelector("[data-idc-level]");
+    f.addEventListener("change", function (e) {
+      if (!e.target.hasAttribute("data-idc-kind")) return;
+      var k = e.target.value;
+      text.hidden = k === "remove";
+      level.hidden = k !== "add";
+      if (k === "add") text.value = ""; else if (k === "reword" && !text.value) text.value = text.getAttribute("data-was");
+    });
+  });
+</script>
+{% endblock %}

@@ -310,6 +310,9 @@
   {% set _ = groups.append({'key': key, 'title': title, 'open': report['open'][key] if report.get('open') else report[key] | length,
                             'holds': key in ('model', 'answers', 'references', 'outdated', 'discrepancies')}) %}
 {% endfor %}
+{% if between is defined and between is not none %}
+  {% set _ = groups.append({'key': 'trades', 'title': 'Between the trades', 'open': between | length, 'holds': false}) %}
+{% endif %}
 {% if language is defined %}
   {% set _ = groups.append({'key': 'language', 'title': 'Language', 'open': language.values() | map('length') | sum, 'holds': false}) %}
 {% endif %}
@@ -402,6 +405,29 @@
 {% if language is defined %}
 {% set action = url_for('specs.language_set', set_id=spec['id']) if spec else url_for('specs.language_library') %}
 {% set can = spec or is_admin %}
+{% if between is defined and between is not none %}
+<div class="spec-group" data-group="trades" id="group-trades">
+<div class="card" style="margin-top:12px">
+  <div class="card-head">
+    <div><h2>Between the trades {% if between %}{{ badge('warning', between | length) }}{% else %}{{ badge('good', 'Aligned') }}{% endif %}</h2>
+      <p class="small muted" style="margin-top:2px">An IDC is open on this project: where this specification and the other trades' say different things, to align before either is issued.</p></div>
+  </div>
+  {% if between %}
+  <div class="card-body flush table-scroll">
+    <table class="themis-table">
+      <thead><tr><th>What</th><th>This specification</th><th>The other trade's</th><th></th></tr></thead>
+      <tbody>{% for b in between %}
+        <tr><td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both', 'called': 'Called for by the other trade'}[b['kind']] }}</span></td>
+          <td>{{ b['here'] }}</td><td>{{ b['trade'] }}: {{ b['there'] }}</td>
+          <td class="small">{% if b['kind'] != 'section' %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+  {{ group_foot('trades') }}
+</div>
+</div>
+{% endif %}
 <div class="spec-group" data-group="language" id="group-language">
 <div class="card" style="margin-top:12px" id="language">
   <div class="card-head">

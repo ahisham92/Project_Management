@@ -206,3 +206,70 @@ def test_the_brief_page_carries_the_rules(app, signed_in):
     assert rule == [[["precast", "some", ""], ["structures", "has", "Buildings"]]]
     fenders = re.search(r'data-opt="fenders"[^>]*>', page).group(0)
     assert json.loads(re.search(r"data-when='([^']*)'", fenders).group(1)) == [[["structures", "has", "Marine structures"]]]
+
+
+def test_a_quay_is_not_suggested_or_told_about_towers(app, signed_in):
+    from app import specs_questions, specs_store
+
+    with app.app_context():
+        specs_questions.save_definitions([
+            {"key": "monitor_where", "label": "Where it is watched", "grp": "Demolition, shoring and monitoring",
+             "suggested": "at the top of the tallest tower",
+             "help": "Where it is watched, such as at the top of the tallest tower, a long joint or a tall bridge pier."},
+            {"key": "monitor_corrosion", "label": "Where corrosion is monitored",
+             "grp": "Demolition, shoring and monitoring", "suggested": "the splash zone"}])
+    set_id = _project(app, signed_in, structures="Marine structures")
+    asked = _asked(app, set_id)
+    # No tag on the choice, but the suggestion names a tower: none is offered.
+    assert asked["monitor_scope"]["suggested"] == "of quay walls"
+    with app.app_context():
+        specs_questions.save_definitions([{**QUESTIONS[0], "key": "monitor_scope",
+                                           "suggested": "of the tallest tower", "choice_when": []}])
+    asked = _asked(app, set_id)
+    assert asked["monitor_scope"]["suggested"] is None
+    assert "of tall towers" not in asked["monitor_scope"]["choices"]
+    # An answer given before, which names a tower, is asked again.
+    with app.app_context():
+        specs_questions.save_answers(set_id, {"monitor_scope": "of the tallest tower",
+                                              "monitor_corrosion": "the splash zone"}, {})
+    asked = _asked(app, set_id)
+    assert asked["monitor_scope"]["answered"] is False
+    assert asked["monitor_scope"]["off_scope"] == "of the tallest tower"
+    assert asked["monitor_corrosion"]["answered"] is True
+    # Words the engineer typed are theirs: a port's control tower stays.
+    with app.app_context():
+        specs_questions.save_answers(set_id, {"monitor_scope": "of the port control tower"}, {})
+    assert _asked(app, set_id)["monitor_scope"]["answered"] is True
+    with app.app_context():
+        specs_questions.save_answers(set_id, {"monitor_scope": "of the tallest tower"}, {})
+    from app import specs_inputs
+    station = next(specs_inputs.station_of(q, c["slug"]) for c in specs_questions.story(list(asked.values()))
+                   for q in c["questions"] if q["key"] == "monitor_scope")
+    card = signed_in.get(f"/specs/sets/{set_id}/inputs/{station}?cards=1").get_data(as_text=True)
+    assert "Answer again" in card and "of the tallest tower" in card
+    # A building keeps the same answer.
+    building = _project(app, signed_in, structures="Buildings")
+    with app.app_context():
+        specs_questions.save_answers(building, {"monitor_scope": "of the tallest tower"}, {})
+    assert _asked(app, building)["monitor_scope"]["answered"] is True
+
+
+def test_examples_follow_what_is_built():
+    from app import specs_questions as sq
+
+    text = "Where it is watched, such as at the top of the tallest tower, a long joint or a tall bridge pier."
+    quay = sq.off_scope({"structures": "Marine structures"})
+    assert sq.scope_examples(text, quay) == "Where it is watched, such as a long joint."
+    assert sq.scope_examples("Watch it, such as the tallest tower or a tall bridge pier.", quay) == "Watch it."
+    assert sq.scope_examples(text, sq.off_scope({"structures": "Buildings|Bridges"})) == text
+    # Nothing said yet about what is built: nothing is taken out.
+    assert sq.off_scope({}) is None and sq.scope_examples(text, None) == text
+    # A building by the sea keeps its quays; one inland does not.
+    assert not sq.off_scope({"structures": "Buildings", "exposure": "Marine"}).search("the quay wall")
+    assert sq.off_scope({"structures": "Buildings"}).search("the quay wall")
+    # Tower cranes and shoring towers are not towers to be built.
+    for words in ("the tower crane base", "vertical towers of the falsework", "shoring towers"):
+        assert not quay.search(words), words
+    # Untagged choices naming other works are left out when others remain.
+    assert sq.offered(["at tall towers", "at the deck"], [], {"structures": "Marine structures"}, quay) == \
+        ["at the deck"]

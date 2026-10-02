@@ -57,11 +57,11 @@
   <p class="small muted">{{ q['grp'] or 'Other details' }}</p>
 
   {% if q['definition'] %}
-  <p class="spec-explain-def">{{ q['definition'] }}</p>
+  <p class="spec-explain-def">{{ means }}</p>
   {% else %}
   <p class="small muted">No explanation has been written for this question yet.{% if admin %} Add one under Edit below.{% endif %}</p>
   {% endif %}
-  {% if q['help'] and q['help'] != q['definition'] %}<p class="small muted">{{ q['help'] }}</p>{% endif %}
+  {% if hint and q['help'] != q['definition'] %}<p class="small muted">{{ hint }}</p>{% endif %}
 
   {% if q['drawing'] %}<figure class="spec-explain-drawing">{{ q['drawing'] | safe }}</figure>{% endif %}
   {{ shots(q['pictures']) }}

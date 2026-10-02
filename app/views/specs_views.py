@@ -1187,7 +1187,7 @@ def inputs_station(set_id: int, station: str):
         return render_template(
             "specs/_cards.html", spec=row, station=st, questions=questions,
             locked=specs_inputs.blocking(data, station), may_edit=review.may(row, g.user, "edit"),
-            element_labels=_labels(), pictures=_pictures(questions, row["family"]),
+            element_labels=_labels(), pictures=_pictures(questions, row["family"], store.chosen_for(row)),
             split_location=specs_places.split_location, join_location=specs_places.join_location,
             countries=specs_places.country_names(),
             cities=sorted({n.title() for n, *_rest in specs_places.CITIES}),
@@ -1203,15 +1203,17 @@ def inputs_station(set_id: int, station: str):
         picked=specs_questions.picked, shown=specs_questions.shown, KEEP=specs.KEEP)
 
 
-def _pictures(questions: list[dict], family: str) -> dict[str, dict]:
+def _pictures(questions: list[dict], family: str, chosen: dict | None = None) -> dict[str, dict]:
     """What each question's card shows above it: its drawing, or the first
-    picture added to it, and what it means in a line or two."""
+    picture added to it, and what it means in a line or two (its examples
+    only the ones that fit what the project builds)."""
+    off_words = specs_questions.off_scope(chosen or {})
     out = {}
     for q in questions:
         found = specs_questions.explained(q["key"], family) or {}
         shots = found.get("pictures") or []
         out[q["key"]] = {"drawing": found.get("drawing") or "", "image": shots[0] if shots else None,
-                         "definition": found.get("definition") or ""}
+                         "definition": specs_questions.scope_examples(found.get("definition") or "", off_words)}
     return out
 
 
@@ -1274,8 +1276,11 @@ def explain(set_id: int, key: str):
     if found is None:
         abort(404)
     asked = next((q for q in _asked(set_id, row) if q["key"] == key), None)
+    off_words = specs_questions.off_scope(store.chosen_for(row))
     return render_template(
         "specs/_explain.html", spec=row, q=found, asked=asked, admin=_is_admin(),
+        means=specs_questions.scope_examples(found["definition"] or "", off_words),
+        hint=specs_questions.scope_examples(found.get("help") or "", off_words),
         refs_text=specs_questions.refs_as_lines(specs_questions.refs_of(found)),
         drawings=specs_questions.drawings(), group=request.args.get("group", ""))
 

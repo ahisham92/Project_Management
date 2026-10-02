@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge, empty %}
+{% block title %}Asked of the teams · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted" style="margin:0"><a href="{{ url_for('specs.spec_set', set_id=spec['id']) }}">← {{ spec['name'] }}</a></p>
+    <h1>Asked of the teams</h1>
+    <p class="small muted" style="margin-top:2px;max-width:80ch">The questions of this specification handed to the materials team or the marine unit before the IDC. Each team answer is written in only once this specification's engineer accepts it. Ask from any question's card in the story.</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}">▶ The story</a>
+</div>
+
+<div class="card">
+  {% if asks %}
+  <div class="card-body flush table-scroll">
+    <table class="themis-table">
+      <thead><tr><th>Question</th><th>Team</th><th>Asked</th><th>Answer</th><th>State</th></tr></thead>
+      <tbody>
+      {% for a in asks %}
+        <tr>
+          <td><a href="{{ url_for('specs.ask_page', set_id=spec['id'], key=a['qkey']) }}"><strong>{{ a['label'] }}</strong></a>{% if a['note'] %}<br><span class="small muted">“{{ a['note'] }}”</span>{% endif %}</td>
+          <td>{{ a['team_name'] }}{% if a['to_name'] %}<br><span class="small muted">{{ a['to_name'] }}</span>{% endif %}</td>
+          <td class="small">{{ a['asked_by_name'] }}<br><span class="muted">{{ a['asked_at'][:10] }}</span></td>
+          <td class="small">{% if a['given'] %}{{ shown_answer(a) }}{% if a['answered_by_name'] %}<br><span class="muted">{{ a['answered_by_name'] }}</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if a['state'] == 'asked' %}{{ badge('warning', 'Waiting') }}{% elif a['state'] == 'answered' %}{{ badge('serious', 'To accept') }}{% elif a['state'] == 'accepted' %}{{ badge('good', 'Accepted') }}{% else %}{{ badge('neutral', 'Taken back') }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body">{{ empty('Nothing asked of a team yet', 'Open the story and use “Ask a team” on a question that needs the materials team or the marine unit.') }}</div>
+  {% endif %}
+</div>
+{% endblock %}

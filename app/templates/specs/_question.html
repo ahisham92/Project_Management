@@ -33,6 +33,13 @@
       <fieldset class="spec-q{{ ' spec-q-answered' if q['answered'] }}" id="q-{{ q['key'] }}">
         <legend class="spec-q-label">{% if q['switch'] %}{{ q['label'] }}{% else %}<span class="spec-q-ask" data-explain="{{ q['key'] }}" title="What this means and what the codes say">{{ q['label'] }}</span>{% endif %}{% if q['answered'] %} <span class="spec-q-tick" title="Answered">✓</span>{% endif %}{% if not q['switch'] %} <button type="button" class="spec-q-info" data-explain="{{ q['key'] }}" aria-label="What this means and what the codes say">i</button>{% endif %}</legend>
         {% if q['help'] %}<p class="small muted spec-q-help">{{ q['help'] }}</p>{% endif %}
+        {% if not q['switch'] and not no_ask and spec is defined and spec['id'] %}{% set asked = themis_asks_live(spec).get(q['key']) %}{% set ask_url = url_for('specs.ask_page', set_id=spec['id'], key=q['key'], back=(url_for('specs.story', set_id=spec['id']) ~ '#st-' ~ station['id']) if station is defined and station else None) %}
+        <p class="small spec-q-ask-team">
+          {% if asked and asked['state'] == 'answered' %}<span class="spec-in-chip spec-in-suggested">{{ asked['team_name'] }} answered</span> “{{ shown_answer(asked) }}” <a href="{{ ask_url }}">Accept or send back →</a>
+          {% elif asked %}<span class="spec-in-chip spec-in-needed">With the {{ asked['team_name'] }}</span> Waiting for their answer. <a href="{{ ask_url }}">See it →</a>
+          {% else %}<a href="{{ ask_url }}" class="spec-ask-link" title="Hand this question to the materials team or the marine unit">Ask a team…</a>{% endif %}
+        </p>
+        {% endif %}
         {% if q['yes_no'] and q['example'] %}<p class="small muted spec-q-help">Yes keeps the words “{{ q['example'] | trim(' ,') }}”.</p>{% endif %}
         {{ controls(q['key'], q, q['answer'], q['answered']) }}
         {% if q['rows'] %}

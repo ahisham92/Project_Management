@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% from "partials/bits.html" import badge %}
+{% from "specs/_question.html" import question with context %}
+{% block title %}{{ label }} · Asked of a team · {{ spec['name'] }} · THEMIS{% endblock %}
+
+{% macro state_badge(a) %}
+  {% if a['state'] == 'asked' %}{{ badge('warning', 'Waiting for the ' ~ a['team_name']) }}
+  {% elif a['state'] == 'answered' %}{{ badge('serious', 'Answered, to accept') }}
+  {% elif a['state'] == 'accepted' %}{{ badge('good', 'Accepted by ' ~ a['decided_by_name']) }}
+  {% else %}{{ badge('neutral', 'Taken back') }}{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted" style="margin:0"><a href="{{ back }}">← Back</a> · {{ spec['name'] }} · <a href="{{ url_for('specs.asks_page', set_id=spec['id']) }}">Every question asked of a team</a></p>
+    <h1>{{ label }}</h1>
+    <p class="small muted" style="margin-top:2px;max-width:80ch">
+      {% if live %}With the {{ live['team_name'] }}{% if live['to_name'] %} ({{ live['to_name'] }}){% endif %}, asked by {{ live['asked_by_name'] }} on {{ live['asked_at'][:16] }}.
+      Their answer is written into the specification only once its engineer accepts it.
+      {% else %}Hand this question to a team whose answer it needs. They answer it with these same buttons and say why; you accept their answer before it is written in.{% endif %}
+    </p>
+  </div>
+  {% if live %}<div>{{ state_badge(live) }}</div>{% endif %}
+</div>
+
+<div class="ask-grid">
+  <div class="card">
+    <div class="card-head"><div><h2>{% if may_answer %}Your team's answer{% elif live and live['state'] == 'answered' %}The {{ live['team_name'] }}'s answer{% else %}The question{% endif %}</h2>
+      {% if may_answer %}<p class="small muted" style="margin-top:2px">Pick or type the answer the way the specification needs it, and say why. {{ live['asked_by_name'] }} accepts it into the specification.</p>{% endif %}</div></div>
+    <div class="card-body">
+      {% if q %}
+      {% if may_answer %}
+      <form method="post" action="{{ url_for('specs.ask_answer', set_id=spec['id'], ask_id=live['id']) }}" class="spec-details ask-answer">
+        {{ question(q) }}
+        <label class="field"><span class="field-label">Why</span>
+          <textarea name="why" rows="2" maxlength="800" placeholder="The code, the test results, the ground or sea conditions"></textarea></label>
+        <button type="submit" class="btn btn-primary">Send the answer to {{ live['asked_by_name'] }}</button>
+      </form>
+      {% else %}
+      <div class="spec-details ask-readonly"><fieldset disabled style="border:0;padding:0;margin:0">{{ question(q) }}</fieldset></div>
+      {% if live and live['state'] == 'answered' %}
+      <p class="ask-answer-line"><strong>{{ live['answered_by_name'] }}</strong> answered: <span class="ask-words">{{ live['given'] and shown_answer(live) }}</span>{% if live['why'] %}<br><span class="small"><span class="muted">Why:</span> {{ live['why'] }}</span>{% endif %}</p>
+      {% endif %}
+      {% endif %}
+      {% else %}
+      <p class="small muted">The project no longer asks this question: what it builds changed since.</p>
+      {% endif %}
+
+      {% if may_decide %}
+      <div class="inline-form ask-decide">
+        <form method="post" action="{{ url_for('specs.ask_decide', set_id=spec['id'], ask_id=live['id']) }}">
+          <input type="hidden" name="how" value="accept"><input type="hidden" name="back" value="{{ back }}">
+          <button type="submit" class="btn btn-primary">Accept and write it in</button>
+        </form>
+        <details class="ask-back">
+          <summary class="btn btn-ghost">Send back…</summary>
+          <form method="post" action="{{ url_for('specs.ask_decide', set_id=spec['id'], ask_id=live['id']) }}" class="inline-form">
+            <input type="hidden" name="how" value="back">
+            <input type="text" name="why" required maxlength="500" placeholder="What to look at again, for the {{ live['team_name'] }}" aria-label="Why it goes back" style="min-width:24ch">
+            <button type="submit" class="btn btn-ghost">Send back</button>
+          </form>
+        </details>
+      </div>
+      {% elif live and live['state'] == 'answered' and not may_answer %}
+      <p class="small muted">The specification's engineer accepts it.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    {% if may_ask %}
+    <div class="card-head"><div><h2>Ask a team</h2>
+      <p class="small muted" style="margin-top:2px">Carry on with the other questions meanwhile: this one shows as waiting until the answer comes back.</p></div></div>
+    <form method="post" action="{{ url_for('specs.ask_send', set_id=spec['id'], key=key) }}" class="card-body ask-form">
+      <input type="hidden" name="back" value="{{ back }}">
+      <fieldset class="field ask-teams" style="border:0;padding:0;margin:0">
+        <span class="field-label">The team</span>
+        {% for t in teams %}
+        <label class="ask-team">
+          <input type="radio" name="team" value="{{ t['code'] }}"{% if loop.first %} checked{% endif %} data-ask-team>
+          <span><strong>{{ t['name'] }}</strong> <span class="themis-trade-chip themis-trade-{{ t['trade'] }}">{{ t['trade_name'] }}</span><br>
+            <span class="small muted">{{ t['note'] }} {% if t['people'] %}{{ t['people'] | length }} engineer{{ 's' if t['people'] | length != 1 }}: {{ t['people'] | map(attribute='name') | join(', ') }}.{% else %}Nobody is in it yet: an administrator puts engineers in it on their account.{% endif %}</span></span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <label class="field"><span class="field-label">To <span class="muted">(optional)</span></span>
+        <select name="to_user">
+          <option value="">Anyone in the team</option>
+          {% for t in teams %}{% for u in t['people'] %}<option value="{{ u['id'] }}" data-team="{{ t['code'] }}">{{ u['name'] }} · {{ t['name'] }}</option>{% endfor %}{% endfor %}
+        </select></label>
+      <label class="field"><span class="field-label">Your note</span>
+        <textarea name="note" rows="3" maxlength="800" placeholder="What you need from them: the element, the exposure, what the design assumed"></textarea></label>
+      <button type="submit" class="btn btn-primary">Ask the team</button>
+    </form>
+    {% else %}
+    <div class="card-head"><div><h2>What was said</h2></div>
+      {% if may_withdraw %}
+      <form method="post" action="{{ url_for('specs.ask_decide', set_id=spec['id'], ask_id=live['id']) }}" onsubmit="return confirm('Take this question back from the team and answer it yourself?')">
+        <input type="hidden" name="how" value="withdraw"><input type="hidden" name="back" value="{{ back }}">
+        <button type="submit" class="btn btn-ghost btn-sm">Take it back</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if live %}
+      <ol class="ask-thread">
+        <li><strong>{{ live['asked_by_name'] }}</strong> <span class="small muted">asked the {{ live['team_name'] }} · {{ live['asked_at'][:16] }}</span>
+          {% if live['note'] %}<p>{{ live['note'] }}</p>{% endif %}</li>
+        {% for t in live['thread'] %}
+        <li class="ask-{{ t['kind'] }}"><strong>{{ t['who'] }}</strong> <span class="small muted">{{ {'answer': 'answered', 'back': 'sent it back', 'accept': 'accepted'}[t['kind']] }} · {{ t['at'][:16] }}</span>
+          <p>{{ t['said'] }}</p></li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="small muted">Only this specification's engineers hand its questions to a team.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% set earlier = asks | rejectattr('id', 'equalto', live['id'] if live else 0) | list %}
+{% if earlier %}
+<details class="card" style="margin-top:16px">
+  <summary class="card-head"><h2>Asked before ({{ earlier | length }})</h2></summary>
+  <ul class="card-body small">
+    {% for a in earlier %}<li>{{ state_badge(a) }} The {{ a['team_name'] }}, asked by {{ a['asked_by_name'] }} on {{ a['asked_at'][:10] }}{% if a['given'] %}: {{ shown_answer(a) }}{% endif %}{% if a['why'] %} ({{ a['why'] }}){% endif %}</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
+<script>
+  // The person list follows the team picked.
+  (function () {
+    var form = document.querySelector(".ask-form");
+    if (!form) return;
+    var pick = form.querySelector("select[name=to_user]");
+    function follow() {
+      var team = (form.querySelector("[data-ask-team]:checked") || {}).value;
+      pick.querySelectorAll("option[data-team]").forEach(function (o) { o.hidden = o.getAttribute("data-team") !== team; });
+      if (pick.selectedOptions[0] && pick.selectedOptions[0].hidden) pick.value = "";
+    }
+    form.addEventListener("change", follow);
+    follow();
+  })();
+</script>
+{% endblock %}

@@ -32,6 +32,34 @@
 </div>
 {% endif %}
 
+{% set team_inbox = themis_team_inbox() %}
+{% if team_inbox %}
+<div class="card idc-waiting" style="margin-bottom:16px">
+  <div class="card-head"><div><h2>Asked of the {{ team_inbox[0]['team_name'] }}</h2>
+    <p class="small muted" style="margin-top:2px">Questions an engineer handed to your team. Answer each; they accept it into their specification.</p></div></div>
+  <ul class="themis-recent">
+    {% for a in team_inbox %}
+    <li><a href="{{ url_for('specs.ask_page', set_id=a['set_id'], key=a['qkey']) }}"><strong>{{ a['label'] }}</strong> · {{ a['set_name'] }} · {{ themis_trade_name(a['set_trade']) }}</a>
+      <span class="small muted">From {{ a['asked_by_name'] }} · {{ a['asked_at'][:10] }}{% if a['to_name'] %} · for {{ a['to_name'] }}{% endif %}{% if a['note'] %} · “{{ a['note'] }}”{% endif %}{% if a['thread'] and a['thread'][-1]['kind'] == 'back' %} · sent back: “{{ a['thread'][-1]['said'] }}”{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% set to_accept = themis_answers_to_accept() %}
+{% if to_accept %}
+<div class="card idc-waiting" style="margin-bottom:16px">
+  <div class="card-head"><div><h2>Team answers to accept</h2>
+    <p class="small muted" style="margin-top:2px">What the materials team or the marine unit answered. Nothing is written in until you accept it.</p></div></div>
+  <ul class="themis-recent">
+    {% for a in to_accept %}
+    <li><a href="{{ url_for('specs.ask_page', set_id=a['set_id'], key=a['qkey']) }}"><strong>{{ a['label'] }}</strong> · {{ a['set_name'] }}</a>
+      <span class="small muted">{{ a['team_name'] }} ({{ a['answered_by_name'] }}): “{{ shown_answer(a) }}”{% if a['why'] %} · {{ a['why'] }}{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if calls_waiting %}
 <div class="card idc-waiting" style="margin-bottom:16px">
   <div class="card-head"><div><h2>To add from the other trades</h2>

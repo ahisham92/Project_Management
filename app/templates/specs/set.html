@@ -31,6 +31,16 @@
   <a class="btn btn-primary btn-sm" href="{{ url_for('specs.idc_page', set_id=spec['id']) }}">{{ 'Accept or reject the changes' if may_edit and idc['open'] else 'Open the IDC' }} →</a>
 </div>
 {% endif %}
+{% set team_answers = themis_answers_to_accept(spec) %}
+{% set with_teams = themis_asks_live(spec).values() | selectattr('state', 'equalto', 'asked') | list %}
+{% if team_answers or with_teams %}
+<div class="idc-banner">
+  <p>{% if team_answers %}<strong>{{ team_answers | length }} team answer{{ 's' if team_answers | length != 1 }} to accept:</strong>
+    {% for a in team_answers %}{{ a['label'] }} ({{ a['team_name'] }}){{ ', ' if not loop.last else '.' }}{% endfor %}{% endif %}
+    {% if with_teams %}{{ with_teams | length }} question{{ 's' if with_teams | length != 1 }} waiting on {{ with_teams | map(attribute='team_name') | unique | join(' and ') }}.{% endif %}</p>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('specs.ask_page', set_id=spec['id'], key=team_answers[0]['qkey']) if team_answers | length == 1 else url_for('specs.asks_page', set_id=spec['id']) }}">{{ 'Accept or send back' if team_answers else 'See them' }} →</a>
+</div>
+{% endif %}
 {% set calls = themis_called_for(spec) %}
 {% if calls %}
 <div class="idc-banner idc-calls">
@@ -99,6 +109,8 @@
     {{ tool(url_for('specs.review_set', set_id=spec['id']), 'Team and sign-off', 'Who works on it, and each section prepared, checked and approved.') }}
     {{ tool(url_for('specs.comments', set_id=spec['id']), 'Review comments', 'Comments on the text, answered and closed.', (open_comments ~ ' open') if open_comments else '') }}
     {{ tool(url_for('specs.issues', set_id=spec['id']), 'Issued revisions', 'Issue a revision, and every revision issued so far with its files.') }}
+    {% set live_asks = themis_asks_live(spec) %}
+    {{ tool(url_for('specs.asks_page', set_id=spec['id']), 'Asked of the teams', 'Questions handed to the materials team or the marine unit before the IDC, each accepted by you before it is written in. Ask from any question card.', (live_asks | length ~ ' open') if live_asks else '') }}
     {% set idc_to = themis_trades() | rejectattr('code', 'equalto', spec['trade']) | list %}
     {% if idc %}{{ tool(url_for('specs.idc_page', set_id=spec['id']), 'IDC', 'Open: the other trades\' input as tracked changes, and where the documents disagree.', (idc['open'] ~ ' to decide') if idc['open'] else 'open') }}
     {% elif may_edit and idc_to %}

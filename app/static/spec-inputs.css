@@ -309,3 +309,7 @@
 .spec-decide-q.is-card .spec-decide-choice input { width: auto; flex: 0 0 auto; margin: 0; }
 .spec-card-saves { min-height: 0; margin: 4px 0 0; }
 .spec-card-saves .flash { margin: 4px 0; }
+
+/* A question handed to a team (materials, marine) before the IDC. */
+.spec-q-ask-team { margin: 4px 0 6px; }
+.spec-ask-link { font-size: 0.86rem; }

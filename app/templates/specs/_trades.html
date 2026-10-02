@@ -4,8 +4,13 @@
 {% set tabs = themis_trade_tabs(spec) %}
 <nav class="themis-trade-tabs" aria-label="Trades of this project">
   {% for t in tabs if t['set_id'] %}
+  {% if not t['here'] and not themis_may_see(t['set_id']) %}
+  <span class="themis-trade-tab is-closed" title="Another trade's specification: its own engineers work on it">
+    <span class="themis-trade-chip themis-trade-{{ t['code'] }}">{{ t['mark'] }}</span> {{ t['name'] }}{% if t['owner'] %} <span class="small muted">· {{ t['owner'] }}</span>{% endif %}</span>
+  {% else %}
   <a class="themis-trade-tab{% if t['here'] %} is-here{% endif %}" href="{{ url_for('specs.spec_set', set_id=t['set_id']) }}"{% if t['here'] %} aria-current="page"{% endif %}>
     <span class="themis-trade-chip themis-trade-{{ t['code'] }}">{{ t['mark'] }}</span> {{ t['name'] }}{% if t['owner'] and not t['here'] %} <span class="small muted">· {{ t['owner'] }}</span>{% endif %}</a>
+  {% endif %}
   {% endfor %}
   {% if may_add %}
   {% for t in tabs if not t['set_id'] %}

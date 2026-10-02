@@ -31,6 +31,28 @@
   <a class="btn btn-primary btn-sm" href="{{ url_for('specs.idc_page', set_id=spec['id']) }}">{{ 'Accept or reject the changes' if may_edit and idc['open'] else 'Open the IDC' }} →</a>
 </div>
 {% endif %}
+{% set calls = themis_called_for(spec) %}
+{% if calls %}
+<div class="idc-banner idc-calls">
+  <div>
+    <p><strong>{{ calls | length }} item{{ 's' if calls | length != 1 }} to add from the project's other trade{{ 's' if calls | map(attribute='from_trade') | unique | list | length > 1 }}</strong></p>
+    <ul class="idc-call-list">
+      {% for c in calls %}
+      <li><span><strong>{{ c['label'] }}</strong>: {{ c['why'] }}</span>
+        {% if may_edit %}
+        <form method="post" action="{{ url_for('specs.inputs_station', set_id=spec['id'], station='decide') }}" class="inline-form">
+          <input type="hidden" name="shown_opt" value="{{ c['key'] }}"><input type="hidden" name="from" value="project">
+          {% for v in c['values'] %}<input type="hidden" name="opt_{{ c['key'] }}" value="{{ v }}">{% endfor %}
+          <button type="submit" class="btn btn-primary btn-sm" title="Adds the answer and the sections it calls for">Add {{ c['suggest'] | lower }}</button>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('specs.story', set_id=spec['id']) }}#level-1">Choose in the brief</a>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
 {% for asked in themis_idc_of_project(spec) %}
 <div class="idc-banner">
   <p><strong>The {{ asked['of_trade'] | lower }} specification is sent to you for IDC</strong> by {{ asked['sent_by_name'] }} on {{ asked['sent_at'][:10] }}{% if asked['note'] %}: “{{ asked['note'] }}”{% endif %}. Put your input in as tracked changes.</p>

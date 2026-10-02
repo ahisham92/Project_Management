@@ -417,7 +417,7 @@
     <table class="themis-table">
       <thead><tr><th>What</th><th>This specification</th><th>The other trade's</th><th></th></tr></thead>
       <tbody>{% for b in between %}
-        <tr><td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both'}[b['kind']] }}</span></td>
+        <tr><td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both', 'called': 'Called for by the other trade'}[b['kind']] }}</span></td>
           <td>{{ b['here'] }}</td><td>{{ b['trade'] }}: {{ b['there'] }}</td>
           <td class="small">{% if b['kind'] != 'section' %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% endif %}</td></tr>
       {% endfor %}</tbody>

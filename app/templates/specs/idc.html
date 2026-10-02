@@ -57,7 +57,7 @@
       <tbody>
       {% for b in between %}
         <tr>
-          <td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both'}[b['kind']] }}</span></td>
+          <td><strong>{{ b['what'] }}</strong><br><span class="small muted">{{ {'project': 'Project details', 'brief': 'The brief', 'answer': 'A question both answer', 'section': 'A section in both', 'called': 'Called for by the other trade'}[b['kind']] }}</span></td>
           <td>{{ b['here'] }}</td>
           <td><span class="themis-trade-chip themis-trade-{{ 'geotechnical' if b['trade'] == 'Geotechnical' else 'structures' }}">{{ b['trade'] }}</span> {{ b['there'] }}</td>
           <td class="small">{% if b['kind'] == 'section' %}<span class="muted">One should refer to the other</span>{% else %}<a href="{{ url_for('specs.spec_set', set_id=b['other_id']) }}">Open the {{ b['trade'] | lower }} one</a>{% endif %}</td>

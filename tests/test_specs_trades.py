@@ -172,3 +172,28 @@ def test_a_geotechnical_specification_ticks_its_ground_works_and_tells_the_groun
     assert "no section written for them" not in page
     story = text(signed_in.get(f"/specs/sets/{geo['id']}/story"))
     assert "the instruments that watch the ground works" in story
+
+
+def test_what_the_structures_add_is_asked_of_the_geotechnical_specification(app, signed_in):
+    from app import specs_store, specs_trades
+    from app.db import execute
+
+    _library(app)
+    one = set_id_of(signed_in.post("/specs/sets", data={"name": "Riyadh Tower", "family": "15A",
+                                                       "trade": ["structures", "geotechnical"]}))
+    with app.app_context():
+        geo = specs_trades.sibling(specs_store.spec_set(one), "geotechnical")
+        assert specs_trades.called_for(geo) == []
+        execute("UPDATE spec_sets SET options = ? WHERE id = ?",
+                (json.dumps({"structures": "Buildings", "elements": "Piles|Columns"}), one))
+        calls = specs_trades.called_for(specs_store.spec_set(geo["id"]))
+    assert [c["key"] for c in calls] == ["ge_piles"] and calls[0]["suggest"] == "Bored piles and barrettes"
+    page = text(signed_in.get(f"/specs/sets/{geo['id']}"))
+    assert "the project has piles" in page and "Add bored piles and barrettes" in page
+    assert "To add from the other trades" in text(signed_in.get("/specs/"))
+    # One click answers it and puts in the piles sections.
+    signed_in.post(f"/specs/sets/{geo['id']}/inputs/decide",
+                   data={"shown_opt": "ge_piles", "opt_ge_piles": calls[0]["values"], "from": "project"})
+    with app.app_context():
+        assert "316323" in [s["number"] for s in specs_store.set_sections(geo["id"])]
+        assert specs_trades.called_for(specs_store.spec_set(geo["id"])) == []

@@ -309,7 +309,23 @@ def index():
                            others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
                            is_admin=_is_admin(), flagged=_flagged(mine), **dashboard(everything, mine),
-                           trades_of=_trades_of(everything), idcs_waiting=_idcs_waiting())
+                           trades_of=_trades_of(everything), idcs_waiting=_idcs_waiting(),
+                           calls_waiting=_calls_waiting(mine))
+
+
+def _calls_waiting(mine: list[dict]) -> list[dict]:
+    """The user's specifications another trade of the project has asked
+    something of (the structures have piles: the geotechnical brief needs them)."""
+    from .. import specs_trades
+
+    out = []
+    for s in mine:
+        if not s.get("trade_group"):
+            continue
+        calls = specs_trades.called_for(s)
+        if calls:
+            out.append({"spec": s, "calls": calls})
+    return out
 
 
 def _idcs_waiting() -> list[dict]:
@@ -1218,6 +1234,8 @@ def inputs_station(set_id: int, station: str):
         if not wants_json:
             for kind, text in messages:
                 flash(text, kind)
+            if request.form.get("from") == "project":
+                return redirect(url_for("specs.spec_set", set_id=set_id))
             back = "specs.story" if request.form.get("from") == "story" else "specs.review_inputs"
             return redirect(url_for(back, set_id=set_id) + f"#st-{station}")
         row = store.spec_set(set_id)

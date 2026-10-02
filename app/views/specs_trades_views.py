@@ -53,3 +53,13 @@ def add_trade(set_id: int):
 @bp.app_template_global("themis_trade_leads")
 def themis_trade_leads(code: str) -> list[dict]:
     return specs_trades.lead_choices().get(code, [])
+
+
+@bp.app_template_global("themis_called_for")
+def themis_called_for(spec) -> list[dict]:
+    """What the project's other trades have said that this specification has
+    not followed yet."""
+    try:
+        return specs_trades.called_for(spec)
+    except Exception:
+        return []

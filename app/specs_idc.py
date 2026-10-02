@@ -297,6 +297,11 @@ def between(row: Mapping[str, Any]) -> list[dict]:
                     label += f" ({key.split('@')[1].replace('_', ' ')})"
                 out.append({**base, "kind": "answer", "what": label, "here": a.replace("|", ", "),
                             "there": b.replace("|", ", "), "key": key})
+        for c in specs_trades.called_for(row):
+            if c["from_id"] == other["id"]:
+                out.append({**base, "kind": "called", "what": c["label"], "here": "Not in this brief yet",
+                            "there": f"{c['why']} Answer {c['suggest']}, or what the project has.",
+                            "key": c["key"]})
         for s in store.set_sections(other["id"]):
             if s["number"] in mine_sections:
                 out.append({**base, "kind": "section", "what": f"{s['number']} {s['title']}",

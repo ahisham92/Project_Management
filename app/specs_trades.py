@@ -197,3 +197,70 @@ def lead_choices() -> dict[str, list[dict]]:
 def user_name(user_id: int) -> str:
     row = query_one("SELECT name, email FROM users WHERE id = ?", (user_id,))
     return (row["name"] or row["email"]) if row else ""
+
+
+# --- what one trade's answers ask of another -------------------------------------
+# (trade it comes from, its question, the answers that call for it,
+#  trade it goes to, the question there, the answers that would cover it
+#  (empty: any but None or No), the answer to suggest, why in words)
+CALLS = (
+    (STRUCTURES, "elements", ("Piles", "Pile caps"), GEOTECHNICAL, "ge_piles", (), "Bored piles and barrettes",
+     "the project has piles"),
+    (STRUCTURES, "elements", ("Retaining walls", "Basement walls"), GEOTECHNICAL, "ge_retaining", (),
+     "Excavation support", "the project has retaining or basement walls"),
+    (STRUCTURES, "elements", ("Foundations", "Slab on grade", "Basement walls"), GEOTECHNICAL, "ge_earthworks",
+     (), "Earth moving", "the project has foundations or slabs on grade"),
+    (STRUCTURES, "elements", ("Quay walls",), GEOTECHNICAL, "ge_marine", (), "Dredging",
+     "the project has quay walls"),
+    (STRUCTURES, "structures", ("Marine structures",), GEOTECHNICAL, "ge_marine", (), "Dredging",
+     "the project builds marine structures"),
+    (STRUCTURES, "shoring", ("Yes",), GEOTECHNICAL, "ge_retaining", ("Excavation support",), "Excavation support",
+     "the works are shored"),
+    (GEOTECHNICAL, "ge_piles", (), STRUCTURES, "elements", ("Pile caps",), "Pile caps",
+     "the ground works have piles"),
+    (GEOTECHNICAL, "ge_retaining", ("Embedded retaining walls", "Diaphragm walls"), STRUCTURES, "elements",
+     ("Retaining walls", "Basement walls"), "Retaining walls", "the ground works have embedded or diaphragm walls"),
+)
+
+
+def _picks(value: str | None) -> set[str]:
+    return {v.strip().lower() for v in (value or "").split("|") if v.strip()}
+
+
+def _some(value: str | None) -> bool:
+    return bool(_picks(value) - {"none", "no"})
+
+
+def called_for(row: Mapping[str, Any]) -> list[dict]:
+    """What the project's other trades have said that this specification has
+    not followed yet: the structures say the building has piles, so the
+    geotechnical brief needs its piles (and the piles sections they call for).
+    Each with the question here, what to answer, and who said it."""
+    from . import specs_store as store
+
+    mine = clean(row.get("trade"))
+    here = store.chosen_for(row, scope=False)
+    known = {o["key"]: o for o in store.options()}
+    out, seen = [], set()
+    for other in siblings(row):
+        them = clean(other.get("trade"))
+        if other["id"] == row["id"] or them == mine:
+            continue
+        theirs = store.chosen_for(other, scope=False)
+        for src, key, values, dst, to_key, covers, suggest, why in CALLS:
+            if src != them or dst != mine or (to_key, suggest) in seen:
+                continue
+            said = _picks(theirs.get(key))
+            if not (said & {v.lower() for v in values} if values else _some(theirs.get(key))):
+                continue
+            have = here.get(to_key)
+            if (_picks(have) & {c.lower() for c in covers}) if covers else _some(have):
+                continue
+            seen.add((to_key, suggest))
+            o = known.get(to_key) or {}
+            kept = [v.strip() for v in (have or "").split("|") if v.strip() and v.strip().lower() not in ("none", "no")]
+            out.append({"key": to_key, "label": o.get("label") or to_key, "suggest": suggest,
+                        "values": kept + [suggest] if o.get("kind") == "many" else [suggest],
+                        "why": f"The {name(them).lower()} specification says {why}.", "from_trade": name(them),
+                        "from_id": other["id"]})
+    return out

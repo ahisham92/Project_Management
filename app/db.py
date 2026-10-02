@@ -593,6 +593,7 @@ def _ensure_specs(conn: sqlite3.Connection) -> None:
     _spec_issued(conn)
     _spec_packages(conn)
     _spec_places(conn)
+    _spec_trades(conn)
 
     from .specs_seed import EQUIVALENTS, OPTIONS, VARIABLES, WITHDRAWN, WORDING
 
@@ -773,6 +774,19 @@ def _spec_places(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "spec_sets", "lat", "REAL")
     _ensure_column(conn, "spec_sets", "lng", "REAL")
     _ensure_column(conn, "spec_sets", "covered", "TEXT NOT NULL DEFAULT '{}'")
+
+
+def _spec_trades(conn: sqlite3.Connection) -> None:
+    """The trades THEMIS writes for (structures, geotechnical): each account's
+    own trade, each specification's trade and the project it belongs to (the
+    specifications of one project, a trade each, share ``trade_group``: the id
+    of the first of them), and which trade each master section and brief
+    question is for (an option's blank trade: see specs_trades.option_trade)."""
+    _ensure_column(conn, "users", "themis_trade", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "spec_sets", "trade", "TEXT NOT NULL DEFAULT 'structures'")
+    _ensure_column(conn, "spec_sets", "trade_group", "INTEGER")
+    _ensure_column(conn, "spec_sections", "trade", "TEXT NOT NULL DEFAULT 'structures'")
+    _ensure_column(conn, "spec_options", "trade", "TEXT NOT NULL DEFAULT ''")
 
 
 def _spec_review(conn: sqlite3.Connection) -> None:

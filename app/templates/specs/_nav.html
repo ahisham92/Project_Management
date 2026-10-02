@@ -24,6 +24,7 @@
 <div class="themis-project-bar">
   <a class="themis-back" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}"><span aria-hidden="true">←</span> Back to the project</a>
   <span class="themis-project-name"><strong>{{ spec['name'] }}</strong>{% if spec.get('package') %} · {{ spec['package'] }}{% endif %}{% if spec.get('code') %} <span class="muted">{{ spec['code'] }}</span>{% endif %}{% if spec.get('family') %} <span class="spec-key">{{ spec['family'] }}</span>{% endif %}</span>
+  {% if spec.get('trade') %}{% from "specs/_trades.html" import trade_tabs %}{{ trade_tabs(spec, may_add=false) }}{% endif %}
 </div>
 {% elif ep not in ('specs.index', 'specs.library', 'specs.issued_list', 'specs.standards_register', 'specs.from_projects', 'specs.options') %}
 {% set to_library = ep.startswith('specs.library_') or ep in ('specs.edit_library_section', 'specs.check_library', 'specs.language_library', 'specs.standards') %}

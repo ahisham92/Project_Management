@@ -29,13 +29,29 @@ def _row(row: Any) -> dict | None:
 
 # --- options and variables ----------------------------------------------------
 
-def options() -> list[dict]:
+def options(trade: str | None = None) -> list[dict]:
+    """The brief's questions: every one, or those one trade answers (its own
+    and the shared ones)."""
+    from . import specs_trades
+
     out = []
     for row in query("SELECT * FROM spec_options ORDER BY position, id"):
         one = dict(row)
         one["choice_list"] = [c.strip() for c in one["choices"].split("|") if c.strip()]
+        one["trade"] = specs_trades.option_trade(one)
         out.append(one)
-    return out
+    return specs_trades.options_for(out, trade) if trade else out
+
+
+def options_of(spec_set: Mapping[str, Any] | None) -> list[dict]:
+    """The brief questions a specification answers, by its trade."""
+    return options(trade_of(spec_set)) if spec_set else options()
+
+
+def trade_of(spec_set: Mapping[str, Any] | None) -> str:
+    from . import specs_trades
+
+    return specs_trades.clean((spec_set or {}).get("trade") if spec_set else None)
 
 
 def variables() -> list[dict]:
@@ -61,10 +77,10 @@ def save_options(rows: Iterable[Mapping[str, str]]) -> None:
             kind = "many" if (row.get("kind") or "").strip().lower() == "many" else "one"
             conn.execute(
                 "INSERT OR REPLACE INTO spec_options (key, label, choices, default_value, grp, kind, "
-                "position) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "position, trade) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (key, row.get("label", "").strip() or key, choices,
                  row.get("default_value", "").strip(), (row.get("grp") or "").strip(), kind,
-                 position))
+                 position, (row.get("trade") or "").strip().lower()))
 
 
 def add_suggested() -> int:
@@ -95,7 +111,7 @@ def chosen_for(spec_set: Mapping[str, Any] | None, scope: bool = True) -> dict[s
     does not ask is off (see ``scoped``). The brief itself shows them as
     left (``scope=False``), to be on when what they hang on is picked."""
     stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
-    opts = options()
+    opts = options_of(spec_set)
     chosen = {o["key"]: stored[o["key"]] if o["key"] in stored else o["default_value"] for o in opts}
     return scoped(chosen, opts) if scope else chosen
 
@@ -168,11 +184,13 @@ def drop_template(family: str = "") -> None:
 DEFAULT_FAMILY = "15A"
 
 
-def families() -> list[dict]:
+def families(trade: str | None = None) -> list[dict]:
     """The kinds of specification, with how many sections the library has of
-    each: the office's three, and any other a library file brought in."""
+    each (of one trade's library, or of all): the office's three, and any other
+    a library file brought in."""
     counts = {r["family"]: r["n"] for r in query(
-        "SELECT family, COUNT(*) AS n FROM spec_sections GROUP BY family")}
+        "SELECT family, COUNT(*) AS n FROM spec_sections" + (" WHERE trade = ?" if trade else "")
+        + " GROUP BY family", (trade,) if trade else ())}
     out = [{"code": code, "name": name, "note": note, "sections": counts.pop(code, 0)}
            for code, name, note in specs_seed.FAMILIES]
     out += [{"code": code, "name": code, "note": "", "sections": n} for code, n in sorted(counts.items())
@@ -191,10 +209,18 @@ def clean_family(code: str | None) -> str:
 
 # --- the library ----------------------------------------------------------------
 
-def library(family: str | None = None) -> list[dict]:
+def library(family: str | None = None, trade: str | None = None) -> list[dict]:
+    """The master sections: all of them, or one kind's, or one trade's."""
+    where, args = [], []
+    if family:
+        where.append("family = ?")
+        args.append(family)
+    if trade:
+        where.append("trade = ?")
+        args.append(trade)
     rows = query("SELECT id, family, number, title, version, updated_by, updated_at, note, body, "
-                 "applies FROM spec_sections" + (" WHERE family = ?" if family else "")
-                 + " ORDER BY family, number", (family,) if family else ())
+                 "applies, trade FROM spec_sections" + (" WHERE " + " AND ".join(where) if where else "")
+                 + " ORDER BY family, number", tuple(args))
     out = []
     for row in rows:
         one = dict(row)
@@ -227,7 +253,8 @@ def version_body(section_id: int, version: int) -> list[dict] | None:
 
 
 def save_section(number: str, title: str, nodes: list[dict], note: str = "",
-                 section_id: int | None = None, family: str | None = None) -> int:
+                 section_id: int | None = None, family: str | None = None,
+                 trade: str | None = None) -> int:
     """A master section, new or saved over, kept as a new version either way.
 
     Saving text that is the same as the current version is not a new version:
@@ -252,10 +279,14 @@ def save_section(number: str, title: str, nodes: list[dict], note: str = "",
                 "VALUES (?, ?, ?, ?, 1, ?, ?)", (family, number, title, body, note, _who()))
             section_id = int(cursor.lastrowid)
             version = 1
+            if trade:
+                conn.execute("UPDATE spec_sections SET trade = ? WHERE id = ?", (trade, section_id))
         else:
             now = conn.execute("SELECT * FROM spec_sections WHERE id = ?", (section_id,)).fetchone()
             if now is None:
                 raise specs.SpecError("That section is not in the library any more.")
+            if trade and now["trade"] != trade:
+                conn.execute("UPDATE spec_sections SET trade = ? WHERE id = ?", (trade, section_id))
             if (now["body"] == body and now["title"] == title and now["number"] == number
                     and now["family"] == family):
                 return section_id
@@ -289,18 +320,19 @@ def fits(applies: str, chosen: Mapping[str, str]) -> bool:
     return bool(applies) and (applies == ALWAYS or specs.applies(applies, chosen))
 
 
-def called_for(chosen: Mapping[str, str], family: str | None = None) -> dict[str, list[dict]]:
+def called_for(chosen: Mapping[str, str], family: str | None = None,
+               trade: str | None = None) -> dict[str, list[dict]]:
     """The library sections a project's choices call for and the ones they rule
-    out, of one kind of specification; sections with no condition are in
-    neither list."""
+    out, of one kind of specification and one trade's library; sections with
+    no condition are in neither list."""
     out: dict[str, list[dict]] = {"in": [], "out": []}
-    for s in library(family):
+    for s in library(family, trade):
         if (s.get("applies") or "").strip():
             out["in" if fits(s["applies"], chosen) else "out"].append(s)
     return out
 
 
-def import_to_library(filename: str, data: bytes, family: str = "") -> tuple[int, str]:
+def import_to_library(filename: str, data: bytes, family: str = "", trade: str = "") -> tuple[int, str]:
     """A Word section into the library: a new section, or a new version of one.
 
     Paragraphs that read the same as the master's keep their ids, so a project
@@ -311,14 +343,16 @@ def import_to_library(filename: str, data: bytes, family: str = "") -> tuple[int
     if not number:
         raise specs.SpecError(f"{filename}: no section number in it or in its name.")
     family = clean_family(specs.family_from_filename(filename) or family)
+    from . import specs_trades
+    trade = specs_trades.from_filename(filename) or (specs_trades.clean(trade) if trade else "")
     existing = section_by_number(number, family)
     if existing:
         nodes = specs.align(specs.loads(existing["body"]), read["nodes"])
         save_section(number, read["title"] or existing["title"], nodes,
-                     note=f"Read from {filename}", section_id=existing["id"])
+                     note=f"Read from {filename}", section_id=existing["id"], trade=trade or None)
         return existing["id"], "updated"
     return save_section(number, read["title"], read["nodes"], note=f"Read from {filename}",
-                        family=family), "added"
+                        family=family, trade=trade or None), "added"
 
 
 def delete_section(section_id: int) -> None:
@@ -372,13 +406,16 @@ def create_set(fields: Mapping[str, str], copy_from: int | None = None) -> int:
     # and English for 03A, American for 15A, and so on.
     answers = (source["options"] if source else
                json.dumps(specs_seed.FAMILY_DEFAULTS.get(family, {}), ensure_ascii=False))
+    from . import specs_trades
+    # A copy is of the other's trade; a new one of the trade it is started for.
+    trade = specs_trades.clean(source.get("trade") if source else fields.get("trade"))
     set_id = insert(
         f"INSERT INTO spec_sets ({', '.join(SET_FIELDS)}, family, options, variables, declined, "
-        f"created_by) VALUES ({', '.join('?' * len(SET_FIELDS))}, ?, ?, ?, ?, ?)",
+        f"created_by, trade) VALUES ({', '.join('?' * len(SET_FIELDS))}, ?, ?, ?, ?, ?, ?)",
         [values[k] for k in SET_FIELDS] + [family, answers,
                                            source["variables"] if source else "{}",
                                            source["declined"] if source else "[]",
-                                           g.user["id"] if g.get("user") else None])
+                                           g.user["id"] if g.get("user") else None, trade])
     if fields.get("need_signoff"):
         # Held for sign-off and closed comments, as the new-project form offers.
         execute("UPDATE spec_sets SET need_signoff = 1 WHERE id = ?", (set_id,))
@@ -598,7 +635,7 @@ def auto_add(set_id: int) -> dict[str, list[dict]]:
     """
     row = spec_set(set_id)
     chosen = chosen_for(row)
-    called = called_for(chosen, row["family"])
+    called = called_for(chosen, row["family"], trade_of(row))
     have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
                                            "WHERE set_id = ?", (set_id,)) if r["section_id"]}
     numbers = {r["number"].lower() for r in query("SELECT number FROM spec_set_sections "
@@ -616,7 +653,7 @@ def would_add(set_id: int, chosen: Mapping[str, str]) -> dict[str, list[dict]]:
     sections it would put in, and the ones it has that they would rule out.
     Nothing is changed."""
     row = spec_set(set_id)
-    called = called_for(chosen, row["family"])
+    called = called_for(chosen, row["family"], trade_of(row))
     have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
                                            "WHERE set_id = ?", (set_id,)) if r["section_id"]}
     numbers = {r["number"].lower() for r in query("SELECT number FROM spec_set_sections "
@@ -632,7 +669,8 @@ def ruled_out(set_id: int) -> set[int]:
     row = spec_set(set_id)
     have = {r["section_id"] for r in query("SELECT section_id FROM spec_set_sections "
                                            "WHERE set_id = ?", (set_id,)) if r["section_id"]}
-    return {s["id"] for s in called_for(chosen_for(row), row["family"])["out"] if s["id"] in have}
+    return {s["id"] for s in called_for(chosen_for(row), row["family"], trade_of(row))["out"]
+            if s["id"] in have}
 
 
 def remove_by_master(set_id: int, section_ids: Iterable[int]) -> int:
@@ -1531,7 +1569,8 @@ def uncovered(chosen: Mapping[str, str], family: str | None = None
 
     out = []
     for o in options():
-        if (o.get("grp") or "") == "Basis":
+        # The ground conditions describe the site rather than call for works.
+        if (o.get("grp") or "") in ("Basis", "Ground conditions"):
             continue
         # The plain case (the question's default) is what the sections say as they stand.
         plain = {specs._norm(v) for v in (o.get("default_value") or "").split("|")}
@@ -1657,10 +1696,11 @@ def pack() -> bytes:
     data = {
         "format": "specs-writer-library/1",
         "sections": [{"family": s["family"], "number": s["number"], "title": s["title"],
+                      "trade": s.get("trade") or "structures",
                       "applies": s.get("applies") or "", "body": specs.loads(s["body"])}
                      for s in (dict(r) for r in query("SELECT * FROM spec_sections "
                                                       "ORDER BY family, number"))],
-        "options": [{k: o[k] for k in ("key", "label", "choices", "default_value", "grp", "kind")}
+        "options": [{k: o[k] for k in ("key", "label", "choices", "default_value", "grp", "kind", "trade")}
                     for o in options()],
         "variables": [{k: v[k] for k in ("key", "label", "default_value")} for v in variables()],
         "questions": _questions_packed(),
@@ -1744,8 +1784,10 @@ def _load_section(s: Mapping[str, Any], loaded: Mapping[str, Any], mode: str, co
     """One section of a library file read in (the part of a load that takes time)."""
     nodes = [specs.node(n["level"], n["text"], n.get("when", ""), n.get("id"))
              for n in s.get("body", []) if n.get("level") in specs.KINDS]
+    from . import specs_trades
     family = clean_family(s.get("family") or loaded.get("family"))
-    in_file.setdefault(family, set()).add(s["number"].strip().upper())
+    trade = specs_trades.clean(s.get("trade") or loaded.get("trade"))
+    in_file.setdefault(f"{family}/{trade}", set()).add(s["number"].strip().upper())
     have = section_by_number(s["number"], family)
     counted["sections"] += 1
     if have and mode == "add":
@@ -1755,7 +1797,7 @@ def _load_section(s: Mapping[str, Any], loaded: Mapping[str, Any], mode: str, co
         nodes = specs.align(specs.loads(have["body"]), nodes) if not _same_ids(have, nodes) else nodes
     section_id = save_section(s["number"], s.get("title", ""), nodes,
                               note="Read from a library file",
-                              section_id=have["id"] if have else None, family=family)
+                              section_id=have["id"] if have else None, family=family, trade=trade)
     if "applies" in s:
         set_applies(section_id, s["applies"])
     if not have:
@@ -1771,8 +1813,11 @@ def _load_the_rest(z, loaded: Mapping[str, Any], mode: str, counted: dict,
     """The end of a load, once every section is in: what ``replace`` takes out,
     then the questions, words, standards, wording and templates."""
     if mode == "replace":
-        for family, numbers in in_file.items():
-            for r in library(family):
+        # Only the kinds of the trades the file carries: a geotechnical file
+        # never takes structures' sections out.
+        for where, numbers in in_file.items():
+            family, _, trade = where.partition("/")
+            for r in library(family, trade or None):
                 if r["number"].upper() not in numbers:
                     delete_section(r["id"])
                     counted["removed"].append(f"{family} {r['number']}")
@@ -1781,13 +1826,15 @@ def _load_the_rest(z, loaded: Mapping[str, Any], mode: str, counted: dict,
         for o in loaded.get("options", []):
             last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_options").fetchone()["n"]
             conn.execute(
-                "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, position) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO "
+                "INSERT INTO spec_options (key, label, choices, default_value, grp, kind, position, trade) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO "
                 + ("NOTHING" if mode == "add" else
                    "UPDATE SET label = excluded.label, choices = excluded.choices, "
-                   "default_value = excluded.default_value, grp = excluded.grp, kind = excluded.kind"),
+                   "default_value = excluded.default_value, grp = excluded.grp, kind = excluded.kind, "
+                   "trade = excluded.trade"),
                 (_clean_key(o["key"]), o.get("label", ""), o.get("choices", ""),
-                 o.get("default_value", ""), o.get("grp", ""), o.get("kind", "one"), last + 1))
+                 o.get("default_value", ""), o.get("grp", ""), o.get("kind", "one"), last + 1,
+                 (o.get("trade") or "").strip().lower()))
             counted["options"] += 1
         for v in loaded.get("variables", []):
             last = conn.execute("SELECT COALESCE(MAX(position), 0) AS n FROM spec_variables").fetchone()["n"]

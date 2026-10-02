@@ -38,8 +38,38 @@
     </div>
   </div>
 
+  {% if not source %}
   <div class="card" style="margin-top:16px">
-    <div class="card-head"><div><h2><span class="spec-n">2</span> Kind of specification</h2>
+    <div class="card-head"><div><h2><span class="spec-n">2</span> Trades</h2>
+      <p class="small muted" style="margin-top:2px">Each trade writes its own specification of the project, with its own brief, story and sign-off. They sit side by side as tabs, and are checked against each other.</p></div></div>
+    <div class="card-body">
+      <div class="themis-trade-picks">
+        {% for t in trades %}
+        {% set on = (my_trade == t['code']) or (not my_trade and loop.first) %}
+        <div class="themis-trade-pick">
+          <label class="spec-family">
+            <input type="checkbox" name="trade" value="{{ t['code'] }}"{% if on %} checked{% endif %} data-trade-pick>
+            <span><strong><span class="themis-trade-chip themis-trade-{{ t['code'] }}">{{ t['mark'] }}</span> {{ t['name'] }}</strong>
+              <span class="small muted">{{ t['note'] }} {% set fam = trade_families[t['code']] %}{% if fam.values() | sum %}Library: {% for code, n in fam.items() if n %}{{ code }} {{ n }}{{ ', ' if not loop.last }}{% endfor %} sections.{% else %}Its library is not loaded yet.{% endif %}</span></span>
+          </label>
+          {% if my_trade != t['code'] %}
+          <label class="field themis-trade-lead"><span class="field-label">Led by</span>
+            <select name="lead_{{ t['code'] }}">
+              <option value="">Me</option>
+              {% for u in leads[t['code']] %}<option value="{{ u['id'] }}">{{ u['name'] }}</option>{% endfor %}
+            </select>
+            <span class="field-hint">{% if leads[t['code']] %}The {{ t['name'] | lower }} engineers on THEMIS.{% else %}Nobody has the {{ t['name'] | lower }} trade yet: an administrator gives it on the account.{% endif %}</span></label>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <p class="small muted" style="margin:10px 0 0">Marine works are part of each trade: say the project builds marine structures in its brief.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div><h2><span class="spec-n">{{ 2 if source else 3 }}</span> Kind of specification</h2>
       <p class="small muted" style="margin-top:2px">Which of the company's libraries its sections come from.{% if source %} A copy keeps {{ source['name'] }}'s kind ({{ source['family'] }}).{% endif %}</p></div></div>
     <div class="card-body">
       <fieldset class="spec-families"{% if source %} disabled{% endif %}>
@@ -55,7 +85,7 @@
   </div>
 
   <div class="card" style="margin-top:16px">
-    <div class="card-head"><div><h2><span class="spec-n">3</span> Where it starts from</h2>
+    <div class="card-head"><div><h2><span class="spec-n">{{ 3 if source else 4 }}</span> Where it starts from</h2>
       <p class="small muted" style="margin-top:2px">The company's master library, or an earlier project's specification with its amendments.</p></div></div>
     <div class="card-body themis-fields">
       <label class="field themis-span-2"><span class="field-label">Start from</span>

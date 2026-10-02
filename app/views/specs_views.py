@@ -308,7 +308,14 @@ def index():
     return render_template("specs/index.html", sets=everything, mine=mine,
                            others=[s for s in everything if s not in mine],
                            families=store.families(), library=store.library(),
-                           is_admin=_is_admin(), flagged=_flagged(mine), **dashboard(everything, mine))
+                           is_admin=_is_admin(), flagged=_flagged(mine), **dashboard(everything, mine),
+                           trades_of=_trades_of(everything))
+
+
+def _trades_of(rows) -> dict:
+    from .. import specs_trades
+
+    return specs_trades.project_trades(rows)
 
 
 def _package_source() -> dict | None:
@@ -336,11 +343,34 @@ def _flagged(rows) -> dict[int, int]:
 @bp.post("/sets")
 @login_required
 def new_set():
+    from .. import specs_trades
+
+    copy_from = request.form.get("copy_from", type=int)
+    # One specification per trade the project is given, joined as one project;
+    # a copy is one specification, of the other's trade.
+    trades = [t for t in specs_trades.CODES if t in request.form.getlist("trade")] or [
+        specs_trades.of_user(g.user) or specs_trades.DEFAULT]
+    if copy_from:
+        trades = trades[:1]
+    made: dict[str, int] = {}
     try:
-        set_id = store.create_set(request.form, copy_from=request.form.get("copy_from", type=int))
+        for trade in trades:
+            set_id = store.create_set({**request.form.to_dict(), "trade": trade}, copy_from=copy_from)
+            made[trade] = set_id
+            first = next(iter(made.values()))
+            if len(trades) > 1:
+                specs_trades.join(set_id, first)
+            lead = request.form.get(f"lead_{trade}", type=int)
+            if lead and lead != g.user["id"]:
+                review.save_team(set_id, {lead: "lead"})
     except specs.SpecError as exc:
         flash(str(exc), "error")
         return redirect(url_for("specs.new_project", start_from=request.form.get("copy_from") or None))
+    if len(made) > 1:
+        flash("Started the project's " + " and ".join(specs_trades.name(t).lower() for t in made)
+              + " specifications. Each trade has its own tab, brief and story.", "success")
+    # The engineer lands on their own trade's specification.
+    set_id = made.get(specs_trades.of_user(g.user)) or next(iter(made.values()))
     models = _uploads("model", MOST_MODEL)
     if models and _read_model(set_id, *models[0]):
         _added(set_id)
@@ -430,9 +460,9 @@ def spec_set(set_id: int):
     asked = specs_questions.asked(sections, chosen, row, _element_slugs(chosen)) if sections else []
     report = store.check_set(set_id) if sections else None
     waiting = store.open_items(set_id, report) if report else None
-    everything = store.options()
-    tiles = _tiles(everything, chosen)
-    library = store.library()
+    everything = store.options_of(row)
+    tiles = _tiles(everything, chosen, store.trade_of(row))
+    library = store.library(trade=store.trade_of(row))
     model = store.model_for(row)
     return render_template(
         "specs/set.html", spec=row, sections=sections, tiles=tiles,
@@ -441,10 +471,10 @@ def spec_set(set_id: int):
         location=specs_questions.answers_of(row).get("proj_location", ""),
         place=store.place_of(row), countries=specs_places.country_names(),
         uncover=store.uncovered_for(row, chosen), opts={o["key"]: o for o in everything},
-        groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS]),
+        groups=_grouped([o for o in everything if o["key"] not in TILE_KEYS and o["key"] not in GEO_TILE_KEYS]),
         waiting=waiting,
         chosen=chosen, picked={k: set(v.split("|")) for k, v in chosen.items()},
-        variables=store.variables(), values=values, families=store.families(),
+        variables=store.variables(), values=values, families=store.families(store.trade_of(row)),
         family=store.family_name(row["family"]),
         available=[s for s in library if s["id"] not in have and s["family"] == row["family"]],
         elsewhere=[s for s in library if s["id"] not in have and s["family"] != row["family"]],
@@ -476,10 +506,37 @@ GROUP_ICONS = {"Basis": "basis", "Sustainability and compliance": "sustainabilit
                "Bridges": "bridges"}
 
 
-def _tiles(options: list[dict], chosen: dict | None = None) -> list[dict]:
+# The ground works a geotechnical specification ticks instead of structural
+# elements: its scope questions, each with its drawing.
+GEO_TILES = (("ge_investigation", "scope"), ("ge_earthworks", "el_slab_on_grade"),
+             ("ge_improvement", "el_foundations"), ("ge_piles", "el_piles"), ("ge_pile_tests", "monitoring"),
+             ("ge_retaining", "el_retaining_walls"), ("ge_marine", "marine"), ("ge_tunnels", "shoring"),
+             ("ge_dams", "water_retaining"), ("ge_pavements", "el_slab_on_grade"))
+GEO_TILE_KEYS = {key for key, _icon in GEO_TILES}
+
+
+def _geo_tiles(known: dict) -> list[dict]:
+    out = []
+    for key, drawing in GEO_TILES:
+        o = known.get(key)
+        if o is None or not o["choice_list"]:
+            continue
+        if o["kind"] == "many":
+            tiles = [{"how": "many", "option": o, "value": c, "label": c, "icon": drawing}
+                     for c in o["choice_list"] if specs._norm(c) not in ("none", "no", "")]
+        else:
+            tiles = [{"how": "pick", "option": o, "value": "", "label": o["label"], "icon": drawing}]
+        out.append({"key": key, "title": o["label"], "tiles": tiles})
+    return out
+
+
+def _tiles(options: list[dict], chosen: dict | None = None, trade: str = "structures") -> list[dict]:
     """The element questions as tiles, under their headings: one tile a
-    question, or one an answer for a question that takes several."""
+    question, or one an answer for a question that takes several. A
+    geotechnical specification ticks its ground works instead."""
     known = {o["key"]: o for o in options}
+    if trade == "geotechnical":
+        return _geo_tiles(known)
     groups = [{"key": k, "title": t, "tiles": []} for k, t in specs_seed.ELEMENT_GROUPS]
     by_key = {grp["key"]: grp for grp in groups}
     for key, grp, how, drawing in specs_seed.ELEMENTS:
@@ -553,7 +610,7 @@ def save_set(set_id: int):
                         + (f"#step-{step}" if step in ("elements", "questions", "sections") else ""))
     chosen = {DECIDED: "1"}            # saving the project's choices is deciding them
     toggles = {key for key, _g, how, _i in specs_seed.ELEMENTS if how == "toggle"}
-    for o in store.options():
+    for o in store.options_of(row):
         key = o["key"]
         if key in toggles and len(o["choice_list"]) >= 2 and key in request.form.getlist("tile_shown"):
             # A ticked tile is the question's second answer; an unticked one its first.
@@ -561,7 +618,7 @@ def save_set(set_id: int):
         elif o["kind"] == "many":
             ticked = [v for v in request.form.getlist(f"opt_{key}") if v]
             if not ticked and key in request.form.getlist("tile_shown"):
-                ticked = [c for c in o["choice_list"] if specs._norm(c) == "none"][:1]
+                ticked = [c for c in o["choice_list"] if specs._norm(c) in ("none", "no")][:1]
             chosen[key] = "|".join(ticked)
             if key == "elements":
                 chosen[key] = _with_element(o, chosen[key], request.form.get("element_new", ""))
@@ -977,7 +1034,7 @@ def _decide_page(row, data: dict, confirm: dict | None = None) -> dict:
     chosen = confirm["chosen"] if confirm else _brief_chosen(row)
     stored = json.loads(row["options"] or "{}")
     st = next(s for s in data["stations"] if s["id"] == "decide")
-    options = store.options()
+    options = store.options_of(row)
     return {"spec": row, "station": st, "level": st["level"], "may_edit": review.may(row, g.user, "edit"),
             "groups": _grouped(options), "chosen": chosen, "confirm": confirm,
             "picked": {k: set(v.split("|")) for k, v in chosen.items()},
@@ -1021,7 +1078,8 @@ def _scene(set_id: int, row, sections, asked=None, words: bool = True) -> dict:
         asked if asked is not None else _asked(set_id, row, sections),
         review.issued_words(row, sections, marked=True) if words else [], _labels(),
         lambda row_id, node_id: url_for("specs.set_section", set_id=set_id, row_id=row_id) + f"#p-{node_id}",
-        chosen=_brief_chosen(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options())
+        chosen=_brief_chosen(row), decided=bool(stored.get(specs_inputs.DECIDED)), options=store.options_of(row),
+        trade=store.trade_of(row))
 
 
 def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:
@@ -1033,14 +1091,14 @@ def _decide(set_id: int, row) -> tuple[list[tuple[str, str]], dict | None]:
 
     shown = set(request.form.getlist("shown_opt"))
     given = {}
-    for o in store.options():
+    for o in store.options_of(row):
         key = o["key"]
         if key not in shown:
             continue
         if o["kind"] == "many":
             ticked = [v for v in request.form.getlist(f"opt_{key}") if v]
             if not ticked:
-                ticked = [c for c in o["choice_list"] if specs._norm(c) == "none"][:1]
+                ticked = [c for c in o["choice_list"] if specs._norm(c) in ("none", "no")][:1]
             given[key] = "|".join(ticked)
         else:
             given[key] = request.form.get(f"opt_{key}", "")
@@ -2180,3 +2238,5 @@ from . import specs_issued_views  # noqa: E402,F401
 from . import specs_packages_views  # noqa: E402,F401
 # The start page's dashboard, a new project's page, and .themis files in and out.
 from . import specs_home_views  # noqa: E402,F401
+# A project's trades (structures, geotechnical) and the tabs between them.
+from . import specs_trades_views  # noqa: E402,F401

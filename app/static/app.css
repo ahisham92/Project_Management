@@ -1459,3 +1459,34 @@ details.card > summary::-webkit-details-marker { display: none; }
 .spec-signed { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; margin: 0; }
 .spec-signed dt { color: var(--muted); }
 .spec-signed dd { margin: 0; }
+
+/* --- Trades: each trade's specification of a project, as tabs ------------------- */
+.themis-trade-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.04em; vertical-align: 1px; border: 1px solid currentColor; line-height: 1.5; }
+.themis-trade-structures { color: #1f4e8c; background: rgba(31, 78, 140, 0.08); }
+.themis-trade-geotechnical { color: #8a5a14; background: rgba(166, 124, 58, 0.12); }
+[data-theme="dark"] .themis-trade-structures { color: #8fb6ec; }
+[data-theme="dark"] .themis-trade-geotechnical { color: #e0b46c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .themis-trade-structures { color: #8fb6ec; }
+  :root:not([data-theme="light"]) .themis-trade-geotechnical { color: #e0b46c; } }
+.themis-trade-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; margin: 4px 0 14px;
+  border-bottom: 1px solid var(--border); }
+.themis-project-bar .themis-trade-tabs { margin: 0 0 0 auto; border-bottom: 0; }
+.themis-trade-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--border);
+  border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--surface-2, transparent); color: var(--ink-2);
+  font-size: 0.875rem; text-decoration: none; cursor: pointer; }
+.themis-project-bar .themis-trade-tab { border-radius: 999px; border-bottom: 1px solid var(--border); padding: 3px 10px; }
+.themis-trade-tab:hover { color: var(--ink); }
+.themis-trade-tab.is-here { background: var(--surface, #fff); color: var(--ink); font-weight: 600;
+  box-shadow: inset 0 3px 0 var(--series-1); }
+.themis-project-bar .themis-trade-tab.is-here { box-shadow: inset 0 0 0 1px var(--series-1); }
+.themis-trade-tab.is-add { border-style: dashed; color: var(--series-1); list-style: none; }
+.themis-trade-tab.is-add::-webkit-details-marker { display: none; }
+.themis-trade-add { position: relative; }
+.themis-trade-add-form { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 300px; padding: 14px;
+  background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  display: grid; gap: 10px; }
+.themis-trade-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.themis-trade-pick { display: grid; gap: 8px; align-content: start; }
+.themis-trade-lead { margin: 0 0 0 28px; }
+.themis-trade-pick:not(:has(input[data-trade-pick]:checked)) .themis-trade-lead { display: none; }

@@ -40,6 +40,22 @@ GROUPS = [
     "Demolition, shoring and monitoring",
     "Repair and maintenance",
 ]
+# The geotechnical trade's groups (its library's banks are written to these).
+GEO_GROUPS = [
+    "Site investigation and surveys",
+    "Site preparation and earthworks",
+    "Ground improvement",
+    "Piles and pile testing",
+    "Retaining walls, excavation support and slopes",
+    "Pavements",
+    "Tunnels",
+    "Dams",
+    "Marine works",
+    "Materials for the ground works",
+    "Monitoring and instrumentation",
+]
+STRUCTURAL_GROUPS = list(GROUPS)
+GROUPS = GROUPS + GEO_GROUPS
 OTHER = "Other details"
 FIELDS = ("key", "label", "grp", "help", "suggested", "per_element", "many", "optional", "position")
 # What explains a question: a file that lacks them never clears them.
@@ -593,6 +609,9 @@ def asked(sections: Iterable[Mapping[str, Any]], chosen: Mapping[str, str],
                     q["suggested"] = specs_places.join_location(city, country)
         out.append(q)
     out += _switches(sections, spec_set)
+    trade = (spec_set or {}).get("trade") or "structures"
+    for q in out:
+        q["trade"] = trade
     order = {g: i for i, g in enumerate(GROUPS + [OTHER])}
     out.sort(key=lambda q: (order[q["group"]], q["position"], q["label"]))
     return out
@@ -648,7 +667,7 @@ def _switches(sections: Iterable[Mapping[str, Any]], spec_set: Mapping[str, Any]
     stored = json.loads(spec_set["options"] or "{}") if spec_set else {}
     raw = specs_store.chosen_for(spec_set, scope=False)
     out = []
-    for o in specs_store.options():
+    for o in specs_store.options_of(spec_set):
         if o["key"] not in used or o.get("grp") not in GROUPS:
             continue
         if not specs_inputs.brief_applies(o["key"], raw):
@@ -720,7 +739,51 @@ STORY = [
      "service.", ["Repair and maintenance"]),
     ("other-details", OTHER, "Questions the library does not place in a chapter.", [OTHER]),
 ]
+# The geotechnical story: the ground known, made ready, improved and held,
+# what goes into it, what is built on and through it, and how it is proved
+# and watched. The structural groups its sections share (concrete, steel)
+# are the materials that go into the ground works.
+GEO_MATERIALS = "Materials for the ground works"
+GEO_STORY = [
+    ("the-project", "The project", "Where it is, who is who, and what this specification is for.",
+     ["Project information"]),
+    ("before-work-starts", "Before work starts", "What the contractor submits and what is agreed "
+     "before anything is dug.", ["General requirements and submittals"]),
+    ("knowing-the-ground", "Knowing the ground", "Boreholes, tests and surveys: what the ground and "
+     "the seabed are.", ["Site investigation and surveys"]),
+    ("preparing-the-ground", "Preparing the ground", "Clearing, digging, filling and compacting, and "
+     "the liners and drains laid in the ground.", ["Site preparation and earthworks"]),
+    ("improving-the-ground", "Improving the ground", "Making weak ground strong enough: drains, "
+     "compaction, columns, mixing and grouting.", ["Ground improvement"]),
+    ("holding-the-ground", "Holding the ground", "Walls, nails, anchors and slopes that keep the "
+     "ground where it is.", ["Retaining walls, excavation support and slopes",
+                             "Demolition, shoring and monitoring"]),
+    ("into-the-ground", "Into the ground", "The piles that carry the structure down to firm ground, "
+     "and how they are tested.", ["Piles and pile testing"]),
+    ("by-the-sea", "By the sea", "Dredging, reclamation, breakwaters, revetments and the rest of "
+     "the marine works.", ["Marine works"]),
+    ("through-the-ground", "Through the ground", "Tunnels: boring, support, linings and grouting.",
+     ["Tunnels"]),
+    ("holding-water", "Holding water back", "Dams: their foundations, fill, protection and grouting.",
+     ["Dams"]),
+    ("on-the-ground", "On the ground", "The layers of the roads and hardstandings.", ["Pavements"]),
+    ("ground-materials", "What goes into the ground", "Concrete, grout, steel, aggregates and "
+     "geosynthetics used in the ground works.",
+     [GEO_MATERIALS, "Concrete materials", "Concrete mixes and properties", "Placing, finishing and curing",
+      "Formwork and accessories", "Reinforcement", "Post-tensioning and precast", "Structural steel",
+      "Decking, framing and joists", "Stairs and railings", "Waterproofing", "Bridges",
+      "Repair and maintenance"]),
+    ("proving-it", "Proving it", "Tests, inspections and what happens when a result falls short.",
+     ["Quality, testing and inspection"]),
+    ("watching-it", "Watching it", "Instruments that show how the ground and the works move.",
+     ["Monitoring and instrumentation"]),
+    ("other-details", OTHER, "Questions the library does not place in a chapter.", [OTHER]),
+]
 CHAPTER_OF = {g: c[0] for c in STORY for g in c[3]}
+
+
+def story_of(trade: str | None) -> list:
+    return GEO_STORY if trade == "geotechnical" else STORY
 
 
 def story(questions: list[dict]) -> list[dict]:
@@ -734,7 +797,8 @@ def story(questions: list[dict]) -> list[dict]:
     after."""
     by_group = {g["name"]: g for g in grouped(questions)}
     out = []
-    for slug, name, lead, groups in STORY:
+    trade = next((q.get("trade") for q in questions if q.get("trade")), None)
+    for slug, name, lead, groups in story_of(trade):
         held = [by_group[g] for g in groups if g in by_group]
         if not held:
             continue

@@ -66,11 +66,16 @@ def new_project():
     mine = [s for s in everything if s["created_by"] == g.user["id"] or s["id"] in on]
     start_from = request.args.get("start_from", type=int)
     source = store.spec_set(start_from) if start_from else None
+    from .. import specs_trades
+
     return render_template(
         "specs/new.html", families=store.families(), mine=mine,
         others=[s for s in everything if s not in mine], start_from=start_from, source=source,
         place=store.place_of(source) if source else ("", ""), library=store.library(),
-        countries=specs_places.country_names(), is_admin=_is_admin())
+        countries=specs_places.country_names(), is_admin=_is_admin(),
+        trades=specs_trades.choices(), my_trade=specs_trades.of_user(g.user),
+        leads=specs_trades.lead_choices(),
+        trade_families={t: {f["code"]: f["sections"] for f in store.families(t)} for t in specs_trades.CODES})
 
 
 @bp.get("/sets/<int:set_id>/themis")

@@ -4,7 +4,7 @@
 {% block title %}{{ asset['name'] }} · Safety and security · MarineTwin{% endblock %}
 
 {% block content %}
-{{ page_head(asset, "People's safety on the terminal and the security of the port facility: incidents and their rates, the permits open now, access, CCTV and alarms. Simulated for the prototype, in the shape the incident register, permit-to-work system, access control and video management system would supply.") }}
+{{ page_head(asset, "Incidents, permits to work, access, CCTV and alarms. Simulated for the prototype.") }}
 {{ asset_tabs(asset) }}
 
 {% set k = safe['kpis'] %}
@@ -25,9 +25,15 @@
   {{ tile('Crane exclusion zones', safe['proximity'], 'people detected inside in 24 h', 'warning' if safe['proximity'] >= 5 else 'good') }}
 </div>
 
-<div style="margin-top:16px">{{ actions_card(safe['actions'], 'Nothing needs doing: no open serious incidents, no permits about to lapse, every camera online.') }}</div>
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ safe['actions'] | length }}"
+         {% if safe['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif safe['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(safe['actions'], 'Nothing needs doing: no open serious incidents, no permits about to lapse, every camera online.') }}</div>
 
-<div class="grid grid-2" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="Permits and alarms" data-slug="permits">
+<div class="grid grid-2">
   <div class="card">
     <div class="card-head"><div><h2>Permits to work open now</h2></div></div>
     <div class="card-body table-scroll">
@@ -51,7 +57,10 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="Incidents" data-slug="incidents">
+<div class="card">
   <div class="card-head"><div><h2>Incidents, last 90 days</h2></div></div>
   <div class="card-body table-scroll">
     <table class="table">
@@ -68,11 +77,16 @@
 </div>
 
 {% if safe['structural'] %}
-<div class="card" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="On the structure" data-slug="structure" data-count="{{ safe['structural'] | length }}">
+<div class="card">
   <div class="card-head"><div><h2>Safety items on the structure</h2><p class="small muted" style="margin-top:2px">Quay ladders, and any fender or bollard graded unsafe, from the Structure tab.</p></div></div>
   <div class="card-body"><ul class="marine-advice">
     {% for e in safe['structural'] %}<li>{{ state_badge(e['state']) }} <strong>{{ e['name'] }}</strong> <span class="muted">{{ element_kind_name.get(e['kind']) }}</span></li>{% endfor %}
   </ul></div>
 </div>
 {% endif %}
+</section>
+</div>
 {% endblock %}

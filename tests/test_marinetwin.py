@@ -206,7 +206,7 @@ def test_a_linked_asset_takes_its_design_from_triton(app, signed_in, demo, tmp_p
 
     assert marine_triton.design_utilisation(project.id, section.id)["P01"]["ur"] == 0.93
     assert any(p["name"] == "Berth 1" for p in marine_triton.projects())
-    assert "Berth 1" in text(signed_in.get(demo))
+    assert "Berth 1" in text(signed_in.get(demo + "/setup"))
 
     signed_in.post(demo + "/settings", data={"name": "Demo berth — Quay 1", "kind": "quay_wall",
                                              "commissioned": "2018-03-01", "design_life": "50",
@@ -447,7 +447,7 @@ def test_a_big_ship_over_the_fender_rating_is_flagged(monkeypatch):
 
 def test_the_operations_page_answers_now_next_and_what_to_do(signed_in, demo):
     page = text(signed_in.get(demo + "/operations"))
-    for heading in ("What is happening now", "What will happen next", "What should we do",
+    for heading in ('data-tab="Now"', 'data-tab="Next 72 hours"', 'data-tab="What to do"',
                     "Wind, next 72 hours", "Ships", "Cranes", "simulated"):
         assert heading in page
     assert "<svg" in page and 'href="' + demo + '/operations"' in text(signed_in.get(demo))
@@ -493,7 +493,7 @@ def test_a_narrow_gate_queues_road_trucks():
 
 def test_scenarios_are_kept_compared_and_deleted(signed_in, demo):
     page = text(signed_in.get(demo + "/simulation"))
-    assert "Baseline" in page and "Scenarios side by side" in page and "<svg" in page
+    assert "Baseline" in page and "Compare scenarios" in page and "<svg" in page
     answer = signed_in.post(demo + "/simulation", data={**{k: v for k, v in marine_sim.DEFAULTS.items()},
                                                         "name": "More tractors", "trucks": "30"})
     assert answer.status_code == 302
@@ -552,3 +552,119 @@ def test_every_new_tab_opens(signed_in, demo):
                         ("/carbon", "Month by month"), ("/safety", "Incidents, last 90 days")):
         page = text(signed_in.get(demo + path))
         assert words in page and "Safety &amp; security" in page
+
+
+# --- where it is: the Revit model's site, the map, and the terminal type -------------------
+
+from pathlib import Path  # noqa: E402
+
+from app import marine_ifc, marine_sim  # noqa: E402
+
+FIXTURE = Path(__file__).parent / "fixtures" / "marinetwin_berth.ifc"
+
+
+def test_the_ifc_gives_the_site_its_datum_and_the_elements():
+    found = marine_ifc.read_file(FIXTURE)
+    site = found["site"]
+    assert (site["latitude"], site["longitude"], site["source"]) == (pytest.approx(6.43872, abs=1e-5), pytest.approx(3.38945, abs=1e-5), "IfcSite")
+    assert site["rotation"] == pytest.approx(20.0, abs=0.01) and site["epsg"] == "EPSG:32631"
+    assert found["msl_cd"] == pytest.approx(0.9) and found["terminal_type"] == "roro"
+    names = [e["name"] for e in found["elements"]]
+    assert len(names) == 16 and not any("Lamp" in n for n in names)
+    by = {e["name"]: e for e in found["elements"]}
+    assert by["RR1"]["kind"] == "ramp"
+    assert by["F1"]["rated_reaction"] == pytest.approx(1650) and by["BOL1"]["bollard_capacity"] == pytest.approx(100)
+    assert by["P01"]["global_id"] and by["DK1"]["kind"] == "slab"
+
+
+def test_without_a_site_latitude_the_map_conversion_is_used():
+    text = FIXTURE.read_text().replace("(6,26,19,392000),(3,23,22,20000)", "$,$")
+    site = marine_ifc.read(text)["site"]
+    assert site["source"] != "IfcSite"
+    assert (site["latitude"], site["longitude"]) == (pytest.approx(6.43856, abs=1e-4), pytest.approx(3.38118, abs=1e-4))
+
+
+def test_utm_comes_back_as_latitude_and_longitude():
+    lat, lon = marine_ifc.utm_to_latlon(542150, 711700, 31)
+    assert (lat, lon) == (pytest.approx(6.43856, abs=1e-5), pytest.approx(3.38118, abs=1e-5))
+    lat, lon = marine_ifc.utm_to_latlon(500000, 0, 31)
+    assert (lat, lon) == (pytest.approx(0, abs=1e-6), pytest.approx(3, abs=1e-6))
+
+
+def test_a_model_position_is_turned_onto_the_map():
+    asset = {"latitude": 6.0, "longitude": 3.0, "rotation": 90.0}
+    lat, lon = marine.geolocate(asset, 100.0, 0.0)          # x turned 90° points north
+    assert lat == pytest.approx(6.0 + 100 / 111_320, abs=1e-7) and lon == pytest.approx(3.0, abs=1e-7)
+    assert marine.geolocate({"latitude": None, "longitude": None, "rotation": 0}, 1, 1) is None
+
+
+def test_uploading_the_model_sets_the_site_and_imports_its_elements(app, signed_in):
+    signed_in.post("/marinetwin/assets", data={"name": "Berth 4", "kind": "quay_wall", "commissioned": "2024-01-01",
+                                                   "design_life": "50", "corrosion_code": "bs6349"})
+    with app.app_context():
+        asset_id = connect(app.config["DATABASE"]).execute("SELECT id FROM marine_assets WHERE name = 'Berth 4'").fetchone()["id"]
+    page = f"/marinetwin/assets/{asset_id}"
+    answer = signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")},
+                            content_type="multipart/form-data", follow_redirects=True)
+    assert "16 elements" in text(answer) and "Import the ticked elements" in text(answer)
+    twin = signed_in.get(page + "/twin.json").get_json()
+    assert twin["asset"]["terminal"] == "roro" and twin["asset"]["latitude"] == pytest.approx(6.43872)
+    assert twin["asset"]["rotation"] == pytest.approx(20.0) and twin["asset"]["msl_cd"] == pytest.approx(0.9)
+    signed_in.post(page + "/model/import", data={"names": ["P01", "F1", "RR1"]})
+    twin = signed_in.get(page + "/twin.json").get_json()
+    by = {e["name"]: e for e in twin["elements"]}
+    assert set(by) == {"P01", "F1", "RR1"} and by["RR1"]["kind"] == "ramp"
+    gid = {e["name"]: e["global_id"] for e in marine_ifc.read_file(FIXTURE)["elements"]}
+    assert by["P01"]["ref"] == gid["P01"]
+    signed_in.post(page + "/model/import")                   # the rest, and nothing twice
+    assert len(signed_in.get(page + "/twin.json").get_json()["elements"]) == 16
+    shown = text(signed_in.get(page + "/setup"))
+    assert "Where it is" in shown and '"elements"' in shown and "RoRo (vehicles)" in shown
+    assert "Berth 4" in text(signed_in.get("/marinetwin/"))
+
+
+def test_the_world_map_carries_every_located_asset(signed_in, demo):
+    page = text(signed_in.get("/marinetwin/"))
+    assert "Where they are" in page and "6.43872" in page
+
+
+def test_each_terminal_type_speaks_its_own_words():
+    now = datetime(2026, 10, 3, 12)
+    for terminal, prefix in (("container", "STS"), ("general_cargo", "MHC"), ("roro", "Ramp gang"), ("bulk", "SU")):
+        cranes = marine_ops.cranes(1, now, gust=30.0, terminal=terminal)
+        assert cranes and all(c["name"].startswith(prefix) for c in cranes)
+        if terminal == "roro":
+            assert all(c["state"] != "critical" or "wind" not in c.get("why", "") for c in cranes)
+        ships = marine_ops.lineup(1, now, terminal)
+        assert ships and {s["name"] for s in ships} <= {f[0] for f in marine_ops.FLEETS[terminal]}
+        words = marine_sim.vocab(terminal)
+        result = marine_sim.run(1, marine_sim.DEFAULTS, detail=False, terminal=terminal)
+        assert result and words
+
+
+def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo):
+    with app.app_context():
+        asset = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_assets").fetchone()
+    form = {k: asset[k] if asset[k] is not None else "" for k in ("name", "kind", "location", "client", "commissioned",
+                                                                   "design_life", "corrosion_code", "latitude", "longitude",
+                                                                   "rotation", "msl_cd")}
+    form["terminal_type"] = "roro"
+    signed_in.post(demo + "/settings", data=form)
+    assert signed_in.get(demo + "/twin.json").get_json()["asset"]["terminal"] == "roro"
+    assert "vehicles" in text(signed_in.get(demo + "/operations")).lower()
+    assert signed_in.get(demo + "/simulation").status_code == 200
+
+
+def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
+    for path in ("", "/setup", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+        page = text(signed_in.get(demo + path))
+        assert page.count('class="mt-step ') == 6 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+    front = text(signed_in.get("/marinetwin/"))
+    assert front.count('class="mt-step ') == 6 and front.count("mt-step s") - front.count(" off") == 1
+
+
+def test_setting_up_lands_on_the_setup_step(signed_in):
+    answer = signed_in.post("/marinetwin/assets", data={"name": "Berth 9", "kind": "quay_wall", "commissioned": "2024-01-01"})
+    assert answer.headers["Location"].endswith("/setup")
+    page = text(signed_in.get(answer.headers["Location"]))
+    assert 'data-tab="Revit model"' in page and "Revit Modelling Guide" in page

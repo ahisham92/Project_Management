@@ -1,20 +1,18 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty %}
-{% from "marine/_macros.html" import state_badge, health %}
+{% from "marine/_macros.html" import state_badge, health, asset_tabs %}
 {% block title %}MarineTwin{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
     <h1>MarineTwin</h1>
-    <p class="small muted" style="margin-top:2px">
-      The structures we designed, after handover: each one's Revit model, its sensors, and how it is
-      standing up against the design Triton did for it. Where the steel is losing section faster than
-      it was allowed to, where strains run past their limits, and what to do about it.
-    </p>
+    <p class="small muted" style="margin-top:2px">Our structures after handover: how each is standing up against its Triton design, and what to do. Pick one to start.</p>
   </div>
 </div>
+
+{{ asset_tabs() }}
 
 <div class="grid grid-4">
   {{ tile('Assets', totals['assets'], 'structures being monitored') }}
@@ -25,11 +23,13 @@
           'warning' if totals['warning'] else 'good', 'watch' if totals['warning'] else 'none') }}
 </div>
 
-<div class="card" style="margin-top:16px">
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="Assets" data-slug="assets" data-count="{{ assets | length }}">
+<div class="card">
   <div class="card-head"><div><h2>Assets</h2></div></div>
   <div class="card-body">
     {% if not assets %}
-      {{ empty('No assets yet', 'Set one up below, or start with the demonstration berth to see the twin working.') }}
+      {{ empty('No assets yet', 'Add one under Add an asset, or start with the demonstration berth to see the twin working.') }}
     {% else %}
     <div class="table-scroll">
       <table class="table">
@@ -62,7 +62,21 @@
   </div>
 </div>
 
-<div class="grid grid-2" style="margin-top:16px">
+</section>
+
+{% if world['assets'] %}
+<section class="mt-panel" data-tab="Map" data-slug="map">
+<div class="card">
+  <div class="card-head"><div><h2>Where they are</h2>
+    <p class="small muted" style="margin-top:2px">From each model's site coordinates, or as typed in on the asset. Click one to open it.</p></div></div>
+  <div class="card-body"><div class="marine-map marine-map-world" data-map='{{ world | tojson }}'></div></div>
+</div>
+
+</section>
+{% endif %}
+
+<section class="mt-panel" data-tab="Add an asset" data-slug="add" {% if not assets %}data-open="1"{% endif %}>
+<div class="grid grid-2">
   <div class="card">
     <div class="card-head"><div><h2>Set up an asset</h2>
       <p class="small muted" style="margin-top:2px">One structure: a quay wall, a jetty, a dolphin. Its elements,
@@ -100,4 +114,12 @@
     </div>
   </div>
 </div>
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='marinetwin-map.js') }}" defer></script>
 {% endblock %}

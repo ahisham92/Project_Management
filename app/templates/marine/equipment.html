@@ -4,7 +4,7 @@
 {% block title %}{{ asset['name'] }} · Equipment · MarineTwin{% endblock %}
 
 {% block content %}
-{{ page_head(asset, "The asset register and its maintenance: every crane, vehicle and plant item, its service against running hours, its reliability and the work orders open on it. Simulated for the prototype, in the shape a CMMS would supply.") }}
+{{ page_head(asset, "Every crane, vehicle and plant item: service due, reliability and open work orders. Simulated, in the shape a CMMS would supply.") }}
 {{ asset_tabs(asset) }}
 
 {% set u = upkeep %}
@@ -17,9 +17,15 @@
           'good' if u['availability'] >= 98 else 'warning', 'good' if u['availability'] >= 98 else 'below 98%') }}
 </div>
 
-<div style="margin-top:16px">{{ actions_card(u['actions'], 'Nothing is overdue and nothing is wearing faster than it should.') }}</div>
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ u['actions'] | length }}"
+         {% if u['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif u['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(u['actions'], 'Nothing is overdue and nothing is wearing faster than it should.') }}</div>
 
-<div class="card" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="By type" data-slug="by-type">
+<div class="card">
   <div class="card-head"><div><h2>By type</h2></div></div>
   <div class="card-body table-scroll">
     <table class="table">
@@ -34,7 +40,10 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="Work orders" data-slug="work-orders">
+<div class="card">
   <div class="card-head"><div><h2>Work orders open</h2></div></div>
   <div class="card-body table-scroll">
     <table class="table">
@@ -50,7 +59,10 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="Asset register" data-slug="register">
+<div class="card">
   <div class="card-head"><div><h2>Asset register</h2>
     <p class="small muted" style="margin-top:2px">Hoist gearbox vibration on the cranes is judged against ISO 10816-3: zone C from {{ u['vibration_limits'][0] }} mm/s, zone D from {{ u['vibration_limits'][1] }} mm/s.</p></div></div>
   <div class="card-body table-scroll">
@@ -75,5 +87,7 @@
       </tbody>
     </table>
   </div>
+</div>
+</section>
 </div>
 {% endblock %}

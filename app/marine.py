@@ -64,11 +64,20 @@ ELEMENT_KINDS = [
     ("crane_stopper", "Crane stopper"),
     ("storm_pin", "Storm pin / tie-down"),
     ("ladder", "Ladder"),
+    ("ramp", "RoRo ramp / linkspan"),
     ("tie_rod", "Tie rod / anchor"),
     ("other", "Other"),
 ]
 # The quay furniture: what the ships and cranes knock about, as against the structure.
-FURNITURE = {"fender", "bollard", "crane_rail", "crane_stopper", "storm_pin", "ladder"}
+FURNITURE = {"fender", "bollard", "crane_rail", "crane_stopper", "storm_pin", "ladder", "ramp"}
+# What the berth handles: it decides the ships, the equipment and the 3D scene.
+TERMINAL_TYPES = [
+    ("container", "Container"),
+    ("general_cargo", "General cargo"),
+    ("roro", "RoRo (vehicles)"),
+    ("bulk", "Dry bulk"),
+    ("multipurpose", "Multipurpose"),
+]
 ZONES = [
     ("atmospheric", "Atmospheric"),
     ("splash", "Splash"),
@@ -129,6 +138,7 @@ SUGGESTED: dict[str, list[str]] = {
     "crane_stopper": ["inspection"],
     "storm_pin": ["inspection"],
     "ladder": ["inspection"],
+    "ramp": ["displacement", "inspection"],
     "tie_rod": ["strain", "corrosion"],
     "other": ["inspection"],
 }
@@ -155,6 +165,102 @@ def suggested(kind: str) -> list[str]:
     return SUGGESTED.get(kind, SUGGESTED["other"])
 
 
+# --- where things are on the earth ---------------------------------------------------------
+
+def geolocate(asset: Any, x: float, y: float) -> tuple[float, float] | None:
+    """A model position (metres along x and y from the site's origin) as latitude and longitude.
+
+    The model is turned by the asset's rotation (from its x axis to east,
+    anticlockwise). Good to a few centimetres across a berth, which is all a map needs.
+    """
+    lat0, lon0 = asset["latitude"], asset["longitude"]
+    if lat0 is None or lon0 is None:
+        return None
+    theta = math.radians(asset["rotation"] or 0.0)
+    east = x * math.cos(theta) - y * math.sin(theta)
+    north = x * math.sin(theta) + y * math.cos(theta)
+    return (lat0 + north / 111_320.0, lon0 + east / (111_320.0 * max(math.cos(math.radians(lat0)), 1e-6)))
+
+
+# --- what the Revit model brings ---------------------------------------------------------
+
+def apply_site(conn: sqlite3.Connection, asset_id: int, found: dict[str, Any]) -> list[str]:
+    """Take the model's location, orientation, datum and terminal type onto the asset. Says what it took."""
+    site, took, sets = found.get("site", {}), [], {}
+    if site.get("latitude") is not None and site.get("longitude") is not None:
+        sets.update(latitude=site["latitude"], longitude=site["longitude"])
+        took.append(f"its location ({site['latitude']:.5f}, {site['longitude']:.5f}, from {site.get('source', 'the model')})")
+    if site.get("rotation") is not None and (site.get("eastings") is not None or site.get("rotation")):
+        sets["rotation"] = site["rotation"]
+    if site.get("epsg"):
+        sets["epsg"] = site["epsg"]
+    if found.get("msl_cd") is not None:
+        sets["msl_cd"] = found["msl_cd"]
+        took.append(f"its datum (MSL at +{found['msl_cd']:.2f} mCD)")
+    if found.get("terminal_type") in dict(TERMINAL_TYPES):
+        sets["terminal_type"] = found["terminal_type"]
+        took.append(f"its terminal type ({labels(TERMINAL_TYPES)[found['terminal_type']].lower()})")
+    project = found.get("project", {})
+    if project.get("MT_AssetType") in dict(ASSET_KINDS):
+        sets["kind"] = project["MT_AssetType"]
+    if project.get("MT_TritonProject"):
+        sets["triton_project"] = str(project["MT_TritonProject"])
+    try:
+        sets["commissioned"] = date.fromisoformat(str(project.get("MT_Commissioned"))[:10]).isoformat()
+    except ValueError:
+        pass
+    try:
+        if project.get("MT_DesignLife") is not None:
+            sets["design_life"] = max(1, int(float(project["MT_DesignLife"])))
+    except (TypeError, ValueError):
+        pass
+    if sets:
+        conn.execute(f"UPDATE marine_assets SET {', '.join(k + ' = ?' for k in sets)} WHERE id = ?", (*sets.values(), asset_id))
+    return took
+
+
+def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, Any], names: Iterable[str] | None = None) -> dict[str, list[str]]:
+    """Create MarineTwin elements for the model's elements, and point existing ones at their GlobalId.
+
+    A new element takes its kind, material, zone, wall and Triton name from the
+    model's MT_Common properties (or what its name and IFC class imply), its
+    position from the model, and the sensors MT_Sensors lists or the usual ones
+    for its kind. A fender or bollard rated in the model (MT_Furniture) has its
+    sensor's limits set from that rating.
+    """
+    wanted = set(names) if names is not None else None
+    existing = {r["name"]: r for r in conn.execute("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))}
+    kinds, materials, zones = dict(ELEMENT_KINDS), dict(MATERIALS), dict(ZONES)
+    made, linked = [], []
+    for e in found.get("elements", []):
+        if wanted is not None and e["name"] not in wanted:
+            continue
+        if e["name"] in existing:
+            row = existing[e["name"]]
+            if row["model_ref"] != e["global_id"]:
+                conn.execute("UPDATE marine_elements SET model_ref = ? WHERE id = ?", (e["global_id"], row["id"]))
+                linked.append(e["name"])
+            continue
+        kind = e["kind"] if e["kind"] in kinds else "other"
+        element_id = conn.execute(
+            "INSERT INTO marine_elements (asset_id, name, kind, material, zone, wall_mm, design_ur, triton_element,"
+            " model_ref, x, y, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (asset_id, e["name"], kind, e["material"] if e["material"] in materials else "steel",
+             e["zone"] if e["zone"] in zones else "splash", e.get("wall_mm"), e.get("design_ur"),
+             e.get("triton_element") or "", e["global_id"], e["x"], e["y"], e["z"])).lastrowid
+        chosen = [k for k in e.get("sensors", []) if k in SENSOR_KINDS] or suggested(kind)
+        for sensor_kind in dict.fromkeys(chosen):
+            alarm = e.get("rated_reaction") if sensor_kind == "fender_reaction" else \
+                e.get("bollard_capacity") if sensor_kind == "bollard_load" else None
+            conn.execute("INSERT INTO marine_sensors (element_id, kind, label, alert, alarm, simulated) VALUES (?, ?, ?, ?, ?, 1)",
+                         (element_id, sensor_kind, f"{e['name']}-{SENSOR_KINDS[sensor_kind]['tag']}1",
+                          round(alarm * 0.8, 1) if alarm else None, alarm))
+        made.append(e["name"])
+    if made:
+        refresh_simulated(conn, asset_id)
+    return {"made": made, "linked": linked}
+
+
 # --- storage -----------------------------------------------------------------------
 
 SCHEMA = """
@@ -171,6 +277,12 @@ CREATE TABLE IF NOT EXISTS marine_assets (
   triton_section  TEXT NOT NULL DEFAULT '',
   model_file      TEXT NOT NULL DEFAULT '',         -- stored name of the uploaded IFC / glTF model
   model_name      TEXT NOT NULL DEFAULT '',         -- the name it was uploaded as
+  terminal_type   TEXT NOT NULL DEFAULT 'container',-- see TERMINAL_TYPES
+  latitude        REAL,                             -- decimal degrees, WGS 84: from the IFC site or typed in
+  longitude       REAL,
+  rotation        REAL NOT NULL DEFAULT 0,          -- degrees from the model's x axis to east, anticlockwise
+  msl_cd          REAL NOT NULL DEFAULT 1.0,        -- mean sea level above chart datum, m: model levels are mCD
+  epsg            TEXT NOT NULL DEFAULT '',         -- the project's map grid, from the model
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -220,8 +332,23 @@ CREATE TABLE IF NOT EXISTS marine_scenarios (
 """
 
 
+# Columns added after the first release, for databases made before them.
+LATER_COLUMNS = [
+    ("marine_assets", "terminal_type", "TEXT NOT NULL DEFAULT 'container'"),
+    ("marine_assets", "latitude", "REAL"),
+    ("marine_assets", "longitude", "REAL"),
+    ("marine_assets", "rotation", "REAL NOT NULL DEFAULT 0"),
+    ("marine_assets", "msl_cd", "REAL NOT NULL DEFAULT 1.0"),
+    ("marine_assets", "epsg", "TEXT NOT NULL DEFAULT ''"),
+]
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, definition in LATER_COLUMNS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 # --- dates -------------------------------------------------------------------------
@@ -803,9 +930,10 @@ def create_demo(conn: sqlite3.Connection, user_id: int | None, today: date | Non
     today = today or date.today()
     commissioned = date(today.year - 8, 3, 1).isoformat()
     asset_id = conn.execute(
-        "INSERT INTO marine_assets (name, kind, location, client, commissioned, design_life, corrosion_code, created_by)"
-        " VALUES (?, 'quay_wall', ?, ?, ?, 50, 'bs6349', ?)",
-        ("Demo berth — Quay 1", "Demonstration", "Port authority (demo)", commissioned, user_id)).lastrowid
+        "INSERT INTO marine_assets (name, kind, location, client, commissioned, design_life, corrosion_code, created_by,"
+        " terminal_type, latitude, longitude, rotation, msl_cd)"
+        " VALUES (?, 'quay_wall', ?, ?, ?, 50, 'bs6349', ?, 'container', 6.43872, 3.38945, 0, 0.9)",
+        ("Demo berth — Quay 1", "Apapa, Lagos (demonstration)", "Port authority (demo)", commissioned, user_id)).lastrowid
 
     def element(name, kind, material, zone, x, y, z, wall=None, ur=None):
         return conn.execute(

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import math
 from datetime import date, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from flask import (
     Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
-from .. import marine, marine_facility, marine_ops, marine_sim, marine_triton
+from .. import marine, marine_facility, marine_ifc, marine_ops, marine_sim, marine_triton
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
 from ..marine_charts import (
@@ -86,7 +87,8 @@ def _context() -> dict:
     return {
         "asset_kinds": marine.ASSET_KINDS, "element_kinds": marine.ELEMENT_KINDS, "zones": marine.ZONES,
         "materials": marine.MATERIALS, "sensor_kinds": marine.SENSOR_KINDS, "grades": marine.GRADES,
-        "suggested": marine.SUGGESTED,
+        "suggested": marine.SUGGESTED, "terminal_types": marine.TERMINAL_TYPES,
+        "terminal_name": marine.labels(marine.TERMINAL_TYPES),
         "kind_name": marine.labels(marine.ASSET_KINDS), "element_kind_name": marine.labels(marine.ELEMENT_KINDS),
         "zone_name": marine.labels(marine.ZONES), "triton_ready": marine_triton.available(),
     }
@@ -108,7 +110,11 @@ def index():
         "critical": sum(1 for a in assets if a["twin"]["state"] == "critical"),
         "warning": sum(1 for a in assets if a["twin"]["state"] == "warning"),
     }
-    return render_template("marine/index.html", assets=assets, totals=totals,
+    world = {"assets": [{"name": a["asset"]["name"], "lat": a["asset"]["latitude"], "lon": a["asset"]["longitude"],
+                         "state": a["twin"]["state"], "href": url_for("marine.asset", asset_id=a["asset"]["id"]),
+                         "terminal": marine.labels(marine.TERMINAL_TYPES).get(a["asset"]["terminal_type"], "")}
+                        for a in assets if a["asset"]["latitude"] is not None]}
+    return render_template("marine/index.html", assets=assets, totals=totals, world=world,
                            today=date.today().isoformat(), **_context())
 
 
@@ -129,7 +135,7 @@ def new_asset():
          g.user["id"])).lastrowid
     get_db().commit()
     flash(f"{name} is set up. Add its elements and sensors, or link it to its Triton design.", "success")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    return redirect(url_for("marine.setup", asset_id=asset_id))
 
 
 @bp.post("/demo")
@@ -146,9 +152,32 @@ def demo():
 @bp.get("/assets/<int:asset_id>")
 @login_required
 def asset(asset_id: int):
+    """Step 3, the structure: its health, the twin in 3D, what to do and every element."""
     asset = _asset_or_404(asset_id)
     twin = marine.assess_asset(get_db(), asset)
-    return render_template("marine/asset.html", asset=asset, twin=twin, may_remove=_may_remove(asset),
+    return render_template("marine/asset.html", asset=asset, twin=twin, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/setup")
+@login_required
+def setup(asset_id: int):
+    """Step 2, setting the asset up: the Revit model, where it is, its details, elements and readings."""
+    asset = _asset_or_404(asset_id)
+    twin = marine.assess_asset(get_db(), asset)
+    found = _model_found(asset_id)
+    site_map = None
+    if asset["latitude"] is not None and asset["longitude"] is not None:
+        placed = []
+        for e in twin["elements"]:
+            at = marine.geolocate(asset, e["element"]["x"], e["element"]["y"])
+            placed.append({"name": e["element"]["name"], "kind": e["element"]["kind"], "state": e["state"],
+                           "lat": round(at[0], 7), "lon": round(at[1], 7)})
+        site_map = {"assets": [] if placed else [{"name": asset["name"], "lat": asset["latitude"], "lon": asset["longitude"],
+                                                 "state": twin["state"], "terminal": ""}],
+                    "elements": placed, "focus": [asset["latitude"], asset["longitude"]], "zoom": 17}
+    return render_template("marine/setup.html", asset=asset, twin=twin, may_remove=_may_remove(asset),
+                           site_map=site_map,
+                           model_found=found, model_new=_new_in_model(asset_id, found) if found else [],
                            triton_projects=marine_triton.projects(),
                            model_kind=MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
                            **_context())
@@ -180,26 +209,29 @@ def simulation(asset_id: int):
     """Scenarios side by side, the bottleneck in each, and a form to try another."""
     asset = _asset_or_404(asset_id)
     db = get_db()
-    kept = marine_sim.scenarios(db, asset_id)
+    terminal = asset["terminal_type"]
+    words = marine_sim.vocab(terminal)
+    kept = marine_sim.scenarios(db, asset_id, terminal)
     results = []
     for sc in kept:
-        results.append({**sc, "result": marine_sim.assess(asset_id, sc["params"], detail=False),
-                        "changes": marine_sim.changes(kept[0]["params"], sc["params"]) if sc is not kept[0] else []})
+        results.append({**sc, "result": marine_sim.assess(asset_id, sc["params"], detail=False, terminal=terminal),
+                        "changes": marine_sim.changes(kept[0]["params"], sc["params"], terminal) if sc is not kept[0] else []})
     try:
         shown_id = int(request.args.get("show") or results[-1]["id"])
     except ValueError:
         shown_id = results[-1]["id"]
     shown = next((r for r in results if r["id"] == shown_id), results[-1])
-    detail = marine_sim.assess(asset_id, shown["params"])
+    detail = marine_sim.assess(asset_id, shown["params"], terminal=terminal)
     editing = next((r for r in results if str(r["id"]) == request.args.get("edit")), None)
     copying = next((r for r in results if str(r["id"]) == request.args.get("copy")), None)
     form = (editing or copying or shown)["params"]
     groups: dict[str, list] = {}
-    for key, label, unit, _, lo, hi, step, group in marine_sim.PARAMS:
+    for key, _, _, _, lo, hi, step, group in marine_sim.PARAMS:
+        label, unit = words["labels"][key]
         groups.setdefault(group, []).append({"key": key, "label": label, "unit": unit, "min": lo, "max": hi,
                                              "step": step, "value": form[key]})
     return render_template("marine/simulation.html", asset=asset, results=results, shown=shown, detail=detail,
-                           editing=editing, copying=copying, groups=groups, links=marine_sim.LINKS,
+                           editing=editing, copying=copying, groups=groups, links=words["links"], words=words,
                            ships_chart=sim_ships(detail["timeline"], detail["params"]["berths"]),
                            gate_chart=sim_gate(detail["timeline"]), **_context())
 
@@ -247,7 +279,7 @@ def equipment(asset_id: int):
 def environment(asset_id: int):
     asset = _asset_or_404(asset_id)
     now = datetime.now()
-    alongside = any(s["eta"] <= now < s["etd"] for s in marine_ops.lineup(int(asset["id"]), now))
+    alongside = any(s["eta"] <= now < s["etd"] for s in marine_ops.lineup(int(asset["id"]), now, asset["terminal_type"]))
     env = marine_facility.environment(asset, now, alongside)
     m = marine_facility.MEASURES
     outdoor = [s for s in env["stations"] if "pm25" in [r["key"] for r in s["measures"]]]
@@ -287,8 +319,26 @@ def twin_json(asset_id: int):
     def finite(value):
         return value if value is None or math.isfinite(value) else None
 
+    # The berth at work, for the scene: weather, tide, the ship alongside and the equipment.
+    now = datetime.now()
+    weather = marine_ops.metocean(asset_id, now, hours_back=0, hours_ahead=24)
+    ships = marine_ops.lineup(asset_id, now, asset["terminal_type"])
+    alongside = next((s for s in ships if s["eta"] <= now < s["etd"]), None)
+    equipment = marine_ops.cranes(asset_id, now, weather[0]["gust"], asset["terminal_type"])
     return jsonify({
-        "asset": {"id": asset["id"], "name": asset["name"], "kind": asset["kind"]},
+        "asset": {"id": asset["id"], "name": asset["name"], "kind": asset["kind"],
+                  "terminal": asset["terminal_type"], "latitude": asset["latitude"], "longitude": asset["longitude"],
+                  "rotation": asset["rotation"], "msl_cd": asset["msl_cd"], "location": asset["location"]},
+        "now": {"at": now.isoformat(timespec="minutes"), "wind": weather[0]["wind"], "gust": weather[0]["gust"],
+                "hs": weather[0]["hs"], "tide": weather[0]["tide"],
+                "tides": [{"at": w["at"].isoformat(timespec="minutes"), "tide": w["tide"]} for w in weather],
+                "source": "simulated"},
+        "alongside": {"name": alongside["name"], "type": alongside["type"], "loa": alongside["loa"],
+                      "beam": alongside["beam"], "draught": alongside["draught"]} if alongside else None,
+        "next_ship": next(({"name": s["name"], "type": s["type"], "eta": s["eta"].isoformat(timespec="minutes"),
+                            "loa": s["loa"], "beam": s["beam"], "draught": s["draught"]}
+                           for s in ships if s["eta"] > now), None),
+        "equipment": [{"name": c["name"], "state": c["state"]} for c in equipment],
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
         "elements": [{
@@ -310,6 +360,14 @@ def save_asset(asset_id: int):
     asset = _asset_or_404(asset_id)
     link = (request.form.get("triton") or "").strip()
     project_id, _, section_id = link.partition(":")
+    lat, lon = _number("latitude"), _number("longitude")
+    if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
+        get_db().execute("UPDATE marine_assets SET latitude = ?, longitude = ? WHERE id = ?", (lat, lon, asset_id))
+    elif not (request.form.get("latitude") or "").strip() and "latitude" in request.form:
+        get_db().execute("UPDATE marine_assets SET latitude = NULL, longitude = NULL WHERE id = ?", (asset_id,))
+    get_db().execute("UPDATE marine_assets SET terminal_type = ?, rotation = ?, msl_cd = ? WHERE id = ?",
+                     (_choice("terminal_type", marine.TERMINAL_TYPES, asset["terminal_type"]),
+                      _number("rotation", asset["rotation"]) % 360, _number("msl_cd", asset["msl_cd"]), asset_id))
     get_db().execute(
         "UPDATE marine_assets SET name = ?, kind = ?, location = ?, client = ?, commissioned = ?, design_life = ?,"
         " corrosion_code = ?, triton_project = ?, triton_section = ? WHERE id = ?",
@@ -320,7 +378,7 @@ def save_asset(asset_id: int):
          else asset["corrosion_code"], project_id, section_id, asset_id))
     get_db().commit()
     flash("Saved.", "success")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="details"))
 
 
 @bp.post("/assets/<int:asset_id>/delete")
@@ -354,7 +412,7 @@ def import_readings(asset_id: int):
     upload = request.files.get("file")
     if upload is None or not upload.filename:
         flash("Choose a CSV file of readings.", "error")
-        return redirect(url_for("marine.asset", asset_id=asset_id))
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="readings"))
     text = upload.read().decode("utf-8", errors="replace")
     result = marine.import_csv(get_db(), asset_id, text)
     get_db().commit()
@@ -362,7 +420,7 @@ def import_readings(asset_id: int):
         flash(f"{result['written']:,} readings imported for {result['sensors']} sensors.", "success")
     for problem in result["problems"]:
         flash(problem, "error")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="readings"))
 
 
 @bp.get("/assets/<int:asset_id>/readings.csv")
@@ -392,21 +450,73 @@ def upload_model(asset_id: int):
     suffix = Path(upload.filename).suffix.lower() if upload and upload.filename else ""
     if suffix not in MODEL_TYPES:
         flash("Upload the Revit model exported as IFC (.ifc) or glTF (.glb, .gltf).", "error")
-        return redirect(url_for("marine.asset", asset_id=asset_id))
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
     stored = f"asset-{asset_id}{suffix}"
     target = models_dir() / stored
     upload.save(target)
     if target.stat().st_size > MODEL_LIMIT:
         target.unlink(missing_ok=True)
         flash("That model is over 200 MB. Export only the structure's own elements and try again.", "error")
-        return redirect(url_for("marine.asset", asset_id=asset_id))
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
     if asset["model_file"] and asset["model_file"] != stored:
         (models_dir() / asset["model_file"]).unlink(missing_ok=True)
     get_db().execute("UPDATE marine_assets SET model_file = ?, model_name = ? WHERE id = ?",
                      (stored, upload.filename, asset_id))
+    message = f"{upload.filename} is the model now. Elements are matched to it by their model reference."
+    _found_path(asset_id).unlink(missing_ok=True)
+    if suffix == ".ifc":
+        try:
+            found = marine_ifc.read_file(target)
+        except Exception:                             # noqa: BLE001 - an IFC we cannot read is still drawn
+            found = None
+        if found is not None:
+            _found_path(asset_id).write_text(json.dumps(found), encoding="utf-8")
+            took = marine.apply_site(get_db(), asset_id, found)
+            new = _new_in_model(asset_id, found)
+            if took:
+                message += " From the model MarineTwin took " + "; ".join(took) + "."
+            if new:
+                message += f" It also has {len(new)} element{'s' if len(new) > 1 else ''} MarineTwin does not track yet: import them below."
     get_db().commit()
-    flash(f"{upload.filename} is the model now. Elements are matched to it by their model reference.", "success")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    flash(message, "success")
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
+
+
+def _found_path(asset_id: int) -> Path:
+    return models_dir() / f"asset-{asset_id}.found.json"
+
+
+def _model_found(asset_id: int) -> dict | None:
+    path = _found_path(asset_id)
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    except (OSError, ValueError):
+        return None
+
+
+def _new_in_model(asset_id: int, found: dict) -> list[dict]:
+    have = {r["name"] for r in query("SELECT name FROM marine_elements WHERE asset_id = ?", (asset_id,))}
+    return [e for e in found.get("elements", []) if e["name"] not in have]
+
+
+@bp.post("/assets/<int:asset_id>/model/import")
+@login_required
+def import_model_elements(asset_id: int):
+    _asset_or_404(asset_id)
+    found = _model_found(asset_id)
+    if not found:
+        flash("Upload the IFC model first.", "error")
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
+    chosen = request.form.getlist("names") or None
+    done = marine.import_elements(get_db(), asset_id, found, chosen)
+    get_db().commit()
+    words = []
+    if done["made"]:
+        words.append(f"{len(done['made'])} element{'s' if len(done['made']) > 1 else ''} imported from the model, with their usual sensors")
+    if done["linked"]:
+        words.append(f"{len(done['linked'])} existing element{'s' if len(done['linked']) > 1 else ''} now matched by GlobalId")
+    flash((". ".join(words) or "Nothing new to import") + ".", "success")
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
 
 
 @bp.get("/assets/<int:asset_id>/model")
@@ -425,10 +535,11 @@ def delete_model(asset_id: int):
     asset = _asset_or_404(asset_id)
     if asset["model_file"]:
         (models_dir() / asset["model_file"]).unlink(missing_ok=True)
+    _found_path(asset_id).unlink(missing_ok=True)
     get_db().execute("UPDATE marine_assets SET model_file = '', model_name = '' WHERE id = ?", (asset_id,))
     get_db().commit()
     flash("The model was removed; the view draws the schematic again.", "success")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
 
 
 # --- elements and sensors -----------------------------------------------------------
@@ -440,10 +551,10 @@ def add_element(asset_id: int):
     name = (request.form.get("name") or "").strip()
     if not name:
         flash("Give the element a name, as it is called in Triton or on the drawings.", "error")
-        return redirect(url_for("marine.asset", asset_id=asset_id))
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="add-an-element"))
     if query_one("SELECT 1 FROM marine_elements WHERE asset_id = ? AND name = ?", (asset_id, name)):
         flash(f"There is already an element called {name} on this asset.", "error")
-        return redirect(url_for("marine.asset", asset_id=asset_id))
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="add-an-element"))
     db = get_db()
     element_id = db.execute(
         "INSERT INTO marine_elements (asset_id, name, kind, material, zone, wall_mm, design_ur, triton_element,"
@@ -465,7 +576,7 @@ def add_element(asset_id: int):
     marine.refresh_simulated(db, asset_id)
     db.commit()
     flash(f"{name} added.", "success")
-    return redirect(url_for("marine.asset", asset_id=asset_id))
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="add-an-element"))
 
 
 @bp.post("/assets/<int:asset_id>/elements/<int:element_id>/delete")

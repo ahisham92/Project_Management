@@ -106,6 +106,31 @@ SHIPS = [
     ("Gulf Pioneer", "General cargo", 180, 28.0, 10.0, 35000, 14),
     ("Arabian Star", "Bulk carrier", 229, 32.3, 13.5, 95000, 12),
 ]
+# The fleets each kind of terminal sees.
+FLEETS = {
+    "container": SHIPS[:6],
+    "general_cargo": [("Gulf Pioneer", "General cargo", 180, 28.0, 10.0, 35000, 14),
+                      ("BBC Lagos", "Heavy lift", 154, 23.0, 8.8, 22000, 16),
+                      ("Atlantic Trader", "General cargo", 190, 30.0, 10.5, 40000, 15),
+                      ("Spliethoff Eems", "Multipurpose", 169, 25.2, 9.5, 28000, 15),
+                      ("Africa Star", "Breakbulk", 200, 32.2, 11.0, 48000, 14)],
+    "roro": [("Grande Lagos", "RoRo", 236, 32.3, 10.0, 52000, 30),
+             ("Hoegh Target", "Car carrier", 200, 36.5, 9.5, 42000, 36),
+             ("Grande Abidjan", "RoRo", 211, 32.3, 9.8, 46000, 28),
+             ("Glovis Sun", "Car carrier", 199, 32.3, 9.2, 38000, 34),
+             ("Celine", "RoRo", 235, 35.0, 8.0, 50000, 30)],
+    "bulk": [("Arabian Star", "Bulk carrier", 229, 32.3, 13.5, 95000, 12),
+             ("Cape Onne", "Bulk carrier", 190, 32.2, 12.0, 70000, 11),
+             ("Star Kirkenes", "Bulk carrier", 200, 32.3, 12.8, 80000, 11),
+             ("Ocean Grain", "Bulk carrier", 180, 30.0, 11.5, 60000, 10)],
+}
+FLEETS["multipurpose"] = FLEETS["container"][:3] + FLEETS["general_cargo"][:2] + FLEETS["roro"][:1]
+# What works the ships at each kind of terminal, by name prefix and what it is called.
+EQUIPMENT = {
+    "container": ("STS", "quay cranes"), "general_cargo": ("MHC", "mobile harbour cranes"),
+    "roro": ("RAMP", "ramp gangs"), "bulk": ("SU", "ship unloaders"), "multipurpose": ("MHC", "mobile harbour cranes"),
+}
+UNITS = {"container": "moves", "general_cargo": "lifts", "roro": "vehicles", "bulk": "tonnes ×10", "multipurpose": "lifts"}
 
 
 def _rng(asset_id: int, day: str, what: str) -> random.Random:
@@ -145,10 +170,10 @@ def metocean(asset_id: int, now: datetime, hours_back: int = 24, hours_ahead: in
     return out
 
 
-def lineup(asset_id: int, now: datetime) -> list[dict[str, Any]]:
+def lineup(asset_id: int, now: datetime, terminal: str = "container") -> list[dict[str, Any]]:
     """The ship alongside, if any, and the calls due in the next three days."""
     rng = _rng(asset_id, now.date().isoformat(), "lineup")
-    ships = SHIPS[:]
+    ships = list(FLEETS.get(terminal, SHIPS))
     rng.shuffle(ships)
     out = []
     t = _hour(now) - timedelta(hours=rng.uniform(4, 20))     # the current call came in before now
@@ -166,13 +191,17 @@ def lineup(asset_id: int, now: datetime) -> list[dict[str, Any]]:
     return out
 
 
-def cranes(asset_id: int, now: datetime, gust: float) -> list[dict[str, Any]]:
+def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container") -> list[dict[str, Any]]:
     rng = _rng(asset_id, now.date().isoformat(), "cranes")
+    prefix = EQUIPMENT.get(terminal, EQUIPMENT["container"])[0]
     out = []
-    for i in range(3):
+    for i in range(3 if prefix != "RAMP" else 2):
         hours = rng.uniform(150, 520)                          # running hours to the next service
         broken = rng.random() < 0.12
-        if gust >= LIMITS["crane_stow_gust"]:
+        if prefix == "RAMP":
+            # A ramp gang drives vehicles off and on: wind stops the berthing, not the ramp.
+            state, why = ("down", rng.choice(["ramp hydraulic pump fault", "short of drivers"])) if broken else ("working", "")
+        elif gust >= LIMITS["crane_stow_gust"]:
             state, why = "stowed", "on its storm pins: gusts over the stow limit"
         elif gust >= LIMITS["crane_stop_gust"]:
             state, why = "stopped", "wind stop: gusts over the operating limit"
@@ -180,7 +209,7 @@ def cranes(asset_id: int, now: datetime, gust: float) -> list[dict[str, Any]]:
             state, why = "down", rng.choice(["spreader twistlock fault", "hoist brake alarm", "gantry drive fault"])
         else:
             state, why = "working", ""
-        out.append({"name": f"STS{i + 1}", "state": state, "why": why, "service_in_h": round(hours),
+        out.append({"name": f"{prefix}{i + 1}" if prefix != "RAMP" else f"Ramp gang {i + 1}", "state": state, "why": why, "service_in_h": round(hours),
                     "rate": round(rng.uniform(24, 32), 1)})
     return out
 
@@ -229,10 +258,11 @@ def operations(conn: Any, asset: Any, now: datetime | None = None, twin: dict[st
     weather = metocean(asset_id, now)
     current = next(w for w in reversed(weather) if w["past"])
     ahead = [w for w in weather if not w["past"]]
-    ships = lineup(asset_id, now)
+    terminal = asset["terminal_type"] if "terminal_type" in asset.keys() else "container"
+    ships = lineup(asset_id, now, terminal)
     alongside = next((s for s in ships if s["eta"] <= now < s["etd"]), None)
     due = [s for s in ships if s["eta"] > now and s["eta"] <= now + timedelta(hours=72)]
-    crane_list = cranes(asset_id, now, current["gust"])
+    crane_list = cranes(asset_id, now, current["gust"], terminal)
     lost = downtime(asset_id, now)
 
     by_kind: dict[str, list[dict[str, Any]]] = {}
@@ -261,7 +291,7 @@ def operations(conn: Any, asset: Any, now: datetime | None = None, twin: dict[st
     if stow:
         act("critical", stow["at"] - timedelta(hours=3), "Cranes",
             f"Gusts reach {stow['gust']:.0f} m/s {_when(stow['at'], now)}, over the {LIMITS['crane_stow_gust']:.0f} m/s stow limit. "
-            f"Park the STS cranes on their storm pins and fit the tie-downs by {_when(stow['at'] - timedelta(hours=1), now)}"
+            f"Park the {EQUIPMENT.get(terminal, EQUIPMENT['container'])[1]} on their storm pins and fit the tie-downs by {_when(stow['at'] - timedelta(hours=1), now)}"
             + ("; the storm pins were last graded " + ", ".join(f"{e['element']['name']} {e['state']}" for e in by_kind.get('storm_pin', [])) if by_kind.get("storm_pin") else "") + ".")
     elif stop:
         act("warning", stop["at"], "Cranes",
@@ -355,6 +385,7 @@ def operations(conn: Any, asset: Any, now: datetime | None = None, twin: dict[st
         "peak": peak, "alongside": alongside, "calls": calls, "cranes": crane_list,
         "cranes_working": sum(1 for c in crane_list if c["state"] == "working"),
         "downtime": lost, "actions": actions, "limits": LIMITS, "limit_notes": LIMIT_NOTES,
-        "ratings": ratings, "twin": twin,
+        "ratings": ratings, "twin": twin, "terminal": terminal,
+        "equipment_name": EQUIPMENT.get(terminal, EQUIPMENT["container"])[1], "units": UNITS.get(terminal, "moves"),
         "windows": {"stop": stop, "stow": stow, "no_berth": no_berth},
     }

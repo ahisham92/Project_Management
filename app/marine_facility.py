@@ -74,7 +74,37 @@ FLEET = [
     ("OCR", 2, "Gate OCR portal", "Camco", "Gate", 10, "B", 300_000, 2190),
     ("HVAC", 1, "Air handling, admin building", "Carrier", "Buildings", 15, "C", 250_000, 2190),
 ]
+SERVICES = FLEET[4:]                     # substations, shore power, lighting, fire pumps, gate, HVAC
+FLEET_BY_TERMINAL = {
+    "container": FLEET,
+    "general_cargo": [
+        ("MHC", 2, "Mobile harbour crane", "Liebherr LHM 550", "Quay", 25, "A", 6_500_000, 500),
+        ("FL", 8, "Forklift", "Kalmar DCG160", "Shed", 10, "B", 180_000, 250),
+        ("RS", 2, "Reach stacker", "Kalmar DRG450", "Yard", 12, "B", 650_000, 250),
+        ("TT", 10, "Terminal tractor", "Terberg YT203", "Fleet", 10, "B", 140_000, 250),
+    ] + SERVICES,
+    "roro": [
+        ("RR", 2, "Linkspan / shore ramp", "Hydraulic linkspan 30 m", "Quay", 30, "A", 4_000_000, 1000),
+        ("TM", 8, "Tug master", "Terberg RT223", "Fleet", 10, "B", 160_000, 250),
+        ("SB", 4, "Driver shuttle bus", "Coaster 30 seat", "Fleet", 8, "C", 90_000, 250),
+        ("RS", 1, "Reach stacker", "Kalmar DRG450", "Yard", 12, "B", 650_000, 250),
+    ] + SERVICES,
+    "bulk": [
+        ("SU", 2, "Grab ship unloader", "Konecranes 1,500 t/h", "Quay", 25, "A", 9_000_000, 500),
+        ("CV", 4, "Belt conveyor", "1,600 mm belt", "Yard", 20, "A", 1_200_000, 730),
+        ("SR", 2, "Stacker-reclaimer", "FLSmidth", "Stockyard", 25, "A", 7_000_000, 500),
+        ("WL", 3, "Wheel loader", "CAT 980", "Stockyard", 10, "B", 450_000, 250),
+    ] + SERVICES,
+}
+FLEET_BY_TERMINAL["multipurpose"] = FLEET_BY_TERMINAL["general_cargo"][:1] + FLEET[:1] + FLEET_BY_TERMINAL["general_cargo"][1:]
+CRANES = {"STS", "RTG", "MHC", "SU", "SR"}       # what carries a hoist gearbox worth monitoring
 DOCUMENTS = {
+    "MHC": ["O&M manual", "LOLER certificate", "Load test report"],
+    "FL": ["O&M manual", "LOLER certificate"],
+    "RR": ["O&M manual", "Load test report", "Hinge inspection record"],
+    "TM": ["O&M manual"], "SB": ["O&M manual"], "WL": ["O&M manual"],
+    "SU": ["O&M manual", "LOLER certificate", "Load test report"],
+    "CV": ["O&M manual", "Belt splice record"], "SR": ["O&M manual", "LOLER certificate"],
     "STS": ["O&M manual", "LOLER certificate", "Load test report", "As-built drawings"],
     "RTG": ["O&M manual", "LOLER certificate"],
     "RS": ["O&M manual", "LOLER certificate"],
@@ -94,7 +124,8 @@ def register(asset: Any) -> list[dict[str, Any]]:
     start = _commissioned(asset)
     rng = _rng(asset_id, "register")
     out = []
-    for prefix, count, kind, model, where, life, crit, value, pm in FLEET:
+    terminal = asset["terminal_type"] if "terminal_type" in asset.keys() else "container"
+    for prefix, count, kind, model, where, life, crit, value, pm in FLEET_BY_TERMINAL.get(terminal, FLEET):
         for n in range(1, count + 1):
             tag = f"{prefix}{n:02d}" if count > 3 else f"{prefix}{n}"
             installed = start + timedelta(days=rng.choice([0, 0, 0, 365, 730, 1460]))
@@ -112,6 +143,13 @@ def register(asset: Any) -> list[dict[str, Any]]:
 # --- maintenance -------------------------------------------------------------------------
 
 WO_TEXT = {
+    "MHC": ["Slewing ring greasing", "Grab hydraulics leak", "Outrigger pad cracked", "Hoist rope inspection"],
+    "FL": ["Mast chain adjustment", "Tyre replacement", "Hydraulic hose leak"],
+    "RR": ["Hinge pin wear check", "Ramp hydraulic cylinder seal", "Flap tip plate cracked"],
+    "TM": ["Fifth wheel lock adjustment", "Brake service"], "SB": ["Air conditioning fault", "Service"],
+    "SU": ["Grab rope change", "Boom hoist brake pads", "Hopper liner worn"],
+    "CV": ["Belt splice repair", "Idler bearing noise", "Belt misalignment"],
+    "SR": ["Bucket wheel teeth worn", "Slew drive fault"], "WL": ["Bucket edge worn", "Service"],
     "STS": ["Hoist rope inspection and lubrication", "Spreader twistlock sensor replaced", "Boom hoist brake pads",
             "Trolley wheel bearing noise", "Gantry drive fault, inverter reset", "Anemometer calibration"],
     "RTG": ["Hydraulic leak on spreader", "Generator set service", "Tyre replacement, leg 3", "Gantry steering fault"],
@@ -138,12 +176,12 @@ def maintenance(asset: Any, today: date | None = None) -> dict[str, Any]:
     for unit in units:
         hours_since = rng.uniform(0.1, 1.04) * unit["pm_interval"]
         to_next = round(unit["pm_interval"] - hours_since)
-        mtbf = rng.uniform(250, 900) if unit["prefix"] in ("STS", "RTG", "TT", "RS") else rng.uniform(2000, 8000)
+        mtbf = rng.uniform(250, 900) if unit["criticality"] != "C" and unit["pm_interval"] <= 500 else rng.uniform(2000, 8000)
         mttr = rng.uniform(2, 8)
         availability = 100 * mtbf / (mtbf + mttr)
         row = {**unit, "to_next": to_next, "mtbf": round(mtbf), "mttr": round(mttr, 1),
                "availability": round(availability, 1), "vibration": None, "states": []}
-        if unit["prefix"] in ("STS", "RTG"):
+        if unit["prefix"] in CRANES:
             base = rng.uniform(1.2, 3.5)
             drift = rng.choice([0, 0, 0, 0.12, 0.3])          # mm/s a week, for a gearbox going bad
             row["vibration"] = round(base + drift * 8, 1)
@@ -161,7 +199,7 @@ def maintenance(asset: Any, today: date | None = None) -> dict[str, Any]:
         if to_next < 0:
             state = "critical" if unit["criticality"] == "A" else "warning"
             row["states"].append(state)
-            if unit["prefix"] == "TT":
+            if unit["prefix"] in ("TT", "TM", "FL", "SB"):
                 late_tractors.append(unit["tag"])
             else:
                 actions.append({"state": state, "area": "Equipment", "tag": unit["tag"],
@@ -175,14 +213,14 @@ def maintenance(asset: Any, today: date | None = None) -> dict[str, Any]:
         rows.append(row)
 
     if late_tractors:
-        actions.append({"state": "warning", "area": "Equipment", "tag": "TT",
-                        "text": f"{len(late_tractors)} terminal tractor{'s are' if len(late_tractors) > 1 else ' is'} past the 250 h service "
+        actions.append({"state": "warning", "area": "Equipment", "tag": "fleet",
+                        "text": f"{len(late_tractors)} fleet vehicle{'s are' if len(late_tractors) > 1 else ' is'} past the 250 h service "
                                 f"({', '.join(late_tractors)}). Rotate them through the workshop on the night shift."})
 
     # Work orders open in the CMMS.
     orders = []
     for i in range(rng.randint(8, 14)):
-        unit = rng.choice([u for u in units if u["prefix"] in ("STS", "RTG", "TT", "RS", "SP", "HM", "OCR", "HVAC", "FP")])
+        unit = rng.choice([u for u in units if u["prefix"] in WO_TEXT])
         kind = rng.choice(["Corrective", "Corrective", "Preventive", "Inspection"])
         priority = rng.choice(["P1", "P2", "P2", "P3", "P3"]) if kind == "Corrective" else "P3"
         age = rng.randint(0, 20)
@@ -380,6 +418,10 @@ OBLIGATIONS = [
     ("Thorough examination, STS cranes", "LOLER 1998 reg. 9", 12, "STS"),
     ("Thorough examination, RTGs", "LOLER 1998 reg. 9", 12, "RTG"),
     ("Thorough examination, reach stackers", "LOLER 1998 reg. 9", 12, "RS"),
+    ("Thorough examination, harbour cranes", "LOLER 1998 reg. 9", 12, "MHC"),
+    ("Thorough examination, forklifts", "LOLER 1998 reg. 9", 12, "FL"),
+    ("Thorough examination, ship unloaders", "LOLER 1998 reg. 9", 12, "SU"),
+    ("Linkspan hinge and load inspection", "Owner's inspection regime", 12, "RR"),
     ("Principal inspection of the quay", "BS 6349-1-1 / owner's inspection regime", 72, None),
     ("General inspection of the quay", "BS 6349-1-1 / owner's inspection regime", 24, None),
     ("Port facility security assessment review", "ISPS Code, Part A 15", 12, None),
@@ -400,7 +442,10 @@ def compliance(asset: Any, today: date | None = None) -> dict[str, Any]:
     today = today or date.today()
     rng = _rng(int(asset["id"]), "compliance")
     items, actions = [], []
+    present = {u["prefix"] for u in register(asset)}
     for what, regime, every, applies in OBLIGATIONS:
+        if applies and applies not in present:
+            continue
         # When it was last done: usually on time, sometimes slipping.
         slip = rng.choice([0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 0.97, 1.15])
         last = today - timedelta(days=round(slip * every * 30.44))

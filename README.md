@@ -478,12 +478,57 @@ For each element it answers three questions:
   that would be left (a thin-wall approximation, labelled as such).
 - **What should be done?** A recommendation for each element that needs one, most pressing first.
 
-**The 3D view** shows the Revit model exported as **IFC** (File → Export → IFC) or **glTF**, with
-each element coloured by its condition; elements are matched to the model by their *model
-reference* (the IFC GlobalId, the Tag Revit writes its element id into, or the Name). Without a
-model it draws a schematic from the elements' positions. three.js is vendored under
-`app/static/vendor/three`; web-ifc, which reads IFC in the browser, is fetched from jsDelivr only
-when an IFC model is opened.
+
+**Finding your way.** Every MarineTwin page shows the same six numbered steps: **1 Assets** (the
+list), **2 Set up** (the Revit model, where it is, its details, elements and readings), **3
+Structure**, **4 Operations**, **5 Simulation** and **6 Facility** (equipment, comfort and air,
+carbon and compliance, safety and security). Long pages are split into tabs, so each opens about
+one screen long, with the most pressing tab first and a count on each. Moving between pages,
+running a scenario or uploading a model shows Triton's loading bar: a ship sailing to the quay as
+it counts up to 100%; the 3D view shows the same while it builds.
+**From the Revit model.** Export it as **IFC** (File → Export → IFC, with *Export IFC common
+property sets*, *Export base quantities* and the user-defined property sets ticked) or **glTF**.
+On upload MarineTwin reads the IFC itself, with no IFC library on the server:
+
+- **Where it is**: the IfcSite latitude and longitude (Revit's *Project Location*), or else
+  `MT_Latitude`/`MT_Longitude` in the `MT_Project` property set, or else the Survey Point through
+  IFC4's *IfcMapConversion* on a UTM grid (EPSG:326xx/327xx). The model's turn to grid north comes
+  from the map conversion or the true north direction.
+- **Its datum**: `MT_VerticalDatum` such as `CD = MSL − 0.9 m` gives mean sea level in metres above
+  chart datum, so levels modelled in mCD sit against the tide.
+- **Its terminal type and dates**: `MT_TerminalType`, `MT_Commissioned`, `MT_DesignLife`.
+- **Its elements**: anything with an `MT_Common` property set (`MT_Kind`, `MT_Material`, `MT_Zone`,
+  `MT_WallThickness`, `MT_TritonElement`, `MT_DesignUR`, `MT_Sensors`), or named the way the guide
+  names them (P01, CW2, F3, BOL1, RR1). Fender and bollard ratings come from `MT_Furniture`,
+  on the instance or its type. Anything else in the model (lamp posts, kerbs) is left out.
+
+The asset page then lists the elements MarineTwin does not track yet; tick them and *Import*. Each
+comes in with its GlobalId as its model reference, its position and the usual sensors for its kind.
+The full modelling guide (parameters, naming, export settings) is the *MarineTwin Revit Modelling
+Guide*.
+
+**Where it is.** Each asset with a location is a point on the world map on the MarineTwin front
+page, and its own page shows every element on the satellite picture of the site, placed from its
+model position and the model's rotation. Leaflet is vendored under `app/static/vendor/leaflet`;
+the tiles come from OpenStreetMap and the imagery from Esri World Imagery, in the browser.
+
+**The 3D view** shows the model, each element coloured by its condition (or as built), inside the
+terminal around it: the sky and the sun where they are at that place and time (so night falls at
+Lagos when it falls at Lagos, with the yard lights on), the sea at the tide's level in mCD, the
+temperature, wind and waves, the ship alongside (or the next one waiting off the quay) and the
+cranes, tractors, trucks or cars working it. A time slider moves the clock 12 hours back or a day
+on; *See under the water* shows the piles below the tide. Weather and sea level are read live in
+the browser from Open-Meteo (forecast and marine APIs, no key) when the asset has a location, and
+simulated otherwise. Elements are matched to the model by GlobalId, then Name, then Tag, exactly
+(P1 never matches P10). Without a model it draws a schematic from the elements' positions.
+three.js is vendored under `app/static/vendor/three`; web-ifc, which reads IFC in the browser, is
+fetched from jsDelivr only when an IFC model is opened.
+
+**Terminal types.** An asset is a *container*, *general cargo*, *RoRo*, *bulk* or *multipurpose*
+terminal (from the model, or set on its page). The type decides the ships that call, the
+equipment (STS cranes, mobile harbour cranes, ramp gangs, ship unloaders), the units counted
+(moves, lifts, vehicles, tonnes), the simulation's vocabulary and the 3D scene: container stacks
+and RTGs, sheds and steel coils, a car park and the stern ramp, or stockpiles and a conveyor.
 
 **Sensors are simulated for the prototype**, deterministically per sensor, so a demonstration
 berth always tells the same story; *Bring simulated sensors up to today* extends them. Real

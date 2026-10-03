@@ -92,6 +92,78 @@ REMEDY = {
 }
 
 
+# What the chain is called at each kind of terminal. The model is the same: ships, the
+# equipment that works them, the transport to the storage area, the storage area's own
+# handling, and the gate. Only the words, the default numbers and the unit change.
+TERMINAL = {
+    "container": {"unit": "TEU", "per_move": TEU_PER_MOVE, "move": "moves"},
+    "general_cargo": {
+        "unit": "freight tonnes", "per_move": 8.0, "move": "lifts",
+        "links": {"sts": "Harbour cranes", "trucks": "Trailers", "rtgs": "Forklifts", "berth": "Berths"},
+        "labels": {"sts": "Mobile harbour cranes", "max_sts_per_ship": "Most cranes on one ship", "sts_rate": "Crane rate",
+                   "trucks": "Trailers", "truck_cycle": "Trailer cycle, crane to shed and back", "rtgs": "Forklifts",
+                   "rtg_rate": "Forklift rate", "yard_capacity": "Storage", "moves_per_call": "Lifts per call"},
+        "units": {"sts_rate": "lifts/h", "rtg_rate": "lifts/h", "yard_capacity": "freight tonnes", "moves_per_call": "lifts"},
+        "defaults": {"sts": 3, "max_sts_per_ship": 2, "sts_rate": 18, "moves_per_call": 900, "trucks": 10, "rtgs": 8,
+                     "rtg_rate": 14, "yard_capacity": 40000, "ships_per_week": 5},
+    },
+    "roro": {
+        "unit": "vehicles", "per_move": 1.0, "move": "vehicles",
+        "links": {"sts": "Ramp lanes", "trucks": "Drivers", "rtgs": "Yard marshals", "berth": "Berths"},
+        "labels": {"sts": "Ramp lanes", "max_sts_per_ship": "Ramp lanes on one ship", "sts_rate": "Vehicles per lane",
+                   "sts_availability": "Ramp availability", "trucks": "Drivers", "truck_cycle": "Driver cycle, ship to park and back by shuttle",
+                   "rtgs": "Yard marshals", "rtg_rate": "Vehicles parked per marshal", "yard_capacity": "Parking spaces",
+                   "moves_per_call": "Vehicles per call"},
+        "units": {"sts_rate": "per hour", "rtg_rate": "per hour", "yard_capacity": "vehicles", "moves_per_call": "vehicles"},
+        "defaults": {"sts": 2, "max_sts_per_ship": 2, "sts_rate": 120, "sts_availability": 98, "moves_per_call": 1600,
+                     "trucks": 40, "truck_cycle": 18, "rtgs": 10, "rtg_rate": 60, "yard_capacity": 6000, "dwell_days": 6,
+                     "ships_per_week": 3, "weather_downtime": 1},
+        "remedy": {
+            "sts": "The ramp lanes set the pace. Open a second ramp or a side ramp, or cut the time each vehicle spends on the ramp.",
+            "trucks": "Vehicles wait on deck for drivers. Add drivers, or shorten their shuttle back to the ship.",
+            "rtgs": "The park cannot take vehicles as fast as they come off. Add marshals, or pre-assign parking rows.",
+        },
+    },
+    "bulk": {
+        "unit": "tonnes", "per_move": 25.0, "move": "grabs",
+        "links": {"sts": "Ship unloaders", "trucks": "Conveyors", "rtgs": "Stackers", "berth": "Berths"},
+        "labels": {"sts": "Ship unloaders", "max_sts_per_ship": "Unloaders on one ship", "sts_rate": "Unloader rate",
+                   "trucks": "Conveyor lines (in 1/10ths)", "truck_cycle": "Conveyor cycle", "rtgs": "Stacker-reclaimers",
+                   "rtg_rate": "Stacker rate", "yard_capacity": "Stockpile", "moves_per_call": "Grabs per call (25 t)"},
+        "units": {"sts_rate": "grabs/h", "rtg_rate": "grabs/h", "yard_capacity": "tonnes", "moves_per_call": "grabs"},
+        "defaults": {"sts": 2, "max_sts_per_ship": 2, "sts_rate": 40, "moves_per_call": 2400, "trucks": 20, "truck_cycle": 12,
+                     "rtgs": 2, "rtg_rate": 80, "yard_capacity": 400000, "dwell_days": 10, "ships_per_week": 2,
+                     "road_share": 60},
+        "remedy": {
+            "sts": "The unloaders set the pace. Add an unloader, or raise the grab cycle rate.",
+            "trucks": "The conveyors cannot take what the unloaders discharge. Raise the conveyor capacity.",
+            "rtgs": "The stockyard machines cannot keep up. Add a stacker or spread the truck loading over more hours.",
+        },
+    },
+}
+TERMINAL["multipurpose"] = {**TERMINAL["general_cargo"]}
+
+
+def vocab(terminal: str) -> dict[str, Any]:
+    """The words and numbers for a terminal type: labels for each number, link names, unit."""
+    t = TERMINAL.get(terminal, TERMINAL["container"])
+    labels = {key: (t.get("labels", {}).get(key, label), t.get("units", {}).get(key, unit)) for key, label, unit, *_ in PARAMS}
+    links = {**LINKS, **t.get("links", {})}
+    steps = []
+    for key, step, words in STEPS:
+        name = {"berths": "berth", "sts": links["sts"], "trucks": links["trucks"], "rtgs": links["rtgs"],
+                "gate_lanes": "gate lanes"}[key].lower()
+        if key == "gate_lanes":
+            steps.append(words)
+        elif key in ("berths", "sts"):
+            steps.append(f"one more {name.rstrip('s')}" if key == "sts" else words)
+        else:
+            steps.append(f"{'four' if step == 4 else 'two'} more {name}")
+    return {"labels": labels, "links": links, "unit": t["unit"], "per_move": t["per_move"], "move": t["move"],
+            "defaults": {**DEFAULTS, **t.get("defaults", {})}, "remedy": {**REMEDY, **t.get("remedy", {})},
+            "steps": dict(zip([k for k, *_ in STEPS], steps))}
+
+
 def clean(form: dict[str, Any] | None) -> dict[str, Any]:
     """A scenario's numbers, each within its range; anything missing takes the default."""
     out = {}
@@ -150,8 +222,10 @@ def _weather(asset_id: int, p: dict[str, Any]) -> list[bool]:
     return stopped
 
 
-def run(asset_id: int, params: dict[str, Any], start: datetime | None = None, detail: bool = True) -> dict[str, Any]:
+def run(asset_id: int, params: dict[str, Any], start: datetime | None = None, detail: bool = True,
+        terminal: str = "container") -> dict[str, Any]:
     p = clean(params)
+    per_move = TERMINAL.get(terminal, TERMINAL["container"])["per_move"]
     start = (start or datetime(2026, 1, 5)).replace(minute=0, second=0, microsecond=0)
     hours = p["days"] * 24
     ships = _ships(asset_id, p, start)
@@ -225,7 +299,7 @@ def run(asset_id: int, params: dict[str, Any], start: datetime | None = None, de
         gate_moves = min(gate_queue, gate_cap, max(0.0, rtg_cap - vessel_moves))
         gate_queue -= gate_moves
         gate_backlog_max = max(gate_backlog_max, gate_queue)
-        yard_in[h] = (vessel_moves / 2 + gate_moves / 2) * TEU_PER_MOVE
+        yard_in[h] = (vessel_moves / 2 + gate_moves / 2) * per_move
         used["sts"] += vessel_moves
         used["trucks"] += vessel_moves
         used["rtgs"] += vessel_moves + gate_moves
@@ -278,8 +352,8 @@ def run(asset_id: int, params: dict[str, Any], start: datetime | None = None, de
         "params": p,
         "kpis": {
             "calls": len(calls), "finished": len(finished),
-            "moves": round(moves_done), "teu": round(moves_done * TEU_PER_MOVE),
-            "teu_per_year": round(moves_done * TEU_PER_MOVE * 365 / p["days"]),
+            "moves": round(moves_done), "teu": round(moves_done * per_move),
+            "teu_per_year": round(moves_done * per_move * 365 / p["days"]),
             "mean_wait": round(mean_wait, 1), "max_wait": round(max(waits), 1) if waits else 0.0,
             "mean_service": round(mean_service, 1),
             "turnaround": round(mean_wait + mean_service, 1),
@@ -297,16 +371,19 @@ def run(asset_id: int, params: dict[str, Any], start: datetime | None = None, de
     return result
 
 
-def what_helps(asset_id: int, params: dict[str, Any], base: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def what_helps(asset_id: int, params: dict[str, Any], base: dict[str, Any] | None = None,
+               terminal: str = "container") -> list[dict[str, Any]]:
     """The same scenario with one more of each resource: how much each addition shortens a ship's stay."""
-    base = base or run(asset_id, params, detail=False)
+    base = base or run(asset_id, params, detail=False, terminal=terminal)
+    words_for = vocab(terminal)["steps"]
     out = []
-    for key, step, words in STEPS:
+    for key, step, _ in STEPS:
+        words = words_for[key]
         trial = dict(base["params"])
         trial[key] = trial[key] + step
         if key == "sts":
             trial["max_sts_per_ship"] = base["params"]["max_sts_per_ship"]
-        r = run(asset_id, trial, detail=False)
+        r = run(asset_id, trial, detail=False, terminal=terminal)
         out.append({"key": key, "words": words,
                     "turnaround": r["kpis"]["turnaround"], "saves": round(base["kpis"]["turnaround"] - r["kpis"]["turnaround"], 1),
                     "teu": r["kpis"]["teu"], "more_teu": r["kpis"]["teu"] - base["kpis"]["teu"],
@@ -328,7 +405,7 @@ def what_helps(asset_id: int, params: dict[str, Any], base: dict[str, Any] | Non
 LINK_OF = {"berths": "berth", "sts": "sts", "trucks": "trucks", "rtgs": "rtgs", "gate_lanes": "gate"}
 
 
-def assess(asset_id: int, params: dict[str, Any], detail: bool = True) -> dict[str, Any]:
+def assess(asset_id: int, params: dict[str, Any], detail: bool = True, terminal: str = "container") -> dict[str, Any]:
     """A run, what one more of each resource would do, and the bottleneck that follows.
 
     The bottleneck is the resource whose addition helps most: the pressure figures
@@ -336,8 +413,8 @@ def assess(asset_id: int, params: dict[str, Any], detail: bool = True) -> dict[s
     often the symptom of a link further down the chain, and only trying the
     additions tells the two apart.
     """
-    result = run(asset_id, params, detail=detail)
-    helps = what_helps(asset_id, params, result)
+    result = run(asset_id, params, detail=detail, terminal=terminal)
+    helps = what_helps(asset_id, params, result, terminal)
     best = helps[0] if helps else None
     if best and best["score"] >= 2:
         bottleneck = LINK_OF[best["key"]]
@@ -346,18 +423,18 @@ def assess(asset_id: int, params: dict[str, Any], detail: bool = True) -> dict[s
     else:
         bottleneck = None
     result.update({"helps": helps, "bottleneck": bottleneck,
-                   "remedy": REMEDY.get(bottleneck, "Nothing holds the terminal back: one more of any resource changes little.")})
+                   "remedy": vocab(terminal)["remedy"].get(bottleneck, "Nothing holds the terminal back: one more of any resource changes little.")})
     return result
 
 
 # --- scenarios kept for an asset --------------------------------------------------
 
-def scenarios(conn: Any, asset_id: int) -> list[dict[str, Any]]:
+def scenarios(conn: Any, asset_id: int, terminal: str = "container") -> list[dict[str, Any]]:
     """The asset's scenarios, the baseline first; a baseline is made on first use."""
     rows = conn.execute("SELECT * FROM marine_scenarios WHERE asset_id = ? ORDER BY id", (asset_id,)).fetchall()
     if not rows:
         conn.execute("INSERT INTO marine_scenarios (asset_id, name, params) VALUES (?, ?, ?)",
-                     (asset_id, "Baseline", json.dumps(DEFAULTS)))
+                     (asset_id, "Baseline", json.dumps(vocab(terminal)["defaults"])))
         conn.commit()
         rows = conn.execute("SELECT * FROM marine_scenarios WHERE asset_id = ? ORDER BY id", (asset_id,)).fetchall()
     return [{"id": r["id"], "name": r["name"], "params": clean(json.loads(r["params"])),
@@ -375,10 +452,12 @@ def save(conn: Any, asset_id: int, name: str, params: dict[str, Any], scenario_i
                         (asset_id, name, p, user_id)).lastrowid
 
 
-def changes(base: dict[str, Any], other: dict[str, Any]) -> list[str]:
+def changes(base: dict[str, Any], other: dict[str, Any], terminal: str = "container") -> list[str]:
     """What a scenario changes from the baseline, in words."""
     out = []
-    for key, label, unit, *_ in PARAMS:
+    words = vocab(terminal)["labels"]
+    for key, *_ in PARAMS:
+        label, unit = words[key]
         if base.get(key) != other.get(key):
             out.append(f"{label} {_num(base[key])} → {_num(other[key])}{(' ' + unit) if unit and unit != '%' else unit}")
     return out

@@ -4,7 +4,7 @@
 {% block title %}{{ asset['name'] }} · Comfort and air · MarineTwin{% endblock %}
 
 {% block content %}
-{{ page_head(asset, "Comfort indoors and air quality, noise and heat outdoors, over the last 24 hours. Simulated for the prototype, in the shape a building management system and air-quality stations would supply. Air pollutants are judged on their 24-hour mean against the WHO 2021 guidelines.") }}
+{{ page_head(asset, "Comfort indoors; air, noise and heat outdoors, last 24 hours, against the WHO 2021 guidelines. Simulated for the prototype.") }}
 {{ asset_tabs(asset) }}
 
 <div class="grid grid-4">
@@ -15,9 +15,15 @@
   {% endfor %}
 </div>
 
-<div style="margin-top:16px">{{ actions_card(env['actions'], 'Every measure is within its limit.') }}</div>
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ env['actions'] | length }}"
+         {% if env['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif env['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(env['actions'], 'Every measure is within its limit.') }}</div>
 
-<div class="grid grid-2" style="margin-top:16px">
+</section>
+
+<section class="mt-panel" data-tab="Last 24 hours" data-slug="charts">
+<div class="grid grid-2">
   <div class="card">
     <div class="card-head"><div><h2>Fine particles (PM2.5) outdoors</h2></div></div>
     <div class="card-body">{{ charts['pm25'] }}</div>
@@ -28,6 +34,9 @@
   </div>
 </div>
 
+</section>
+
+<section class="mt-panel" data-tab="Every station" data-slug="stations">
 {% for s in env['stations'] %}
 <div class="card" style="margin-top:16px">
   <div class="card-head"><div><h2>{{ s['place'] }}</h2><p class="small muted" style="margin-top:2px">{{ s['inside'] | capitalize }}</p></div>{{ state_badge(s['state']) }}</div>
@@ -48,4 +57,6 @@
   </div>
 </div>
 {% endfor %}
+</section>
+</div>
 {% endblock %}

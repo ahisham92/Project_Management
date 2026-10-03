@@ -60,7 +60,9 @@ def test_the_demonstration_berth_is_a_working_twin(signed_in, demo):
     page = text(signed_in.get(demo))
     assert "Demo berth" in page and "The twin" in page
     twin = signed_in.get(demo + "/twin.json").get_json()
-    assert len(twin["elements"]) == 10
+    assert len(twin["elements"]) == 19
+    kinds = {e["kind"] for e in twin["elements"]}
+    assert {"pile", "slab", "beam", "fender", "bollard", "crane_rail", "ladder"} <= kinds
     assert {e["state"] for e in twin["elements"]} <= {"good", "warning", "critical", "neutral"}
     first = twin["elements"][0]
     element = text(signed_in.get(first["href"]))
@@ -80,7 +82,7 @@ def test_the_simulator_tells_the_same_story_twice(app, demo):
 
 def test_readings_round_trip_and_real_ones_replace_the_simulation(app, signed_in, demo):
     exported = text(signed_in.get(demo + "/readings.csv"))
-    assert exported.startswith("sensor,at,value\n")
+    assert exported.startswith("sensor,at,value,note\n")
     csv = "sensor,at,value\nP01-SG1,2026-01-05 10:00,512\nP01-SG1,2026-01-06,530\nNOPE,2026-01-06,1\n"
     answer = signed_in.post(demo + "/readings", data={"file": (io.BytesIO(csv.encode()), "log.csv")},
                             content_type="multipart/form-data", follow_redirects=True)
@@ -232,3 +234,123 @@ def test_without_triton_the_allowances_fall_back_to_bs6349(monkeypatch):
     assert found["allowances"]["casing"] == 4.5 and "not installed" in found["source"]
     assert marine_triton.projects() == [] and not marine_triton.available()
     assert math.isclose(found["allowances"]["sheet_pile_per_face"], 2.5)
+    rated = marine_triton.ratings(_asset())
+    assert rated["fender"] == 2012.0 and "not installed" in rated["source"]
+
+
+# --- concrete, furniture and inspections --------------------------------------
+
+def _sensor(kind, **over):
+    row = {"id": 9, "kind": kind, "label": f"X-{kind}", "alert": None, "alarm": None, "simulated": 1}
+    row.update(over)
+    return row
+
+
+RATINGS = {"fender": 2000.0, "bollard": 150.0, "source": "Triton project “Berth 1”"}
+
+
+def test_a_fender_is_judged_against_its_rated_reaction_from_triton():
+    readings = [{"at": "2026-01-01", "value": 600.0}, {"at": "2026-01-08", "value": 2100.0},
+                {"at": "2026-01-15", "value": 500.0}]
+    s = marine.assess_sensor(_sensor("fender_reaction"), readings, _element(kind="fender", material="rubber"),
+                             _asset(), None, 50, date(2026, 1, 16), RATINGS)
+    assert (s["alert"], s["alarm"]) == (1600.0, 2000.0)
+    assert s["state"] == "critical" and "105% of its 2,000 kN rating" in s["headline"]
+    advice = marine.recommendations(_element(name="F2", kind="fender"), {}, [s], _asset())
+    assert "rated reaction of 2,000 kN (Triton project “Berth 1”)" in advice[0]["text"]
+    # A limit set on the sensor itself wins over the rating.
+    own = marine.assess_sensor(_sensor("fender_reaction", alert=2500.0, alarm=3000.0), readings,
+                               _element(kind="fender"), _asset(), None, 50, date(2026, 1, 16), RATINGS)
+    assert own["state"] == "good"
+
+
+def test_a_bollard_near_its_capacity_is_watched():
+    readings = [{"at": "2026-01-01", "value": 40.0}, {"at": "2026-01-08", "value": 130.0}]
+    s = marine.assess_sensor(_sensor("bollard_load"), readings, _element(kind="bollard"), _asset(), None, 50,
+                             date(2026, 1, 9), RATINGS)
+    assert s["state"] == "warning" and s["alarm"] == 150.0
+
+
+def test_half_cell_potentials_are_worse_the_more_negative_they_are():
+    def judged(value):
+        readings = [{"at": "2026-01-01", "value": -100.0}, {"at": "2026-04-01", "value": value}]
+        return marine.assess_sensor(_sensor("half_cell"), readings, _element(material="concrete"), _asset(),
+                                    None, 50, date(2026, 4, 2))["state"]
+    assert judged(-150.0) == "good"
+    assert judged(-250.0) == "warning"
+    assert judged(-400.0) == "critical"
+
+
+def test_chloride_heading_for_its_threshold_within_the_design_life_is_watched():
+    # 0.05 % a year from 2016: 0.25 % now, 0.4 % three years on.
+    readings = [{"at": f"{2016 + y}-06-01", "value": 0.05 * y} for y in range(1, 6)]
+    s = marine.assess_sensor(_sensor("chloride"), readings, _element(kind="beam", material="concrete"), _asset(),
+                             None, 50, date(2021, 6, 2))
+    assert s["limit_year"] == pytest.approx(2024.4, abs=0.2)
+    assert s["state"] == "warning" and "reaches 0.40 % cement around 2024" in s["headline"]
+    advice = marine.recommendations(_element(name="COPE", kind="beam", material="concrete"), {}, [s], _asset())
+    assert "silane" in advice[0]["text"]
+
+
+def test_a_crane_rail_off_its_line_either_way_is_reported():
+    for value in (11.0, -11.0):
+        readings = [{"at": "2026-01-01", "value": 0.0}, {"at": "2026-02-01", "value": value}]
+        s = marine.assess_sensor(_sensor("rail_gauge"), readings, _element(kind="crane_rail"), _asset(), None, 50,
+                                 date(2026, 2, 2))
+        assert s["state"] == "critical"
+
+
+def test_an_inspection_reports_damage_nobody_instrumented(app, signed_in, demo):
+    twin = signed_in.get(demo + "/twin.json").get_json()
+    f3 = next(e for e in twin["elements"] if e["name"] == "F3")
+    answer = signed_in.post(f"{demo}/elements/{f3['id']}/inspection",
+                            data={"at": date.today().isoformat(), "grade": "5", "note": "Panel hanging off one chain"},
+                            follow_redirects=True)
+    page = text(answer)
+    assert "grade 5, failed / unsafe" in page and "Panel hanging off one chain" in page
+    twin = signed_in.get(demo + "/twin.json").get_json()
+    f3 = next(e for e in twin["elements"] if e["name"] == "F3")
+    assert f3["state"] == "critical"
+    asset_page = text(signed_in.get(demo))
+    assert "The last inspection graded F3 5 of 5" in asset_page and "replace the torn rubber" in asset_page
+    # A later, better inspection supersedes it: the latest grade is the condition.
+    signed_in.post(f"{demo}/elements/{f3['id']}/inspection", data={"at": date.today().isoformat(), "grade": "1"})
+    twin = signed_in.get(demo + "/twin.json").get_json()
+    assert next(e for e in twin["elements"] if e["name"] == "F3")["state"] != "critical"
+
+
+def test_a_new_element_takes_the_usual_sensors_for_its_type(signed_in, demo):
+    signed_in.post(demo + "/elements", data={"name": "F9", "kind": "fender", "material": "rubber",
+                                             "zone": "splash", "suggested": "1"})
+    signed_in.post(demo + "/elements", data={"name": "BEAM9", "kind": "beam", "material": "concrete",
+                                             "zone": "splash", "suggested": "1"})
+    twin = signed_in.get(demo + "/twin.json").get_json()
+    labels = {e["name"]: [s["label"] for s in e["sensors"]] for e in twin["elements"]}
+    assert labels["F9"] == ["F9-FR1", "F9-IN1"]
+    assert labels["BEAM9"] == ["BEAM9-CL1", "BEAM9-CR1", "BEAM9-HC1"]
+
+
+def test_triton_furniture_ratings_come_from_a_linked_project(tmp_path, monkeypatch):
+    pytest.importorskip("triton.store")
+    from triton.project import Project
+    from triton.store import ProjectStore
+
+    monkeypatch.setenv("TRITON_DATA_DIR", str(tmp_path / "triton"))
+    project = Project()
+    project.furniture.fenders.reaction = 1500.0
+    project.furniture.bollards.capacity = 100.0
+    ProjectStore(tmp_path / "triton").save(project)
+    found = marine_triton.ratings(_asset(triton_project=project.id))
+    assert (found["fender"], found["bollard"]) == (1500.0, 100.0)
+    assert marine_triton.ratings(_asset())["bollard"] == 150.0
+
+
+def test_a_fender_overloaded_months_ago_is_still_reported():
+    readings = [{"at": "2025-01-06", "value": 2100.0}] + [
+        {"at": f"2025-{m:02d}-01", "value": 500.0} for m in range(2, 13)] + [
+        {"at": f"2026-01-{d:02d}", "value": 450.0} for d in (5, 12, 19, 26)]
+    s = marine.assess_sensor(_sensor("fender_reaction"), readings, _element(kind="fender"), _asset(), None, 50,
+                             date(2026, 1, 27), RATINGS)
+    assert s["state"] == "warning" and s["exceedances"] == 1 and s["last_exceeded"] == "2025-01-06"
+    advice = marine.recommendations(_element(name="F1", kind="fender"), {}, [s], _asset())
+    assert "has gone over its rated reaction 1 time, last on 2025-01-06" in advice[0]["text"]

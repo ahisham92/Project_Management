@@ -8,6 +8,8 @@ only gather and show them. Every page is behind the site's one sign-in and the
 
 from __future__ import annotations
 
+import csv
+import io
 import math
 from datetime import date, datetime
 from pathlib import Path
@@ -26,8 +28,6 @@ bp = Blueprint("marine", __name__, url_prefix="/marinetwin")
 # What the 3D view can open: a Revit model exported as IFC, or as glTF / GLB.
 MODEL_TYPES = {".ifc": "ifc", ".glb": "glb", ".gltf": "gltf"}
 MODEL_LIMIT = 200 * 1024 * 1024
-# How a new sensor is labelled on an element: P01-SG1, P01-UT1...
-SENSOR_TAGS = {"strain": "SG", "corrosion": "UT", "displacement": "D", "tilt": "T"}
 
 
 def models_dir() -> Path:
@@ -83,7 +83,8 @@ def _day_field(name: str, default: str) -> str:
 def _context() -> dict:
     return {
         "asset_kinds": marine.ASSET_KINDS, "element_kinds": marine.ELEMENT_KINDS, "zones": marine.ZONES,
-        "materials": marine.MATERIALS, "sensor_kinds": marine.SENSOR_KINDS,
+        "materials": marine.MATERIALS, "sensor_kinds": marine.SENSOR_KINDS, "grades": marine.GRADES,
+        "suggested": marine.SUGGESTED,
         "kind_name": marine.labels(marine.ASSET_KINDS), "element_kind_name": marine.labels(marine.ELEMENT_KINDS),
         "zone_name": marine.labels(marine.ZONES), "triton_ready": marine_triton.available(),
     }
@@ -245,9 +246,13 @@ def export_readings(asset_id: int):
     """Every reading on the asset, in the same columns the import reads."""
     _asset_or_404(asset_id)
     rows = query(
-        "SELECT s.label, r.at, r.value FROM marine_readings r JOIN marine_sensors s ON s.id = r.sensor_id"
+        "SELECT s.label, r.at, r.value, r.note FROM marine_readings r JOIN marine_sensors s ON s.id = r.sensor_id"
         " JOIN marine_elements e ON e.id = s.element_id WHERE e.asset_id = ? ORDER BY s.label, r.at", (asset_id,))
-    body = "sensor,at,value\n" + "".join(f"{r['label']},{r['at']},{r['value']}\n" for r in rows)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["sensor", "at", "value", "note"])
+    writer.writerows([r["label"], r["at"], r["value"], r["note"]] for r in rows)
+    body = out.getvalue()
     return Response(body, mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=marinetwin-{asset_id}-readings.csv"})
 
@@ -322,12 +327,16 @@ def add_element(asset_id: int):
          _choice("zone", marine.ZONES, "splash"), _number("wall_mm"), _number("design_ur"),
          (request.form.get("triton_element") or "").strip(), (request.form.get("model_ref") or "").strip(),
          _number("x", 0.0), _number("y", 0.0), _number("z", 0.0))).lastrowid
-    for kind in request.form.getlist("sensors"):
-        if kind in marine.SENSOR_KINDS:
-            _, _, alert, alarm = marine.SENSOR_KINDS[kind]
-            label = f"{name}-{SENSOR_TAGS[kind]}1"
-            db.execute("INSERT INTO marine_sensors (element_id, kind, label, alert, alarm, simulated)"
-                       " VALUES (?, ?, ?, ?, ?, 1)", (element_id, kind, label, alert, alarm))
+    kind = _choice("kind", marine.ELEMENT_KINDS, "pile")
+    chosen = request.form.getlist("sensors")
+    if request.form.get("suggested"):
+        chosen = marine.suggested(kind) + chosen
+    for sensor_kind in dict.fromkeys(chosen):
+        spec = marine.SENSOR_KINDS.get(sensor_kind)
+        if spec:
+            # P01-SG1, F2-FR1. Limits left empty follow the kind's defaults, or Triton's ratings.
+            db.execute("INSERT INTO marine_sensors (element_id, kind, label, simulated) VALUES (?, ?, ?, 1)",
+                       (element_id, sensor_kind, f"{name}-{spec['tag']}1"))
     marine.refresh_simulated(db, asset_id)
     db.commit()
     flash(f"{name} added.", "success")
@@ -355,8 +364,10 @@ def element(asset_id: int, element_id: int):
     readings = marine.readings_for(db, [s["id"] for s in mine["sensors"]])
     life = int(twin["durability"]["life"])
     charts = {s["id"]: sensor_trend(s, readings[s["id"]], asset, life) for s in mine["sensors"]}
+    history = {s["id"]: [r for r in readings[s["id"]] if not s["simulated"] or r["note"]]
+               for s in mine["sensors"] if s["kind"] == "inspection"}
     return render_template("marine/element.html", asset=asset, element=element, twin=twin, mine=mine,
-                           charts=charts, life=life, **_context())
+                           charts=charts, life=life, history=history, grade_name=dict(marine.GRADES), **_context())
 
 
 @bp.post("/assets/<int:asset_id>/elements/<int:element_id>/edit")
@@ -382,15 +393,35 @@ def add_sensor(asset_id: int, element_id: int):
     kind = request.form.get("kind")
     if kind not in marine.SENSOR_KINDS:
         abort(400)
-    _, _, alert, alarm = marine.SENSOR_KINDS[kind]
-    label = (request.form.get("label") or "").strip() or f"{element['name']}-{kind}"
+    tag = marine.SENSOR_KINDS[kind]["tag"]
+    taken = {r["label"] for r in query("SELECT label FROM marine_sensors WHERE element_id = ?", (element_id,))}
+    label = (request.form.get("label") or "").strip() or next(
+        f"{element['name']}-{tag}{n}" for n in range(1, 100) if f"{element['name']}-{tag}{n}" not in taken)
     get_db().execute(
         "INSERT INTO marine_sensors (element_id, kind, label, alert, alarm, simulated) VALUES (?, ?, ?, ?, ?, ?)",
-        (element_id, kind, label, _number("alert", alert), _number("alarm", alarm),
-         1 if request.form.get("simulated") else 0))
+        (element_id, kind, label, _number("alert"), _number("alarm"), 1 if request.form.get("simulated") else 0))
     marine.refresh_simulated(get_db(), asset_id)
     get_db().commit()
     flash(f"{label} added.", "success")
+    return redirect(url_for("marine.element", asset_id=asset_id, element_id=element_id))
+
+
+@bp.post("/assets/<int:asset_id>/elements/<int:element_id>/inspection")
+@login_required
+def record_inspection(asset_id: int, element_id: int):
+    """What an inspector found: a grade from 1 (as new) to 5 (failed), and a note."""
+    element = _element_or_404(asset_id, element_id)
+    try:
+        grade = int(request.form.get("grade") or 0)
+    except ValueError:
+        grade = 0
+    if grade not in dict(marine.GRADES):
+        flash("Pick a grade from 1 to 5.", "error")
+        return redirect(url_for("marine.element", asset_id=asset_id, element_id=element_id))
+    at = _day_field("at", date.today().isoformat())
+    marine.record_inspection(get_db(), element, at, grade, request.form.get("note") or "")
+    get_db().commit()
+    flash(f"Inspection of {element['name']} recorded: grade {grade}, {dict(marine.GRADES)[grade].lower()}.", "success")
     return redirect(url_for("marine.element", asset_id=asset_id, element_id=element_id))
 
 

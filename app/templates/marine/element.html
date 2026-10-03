@@ -20,6 +20,19 @@
 
 <div class="grid grid-4">
   {{ tile('Health', mine['health'] if mine['health'] is not none else '—', 'its worst sensor, out of 100') }}
+  {% if mine['furniture'] %}
+    {% set inspection = mine['sensors'] | selectattr('kind', 'equalto', 'inspection') | list %}
+    {% if element['kind'] == 'fender' and twin['ratings']['fender'] %}
+      {{ tile('Rated reaction', '{:,.0f} kN'.format(twin['ratings']['fender']), twin['ratings']['fender_name'] or twin['ratings']['source']) }}
+    {% elif element['kind'] == 'bollard' and twin['ratings']['bollard'] %}
+      {{ tile('Rated capacity', '{:,.0f} t'.format(twin['ratings']['bollard']), twin['ratings']['source']) }}
+    {% else %}
+      {{ tile('Type', element_kind_name.get(element['kind']), 'quay furniture') }}
+    {% endif %}
+    {{ tile('Last inspection', ('Grade ' ~ (inspection[0]['latest'] | int)) if inspection and inspection[0]['latest'] is not none else '—',
+            short_date(inspection[0]['latest_at']) if inspection and inspection[0]['latest_at'] else 'none recorded') }}
+    {{ tile('Sensors', mine['sensors'] | length, 'readings and inspections') }}
+  {% else %}
   {{ tile('Design UR', '%.2f' | format(mine['design_ur']) if mine['design_ur'] is not none else '—',
           'from Triton' if mine['design_from'] == 'Triton' else ('typed in' if mine['design_from'] else 'not known yet')) }}
   {{ tile('UR at end of life',
@@ -28,7 +41,8 @@
           'critical' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else 'neutral',
           'over capacity' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else '') }}
   {{ tile('Corrosion allowance', ('%.2f mm' | format(mine['allowance'])) if mine['allowance'] else '—',
-          'per face over ' ~ life ~ ' years') }}
+          ('per face over ' ~ life ~ ' years') if mine['allowance'] else 'not steel, or not exposed') }}
+  {% endif %}
 </div>
 
 {% if mine['advice'] %}
@@ -57,7 +71,22 @@
       <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
     </form>
   </div>
-  <div class="card-body">{{ charts[s['id']] }}</div>
+  <div class="card-body">
+    {% if s.get('limit_source') and s['limit_source'] not in ('default', 'set on the sensor') %}
+      <p class="small muted">Limits from the rating in {{ s['limit_source'] }}: alert at 80% ({{ '{:,.0f}'.format(s['alert']) }} {{ s['unit'] }}),
+        alarm at the rating ({{ '{:,.0f}'.format(s['alarm']) }} {{ s['unit'] }}).</p>
+    {% endif %}
+    {{ charts[s['id']] }}
+    {% if s['kind'] == 'inspection' and history[s['id']] %}
+      <div class="table-wrap" style="margin-top:8px"><table class="table">
+        <thead><tr><th>Inspected</th><th>Grade</th><th>What was seen</th></tr></thead>
+        <tbody>{% for r in history[s['id']] | reverse %}
+          <tr><td class="small nowrap">{{ short_date(r['at']) }}</td><td class="small nowrap">{{ r['value'] | int }}: {{ grade_name[r['value'] | int] }}</td>
+              <td class="small">{{ r['note'] or '—' }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+  </div>
 </div>
 {% else %}
 <div class="card" style="margin-top:16px"><div class="card-body">
@@ -65,15 +94,31 @@
 </div></div>
 {% endfor %}
 
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Record an inspection</h2>
+    <p class="small muted" style="margin-top:2px">What the inspector saw, graded 1 (as new) to 5 (failed). A 3 is watched, a 4 or 5 is acted on,
+      and the note goes with it into the recommendations. Damage no sensor can see (a torn fender, spalled concrete, a bent ladder) is reported this way.</p></div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.record_inspection', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="field w-lg"><span class="field-label">Inspected on</span><input type="date" name="at" value="{{ twin['today'] }}" required></label>
+      <label class="field w-lg"><span class="field-label">Grade</span>
+        <select name="grade" required>{% for g, w in grades %}<option value="{{ g }}">{{ g }}: {{ w }}</option>{% endfor %}</select></label>
+      <label class="field flex1"><span class="field-label">What was seen</span><input type="text" name="note" placeholder="e.g. cone torn at the lower flange; two panel pads missing"></label>
+      <button type="submit" class="btn btn-primary">Record it</button>
+    </form>
+  </div>
+</div>
+
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
     <div class="card-head"><div><h2>Add a sensor</h2>
-      <p class="small muted" style="margin-top:2px">Limits are pre-filled for S355 steel (alert at half of yield strain, alarm at three quarters).
-        Thickness loss is judged against the design allowance instead.</p></div></div>
+      <p class="small muted" style="margin-top:2px">Leave the limits empty to use the defaults: strain at half and three quarters of S355's yield strain,
+        chlorides at 0.2 and 0.4% of cement, cracks at 0.2 and 0.3 mm, half-cell at −200 and −350 mV, rails at 5 and 10 mm,
+        and a fender's reaction or a bollard's load at 80 and 100% of its rating in Triton. Thickness loss is judged against the design allowance.</p></div></div>
     <div class="card-body">
       <form method="post" action="{{ url_for('marine.add_sensor', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
         <label class="field w-lg"><span class="field-label">Measures</span>
-          <select name="kind">{% for k, v in sensor_kinds.items() %}<option value="{{ k }}">{{ v[0] }} ({{ v[1] }})</option>{% endfor %}</select></label>
+          <select name="kind">{% for k, v in sensor_kinds.items() %}<option value="{{ k }}">{{ v['name'] }} ({{ v['unit'] }})</option>{% endfor %}</select></label>
         <label class="field w-lg"><span class="field-label">Label</span><input type="text" name="label" placeholder="{{ element['name'] }}-SG2"></label>
         <label class="field w-md"><span class="field-label">Alert</span><input type="number" step="any" name="alert" placeholder="default"></label>
         <label class="field w-md"><span class="field-label">Alarm</span><input type="number" step="any" name="alarm" placeholder="default"></label>

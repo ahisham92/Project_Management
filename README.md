@@ -445,12 +445,27 @@ anybody given the program writes project specifications.
 ### About MarineTwin (digital twin of marine structures)
 
 Once a quay, jetty or dolphin is handed over, MarineTwin follows it through its life. Each
-**asset** is made of **elements** (piles, combi wall panels, beams, the deck), each of which can
-carry **sensors**: strain gauges, ultrasonic thickness points for corrosion, displacement and tilt.
+**asset** is made of **elements**: the structure (piles, combi wall panels, beams, the deck) and
+its **quay furniture** (fenders, bollards, crane rails, crane stoppers, storm pins, ladders). Each
+can carry **sensors**:
+
+| On | What is measured | Judged against |
+|---|---|---|
+| Steel | Strain, ultrasonic thickness loss, displacement, tilt | Half and three quarters of S355's yield strain; the corrosion allowance; 25/50 mm; 0.5/1° |
+| Concrete | Chloride at the rebar, crack width, half-cell potential | 0.2/0.4 % by mass of cement; 0.2/0.3 mm; −200/−350 mV CSE (ASTM C876) |
+| Fenders, bollards | Fender reaction, bollard line load | 80 % and 100 % of the rating in Triton's quay furniture |
+| Crane rails | Deviation from line and level | ±5 / ±10 mm |
+| Anything | **Inspection grade**, 1 (as new) to 5 (failed), with the inspector's note | 3 is watched, 4 or 5 acted on |
+
+The inspection grade is how damage no sensor can see (a torn fender, spalled concrete, a bent
+ladder) gets reported: it is typed in on the element's page and goes into the recommendations with
+its note. A fender or bollard that has ever gone over its rating stays flagged until somebody looks.
+Chlorides and crack widths are trended to the year they reach their limit.
 
 **It does no design of its own; it asks Triton.** Link an asset to a Triton section and each
 element (named as Triton names it: P01, CW2) takes its **design utilisation** from Triton's saved
-results, and the asset takes the project's own **corrosion allowances and design life**. Unlinked,
+results, and the asset takes the project's own **corrosion allowances and design life** and its
+**fender and bollard ratings**. Unlinked,
 the allowances come from Triton's code defaults (BS 6349-1-4 or EN 1993-5) and the utilisation is
 typed in. Triton is only read, never written to, and a site without Triton still runs MarineTwin.
 

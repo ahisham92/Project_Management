@@ -23,11 +23,13 @@
   {{ tile('Health', twin['health'] if twin['health'] is not none else '—', 'out of 100, averaged over its elements',
           {'critical': 'critical', 'warning': 'warning', 'good': 'good'}.get(twin['state'], 'neutral'),
           {'critical': 'act now', 'warning': 'watch', 'good': 'good'}.get(twin['state'], '')) }}
+  {% set structure = twin['groups'].get('Structure') %}{% set furniture = twin['groups'].get('Quay furniture') %}
   {{ tile('Elements', twin['elements'] | length,
-          twin['counts']['critical'] ~ ' to act on, ' ~ twin['counts']['warning'] ~ ' to watch') }}
+          (structure['count'] if structure else 0) ~ ' structural, ' ~ (furniture['count'] if furniture else 0) ~ ' furniture; '
+          ~ twin['counts']['critical'] ~ ' to act on, ' ~ twin['counts']['warning'] ~ ' to watch') }}
   {{ tile('Sensors', twin['sensors'], 'readings up to ' ~ short_date(twin['today'])) }}
   {{ tile('Judged against', 'Triton' if twin['triton_linked'] else 'Typed in',
-          twin['durability']['source']) }}
+          twin['durability']['source'] ~ '; fender and bollard ratings from ' ~ twin['ratings']['source']) }}
 </div>
 
 <div class="card" style="margin-top:16px">
@@ -87,7 +89,9 @@
           <th class="right">Health</th><th>Condition</th>
         </tr></thead>
         <tbody>
-          {% for e in twin['elements'] %}
+          {% for group, members in twin['elements'] | groupby('furniture') %}
+            <tr><th colspan="8" class="small" style="background:var(--surface)">{{ 'Quay furniture' if group else 'Structure' }}</th></tr>
+          {% for e in members %}
             <tr>
               <td><a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=e['element']['id']) }}"><strong>{{ e['element']['name'] }}</strong></a></td>
               <td class="small">{{ element_kind_name.get(e['element']['kind']) }}<span class="muted">, {{ e['element']['material'] }}</span></td>
@@ -102,6 +106,7 @@
               <td>{{ state_badge(e['state']) }}</td>
             </tr>
           {% endfor %}
+          {% endfor %}
         </tbody>
       </table>
     </div>
@@ -111,7 +116,8 @@
 
 <div class="card" style="margin-top:16px">
   <div class="card-head"><div><h2>Add an element</h2>
-    <p class="small muted" style="margin-top:2px">Name it as Triton does (P01, CW2, B1) and its design ratio comes from the linked section.
+    <p class="small muted" style="margin-top:2px">The structure (piles, walls, beams, the deck) or its furniture (fenders, bollards, crane rails, ladders).
+      Name it as Triton does (P01, CW2, B1) and its design ratio comes from the linked section.
       The model reference is its IFC GlobalId, Tag (the Revit element id) or Name, so the 3D view can find it.</p></div></div>
   <div class="card-body">
     <form method="post" action="{{ url_for('marine.add_element', asset_id=asset['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
@@ -128,8 +134,13 @@
       <label class="field w-sm"><span class="field-label">x (m)</span><input type="number" step="0.1" name="x" value="0"></label>
       <label class="field w-sm"><span class="field-label">y (m)</span><input type="number" step="0.1" name="y" value="0"></label>
       <label class="field w-sm"><span class="field-label">z (m)</span><input type="number" step="0.1" name="z" value="0"></label>
-      <fieldset class="field" style="border:0;padding:0;margin:0"><span class="field-label">Simulated sensors</span>
-        {% for k, v in sensor_kinds.items() %}<label class="small" style="margin-right:10px"><input type="checkbox" name="sensors" value="{{ k }}" {{ 'checked' if k in ('strain', 'corrosion') }}> {{ v[0] }}</label>{% endfor %}
+      <fieldset class="field" style="border:0;padding:0;margin:0;flex-basis:100%"><span class="field-label">Simulated sensors</span>
+        <label class="small" style="margin-right:14px"><input type="checkbox" name="suggested" value="1" checked>
+          <strong>The usual ones for its type</strong></label>
+        <span class="small muted">and also:</span>
+        {% for k, v in sensor_kinds.items() %}<label class="small" style="margin-right:10px;white-space:nowrap"><input type="checkbox" name="sensors" value="{{ k }}"> {{ v['name'] }}</label>{% endfor %}
+        <span class="field-hint">The usual ones: piles take thickness and strain; concrete beams and slabs chlorides, cracks and half-cell;
+          fenders their reaction and an inspection grade; bollards their line load; crane rails their line and level.</span>
       </fieldset>
       <button type="submit" class="btn btn-primary">Add it</button>
     </form>

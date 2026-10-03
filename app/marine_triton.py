@@ -1,13 +1,15 @@
 """What MarineTwin asks of Triton, and nothing more.
 
-MarineTwin does not design anything. The quay was designed in Triton, so the two
+MarineTwin does not design anything. The quay was designed in Triton, so the
 numbers a monitored element is judged against come from there:
 
 * **the design utilisation** of the element — the ratio Triton found for it under
-  the Plaxis straining actions, read from the section's saved results; and
+  the Plaxis straining actions, read from the section's saved results;
 * **the corrosion allowance** the design assumed — the project's own durability
   settings when the asset is linked to a Triton project, or Triton's defaults for
-  the chosen code and design life when it is not.
+  the chosen code and design life when it is not; and
+* **the ratings of the quay furniture** — the fender's rated reaction and the
+  bollard's capacity, from the project's quay furniture or Triton's defaults.
 
 Triton is read in-process from its own files (the ``triton`` package beside
 ``app``, and the data folder ``triton_door`` points it at), read-only: nothing
@@ -156,3 +158,36 @@ def allowance_for(element: Any, allowances: dict[str, float]) -> float | None:
         return None
     key = ALLOWANCE_FOR_KIND.get(element["kind"]) or ALLOWANCE_FOR_ZONE.get(element["zone"], "casing")
     return float(allowances.get(key, 0.0)) or None
+
+
+# Typical catalogue values, only for when Triton itself will not import: the
+# defaults Triton's own quay furniture starts from.
+_FALLBACK_FENDER_REACTION = 2012.0   # kN, SCN 1600 F1.8
+_FALLBACK_BOLLARD_CAPACITY = 150.0   # t
+
+
+def ratings(asset: Any) -> dict[str, Any]:
+    """What a fender and a bollard are rated for: ``fender`` (kN reaction) and ``bollard`` (t).
+
+    A linked Triton project's quay furniture wins, since that is what the berth
+    was designed with; otherwise Triton's own defaults.
+    """
+    project = _project(asset["triton_project"] or "")
+    if project is not None:
+        furniture = project.furniture
+        fenders, bollards = furniture.fenders, furniture.bollards
+        return {
+            "fender": fenders.reaction if fenders else None,
+            "fender_name": fenders.name if fenders else "",
+            "bollard": bollards.capacity if bollards else None,
+            "source": f"Triton project “{project.info.name}”",
+        }
+    try:
+        from triton.furniture_inputs import Bollards, Fenders
+
+        fenders, bollards = Fenders(), Bollards()
+        return {"fender": fenders.reaction, "fender_name": fenders.name, "bollard": bollards.capacity,
+                "source": "Triton's default furniture"}
+    except Exception:                                 # noqa: BLE001 - Triton not installed
+        return {"fender": _FALLBACK_FENDER_REACTION, "fender_name": "", "bollard": _FALLBACK_BOLLARD_CAPACITY,
+                "source": "typical catalogue values (Triton is not installed here)"}

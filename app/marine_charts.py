@@ -67,7 +67,9 @@ def sensor_trend(sensor: dict[str, Any], readings: Sequence[Any], asset: Any, li
             limits.append(("Alarm", sensor["alarm"], CRITICAL))
 
     values = [v for _, v in points] + [v for _, v in projection] + [v for _, v, _ in limits]
-    lo, hi = min(values + [0.0]), max(values)
+    if sensor["kind"] in ("rail_gauge", "rail_level"):
+        values += [-v for _, v, _ in limits]                  # either side of the line
+    lo, hi = min(values + [0.0]), max(values + [0.0])
     if sensor["kind"] in ("strain", "displacement", "tilt"):
         lo = min(lo, -max(abs(lo), 0))
     if hi - lo < 1e-9:
@@ -109,7 +111,7 @@ def sensor_trend(sensor: dict[str, Any], readings: Sequence[Any], asset: Any, li
                      f'stroke-width="1.5" stroke-dasharray="6 4"/>')
         parts.append(f'<text x="{w - right - 4}" y="{y - 5:.1f}" text-anchor="end" class="tick-value">'
                      f'{label} {value:,.{0 if abs(value) >= 100 else 2}f}</text>')
-        if sensor["kind"] in ("strain",) and value > 0:
+        if sensor["kind"] in ("strain", "rail_gauge", "rail_level") and value > 0:
             parts.append(f'<line x1="{left}" y1="{y_of(-value):.1f}" x2="{w - right}" y2="{y_of(-value):.1f}" '
                          f'stroke="{colour}" stroke-width="1" stroke-dasharray="6 4" opacity="0.6"/>')
 
@@ -120,7 +122,14 @@ def sensor_trend(sensor: dict[str, Any], readings: Sequence[Any], asset: Any, li
         parts.append(f'<line x1="{today_x:.1f}" y1="{top}" x2="{today_x:.1f}" y2="{h - bottom}" stroke="{AXIS}" stroke-width="1"/>')
         parts.append(f'<text x="{today_x + 5:.1f}" y="{top + 10}" class="tick">Latest reading</text>')
 
-    path = " ".join(f"{'M' if i == 0 else 'L'}{x_of(d):.1f},{y_of(v):.1f}" for i, (d, v) in enumerate(points))
+    if sensor["kind"] == "inspection":
+        # A grade holds until the next inspection: a step, not a slope.
+        steps = [f"M{x_of(points[0][0]):.1f},{y_of(points[0][1]):.1f}"]
+        for d, v in points[1:]:
+            steps.append(f"H{x_of(d):.1f}V{y_of(v):.1f}")
+        path = " ".join(steps)
+    else:
+        path = " ".join(f"{'M' if i == 0 else 'L'}{x_of(d):.1f},{y_of(v):.1f}" for i, (d, v) in enumerate(points))
     parts.append(f'<path d="{path}" fill="none" stroke="{READING}" stroke-width="1.6" stroke-linejoin="round"/>')
     d, v = points[-1]
     parts.append(f'<circle cx="{x_of(d):.1f}" cy="{y_of(v):.1f}" r="4" fill="{READING}" stroke="{SURFACE}" stroke-width="2"/>')

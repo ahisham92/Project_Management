@@ -100,7 +100,25 @@ function schematic(elements) {
         geometry = new THREE.CylinderGeometry(0.35, 0.45, 0.9, 16);
         break;
       case 'fender':
-        geometry = new THREE.BoxGeometry(2, 2.5, 1);
+        geometry = new THREE.BoxGeometry(2.2, 2.6, 1.2);
+        break;
+      case 'crane_rail':
+        // One rail along the whole berth, at the element's own line and level.
+        geometry = new THREE.BoxGeometry(span, 0.25, 0.35);
+        at = new THREE.Vector3(midX, e.z, -e.y);
+        break;
+      case 'ladder':
+        geometry = new THREE.BoxGeometry(0.6, 5, 0.15);
+        at = new THREE.Vector3(e.x, e.z - 1, -e.y);
+        break;
+      case 'crane_stopper':
+      case 'storm_pin':
+        geometry = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+        break;
+      case 'tie_rod':
+        geometry = new THREE.CylinderGeometry(0.08, 0.08, 20, 8);
+        geometry.rotateX(Math.PI / 2);
+        at = new THREE.Vector3(e.x, e.z, -e.y + 10);
         break;
       default:
         geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);

@@ -510,6 +510,37 @@ feed is simulated for the prototype** (deterministically per asset and day), in 
 would later connect: a met forecast, the vessel line-up, crane status and the downtime log. The
 limits are typical values for a container berth; the figures are indicative, not a design check.
 
+**Simulation.** The *Simulation* tab runs the terminal hour by hour over a few weeks of ship calls:
+ships wait for a berth, quay cranes work them, terminal tractors carry each box to the yard, yard
+cranes stack it, and road trucks come through the gate. A scenario is a set of numbers anyone can
+edit (berths, quay cranes, cranes per ship, tractors, yard cranes, gate lanes and hours, ship calls
+a week, moves per call, the share of hours lost to wind). Every scenario sees the same ships, so
+scenarios kept side by side differ only by what was changed. The **bottleneck** is found by running
+the scenario again with one more of each resource: the addition that shortens ship stays, raises
+throughput or clears the gate queue most is the constraint, and the page says when fixing it moves
+the bottleneck on (more tractors often hand it to the yard cranes). It is for comparing options,
+not for sizing a terminal.
+
+**Beyond the structure** each asset has four more tabs, every feed simulated for the prototype in
+the shape the real system would supply:
+
+- **Equipment & maintenance** – the asset register (cranes, RTGs, reach stackers, tractors,
+  substations, shore power, lighting, fire pumps, gate portals, HVAC) with life used and documents;
+  service due against running hours, MTBF/MTTR and availability, hoist gearbox vibration against
+  ISO 10816-3, and the open work orders (as from a CMMS).
+- **Comfort & air** – temperature, humidity, CO₂ and noise indoors; PM2.5, PM10, NO₂, SO₂, noise
+  and heat stress (WBGT) outdoors, with pollutants judged on their 24-hour mean against the WHO
+  2021 guidelines.
+- **Carbon & compliance** – twelve months of diesel and electricity as scope 1 and 2 emissions,
+  carbon per container move against a 4.2% a year cut, shore power reported apart; and a register
+  of inspections, examinations and reports (LOLER, ISPS, environmental permit, NFPA 25, IEC 60364,
+  ISO 14001/45001, the quay's own inspections) with what is overdue or due in 30 days.
+- **Safety & security** – days since a lost-time injury, LTIFR and TRIFR, near misses, the
+  incident log, permits to work open now, ISPS level, gate access, CCTV, perimeter alarms and
+  people in crane exclusion zones, plus the quay ladders from the structure.
+
+The urgent items from every tab also appear on the Operations tab's *What should we do* list.
+
 ## Installing it on your computer
 
 You need Python 3.10 or newer. Check with `python3 --version` (Windows: `py --version`).

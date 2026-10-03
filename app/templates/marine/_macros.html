@@ -19,7 +19,39 @@
 
 {% macro asset_tabs(asset) %}
   <nav class="tabs" style="margin:0 0 16px">
-    <a href="{{ url_for('marine.asset', asset_id=asset['id']) }}" class="{{ 'active' if request.endpoint == 'marine.asset' }}">Structure</a>
-    <a href="{{ url_for('marine.operations', asset_id=asset['id']) }}" class="{{ 'active' if request.endpoint == 'marine.operations' }}">Operations</a>
+    {% for endpoint, label in [('marine.asset', 'Structure'), ('marine.operations', 'Operations'), ('marine.simulation', 'Simulation'),
+                               ('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
+                               ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
+      <a href="{{ url_for(endpoint, asset_id=asset['id']) }}" class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+    {% endfor %}
   </nav>
+{% endmacro %}
+
+{% macro page_head(asset, subtitle) %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>{{ asset['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">{{ subtitle }}</p>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro actions_card(actions, empty_text, intro='Most pressing first.') %}
+<div class="card">
+  <div class="card-head"><div><h2>What to do</h2><p class="small muted" style="margin-top:2px">{{ intro }}</p></div></div>
+  <div class="card-body">
+    {% if actions %}
+    <ul class="marine-advice">
+      {% for one in actions %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['area'] }}</strong>{% if one.get('when') %} <span class="muted">· {{ one['when'] }}</span>{% endif %}<br>{{ one['text'] }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">{{ empty_text }}</p>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro bar(percent, state='') %}
+  <div class="marine-meter"><div class="marine-bar {{ 'marine-bar-' ~ state if state }}" style="width:{{ [percent, 100] | min }}%"></div></div>
 {% endmacro %}

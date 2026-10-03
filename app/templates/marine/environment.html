@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, actions_card %}
+{% block title %}{{ asset['name'] }} · Comfort and air · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "Comfort indoors and air quality, noise and heat outdoors, over the last 24 hours. Simulated for the prototype, in the shape a building management system and air-quality stations would supply. Air pollutants are judged on their 24-hour mean against the WHO 2021 guidelines.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {% for s in env['stations'][:4] %}
+    {{ tile(s['place'], s['inside'] | capitalize,
+            (s['measures'] | selectattr('state', 'ne', 'good') | list | length) ~ ' of ' ~ (s['measures'] | length) ~ ' measures over their limit',
+            s['state'], {'good': 'within limits', 'warning': 'watch', 'critical': 'act now'}[s['state']]) }}
+  {% endfor %}
+</div>
+
+<div style="margin-top:16px">{{ actions_card(env['actions'], 'Every measure is within its limit.') }}</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><div><h2>Fine particles (PM2.5) outdoors</h2></div></div>
+    <div class="card-body">{{ charts['pm25'] }}</div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>CO₂ indoors</h2><p class="small muted" style="margin-top:2px">A measure of fresh air: it rises with people in the room and too little ventilation.</p></div></div>
+    <div class="card-body">{{ charts['co2'] }}</div>
+  </div>
+</div>
+
+{% for s in env['stations'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>{{ s['place'] }}</h2><p class="small muted" style="margin-top:2px">{{ s['inside'] | capitalize }}</p></div>{{ state_badge(s['state']) }}</div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Measure</th><th class="right">Now</th><th class="right">24-hour mean</th><th class="right">24-hour peak</th><th>Limit</th><th>Judged on</th><th>Condition</th></tr></thead>
+      <tbody>
+        {% for r in s['measures'] %}
+          <tr><td>{{ r['name'] }}</td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['latest']) }} <span class="small muted">{{ r['unit'] }}</span></td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['mean']) }}</td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['peak']) }}</td>
+            <td class="small muted">{{ r['note'] }}</td><td class="small">{{ r['judged_on'] }}</td>
+            <td>{{ state_badge(r['state']) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

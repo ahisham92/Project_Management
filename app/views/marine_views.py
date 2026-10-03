@@ -18,10 +18,12 @@ from flask import (
     Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
-from .. import marine, marine_ops, marine_triton
+from .. import marine, marine_facility, marine_ops, marine_sim, marine_triton
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
-from ..marine_charts import sea_forecast, sensor_trend, wind_forecast
+from ..marine_charts import (
+    carbon_months, env_chart, sea_forecast, sensor_trend, sim_gate, sim_ships, wind_forecast,
+)
 
 bp = Blueprint("marine", __name__, url_prefix="/marinetwin")
 
@@ -158,9 +160,121 @@ def operations(asset_id: int):
     """The berth at work: what is happening now, what happens next, what to do."""
     asset = _asset_or_404(asset_id)
     ops = marine_ops.operations(get_db(), asset)
+    # The other modules' urgent items belong on the same list: one place to see what to do.
+    extra = (marine_facility.maintenance(asset)["actions"] + marine_facility.compliance(asset)["actions"]
+             + marine_facility.safety(asset, ops["now"], ops["twin"])["actions"]
+             + marine_facility.environment(asset, ops["now"], ops["alongside"] is not None)["actions"])
+    ops["actions"] += [{**a, "when": "", "at": ops["now"]} for a in extra if a["state"] == "critical"]
+    order = {"critical": 0, "warning": 1, "good": 2}
+    ops["actions"].sort(key=lambda a: (order.get(a["state"], 3), a["area"] not in ("Vessels", "Cranes", "Mooring"), a["at"]))
     return render_template("marine/operations.html", asset=asset, ops=ops, twin=ops["twin"],
                            wind_chart=wind_forecast(ops["weather"], ops["limits"]),
                            sea_chart=sea_forecast(ops["weather"], ops["limits"]), **_context())
+
+
+# --- beyond the structure ----------------------------------------------------------
+
+@bp.get("/assets/<int:asset_id>/simulation")
+@login_required
+def simulation(asset_id: int):
+    """Scenarios side by side, the bottleneck in each, and a form to try another."""
+    asset = _asset_or_404(asset_id)
+    db = get_db()
+    kept = marine_sim.scenarios(db, asset_id)
+    results = []
+    for sc in kept:
+        results.append({**sc, "result": marine_sim.assess(asset_id, sc["params"], detail=False),
+                        "changes": marine_sim.changes(kept[0]["params"], sc["params"]) if sc is not kept[0] else []})
+    try:
+        shown_id = int(request.args.get("show") or results[-1]["id"])
+    except ValueError:
+        shown_id = results[-1]["id"]
+    shown = next((r for r in results if r["id"] == shown_id), results[-1])
+    detail = marine_sim.assess(asset_id, shown["params"])
+    editing = next((r for r in results if str(r["id"]) == request.args.get("edit")), None)
+    copying = next((r for r in results if str(r["id"]) == request.args.get("copy")), None)
+    form = (editing or copying or shown)["params"]
+    groups: dict[str, list] = {}
+    for key, label, unit, _, lo, hi, step, group in marine_sim.PARAMS:
+        groups.setdefault(group, []).append({"key": key, "label": label, "unit": unit, "min": lo, "max": hi,
+                                             "step": step, "value": form[key]})
+    return render_template("marine/simulation.html", asset=asset, results=results, shown=shown, detail=detail,
+                           editing=editing, copying=copying, groups=groups, links=marine_sim.LINKS,
+                           ships_chart=sim_ships(detail["timeline"], detail["params"]["berths"]),
+                           gate_chart=sim_gate(detail["timeline"]), **_context())
+
+
+@bp.post("/assets/<int:asset_id>/simulation")
+@login_required
+def save_scenario(asset_id: int):
+    _asset_or_404(asset_id)
+    name = (request.form.get("name") or "").strip()[:60] or "Scenario"
+    try:
+        scenario_id = int(request.form.get("scenario_id") or 0) or None
+    except ValueError:
+        scenario_id = None
+    if scenario_id and query_one("SELECT 1 FROM marine_scenarios WHERE id = ? AND asset_id = ?", (scenario_id, asset_id)) is None:
+        abort(404)
+    saved = marine_sim.save(get_db(), asset_id, name, request.form.to_dict(), scenario_id, g.user["id"])
+    get_db().commit()
+    flash(f"{name} has been run.", "success")
+    return redirect(url_for("marine.simulation", asset_id=asset_id, show=saved))
+
+
+@bp.post("/assets/<int:asset_id>/simulation/<int:scenario_id>/delete")
+@login_required
+def delete_scenario(asset_id: int, scenario_id: int):
+    first = query_one("SELECT MIN(id) AS id FROM marine_scenarios WHERE asset_id = ?", (asset_id,))
+    if first and first["id"] == scenario_id:
+        flash("The baseline stays: edit it instead.", "error")
+    else:
+        get_db().execute("DELETE FROM marine_scenarios WHERE id = ? AND asset_id = ?", (scenario_id, asset_id))
+        get_db().commit()
+    return redirect(url_for("marine.simulation", asset_id=asset_id))
+
+
+@bp.get("/assets/<int:asset_id>/equipment")
+@login_required
+def equipment(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    twin = marine.assess_asset(get_db(), asset)
+    return render_template("marine/equipment.html", asset=asset, twin=twin,
+                           upkeep=marine_facility.maintenance(asset), today_date=date.today(), **_context())
+
+
+@bp.get("/assets/<int:asset_id>/environment")
+@login_required
+def environment(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    now = datetime.now()
+    alongside = any(s["eta"] <= now < s["etd"] for s in marine_ops.lineup(int(asset["id"]), now))
+    env = marine_facility.environment(asset, now, alongside)
+    m = marine_facility.MEASURES
+    outdoor = [s for s in env["stations"] if "pm25" in [r["key"] for r in s["measures"]]]
+    charts = {
+        "pm25": env_chart(env["timeline"], [(s["place"], f"{s['key']}_pm25") for s in outdoor], "pm25", "µg/m³",
+                          [("WHO guideline 15", m["pm25"][2]), ("Interim target 37.5", m["pm25"][3])]),
+        "co2": env_chart(env["timeline"], [(s["place"], f"{s['key']}_co2") for s in env["indoor"]], "co2", "ppm",
+                         [("Alert 1,000", m["co2"][2]), ("Act 1,500", m["co2"][3])]),
+    }
+    return render_template("marine/environment.html", asset=asset, env=env, charts=charts, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/carbon")
+@login_required
+def carbon(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    co2 = marine_facility.carbon(asset)
+    return render_template("marine/carbon.html", asset=asset, co2=co2, chart=carbon_months(co2["months"]),
+                           rules=marine_facility.compliance(asset), **_context())
+
+
+@bp.get("/assets/<int:asset_id>/safety")
+@login_required
+def safety(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    twin = marine.assess_asset(get_db(), asset)
+    return render_template("marine/safety.html", asset=asset, safe=marine_facility.safety(asset, twin=twin), **_context())
 
 
 @bp.get("/assets/<int:asset_id>/twin.json")

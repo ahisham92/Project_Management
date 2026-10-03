@@ -209,6 +209,14 @@ CREATE TABLE IF NOT EXISTS marine_readings (
   note            TEXT NOT NULL DEFAULT '',         -- what an inspector saw
   PRIMARY KEY (sensor_id, at)
 );
+CREATE TABLE IF NOT EXISTS marine_scenarios (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  params          TEXT NOT NULL,                    -- JSON, the keys of marine_sim.PARAMS
+  created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

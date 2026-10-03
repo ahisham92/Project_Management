@@ -451,3 +451,104 @@ def test_the_operations_page_answers_now_next_and_what_to_do(signed_in, demo):
                     "Wind, next 72 hours", "Ships", "Cranes", "simulated"):
         assert heading in page
     assert "<svg" in page and 'href="' + demo + '/operations"' in text(signed_in.get(demo))
+
+
+# --- simulation and the modules beyond the structure ------------------------------------
+
+from app import marine_facility, marine_sim  # noqa: E402
+
+
+def test_the_simulation_is_repeatable_and_every_scenario_sees_the_same_ships():
+    a = marine_sim.run(3, marine_sim.DEFAULTS, detail=False)
+    assert a == marine_sim.run(3, marine_sim.DEFAULTS, detail=False)
+    more_cranes = marine_sim.run(3, {**marine_sim.DEFAULTS, "sts": 9}, detail=False)
+    assert [(c["at"], c["moves"]) for c in a["calls"]] == [(c["at"], c["moves"]) for c in more_cranes["calls"]]
+
+
+def test_scenario_numbers_are_kept_in_range():
+    p = marine_sim.clean({"berths": "-3", "sts": "2", "max_sts_per_ship": "6", "trucks": "nan", "gate_open": "20", "gate_close": "4"})
+    assert p["berths"] == 1 and p["max_sts_per_ship"] == 2 and p["trucks"] == marine_sim.DEFAULTS["trucks"]
+    assert p["gate_close"] > p["gate_open"]
+
+
+def test_too_few_tractors_is_found_as_the_bottleneck_and_more_of_them_helps():
+    starved = {**marine_sim.DEFAULTS, "trucks": 8, "rtgs": 20, "gate_lanes": 12}
+    r = marine_sim.assess(1, starved, detail=False)
+    assert r["bottleneck"] == "trucks"
+    assert r["helps"][0]["key"] == "trucks" and r["helps"][0]["saves"] > 0
+    fixed = marine_sim.run(1, {**starved, "trucks": 40}, detail=False)
+    assert fixed["kpis"]["turnaround"] < r["kpis"]["turnaround"]
+
+
+def test_one_berth_for_many_ships_makes_the_berth_the_bottleneck():
+    busy = {**marine_sim.DEFAULTS, "berths": 1, "sts": 6, "trucks": 60, "rtgs": 30, "gate_lanes": 20, "ships_per_week": 6}
+    r = marine_sim.assess(1, busy, detail=False)
+    assert r["bottleneck"] == "berth" and r["kpis"]["mean_wait"] > 10
+
+
+def test_a_narrow_gate_queues_road_trucks():
+    r = marine_sim.assess(1, {**marine_sim.DEFAULTS, "trucks": 40, "rtgs": 16, "gate_lanes": 1}, detail=False)
+    assert r["bottleneck"] == "gate" and r["kpis"]["gate_backlog"] > 1000
+
+
+def test_scenarios_are_kept_compared_and_deleted(signed_in, demo):
+    page = text(signed_in.get(demo + "/simulation"))
+    assert "Baseline" in page and "Scenarios side by side" in page and "<svg" in page
+    answer = signed_in.post(demo + "/simulation", data={**{k: v for k, v in marine_sim.DEFAULTS.items()},
+                                                        "name": "More tractors", "trucks": "30"})
+    assert answer.status_code == 302
+    page = text(signed_in.get(answer.headers["Location"]))
+    assert "More tractors" in page and "Terminal tractors 18 → 30" in page
+    sid = answer.headers["Location"].split("show=")[1]
+    signed_in.post(f"{demo}/simulation/{sid}/delete")
+    assert "More tractors" not in text(signed_in.get(demo + "/simulation"))
+
+
+def test_the_baseline_cannot_be_deleted(signed_in, demo):
+    page = text(signed_in.get(demo + "/simulation"))
+    baseline = page.split("show=")[1].split("&")[0].split('"')[0]
+    answer = signed_in.post(f"{demo}/simulation/{baseline}/delete", follow_redirects=True)
+    assert "The baseline stays" in text(answer) and "Baseline" in text(answer)
+
+
+def test_maintenance_reports_overdue_service_and_bad_vibration():
+    m = marine_facility.maintenance(_asset(), date(2026, 10, 3))
+    assert len(m["units"]) == sum(f[1] for f in marine_facility.FLEET)
+    for unit in m["units"]:
+        if unit["to_next"] < 0 and unit["prefix"] != "TT":
+            assert any(unit["tag"] in a["text"] for a in m["actions"])
+        if unit["vibration"] is not None and unit["vibration"] >= marine_facility.VIBRATION_LIMITS[0]:
+            assert any(f"{unit['tag']} hoist gearbox vibration" in a["text"] for a in m["actions"])
+
+
+def test_air_quality_is_judged_on_its_daily_mean_against_who():
+    env = marine_facility.environment(_asset(), datetime(2026, 10, 3, 15))
+    for s in env["stations"]:
+        for r in s["measures"]:
+            judged = r["mean"] if r["key"] in marine_facility.DAILY_MEAN else r["latest"]
+            expect = "critical" if judged >= r["alarm"] else "warning" if judged >= r["alert"] else "good"
+            assert r["state"] == expect
+
+
+def test_carbon_adds_up_by_scope():
+    c = marine_facility.carbon(_asset(), date(2026, 10, 3))
+    assert len(c["months"]) == 12
+    m = c["months"][0]
+    assert m["scope1"] == pytest.approx(m["diesel"] * marine_facility.DIESEL / 1000, abs=0.1)
+    assert m["scope2"] == pytest.approx(m["electricity"] * marine_facility.GRID / 1000, abs=0.1)
+    assert c["total"] == pytest.approx(c["scope1"] + c["scope2"], abs=2)
+
+
+def test_an_overdue_lifting_examination_stops_the_crane():
+    c = marine_facility.compliance(_asset(), date(2026, 10, 3))
+    for item in c["items"]:
+        assert item["state"] == ("critical" if item["days"] < 0 else "warning" if item["days"] <= 30 else "good")
+    late = [a for a in c["actions"] if "LOLER" in a["text"] and a["state"] == "critical"]
+    assert all("must not lift" in a["text"] for a in late)
+
+
+def test_every_new_tab_opens(signed_in, demo):
+    for path, words in (("/equipment", "Asset register"), ("/environment", "CO₂ indoors"),
+                        ("/carbon", "Month by month"), ("/safety", "Incidents, last 90 days")):
+        page = text(signed_in.get(demo + path))
+        assert words in page and "Safety &amp; security" in page

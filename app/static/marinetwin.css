@@ -22,3 +22,14 @@
 /* Operations: the three questions as section heads, and the downtime bars. */
 .marine-q { margin: 24px 0 10px; font-size: 1.1rem; }
 .marine-bar { height: 10px; border-radius: 3px; background: var(--series-1); min-width: 2px; }
+.marine-meter { background: var(--grid); border-radius: 3px; min-width: 60px; }
+.marine-bar-warning { background: var(--warning); }
+.marine-bar-critical { background: var(--critical); }
+.marine-scenarios th, .marine-scenarios td { min-width: 130px; }
+.marine-scenarios td.label { min-width: 190px; }
+.marine-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 16px; }
+.marine-params fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 12px; margin: 0; }
+.marine-params legend { font-size: 0.8rem; color: var(--muted); padding: 0 4px; }
+.marine-params .field { display: block; margin-top: 6px; }
+.marine-params input { width: 100%; }
+.link-button { background: none; border: 0; padding: 0; color: var(--critical); cursor: pointer; font: inherit; text-decoration: underline; }

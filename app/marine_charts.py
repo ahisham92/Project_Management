@@ -160,8 +160,9 @@ TIDE = "var(--series-3)"
 
 
 def _hourly(weather: Sequence[dict[str, Any]], series: Sequence[tuple[str, str, str]],
-            limits: Sequence[tuple[str, float, str]], unit: str, h: int = 240) -> Markup:
-    """Hourly lines over the last day and the next three, the past shaded, limits dashed."""
+            limits: Sequence[tuple[str, float, str]], unit: str, h: int = 240, now: bool = True,
+            step_lines: bool = False) -> Markup:
+    """Hourly lines, limits dashed; with ``now``, the past is shaded and the present marked."""
     if not weather:
         return _empty("No forecast.")
     values = [w[key] for w in weather for _, key, _ in series] + [v for _, v, _ in limits] + [0.0]
@@ -179,7 +180,8 @@ def _hourly(weather: Sequence[dict[str, Any]], series: Sequence[tuple[str, str, 
 
     parts: list[str] = []
     now_i = max((i for i, row in enumerate(weather) if row["past"]), default=0)
-    parts.append(f'<rect x="{left}" y="{top}" width="{x_of(now_i) - left:.1f}" height="{plot_h}" fill="{GRID}" opacity="0.45"/>')
+    if now:
+        parts.append(f'<rect x="{left}" y="{top}" width="{x_of(now_i) - left:.1f}" height="{plot_h}" fill="{GRID}" opacity="0.45"/>')
     step = _nice_step(hi - lo)
     tick = (lo // step) * step
     digits = 0 if step >= 1 else 1
@@ -189,14 +191,18 @@ def _hourly(weather: Sequence[dict[str, Any]], series: Sequence[tuple[str, str, 
             parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{w - right}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>')
             parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="tick">{tick:,.{digits}f}</text>')
         tick += step
-    for i, row in enumerate(weather):
-        if row["at"].hour == 0:
-            x = x_of(i)
-            parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{h - bottom}" stroke="{GRID}" stroke-width="1"/>')
-            parts.append(f'<text x="{x + 4:.1f}" y="{h - bottom + 18}" class="tick">{row["at"]:%a %d/%m}</text>')
-    x_now = x_of(now_i)
-    parts.append(f'<line x1="{x_now:.1f}" y1="{top}" x2="{x_now:.1f}" y2="{h - bottom}" stroke="{AXIS}" stroke-width="1.5"/>')
-    parts.append(f'<text x="{x_now + 5:.1f}" y="{top + 10}" class="tick">Now</text>')
+    midnights = [i for i, row in enumerate(weather) if row["at"].hour == 0]
+    every = max(1, math.ceil(len(midnights) / 8))
+    for n, i in enumerate(midnights):
+        x = x_of(i)
+        parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{h - bottom}" stroke="{GRID}" stroke-width="1"/>')
+        if n % every == 0:
+            label = f'{weather[i]["at"]:%a %d/%m}' if every == 1 else f'{weather[i]["at"]:%d/%m}'
+            parts.append(f'<text x="{x + 4:.1f}" y="{h - bottom + 18}" class="tick">{label}</text>')
+    if now:
+        x_now = x_of(now_i)
+        parts.append(f'<line x1="{x_now:.1f}" y1="{top}" x2="{x_now:.1f}" y2="{h - bottom}" stroke="{AXIS}" stroke-width="1.5"/>')
+        parts.append(f'<text x="{x_now + 5:.1f}" y="{top + 10}" class="tick">Now</text>')
     parts.append(f'<text x="{left}" y="{top - 2}" class="tick">{unit}</text>')
 
     for label, value, colour in limits:
@@ -206,14 +212,19 @@ def _hourly(weather: Sequence[dict[str, Any]], series: Sequence[tuple[str, str, 
         parts.append(f'<text x="{w - right - 4}" y="{y - 5:.1f}" text-anchor="end" class="tick-value">{label}</text>')
 
     for _, key, colour in series:
-        path = " ".join(f"{'M' if i == 0 else 'L'}{x_of(i):.1f},{y_of(row[key]):.1f}" for i, row in enumerate(weather))
+        if step_lines:
+            path = f"M{x_of(0):.1f},{y_of(weather[0][key]):.1f} " + " ".join(
+                f"H{x_of(i):.1f}V{y_of(row[key]):.1f}" for i, row in enumerate(weather) if i)
+        else:
+            path = " ".join(f"{'M' if i == 0 else 'L'}{x_of(i):.1f},{y_of(row[key]):.1f}" for i, row in enumerate(weather))
         parts.append(f'<path d="{path}" fill="none" stroke="{colour}" stroke-width="1.8" stroke-linejoin="round"/>')
 
     band = plot_w / count
     for i, row in enumerate(weather):
-        rows = [{"label": label, "color": colour, "value": f"{row[key]:,.{1 if unit == 'm/s' else 2}f} {unit}"}
+        digits = 1 if unit == "m/s" else 0 if step_lines or unit in ("trucks", "%", "trucks / %") else 2
+        rows = [{"label": label, "color": colour, "value": f"{row[key]:,.{digits}f} {unit}"}
                 for label, key, colour in series]
-        title = f"{row['at']:%a %d/%m %H:00}" + ("" if row["past"] else " (forecast)")
+        title = f"{row['at']:%a %d/%m %H:00}" + ("" if row["past"] or not now else " (forecast)")
         parts.append(f'<rect class="hit" x="{x_of(i) - band / 2:.1f}" y="{top}" width="{band:.1f}" height="{plot_h}" '
                      f'fill="transparent" data-x="{x_of(i):.1f}" data-tip="{_tip(title, rows)}"/>')
     parts.append(f'<line class="crosshair" x1="0" y1="{top}" x2="0" y2="{h - bottom}" stroke="{MUTED}" '
@@ -234,3 +245,67 @@ def sea_forecast(weather: Sequence[dict[str, Any]], limits: dict[str, float]) ->
     return _hourly(weather, [("Significant wave height", "hs", READING), ("Tide above chart datum", "tide", TIDE)], [
         (f"Berthing stops {limits['berthing_hs']:.1f}", limits["berthing_hs"], ALERT),
     ], "m", h=200)
+
+
+def sim_ships(timeline: Sequence[dict[str, Any]], berths: int) -> Markup:
+    return _hourly(timeline, [("Ships alongside", "alongside", READING), ("Ships waiting for a berth", "waiting", GUST)],
+                   [(f"{berths} berth{'s' if berths != 1 else ''}", berths, ALERT)], "ships", h=200, now=False, step_lines=True)
+
+
+def sim_gate(timeline: Sequence[dict[str, Any]]) -> Markup:
+    return _hourly(timeline, [("Road trucks queuing at the gate", "gate_queue", GUST)], [], "trucks", h=200, now=False)
+
+
+def carbon_months(months: Sequence[dict[str, Any]]) -> Markup:
+    """Monthly emissions, scope 1 stacked on scope 2, with the carbon per move as a line."""
+    if not months:
+        return _empty("No energy data.")
+    w, h, left, right, top, bottom = 800, 260, 52, 52, 14, 30
+    plot_w, plot_h = w - left - right, h - top - bottom
+    hi = max(m["scope1"] + m["scope2"] for m in months) * 1.1
+    ihi = max(m["intensity"] for m in months) * 1.25
+    slot = plot_w / len(months)
+    parts = []
+    step = _nice_step(hi)
+    tick = 0.0
+    while tick <= hi:
+        y = top + plot_h * (1 - tick / hi)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{w - right}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="tick">{tick:,.0f}</text>')
+        tick += step
+    parts.append(f'<text x="{left}" y="{top - 2}" class="tick">t CO₂e</text>')
+    parts.append(f'<text x="{w - right + 4}" y="{top - 2}" class="tick">kg/move</text>')
+    points = []
+    for i, m in enumerate(months):
+        x = left + slot * i + slot * 0.18
+        bw = slot * 0.64
+        y2 = top + plot_h * (1 - m["scope2"] / hi)
+        y1 = top + plot_h * (1 - (m["scope1"] + m["scope2"]) / hi)
+        parts.append(f'<rect x="{x:.1f}" y="{y2:.1f}" width="{bw:.1f}" height="{top + plot_h - y2:.1f}" fill="{READING}"/>')
+        parts.append(f'<rect x="{x:.1f}" y="{y1:.1f}" width="{bw:.1f}" height="{y2 - y1:.1f}" fill="{GUST}"/>')
+        parts.append(f'<text x="{x + bw / 2:.1f}" y="{h - bottom + 18}" text-anchor="middle" class="tick">{m["month"]:%b}</text>')
+        points.append((x + bw / 2, top + plot_h * (1 - m["intensity"] / ihi)))
+        rows = [{"label": "Scope 1, diesel", "color": GUST, "value": f"{m['scope1']:,.0f} t"},
+                {"label": "Scope 2, electricity", "color": READING, "value": f"{m['scope2']:,.0f} t"},
+                {"label": "Per container move", "color": TIDE, "value": f"{m['intensity']:.2f} kg"}]
+        parts.append(f'<rect class="hit" x="{left + slot * i:.1f}" y="{top}" width="{slot:.1f}" height="{plot_h}" fill="transparent" '
+                     f'data-x="{x + bw / 2:.1f}" data-tip="{_tip(m["month"].strftime("%B %Y"), rows)}"/>')
+    path = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(points))
+    parts.append(f'<path d="{path}" fill="none" stroke="{TIDE}" stroke-width="2"/>')
+    for x, y in points:
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{TIDE}"/>')
+    for frac in (0.25, 0.5, 0.75):
+        v = ihi * frac
+        parts.append(f'<text x="{w - right + 4}" y="{top + plot_h * (1 - frac) + 4:.1f}" class="tick">{v:.1f}</text>')
+    parts.append(f'<line class="crosshair" x1="0" y1="{top}" x2="0" y2="{h - bottom}" stroke="{MUTED}" stroke-width="1" visibility="hidden"/>')
+    legend = _legend([("Scope 2, electricity", READING), ("Scope 1, diesel", GUST), ("kg CO₂e per move", TIDE)])
+    return _chart("".join(parts), legend, w, h)
+
+
+def env_chart(timeline: Sequence[dict[str, Any]], series: Sequence[tuple[str, str]], measure: str,
+              unit: str, limits: Sequence[tuple[str, float]]) -> Markup:
+    """One measure at several stations over the last day."""
+    colours = [READING, GUST, TIDE, "var(--series-4)"]
+    return _hourly(timeline, [(label, key, colours[i % 4]) for i, (label, key) in enumerate(series)],
+                   [(label, value, ALERT if i == 0 else CRITICAL) for i, (label, value) in enumerate(limits)],
+                   unit, h=200, now=False)

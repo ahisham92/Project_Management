@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty %}
+{% from "marine/_macros.html" import state_badge, health %}
+{% block title %}MarineTwin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>MarineTwin</h1>
+    <p class="small muted" style="margin-top:2px">
+      The structures we designed, after handover: each one's Revit model, its sensors, and how it is
+      standing up against the design Triton did for it. Where the steel is losing section faster than
+      it was allowed to, where strains run past their limits, and what to do about it.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Assets', totals['assets'], 'structures being monitored') }}
+  {{ tile('Sensors', totals['sensors'], 'strain, thickness, movement and tilt') }}
+  {{ tile('Need action', totals['critical'], 'assets with an element to act on',
+          'critical' if totals['critical'] else 'good', 'act now' if totals['critical'] else 'none') }}
+  {{ tile('To watch', totals['warning'], 'assets heading towards a limit',
+          'warning' if totals['warning'] else 'good', 'watch' if totals['warning'] else 'none') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Assets</h2></div></div>
+  <div class="card-body">
+    {% if not assets %}
+      {{ empty('No assets yet', 'Set one up below, or start with the demonstration berth to see the twin working.') }}
+    {% else %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Asset</th><th>Type</th><th>Commissioned</th><th class="right">Elements</th>
+            <th class="right">Sensors</th><th class="right">Health</th><th>Condition</th><th>Design</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for one in assets %}
+            {% set a = one['asset'] %}{% set t = one['twin'] %}
+            <tr>
+              <td><a href="{{ url_for('marine.asset', asset_id=a['id']) }}"><strong>{{ a['name'] }}</strong></a>
+                {% if a['location'] or a['client'] %}<div class="small muted">{{ a['location'] }}{% if a['location'] and a['client'] %} · {% endif %}{{ a['client'] }}</div>{% endif %}</td>
+              <td class="small">{{ kind_name.get(a['kind'], a['kind']) }}</td>
+              <td class="small">{{ short_date(a['commissioned']) }}</td>
+              <td class="right tabular">{{ t['elements'] | length }}</td>
+              <td class="right tabular">{{ t['sensors'] }}</td>
+              <td class="right">{{ health(t['health']) }}</td>
+              <td>{{ state_badge(t['state']) }}
+                {% if t['counts']['critical'] %}<span class="small muted">{{ t['counts']['critical'] }} to act on</span>{% endif %}</td>
+              <td class="small">{% if a['triton_project'] %}Triton{% else %}<span class="muted">not linked</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><div><h2>Set up an asset</h2>
+      <p class="small muted" style="margin-top:2px">One structure: a quay wall, a jetty, a dolphin. Its elements,
+        sensors and Revit model are added on its own page.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.new_asset') }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field flex1"><span class="field-label">Name</span>
+          <input type="text" name="name" required placeholder="e.g. Berth 3 quay wall"></label>
+        <label class="field w-lg"><span class="field-label">Type</span>
+          <select name="kind">{% for k, n in asset_kinds %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Location</span><input type="text" name="location"></label>
+        <label class="field w-lg"><span class="field-label">Client</span><input type="text" name="client"></label>
+        <label class="field w-lg"><span class="field-label">Commissioned</span>
+          <input type="date" name="commissioned" value="{{ today }}" required></label>
+        <label class="field w-md"><span class="field-label">Design life (years)</span>
+          <input type="number" name="design_life" value="50" min="1" max="200"></label>
+        <label class="field w-lg"><span class="field-label">Corrosion allowances from</span>
+          <select name="corrosion_code"><option value="bs6349">BS 6349-1-4</option><option value="en1993_5">EN 1993-5</option></select></label>
+        <button type="submit" class="btn btn-primary">Set it up</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>See it working</h2>
+      <p class="small muted" style="margin-top:2px">A berth of steel piles, a combi wall and a deck, eight years
+        into a fifty-year life, with simulated sensors: some piles corroding faster than they were designed to.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.demo') }}">
+        <button type="submit" class="btn">Set up the demonstration berth</button>
+      </form>
+      {% if not triton_ready %}
+        <p class="small muted" style="margin-top:10px">Triton is not installed on this site, so design ratios are typed in
+          per element and allowances use the BS 6349 rates.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

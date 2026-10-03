@@ -1,8 +1,8 @@
 """The front door: which application you are here for.
 
-Three things live behind this address — the project control platform, the
-comment response sheets, and Triton, the quay element designer, which is an
-application of its own mounted in front of ``/triton``. They are one application and one database now, but
+Several things live behind this address — the project control platform, the
+comment response sheets, THEMIS, MarineTwin, and Triton, the quay element
+designer, which is an application of its own mounted in front of ``/triton``. They are one application and one database now, but
 they are two different jobs on two different days, so the site opens on a
 choice rather than dropping everybody into whichever one happened to be written
 first.

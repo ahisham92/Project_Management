@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty, badge %}
+{% from "marine/_macros.html" import state_badge, health, ur %}
+{% block title %}{{ asset['name'] }} · MarineTwin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>{{ asset['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ kind_name.get(asset['kind'], asset['kind']) }}{% if asset['location'] %} · {{ asset['location'] }}{% endif %}{% if asset['client'] %} · {{ asset['client'] }}{% endif %}
+      · commissioned {{ short_date(asset['commissioned']) }} · {{ twin['durability']['life'] }}-year design life
+    </p>
+  </div>
+  <form method="post" action="{{ url_for('marine.refresh', asset_id=asset['id']) }}">
+    <button type="submit" class="btn btn-ghost" title="Simulated sensors only: real ones keep what was imported">Bring simulated sensors up to today</button>
+  </form>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Health', twin['health'] if twin['health'] is not none else '—', 'out of 100, averaged over its elements',
+          {'critical': 'critical', 'warning': 'warning', 'good': 'good'}.get(twin['state'], 'neutral'),
+          {'critical': 'act now', 'warning': 'watch', 'good': 'good'}.get(twin['state'], '')) }}
+  {{ tile('Elements', twin['elements'] | length,
+          twin['counts']['critical'] ~ ' to act on, ' ~ twin['counts']['warning'] ~ ' to watch') }}
+  {{ tile('Sensors', twin['sensors'], 'readings up to ' ~ short_date(twin['today'])) }}
+  {{ tile('Judged against', 'Triton' if twin['triton_linked'] else 'Typed in',
+          twin['durability']['source']) }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>The twin</h2>
+      <p class="small muted" style="margin-top:2px">
+        {% if asset['model_file'] %}{{ asset['model_name'] }}, coloured by each element's condition where its model reference matches.
+        {% else %}A schematic drawn from the elements' positions. Upload the Revit model (exported as IFC or glTF) below to see the real thing.{% endif %}
+        Drag to turn, scroll to zoom, click an element.
+      </p>
+    </div>
+    <div class="legend" style="margin:0">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>Good</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>Watch</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>Act</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--axis)"></span>No data / not monitored</span>
+    </div>
+  </div>
+  <div class="card-body marine-twin">
+    <div class="marine-view" data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
+         data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/">
+      <p class="marine-view-note small muted">Loading the 3D view…</p>
+    </div>
+    <aside class="marine-pick" aria-live="polite">
+      <p class="small muted">Click an element to see its sensors.</p>
+    </aside>
+  </div>
+</div>
+
+{% if twin['advice'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>What to do</h2>
+    <p class="small muted" style="margin-top:2px">Most pressing first. Each follows from the readings and the design; none of them is a substitute for an engineer's inspection.</p></div></div>
+  <div class="card-body">
+    <ul class="marine-advice">
+      {% for one in twin['advice'] %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['element'] }}</strong> {{ one['text'] }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Elements</h2></div></div>
+  <div class="card-body">
+    {% if not twin['elements'] %}
+      {{ empty('No elements yet', 'Add the piles, walls and beams below, named as they are in Triton so their design ratios come across.') }}
+    {% else %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th>Element</th><th>Type</th><th>Zone</th><th>Sensors</th>
+          <th class="right" title="The utilisation it was designed to">Design UR</th>
+          <th class="right" title="Design UR rescaled for the corrosion projected at the end of the design life (thin-wall approximation)">UR at end of life</th>
+          <th class="right">Health</th><th>Condition</th>
+        </tr></thead>
+        <tbody>
+          {% for e in twin['elements'] %}
+            <tr>
+              <td><a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=e['element']['id']) }}"><strong>{{ e['element']['name'] }}</strong></a></td>
+              <td class="small">{{ element_kind_name.get(e['element']['kind']) }}<span class="muted">, {{ e['element']['material'] }}</span></td>
+              <td class="small">{{ zone_name.get(e['element']['zone']) }}</td>
+              <td class="small">
+                {% for s in e['sensors'] %}<div><span class="state-{{ s['state'] }}" aria-hidden="true">●</span> {{ s['label'] }}: {{ s['headline'] }}{% if s['simulated'] %} <span class="muted">(simulated)</span>{% endif %}</div>
+                {% else %}<span class="muted">none</span>{% endfor %}
+              </td>
+              <td class="right">{{ ur(e['design_ur']) }}{% if e['design_from'] == 'Triton' %}<div class="small muted">Triton</div>{% endif %}</td>
+              <td class="right">{{ ur(e['ur_at_life']) }}</td>
+              <td class="right">{{ health(e['health']) }}</td>
+              <td>{{ state_badge(e['state']) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Add an element</h2>
+    <p class="small muted" style="margin-top:2px">Name it as Triton does (P01, CW2, B1) and its design ratio comes from the linked section.
+      The model reference is its IFC GlobalId, Tag (the Revit element id) or Name, so the 3D view can find it.</p></div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.add_element', asset_id=asset['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="field w-md"><span class="field-label">Name</span><input type="text" name="name" required></label>
+      <label class="field w-lg"><span class="field-label">Type</span>
+        <select name="kind">{% for k, n in element_kinds %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></label>
+      <label class="field w-lg"><span class="field-label">Material</span>
+        <select name="material">{% for k, n in materials %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></label>
+      <label class="field w-lg"><span class="field-label">Exposure zone</span>
+        <select name="zone">{% for k, n in zones %}<option value="{{ k }}" {{ 'selected' if k == 'splash' }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="field w-md"><span class="field-label">Steel wall (mm)</span><input type="number" step="0.1" name="wall_mm"></label>
+      <label class="field w-md"><span class="field-label">Design UR</span><input type="number" step="0.01" name="design_ur" placeholder="from Triton"></label>
+      <label class="field w-lg"><span class="field-label">Model reference</span><input type="text" name="model_ref" placeholder="GlobalId, Tag or Name"></label>
+      <label class="field w-sm"><span class="field-label">x (m)</span><input type="number" step="0.1" name="x" value="0"></label>
+      <label class="field w-sm"><span class="field-label">y (m)</span><input type="number" step="0.1" name="y" value="0"></label>
+      <label class="field w-sm"><span class="field-label">z (m)</span><input type="number" step="0.1" name="z" value="0"></label>
+      <fieldset class="field" style="border:0;padding:0;margin:0"><span class="field-label">Simulated sensors</span>
+        {% for k, v in sensor_kinds.items() %}<label class="small" style="margin-right:10px"><input type="checkbox" name="sensors" value="{{ k }}" {{ 'checked' if k in ('strain', 'corrosion') }}> {{ v[0] }}</label>{% endfor %}
+      </fieldset>
+      <button type="submit" class="btn btn-primary">Add it</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><div><h2>The Revit model</h2>
+      <p class="small muted" style="margin-top:2px">From Revit: File → Export → IFC (IFC4 or IFC2x3), or a glTF exporter.
+        Only the structure's own categories keeps it light.</p></div></div>
+    <div class="card-body">
+      {% if asset['model_file'] %}<p class="small">Now: <strong>{{ asset['model_name'] }}</strong>
+        <a href="{{ url_for('marine.model', asset_id=asset['id']) }}">download</a></p>{% endif %}
+      <form method="post" action="{{ url_for('marine.upload_model', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field flex1"><span class="field-label">IFC or glTF file</span><input type="file" name="model" accept=".ifc,.glb,.gltf" required></label>
+        <button type="submit" class="btn btn-primary">Upload</button>
+      </form>
+      {% if asset['model_file'] %}
+      <form method="post" action="{{ url_for('marine.delete_model', asset_id=asset['id']) }}" style="margin-top:8px">
+        <button type="submit" class="btn btn-ghost btn-sm">Remove the model</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Sensor readings</h2>
+      <p class="small muted" style="margin-top:2px">A logger export as CSV with the columns <code>sensor</code> (its label),
+        <code>at</code> (date or date and time) and <code>value</code>. A sensor that gets real readings stops being simulated.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.import_readings', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field flex1"><span class="field-label">CSV file</span><input type="file" name="file" accept=".csv,text/csv" required></label>
+        <button type="submit" class="btn btn-primary">Import</button>
+      </form>
+      <p class="small" style="margin-top:8px"><a href="{{ url_for('marine.export_readings', asset_id=asset['id']) }}">Download every reading</a> in the same columns.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Details and design link</h2>
+    <p class="small muted" style="margin-top:2px">Linked to a Triton section, each element's design utilisation and the
+      project's own corrosion allowances and design life come from there.</p></div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.save_asset', asset_id=asset['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="field flex1"><span class="field-label">Name</span><input type="text" name="name" value="{{ asset['name'] }}" required></label>
+      <label class="field w-lg"><span class="field-label">Type</span>
+        <select name="kind">{% for k, n in asset_kinds %}<option value="{{ k }}" {{ 'selected' if k == asset['kind'] }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="field w-lg"><span class="field-label">Location</span><input type="text" name="location" value="{{ asset['location'] }}"></label>
+      <label class="field w-lg"><span class="field-label">Client</span><input type="text" name="client" value="{{ asset['client'] }}"></label>
+      <label class="field w-lg"><span class="field-label">Commissioned</span><input type="date" name="commissioned" value="{{ asset['commissioned'] }}"></label>
+      <label class="field w-md"><span class="field-label">Design life (years)</span><input type="number" name="design_life" value="{{ asset['design_life'] }}" min="1" max="200"></label>
+      <label class="field w-lg"><span class="field-label">Allowances from</span>
+        <select name="corrosion_code">
+          <option value="bs6349" {{ 'selected' if asset['corrosion_code'] == 'bs6349' }}>BS 6349-1-4</option>
+          <option value="en1993_5" {{ 'selected' if asset['corrosion_code'] == 'en1993_5' }}>EN 1993-5</option>
+        </select></label>
+      <label class="field" style="min-width:260px;flex:1"><span class="field-label">Triton section</span>
+        <select name="triton">
+          <option value="">Not linked</option>
+          {% for p in triton_projects %}{% for s in p['sections'] %}
+            {% set key = p['id'] ~ ':' ~ s['id'] %}
+            <option value="{{ key }}" {{ 'selected' if key == asset['triton_project'] ~ ':' ~ asset['triton_section'] }}>{{ p['name'] }}{% if p['number'] %} ({{ p['number'] }}){% endif %} — {{ s['name'] }}</option>
+          {% endfor %}{% endfor %}
+        </select>
+        {% if not triton_ready %}<span class="field-hint">Triton is not installed on this site.</span>
+        {% elif not triton_projects %}<span class="field-hint">No Triton projects yet.</span>{% endif %}
+      </label>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+    {% if may_remove %}
+    <form method="post" action="{{ url_for('marine.delete_asset', asset_id=asset['id']) }}" style="margin-top:12px"
+          onsubmit="return confirm('Delete this asset, its elements, sensors and every reading?')">
+      <button type="submit" class="btn btn-danger btn-sm">Delete this asset</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="importmap">
+  {"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/') }}"}}
+</script>
+<script type="module" src="{{ url_for('static', filename='marinetwin.js') }}"></script>
+{% endblock %}

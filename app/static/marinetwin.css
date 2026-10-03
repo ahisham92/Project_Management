@@ -1,0 +1,21 @@
+/* MarineTwin: the 3D twin beside its picked element, and the advice list. */
+.marine-twin { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+.marine-view {
+  position: relative; height: 460px; border-radius: 10px; overflow: hidden;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--plane) 100%);
+  border: 1px solid var(--border);
+}
+.marine-view canvas { display: block; width: 100%; height: 100%; }
+.marine-view-note { position: absolute; left: 12px; bottom: 10px; margin: 0; pointer-events: none; }
+.marine-pick { border-left: 1px solid var(--border); padding-left: 16px; font-size: 0.875rem; }
+.marine-pick h3 { margin: 0 0 4px; font-size: 1.05rem; }
+.marine-pick ul { margin: 8px 0; padding: 0; list-style: none; }
+.marine-pick li { margin: 0 0 6px; }
+.marine-advice { margin: 0; padding: 0; list-style: none; }
+.marine-advice li { padding: 8px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.marine-advice li:last-child { border-bottom: 0; }
+@media (max-width: 860px) {
+  .marine-twin { grid-template-columns: 1fr; }
+  .marine-pick { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; }
+  .marine-view { height: 340px; }
+}

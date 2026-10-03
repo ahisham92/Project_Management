@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty %}
+{% from "marine/_macros.html" import state_badge, health, ur %}
+{% block title %}{{ element['name'] }} · {{ asset['name'] }} · MarineTwin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /
+      <a href="{{ url_for('marine.asset', asset_id=asset['id']) }}">{{ asset['name'] }}</a> /</p>
+    <h1>{{ element['name'] }} {{ state_badge(mine['state']) }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ element_kind_name.get(element['kind']) }}, {{ element['material'] }}, {{ zone_name.get(element['zone'])|lower }} zone
+      {% if element['wall_mm'] %} · {{ element['wall_mm'] }} mm wall{% endif %}
+      {% if element['model_ref'] %} · model reference {{ element['model_ref'] }}{% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  {{ tile('Health', mine['health'] if mine['health'] is not none else '—', 'its worst sensor, out of 100') }}
+  {{ tile('Design UR', '%.2f' | format(mine['design_ur']) if mine['design_ur'] is not none else '—',
+          'from Triton' if mine['design_from'] == 'Triton' else ('typed in' if mine['design_from'] else 'not known yet')) }}
+  {{ tile('UR at end of life',
+          ('no section left' if mine['ur_at_life'] > 1e9 else '%.2f' | format(mine['ur_at_life'])) if mine['ur_at_life'] is not none else '—',
+          'design UR with the projected section loss',
+          'critical' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else 'neutral',
+          'over capacity' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else '') }}
+  {{ tile('Corrosion allowance', ('%.2f mm' | format(mine['allowance'])) if mine['allowance'] else '—',
+          'per face over ' ~ life ~ ' years') }}
+</div>
+
+{% if mine['advice'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>What to do</h2></div></div>
+  <div class="card-body"><ul class="marine-advice">
+    {% for one in mine['advice'] %}<li>{{ state_badge(one['state']) }} {{ one['text'] }}</li>{% endfor %}
+  </ul></div>
+</div>
+{% endif %}
+
+{% for s in mine['sensors'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <div>
+      <h2>{{ s['label'] }} <span class="small muted">{{ s['kind_name'] }}, {{ s['unit'] }}{% if s['simulated'] %}, simulated{% endif %}</span></h2>
+      <p class="small" style="margin-top:2px">{{ state_badge(s['state']) }} {{ s['headline'] }}
+        {% if s['silent'] %}<span class="state-warning">silent since {{ short_date(s['latest_at']) }}</span>{% endif %}</p>
+      {% if s.get('fit_a') is not none %}
+        <p class="small muted">Fitted loss = {{ '%.3f' | format(s['fit_a']) }}·t<sup>{{ '%.2f' | format(s['fit_b']) }}</sup> mm, t in years since commissioning;
+          {{ '%.2f' | format(s['projected_at_life']) }} mm by the end of the design life{% if s['exhausted_year'] %}, the allowance used up around {{ s['exhausted_year'] | int }}{% endif %}.</p>
+      {% endif %}
+    </div>
+    <form method="post" action="{{ url_for('marine.delete_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"
+          onsubmit="return confirm('Remove this sensor and its readings?')">
+      <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+    </form>
+  </div>
+  <div class="card-body">{{ charts[s['id']] }}</div>
+</div>
+{% else %}
+<div class="card" style="margin-top:16px"><div class="card-body">
+  {{ empty('No sensors on this element', 'Add one below; a simulated one starts with a history up to today.') }}
+</div></div>
+{% endfor %}
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><div><h2>Add a sensor</h2>
+      <p class="small muted" style="margin-top:2px">Limits are pre-filled for S355 steel (alert at half of yield strain, alarm at three quarters).
+        Thickness loss is judged against the design allowance instead.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.add_sensor', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field w-lg"><span class="field-label">Measures</span>
+          <select name="kind">{% for k, v in sensor_kinds.items() %}<option value="{{ k }}">{{ v[0] }} ({{ v[1] }})</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Label</span><input type="text" name="label" placeholder="{{ element['name'] }}-SG2"></label>
+        <label class="field w-md"><span class="field-label">Alert</span><input type="number" step="any" name="alert" placeholder="default"></label>
+        <label class="field w-md"><span class="field-label">Alarm</span><input type="number" step="any" name="alarm" placeholder="default"></label>
+        <label class="small"><input type="checkbox" name="simulated" value="1" checked> Simulate it</label>
+        <button type="submit" class="btn btn-primary">Add it</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>The element</h2></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.edit_element', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field w-lg"><span class="field-label">Type</span>
+          <select name="kind">{% for k, n in element_kinds %}<option value="{{ k }}" {{ 'selected' if k == element['kind'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Material</span>
+          <select name="material">{% for k, n in materials %}<option value="{{ k }}" {{ 'selected' if k == element['material'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Zone</span>
+          <select name="zone">{% for k, n in zones %}<option value="{{ k }}" {{ 'selected' if k == element['zone'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-md"><span class="field-label">Steel wall (mm)</span><input type="number" step="0.1" name="wall_mm" value="{{ element['wall_mm'] if element['wall_mm'] is not none }}"></label>
+        <label class="field w-md"><span class="field-label">Design UR</span><input type="number" step="0.01" name="design_ur" value="{{ element['design_ur'] if element['design_ur'] is not none }}" placeholder="from Triton"></label>
+        <label class="field w-md"><span class="field-label">Name in Triton</span><input type="text" name="triton_element" value="{{ element['triton_element'] }}" placeholder="{{ element['name'] }}"></label>
+        <label class="field w-lg"><span class="field-label">Model reference</span><input type="text" name="model_ref" value="{{ element['model_ref'] }}"></label>
+        <label class="field w-sm"><span class="field-label">x</span><input type="number" step="0.1" name="x" value="{{ element['x'] }}"></label>
+        <label class="field w-sm"><span class="field-label">y</span><input type="number" step="0.1" name="y" value="{{ element['y'] }}"></label>
+        <label class="field w-sm"><span class="field-label">z</span><input type="number" step="0.1" name="z" value="{{ element['z'] }}"></label>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+      <form method="post" action="{{ url_for('marine.delete_element', asset_id=asset['id'], element_id=element['id']) }}" style="margin-top:12px"
+            onsubmit="return confirm('Remove this element, its sensors and their readings?')">
+        <button type="submit" class="btn btn-danger btn-sm">Remove this element</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

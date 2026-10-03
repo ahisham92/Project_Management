@@ -16,6 +16,7 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Project Management** | Everything described in this README — programme, progress, budget, the register, the resource plan, the minutes. | `/projects` |
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
 | **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
+| **MarineTwin** | The digital twin of a structure after handover: its Revit model in 3D, its sensors, and its condition judged against the design Triton did for it. | `/marinetwin` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -440,6 +441,39 @@ the Admin page. Only administrators change the library, the options and the hous
 anybody given the program writes project specifications.
 
 ---
+
+### About MarineTwin (digital twin of marine structures)
+
+Once a quay, jetty or dolphin is handed over, MarineTwin follows it through its life. Each
+**asset** is made of **elements** (piles, combi wall panels, beams, the deck), each of which can
+carry **sensors**: strain gauges, ultrasonic thickness points for corrosion, displacement and tilt.
+
+**It does no design of its own; it asks Triton.** Link an asset to a Triton section and each
+element (named as Triton names it: P01, CW2) takes its **design utilisation** from Triton's saved
+results, and the asset takes the project's own **corrosion allowances and design life**. Unlinked,
+the allowances come from Triton's code defaults (BS 6349-1-4 or EN 1993-5) and the utilisation is
+typed in. Triton is only read, never written to, and a site without Triton still runs MarineTwin.
+
+For each element it answers three questions:
+
+- **How is it now?** Every sensor's latest reading against its limits (strain defaults to half and
+  three quarters of the S355 yield strain; movement and tilt are measured from installation).
+- **Where is it heading?** Thickness loss is fitted as loss = a·tᵇ and projected to the end of the
+  design life: the year the allowance is used up, and the design utilisation rescaled for the steel
+  that would be left (a thin-wall approximation, labelled as such).
+- **What should be done?** A recommendation for each element that needs one, most pressing first.
+
+**The 3D view** shows the Revit model exported as **IFC** (File → Export → IFC) or **glTF**, with
+each element coloured by its condition; elements are matched to the model by their *model
+reference* (the IFC GlobalId, the Tag Revit writes its element id into, or the Name). Without a
+model it draws a schematic from the elements' positions. three.js is vendored under
+`app/static/vendor/three`; web-ifc, which reads IFC in the browser, is fetched from jsDelivr only
+when an IFC model is opened.
+
+**Sensors are simulated for the prototype**, deterministically per sensor, so a demonstration
+berth always tells the same story; *Bring simulated sensors up to today* extends them. Real
+readings come in as a CSV with the columns `sensor`, `at`, `value`; a sensor that receives real
+readings stops being simulated. Models are kept under `marinetwin/models` in the data directory.
 
 ## Installing it on your computer
 

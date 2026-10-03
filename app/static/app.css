@@ -643,6 +643,7 @@ input[type="checkbox"] { width: auto; }
 .door-mark-crs { background: #1f9d76; font-size: 0.82rem; }
 .door-mark-triton { background: #0f4c81; }
 .door-mark-specs { background: #7a4fb5; font-size: 0.78rem; }
+.door-mark-marine { background: #0b7a8a; font-size: 0.82rem; }
 .door-name { font-size: 1.15rem; font-weight: 650; }
 .door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
 .door-go { margin-top: 4px; color: var(--series-1); font-size: 0.9rem; font-weight: 600; }

@@ -8,7 +8,7 @@
     <h1>Which one today?</h1>
     <p class="small muted" style="margin-top:2px">
       One sign-in for all of them: the programme, the client's comments on what it hands over,
-      the design of the quay itself, and the specification it is built to.
+      the design of the quay itself, the specification it is built to, and how it stands up once it is in service.
     </p>
   </div>
 </div>
@@ -72,6 +72,19 @@
       section issued in the same Word format as the original.
     </span>
     <span class="door-go">Open THEMIS →</span>
+  </a>
+  {% endif %}
+
+  {% if 'marinetwin' in my_programs %}
+  <a class="door" href="{{ url_for('marine.index') }}">
+    <span class="door-mark door-mark-marine" aria-hidden="true">MT</span>
+    <span class="door-name">MarineTwin</span>
+    <span class="door-what">
+      The digital twin of a marine structure after handover: its Revit model, its sensors (strain,
+      steel thickness, movement and tilt) and how it is standing up against the design Triton did for
+      it, with corrosion projected to the end of its life and what to do about it.
+    </span>
+    <span class="door-go">Open MarineTwin →</span>
   </a>
   {% endif %}
 </div>

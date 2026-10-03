@@ -78,7 +78,7 @@
     {% endif %}
     {{ charts[s['id']] }}
     {% if s['kind'] == 'inspection' and history[s['id']] %}
-      <div class="table-wrap" style="margin-top:8px"><table class="table">
+      <div class="table-scroll" style="margin-top:8px"><table class="table">
         <thead><tr><th>Inspected</th><th>Grade</th><th>What was seen</th></tr></thead>
         <tbody>{% for r in history[s['id']] | reverse %}
           <tr><td class="small nowrap">{{ short_date(r['at']) }}</td><td class="small nowrap">{{ r['value'] | int }}: {{ grade_name[r['value'] | int] }}</td>

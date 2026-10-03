@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs %}
+{% block title %}{{ asset['name'] }} · Operations · MarineTwin{% endblock %}
+
+{% block content %}
+{% set c = ops['current'] %}
+{% set limits = ops['limits'] %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>{{ asset['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      The berth at work, {{ ops['now'].strftime('%A %d/%m/%Y %H:%M') }}.
+      Weather, ships, cranes and downtime are <strong>simulated</strong> for the prototype; the berthing and mooring figures are indicative, not a design check.
+    </p>
+  </div>
+</div>
+
+{{ asset_tabs(asset) }}
+
+<h2 class="marine-q">What is happening now</h2>
+<div class="grid grid-4">
+  {{ tile('Berth', ops['status'], ops['reason'],
+          {'Normal': 'good', 'Restricted': 'warning', 'Stopped': 'critical'}[ops['status']],
+          {'Normal': 'working', 'Restricted': 'restricted', 'Stopped': 'stopped'}[ops['status']]) }}
+  {{ tile('Wind', '%.0f m/s' | format(c['wind']), 'gusting ' ~ ('%.0f' | format(c['gust'])) ~ ' m/s; cranes stop at ' ~ ('%.0f' | format(limits['crane_stop_gust'])),
+          'critical' if c['gust'] >= limits['crane_stop_gust'] else 'warning' if c['wind'] >= limits['berthing_wind'] else 'good',
+          'over the crane limit' if c['gust'] >= limits['crane_stop_gust'] else 'no berthing' if c['wind'] >= limits['berthing_wind'] else 'within limits') }}
+  {{ tile('Sea', '%.1f m' | format(c['hs']), 'tide ' ~ ('%.1f' | format(c['tide'])) ~ ' m CD, current ' ~ ('%.2f' | format(c['current'])) ~ ' m/s',
+          'warning' if c['hs'] >= limits['berthing_hs'] else 'good',
+          'over the berthing limit' if c['hs'] >= limits['berthing_hs'] else 'within limits') }}
+  {{ tile('Structure', twin['health'] if twin['health'] is not none else '—', 'health out of 100; ' ~ twin['counts']['critical'] ~ ' elements to act on',
+          {'critical': 'critical', 'warning': 'warning', 'good': 'good'}.get(twin['state'], 'neutral'),
+          {'critical': 'act now', 'warning': 'watch', 'good': 'good'}.get(twin['state'], '')) }}
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><div><h2>Alongside</h2></div></div>
+    <div class="card-body">
+      {% set ship = ops['alongside'] %}
+      {% if ship %}
+        <p><strong>{{ ship['name'] }}</strong> <span class="muted">{{ ship['type'] }}, {{ ship['loa'] }} m, {{ '{:,}'.format(ship['displacement']) }} t</span></p>
+        <p class="small muted">Alongside since {{ ship['eta'].strftime('%a %H:%M') }}, sails {{ ship['etd'].strftime('%a %H:%M') }}. About {{ '{:,}'.format(ship['moves']) }} moves.</p>
+      {% else %}
+        <p class="muted">The berth is empty.{% if ops['calls'] %} {{ ops['calls'][0]['name'] }} is due {{ ops['calls'][0]['when'] }}.{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Cranes</h2>
+      <p class="small muted" style="margin-top:2px">{{ ops['cranes_working'] }} of {{ ops['cranes'] | length }} working</p></div></div>
+    <div class="card-body table-scroll">
+      <table class="table">
+        <tbody>
+          {% for crane in ops['cranes'] %}
+            <tr>
+              <td><strong>{{ crane['name'] }}</strong></td>
+              <td>{% set st = {'working': 'good', 'stopped': 'warning', 'stowed': 'critical', 'down': 'critical'}[crane['state']] %}
+                <span class="small state-{{ st }}"><span aria-hidden="true">●</span> {{ crane['state'] | capitalize }}</span><span class="small">{% if crane['why'] %}: {{ crane['why'] }}{% endif %}</span></td>
+              <td class="right small muted">{% if crane['state'] == 'working' %}{{ crane['rate'] }} moves/h · {% endif %}service in {{ crane['service_in_h'] }} h</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2 class="marine-q">What will happen next</h2>
+<div class="card">
+  <div class="card-head"><div><h2>Wind, next 72 hours</h2>
+    <p class="small muted" style="margin-top:2px">The last day is shaded. Peak gust {{ '%.0f' | format(ops['peak']['gust']) }} m/s {{ ops['peak']['at'].strftime('%a %H:00') }}.</p></div></div>
+  <div class="card-body">{{ wind_chart }}</div>
+</div>
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Sea and tide, next 72 hours</h2></div></div>
+  <div class="card-body">{{ sea_chart }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Ships</h2>
+    <p class="small muted" style="margin-top:2px">
+      Berthing energy E = ½·M·V²·Cm·Ce·Cs·Cc (BS 6349-4, PIANC WG 33), abnormal ×{{ '%.1f' | format(1.5) }}, against the fenders' rated energy
+      {% if ops['ratings']['fender_energy'] %}of {{ '{:,.0f}'.format(ops['ratings']['fender_energy']) }} kNm{% endif %} from {{ ops['ratings']['source'] }}.
+      Mooring pull is beam-on wind on the ship's windage at the strongest wind of its stay, shared over the bollards not graded for action.
+    </p></div></div>
+  <div class="card-body">
+    {% if not ops['calls'] %}
+      <p class="muted">No ships alongside or due in the next 72 hours.</p>
+    {% else %}
+    <div class="table-scroll">
+      <table class="table">
+        <thead><tr>
+          <th>Ship</th><th>Arrives</th><th>Sails</th>
+          <th class="right">Wind / sea at arrival</th>
+          <th class="right">Berthing energy, abnormal</th>
+          <th class="right">Pull per bollard</th>
+          <th>Check</th>
+        </tr></thead>
+        <tbody>
+          {% for call in ops['calls'] %}
+            <tr>
+              <td><strong>{{ call['name'] }}</strong><div class="small muted">{{ call['type'] }}, {{ call['loa'] }} m, {{ '{:,}'.format(call['displacement']) }} t</div></td>
+              <td class="small">{% if call['alongside'] %}alongside{% else %}{{ call['when'] }}{% endif %}</td>
+              <td class="small">{{ call['until'] }}</td>
+              <td class="right small tabular">{% if call['alongside'] %}<span class="muted">—</span>{% else %}{{ '%.0f' | format(call['wind_at_eta']) }} m/s, {{ '%.1f' | format(call['hs_at_eta']) }} m{% endif %}</td>
+              <td class="right small tabular">{% if call['alongside'] %}<span class="muted">berthed</span>{% else %}
+                {{ '{:,}'.format(call['energy']['abnormal']) }} kNm
+                {% if call['fender_energy'] %}<div class="muted">{{ (100 * call['energy']['abnormal'] / call['fender_energy']) | round | int }}% of rating, at {{ '%.2f' | format(call['energy']['speed']) }} m/s</div>{% endif %}
+              {% endif %}</td>
+              <td class="right small tabular">{{ call['per_bollard'] }} t
+                {% if ops['ratings']['bollard'] %}<div class="muted">{{ (100 * call['per_bollard'] / ops['ratings']['bollard']) | round | int }}% of {{ '%.0f' | format(ops['ratings']['bollard']) }} t</div>{% endif %}</td>
+              <td>{{ state_badge(call['state']) }}{% if call['flags'] %}<div class="small muted">{{ call['flags'] | join(', ') }}</div>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="marine-q">What should we do</h2>
+<div class="card">
+  <div class="card-head"><div><h2>Actions</h2>
+    <p class="small muted" style="margin-top:2px">Most pressing first, across the weather, the ships, the cranes and the structure. Each follows from the figures above; none replaces the harbour master's or an engineer's judgement.</p></div></div>
+  <div class="card-body">
+    {% if ops['actions'] %}
+    <ul class="marine-advice">
+      {% for one in ops['actions'] %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['area'] }}</strong>{% if one['when'] %} <span class="muted">· {{ one['when'] }}</span>{% endif %}<br>{{ one['text'] }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p class="muted">Nothing needs doing: the forecast stays within every limit and the ships due fit the berth as it stands.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% set lost = ops['downtime'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>The last {{ lost['days'] }} days</h2>
+    <p class="small muted" style="margin-top:2px">Occupancy {{ lost['occupancy'] }}% (a ship alongside), availability {{ lost['availability'] }}% (the berth able to work), {{ lost['lost'] }} hours lost.</p></div></div>
+  <div class="card-body">
+    {% set most = (lost['causes'].values() | max) or 1 %}
+    <table class="table">
+      <tbody>
+        {% for cause, hours in lost['causes'] | dictsort(by='value', reverse=true) %}
+          <tr>
+            <td style="width:30%">{{ cause }}</td>
+            <td><div class="marine-bar" style="width:{{ (100 * hours / most) | round(1) }}%"></div></td>
+            <td class="right tabular" style="width:12%">{{ hours }} h</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted" style="margin-top:8px">Waiting for a ship is idle berth time, not downtime.</p>
+  </div>
+</div>
+{% endblock %}

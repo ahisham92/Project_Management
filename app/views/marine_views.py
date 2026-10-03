@@ -18,10 +18,10 @@ from flask import (
     Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
-from .. import marine, marine_triton
+from .. import marine, marine_ops, marine_triton
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
-from ..marine_charts import sensor_trend
+from ..marine_charts import sea_forecast, sensor_trend, wind_forecast
 
 bp = Blueprint("marine", __name__, url_prefix="/marinetwin")
 
@@ -150,6 +150,17 @@ def asset(asset_id: int):
                            triton_projects=marine_triton.projects(),
                            model_kind=MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
                            **_context())
+
+
+@bp.get("/assets/<int:asset_id>/operations")
+@login_required
+def operations(asset_id: int):
+    """The berth at work: what is happening now, what happens next, what to do."""
+    asset = _asset_or_404(asset_id)
+    ops = marine_ops.operations(get_db(), asset)
+    return render_template("marine/operations.html", asset=asset, ops=ops, twin=ops["twin"],
+                           wind_chart=wind_forecast(ops["weather"], ops["limits"]),
+                           sea_chart=sea_forecast(ops["weather"], ops["limits"]), **_context())
 
 
 @bp.get("/assets/<int:asset_id>/twin.json")

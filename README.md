@@ -490,6 +490,26 @@ berth always tells the same story; *Bring simulated sensors up to today* extends
 readings come in as a CSV with the columns `sensor`, `at`, `value`; a sensor that receives real
 readings stops being simulated. Models are kept under `marinetwin/models` in the data directory.
 
+**Operations.** Each asset also has an *Operations* tab that looks at the berth at work, not just
+the structure, and answers the same three questions for it:
+
+- **What is happening now?** Wind, gust, waves, tide and current; the ship alongside; each STS
+  crane working, stopped, stowed or down; and whether the berth is working normally, restricted
+  or stopped, and why.
+- **What will happen next?** A 72-hour wind and sea forecast against the operating limits (no
+  berthing above 15 m/s or 1.5 m Hs, cranes stop at 20 m/s gust and go to their storm pins at 25),
+  and each ship due: its berthing energy (BS 6349-4 / PIANC WG 33, abnormal ×1.5) against the
+  fenders' rated energy, and the beam-on wind pull of its stay shared over the bollards still fit
+  to use, against their capacity. The ratings come from Triton's quay furniture.
+- **What should we do?** One list across weather, ships, cranes and the structure, each with a
+  time: stow the cranes before a gale, hold a ship at anchor until it eases, shift a berthing
+  position off a damaged fender, double up lines, slow the gantry over a rail out of line.
+
+The last 30 days' downtime by cause, occupancy and availability sit below. **Every operational
+feed is simulated for the prototype** (deterministically per asset and day), in the shapes a port
+would later connect: a met forecast, the vessel line-up, crane status and the downtime log. The
+limits are typical values for a container berth; the figures are indicative, not a design check.
+
 ## Installing it on your computer
 
 You need Python 3.10 or newer. Check with `python3 --version` (Windows: `py --version`).

@@ -354,3 +354,100 @@ def test_a_fender_overloaded_months_ago_is_still_reported():
     assert s["state"] == "warning" and s["exceedances"] == 1 and s["last_exceeded"] == "2025-01-06"
     advice = marine.recommendations(_element(name="F1", kind="fender"), {}, [s], _asset())
     assert "has gone over its rated reaction 1 time, last on 2025-01-06" in advice[0]["text"]
+
+
+# --- operations ---------------------------------------------------------------
+
+from datetime import datetime, timedelta  # noqa: E402
+
+from app import marine_ops  # noqa: E402
+
+NOW = datetime(2026, 10, 3, 9, 30)
+
+
+def test_berthing_energy_follows_bs6349_4():
+    # Cm = 1 + 2·14/40 = 1.7; E = ½ · 100 000 t · 0.15² · 1.7 · 0.5 · 1.0 · 0.9 = 861 kNm.
+    e = marine_ops.berthing_energy(100000, 40, 14, 0.15, solid=True)
+    assert e["cm"] == 1.7 and e["normal"] == 861 and e["abnormal"] == 1291
+    assert marine_ops.berthing_energy(100000, 40, 14, 0.15, solid=False)["normal"] == 956
+
+
+def test_wind_on_a_moored_ship():
+    # ½ · 1.225 · 1.2 · (300 m × 30 m) · 20² / 9.81 = 270 t.
+    assert marine_ops.wind_on_ship(300, 30, 20) == pytest.approx(269.7, abs=0.1)
+    assert marine_ops.approach_speed(5) < marine_ops.approach_speed(12) < marine_ops.approach_speed(18)
+
+
+def test_the_simulated_feeds_tell_the_same_story_all_day():
+    assert marine_ops.metocean(7, NOW) == marine_ops.metocean(7, NOW)
+    assert marine_ops.lineup(7, NOW) == marine_ops.lineup(7, NOW)
+    assert marine_ops.metocean(7, NOW) != marine_ops.metocean(8, NOW)
+    hours = marine_ops.metocean(7, NOW)
+    assert len(hours) == 24 + 72 + 1 and sum(1 for h in hours if not h["past"]) == 72
+
+
+def _weather(wind):
+    start = NOW.replace(minute=0) - timedelta(hours=24)
+    return [{"at": start + timedelta(hours=i), "wind": wind(i - 24), "gust": wind(i - 24) * 1.3,
+             "hs": 0.3 + 0.05 * wind(i - 24), "tide": 1.0, "current": 0.2, "past": i <= 24} for i in range(97)]
+
+
+def _ship(hours, **over):
+    ship = {"name": "Test Ship", "type": "Container", "loa": 300, "beam": 48.2, "draught": 14.0,
+            "displacement": 140000, "windage": 32, "eta": NOW + timedelta(hours=hours),
+            "etd": NOW + timedelta(hours=hours + 20), "moves": 1500}
+    ship.update(over)
+    return ship
+
+
+def _twin(fender_state="good"):
+    def el(name, kind, state):
+        return {"element": {"name": name, "kind": kind}, "state": state, "sensors": []}
+    return {"elements": [el("F1", "fender", "good"), el("F2", "fender", fender_state),
+                         el("BOL1", "bollard", "good"), el("BOL2", "bollard", "good")],
+            "advice": [], "health": 80, "state": "good", "counts": {"critical": 0, "warning": 0}}
+
+
+def _operations(monkeypatch, wind, ships, fender_state="good"):
+    monkeypatch.setattr(marine_ops, "metocean", lambda *a, **k: _weather(wind))
+    monkeypatch.setattr(marine_ops, "lineup", lambda *a, **k: ships)
+    return marine_ops.operations(None, _asset(), NOW, _twin(fender_state))
+
+
+def test_a_calm_day_needs_nothing(monkeypatch):
+    ops = _operations(monkeypatch, lambda h: 6.0, [_ship(10, displacement=60000, loa=200, windage=20)])
+    assert ops["status"] == "Normal"
+    assert [a for a in ops["actions"] if a["area"] in ("Vessels", "Mooring")] == []
+    assert ops["calls"][0]["state"] == "good"
+
+
+def test_a_ship_due_on_a_damaged_fender_is_moved_along_the_berth(monkeypatch):
+    ops = _operations(monkeypatch, lambda h: 6.0, [_ship(10, displacement=60000)], fender_state="critical")
+    vessel = [a for a in ops["actions"] if a["area"] == "Vessels"]
+    assert vessel and "F2" in vessel[0]["text"] and "clears F2" in vessel[0]["text"]
+    assert "damaged fender" in ops["calls"][0]["flags"]
+
+
+def test_a_gale_stows_the_cranes_holds_the_ship_and_doubles_the_lines(monkeypatch):
+    gale = lambda h: 26.0 if 20 <= h <= 30 else 6.0   # noqa: E731
+    ops = _operations(monkeypatch, gale, [_ship(24)])
+    areas = [a["area"] for a in ops["actions"]]
+    assert "Cranes" in areas and "Vessels" in areas and "Mooring" in areas
+    assert any("storm pins" in a["text"] for a in ops["actions"])
+    assert any("Hold her at anchor" in a["text"] for a in ops["actions"])
+    assert ops["actions"][0]["state"] == "critical"
+    assert ops["status"] == "Normal" and ops["windows"]["stow"] is not None
+
+
+def test_a_big_ship_over_the_fender_rating_is_flagged(monkeypatch):
+    ops = _operations(monkeypatch, lambda h: 12.0, [_ship(10, displacement=400000)])
+    assert "berthing energy" in ops["calls"][0]["flags"]
+    assert ops["calls"][0]["energy"]["abnormal"] > ops["ratings"]["fender_energy"]
+
+
+def test_the_operations_page_answers_now_next_and_what_to_do(signed_in, demo):
+    page = text(signed_in.get(demo + "/operations"))
+    for heading in ("What is happening now", "What will happen next", "What should we do",
+                    "Wind, next 72 hours", "Ships", "Cranes", "simulated"):
+        assert heading in page
+    assert "<svg" in page and 'href="' + demo + '/operations"' in text(signed_in.get(demo))

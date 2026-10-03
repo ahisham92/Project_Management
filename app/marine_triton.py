@@ -164,10 +164,12 @@ def allowance_for(element: Any, allowances: dict[str, float]) -> float | None:
 # defaults Triton's own quay furniture starts from.
 _FALLBACK_FENDER_REACTION = 2012.0   # kN, SCN 1600 F1.8
 _FALLBACK_BOLLARD_CAPACITY = 150.0   # t
+_FALLBACK_FENDER_ENERGY = 1867.0     # kNm, SCN 1600 F1.8
 
 
 def ratings(asset: Any) -> dict[str, Any]:
-    """What a fender and a bollard are rated for: ``fender`` (kN reaction) and ``bollard`` (t).
+    """What a fender and a bollard are rated for: ``fender`` (kN reaction),
+    ``fender_energy`` (kNm) and ``bollard`` (t).
 
     A linked Triton project's quay furniture wins, since that is what the berth
     was designed with; otherwise Triton's own defaults.
@@ -179,6 +181,7 @@ def ratings(asset: Any) -> dict[str, Any]:
         return {
             "fender": fenders.reaction if fenders else None,
             "fender_name": fenders.name if fenders else "",
+            "fender_energy": fenders.energy if fenders else None,
             "bollard": bollards.capacity if bollards else None,
             "source": f"Triton project “{project.info.name}”",
         }
@@ -186,8 +189,10 @@ def ratings(asset: Any) -> dict[str, Any]:
         from triton.furniture_inputs import Bollards, Fenders
 
         fenders, bollards = Fenders(), Bollards()
-        return {"fender": fenders.reaction, "fender_name": fenders.name, "bollard": bollards.capacity,
+        return {"fender": fenders.reaction, "fender_name": fenders.name,
+                "fender_energy": fenders.energy, "bollard": bollards.capacity,
                 "source": "Triton's default furniture"}
     except Exception:                                 # noqa: BLE001 - Triton not installed
-        return {"fender": _FALLBACK_FENDER_REACTION, "fender_name": "", "bollard": _FALLBACK_BOLLARD_CAPACITY,
+        return {"fender": _FALLBACK_FENDER_REACTION, "fender_name": "",
+                "fender_energy": _FALLBACK_FENDER_ENERGY, "bollard": _FALLBACK_BOLLARD_CAPACITY,
                 "source": "typical catalogue values (Triton is not installed here)"}

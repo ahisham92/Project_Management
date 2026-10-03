@@ -1,0 +1,360 @@
+"""MarineTwin's operations: what is happening at the berth now, what happens next, what to do.
+
+The structure is only half of a berth. The other half is its operation: the
+weather and sea it works in, the ships that come alongside, the cranes that work
+them, and the hours lost when any of those stops. This module puts the two
+together, because that is where the decisions are: a ship due on a fender the
+last inspection found torn, a gale forecast while a bollard is near its rating,
+cranes running on a rail that is off its line.
+
+It answers three questions for one asset:
+
+* **Now.** Wind, sea and tide; the ship alongside; the cranes; whether the berth
+  is working normally, restricted or stopped, and why.
+* **Next 72 hours.** The forecast against the operating limits, and each ship
+  due: its berthing energy against the fenders it lands on, and its mooring
+  loads in the forecast wind against the bollards that hold it.
+* **What to do.** Actions with a time on them, most pressing first, whether the
+  cause is the weather, a ship, a crane or the structure.
+
+**For the prototype every operational feed is simulated**, deterministically per
+asset and day so the page tells the same story all day. The shapes are what a
+port would plug in later: a met forecast, the vessel line-up from the port
+community system or AIS, crane status from the crane PLCs, and the downtime log.
+
+The calculations are the standard simplified ones, labelled as indicative:
+berthing energy to BS 6349-4 / PIANC WG 33 and wind load on a moored ship from
+its windage area. Ratings (the fender's rated energy, the bollard's capacity)
+come from Triton's quay furniture through ``marine_triton``, read-only.
+"""
+
+from __future__ import annotations
+
+import math
+import random
+from datetime import datetime, timedelta
+from typing import Any
+
+from . import marine, marine_triton
+
+# --- operating limits ----------------------------------------------------------------
+# Typical values for a container berth; a port sets its own in its operating manual.
+LIMITS = {
+    "crane_stop_gust": 20.0,     # m/s, STS cranes stop working (3 s gust at boom height)
+    "crane_stow_gust": 25.0,     # m/s, cranes parked on their storm pins and tied down
+    "berthing_wind": 15.0,       # m/s mean, no berthing or unberthing above it
+    "berthing_hs": 1.5,          # m, significant wave height, no berthing above it
+    "mooring_wind": 20.0,        # m/s mean, extra lines and a tug on standby above it
+}
+LIMIT_NOTES = {
+    "crane_stop_gust": "STS cranes stop",
+    "crane_stow_gust": "cranes to storm pins",
+    "berthing_wind": "no berthing",
+    "mooring_wind": "extra lines, tug standby",
+}
+
+# Berthing energy, BS 6349-4:2014 / PIANC WG 33 (2002): E = ½ M V² Cm Ce Cs Cc.
+ECCENTRICITY = 0.5               # Ce, contact at the quarter point
+SOFTNESS = 1.0                   # Cs
+BERTH_CONFIG_SOLID = 0.9         # Cc, a solid quay wall cushions the approach
+BERTH_CONFIG_OPEN = 1.0          # Cc, an open piled jetty does not
+ABNORMAL = 1.5                   # factor on the normal energy the fender has to absorb
+
+# Wind on a moored ship: F = ½ ρ Cd A V².
+AIR = 1.225                      # kg/m³
+DRAG_BEAM = 1.2                  # beam-on wind on a ship with deck cargo
+LINES_PER_BOLLARD = 2
+
+
+def approach_speed(wind: float) -> float:
+    """Design approach speed for a large ship (m/s), from the wind it berths in.
+
+    Brolsma's curves (PIANC WG 33) for a ship over 50 000 t: about 0.10 m/s in good,
+    sheltered conditions, 0.15 m/s in moderate ones, 0.20 m/s when it is difficult.
+    """
+    if wind < 10:
+        return 0.10
+    if wind < LIMITS["berthing_wind"]:
+        return 0.15
+    return 0.20
+
+
+def berthing_energy(displacement_t: float, beam: float, draught: float, speed: float, solid: bool) -> dict[str, float]:
+    """Normal and abnormal berthing energy (kNm) of one ship."""
+    cm = 1 + 2 * draught / beam                       # Vasco Costa added mass
+    cc = BERTH_CONFIG_SOLID if solid else BERTH_CONFIG_OPEN
+    normal = 0.5 * displacement_t * speed ** 2 * cm * ECCENTRICITY * SOFTNESS * cc   # t·m²/s² = kNm
+    return {"cm": round(cm, 2), "cc": cc, "speed": speed, "normal": round(normal), "abnormal": round(normal * ABNORMAL)}
+
+
+def wind_on_ship(loa: float, windage: float, wind: float) -> float:
+    """Beam-on wind load on a moored ship, in tonnes force."""
+    area = loa * windage
+    return 0.5 * AIR * DRAG_BEAM * area * wind ** 2 / 9.81 / 1000
+
+
+# --- the simulated feeds -------------------------------------------------------------
+
+SHIPS = [
+    # name, type, LOA m, beam m, draught m, displacement t, windage height m
+    ("MSC Aurora", "Container", 300, 48.2, 14.0, 140000, 32),
+    ("Maersk Kendal", "Container", 294, 32.3, 13.0, 95000, 28),
+    ("CMA CGM Thalia", "Container", 334, 42.8, 14.5, 150000, 34),
+    ("Ever Lucent", "Container", 366, 48.2, 15.0, 190000, 36),
+    ("ONE Harmony", "Container", 260, 32.3, 12.5, 70000, 26),
+    ("Hapag Riyadh", "Container", 368, 51.0, 15.5, 200000, 38),
+    ("Gulf Pioneer", "General cargo", 180, 28.0, 10.0, 35000, 14),
+    ("Arabian Star", "Bulk carrier", 229, 32.3, 13.5, 95000, 12),
+]
+
+
+def _rng(asset_id: int, day: str, what: str) -> random.Random:
+    return random.Random(f"marinetwin-ops:{asset_id}:{day}:{what}")
+
+
+def _hour(now: datetime) -> datetime:
+    return now.replace(minute=0, second=0, microsecond=0)
+
+
+def metocean(asset_id: int, now: datetime, hours_back: int = 24, hours_ahead: int = 72) -> list[dict[str, Any]]:
+    """Hourly wind, gust, wave height, tide and current, from a day ago to three days ahead.
+
+    A sea breeze cycle, and on most days a weather system passing through
+    somewhere in the next three days, peaking at a random hour.
+    """
+    start = _hour(now) - timedelta(hours=hours_back)
+    rng = _rng(asset_id, now.date().isoformat(), "metocean")
+    base = rng.uniform(4, 8)
+    storm_at = rng.uniform(hours_back + 6, hours_back + hours_ahead - 6)
+    storm_peak = rng.choice([0, 6, 10, 13, 16]) + rng.uniform(0, 3)   # extra m/s at the peak
+    storm_width = rng.uniform(5, 12)
+    tide_phase = rng.uniform(0, 2 * math.pi)
+    out = []
+    for i in range(hours_back + hours_ahead + 1):
+        at = start + timedelta(hours=i)
+        breeze = 3 * max(0.0, math.sin(2 * math.pi * (at.hour - 9) / 24))
+        storm = storm_peak * math.exp(-((i - storm_at) / storm_width) ** 2)
+        wind = max(0.5, base + breeze + storm + rng.gauss(0, 0.6))
+        gust = wind * rng.uniform(1.25, 1.4)
+        hs = 0.25 + 0.012 * wind ** 1.6 + rng.gauss(0, 0.03)
+        tide = 0.9 + 0.75 * math.sin(2 * math.pi * i / 12.42 + tide_phase)       # m above chart datum
+        current = 0.35 * abs(math.cos(2 * math.pi * i / 12.42 + tide_phase)) + rng.gauss(0, 0.02)
+        out.append({"at": at, "wind": round(wind, 1), "gust": round(gust, 1), "hs": round(max(hs, 0.1), 2),
+                    "tide": round(tide, 2), "current": round(max(current, 0.0), 2),
+                    "past": at <= _hour(now)})
+    return out
+
+
+def lineup(asset_id: int, now: datetime) -> list[dict[str, Any]]:
+    """The ship alongside, if any, and the calls due in the next three days."""
+    rng = _rng(asset_id, now.date().isoformat(), "lineup")
+    ships = SHIPS[:]
+    rng.shuffle(ships)
+    out = []
+    t = _hour(now) - timedelta(hours=rng.uniform(4, 20))     # the current call came in before now
+    for i, (name, kind, loa, beam, draught, disp, windage) in enumerate(ships[:4]):
+        stay = timedelta(hours=rng.uniform(14, 30))
+        eta = t
+        etd = eta + stay
+        if i == 0 and rng.random() < 0.25:                    # some days the berth is empty this morning
+            eta = _hour(now) + timedelta(hours=rng.uniform(3, 8))
+            etd = eta + stay
+        out.append({"name": name, "type": kind, "loa": loa, "beam": beam, "draught": draught,
+                    "displacement": disp, "windage": windage, "eta": eta, "etd": etd,
+                    "moves": int(rng.uniform(0.5, 1.0) * loa * 6)})
+        t = etd + timedelta(hours=rng.uniform(2, 10))
+    return out
+
+
+def cranes(asset_id: int, now: datetime, gust: float) -> list[dict[str, Any]]:
+    rng = _rng(asset_id, now.date().isoformat(), "cranes")
+    out = []
+    for i in range(3):
+        hours = rng.uniform(150, 520)                          # running hours to the next service
+        broken = rng.random() < 0.12
+        if gust >= LIMITS["crane_stow_gust"]:
+            state, why = "stowed", "on its storm pins: gusts over the stow limit"
+        elif gust >= LIMITS["crane_stop_gust"]:
+            state, why = "stopped", "wind stop: gusts over the operating limit"
+        elif broken:
+            state, why = "down", rng.choice(["spreader twistlock fault", "hoist brake alarm", "gantry drive fault"])
+        else:
+            state, why = "working", ""
+        out.append({"name": f"STS{i + 1}", "state": state, "why": why, "service_in_h": round(hours),
+                    "rate": round(rng.uniform(24, 32), 1)})
+    return out
+
+
+def downtime(asset_id: int, now: datetime, days: int = 30) -> dict[str, Any]:
+    """Hours the berth lost in the last ``days``, by cause, and its occupancy."""
+    rng = _rng(asset_id, now.date().isoformat(), "downtime")
+    causes = {"Wind": 0.0, "Waves": 0.0, "Crane breakdown": 0.0, "Berth / fender damage": 0.0, "Waiting for ship": 0.0}
+    for _ in range(days):
+        if rng.random() < 0.2:
+            causes["Wind"] += rng.uniform(2, 10)
+        if rng.random() < 0.08:
+            causes["Waves"] += rng.uniform(2, 8)
+        if rng.random() < 0.15:
+            causes["Crane breakdown"] += rng.uniform(1, 6)
+        if rng.random() < 0.04:
+            causes["Berth / fender damage"] += rng.uniform(4, 12)
+        if rng.random() < 0.3:
+            causes["Waiting for ship"] += rng.uniform(2, 9)
+    lost = sum(v for k, v in causes.items() if k != "Waiting for ship")
+    occupied = days * 24 - causes["Waiting for ship"]
+    return {"days": days, "causes": {k: round(v, 1) for k, v in causes.items()}, "lost": round(lost, 1),
+            "occupancy": round(100 * occupied / (days * 24)),
+            "availability": round(100 * (days * 24 - lost) / (days * 24))}
+
+
+# --- putting it together ----------------------------------------------------------
+
+def _when(at: datetime, now: datetime) -> str:
+    hours = (at - now).total_seconds() / 3600
+    if -1 < hours < 1:
+        return "now"
+    day = "today" if at.date() == now.date() else "tomorrow" if at.date() == (now + timedelta(days=1)).date() else at.strftime("%A")
+    return f"{day} {at:%H:00}"
+
+
+def operations(conn: Any, asset: Any, now: datetime | None = None, twin: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Now, next and what to do for one asset."""
+    now = now or datetime.now()
+    twin = twin or marine.assess_asset(conn, asset, now.date())
+    asset_id = int(asset["id"])
+    ratings = marine_triton.ratings(asset)
+    fender_energy = ratings.get("fender_energy")
+    solid = asset["kind"] == "quay_wall"
+
+    weather = metocean(asset_id, now)
+    current = next(w for w in reversed(weather) if w["past"])
+    ahead = [w for w in weather if not w["past"]]
+    ships = lineup(asset_id, now)
+    alongside = next((s for s in ships if s["eta"] <= now < s["etd"]), None)
+    due = [s for s in ships if s["eta"] > now and s["eta"] <= now + timedelta(hours=72)]
+    crane_list = cranes(asset_id, now, current["gust"])
+    lost = downtime(asset_id, now)
+
+    by_kind: dict[str, list[dict[str, Any]]] = {}
+    for e in twin["elements"]:
+        by_kind.setdefault(e["element"]["kind"], []).append(e)
+    fenders = by_kind.get("fender", [])
+    bollards = by_kind.get("bollard", [])
+    rails = by_kind.get("crane_rail", [])
+    damaged = [f for f in fenders if f["state"] == "critical"]
+    usable_bollards = max(1, len([b for b in bollards if b["state"] != "critical"]))
+
+    actions: list[dict[str, Any]] = []
+
+    def act(state: str, when: datetime | None, area: str, text: str) -> None:
+        actions.append({"state": state, "when": _when(when, now) if when else "", "at": when or now,
+                        "area": area, "text": text})
+
+    # Weather windows over the next 72 hours.
+    def first(rows, test):
+        return next((w for w in rows if test(w)), None)
+
+    stow = first(ahead, lambda w: w["gust"] >= LIMITS["crane_stow_gust"])
+    stop = first(ahead, lambda w: w["gust"] >= LIMITS["crane_stop_gust"])
+    no_berth = first(ahead, lambda w: w["wind"] >= LIMITS["berthing_wind"] or w["hs"] >= LIMITS["berthing_hs"])
+    peak = max(ahead, key=lambda w: w["gust"])
+    if stow:
+        act("critical", stow["at"] - timedelta(hours=3), "Cranes",
+            f"Gusts reach {stow['gust']:.0f} m/s {_when(stow['at'], now)}, over the {LIMITS['crane_stow_gust']:.0f} m/s stow limit. "
+            f"Park the STS cranes on their storm pins and fit the tie-downs by {_when(stow['at'] - timedelta(hours=1), now)}"
+            + ("; the storm pins were last graded " + ", ".join(f"{e['element']['name']} {e['state']}" for e in by_kind.get('storm_pin', [])) if by_kind.get("storm_pin") else "") + ".")
+    elif stop:
+        act("warning", stop["at"], "Cranes",
+            f"Gusts reach {stop['gust']:.0f} m/s {_when(stop['at'], now)}: the cranes will stop at {LIMITS['crane_stop_gust']:.0f} m/s. "
+            f"Plan the stowage so whichever ship is alongside then can sail with what is loaded.")
+    if current["gust"] >= LIMITS["crane_stop_gust"]:
+        status, reason = "Stopped", f"gusts {current['gust']:.0f} m/s, over the crane limit"
+    elif current["wind"] >= LIMITS["berthing_wind"] or current["hs"] >= LIMITS["berthing_hs"]:
+        status, reason = "Restricted", "no berthing in this wind or sea; cranes working"
+    else:
+        status, reason = "Normal", "within every operating limit"
+
+    # Each ship due: berthing conditions, berthing energy on the fenders, mooring on the bollards.
+    calls = []
+    landing: list[dict[str, Any]] = []                 # ships due onto a fender graded for action
+    for ship in ([alongside] if alongside else []) + due:
+        at_eta = min(weather, key=lambda w: abs((w["at"] - ship["eta"]).total_seconds()))
+        energy = berthing_energy(ship["displacement"], ship["beam"], ship["draught"], approach_speed(at_eta["wind"]), solid)
+        during = [w for w in weather if ship["eta"] <= w["at"] <= ship["etd"]] or [at_eta]
+        worst_wind = max(during, key=lambda w: w["wind"])
+        pull = wind_on_ship(ship["loa"], ship["windage"], worst_wind["wind"])
+        per_bollard = pull / usable_bollards
+        flags = []
+        is_alongside = ship is alongside
+        if not is_alongside and (at_eta["wind"] >= LIMITS["berthing_wind"] or at_eta["hs"] >= LIMITS["berthing_hs"]):
+            flags.append(("critical", "berthing conditions"))
+            calm = first([w for w in ahead if w["at"] > ship["eta"]],
+                         lambda w: w["wind"] < LIMITS["berthing_wind"] - 2 and w["hs"] < LIMITS["berthing_hs"] - 0.2)
+            act("critical", ship["eta"] - timedelta(hours=6), "Vessels",
+                f"{ship['name']} is due {_when(ship['eta'], now)} into {at_eta['wind']:.0f} m/s wind and {at_eta['hs']:.1f} m waves, "
+                f"over the berthing limits. Hold her at anchor" + (f" until about {_when(calm['at'], now)}, when it eases" if calm else "") + ".")
+        if fender_energy and not is_alongside:
+            ratio = energy["abnormal"] / fender_energy
+            if ratio > 1:
+                flags.append(("critical", "berthing energy"))
+                act("critical", ship["eta"] - timedelta(hours=2), "Vessels",
+                    f"{ship['name']} ({ship['displacement']:,} t) berthing at {energy['speed']:.2f} m/s carries {energy['abnormal']:,} kNm abnormal energy, "
+                    f"over the fenders' {fender_energy:,.0f} kNm rating. Berth her with tugs at no more than 0.10 m/s and a berthing aid display.")
+            if damaged:
+                flags.append(("critical", "damaged fender"))
+                landing.append(ship)
+        if bollards and ratings.get("bollard"):
+            share = per_bollard / ratings["bollard"]
+            near = [b for b in bollards if b["state"] in ("warning", "critical")]
+            if share > 0.8 or (worst_wind["wind"] >= LIMITS["mooring_wind"]):
+                flags.append(("warning" if share <= 1 else "critical", "mooring"))
+                act("critical" if share > 1 else "warning", worst_wind["at"] - timedelta(hours=3), "Mooring",
+                    f"In {worst_wind['wind']:.0f} m/s {_when(worst_wind['at'], now)}, beam-on wind pulls {ship['name']} off the berth with about {pull:,.0f} t, "
+                    f"{per_bollard:,.0f} t on each of {usable_bollards} bollards against their {ratings['bollard']:,.0f} t rating. "
+                    f"Double up the breast lines and have a tug on standby"
+                    + (f"; keep the extra lines off {', '.join(b['element']['name'] for b in near)}, already near its rating" if near else "") + ".")
+        calls.append({**ship, "alongside": is_alongside, "when": _when(ship["eta"], now), "until": _when(ship["etd"], now),
+                      "wind_at_eta": at_eta["wind"], "hs_at_eta": at_eta["hs"], "energy": energy,
+                      "fender_energy": fender_energy, "pull": round(pull), "per_bollard": round(per_bollard, 1),
+                      "state": max((f[0] for f in flags), key=lambda s: marine.STATE_RANK[s], default="good"),
+                      "flags": [f[1] for f in flags]})
+
+    if landing:
+        names = ", ".join(f["element"]["name"] for f in damaged)
+        one = len(damaged) == 1
+        ships_due = "; ".join(f"{s['name']} {_when(s['eta'], now)}" for s in landing)
+        act("critical", landing[0]["eta"] - timedelta(hours=4), "Vessels",
+            f"{names} {'is' if one else 'are'} graded for action and {len(landing)} ship{'s' if len(landing) > 1 else ''} "
+            f"will land on the fender line ({ships_due}). Replace {'it' if one else 'them'} before the first, "
+            f"or shift each ship's berthing position so her parallel body clears {names}.")
+
+    # Cranes.
+    for crane in crane_list:
+        if crane["state"] == "down":
+            act("warning", now, "Cranes", f"{crane['name']} is down ({crane['why']}). "
+                f"{'Re-plan ' + alongside['name'] + ' on the other cranes' if alongside else 'Fix it before the next ship'}, and log the hours.")
+        elif crane["service_in_h"] < 200:
+            act("good", now + timedelta(hours=crane["service_in_h"] / 2), "Cranes",
+                f"{crane['name']} is {crane['service_in_h']} running hours from its service: book it into the gap between ships.")
+    for rail in rails:
+        if rail["state"] in ("warning", "critical"):
+            act(rail["state"], now, "Cranes",
+                f"The crane rail {rail['element']['name']} is out of line ({'; '.join(s['headline'] for s in rail['sensors'] if s['state'] != 'good')}). "
+                f"Limit gantry speed over that length until it is realigned.")
+
+    # The structure's own actions come along, under their heading.
+    for advice in twin["advice"]:
+        if advice["state"] == "critical":
+            act("critical", None, "Structure", f"{advice['element']}: {advice['text']}")
+
+    # Most severe first; within that, what has a time on it by its time, then the structure's standing actions.
+    order = {"critical": 0, "warning": 1, "good": 2}
+    actions.sort(key=lambda a: (order.get(a["state"], 3), a["area"] == "Structure", a["at"]))
+    return {
+        "now": now, "status": status, "reason": reason, "current": current, "weather": weather, "ahead": ahead,
+        "peak": peak, "alongside": alongside, "calls": calls, "cranes": crane_list,
+        "cranes_working": sum(1 for c in crane_list if c["state"] == "working"),
+        "downtime": lost, "actions": actions, "limits": LIMITS, "limit_notes": LIMIT_NOTES,
+        "ratings": ratings, "twin": twin,
+        "windows": {"stop": stop, "stow": stow, "no_berth": no_berth},
+    }

@@ -17,8 +17,9 @@
   {% else %}<span class="tabular {{ 'state-critical' if value > 1 }}">{{ '%.2f' | format(value) }}</span>{% endif %}
 {% endmacro %}
 
-{% macro nav(active='') %}
-  <nav class="marine-nav small">
-    <a href="{{ url_for('marine.index') }}" class="{{ 'on' if active == 'assets' }}">Assets</a>
+{% macro asset_tabs(asset) %}
+  <nav class="tabs" style="margin:0 0 16px">
+    <a href="{{ url_for('marine.asset', asset_id=asset['id']) }}" class="{{ 'active' if request.endpoint == 'marine.asset' }}">Structure</a>
+    <a href="{{ url_for('marine.operations', asset_id=asset['id']) }}" class="{{ 'active' if request.endpoint == 'marine.operations' }}">Operations</a>
   </nav>
 {% endmacro %}

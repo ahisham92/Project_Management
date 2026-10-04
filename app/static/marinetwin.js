@@ -258,8 +258,38 @@ async function fetchWithProgress(url, onProgress) {
 
 const MB = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
 
+// The browser keeps the model it downloaded (the IFC, or the shapes kept from it) in its own
+// cache, so going to another step and back opens it from the computer, not the network. One
+// entry per asset: a newer model or newer shapes replace the older ones. `version` changes with
+// the model file (it is the kept shapes' key), so a re-uploaded model is fetched again.
+const CACHE = 'marinetwin-models-v1';
+async function cachedBytes(url, version, onProgress) {
+  const as = new URL(url, location.href);
+  as.searchParams.set('v', version);
+  let cache = null;
+  try {
+    cache = await caches.open(CACHE);
+    const hit = await cache.match(as.href);
+    if (hit) {
+      const bytes = await hit.arrayBuffer();
+      onProgress(1, bytes.byteLength, bytes.byteLength);
+      return bytes;
+    }
+  } catch (err) { cache = null; }       // no cache here (a private window, an http address): just download
+  const bytes = await fetchWithProgress(url, onProgress);
+  if (cache) {
+    const asset = as.pathname.replace(/\/model.*$/, '/model');
+    (async () => {
+      for (const old of await cache.keys()) if (new URL(old.url).pathname.startsWith(asset) && old.url !== as.href) await cache.delete(old);
+      await cache.put(as.href, new Response(bytes));
+    })().catch((err) => console.warn('The model could not be kept in this browser', err));
+  }
+  return bytes;
+}
+const keyOf = (url) => (url ? url.split('/').pop() : 'none');
+
 async function loadKept(url) {
-  const zipped = await fetchWithProgress(url, (f, got, total) =>
+  const zipped = await cachedBytes(url, keyOf(url), (f, got, total) =>
     progress(0.8 * f, `Opening the Revit model: ${MB(got)} of ${MB(total)} MB`, 0, true));
   const raw = await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const { parts, origin } = unpackShapes(raw);
@@ -273,7 +303,7 @@ const SKIP_MOST = 12;
 
 // Reads the IFC in a worker, starting it again past any product it gets stuck on.
 async function readIfc(url, base, refs, keepAt) {
-  const bytes = await fetchWithProgress(url, (f, got, total) =>
+  const bytes = await cachedBytes(url, keyOf(keepAt), (f, got, total) =>
     progress(0.6 * f, `Downloading the Revit model: ${MB(got)} of ${MB(total)} MB`, 0, true));
   const skipped = [];
   for (;;) {
@@ -451,6 +481,177 @@ function waterNormals() {
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.needsUpdate = true;
   return texture;
+}
+
+// --- the quay line ---------------------------------------------------------------------
+// A long quay is seldom one straight berth: it runs in legs, bending with the shore, with the
+// land behind it and the sea in front. Its fenders line its front, so their positions in plan,
+// put in order along the quay and straightened, give the legs; the deck behind them says which
+// side is land. Points are [x, z] in the model's plan.
+
+// The points in order along the quay: from one end, always to the nearest not yet taken.
+function alongQuay(points) {
+  const centre = points.reduce((a, p) => [a[0] + p[0] / points.length, a[1] + p[1] / points.length], [0, 0]);
+  let at = points.reduce((best, p) => (Math.hypot(p[0] - centre[0], p[1] - centre[1]) > Math.hypot(best[0] - centre[0], best[1] - centre[1]) ? p : best));
+  const left = new Set(points);
+  left.delete(at);
+  const out = [at];
+  while (left.size) {
+    let next = null;
+    let d = Infinity;
+    for (const p of left) {
+      const e = (p[0] - at[0]) ** 2 + (p[1] - at[1]) ** 2;
+      if (e < d) { d = e; next = p; }
+    }
+    left.delete(next);
+    out.push(next);
+    at = next;
+  }
+  return out;
+}
+
+// Douglas–Peucker: the fewest corners that stay within `tol` metres of every point.
+function straighten(points, tol) {
+  if (points.length < 3) return points;
+  const [a, b] = [points[0], points[points.length - 1]];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  let worst = 0;
+  let k = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = Math.abs((b[0] - a[0]) * (a[1] - points[i][1]) - (a[0] - points[i][0]) * (b[1] - a[1])) / len;
+    if (d > worst) { worst = d; k = i; }
+  }
+  if (worst <= tol) return [a, b];
+  return [...straighten(points.slice(0, k + 1), tol).slice(0, -1), ...straighten(points.slice(k), tol)];
+}
+
+// The quay's legs, each {a, b, dir, len, from} (from: its distance along the quay), with `land`,
+// the unit vector across the legs towards the land (+1 or -1 times each leg's left normal).
+function quayLine(front, deck) {
+  if (front.length < 4) return null;
+  const sample = front.length > 4000 ? front.filter((_, i) => i % Math.ceil(front.length / 4000) === 0) : front;
+  const corners = straighten(alongQuay(sample), 4);
+  const legs = [];
+  let from = 0;
+  for (let i = 0; i + 1 < corners.length; i++) {
+    const [a, b] = [corners[i], corners[i + 1]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1) continue;
+    legs.push({ a, b, dir: [(b[0] - a[0]) / len, (b[1] - a[1]) / len], len, from });
+    from += len;
+  }
+  if (!legs.length) return null;
+  // The deck lies on the land side: count its parts left and right of the leg each is beside.
+  let side = 0;
+  for (const p of deck) {
+    for (const l of legs) {
+      const t = (p[0] - l.a[0]) * l.dir[0] + (p[1] - l.a[1]) * l.dir[1];
+      const d = (p[1] - l.a[1]) * l.dir[0] - (p[0] - l.a[0]) * l.dir[1];
+      if (t >= 0 && t <= l.len && Math.abs(d) < 80) { side += Math.sign(d); break; }
+    }
+  }
+  const land = side >= 0 ? 1 : -1;       // +1: land to the left of the direction of travel
+  for (const l of legs) {
+    l.land = [-l.dir[1] * land, l.dir[0] * land];
+    l.sea = [-l.land[0], -l.land[1]];
+  }
+  return { legs, length: from };
+}
+
+// A point's distance along the quay, the leg it is by, and how far off the line.
+function onQuay(quay, p) {
+  let best = null;
+  for (const l of quay.legs) {
+    const t = Math.max(0, Math.min(l.len, (p[0] - l.a[0]) * l.dir[0] + (p[1] - l.a[1]) * l.dir[1]));
+    const off = Math.hypot(l.a[0] + l.dir[0] * t - p[0], l.a[1] + l.dir[1] * t - p[1]);
+    if (!best || off < best.off) best = { leg: l, s: l.from + t, t, off };
+  }
+  return best;
+}
+
+// The point `along` metres along the quay, `inland` metres towards the land.
+function quayPoint(quay, along, inland = 0) {
+  const leg = quay.legs.find((l) => along <= l.from + l.len) || quay.legs[quay.legs.length - 1];
+  const t = Math.max(0, Math.min(leg.len, along - leg.from));
+  return { x: leg.a[0] + leg.dir[0] * t + leg.land[0] * inland, z: leg.a[1] + leg.dir[1] * t + leg.land[1] * inland, leg };
+}
+
+// Turned in plan by three's rotation.y = angle: [x, z] goes to [x cos + z sin, -x sin + z cos].
+function turned(p, angle) {
+  const [c, s] = [Math.cos(angle), Math.sin(angle)];
+  return [p[0] * c + p[1] * s, -p[0] * s + p[1] * c];
+}
+function turnQuay(quay, angle) {
+  let from = 0;
+  for (const l of quay.legs) {
+    l.a = turned(l.a, angle); l.b = turned(l.b, angle);
+    l.dir = turned(l.dir, angle); l.land = turned(l.land, angle); l.sea = turned(l.sea, angle);
+    l.from = from; from += l.len;
+  }
+  return quay;
+}
+
+// The rotation.y that turns a thing facing the sea along -z to face along `sea`.
+const facing = (sea) => Math.atan2(-sea[0], -sea[1]);
+
+// The crane bays: between two crane stoppers (both rails' stoppers at one end counted once) one
+// rail-mounted crane runs, over a straight stretch of 60 to 700 m.
+function craneBays(quay, stoppers) {
+  const ends = [];
+  for (const s of stoppers.map((p) => onQuay(quay, p)).filter((q) => q.off < 60).sort((a, b) => a.s - b.s)) {
+    const last = ends[ends.length - 1];
+    if (last && s.s - last.s < 30) continue;
+    ends.push(s);
+  }
+  const bays = [];
+  for (let i = 0; i + 1 < ends.length; i++) {
+    const gap = ends[i + 1].s - ends[i].s;
+    if (gap >= 60 && gap <= 700) bays.push({ from: ends[i].s, to: ends[i + 1].s });
+  }
+  return bays;
+}
+
+// The land behind the quay and the paved apron and yard on it, following the legs: the land
+// carries on past both ends of the modelled quay, and its edge is the quay wall down to the sea.
+function shore(quay, top, yardDepth) {
+  const g = new THREE.Group();
+  const set = 2;      // the line runs through the fenders: the land starts at the wall just behind
+  const first = quay.legs[0];
+  const last = quay.legs[quay.legs.length - 1];
+  const pt = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
+  const line = [pt(pt(first.a, first.land, set), first.dir, -3000)];
+  for (const l of quay.legs) line.push(pt(l.a, l.land, set));
+  line.push(pt(last.b, last.land, set));
+  line.push(pt(pt(last.b, last.land, set), last.dir, 3000));
+  const outline = [...line, pt(line[line.length - 1], last.land, 6000), pt(line[0], first.land, 6000)];
+  const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const below = 8;
+  const land = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: top - 0.3 + below, bevelEnabled: false }), REAL.land);
+  land.rotation.x = -Math.PI / 2;
+  land.position.y = -below;
+  land.receiveShadow = true;
+  g.add(land);
+  // The apron and yard: a band along each leg, and a wedge at each bend to close it.
+  const v = [];
+  const tri = (p, q, r) => { for (const [x, z] of [p, q, r]) v.push(x, top - 0.05, z); };
+  const legs = quay.legs;
+  legs.forEach((l, i) => {
+    const [a, b] = [pt(l.a, l.land, set), pt(l.b, l.land, set)];
+    const [a2, b2] = [pt(a, l.land, yardDepth), pt(b, l.land, yardDepth)];
+    tri(a, a2, b); tri(b, a2, b2);
+    if (i + 1 < legs.length) {
+      const n = legs[i + 1];
+      tri(b, pt(b, l.land, yardDepth), pt(b, n.land, yardDepth));
+    }
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  geo.computeVertexNormals();
+  const yard = new THREE.Mesh(geo, REAL.asphalt.clone());
+  yard.material.side = THREE.DoubleSide;
+  yard.receiveShadow = true;
+  g.add(yard);
+  return g;
 }
 
 // --- the terminal around the berth ----------------------------------------------------
@@ -642,7 +843,7 @@ function loop(points, y) {
   return new THREE.CatmullRomCurve3(points.map(([x, z]) => new THREE.Vector3(x, y, z)), true, 'catmullrom', 0.1);
 }
 
-function terminal(scene, frame, twin, rng) {
+function terminal(scene, frame, twin, rng, quay) {
   const { minX, maxX, front, top } = frame;
   const kind = twin.asset.terminal || 'container';
   const centre = (minX + maxX) / 2;
@@ -652,8 +853,11 @@ function terminal(scene, frame, twin, rng) {
   const cranes = [];
   const lights = [];
 
-  // Apron and yard: paved land behind the berth, and plain land beyond.
+  // Apron and yard: paved land behind the berth, and plain land beyond. Along a traced quay
+  // they follow its legs; otherwise they are laid square behind the berth.
   const yardDepth = 320;
+  if (quay) g.add(shore(quay, top, yardDepth));
+  else {
   const yard = new THREE.Mesh(new THREE.PlaneGeometry(length + 600, yardDepth), REAL.asphalt);
   yard.rotation.x = -Math.PI / 2;
   yard.position.set(centre, top - 0.05, front + yardDepth / 2);
@@ -669,10 +873,11 @@ function terminal(scene, frame, twin, rng) {
     const wall = box(b - a, top + 6, 3, REAL.concrete, (a + b) / 2, (top - 6) / 2, front + 1.5);
     g.add(wall);
   }
+  }
   // Lane markings along the apron.
   const paint = new THREE.MeshBasicMaterial({ color: 0xe9e4c9 });
   for (const z of [front + 6, front + 42]) {
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(length + 600, 0.25), paint);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(quay ? length : length + 600, 0.25), paint);
     line.rotation.x = -Math.PI / 2;
     line.position.set(centre, top + 0.02, z);
     g.add(line);
@@ -691,8 +896,40 @@ function terminal(scene, frame, twin, rng) {
   const ships = twin.alongside;
   const shipLength = ships ? ships.loa : 0;
 
+  // Rail-mounted cranes: one in each bay between crane stoppers, on the deck of whichever leg it
+  // is; the rest of the quay is worked by mobile harbour cranes. Only the cranes by the berth
+  // where the ship lies work; the others wait.
+  const bays = quay && quay.stoppers ? craneBays(quay, quay.stoppers) : [];
+  if (bays.length) {
+    const berthAt = [centre, front];
+    const reach = (shipLength || 200) / 2 + 40;
+    const place = (crane, along, inland) => {
+      const p = quayPoint(quay, along, inland);
+      crane.position.set(p.x, top, p.z);
+      crane.rotation.y = facing(p.leg.sea);
+      if (Math.hypot(p.x - berthAt[0], p.z - berthAt[1]) > reach) { crane.userData.working = false; crane.userData.idle = true; }
+      g.add(crane);
+      return crane;
+    };
+    const order = [];
+    bays.forEach((b, i) => order.push({ along: (b.from + b.to) / 2, make: () => (kind === 'bulk' ? unloader(stateOf(i)) : stsCrane(stateOf(i))), inland: 6 }));
+    // Mobile cranes along the stretches no bay covers, one every 300 m or so.
+    let mobile = 0;
+    const gaps = [];
+    let at = 0;
+    for (const b of bays) { gaps.push([at, b.from]); at = b.to; }
+    gaps.push([at, quay.length]);
+    for (const [a, b] of gaps) {
+      for (let x = a + 150; x <= b - 60 && mobile < 12; x += 300) { order.push({ along: x, make: () => harbourCrane('working'), inland: 16 }); mobile++; }
+    }
+    // Those by the berth first, so the cameras and the live port take a working one.
+    const dist = (o) => { const p = quayPoint(quay, o.along); return Math.hypot(p.x - berthAt[0], p.z - berthAt[1]); };
+    order.sort((x, y) => dist(x) - dist(y));
+    for (const o of order.slice(0, 40)) cranes.push(place(o.make(), o.along, o.inland));
+  }
+
   if (kind === 'container' || kind === 'multipurpose') {
-    const count = kind === 'container' ? Math.max(3, equipment.length) : 1;
+    const count = bays.length ? 0 : kind === 'container' ? Math.max(3, equipment.length) : 1;
     for (let i = 0; i < count; i++) {
       const c = stsCrane(kind === 'container' ? stateOf(i) : 'working');
       c.position.set(centre + (i - (count - 1) / 2) * 42, top, front + 4);
@@ -714,7 +951,7 @@ function terminal(scene, frame, twin, rng) {
     }
   }
   if (kind === 'general_cargo' || kind === 'multipurpose') {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < (bays.length ? 0 : 2); i++) {
       const c = harbourCrane(stateOf(i));
       c.position.set(centre + (i - 0.5) * 50 + (kind === 'multipurpose' ? 60 : 0), top, front + 14);
       g.add(c);
@@ -731,7 +968,7 @@ function terminal(scene, frame, twin, rng) {
     }
   }
   if (kind === 'bulk') {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < (bays.length ? 0 : 2); i++) {
       const c = unloader(stateOf(i));
       c.position.set(centre + (i - 0.5) * 60, top, front + 4);
       g.add(c);
@@ -856,14 +1093,36 @@ async function main() {
   scene.add(content);
   progress(twin.model ? 0.85 : 0.55, 'Building the terminal around it', twin.model ? 0.04 : 0.15);
 
-  // Turn the model so its fenders face the sea (-z) and the berth runs along x.
+  // Turn the model so its quay faces the sea (-z): the longest leg of the quay, traced from its
+  // fenders, runs along x, and the berth is on it. Without fenders, the old way: fenders' centre
+  // to the bollards'.
+  const plan = (pick) => clickable.filter((m) => pick(m.userData.element.kind)).map((m) => {
+    const c = new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+    return [c.x, c.z];
+  });
+  let quay = null;
+  let mainLeg = null;
+  if (twin.model) {
+    const fenderPts = plan((k) => k === 'fender');
+    const deckPts = plan((k) => k !== 'fender' && k !== 'crane_stopper');
+    quay = quayLine(fenderPts.length >= 4 ? fenderPts : plan((k) => k === 'bollard'), deckPts.length > 3000 ? deckPts.filter((_, i) => i % Math.ceil(deckPts.length / 3000) === 0) : deckPts);
+    if (quay) {
+      const stopperPts = plan((k) => k === 'crane_stopper');     // before the turn, like the rest
+      mainLeg = quay.legs.reduce((a, l) => (l.len > a.len ? l : a));
+      const angle = Math.atan2(mainLeg.sea[0], -mainLeg.sea[1]);
+      content.rotation.y = angle;
+      content.updateMatrixWorld(true);
+      turnQuay(quay, angle);
+      quay.stoppers = stopperPts.map((p) => turned(p, angle));
+    }
+  }
   const centreOf = (kind) => {
     const pts = clickable.filter((m) => m.userData.element.kind === kind).map((m) => new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3()));
     if (!pts.length) return null;
     return pts.reduce((a, b) => a.add(b), new THREE.Vector3()).divideScalar(pts.length);
   };
-  const fenders = centreOf('fender');
-  const bollards = centreOf('bollard') || centreOf('crane_rail') || centreOf('slab');
+  const fenders = quay ? null : centreOf('fender');
+  const bollards = quay ? null : centreOf('bollard') || centreOf('crane_rail') || centreOf('slab');
   if (twin.model && fenders && bollards) {
     const v = fenders.clone().sub(bollards);
     if (Math.hypot(v.x, v.z) > 0.3) content.rotation.y = Math.atan2(v.x, -v.z) * -1;
@@ -871,13 +1130,20 @@ async function main() {
   }
   const bbox = new THREE.Box3().setFromObject(content);
   if (bbox.isEmpty()) bbox.set(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 5, 10));
-  const fenderBoxes = clickable.filter((m) => m.userData.element.kind === 'fender').map((m) => new THREE.Box3().setFromObject(m));
+  let fenderBoxes = clickable.filter((m) => m.userData.element.kind === 'fender').map((m) => new THREE.Box3().setFromObject(m));
+  const legX = mainLeg ? [Math.min(mainLeg.a[0], mainLeg.b[0]), Math.max(mainLeg.a[0], mainLeg.b[0])] : null;
+  if (mainLeg) {
+    // The berth's own fenders: those along the main leg.
+    const z = (mainLeg.a[1] + mainLeg.b[1]) / 2;
+    const near = fenderBoxes.filter((b) => { const c = b.getCenter(new THREE.Vector3()); return Math.abs(c.z - z) < 12 && c.x >= legX[0] - 5 && c.x <= legX[1] + 5; });
+    if (near.length) fenderBoxes = near;
+  }
   const slabTops = clickable.filter((m) => ['slab', 'beam'].includes(m.userData.element.kind)).map((m) => new THREE.Box3().setFromObject(m).max.y);
   const frame = {
-    minX: bbox.min.x, maxX: bbox.max.x,
-    front: fenderBoxes.length ? Math.max(...fenderBoxes.map((b) => b.max.z)) : bbox.min.z,
-    fenderFace: fenderBoxes.length ? Math.min(...fenderBoxes.map((b) => b.min.z)) : bbox.min.z - 1.5,
-    top: slabTops.length ? Math.max(...slabTops) : bbox.max.y,
+    minX: legX ? legX[0] : bbox.min.x, maxX: legX ? legX[1] : bbox.max.x,
+    front: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.max(m, b.max.z), -Infinity) : bbox.min.z,
+    fenderFace: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.min(m, b.min.z), Infinity) : bbox.min.z - 1.5,
+    top: slabTops.length ? slabTops.reduce((m, y) => Math.max(m, y), -Infinity) : bbox.max.y,
   };
 
   // Sky, sun and sea.
@@ -919,7 +1185,7 @@ async function main() {
 
   // The terminal around it.
   const rng = makeRng(twin.asset.id * 7919);
-  const site = terminal(scene, frame, twin, rng);
+  const site = terminal(scene, frame, twin, rng, quay);
   let vessel = null;
   if (LIVE || LIFE) {
     // The live and lifecycle players bring the ships in and out themselves.
@@ -1104,7 +1370,8 @@ async function main() {
   // The camera: from over the water, looking at the berth.
   const focus = new THREE.Vector3((frame.minX + frame.maxX) / 2, frame.top, (frame.front + bbox.max.z) / 2);
   // Far enough back to take in the berth, the cranes and the ship, whatever the model's size.
-  const radius = Math.max(bbox.getSize(new THREE.Vector3()).length() / 2, ((twin.alongside || {}).loa || 0) * 0.8, 120);
+  // On a quay kilometres long, the berth where the ship lies, not the whole quay: zoom out for that.
+  const radius = Math.max(Math.min(bbox.getSize(new THREE.Vector3()).length() / 2, 700), ((twin.alongside || {}).loa || 0) * 0.8, 120);
   camera.position.copy(focus).add(new THREE.Vector3(radius * 0.8, radius * 0.95, -radius * 1.25));
   controls.target.copy(focus);
   controls.maxDistance = 4000;
@@ -1209,12 +1476,17 @@ async function main() {
       if (vessel) vessel.rotation.x = 0.004 * Math.sin(t * 0.6) * (1 + hs);
     }
     controls.update();
+    // The near plane moves out as the camera does, so the land and the sea a few metres below it
+    // stay apart in the depth buffer when looking over a quay kilometres long.
+    const near = Math.max(0.5, camera.position.distanceTo(controls.target) / 400);
+    if (Math.abs(near - camera.near) > camera.near * 0.2) { camera.near = near; camera.updateProjectionMatrix(); }
     renderer.render(scene, camera);
   }
   renderer.setAnimationLoop(animate);
   if (voyage) await voyage.done('Ready');
   if (voyage) voyage.remove();
   view.dataset.ready = String(clickable.length);
+  view.dataset.cranes = String(site.cranes.length);
 }
 
 if (view) {

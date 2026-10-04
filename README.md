@@ -502,6 +502,14 @@ downloaded and the objects built, then keeps the shapes it built on the server (
 the model and the tracked elements), so later visits open in seconds. Elements that share a
 legend name (every MP1-DS03 pile) are imported numbered along the berth, MP1-DS03-01, -02…, and
 monitored through the first of them.
+The browser also keeps the downloaded model in its cache, so another step opens it without
+downloading it again.
+
+**A quay in legs.** A long quay bends with the shore. The 3D view traces its front from the
+fenders (in order along the quay, straightened into legs), puts the land behind it and the sea in
+front, and turns the longest leg, where the ship berths, to face the sea. One rail-mounted crane
+works each bay between crane stoppers (Revit's Structural Connections); mobile harbour cranes work
+the rest of the quay.
 **From the Revit model.** Export it as **IFC** (File → Export → IFC, with *Export IFC common
 property sets*, *Export base quantities* and the user-defined property sets ticked) or **glTF**.
 On upload MarineTwin reads the IFC itself, with no IFC library on the server:

@@ -759,12 +759,12 @@ export async function startLife(ctx) {
         const up = condemned ? -1.25 : 0;
         u.boom.rotation.x += (up - u.boom.rotation.x) * 0.1;
       }
-      if (u.trolley && player.working && vessel.visible) {
+      if (u.trolley && player.working && vessel.visible && !u.idle) {
         const s = (Math.sin(visualT * 0.35 + c.position.x) + 1) / 2;
         u.trolley.position.z = -28 + 40 * s;
         u.spreader.position.y = -10 - 22 * Math.abs(Math.sin(visualT * 0.7 + c.position.x));
       }
-      if (u.top && player.working && vessel.visible) u.top.rotation.y = 0.9 * Math.sin(visualT * 0.18 + c.position.x + n);
+      if (u.top && player.working && vessel.visible && !u.idle) u.top.rotation.y = 0.9 * Math.sin(visualT * 0.18 + c.position.x + n);
     });
 
     // The weather of the month, and a day going by on screen whatever the calendar's pace.

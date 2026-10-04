@@ -134,7 +134,7 @@ export async function startLive(ctx) {
     site.cranes.forEach((c, i) => {
       const u = c.userData;
       const state = states[i] ? states[i].state : 'working';
-      const working = state === 'working' && !!alongside;
+      const working = state === 'working' && !!alongside && !u.idle;   // idle: by another berth, no ship
       if (u.boom) {
         const up = state === 'stowed' ? -1.25 : 0;
         u.boom.rotation.x += (up - u.boom.rotation.x) * 0.1;

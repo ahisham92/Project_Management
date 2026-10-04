@@ -264,39 +264,81 @@ async function loadKept(url) {
   return meshesFrom(parts, origin);
 }
 
-function readIfc(url, base, refs, keepAt) {
+// A product web-ifc has been on this long is taken as one it will never finish (a broken void or
+// sweep in the export): the reader starts again without it, up to SKIP_MOST of them.
+const STUCK_MS = 25000;
+const SKIP_MOST = 12;
+
+// Reads the IFC in a worker, starting it again past any product it gets stuck on.
+async function readIfc(url, base, refs, keepAt) {
+  const bytes = await fetchWithProgress(url, (f, got, total) =>
+    progress(0.6 * f, `Downloading the Revit model: ${MB(got)} of ${MB(total)} MB`, 0, true));
+  const skipped = [];
+  for (;;) {
+    const got = await readOnce(bytes, base, refs, keepAt, skipped.map((s) => s.id));
+    if (got.stuck) {
+      skipped.push(got.stuck);
+      if (skipped.length > SKIP_MOST) throw new Error(`the reader got stuck on ${skipped.length} objects (the last: ${got.stuck.name})`);
+      continue;
+    }
+    if (skipped.length) {
+      note(`Left out ${skipped.length} object${skipped.length > 1 ? 's' : ''} the reader could not build: ${skipped.map((s) => s.name).join(', ')}. ` +
+        'Check their geometry in Revit (often a void or sweep) and export again.');
+    }
+    return got;
+  }
+}
+
+// One go: resolves with the parts, or with {stuck} when a product takes longer than STUCK_MS.
+function readOnce(bytes, base, refs, keepAt, skip) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('marinetwin-ifc-worker.js', import.meta.url), { type: 'module' });
     const parts = [];
     let reading = null;
-    const slow = () => progress(0.6, 'Reading the model. A big Revit model can take a minute or two the first time', 0.1);
+    let at = null;
+    let since = 0;
+    let shown = 0;
+    let watch = null;
+    const stop = () => { clearTimeout(reading); clearInterval(watch); worker.terminate(); };
+    progress(0.6, skip.length ? `Reading the model again, without ${skip.length} object${skip.length > 1 ? 's' : ''} it got stuck on` :
+      'Reading the model. A big Revit model can take a minute or two the first time', 0.1);
     worker.onmessage = (ev) => {
       const m = ev.data;
-      if (m.type === 'progress' && m.stage === 'download') {
-        progress(0.6 * (m.loaded / m.total), `Downloading the Revit model: ${MB(m.loaded)} of ${MB(m.total)} MB`, 0, true);
-      } else if (m.type === 'progress' && m.stage === 'open') {
-        slow();
+      if (m.type === 'progress' && m.stage === 'open') {
         reading = setTimeout(() => note('Still reading the model: big Revit exports take a while the first time. It is kept after that.'), 45000);
       } else if (m.type === 'progress' && m.stage === 'shapes') {
         clearTimeout(reading);
-        note('Loading the IFC model…');
-        const f = m.total ? m.done / m.total : 0;
-        progress(0.7 + 0.15 * f, m.total ? `Building the model: ${m.done.toLocaleString()} of ${m.total.toLocaleString()} objects` : 'Building the model');
+        progress(0.7, `Building the model: 0 of ${m.total.toLocaleString()} objects`);
+      } else if (m.type === 'at') {
+        at = m;
+        since = performance.now();
+        if (!watch) {
+          watch = setInterval(() => {
+            const waited = performance.now() - since;
+            if (waited > 5000) progress(0.7 + 0.15 * (at.done / at.total), `Building the model: ${at.done.toLocaleString()} of ${at.total.toLocaleString()} objects, on ${at.name} for ${Math.round(waited / 1000)} s`);
+            if (waited > STUCK_MS) { stop(); resolve({ stuck: { id: at.id, name: at.name } }); }
+          }, 1000);
+        }
+        if (since - shown > 200) {
+          shown = since;
+          progress(0.7 + 0.15 * (m.done / m.total), `Building the model: ${m.done.toLocaleString()} of ${m.total.toLocaleString()} objects`);
+        }
       } else if (m.type === 'part') {
         parts.push(m);
       } else if (m.type === 'kept') {
         if (!m.ok) console.warn('The shapes could not be kept on the server', m.why || '');
       } else if (m.type === 'done') {
         clearTimeout(reading);
+        clearInterval(watch);
         resolve({ parts, origin: m.origin });   // the reader closes itself once it has kept the shapes
       } else if (m.type === 'error') {
-        clearTimeout(reading);
-        worker.terminate();
+        stop();
         reject(new Error(m.message));
       }
     };
-    worker.onerror = (ev) => { clearTimeout(reading); worker.terminate(); reject(new Error(ev.message || 'the model reader stopped')); };
-    worker.postMessage({ url: new URL(url, location.href).href, base, refs, keepAt: keepAt ? new URL(keepAt, location.href).href : null });
+    worker.onerror = (ev) => { stop(); reject(new Error(ev.message || 'the model reader stopped')); };
+    // A copy, so the page still has the bytes if the reader has to start again.
+    worker.postMessage({ bytes, base, refs, skip, keepAt: keepAt ? new URL(keepAt, location.href).href : null });
   });
 }
 

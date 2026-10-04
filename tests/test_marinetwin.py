@@ -606,7 +606,7 @@ def test_uploading_the_model_sets_the_site_and_imports_its_elements(app, signed_
     page = f"/marinetwin/assets/{asset_id}"
     answer = signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")},
                             content_type="multipart/form-data", follow_redirects=True)
-    assert "16 elements" in text(answer) and "Import the ticked elements" in text(answer)
+    assert "16 elements" in text(answer) and "Import the ticked kinds" in text(answer)
     twin = signed_in.get(page + "/twin.json").get_json()
     assert twin["asset"]["terminal"] == "roro" and twin["asset"]["latitude"] == pytest.approx(6.43872)
     assert twin["asset"]["rotation"] == pytest.approx(20.0) and twin["asset"]["msl_cd"] == pytest.approx(0.9)
@@ -621,6 +621,56 @@ def test_uploading_the_model_sets_the_site_and_imports_its_elements(app, signed_
     shown = text(signed_in.get(page + "/setup"))
     assert "Where it is" in shown and '"elements"' in shown and "RoRo (vehicles)" in shown
     assert "Berth 4" in text(signed_in.get("/marinetwin/"))
+
+
+def _berth(app, signed_in, name):
+    signed_in.post("/marinetwin/assets", data={"name": name, "kind": "quay_wall", "commissioned": "2024-01-01",
+                                               "design_life": "50", "corrosion_code": "bs6349"})
+    with app.app_context():
+        asset_id = connect(app.config["DATABASE"]).execute("SELECT id FROM marine_assets WHERE name = ?", (name,)).fetchone()["id"]
+    return f"/marinetwin/assets/{asset_id}"
+
+
+def test_piles_sharing_a_name_each_become_an_element(app, signed_in):
+    # Revit names every pile of a design section the same (MP1-DS03): they are numbered along the berth.
+    shared = FIXTURE.read_text().replace(",'P01',", ",'P1',").replace(",'P02',", ",'P1',")
+    found = marine_ifc.read(shared)
+    names = sorted(e["name"] for e in found["elements"] if e.get("group") == "P1")
+    assert names == ["P1-01", "P1-02"]
+    page = _berth(app, signed_in, "Berth 6")
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(shared.encode()), "berth.ifc")}, content_type="multipart/form-data")
+    answer = signed_in.post(page + "/model/import", data={"kinds": ["pile"]}, follow_redirects=True)
+    assert answer.status_code == 200 and "imported from the model" in text(answer)
+    made = {e["name"] for e in signed_in.get(page + "/twin.json").get_json()["elements"]}
+    assert {"P1-01", "P1-02"} <= made and "F1" not in made
+    assert "nothing" in text(signed_in.post(page + "/model/import", data={"kinds": ["pile"]}, follow_redirects=True)).lower()
+
+
+def test_an_import_that_fails_says_so_instead_of_a_server_error(app, signed_in, monkeypatch):
+    page = _berth(app, signed_in, "Berth 7")
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")
+
+    def broken(*args, **kwargs):
+        raise ValueError("a bad element")
+    monkeypatch.setattr(marine, "import_elements", broken)
+    answer = signed_in.post(page + "/model/import", follow_redirects=True)
+    assert answer.status_code == 200 and "could not be imported" in text(answer) and "a bad element" in text(answer)
+
+
+def test_an_upload_from_the_page_script_is_told_where_to_go(app, signed_in):
+    page = _berth(app, signed_in, "Berth 8")
+    answer = signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")},
+                            content_type="multipart/form-data", headers={"X-MarineTwin-Xhr": "1"})
+    assert answer.status_code == 200 and answer.get_json()["redirect"].endswith(page + "/setup#model")
+    assert "16 elements" in text(signed_in.get(page + "/setup"))
+
+
+def test_a_big_model_is_read_from_disk_without_loading_it(tmp_path):
+    path = tmp_path / "berth.ifc"
+    path.write_bytes(FIXTURE.read_bytes())
+    assert len(marine_ifc.read_file(path)["elements"]) == 16
+    (tmp_path / "empty.ifc").write_bytes(b"")
+    assert marine_ifc.read_file(tmp_path / "empty.ifc")["elements"] == []
 
 
 def test_the_world_map_carries_every_located_asset(signed_in, demo):
@@ -651,7 +701,7 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
     form["terminal_type"] = "roro"
     signed_in.post(demo + "/settings", data=form)
     assert signed_in.get(demo + "/twin.json").get_json()["asset"]["terminal"] == "roro"
-    assert "vehicles" in text(signed_in.get(demo + "/operations")).lower()
+    assert "ramp gangs" in text(signed_in.get(demo + "/operations")).lower()  # shown whether or not a ship is in
     assert signed_in.get(demo + "/simulation").status_code == 200
 
 
@@ -668,3 +718,12 @@ def test_setting_up_lands_on_the_setup_step(signed_in):
     assert answer.headers["Location"].endswith("/setup")
     page = text(signed_in.get(answer.headers["Location"]))
     assert 'data-tab="Revit model"' in page and "Revit Modelling Guide" in page
+
+
+def test_the_top_bar_is_ahm_home_with_only_the_admin_links(signed_in, demo):
+    page = text(signed_in.get(demo))
+    bar = page[page.index('<header class="topbar">'):page.index("</header>")]
+    assert ">AHM</span>" in bar and 'href="/"' in bar
+    assert "Admin" in bar and "Backups" in bar
+    for app_name in ("Portfolio", "Triton", "THEMIS", ">MarineTwin<", "How to use", "Project Control"):
+        assert app_name not in bar

@@ -89,7 +89,7 @@ def load(control: Flask) -> Callable | None:
     os.environ.setdefault("TRITON_DATA_DIR", str(data_folder()))
     # The link back in Triton's header.
     os.environ.setdefault("TRITON_HOME_URL", "/")
-    os.environ.setdefault("TRITON_HOME_LABEL", "Project Control")
+    os.environ.setdefault("TRITON_HOME_LABEL", "AHM")
 
     module, trouble = _import()
     _state.update(ready=module is not None, trouble=trouble)

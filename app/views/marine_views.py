@@ -16,7 +16,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from flask import (
-    Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
+    Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
 from .. import marine, marine_facility, marine_ifc, marine_ops, marine_sim, marine_triton
@@ -27,6 +27,15 @@ from ..marine_charts import (
 )
 
 bp = Blueprint("marine", __name__, url_prefix="/marinetwin")
+
+
+@bp.after_request
+def _redirect_for_the_voyage(response):
+    """A form sent from the page's script (an upload showing its progress) gets where to go next as
+    JSON, so the script can sail on to it; the flash message waits there as usual."""
+    if request.headers.get("X-MarineTwin-Xhr") and response.status_code in (301, 302, 303):
+        return jsonify(redirect=response.headers["Location"])
+    return response
 
 # What the 3D view can open: a Revit model exported as IFC, or as glTF / GLB.
 MODEL_TYPES = {".ifc": "ifc", ".glb": "glb", ".gltf": "gltf"}
@@ -468,6 +477,7 @@ def upload_model(asset_id: int):
         try:
             found = marine_ifc.read_file(target)
         except Exception:                             # noqa: BLE001 - an IFC we cannot read is still drawn
+            current_app.logger.exception("Reading the IFC model failed for asset %s", asset_id)
             found = None
         if found is not None:
             _found_path(asset_id).write_text(json.dumps(found), encoding="utf-8")
@@ -496,7 +506,11 @@ def _model_found(asset_id: int) -> dict | None:
 
 def _new_in_model(asset_id: int, found: dict) -> list[dict]:
     have = {r["name"] for r in query("SELECT name FROM marine_elements WHERE asset_id = ?", (asset_id,))}
-    return [e for e in found.get("elements", []) if e["name"] not in have]
+    new = {}
+    for e in found.get("elements", []):
+        if e["name"] not in have:
+            new.setdefault(e["name"], e)
+    return sorted(new.values(), key=lambda e: (e["kind"], e["name"]))
 
 
 @bp.post("/assets/<int:asset_id>/model/import")
@@ -507,9 +521,19 @@ def import_model_elements(asset_id: int):
     if not found:
         flash("Upload the IFC model first.", "error")
         return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
-    chosen = request.form.getlist("names") or None
-    done = marine.import_elements(get_db(), asset_id, found, chosen)
-    get_db().commit()
+    kinds = request.form.getlist("kinds")
+    if kinds:
+        chosen = [e["name"] for e in _new_in_model(asset_id, found) if e["kind"] in kinds]
+    else:
+        chosen = request.form.getlist("names") or None
+    try:
+        done = marine.import_elements(get_db(), asset_id, found, chosen)
+        get_db().commit()
+    except Exception as exc:  # noqa: BLE001 - a model MarineTwin cannot take says why, not a server error
+        get_db().rollback()
+        current_app.logger.exception("Importing the model's elements failed for asset %s", asset_id)
+        flash(f"The elements could not be imported ({type(exc).__name__}: {str(exc)[:200]}). Nothing was changed.", "error")
+        return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
     words = []
     if done["made"]:
         words.append(f"{len(done['made'])} element{'s' if len(done['made']) > 1 else ''} imported from the model, with their usual sensors")

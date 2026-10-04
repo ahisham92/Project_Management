@@ -295,6 +295,7 @@ CREATE TABLE IF NOT EXISTS marine_assets (
   rotation        REAL NOT NULL DEFAULT 0,          -- degrees from the model's x axis to east, anticlockwise
   msl_cd          REAL NOT NULL DEFAULT 1.0,        -- mean sea level above chart datum, m: model levels are mCD
   epsg            TEXT NOT NULL DEFAULT '',         -- the project's map grid, from the model
+  feed_key        TEXT NOT NULL DEFAULT '',         -- the key a logger sends readings with; blank: none can
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -323,7 +324,8 @@ CREATE TABLE IF NOT EXISTS marine_sensors (
   label           TEXT NOT NULL,
   alert           REAL,                             -- NULL: the kind's default, or the Triton rating
   alarm           REAL,
-  simulated       INTEGER NOT NULL DEFAULT 1
+  simulated       INTEGER NOT NULL DEFAULT 1,
+  feed_device     TEXT NOT NULL DEFAULT ''          -- the logger whose readings it last got, blank: none
 );
 
 CREATE TABLE IF NOT EXISTS marine_readings (
@@ -332,6 +334,15 @@ CREATE TABLE IF NOT EXISTS marine_readings (
   value           REAL NOT NULL,
   note            TEXT NOT NULL DEFAULT '',         -- what an inspector saw
   PRIMARY KEY (sensor_id, at)
+);
+CREATE TABLE IF NOT EXISTS marine_feed_log (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  at              TEXT NOT NULL,                    -- when it arrived, UTC, YYYY-MM-DDTHH:MM:SS
+  device          TEXT NOT NULL DEFAULT '',
+  written         INTEGER NOT NULL DEFAULT 0,
+  problems        INTEGER NOT NULL DEFAULT 0,
+  first_problem   TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS marine_scenarios (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -352,6 +363,8 @@ LATER_COLUMNS = [
     ("marine_assets", "rotation", "REAL NOT NULL DEFAULT 0"),
     ("marine_assets", "msl_cd", "REAL NOT NULL DEFAULT 1.0"),
     ("marine_assets", "epsg", "TEXT NOT NULL DEFAULT ''"),
+    ("marine_assets", "feed_key", "TEXT NOT NULL DEFAULT ''"),
+    ("marine_sensors", "feed_device", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -548,43 +561,59 @@ def record_inspection(conn: sqlite3.Connection, element: Any, at: str, grade: in
     return sensor_id
 
 
-def import_csv(conn: sqlite3.Connection, asset_id: int, text: str) -> dict[str, Any]:
+def import_csv(conn: sqlite3.Connection, asset_id: int, text: str, device: str = "") -> dict[str, Any]:
     """Readings from a logger export: columns ``sensor``, ``at`` and ``value``, and ``note`` if any.
 
     ``sensor`` is the sensor's label on this asset (or its number). A sensor
     that receives real readings stops being simulated, so the two never mix.
     """
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    fields = {f.strip().lower(): f for f in (reader.fieldnames or [])}
+    missing = [f for f in ("sensor", "at", "value") if f not in fields]
+    if missing:
+        return {"written": 0, "sensors": 0, "problem_count": 1,
+                "problems": [f"The file needs the columns sensor, at and value (missing: {', '.join(missing)})."]}
+    rows = ({k: row.get(fields[k]) for k in ("sensor", "at", "value", "note") if k in fields} for row in reader)
+    return write_rows(conn, asset_id, rows, device=device, first=2)
+
+
+def write_rows(conn: sqlite3.Connection, asset_id: int, rows: Iterable[dict[str, Any]],
+               device: str = "", first: int = 1) -> dict[str, Any]:
+    """Readings as dicts with ``sensor``, ``at``, ``value`` and maybe ``note``: from a CSV file or a
+    logger sending them. Rows it cannot place are listed (the first twenty), never guessed at.
+    ``device`` names the logger that sent them, so its sensors can be found again."""
     sensors = {str(r["label"]).strip().lower(): r["id"] for r in conn.execute(
         "SELECT s.id, s.label FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
         " WHERE e.asset_id = ?", (asset_id,))}
     ids = set(sensors.values())
-    reader = csv.DictReader(io.StringIO(text.lstrip("﻿")))
-    fields = {f.strip().lower(): f for f in (reader.fieldnames or [])}
-    missing = [f for f in ("sensor", "at", "value") if f not in fields]
-    if missing:
-        return {"written": 0, "problems": [f"The file needs the columns sensor, at and value "
-                                           f"(missing: {', '.join(missing)})."]}
     written, problems, touched = 0, [], set()
-    for number, row in enumerate(reader, start=2):
-        key = (row.get(fields["sensor"]) or "").strip()
+    for number, row in enumerate(rows, start=first):
+        if not isinstance(row, dict):
+            problems.append(f"Row {number}: not a reading.")
+            continue
+        key = str(row.get("sensor") or "").strip()
         sensor_id = sensors.get(key.lower())
         if sensor_id is None and key.isdigit() and int(key) in ids:
             sensor_id = int(key)
         if sensor_id is None:
             problems.append(f"Row {number}: no sensor called “{key}” on this asset.")
             continue
-        at = (row.get(fields["at"]) or "").strip().replace(" ", "T")[:16]
+        at = str(row.get("at") or "").strip().replace(" ", "T")[:16]
         try:
             datetime.fromisoformat(at)
-            value = float((row.get(fields["value"]) or "").strip())
+            value = float(str(row.get("value") if row.get("value") is not None else "").strip())
+            if not math.isfinite(value):
+                raise ValueError
         except ValueError:
             problems.append(f"Row {number}: the date or the value could not be read.")
             continue
-        note = (row.get(fields["note"]) or "").strip() if "note" in fields else ""
-        record(conn, sensor_id, at, value, note)
+        record(conn, sensor_id, at, value, str(row.get("note") or "").strip())
         touched.add(sensor_id)
         written += 1
-    return {"written": written, "problems": problems[:20], "sensors": len(touched)}
+    if device and touched:
+        marks = ",".join("?" * len(touched))
+        conn.execute(f"UPDATE marine_sensors SET feed_device = ? WHERE id IN ({marks})", (device, *touched))
+    return {"written": written, "problems": problems[:20], "problem_count": len(problems), "sensors": len(touched)}
 
 
 # --- the assessment ----------------------------------------------------------------

@@ -97,6 +97,96 @@ def test_readings_round_trip_and_real_ones_replace_the_simulation(app, signed_in
     assert row["simulated"] == 0 and count == 2
 
 
+def _asset_id(demo: str) -> int:
+    return int(demo.rstrip("/").rsplit("/", 1)[-1])
+
+
+def test_the_real_sensors_page_prices_the_kit_and_gives_a_key(app, signed_in, demo):
+    page = text(signed_in.get(demo + "/sensors"))
+    assert "Start with one element" in page and "The whole asset" in page
+    assert "Junction box, IP68 stainless" in page and "Data logger (Campbell CR6" in page
+    assert "Installed and working" in page and "Each year to keep it running" in page
+    assert "/marinetwin/api/assets/" in page
+    with app.app_context():
+        key = connect(app.config["DATABASE"]).execute(
+            "SELECT feed_key FROM marine_assets WHERE id = ?", (_asset_id(demo),)).fetchone()[0]
+    assert key.startswith("mt_") and key in page
+    assert "Connect real sensors" in text(signed_in.get(demo + "/setup"))
+
+
+def test_the_kit_counts_boxes_and_loggers_from_the_channels():
+    from app import marine_feed
+
+    k = marine_feed.kit({"strain": 33, "inspection": 4, "displacement": 2})
+    items = {line["item"]: line for line in k["lines"]}
+    assert k["channels"] == 33 and k["boxes"] == 3 and k["loggers"] == 1
+    assert items["Multiplexer (Campbell AM16/32B)"]["qty"] == 3
+    assert any(i.startswith("Robotic total station") for i in items)
+    assert k["hardware_low"] == sum(line["total_low"] for line in k["lines"])
+    assert marine_feed.kit({})["lines"] == []
+
+
+def test_a_logger_sends_readings_with_the_key_and_they_count_as_real(app, client, signed_in, demo):
+    asset_id = _asset_id(demo)
+    signed_in.get(demo + "/sensors")
+    with app.app_context():
+        key = connect(app.config["DATABASE"]).execute(
+            "SELECT feed_key FROM marine_assets WHERE id = ?", (asset_id,)).fetchone()[0]
+    url = f"/marinetwin/api/assets/{asset_id}/readings"
+    body = {"device": "cabinet-1", "readings": [{"sensor": "P01-SG1", "at": "2026-10-04T10:00", "value": 400},
+                                                 {"sensor": "P01-SG1", "at": "2026-10-04 11:00", "value": 410},
+                                                 {"sensor": "NOPE", "at": "2026-10-04T11:00", "value": 1}]}
+    assert client.post(url, json=body).status_code == 403
+    assert client.post(url, json=body, headers={"Authorization": "Bearer wrong"}).status_code == 403
+    answer = client.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+    assert answer.status_code == 200
+    assert answer.get_json()["written"] == 2 and "NOPE" in answer.get_json()["problems"][0]
+    csv = "sensor,at,value\nP01-SG1,2026-10-04T12:00,420\n"
+    answer = client.post(f"{url}?key={key}&device=cabinet-1", data=csv, content_type="text/csv")
+    assert answer.status_code == 200 and answer.get_json()["written"] == 1
+    assert client.post(url, json={"readings": "x"}, headers={"X-MarineTwin-Key": key}).status_code == 422
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        sensor = conn.execute("SELECT id, simulated, feed_device FROM marine_sensors WHERE label = 'P01-SG1'").fetchone()
+        values = [r[0] for r in conn.execute("SELECT value FROM marine_readings WHERE sensor_id = ? ORDER BY at",
+                                             (sensor["id"],))]
+    assert sensor["simulated"] == 0 and sensor["feed_device"] == "cabinet-1" and values == [400, 410, 420]
+    feed = signed_in.get(demo + "/feed.json").get_json()
+    assert [s["label"] for s in feed["fed"]] == ["P01-SG1"] and feed["fed"][0]["latest"] == 420
+    assert len(feed["deliveries"]) == 3 and feed["deliveries"][-1]["problems"] == 1
+    # A new key shuts the old one out.
+    signed_in.post(demo + "/feed/key")
+    assert client.post(url, json=body, headers={"Authorization": f"Bearer {key}"}).status_code == 403
+
+
+def test_the_fake_logger_is_a_runnable_script_and_its_sensors_can_go_back(app, client, signed_in, demo):
+    import json as jsonlib
+
+    script = text(signed_in.get(demo + "/fake_logger.py"))
+    code = compile(script, "fake_logger.py", "exec")
+    space: dict = {"__name__": "fake"}
+    exec(code, space)
+    config = space["CONFIG"]
+    assert config["url"].endswith(f"/marinetwin/api/assets/{_asset_id(demo)}/readings")
+    assert config["channels"] and config["device"] == "fake-logger"
+    kinds = [c["kind"] for c in config["channels"]]
+    assert len(kinds) == len(set(kinds))
+    # Send what the script would, through the real door.
+    readings = [{"sensor": c["sensor"], "at": "2026-10-04T09:00", "value": c["start"]} for c in config["channels"]]
+    answer = client.post(config["url"].split("localhost", 1)[-1], data=jsonlib.dumps(
+        {"device": config["device"], "readings": readings}), content_type="application/json",
+        headers={"Authorization": "Bearer " + config["key"]})
+    assert answer.get_json()["written"] == len(readings)
+    assert "Put the fake logger" in text(signed_in.get(demo + "/sensors"))
+    labels = [c["sensor"] for c in config["channels"]]
+    signed_in.post(demo + "/feed/reset")
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        back = conn.execute("SELECT simulated, feed_device FROM marine_sensors WHERE label IN (%s)"
+                            % ",".join("?" * len(labels)), labels).fetchall()
+    assert [tuple(r) for r in back] == [(1, "")] * len(labels)
+
+
 def test_a_model_is_ifc_or_gltf_and_is_served_back(signed_in, demo):
     bad = signed_in.post(demo + "/model", data={"model": (io.BytesIO(b"x"), "model.rvt")},
                          content_type="multipart/form-data", follow_redirects=True)

@@ -10,7 +10,10 @@
     <h1>{{ asset['name'] }}</h1>
     <p class="small muted" style="margin-top:2px">Bring in the Revit model, check where it is, and fill in what the model did not say.</p>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('marine.asset', asset_id=asset['id']) }}">Next: the structure →</a>
+  <div class="inline-form" style="gap:8px">
+    <a class="btn btn-ghost" href="{{ url_for('marine.sensors', asset_id=asset['id']) }}">Connect real sensors</a>
+    <a class="btn btn-primary" href="{{ url_for('marine.asset', asset_id=asset['id']) }}">Next: the structure →</a>
+  </div>
 </div>
 
 {{ asset_tabs(asset) }}
@@ -165,6 +168,8 @@
         <button type="submit" class="btn btn-primary">Import</button>
       </form>
       <p class="small" style="margin-top:8px"><a href="{{ url_for('marine.export_readings', asset_id=asset['id']) }}">Download every reading</a> in the same columns.</p>
+      <p class="small" style="margin-top:8px"><strong>Real sensors sending on their own?</strong>
+        <a href="{{ url_for('marine.sensors', asset_id=asset['id']) }}">Connect real sensors</a>: the kit and its cost, what to do, and a logger's live feed (try it with the fake logger).</p>
     </div>
   </div>
 </section>

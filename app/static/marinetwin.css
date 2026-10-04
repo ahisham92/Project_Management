@@ -172,3 +172,13 @@
   .mt-live-alert { top: auto; bottom: 120px; }
   .mt-live-cams button { padding: 4px 6px; }
 }
+
+/* Real sensors: the kit tables, the address and key, and the fake logger's console. */
+.mt-kit-group td { background: var(--plane); font-size: 0.8125rem; }
+.mt-feed-keys { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .mt-feed-keys { grid-template-columns: 1fr; } }
+.mt-copy { display: flex; gap: 6px; }
+.mt-copy input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125rem; }
+.mt-code { background: var(--plane); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  font-size: 0.78rem; line-height: 1.5; overflow-x: auto; white-space: pre; margin: 8px 0; }
+.mt-fake-log { min-height: 7.5em; max-height: 18em; white-space: pre-wrap; }

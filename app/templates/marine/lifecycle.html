@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Lifecycle · MarineTwin{% endblock %}
+
+{% macro moves(n) %}{{ '{:,.0f}'.format(n) }} {{ both['fix']['units'] }}{% endmacro %}
+{% macro money(n) %}{% if n >= 1e9 %}${{ '{:,.1f}'.format(n / 1e9) }}B{% elif n >= 1e6 %}${{ '{:,.1f}'.format(n / 1e6) }}M{% else %}${{ '{:,.0f}'.format(n / 1e3) }}k{% endif %}{% endmacro %}
+{% macro life(t) %}{% if t['condemned_year'] %}{{ '%.0f' | format(t['condemned_year']) }} years{% elif t['service_life'] >= 100 %}over 100 years{% else %}{{ '%.0f' | format(t['service_life']) }} years{% endif %}{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The berth's " ~ both['fix']['life'] ~ "-year design life in a few minutes: the weather, the wear, the repairs, and what each costs in "
+   ~ both['fix']['units'] ~ " the berth could not handle. Watch it left alone, fixed as you go, or decide each issue yourself, and save any run as a video. Simulated for the prototype.") }}
+{{ asset_tabs(asset) }}
+
+{% set n = both['nothing']['totals'] %}
+{% set f = both['fix']['totals'] %}
+<div class="grid grid-4">
+  {{ tile('Do nothing', moves(n['cost_moves']), money(n['cost']) ~ ' of ' ~ both['fix']['units'] ~ ' lost', 'critical',
+          'berth out of service in year ' ~ ('%.0f' | format(n['condemned_year'])) if n['condemned_year'] else 'lasts ' ~ life(n)) }}
+  {{ tile('Fix as you go', moves(f['cost_moves']), money(f['spend']) ~ ' on ' ~ f['fixes'] ~ ' repairs, ' ~ '{:,.0f}'.format(f['lost']) ~ ' ' ~ both['fix']['units'] ~ ' lost', 'good',
+          'lasts ' ~ life(f)) }}
+  {{ tile('Saved by fixing', moves(both['saved_moves']), 'about ' ~ money(both['saved']) ~ ' at $' ~ '{:,.0f}'.format(rates['value_per_move']) ~ ' a move',
+          'good' if both['saved_moves'] > 0 else 'warning', 'fixing pays' if both['saved_moves'] > 0 else 'fixing costs more here') }}
+  {{ tile('Service life', life(f), 'design life ' ~ both['fix']['life'] ~ ' years; left alone, ' ~ life(n), 'good', 'with the repairs') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-body" style="padding:0">
+    <div class="marine-view marine-live-view marine-life-view" data-mode="life"
+         data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
+         data-life="{{ url_for('marine.lifecycle_json', asset_id=asset['id']) }}"
+         data-rates="{{ given | tojson | forceescape }}"
+         data-file="{{ asset['name'] | lower | replace(' ', '-') | replace('—', '') }}"
+         data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/"></div>
+  </div>
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What happened" data-slug="log" data-open="1">
+<div class="card">
+  <div class="card-head"><div><h2>What happened</h2>
+    <p class="small muted" style="margin-top:2px">The run playing above, newest first. Click a line to go back to it.</p></div></div>
+  <div class="card-body">
+    <ul class="mt-live-log mt-life-log"><li class="muted">Loading…</li></ul>
+    <noscript><p class="muted">The lifecycle video needs JavaScript.</p></noscript>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Left open" data-slug="open">
+<div class="card">
+  <div class="card-head"><div><h2>Left open</h2>
+    <p class="small muted" style="margin-top:2px">In “You decide”: what you waited on or closed off. Each costs {{ both['fix']['units'] }} every day it stays; fix it whenever you like.</p></div></div>
+  <div class="card-body"><ul class="mt-life-open"><li class="muted">Nothing left open.</li></ul></div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Compare" data-slug="compare">
+<div class="card">
+  <div class="card-head"><div><h2>What it cost, year by year</h2>
+    <p class="small muted" style="margin-top:2px">{{ both['fix']['units'] | capitalize }} the berth could not handle, plus what the repairs cost turned into {{ both['fix']['units'] }}, added up.</p></div></div>
+  <div class="card-body">{{ chart }}</div>
+</div>
+<div class="card" style="margin-top:16px">
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th></th><th class="right">Do nothing</th><th class="right">Fix as you go</th></tr></thead>
+      <tbody>
+        <tr><td class="label">{{ both['fix']['units'] | capitalize }} handled</td><td class="right tabular">{{ '{:,}'.format(n['handled']) }}</td><td class="right tabular">{{ '{:,}'.format(f['handled']) }}</td></tr>
+        <tr><td class="label">Lost to failed or closed parts</td><td class="right tabular">{{ '{:,}'.format(n['lost']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost']) }}</td></tr>
+        <tr><td class="label">Repairs</td><td class="right tabular">{{ n['fixes'] }}</td><td class="right tabular">{{ f['fixes'] }}, {{ money(f['spend']) }} = {{ '{:,}'.format(f['spend_moves']) }} {{ both['fix']['units'] }}</td></tr>
+        <tr><td class="label"><strong>Cost in {{ both['fix']['units'] }}</strong></td><td class="right tabular"><strong>{{ '{:,}'.format(n['cost_moves']) }}</strong></td><td class="right tabular"><strong>{{ '{:,}'.format(f['cost_moves']) }}</strong></td></tr>
+        <tr><td class="label">In money</td><td class="right tabular">{{ money(n['cost']) }}</td><td class="right tabular">{{ money(f['cost']) }}</td></tr>
+        <tr><td class="label">Lost to the weather (both)</td><td class="right tabular">{{ '{:,}'.format(n['lost_weather']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost_weather']) }}</td></tr>
+        <tr><td class="label">Service life</td><td class="right tabular">{{ life(n) }}</td><td class="right tabular">{{ life(f) }}</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted" style="margin-top:8px">Corrosion allowance {{ both['fix']['allowance'] }} mm from {{ both['fix']['allowance_source'] }}. Rates and prices are typical figures, change them under Rates.</p>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Rates" data-slug="rates">
+<div class="card">
+  <div class="card-head"><div><h2>Rates and prices</h2>
+    <p class="small muted" style="margin-top:2px">What a working day of the berth is worth and what each repair costs. Indicative, in US dollars.</p></div></div>
+  <div class="card-body">
+    <form method="get" action="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}" data-voyage="Running fifty years again">
+      <div class="marine-params">
+        <fieldset><legend>The berth</legend>
+          <label class="field"><span class="field-label">{{ both['fix']['units'] | capitalize }} a day at full working</span>
+            <input type="number" name="moves_per_day" value="{{ rates['moves_per_day'] | int }}" min="1" step="1"></label>
+          <label class="field"><span class="field-label">Value of one {{ both['fix']['units'][:-1] if both['fix']['units'].endswith('s') else both['fix']['units'] }} ($)</span>
+            <input type="number" name="value_per_move" value="{{ rates['value_per_move'] | int }}" min="1" step="1"></label>
+        </fieldset>
+        <fieldset><legend>Repairs ($)</legend>
+          {% for key, label, value in prices %}
+            <label class="field"><span class="field-label">{{ label }}</span>
+              <input type="number" name="{{ key }}" value="{{ value | int }}" min="1" step="1000"></label>
+          {% endfor %}
+        </fieldset>
+      </div>
+      <p style="margin-top:12px"><button type="submit" class="btn">Run it again</button>
+        <a class="btn btn-ghost" href="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}">Back to the typical figures</a></p>
+    </form>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="importmap">
+  {"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/') }}"}}
+</script>
+<script type="module" src="{{ url_for('static', filename='marinetwin.js') }}"></script>
+{% endblock %}

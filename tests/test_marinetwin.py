@@ -14,7 +14,7 @@ from datetime import date
 
 import pytest
 
-from app import marine, marine_triton
+from app import marine, marine_life, marine_triton
 from app.db import connect
 
 
@@ -797,11 +797,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/live", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/live", "/lifecycle", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 7 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 8 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 7 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 8 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -891,3 +891,68 @@ def test_ships_berth_only_inside_the_weather_limits():
             for kit in h["equipment"]:
                 if h["gust"] >= marine_ops.LIMITS["crane_stop_gust"]:
                     assert kit["state"] in ("stopped", "stowed")
+
+
+# --- the lifecycle --------------------------------------------------------------
+
+def test_the_lifecycle_page_compares_doing_nothing_with_fixing(signed_in, demo):
+    page = text(signed_in.get(demo + "/lifecycle"))
+    assert 'data-mode="life"' in page and "/lifecycle.json" in page
+    assert "Do nothing" in page and "Fix as you go" in page and "Saved by fixing" in page
+    run = signed_in.get(demo + "/lifecycle.json?policy=nothing").get_json()
+    assert run["finished"] and run["done"] == run["life"] * 12 == len(run["rows"]) == len(run["states"])
+    assert len(run["states"][0]) == len(run["parts"])
+    assert {p["kind"] for p in run["parts"]} == {"fender", "wall", "deck", "bollard"}
+
+
+def test_fixing_as_you_go_costs_less_and_lasts_longer(app, signed_in, demo):
+    with app.app_context():
+        from app.db import query, query_one
+        asset_id = int(demo.rstrip("/").split("/")[-1])
+        asset = query_one("SELECT * FROM marine_assets WHERE id = ?", (asset_id,))
+        elements = query("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))
+        both = marine_life.compare(asset, elements)
+    nothing, fixing = both["nothing"]["totals"], both["fix"]["totals"]
+    assert nothing["spend"] == 0 and nothing["fixes"] == 0
+    assert fixing["fixes"] > 0 and fixing["spend"] > 0
+    assert fixing["cost_moves"] < nothing["cost_moves"] and both["saved_moves"] > 0
+    assert fixing["service_life"] > both["fix"]["life"]
+    assert nothing["service_life"] < fixing["service_life"]
+    # The cost in moves is the lost moves plus the repairs at the value of a move.
+    value = both["fix"]["rates"]["value_per_move"]
+    assert fixing["cost_moves"] == round(fixing["lost"] + fixing["spend"] / value)
+    # Fenders start to wear after about fifteen years, not before.
+    first = min(e["m"] for e in both["fix"]["events"] if e.get("part", "") and e["part"].startswith("F") and e["kind"] == "warning")
+    assert first >= 14 * 12
+
+
+def test_the_game_stops_at_each_issue_and_a_choice_changes_only_what_follows(app, signed_in, demo):
+    first = signed_in.post(demo + "/lifecycle.json", json={"policy": "game", "choices": []}).get_json()
+    assert not first["finished"] and first["pending"]
+    issue = first["pending"][0]
+    assert issue["m"] == first["done"] and set(issue["options"]) == {"fix", "close", "wait"}
+    for act in ("fix", "close", "wait"):
+        after = signed_in.post(demo + "/lifecycle.json",
+                               json={"policy": "game", "choices": [[issue["id"], act, issue["m"]]]}).get_json()
+        assert after["done"] > first["done"]
+        assert after["rows"][:first["done"]] == first["rows"]          # the past is as it was
+        mine = [e for e in after["events"] if e["m"] == issue["m"] and e.get("issue") == issue["id"]]
+        assert {"fix": "fix", "close": "close", "wait": "wait"}[act] in {e["kind"] for e in mine}
+    # Answering every issue with "fix" ends where fixing as you go does.
+    choices = []
+    for _ in range(200):
+        run = signed_in.post(demo + "/lifecycle.json", json={"policy": "game", "choices": choices}).get_json()
+        if run["finished"]:
+            break
+        choices += [[p["id"], "fix", p["m"]] for p in run["pending"]]
+    fixing = signed_in.get(demo + "/lifecycle.json?policy=fix").get_json()
+    assert run["finished"] and run["totals"]["cost_moves"] == fixing["totals"]["cost_moves"]
+
+
+def test_the_rates_change_the_money_not_the_story(signed_in, demo):
+    plain = signed_in.get(demo + "/lifecycle.json?policy=fix").get_json()
+    dear = signed_in.get(demo + "/lifecycle.json?policy=fix&value_per_move=220&fender=1").get_json()
+    assert dear["rates"]["value_per_move"] == 220 and dear["rates"]["fender"] == 1
+    assert [e["m"] for e in dear["events"]] == [e["m"] for e in plain["events"]]
+    assert dear["totals"]["spend"] < plain["totals"]["spend"]
+    assert "220" in text(signed_in.get(demo + "/lifecycle?value_per_move=220"))

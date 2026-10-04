@@ -18,7 +18,7 @@
 {% endmacro %}
 
 {# The steps, from the asset list on: where the person is and what comes next. The four facility
-   pages share step 6 and get their own tabs under it. Every MarineTwin page calls this, so it also
+   pages share the last step and get their own tabs under it. Every MarineTwin page calls this, so it also
    brings the page furniture (the ship loader and section tabs, marinetwin-ui.js). #}
 {% macro asset_tabs(asset=None) %}
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
@@ -30,6 +30,7 @@
       ('marine.setup', 'Set up', 'model, place, sensors', ['marine.setup', 'marine.sensors']),
       ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
       ('marine.live', 'Live port', 'ships, cranes, weather', ['marine.live']),
+      ('marine.lifecycle', 'Lifecycle', '50 years, fix or wait', ['marine.lifecycle']),
       ('marine.operations', 'Operations', 'now, next, what to do', ['marine.operations']),
       ('marine.simulation', 'Simulation', 'scenarios, bottleneck', ['marine.simulation']),
       ('marine.equipment', 'Facility', 'equipment, air, carbon, safety', facility | map('first') | list)] %}

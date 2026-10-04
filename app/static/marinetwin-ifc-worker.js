@@ -1,20 +1,13 @@
 // Opens a Revit IFC for the 3D view, away from the page so the page never freezes.
 //
-// Asked with {url, base, refs}: it downloads the model (saying how much has come), reads it with
-// web-ifc (from `base`), and sends back the shapes. An element MarineTwin tracks (its GlobalId,
-// name or tag is in `refs`) comes back as a part of its own, so it can be coloured and clicked;
-// everything else is merged into a few big parts, which draws thousands of objects as a handful.
+// Asked with {bytes, base, refs, skip}: it reads the model with web-ifc (from `base`) one product at
+// a time, saying which it is on (so the page can tell one that never finishes, and ask again with
+// it in `skip`), and sends back the shapes. Without `bytes` it downloads `url` itself. An element
+// MarineTwin tracks (its GlobalId, name or tag is in `refs`) comes back as a part of its own, so it
+// can be coloured and clicked; everything else is merged into a few big parts, which draws thousands of objects as a handful.
 // Positions are in metres, y up, around `origin` (a model on its map grid sits hundreds of
 // kilometres out, too far for the graphics card's precision).
 
-const ELEMENT_TYPES = [
-  'IFCBEAM', 'IFCCOLUMN', 'IFCSLAB', 'IFCWALL', 'IFCWALLSTANDARDCASE', 'IFCPILE', 'IFCMEMBER', 'IFCPLATE',
-  'IFCFOOTING', 'IFCBUILDINGELEMENTPROXY', 'IFCRAILING', 'IFCSTAIR', 'IFCSTAIRFLIGHT', 'IFCROOF', 'IFCCOVERING',
-  'IFCDOOR', 'IFCWINDOW', 'IFCFURNISHINGELEMENT', 'IFCFLOWSEGMENT', 'IFCFLOWFITTING', 'IFCPIPESEGMENT',
-  'IFCPIPEFITTING', 'IFCDISCRETEACCESSORY', 'IFCMECHANICALFASTENER', 'IFCREINFORCINGBAR', 'IFCCURTAINWALL',
-  'IFCFLOWTERMINAL', 'IFCDUCTSEGMENT', 'IFCELEMENTASSEMBLY', 'IFCCHIMNEY', 'IFCSHADINGDEVICE', 'IFCRAMP',
-  'IFCRAMPFLIGHT', 'IFCTENDON', 'IFCPROXY', 'IFCGEOGRAPHICELEMENT', 'IFCCIVILELEMENT',
-];
 const REST_LIMIT = 1_500_000;          // vertices in one merged part
 
 const say = (msg, transfer) => self.postMessage(msg, transfer || []);
@@ -40,6 +33,37 @@ async function download(url) {
     }
   }
   return got === total ? bytes : bytes.subarray(0, got);
+}
+
+// The products with a shape, as web-ifc's StreamAllMeshes picks them: every element type in the
+// file but openings and spaces.
+function products(api, WebIFC, modelID) {
+  const leave = new Set([WebIFC.IFCOPENINGELEMENT, WebIFC.IFCSPACE, WebIFC.IFCOPENINGSTANDARDCASE].filter((t) => typeof t === 'number'));
+  const ids = [];
+  for (const type of api.GetIfcEntityList(modelID)) {
+    if (leave.has(type) || !api.IsIfcElement(type)) continue;
+    const found = api.GetLineIDsWithType(modelID, type);
+    for (let i = 0; i < found.size(); i++) ids.push(found.get(i));
+  }
+  return ids;
+}
+
+// Openings (pile holes, sleeves, voids) are cut into their slab or wall one boolean at a time,
+// which is where web-ifc spends almost all its time on a big Revit model: a deck slab with 80
+// holes takes about a second, without them a millisecond. The twin is drawn without the cuts:
+// each "IFCRELVOIDSELEMENT(" in the file is renamed to a type web-ifc does not know, in place.
+function dropOpenings(bytes) {
+  const find = new TextEncoder().encode('IFCRELVOIDSELEMENT(');
+  const put = new TextEncoder().encode('IFCRELVOIDSELEMENX(');
+  let at = 0;
+  let count = 0;
+  for (;;) {
+    at = bytes.indexOf(find[0], at);
+    if (at < 0) return count;
+    let same = true;
+    for (let k = 1; k < find.length; k++) if (bytes[at + k] !== find[k]) { same = false; break; }
+    if (same) { bytes.set(put, at); count++; at += find.length; } else at++;
+  }
 }
 
 // One growing set of shapes: positions, normals and triangle indices.
@@ -115,37 +139,30 @@ async function pack(parts, origin) {
 
 self.onmessage = async (ev) => {
   const { url, base, refs, keepAt } = ev.data;
+  const skip = new Set(ev.data.skip || []);
   try {
     const wanted = new Set((refs || []).map((r) => String(r).trim().toLowerCase()));
     const started = import(base + 'web-ifc-api.js');
-    const bytes = await download(url);
-    say({ type: 'progress', stage: 'open' });
+    const bytes = ev.data.bytes ? new Uint8Array(ev.data.bytes) : await download(url);
+    const openings = dropOpenings(bytes);
+    say({ type: 'progress', stage: 'open', openings });
     const WebIFC = await started;
     const api = new WebIFC.IfcAPI();
     api.SetWasmPath(base, true);
     await api.Init(undefined, true);
     const modelID = api.OpenModel(bytes, { COORDINATE_TO_ORIGIN: false, MEMORY_LIMIT: 3221225472 });
     if (modelID < 0) throw new Error('web-ifc could not open the file');
-    let total = 0;
-    for (const name of ELEMENT_TYPES) {
-      if (typeof WebIFC[name] !== 'number') continue;
-      try { total += api.GetLineIDsWithType(modelID, WebIFC[name]).size(); } catch (err) { /* not in this schema */ }
-    }
+    const ids = products(api, WebIFC, modelID).filter((id) => !skip.has(id));
+    const total = ids.length;
     say({ type: 'progress', stage: 'shapes', done: 0, total });
 
     let origin = null;
     let done = 0;
-    let lastSaid = 0;
     const rest = new Bucket();
     let parts = 0;
     const kept = keepAt && typeof CompressionStream !== 'undefined' ? [] : null;
-    api.StreamAllMeshes(modelID, (flat) => {
+    const take = (flat, ids) => {
       const placed = flat.geometries;
-      let ids = {};
-      try {
-        const line = api.GetLine(modelID, flat.expressID);
-        ids = { global: line.GlobalId?.value, name: line.Name?.value, tag: line.Tag?.value };
-      } catch (err) { /* a product without properties is still drawn */ }
       const tracked = [ids.global, ids.name, ids.tag].some((v) => v && wanted.has(String(v).trim().toLowerCase()));
       const bucket = tracked ? new Bucket() : rest;
       for (let i = 0; i < placed.size(); i++) {
@@ -160,12 +177,18 @@ self.onmessage = async (ev) => {
       }
       if (tracked && bucket.count) { send({ ...bucket.take(), ...ids }, kept); parts++; }
       if (rest.count > REST_LIMIT) { send(rest.take(), kept); parts++; }
+    };
+    for (const id of ids) {
+      let named = {};
+      try {
+        const line = api.GetLine(modelID, id);
+        named = { global: line.GlobalId?.value, name: line.Name?.value, tag: line.Tag?.value };
+      } catch (err) { /* a product without properties is still drawn */ }
+      // Before the shape: if this one never finishes, the page knows which it was.
+      say({ type: 'at', id, name: named.name || named.tag || named.global || `#${id}`, done, total });
+      api.StreamMeshes(modelID, [id], (flat) => take(flat, named));
       done++;
-      if (done - lastSaid >= 200) {
-        say({ type: 'progress', stage: 'shapes', done, total: Math.max(total, done) });
-        lastSaid = done;
-      }
-    });
+    }
     if (rest.count) { send(rest.take(), kept); parts++; }
     api.CloseModel(modelID);
     say({ type: 'done', origin: origin || [0, 0, 0], parts, products: done });

@@ -20,6 +20,11 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const big = (n) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)}M` : Math.abs(n) >= 1e4 ? `${Math.round(n / 1e3)}k` : Math.round(n).toLocaleString());
+// A part's state each month: worn 0-99, +1000 being repaired, +2000 closed off, +10000 × its open issue's stage.
+const decode = (code) => {
+  const rest = code % 10000;
+  return { stage: Math.floor(code / 10000), closed: rest >= 2000, repairing: rest % 2000 >= 1000, worn: rest % 1000 };
+};
 const money = (usd) => (usd >= 1e9 ? `$${(usd / 1e9).toFixed(1)}B` : usd >= 1e6 ? `$${(usd / 1e6).toFixed(1)}M` : usd >= 1e3 ? `$${Math.round(usd / 1e3)}k` : `$${Math.round(usd)}`);
 
 export async function startLife(ctx) {
@@ -109,9 +114,7 @@ export async function startLife(ctx) {
   const asBuilt = { fender: REAL.rubber, wall: REAL.steel, deck: REAL.concrete, bollard: REAL.steel };
   const mats = new Map();
   function wearMaterial(code, kind) {
-    const worn = code % 1000;
-    const repairing = Math.floor(code / 1000) % 2 === 1;
-    const closed = Math.floor(code / 2000) % 2 === 1;
+    const { worn, repairing, closed } = decode(code);
     let key;
     if (repairing) key = 'repair';
     else if (closed) key = 'closed';
@@ -131,14 +134,14 @@ export async function startLife(ctx) {
     return mats.get(key);
   }
   const fresh = new THREE.MeshStandardMaterial({ color: 0x43d17a, emissive: 0x1c7a3d, roughness: 0.5 });
-  const rank = (code) => (Math.floor(code / 1000) % 2 ? 300 : 0) + (Math.floor(code / 2000) % 2 ? 200 : 0) + (code % 1000);
+  const rank = (code) => { const d = decode(code); return (d.repairing ? 300 : 0) + (d.closed ? 200 : 0) + d.worn; };
   function paintParts(codes, force) {
     const now = performance.now();
     const touched = new Set();
     for (const p of parts) {
       const code = codes[p.index];
       if (code !== p.code || force || p.flash > now || p.flashed) {
-        if (p.code >= 0 && code % 1000 < p.code % 1000 - 15 && !(Math.floor(code / 1000) % 2)) p.flash = now + 1600;   // just renewed
+        if (p.code >= 0 && decode(code).worn < decode(p.code).worn - 15 && !decode(code).repairing) p.flash = now + 1600;   // just renewed
         p.flashed = p.flash > now;
         p.code = code;
         for (const m of p.meshes) touched.add(m);
@@ -641,9 +644,7 @@ export async function startLife(ctx) {
       lastPaint = performance.now();
       parts.forEach((p, n) => {
         const code = codes[n];
-        const stage = Math.floor(code / 10000);
-        const repairing = Math.floor(code / 1000) % 2 === 1;
-        const closed = Math.floor(code / 2000) % 2 === 1;
+        const { stage, repairing, closed } = decode(code);
         const mk = markers[n];
         mk.visible = stage > 0 && !repairing;
         if (mk.visible) {
@@ -651,7 +652,7 @@ export async function startLife(ctx) {
           const l = label(`${p.name} ${names[p.kind][stage]}${closed ? ' · closed' : ''}`, stage >= 2 ? '#e53935' : '#f9a825');
           if (mk.material.map !== l.tex) { mk.material.map = l.tex; mk.material.needsUpdate = true; }
           mk.scale.set(MARKER * l.aspect, MARKER, 1);
-          mk.position.set(p.x, frame.top + 4 + (n % 3) * 3, p.z + (p.kind === 'deck' ? 4 : 0));
+          mk.position.set(p.x, frame.top + 4 + (n % 4) * Math.max(3, spanX / 22), p.z + (p.kind === 'deck' ? 4 : 0));
         }
         barriers[n].visible = closed || (stage >= 3 && p.kind !== 'fender' && !repairing) || condemned;
         crews[n].visible = repairing;

@@ -459,9 +459,10 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
                 log(m, "condemned", "Berth out of service: too much of the front wall is no longer safe. "
                                     "It needs rebuilding before ships can come back.")
 
-        # How each part stands, for the 3D view: worn 0-100, +1000 being repaired, +2000 closed, +10000 a stage.
-        states.append([condition(p) + (1000 if p.repair_days > 0 else 0) + (2000 if p.closed else 0) + 10000 * p.stage
-                       for p in parts])
+        # How each part stands, for the 3D view: worn 0-99, +1000 being repaired, +2000 closed off, +10000 × the
+        # stage of its open issue (none once it is mended, even where the mending leaves its loss).
+        states.append([min(condition(p), 99) + (1000 if p.repair_days > 0 else 0) + (2000 if p.closed else 0)
+                       + (10000 * p.stage if p.issue else 0) for p in parts])
 
         # What the berth could do this month.
         if condemned_at is not None:

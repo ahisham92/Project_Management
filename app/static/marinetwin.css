@@ -195,3 +195,23 @@
   .mt-life-policies button { padding: 4px 6px; }
   .mt-life-rec { margin-left: 0; }
 }
+.mt-life-risk { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 8px; }
+.mt-life-risk input { margin-top: 3px; }
+.mt-life-risk span { display: flex; flex-direction: column; }
+.mt-life-risk small { font-size: 12px; }
+.mt-life-kind { display: flex; gap: 8px; }
+.mt-life-kind .field { flex: 1 1 0; }
+.mt-life-info { position: absolute; right: 12px; top: 232px; width: min(320px, calc(100% - 24px)); max-height: calc(100% - 320px); overflow: auto;
+  background: rgba(10, 18, 28, .9); color: #fff; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.mt-life-info h3 { margin: 0 0 4px; font-size: 1rem; color: #fff; }
+.mt-life-info dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0; }
+.mt-life-info dt { color: #9fb0c2; }
+.mt-life-info dd { margin: 0; }
+.mt-life-info ul { margin: 4px 0 0; padding-left: 16px; color: #dbe3ec; }
+.mt-life-info .close { position: absolute; right: 8px; top: 6px; background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
+.mt-life-info .ok { color: #81c784; } .mt-life-info .bad { color: #ff8a65; }
+.mt-live-bar select.mt-life-part { width: auto; max-width: 180px; flex: 0 1 auto; background: rgba(255,255,255,.12); color: #fff;
+  border: 0; border-radius: 6px; padding: 4px 6px; font: inherit; min-height: 0; height: auto; }
+.mt-live-bar select.mt-life-part option { color: #0b1b2b; }
+.mt-live-ticks i.k-hazard { background: #ce93d8; }
+.mt-live-log li.k-hazard { border-color: #9c27b0; }

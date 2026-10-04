@@ -48,10 +48,16 @@ export async function startLife(ctx) {
     if (!answer.ok) throw new Error(`the run could not be fetched (${answer.status})`);
     const r = await answer.json();
     // Running totals, for the captions.
+    // Rows: month, berth working, handled, lost to parts, to the weather, spent so far, to events, to trade.
     let handled = 0;
     let lost = 0;
+    let other = 0;
     r.cumHandled = r.rows.map((row) => (handled += row[2]));
     r.cumLost = r.rows.map((row) => (lost += row[3]));
+    r.cumOther = r.rows.map((row) => (other += row[4] + (row[6] || 0) + (row[7] || 0)));
+    // What befell the berth each month, for the scene: floods, quakes, power cuts, the war.
+    r.befell = r.rows.map(() => []);
+    for (const e of r.events) if (e.kind === 'hazard' && r.befell[e.m]) r.befell[e.m].push(e.risk);
     return r;
   }
   runs.fix = await fetchRun('fix');
@@ -111,7 +117,8 @@ export async function startLife(ctx) {
     if (!meshParts.has(m)) meshParts.set(m, []);
     meshParts.get(m).push(p);
   }
-  const asBuilt = { fender: REAL.rubber, wall: REAL.steel, deck: REAL.concrete, bollard: REAL.steel };
+  const asBuilt = { fender: REAL.rubber, wall: REAL.steel, deck: REAL.concrete, bollard: REAL.steel, pipes: REAL.steel,
+    drainage: REAL.concrete, power: REAL.steel, lighting: REAL.steel, quay: REAL.concrete, backup: REAL.steel, war: REAL.concrete };
   const mats = new Map();
   function wearMaterial(code, kind) {
     const { worn, repairing, closed } = decode(code);
@@ -264,7 +271,23 @@ export async function startLife(ctx) {
   scene.add(rain);
   scene.fog = new THREE.Fog(0x9aa6b2, 900, 12000);
   const msl = twin.asset.msl_cd || 0;
-  ctx.setTide((when) => msl + 0.9 * Math.sin((2 * Math.PI * when.getTime()) / (12.42 * 3600000)));
+  let seaRise = 0;                       // the sea's rise so far, on top of the tide
+  ctx.setTide((when) => msl + seaRise + 0.9 * Math.sin((2 * Math.PI * when.getTime()) / (12.42 * 3600000)));
+  // Floodwater over the apron, smoke after a hit.
+  const flood = new THREE.Mesh(new THREE.PlaneGeometry(spanX + 60, 70),
+    new THREE.MeshStandardMaterial({ color: 0x2f5d73, transparent: true, opacity: 0.55, roughness: 0.15, metalness: 0.2 }));
+  flood.rotation.x = -Math.PI / 2;
+  flood.position.set((frame.minX + frame.maxX) / 2, frame.top + 0.15, frame.front + 34);
+  flood.visible = false;
+  scene.add(flood);
+  const smokeMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, transparent: true, opacity: 0.6, roughness: 1 });
+  const smoke = Array.from({ length: 24 }, (_, n) => {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(4 + (n % 4) * 2, 10, 8), smokeMat);
+    puff.userData = { x: frame.minX + ((n * 37) % 100) / 100 * spanX, phase: n / 24 };
+    puff.visible = false;
+    scene.add(puff);
+    return puff;
+  });
 
   // --- the screen: the controls in the page, the captions drawn so the video has them too ----
   const overlay = document.createElement('div');
@@ -272,11 +295,13 @@ export async function startLife(ctx) {
   overlay.innerHTML = `
     <canvas class="mt-life-hud" aria-hidden="true"></canvas>
     <div class="mt-life-card" role="dialog" aria-live="assertive" hidden></div>
+    <div class="mt-life-info" aria-live="polite" hidden></div>
     <div class="mt-live-bar">
       <span class="mt-live-cams mt-life-policies" role="group" aria-label="How the berth is looked after">${POLICIES.map(([k, l]) => `<button type="button" data-policy="${k}">${l}</button>`).join('')}</span>
       <button type="button" class="mt-live-play" aria-label="Pause">❚❚</button>
       <span class="mt-live-speeds" role="group" aria-label="How long the ${life} years take">${PACES.map(([s, l]) => `<button type="button" data-pace="${s}">${l}</button>`).join('')}</span>
       <span class="mt-live-track"><input type="range" class="mt-live-scrub" min="0" max="${total}" step="0.1" aria-label="Year of the design life"></span>
+      <select class="mt-life-part" aria-label="Show a part's dates, warranty and life"><option value="">Part…</option>${parts.map((p) => `<option value="${p.index}">${esc(p.name)}</option>`).join('')}</select>
       <button type="button" class="mt-life-rec" title="Plays the run from the start and saves it as a video">● Save as video</button>
     </div>`;
   view.appendChild(overlay);
@@ -290,8 +315,8 @@ export async function startLife(ctx) {
   ticks.className = 'mt-live-ticks';
   scrub.insertAdjacentElement('afterend', ticks);
   function drawTicks() {
-    ticks.innerHTML = run.events.filter((e) => ['critical', 'fix', 'condemned', 'close'].includes(e.kind)).map((e) =>
-      `<i class="k-${e.kind === 'fix' ? 'good' : e.kind === 'close' ? 'warning' : 'critical'}" style="left:${(100 * e.m) / total}%" title="${esc(e.text)}"></i>`).join('');
+    ticks.innerHTML = run.events.filter((e) => ['critical', 'fix', 'condemned', 'close'].includes(e.kind) || (e.kind === 'hazard' && e.risk !== 'power_cuts' && e.risk !== 'drainage')).map((e) =>
+      `<i class="k-${e.kind === 'fix' ? 'good' : e.kind === 'close' ? 'warning' : e.kind === 'hazard' ? 'hazard' : 'critical'}" style="left:${(100 * e.m) / total}%" title="${esc(e.text)}"></i>`).join('');
   }
 
   function setPace(s) {
@@ -386,20 +411,20 @@ export async function startLife(ctx) {
   function say(text, colour) { banner = { text, colour, at: performance.now() }; }
   function at(month) {
     const i = clamp(Math.floor(month), 0, Math.max(run.rows.length - 1, 0));
-    return { i, row: run.rows[i], w: run.weather[i], handled: run.cumHandled[i] || 0, lost: run.cumLost[i] || 0 };
+    return { i, row: run.rows[i], w: run.weather[i], handled: run.cumHandled[i] || 0, lost: run.cumLost[i] || 0, other: run.cumOther[i] || 0 };
   }
   function drawHud(g, W, H, scale) {
     g.clearRect(0, 0, W, H);
     if (!run.rows.length) return;
     const s = scale;
-    const { i, row, w, handled, lost } = at(simM);
+    const { i, row, w, handled, lost, other: otherLost } = at(simM);
     const year = simM / 12;
     const spend = row[5];
-    const cost = lost + spend / value;
+    const cost = lost + otherLost + spend / value;
     const panel = (x, y, w2, h2) => { g.fillStyle = 'rgba(10,18,28,.74)'; g.beginPath(); g.roundRect(x, y, w2, h2, 10 * s); g.fill(); };
     g.textBaseline = 'alphabetic';
     // Top left: the year, the way it is looked after, the design life used.
-    panel(12 * s, 12 * s, 300 * s, 112 * s);
+    panel(12 * s, 12 * s, 300 * s, 132 * s);
     g.fillStyle = '#fff';
     g.font = `700 ${34 * s}px system-ui, sans-serif`;
     g.fillText(`YEAR ${Math.min(Math.floor(year) + 1, life)}`, 26 * s, 52 * s);
@@ -416,13 +441,12 @@ export async function startLife(ctx) {
     g.fillText(`design life ${life} years`, 26 * s, 114 * s);
     if (w) {
       const words = [w.storm === 2 ? 'GREAT STORM' : w.storm ? 'storm' : w.rain > 3 ? 'rain' : 'fair', `wind ${Math.round(w.wind)} m/s`, `${Math.round(w.temp)} °C`];
-      g.textAlign = 'right';
-      g.fillText(words.join(' · '), 296 * s, 114 * s);
-      g.textAlign = 'left';
+      if (w.slr > 0.005) words.push(`sea +${Math.round(w.slr * 100)} cm`);
+      g.fillText(words.join(' · '), 26 * s, 134 * s);
     }
     // Top right: the berth's account.
     const rx = W - 312 * s;
-    panel(rx, 12 * s, 300 * s, 176 * s);
+    panel(rx, 12 * s, 300 * s, 200 * s);
     const lineAt = (n, k, v, colour, bold) => {
       const y = (40 + n * 24) * s;
       g.font = `${bold ? 700 : 400} ${13.5 * s}px system-ui, sans-serif`;
@@ -436,21 +460,22 @@ export async function startLife(ctx) {
     const factor = row[1];
     lineAt(0, 'Berth working', `${Math.round(factor * 100)}%`, factor > 0.95 ? '#81c784' : factor > 0.7 ? '#ffd54f' : '#ff7043', true);
     lineAt(1, `${units[0].toUpperCase() + units.slice(1)} handled`, big(handled));
-    lineAt(2, 'Lost to issues', `${big(lost)} ${units}`, lost > 0 ? '#ff8a65' : '#fff');
-    lineAt(3, 'Repairs', `${money(spend)} = ${big(spend / value)} ${units}`);
-    lineAt(4, 'Cost so far', `${big(cost)} ${units}`, '#fff', true);
-    lineAt(5, '', `≈ ${money(cost * value)}`, '#cfd8e3');
+    lineAt(2, 'Lost to failed parts', `${big(lost)} ${units}`, lost > 0 ? '#ff8a65' : '#fff');
+    lineAt(3, 'Lost to weather, events', `${big(otherLost)} ${units}`, '#cfd8e3');
+    lineAt(4, 'Repairs', `${money(spend)} = ${big(spend / value)} ${units}`);
+    lineAt(5, 'Cost so far', `${big(cost)} ${units}`, '#fff', true);
+    lineAt(6, '', `≈ ${money(cost * value)}`, '#cfd8e3');
     const other = policy === 'nothing' ? runs.fix : runs.nothing;
     if (other && other.rows.length) {
       const j = clamp(i, 0, other.rows.length - 1);
-      const oc = other.cumLost[j] + other.rows[j][5] / value;
+      const oc = other.cumLost[j] + other.cumOther[j] + other.rows[j][5] / value;
       g.font = `${12 * s}px system-ui, sans-serif`;
       g.fillStyle = Math.abs(oc - cost) < 1 ? '#cfd8e3' : oc > cost ? '#81c784' : '#ff8a65';
-      g.fillText(`${policy === 'nothing' ? 'Fixing as you go' : 'Doing nothing'}, by now: ${big(oc)} ${units}`, rx + 14 * s, 180 * s);
+      g.fillText(`${policy === 'nothing' ? 'Fixing as you go' : 'Doing nothing'}, by now: ${big(oc)} ${units}`, rx + 14 * s, 204 * s);
     }
     // Lower left: the last few things that happened.
-    const recent = run.events.filter((e) => e.m <= i && e.kind !== 'wait').slice(-4);
-    const colourOf = { warning: '#ffd54f', critical: '#ff7043', fix: '#81c784', close: '#ff8a65', condemned: '#e53935', weather: '#90caf9', info: '#90caf9' };
+    const recent = run.events.filter((e) => e.m <= i && e.kind !== 'wait' && !(e.kind === 'hazard' && e.risk === 'power_cuts' && policy !== 'nothing')).slice(-4);
+    const colourOf = { warning: '#ffd54f', critical: '#ff7043', fix: '#81c784', close: '#ff8a65', condemned: '#e53935', weather: '#90caf9', info: '#90caf9', hazard: '#ce93d8' };
     g.font = `${13 * s}px system-ui, sans-serif`;
     recent.forEach((e, n) => {
       const y = H - (78 + (recent.length - 1 - n) * 22) * s;
@@ -530,7 +555,7 @@ export async function startLife(ctx) {
     const upTo = run.events.filter((e) => e.m <= i);
     if (!force && upTo.length === shownEvents) return;
     shownEvents = upTo.length;
-    const cls = { fix: 'good', close: 'critical', condemned: 'critical', weather: 'info', info: 'info', wait: 'info' };
+    const cls = { fix: 'good', close: 'critical', condemned: 'critical', weather: 'info', info: 'info', wait: 'info', hazard: 'hazard' };
     if (log) {
       log.innerHTML = upTo.length ? upTo.slice(-14).reverse().map((e, n) =>
         `<li class="k-${cls[e.kind] || e.kind}" data-m="${e.m}"><time>Year ${Math.floor(e.m / 12) + 1}</time> ${esc(e.text)}</li>`).join('')
@@ -609,10 +634,74 @@ export async function startLife(ctx) {
   let lastPaint = 0;
   let lastText = 0;
   let lastClock = 0;
+  let shakeUntil = 0;
+  const warIndex = parts.findIndex((p) => p.kind === 'war');
   let visualT = 0;
   let droneAngle = 0;
   let free = false;
   renderer.domElement.addEventListener('pointerdown', () => { free = true; });
+
+  // --- a part's record: bought, guaranteed, expected to last, mended ---------------------------
+  const info = $('.mt-life-info');
+  const partSelect = $('.mt-life-part');
+  let shownPart = null;
+  let shownElement = null;
+  const dateOf = (m) => `${MONTHS[((m % 12) + 12) % 12]} ${run.start_year + Math.floor(m / 12)}`;
+  function showPart(p, element) {
+    shownPart = p;
+    shownElement = element || null;
+    partSelect.value = p ? String(p.index) : '';
+    info.hidden = !p;
+    if (p) drawInfo();
+  }
+  function drawInfo() {
+    const p = shownPart;
+    if (!p) return;
+    const meta = run.parts[p.index];
+    const now = Math.floor(simM);
+    const mine = run.events.filter((e) => e.part === p.id && e.m <= now);
+    const fixes = mine.filter((e) => e.kind === 'fix');
+    // A renewal (not a coat of protection on a wall that keeps its steel) restarts its dates.
+    const renewals = fixes.filter((e) => !/cathodic protection|patch and coat|clean the drains/i.test(e.text));
+    const installed = renewals.length ? renewals[renewals.length - 1].m : 0;
+    const age = (now - installed) / 12;
+    const life = meta.expected_life;
+    const warranty = meta.warranty;
+    const { stage, repairing, closed, worn } = decode(run.states[clamp(now, 0, run.states.length - 1)][p.index]);
+    const state = repairing ? 'being repaired' : closed ? 'closed off' : stage ? (run.stage_names[p.kind] || {})[stage] : worn < 22 ? 'good' : 'wearing';
+    const spent = fixes.reduce((a, e) => a + (e.cost || 0), 0);
+    const e = shownElement || {};
+    const rows = [
+      e.kind ? ['Element', `${esc(e.name)} · ${esc(e.kind.replace('_', ' '))}${e.material ? ', ' + esc(e.material) : ''}${e.zone ? ', ' + esc(e.zone) + ' zone' : ''}`] : null,
+      e.design_ur !== undefined && e.design_ur !== null ? ['Design UR', Number(e.design_ur).toFixed(2) + ' (Triton)'] : null,
+      ['Bought / installed', `${dateOf(installed)}${renewals.length ? ` (replaced ${renewals.length}×)` : ' (with the berth)'}`],
+      warranty !== null && warranty !== undefined ? ['Warranty', `${warranty} years, to ${dateOf(installed + warranty * 12)}: <span class="${age < warranty ? 'ok' : 'bad'}">${age < warranty ? 'in warranty' : 'expired'}</span>${meta.covers ? `<br><small>covers ${esc(meta.covers)}</small>` : ''}`] : null,
+      life ? ['Expected life', `${life} years, to ${dateOf(installed + life * 12)}: <span class="${age < life * 0.85 ? 'ok' : 'bad'}">${age.toFixed(1)} years old</span>`] : null,
+      ['Now', `<span class="${stage >= 2 || closed ? 'bad' : 'ok'}">${esc(state)}</span>, worn ${worn}%`],
+      ['Spent on it', fixes.length ? `${money(spent)} on ${fixes.length} repair${fixes.length > 1 ? 's' : ''}` : 'nothing yet'],
+    ].filter(Boolean);
+    const history = mine.filter((x) => ['warning', 'critical', 'fix', 'close', 'hazard', 'info'].includes(x.kind)).slice(-6).reverse();
+    info.innerHTML = `<button type="button" class="close" aria-label="Close">×</button>
+      <h3>${esc(p.name)}</h3>
+      <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+      ${history.length ? `<b>What happened to it</b><ul>${history.map((x) => `<li>${dateOf(x.m)}: ${esc(x.text)}</li>`).join('')}</ul>` : ''}`;
+    info.querySelector('.close').addEventListener('click', () => showPart(null));
+  }
+  partSelect.addEventListener('change', () => showPart(partSelect.value === '' ? null : parts[Number(partSelect.value)]));
+  const ray = new THREE.Raycaster();
+  let downAt = null;
+  renderer.domElement.addEventListener('pointerdown', (ev) => { downAt = [ev.clientX, ev.clientY]; });
+  renderer.domElement.addEventListener('pointerup', (ev) => {
+    if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1), camera);
+    const hit = ray.intersectObjects([...meshParts.keys()], false)[0];
+    if (!hit) { showPart(null); return; }
+    const ps = meshParts.get(hit.object);
+    // A mesh shared by bays (one deck slab): the bay under the click.
+    const p = ps.reduce((a, b) => (Math.abs(b.x - hit.point.x) < Math.abs(a.x - hit.point.x) ? b : a));
+    showPart(p, hit.object.userData.element);
+  });
   function tick(dt) {
     const real = Math.min((performance.now() - lastReal) / 1000, 0.25);
     lastReal = performance.now();
@@ -648,8 +737,7 @@ export async function startLife(ctx) {
         const mk = markers[n];
         mk.visible = stage > 0 && !repairing;
         if (mk.visible) {
-          const names = { fender: ['', 'worn', 'damaged', 'failed'], wall: ['', 'corroding', 'over allowance', 'unsafe'], deck: ['', 'cracking', 'spalling', 'delaminated'], bollard: ['', '', '', 'cracked'] };
-          const l = label(`${p.name} ${names[p.kind][stage]}${closed ? ' · closed' : ''}`, stage >= 2 ? '#e53935' : '#f9a825');
+          const l = label(`${p.name} ${(run.stage_names[p.kind] || {})[stage] || ''}${closed ? ' · closed' : ''}`, stage >= 2 ? '#e53935' : '#f9a825');
           if (mk.material.map !== l.tex) { mk.material.map = l.tex; mk.material.needsUpdate = true; }
           mk.scale.set(MARKER * l.aspect, MARKER, 1);
           mk.position.set(p.x, frame.top + 4 + (n % 4) * Math.max(3, spanX / 22), p.z + (p.kind === 'deck' ? 4 : 0));
@@ -712,6 +800,20 @@ export async function startLife(ctx) {
         lastClock = performance.now();
       }
     }
+    // The sea's rise, the floods, the smoke of a hit.
+    seaRise = w ? w.slr : 0;
+    const befell = run.befell[i] || [];
+    flood.visible = befell.includes('sea_level') || befell.includes('drainage');
+    flood.position.y = frame.top + 0.15 + 0.05 * Math.sin(performance.now() / 700);
+    const hitCode = warIndex >= 0 ? decode(codes[warIndex]) : null;
+    const burning = hitCode && (hitCode.stage >= 3 || hitCode.repairing);
+    for (const puff of smoke) {
+      puff.visible = !!burning;
+      if (!burning) continue;
+      const u = ((performance.now() / 6000) + puff.userData.phase) % 1;
+      puff.position.set(puff.userData.x + 8 * Math.sin(u * 6), frame.top + 4 + 60 * u, frame.front + 12 + 20 * u);
+      puff.scale.setScalar(0.6 + 1.8 * u);
+    }
     if (!free) {
       // A drone swinging to and fro over the water, looking at the quay face and the deck behind it.
       droneAngle += dt * 0.05;
@@ -719,6 +821,11 @@ export async function startLife(ctx) {
       const a = 0.95 * Math.sin(droneAngle);
       camera.position.set(berthX + r * Math.sin(a) * 0.9, frame.top + r * 0.5, frame.fenderFace - r * Math.cos(a) * 0.8);
       controls.target.set((frame.minX + frame.maxX) / 2, frame.top, frame.front + 6);
+    }
+    if (shakeUntil > performance.now()) {
+      const k = (shakeUntil - performance.now()) / 1800;
+      camera.position.x += (Math.random() - 0.5) * 3 * k;
+      camera.position.y += (Math.random() - 0.5) * 2 * k;
     }
     // Captions and lists.
     drawHud(hud, hudCanvas.width, hudCanvas.height, hudCanvas.height / 620);
@@ -734,8 +841,15 @@ export async function startLife(ctx) {
         else if (e.kind === 'fix' && policy !== 'game') say(e.text.split('. Paid')[0] + ` · ${money(e.cost)}`, '#81c784');
         else if (e.kind === 'critical' && policy === 'nothing') say(e.text.split('. ')[0], '#ff7043');
         else if (e.kind === 'weather') say('Great storm: berth stopped', '#90caf9');
+        else if (e.kind === 'hazard' && !['power_cuts', 'drainage'].includes(e.risk)) {
+          say({ earthquake: 'EARTHQUAKE', sea_level: 'The sea came over the quay', vessel_strike: 'A ship struck the quay', fire: 'Fire on the apron',
+            cyber: 'Cyber attack: systems locked', pandemic: 'Pandemic: trade down a quarter', war_indirect: 'War in the region: trade falls away',
+            war_direct: 'THE PORT WAS HIT' }[e.risk] || e.text.split(':')[0], '#ce93d8');
+          if (e.risk === 'earthquake') shakeUntil = performance.now() + 1800;
+        }
       }
       refreshLists(false);
+      if (shownPart) drawInfo();
     }
   }
 

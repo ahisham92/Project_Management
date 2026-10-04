@@ -21,6 +21,8 @@ import { Water } from 'three/addons/Water.js';
 const view = document.querySelector('.marine-view');
 // The live port (step 4) plays the next two days through the same scene: marinetwin-live.js drives it.
 const LIVE = view && view.dataset.mode === 'live';
+// The lifecycle (step 5) plays the whole design life through it: marinetwin-life.js drives that.
+const LIFE = view && view.dataset.mode === 'life';
 const pick = document.querySelector('.marine-pick');
 
 function css(name, fallback) {
@@ -874,8 +876,8 @@ async function main() {
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng);
   let vessel = null;
-  if (LIVE) {
-    // The live player brings the ships in and out itself.
+  if (LIVE || LIFE) {
+    // The live and lifecycle players bring the ships in and out themselves.
   } else if (twin.alongside) {
     const a = twin.alongside;
     vessel = ship(a.type, a.loa, a.beam, a.draught, rng);
@@ -932,7 +934,7 @@ async function main() {
       <label><input type="checkbox" class="marine-hud-move" checked> Operations moving</label>
     </div>`;
   view.appendChild(hud);
-  if (LIVE) hud.hidden = true;           // the live player has its own
+  if (LIVE || LIFE) hud.hidden = true;   // the players have their own
   const read = hud.querySelector('.marine-hud-read');
 
   // What the weather is: live from Open-Meteo where the browser can reach it.
@@ -1104,6 +1106,19 @@ async function main() {
     player = await startLive({
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
       ship, vehicle, box, REAL, BOX_COLOURS,
+      setClock(ms) { clock = ms; setTime(); },
+      setTide(fn) { tideSource = fn; },
+      setMoving(on) { moving = on; },
+    });
+  }
+
+  // The lifecycle: the design life month by month, the parts wearing and being mended on the model.
+  if (LIFE) {
+    progress(0.9, 'Running the design life', 0.08);
+    const { startLife } = await import('./marinetwin-life.js');
+    player = await startLife({
+      THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
+      ship, box, REAL, clickable, content,
       setClock(ms) { clock = ms; setTime(); },
       setTide(fn) { tideSource = fn; },
       setMoving(on) { moving = on; },

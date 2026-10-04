@@ -65,7 +65,7 @@
 .mt-step-t small { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
 .mt-step.s4 { --step: var(--series-4); } .mt-step.s5 { --step: var(--series-2); } .mt-step.s6 { --step: var(--series-5); }
-.mt-step.s7 { --step: var(--series-6); }
+.mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); }
 @media (max-width: 860px) {
   .mt-flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .mt-step { flex: 0 0 auto; max-width: none; }
@@ -171,4 +171,27 @@
   .mt-chips { justify-content: flex-start; }
   .mt-live-alert { top: auto; bottom: 120px; }
   .mt-live-cams button { padding: 4px 6px; }
+}
+
+/* The lifecycle: the design life as a video, with captions drawn on a canvas so a saved video has them. */
+.mt-life-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none !important; }
+.mt-life.recording .mt-life-rec { background: #c62828; color: #fff; font-weight: 600; }
+.mt-life-rec { margin-left: auto; }
+.mt-life-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 24px));
+  background: rgba(10, 18, 28, .92); color: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.mt-life-card h3 { margin: 2px 0 6px; font-size: 1.15rem; color: #fff; }
+.mt-life-card p { margin: 0 0 10px; color: #dbe3ec; }
+.mt-life-card-year { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #90caf9 !important; margin: 0 !important; }
+.mt-life-choices { display: grid; gap: 8px; }
+.mt-life-choices button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
+  background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; padding: 8px 12px; font: inherit; }
+.mt-life-choices button:hover, .mt-life-choices button:focus-visible { background: rgba(255,255,255,.18); outline: none; }
+.mt-life-choices button[data-act="fix"] { border-color: #43a047; }
+.mt-life-choices button[data-act="close"] { border-color: #e64a19; }
+.mt-life-choices button small { color: #cfd8e3; font-size: 12.5px; }
+.mt-life-open { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mt-life-open li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 640px) {
+  .mt-life-policies button { padding: 4px 6px; }
+  .mt-life-rec { margin-left: 0; }
 }

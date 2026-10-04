@@ -20,11 +20,11 @@ from flask import (
     Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
-from .. import marine, marine_facility, marine_ifc, marine_ops, marine_sim, marine_triton
+from .. import marine, marine_facility, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
 from ..marine_charts import (
-    carbon_months, env_chart, sea_forecast, sensor_trend, sim_gate, sim_ships, wind_forecast,
+    carbon_months, env_chart, life_costs, sea_forecast, sensor_trend, sim_gate, sim_ships, wind_forecast,
 )
 
 bp = Blueprint("marine", __name__, url_prefix="/marinetwin")
@@ -234,6 +234,47 @@ def live_json(asset_id: int):
         "calls": [{**c, "eta": iso(c["eta"]), "etd": iso(c["etd"])} for c in plan["calls"]],
         "events": [{**e, "at": iso(e["at"])} for e in plan["events"]],
     })
+
+
+def _life_rates() -> dict:
+    """The rates and prices the person changed, from the query string (the page's form) or a JSON body."""
+    body = request.get_json(silent=True) if request.is_json else None
+    given = body.get("rates") if isinstance(body, dict) else None
+    source = given if isinstance(given, dict) else request.args
+    keys = ("moves_per_day", "value_per_move", *marine_life.PRICES)
+    return {k: source.get(k) for k in keys if source.get(k) not in (None, "")}
+
+
+def _life_elements(asset_id: int):
+    return query("SELECT name, kind, material, zone, model_ref, x, y, z FROM marine_elements WHERE asset_id = ?"
+                 " ORDER BY x, name", (asset_id,))
+
+
+@bp.get("/assets/<int:asset_id>/lifecycle")
+@login_required
+def lifecycle(asset_id: int):
+    """The design life in a few minutes: doing nothing against fixing as you go, or deciding each issue."""
+    asset = _asset_or_404(asset_id)
+    given = _life_rates()
+    both = marine_life.compare(asset, _life_elements(asset_id), given)
+    rates = both["fix"]["rates"]
+    return render_template("marine/lifecycle.html", asset=asset, both=both, rates=rates, given=given,
+                           prices=[(k, marine_life.PRICE_NAMES[k], rates[k]) for k in marine_life.PRICES],
+                           chart=life_costs(marine_life.yearly(both["nothing"]), marine_life.yearly(both["fix"]),
+                                            both["fix"]["units"]),
+                           **_context())
+
+
+@bp.route("/assets/<int:asset_id>/lifecycle.json", methods=["GET", "POST"])
+@login_required
+def lifecycle_json(asset_id: int):
+    """One run of the design life: ``policy`` nothing, fix or game, and for a game the choices made so far."""
+    asset = _asset_or_404(asset_id)
+    body = request.get_json(silent=True) if request.is_json else None
+    body = body if isinstance(body, dict) else {}
+    policy = body.get("policy") or request.args.get("policy") or "fix"
+    choices = body.get("choices") if isinstance(body.get("choices"), list) else []
+    return jsonify(marine_life.run(asset, _life_elements(asset_id), policy, choices[:2000], _life_rates()))
 
 
 # --- beyond the structure ----------------------------------------------------------

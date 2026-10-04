@@ -19,12 +19,19 @@ from it, and the IFC text (ISO 10303-21) is simple enough to read for those:
 
 Anything the file does not carry is simply missing from the answer: nothing
 here fails on an IFC it does not fully understand.
+
+A Revit export runs to hundreds of megabytes, nearly all of it geometry the
+server never needs. So the file is not parsed whole: one pass notes where each
+entity starts, and only the entities the answer needs (the site, the property
+sets named MT_..., the elements and their placements) are read.
 """
 
 from __future__ import annotations
 
 import math
+import mmap
 import re
+from array import array
 from typing import Any
 
 # --- reading the STEP text -------------------------------------------------------------
@@ -106,9 +113,57 @@ def _decode(text: str) -> str:
     return text
 
 
-def parse(text: str) -> dict[int, tuple[str, list[Any]]]:
-    data = text.split("DATA;", 1)[-1]
-    return {int(m.group(1)): (m.group(2), _split(m.group(3))) for m in _ENTITY.finditer(data + "ENDSEC")}
+_HEAD = re.compile(rb"^[ \t]*#(\d+)[ \t]*=[ \t]*([A-Z0-9_]+)", re.M)
+_ONE = re.compile(rb"#(\d+)\s*=\s*([A-Z0-9_]+)\s*\((.*?)\)\s*;\s*(?=#\d+\s*=|ENDSEC|$)", re.S)
+# The types the answer is built from; everything else is reached by reference when needed.
+_WANTED = {b"IFCPROJECT", b"IFCSITE", b"IFCMAPCONVERSION", b"IFCSIUNIT", b"IFCCONVERSIONBASEDUNIT",
+           b"IFCGEOMETRICREPRESENTATIONCONTEXT", b"IFCRELDEFINESBYPROPERTIES", b"IFCRELDEFINESBYTYPE",
+           b"IFCRELCONTAINEDINSPATIALSTRUCTURE", b"IFCRELAGGREGATES", b"IFCPROPERTYSET"}
+
+
+class Model:
+    """An IFC file's entities, read on demand: get(id) gives (TYPE, [args])."""
+
+    def __init__(self, data: bytes | mmap.mmap):
+        self.data = data
+        start = data.find(b"DATA;")
+        self.offsets = array("q")
+        self.by_type: dict[str, list[int]] = {}
+        self._cache: dict[int, tuple[str, list[Any]] | None] = {}
+        offsets, by_type, wanted = self.offsets, self.by_type, _WANTED
+        for m in _HEAD.finditer(data, max(start, 0)):
+            eid = int(m.group(1))
+            if eid >= len(offsets):
+                offsets.extend([-1] * (eid - len(offsets) + 65536))
+            offsets[eid] = m.start(1) - 1
+            kind = m.group(2)
+            if kind in wanted:
+                by_type.setdefault(kind.decode(), []).append(eid)
+
+    def raw(self, eid: int) -> bytes | None:
+        """The entity's text, undecoded: for a quick look before parsing it."""
+        if eid < 0 or eid >= len(self.offsets) or self.offsets[eid] < 0:
+            return None
+        m = _ONE.match(self.data, self.offsets[eid])
+        return m.group(0) if m else None
+
+    def get(self, eid: int, default=None):
+        if eid in self._cache:
+            return self._cache[eid] or default
+        found = None
+        if 0 <= eid < len(self.offsets) and self.offsets[eid] >= 0:
+            m = _ONE.match(self.data, self.offsets[eid])
+            if m:
+                found = (m.group(2).decode(), _split(m.group(3).decode("utf-8", "replace")))
+        self._cache[eid] = found
+        return found or default
+
+    def of(self, kind: str) -> list[int]:
+        return self.by_type.get(kind, [])
+
+
+def parse(text: str | bytes) -> Model:
+    return Model(text.encode("utf-8") if isinstance(text, str) else text)
 
 
 # --- geometry helpers -------------------------------------------------------------------
@@ -181,10 +236,13 @@ def _angle(compound) -> float | None:
 
 def _length_scale(model) -> float:
     """Metres per model length unit."""
-    for kind, args in model.values():
-        if kind == "IFCSIUNIT" and len(args) >= 4 and args[1] == "LENGTHUNIT":
+    for eid in model.of("IFCSIUNIT"):
+        kind, args = model.get(eid)
+        if len(args) >= 4 and args[1] == "LENGTHUNIT":
             return {"MILLI": 0.001, "CENTI": 0.01, "DECI": 0.1, "KILO": 1000.0}.get(args[2], 1.0)
-        if kind == "IFCCONVERSIONBASEDUNIT" and len(args) >= 3 and args[1] == "LENGTHUNIT":
+    for eid in model.of("IFCCONVERSIONBASEDUNIT"):
+        kind, args = model.get(eid)
+        if len(args) >= 3 and args[1] == "LENGTHUNIT":
             return 0.3048 if "FOOT" in str(args[2]).upper() else 0.0254 if "INCH" in str(args[2]).upper() else 1.0
     return 1.0
 
@@ -253,14 +311,22 @@ def _kind_from_name(name: str) -> str | None:
     return None
 
 
-def read(text: str) -> dict[str, Any]:
-    model = parse(text)
+_MT_SET = re.compile(rb"IFCPROPERTYSET\s*\(\s*'[^']*'\s*,[^,]*,\s*'MT_")
+_REFS = re.compile(rb"#(\d+)")
+
+
+def read(text: str | bytes | mmap.mmap) -> dict[str, Any]:
+    model = text if isinstance(text, Model) else parse(text)
     scale = _length_scale(model)
 
     # Property sets, by the objects they are attached to (directly or through their type).
+    # Only MarineTwin's own sets (MT_...) are read: a Revit export has thousands of others.
+    mt_sets = {eid for eid in model.of("IFCPROPERTYSET") if _MT_SET.match(model.raw(eid) or b"", (model.raw(eid) or b"").find(b"IFCPROPERTYSET"))}
     psets: dict[int, dict[str, dict[str, Any]]] = {}
 
     def props_of(pset_ref) -> tuple[str, dict[str, Any]] | None:
+        if not (isinstance(pset_ref, tuple) and pset_ref[1] in mt_sets):
+            return None
         ent = _deref(model, pset_ref)
         if not ent or ent[0] != "IFCPROPERTYSET":
             return None
@@ -271,43 +337,56 @@ def read(text: str) -> dict[str, Any]:
                 out[str(pe[1][0])] = pe[1][2]
         return str(ent[1][2]), out
 
-    for kind, args in model.values():
-        if kind == "IFCRELDEFINESBYPROPERTIES":
-            found = props_of(args[5])
-            if found:
-                for obj in args[4] or []:
-                    psets.setdefault(obj[1], {}).setdefault(found[0], {}).update(found[1])
-    for kind, args in model.values():
-        if kind == "IFCRELDEFINESBYTYPE":
-            type_ent = _deref(model, args[5])
-            if not type_ent:
-                continue
-            type_sets = {}
-            # A type object's own property sets: HasPropertySets is its fifth attribute.
-            for ref in (type_ent[1][5] if len(type_ent[1]) > 5 and isinstance(type_ent[1][5], list) else []):
-                found = props_of(ref)
-                if found:
-                    type_sets.setdefault(found[0], {}).update(found[1])
-            type_sets_rel = psets.get(args[5][1], {})
+    for rid in model.of("IFCRELDEFINESBYPROPERTIES"):
+        raw = model.raw(rid) or b""
+        last = _REFS.findall(raw[raw.rfind(b","):]) if raw else []
+        if not last or int(last[-1]) not in mt_sets:
+            continue                                  # not one of ours: no need to read it
+        args = model.get(rid)[1]
+        found = props_of(args[5])
+        if found:
             for obj in args[4] or []:
-                mine = psets.setdefault(obj[1], {})
-                for name, values in list(type_sets.items()) + list(type_sets_rel.items()):
-                    merged = dict(values)
-                    merged.update(mine.get(name, {}))           # the instance's own value wins
-                    mine[name] = merged
+                psets.setdefault(obj[1], {}).setdefault(found[0], {}).update(found[1])
+    for rid in model.of("IFCRELDEFINESBYTYPE"):
+        raw = model.raw(rid) or b""
+        type_ref = _REFS.findall(raw[raw.rfind(b","):])
+        if not type_ref:
+            continue
+        type_id = int(type_ref[-1])
+        type_raw = model.raw(type_id) or b""
+        if type_id not in psets and not any(int(r) in mt_sets for r in _REFS.findall(type_raw)):
+            continue
+        args = model.get(rid)[1]
+        type_ent = _deref(model, args[5])
+        if not type_ent:
+            continue
+        type_sets = {}
+        # A type object's own property sets: HasPropertySets is its fifth attribute.
+        for ref in (type_ent[1][5] if len(type_ent[1]) > 5 and isinstance(type_ent[1][5], list) else []):
+            found = props_of(ref)
+            if found:
+                type_sets.setdefault(found[0], {}).update(found[1])
+        type_sets_rel = psets.get(type_id, {})
+        for obj in args[4] or []:
+            mine = psets.setdefault(obj[1], {})
+            for name, values in list(type_sets.items()) + list(type_sets_rel.items()):
+                merged = dict(values)
+                merged.update(mine.get(name, {}))           # the instance's own value wins
+                mine[name] = merged
 
     out: dict[str, Any] = {"length_unit_m": scale, "site": {}, "project": {}, "elements": []}
 
     # The project and its own MarineTwin settings.
-    for eid, (kind, args) in model.items():
-        if kind == "IFCPROJECT":
-            out["project"] = {"name": args[2] or "", **psets.get(eid, {}).get("MT_Project", {})}
-            break
+    for eid in model.of("IFCPROJECT"):
+        args = model.get(eid)[1]
+        out["project"] = {"name": args[2] or "", **psets.get(eid, {}).get("MT_Project", {})}
+        break
 
     # The site.
     site = {}
-    for eid, (kind, args) in model.items():
-        if kind == "IFCSITE":
+    for eid in model.of("IFCSITE")[:1]:
+        kind, args = model.get(eid)
+        if True:
             lat, lon = _angle(args[9] if len(args) > 9 else None), _angle(args[10] if len(args) > 10 else None)
             elev = args[11] if len(args) > 11 and isinstance(args[11], (int, float)) else None
             if lat is not None and lon is not None and not (lat == 0 and lon == 0):
@@ -315,7 +394,6 @@ def read(text: str) -> dict[str, Any]:
             if elev is not None:
                 site["elevation"] = round(float(elev) * scale, 3)
             site["name"] = args[2] or ""
-            break
     proj = out["project"]
     if "latitude" not in site:
         try:
@@ -326,8 +404,9 @@ def read(text: str) -> dict[str, Any]:
 
     # The map conversion: eastings, northings and the grid's rotation.
     rotation = None
-    for kind, args in model.values():
-        if kind == "IFCMAPCONVERSION":
+    for eid in model.of("IFCMAPCONVERSION")[:1]:
+        kind, args = model.get(eid)
+        if True:
             east, north, height = (float(args[2] or 0), float(args[3] or 0), float(args[4] or 0))
             abscissa = float(args[5]) if isinstance(args[5], (int, float)) else 1.0
             ordinate = float(args[6]) if isinstance(args[6], (int, float)) else 0.0
@@ -339,11 +418,11 @@ def read(text: str) -> dict[str, Any]:
             if "latitude" not in site and utm:
                 lat, lon = utm_to_latlon(east, north, *utm)
                 site.update(latitude=round(lat, 7), longitude=round(lon, 7), source=f"IfcMapConversion, {crs_name or proj.get('MT_EPSG')}")
-            break
     if rotation is None:
         # True north in the model's plan, from the main 3D context: the angle that turns it to north.
-        for kind, args in model.values():
-            if kind == "IFCGEOMETRICREPRESENTATIONCONTEXT" and len(args) > 5 and args[5] is not None:
+        for eid in model.of("IFCGEOMETRICREPRESENTATIONCONTEXT"):
+            kind, args = model.get(eid)
+            if len(args) > 5 and args[5] is not None:
                 nx, ny, _ = _direction(model, args[5], (0.0, 1.0, 0.0))
                 rotation = math.degrees(math.atan2(nx, ny))
                 break
@@ -360,14 +439,30 @@ def read(text: str) -> dict[str, Any]:
     # Element positions are kept relative to the site's own origin, so a site placed at its
     # map eastings and northings still gives positions in metres from the site.
     site_origin = (0.0, 0.0, 0.0)
-    for kind, args in model.values():
-        if kind == "IFCSITE" and isinstance(args[5], tuple):
+    for eid in model.of("IFCSITE")[:1]:
+        kind, args = model.get(eid)
+        if isinstance(args[5], tuple):
             ox, oy, _ = _placement(model, args[5])
             site_origin = (ox * scale, oy * scale, 0.0)   # elevations stay as modelled: mCD
             break
 
-    # The elements: products with a name MarineTwin can track.
-    for eid, (kind, args) in model.items():
+    # The elements: products with a name MarineTwin can track. They are the ones placed in
+    # the building (contained in a storey or site, or parts of an assembly), and anything
+    # carrying an MT_ property set.
+    candidates: dict[int, None] = {}
+    for rel_type, at in (("IFCRELCONTAINEDINSPATIALSTRUCTURE", 4), ("IFCRELAGGREGATES", 5)):
+        for rid in model.of(rel_type):
+            args = model.get(rid)[1]
+            for ref in (args[at] if len(args) > at and isinstance(args[at], list) else []):
+                if isinstance(ref, tuple):
+                    candidates[ref[1]] = None
+    for eid in psets:
+        candidates[eid] = None
+    for eid in sorted(candidates):
+        ent = model.get(eid)
+        if not ent:
+            continue
+        kind, args = ent
         if not kind.startswith("IFC") or kind in PRODUCT_SKIP or len(args) < 7:
             continue
         if kind.startswith("IFCREL") or kind.endswith("TYPE") or not isinstance(args[0], str) or len(args[0]) != 22:
@@ -410,10 +505,30 @@ def read(text: str) -> dict[str, Any]:
             "bollard_capacity": num(furniture.get("MT_BollardCapacity")),
             "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
         })
+    # Several elements often share one name: every pile of a design section is MP1-DS03. Each
+    # becomes its own element, numbered along the berth (MP1-DS03-01, -02, ...).
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for e in out["elements"]:
+        by_name.setdefault(e["name"], []).append(e)
+    for name, same in by_name.items():
+        if len(same) > 1:
+            same.sort(key=lambda e: (e["x"], e["y"], e["z"], e["global_id"]))
+            width = max(2, len(str(len(same))))
+            for i, e in enumerate(same, 1):
+                e["group"] = name
+                e["name"] = f"{name}-{i:0{width}d}"
     out["elements"].sort(key=lambda e: e["name"])
     return out
 
 
 def read_file(path) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        return read(f.read())
+    # Mapped rather than read: a 200 MB export is indexed in place, without a copy in memory.
+    with open(path, "rb") as f:
+        try:
+            buf = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        except ValueError:  # an empty file cannot be mapped
+            return read(b"")
+        try:
+            return read(buf)
+        finally:
+            buf.close()

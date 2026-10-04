@@ -101,12 +101,90 @@
     if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
     sail(a.dataset.voyage || 'Loading ' + (a.textContent.trim() || 'the page').replace(/\s+/g, ' ').slice(0, 40).toLowerCase());
   });
+  // The voyage stops and says what went wrong, with a way back to the page.
+  function wrecked(text) {
+    if (!leaving) sail('');
+    const { veil, v } = leaving;
+    leaving.slow = true;
+    v.element.classList.add('mt-voyage-failed');
+    v.element.querySelector('.mt-voyage-what').textContent = text;
+    v.element.querySelector('.mt-voyage-pct').textContent = '';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn btn-ghost btn-sm';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => { veil.remove(); leaving = null; });
+    v.element.appendChild(close);
+    close.focus();
+  }
+  const WHY = {
+    413: 'The file is too big for the server to take.',
+    502: 'The server stopped while reading the model. Try again; if it happens again, export fewer categories from Revit.',
+    504: 'The server took too long reading the model. Export fewer categories from Revit and try again.',
+  };
+
+  // Back to the same page (only the #section differs) the browser would just scroll: load it again.
+  function arrive(to) {
+    const u = new URL(to, location.href);
+    if (u.pathname === location.pathname && u.search === location.search) {
+      history.replaceState(null, '', u.href);
+      location.reload();
+    } else location.href = u.href;
+  }
+
+  // A file upload goes through the page so the voyage shows the bytes actually sent (to 80%),
+  // then creeps on while the server reads the model, and says so if it fails.
+  function upload(form) {
+    const words = form.dataset.voyage || 'Uploading';
+    sail(words);
+    const { v } = leaving;
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action);
+    xhr.setRequestHeader('X-MarineTwin-Xhr', '1');
+    xhr.timeout = 15 * 60 * 1000;
+    xhr.upload.addEventListener('progress', (e) => {
+      if (!e.lengthComputable) return;
+      const f = e.loaded / e.total;
+      const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+      if (f < 1) v.set(0.02 + 0.78 * f, `${words}: ${mb(e.loaded)} of ${mb(e.total)} MB sent`);
+      else v.set(0.8, 'Uploaded. The server is reading the model', 0.17);
+    });
+    xhr.addEventListener('load', () => {
+      let to = null;
+      try { to = JSON.parse(xhr.responseText).redirect; } catch (e) { /* not ours */ }
+      if (xhr.status < 400 && to) { v.done('Done').then(() => arrive(to)); return; }
+      if (xhr.status < 400) { document.open(); document.write(xhr.responseText); document.close(); return; }
+      wrecked(WHY[xhr.status] || `The server could not finish (error ${xhr.status}). Nothing was changed; try again, and tell the admin if it keeps happening.`);
+    });
+    xhr.addEventListener('error', () => wrecked('The connection dropped during the upload. Check the network and try again.'));
+    xhr.addEventListener('timeout', () => wrecked('No answer from the server after 15 minutes. Try again, or export a smaller model.'));
+    xhr.send(new FormData(form));
+  }
+
   document.addEventListener('submit', (ev) => {
     const form = ev.target;
     if (ev.defaultPrevented || form.method.toLowerCase() !== 'post') return;
+    const file = form.querySelector('input[type=file]');
+    if (file && file.files.length && window.FormData && window.XMLHttpRequest) {
+      ev.preventDefault();
+      upload(form);
+      return;
+    }
     // Let a confirm() in onsubmit say no first.
     setTimeout(() => { if (!ev.defaultPrevented) sail(form.dataset.voyage || 'Working on it'); }, 0);
   });
+
+  // A page that takes long to come back after a form is still on its way; after a while say so,
+  // so it never looks stuck without a word.
+  setInterval(() => {
+    if (!leaving || leaving.slow) return;
+    leaving.since = leaving.since || Date.now();
+    if (Date.now() - leaving.since > 45000) {
+      leaving.slow = true;
+      const what = leaving.v.element.querySelector('.mt-voyage-what');
+      what.textContent += ' (still working; a big model can take a minute or two)';
+    }
+  }, 5000);
 
   // On a phone the steps scroll sideways: bring the one the person is on into view.
   for (const flow of document.querySelectorAll('.mt-flow')) {

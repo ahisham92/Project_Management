@@ -237,6 +237,8 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
             continue
         if e["name"] in existing:
             row = existing[e["name"]]
+            if row is None:
+                continue                              # the same name twice in one model: the first is kept
             if row["model_ref"] != e["global_id"]:
                 conn.execute("UPDATE marine_elements SET model_ref = ? WHERE id = ?", (e["global_id"], row["id"]))
                 linked.append(e["name"])
@@ -256,6 +258,7 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
                          (element_id, sensor_kind, f"{e['name']}-{SENSOR_KINDS[sensor_kind]['tag']}1",
                           round(alarm * 0.8, 1) if alarm else None, alarm))
         made.append(e["name"])
+        existing[e["name"]] = None
     if made:
         refresh_simulated(conn, asset_id)
     return {"made": made, "linked": linked}

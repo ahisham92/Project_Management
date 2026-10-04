@@ -24,21 +24,23 @@
     <div class="card-body">
       {% if asset['model_file'] %}<p class="small">Now: <strong>{{ asset['model_name'] }}</strong>
         <a href="{{ url_for('marine.model', asset_id=asset['id']) }}">download</a></p>{% endif %}
-      <form method="post" action="{{ url_for('marine.upload_model', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <form method="post" action="{{ url_for('marine.upload_model', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" data-voyage="Uploading the model" style="flex-wrap:wrap;align-items:flex-end">
         <label class="field flex1"><span class="field-label">IFC or glTF file</span><input type="file" name="model" accept=".ifc,.glb,.gltf" required></label>
         <button type="submit" class="btn btn-primary">Upload</button>
       </form>
       {% if model_new %}
-      <form method="post" action="{{ url_for('marine.import_model_elements', asset_id=asset['id']) }}" style="margin-top:12px">
+      <form method="post" action="{{ url_for('marine.import_model_elements', asset_id=asset['id']) }}" style="margin-top:12px"
+            data-voyage="Importing the elements">
         <p class="small"><strong>{{ model_new | length }} element{{ 's' if model_new | length > 1 }} in the model that MarineTwin does not track yet.</strong>
           Each comes in with its kind, material and zone from MT_Common (or its name), its position, and the usual sensors for its kind.</p>
         <div class="marine-import">
-          {% for e in model_new %}
-            <label class="small"><input type="checkbox" name="names" value="{{ e['name'] }}" checked>
-              <strong>{{ e['name'] }}</strong> <span class="muted">{{ element_kind_name.get(e['kind'], e['kind']) }}, {{ e['material'] }}</span></label>
+          {% for kind, members in model_new | groupby('kind') %}
+            <label class="small"><input type="checkbox" name="kinds" value="{{ kind }}" checked>
+              <strong>{{ element_kind_name.get(kind, kind) }}</strong> <span class="tabular">({{ members | length }})</span>
+              <span class="muted">{{ members[:3] | map(attribute='name') | join(', ') }}{% if members | length > 3 %}, …{% endif %}</span></label>
           {% endfor %}
         </div>
-        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px">Import the ticked elements</button>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px">Import the ticked kinds</button>
       </form>
       {% elif model_found %}
         <p class="small muted" style="margin-top:8px">Every element the model names is tracked here{% if model_found['elements'] %} ({{ model_found['elements'] | length }}){% endif %}.</p>
@@ -158,7 +160,7 @@
       <p class="small muted" style="margin-top:2px">A logger export as CSV with the columns <code>sensor</code> (its label),
         <code>at</code> (date or date and time) and <code>value</code>. A sensor that gets real readings stops being simulated.</p></div></div>
     <div class="card-body">
-      <form method="post" action="{{ url_for('marine.import_readings', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <form method="post" action="{{ url_for('marine.import_readings', asset_id=asset['id']) }}" enctype="multipart/form-data" class="inline-form" data-voyage="Uploading the model" style="flex-wrap:wrap;align-items:flex-end">
         <label class="field flex1"><span class="field-label">CSV file</span><input type="file" name="file" accept=".csv,text/csv" required></label>
         <button type="submit" class="btn btn-primary">Import</button>
       </form>

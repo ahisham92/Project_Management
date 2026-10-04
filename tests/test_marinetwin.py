@@ -707,11 +707,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/live", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 6 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 7 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 6 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 7 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -772,3 +772,32 @@ def test_the_3d_view_keeps_the_shapes_it_built(app, signed_in):
     assert signed_in.post(twin["model_shapes"], data=shapes).status_code == 409
     signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")
     assert signed_in.get(twin["model_shapes"]).status_code == 404
+
+
+def test_the_live_port_plays_two_days_at_the_berth(signed_in, demo):
+    page = text(signed_in.get(demo + "/live"))
+    assert 'data-mode="live"' in page and "/live.json" in page and "Duty log" in page
+    plan = signed_in.get(demo + "/live.json").get_json()
+    assert len(plan["hours"]) == 49 and plan["calls"] and plan["events"]
+    hour = plan["hours"][0]
+    assert {"wind", "gust", "hs", "tide", "rain", "visibility", "equipment", "berthing"} <= set(hour)
+    starts = [c["eta"] for c in plan["calls"]]
+    assert starts == sorted(starts)
+    for before, after in zip(plan["calls"], plan["calls"][1:]):
+        assert after["eta"] >= before["etd"]                       # one ship at a time on the berth
+
+
+def test_ships_berth_only_inside_the_weather_limits():
+    now = datetime(2026, 10, 4, 12)
+    for asset_id in range(1, 30):
+        plan = marine_ops.live(asset_id, now, "container")
+        by_hour = {h["at"]: h for h in plan["hours"]}
+        for c in plan["calls"]:
+            if c["eta"] > plan["start"]:
+                hour = by_hour[c["eta"].replace(minute=0, second=0, microsecond=0)]
+                before = by_hour.get(hour["at"] - timedelta(hours=1), hour)
+                assert hour["berthing"] and before["berthing"], (asset_id, c["name"])
+        for h in plan["hours"]:
+            for kit in h["equipment"]:
+                if h["gust"] >= marine_ops.LIMITS["crane_stop_gust"]:
+                    assert kit["state"] in ("stopped", "stowed")

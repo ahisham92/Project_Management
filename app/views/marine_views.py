@@ -212,6 +212,30 @@ def operations(asset_id: int):
                            sea_chart=sea_forecast(ops["weather"], ops["limits"]), **_context())
 
 
+@bp.get("/assets/<int:asset_id>/live")
+@login_required
+def live(asset_id: int):
+    """The port as a camera would see it: the next two days played back at 10× or faster."""
+    asset = _asset_or_404(asset_id)
+    return render_template("marine/live.html", asset=asset, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/live.json")
+@login_required
+def live_json(asset_id: int):
+    """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
+    asset = _asset_or_404(asset_id)
+    now = datetime.now()
+    plan = marine_ops.live(asset_id, now, asset["terminal_type"])
+    iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
+    return jsonify({
+        "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
+        "hours": [{**h, "at": iso(h["at"])} for h in plan["hours"]],
+        "calls": [{**c, "eta": iso(c["eta"]), "etd": iso(c["etd"])} for c in plan["calls"]],
+        "events": [{**e, "at": iso(e["at"])} for e in plan["events"]],
+    })
+
+
 # --- beyond the structure ----------------------------------------------------------
 
 @bp.get("/assets/<int:asset_id>/simulation")

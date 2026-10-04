@@ -19,6 +19,8 @@ import { Sky } from 'three/addons/Sky.js';
 import { Water } from 'three/addons/Water.js';
 
 const view = document.querySelector('.marine-view');
+// The live port (step 4) plays the next two days through the same scene: marinetwin-live.js drives it.
+const LIVE = view && view.dataset.mode === 'live';
 const pick = document.querySelector('.marine-pick');
 
 function css(name, fallback) {
@@ -84,6 +86,7 @@ const REAL_FOR_KIND = {
 const BOX_COLOURS = [0x1f4e8c, 0xe2b007, 0x2a7ab0, 0xb3261e, 0x2e7d32, 0xe0e0e0, 0xef6c00, 0x5d4037, 0x00838f, 0x8e24aa];
 
 function showElement(element) {
+  if (!pick) return;                    // the live port has no side panel
   if (!element) {
     pick.innerHTML = '<p class="small muted">Click an element to see its sensors.</p>';
     return;
@@ -477,7 +480,7 @@ function stsCrane(state) {
   trolley.add(spreader);
   trolley.position.set(0, 43, -20);
   if (state !== 'stowed') g.add(trolley);
-  g.userData = { trolley, spreader, working: state === 'working', gauge };
+  g.userData = { trolley, spreader, boom, working: state === 'working', gauge };
   return g;
 }
 
@@ -734,16 +737,16 @@ function terminal(scene, frame, twin, rng) {
     }
   }
   // Road trucks on the access road at the back.
-  loops.push({ curve: loop([[centre - 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 2], [centre - 400, front + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6 });
+  loops.push({ curve: loop([[centre - 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 2], [centre - 400, front + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
   for (const l of loops) {
     for (let k = 0; k < l.n; k++) {
       const v = vehicle(l.kind, [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825, 0x2e7d32, 0x37474f][Math.floor(rng() * 6)]);
       g.add(v);
-      movers.push({ object: v, curve: l.curve, offset: k / l.n + rng() * 0.05, speed: (l.kind === 'car' ? 7 : 6) / l.curve.getLength() });
+      movers.push({ object: v, curve: l.curve, offset: k / l.n + rng() * 0.05, speed: (l.kind === 'car' ? 7 : 6) / l.curve.getLength(), apron: !l.road });
     }
   }
   scene.add(g);
-  return { group: g, movers, cranes, lights, kind };
+  return { group: g, movers, cranes, lights, kind, yardDepth };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -871,7 +874,9 @@ async function main() {
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng);
   let vessel = null;
-  if (twin.alongside) {
+  if (LIVE) {
+    // The live player brings the ships in and out itself.
+  } else if (twin.alongside) {
     const a = twin.alongside;
     vessel = ship(a.type, a.loa, a.beam, a.draught, rng);
     vessel.position.set((frame.minX + frame.maxX) / 2, 0, frame.fenderFace - a.beam / 2 - 0.4);
@@ -927,6 +932,7 @@ async function main() {
       <label><input type="checkbox" class="marine-hud-move" checked> Operations moving</label>
     </div>`;
   view.appendChild(hud);
+  if (LIVE) hud.hidden = true;           // the live player has its own
   const read = hud.querySelector('.marine-hud-read');
 
   // What the weather is: live from Open-Meteo where the browser can reach it.
@@ -943,7 +949,9 @@ async function main() {
     : null;
   const simTides = (sim.tides || []).map((t) => [Date.parse(t.at), t.tide]);
 
+  let tideSource = null;                 // the live player's tide, when it plays its own timeline
   function tideAt(when) {
+    if (tideSource) return tideSource(when);
     // Sea level above chart datum: the live sea level on the site's MSL, or the simulated tide.
     const series = seaLevels && seaLevels.length ? seaLevels.map(([t, v]) => [t, v + (twin.asset.msl_cd || 0)]) : simTides;
     if (!series.length) return 1.0;
@@ -978,8 +986,9 @@ async function main() {
   sky.material.uniforms.mieDirectionalG.value = 0.8;
 
   let lastEnv = -99;
+  let clock = null;                      // the live player's clock, when it runs one
   function setTime() {
-    const when = new Date(Date.now() + offsetHours * 3600000);
+    const when = clock ? new Date(clock) : new Date(Date.now() + offsetHours * 3600000);
     const { alt, az } = sunPosition(when, lat, lon);
     // Sun direction, geographic to the model's frame (x along the berth, -z to the sea side).
     const east = Math.cos(alt) * Math.sin(az);
@@ -1087,19 +1096,37 @@ async function main() {
     renderer.setSize(view.clientWidth, view.clientHeight);
   });
 
+  // The live port: the player takes over the clock, the ships, the cranes and the weather.
+  let player = null;
+  if (LIVE) {
+    progress(0.8, 'Loading the next two days at the berth', 0.1);
+    const { startLive } = await import('./marinetwin-live.js');
+    player = await startLive({
+      THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
+      ship, vehicle, box, REAL, BOX_COLOURS,
+      setClock(ms) { clock = ms; setTime(); },
+      setTide(fn) { tideSource = fn; },
+      setMoving(on) { moving = on; },
+    });
+  }
+
   // The terminal at work.
-  const clock = new THREE.Clock();
+  const timer = new THREE.Clock();
   let t = 0;
   const point = new THREE.Vector3();
   const ahead = new THREE.Vector3();
   function animate() {
-    const dt = Math.min(clock.getDelta(), 0.1);
-    water.material.uniforms.time.value += dt * 0.6 * (1 + hs);
+    const dt = Math.min(timer.getDelta(), 0.1);
+    water.material.uniforms.time.value += dt * 0.6 * (1 + (player ? player.hs : hs));
+    if (player) player.tick(dt);
     if (moving) {
-      t += dt;
+      const pace = player ? player.pace : 1;
+      t += dt * pace;
       for (const m of site.movers) {
         if (m.curve) {
-          const u = (m.offset + t * m.speed) % 1;
+          if (player && m.apron && !player.working) continue;      // nothing to carry: the apron waits
+          m.u = ((m.u ?? m.offset) + dt * pace * m.speed) % 1;
+          const u = m.u;
           m.curve.getPointAt(u, point);
           m.curve.getPointAt((u + 0.002) % 1, ahead);
           m.object.position.copy(point);
@@ -1110,7 +1137,7 @@ async function main() {
           m.object.position[m.swing.axis] = m.swing.from + (m.swing.to - m.swing.from) * s;
         }
       }
-      for (const c of site.cranes) {
+      for (const c of player ? [] : site.cranes) {     // the live player works the cranes itself
         const u = c.userData;
         if (u.trolley && u.working) {
           const s = (Math.sin(t * 0.35 + c.position.x) + 1) / 2;

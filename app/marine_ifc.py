@@ -303,8 +303,21 @@ TERMINALS = {"container": "container", "general_cargo": "general_cargo", "genera
              "multipurpose": "multipurpose", "multi-purpose": "multipurpose"}
 
 
+# The legend tags of DAR's Revit quay models: MP1-DS03 is middle pile 1 of design section 3,
+# RP a rear pile, FKS and FKC a front king pile (steel and its concrete fill), L1/L2 a lowered
+# pile, SPW a sheet pile wall.
+LEGEND_KIND = [
+    (re.compile(r"(?:MP|RP|FP|P)\d*(?:-DS\d+)?(?:-?L\d)?"), "pile"),
+    (re.compile(r"FK[SC]\d*(?:-DS\d+)?(?:-?L\d)?"), "pile"),
+    (re.compile(r"SPW\d*(?:-DS\d+)?"), "sheet_pile"),
+]
+
+
 def _kind_from_name(name: str) -> str | None:
     up = name.upper()
+    for pattern, kind in LEGEND_KIND:
+        if pattern.fullmatch(up):
+            return kind
     for prefix, kind in NAME_KIND:
         if re.fullmatch(prefix + r"[-_ ]?\d+[A-Z]?|" + prefix + r"-[A-Z]+", up):
             return kind

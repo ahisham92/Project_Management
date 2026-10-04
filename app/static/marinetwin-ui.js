@@ -47,7 +47,7 @@
       box.querySelector('.mt-voyage').classList.toggle('moored', shown >= 0.9995);
     }
     function tick(now) {
-      const dt = Math.min((now - last) / 1000, 0.25);
+      const dt = Math.max(0, Math.min((now - last) / 1000, 0.25));   // a frame stamped before go() ran
       last = now;
       if (target > shown) shown = Math.min(target, shown + Math.max(0.25 * dt, (target - shown) * Math.min(1, 4 * dt)));
       else if (creep > shown && target < 1) shown = Math.min(creep, shown + (creep - shown) * 0.35 * dt + 0.004 * dt);

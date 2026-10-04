@@ -66,6 +66,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     from .views.admin_views import bp as admin_bp
     from .views.auth_views import bp as auth_bp
     from .views.home_views import bp as home_bp
+    from .views.marine_views import bp as marine_bp
     from .views.meetings_views import bp as meetings_bp
     from .views.portfolio_views import bp as portfolio_bp
     from .views.projects_views import bp as projects_bp
@@ -80,6 +81,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     app.register_blueprint(assistant_bp)
     app.register_blueprint(crs_bp)
     app.register_blueprint(specs_bp)
+    app.register_blueprint(marine_bp)
 
     @app.get("/healthz")
     def _healthz():

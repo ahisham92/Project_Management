@@ -1,0 +1,91 @@
+{# MarineTwin's small pieces: a condition badge and a health figure. #}
+{% from "partials/bits.html" import badge %}
+
+{% macro state_badge(state, title='') %}
+  {% set words = {'good': 'Good', 'warning': 'Watch', 'critical': 'Act', 'neutral': 'No data'} %}
+  {{ badge(state, words[state], title) }}
+{% endmacro %}
+
+{% macro health(value) %}
+  {% if value is none %}<span class="muted">—</span>
+  {% else %}<span class="tabular {{ 'state-critical' if value < 40 else 'state-warning' if value < 70 else '' }}">{{ value }}</span>{% endif %}
+{% endmacro %}
+
+{% macro ur(value) %}
+  {% if value is none %}<span class="muted">—</span>
+  {% elif value > 1e9 %}<span class="state-critical">no section left</span>
+  {% else %}<span class="tabular {{ 'state-critical' if value > 1 }}">{{ '%.2f' | format(value) }}</span>{% endif %}
+{% endmacro %}
+
+{# The steps, from the asset list on: where the person is and what comes next. The four facility
+   pages share step 6 and get their own tabs under it. Every MarineTwin page calls this, so it also
+   brings the page furniture (the ship loader and section tabs, marinetwin-ui.js). #}
+{% macro asset_tabs(asset=None) %}
+  {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
+                     ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
+  {% set here = request.endpoint %}
+  {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}
+  {% set steps = [
+      ('marine.index', 'Assets', asset['name'] if asset else 'pick or add one', ['marine.index']),
+      ('marine.setup', 'Set up', 'model, place, details', ['marine.setup']),
+      ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
+      ('marine.operations', 'Operations', 'now, next, what to do', ['marine.operations']),
+      ('marine.simulation', 'Simulation', 'scenarios, bottleneck', ['marine.simulation']),
+      ('marine.equipment', 'Facility', 'equipment, air, carbon, safety', facility | map('first') | list)] %}
+  <nav class="mt-flow" aria-label="MarineTwin steps">
+    {% for endpoint, label, note, covers in steps %}
+      {% set n = loop.index %}
+      {% set state = 'here' if here in covers else 'off' if (not asset and n > 1) else 'done' if (n == 1 or (n == 2 and ready)) else '' %}
+      <a class="mt-step s{{ n }} {{ state }}" data-voyage="Opening {{ label | lower }}" {% if here in covers %}aria-current="page"{% endif %}
+         href="{{ url_for(endpoint) if n == 1 else url_for(endpoint, asset_id=asset['id']) if asset else '#' }}">
+        <span class="mt-step-n">{{ '✓' if state == 'done' else n }}</span>
+        <span class="mt-step-t"><b>{{ label }}</b><small>{{ note }}</small></span>
+      </a>
+    {% endfor %}
+  </nav>
+  {% if asset and here in facility | map('first') | list %}
+  <nav class="tabs" style="margin:0 0 16px">
+    {% for endpoint, label in facility %}
+      <a href="{{ url_for(endpoint, asset_id=asset['id']) }}" class="{{ 'active' if here == endpoint }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  <script src="{{ url_for('static', filename='marinetwin-ui.js') }}" defer></script>
+{% endmacro %}
+
+{% macro page_head(asset, subtitle) %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>{{ asset['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">{{ subtitle }}</p>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro actions_card(actions, empty_text, intro='Most pressing first.') %}
+<div class="card">
+  <div class="card-head"><div><h2>What to do</h2><p class="small muted" style="margin-top:2px">{{ intro }}</p></div></div>
+  <div class="card-body">
+    {% if actions %}
+    <ul class="marine-advice">
+      {% for one in actions[:5] %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['area'] }}</strong>{% if one.get('when') %} <span class="muted">· {{ one['when'] }}</span>{% endif %}<br>{{ one['text'] }}</li>
+      {% endfor %}
+    </ul>
+    {% if actions | length > 5 %}
+    <details class="mt-more"><summary>Show {{ actions | length - 5 }} more</summary>
+    <ul class="marine-advice">
+      {% for one in actions[5:] %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['area'] }}</strong>{% if one.get('when') %} <span class="muted">· {{ one['when'] }}</span>{% endif %}<br>{{ one['text'] }}</li>
+      {% endfor %}
+    </ul></details>
+    {% endif %}
+    {% else %}<p class="muted">{{ empty_text }}</p>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro bar(percent, state='') %}
+  <div class="marine-meter"><div class="marine-bar {{ 'marine-bar-' ~ state if state }}" style="width:{{ [percent, 100] | min }}%"></div></div>
+{% endmacro %}

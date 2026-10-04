@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty %}
+{% from "marine/_macros.html" import state_badge, health, ur, asset_tabs %}
+{% block title %}{{ element['name'] }} · {{ asset['name'] }} · MarineTwin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /
+      <a href="{{ url_for('marine.asset', asset_id=asset['id']) }}">{{ asset['name'] }}</a> /</p>
+    <h1>{{ element['name'] }} {{ state_badge(mine['state']) }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ element_kind_name.get(element['kind']) }}, {{ element['material'] }}, {{ zone_name.get(element['zone'])|lower }} zone
+      {% if element['wall_mm'] %} · {{ element['wall_mm'] }} mm wall{% endif %}
+      {% if element['model_ref'] %} · model reference {{ element['model_ref'] }}{% endif %}
+    </p>
+  </div>
+</div>
+
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Health', mine['health'] if mine['health'] is not none else '—', 'its worst sensor, out of 100') }}
+  {% if mine['furniture'] %}
+    {% set inspection = mine['sensors'] | selectattr('kind', 'equalto', 'inspection') | list %}
+    {% if element['kind'] == 'fender' and twin['ratings']['fender'] %}
+      {{ tile('Rated reaction', '{:,.0f} kN'.format(twin['ratings']['fender']), twin['ratings']['fender_name'] or twin['ratings']['source']) }}
+    {% elif element['kind'] == 'bollard' and twin['ratings']['bollard'] %}
+      {{ tile('Rated capacity', '{:,.0f} t'.format(twin['ratings']['bollard']), twin['ratings']['source']) }}
+    {% else %}
+      {{ tile('Type', element_kind_name.get(element['kind']), 'quay furniture') }}
+    {% endif %}
+    {{ tile('Last inspection', ('Grade ' ~ (inspection[0]['latest'] | int)) if inspection and inspection[0]['latest'] is not none else '—',
+            short_date(inspection[0]['latest_at']) if inspection and inspection[0]['latest_at'] else 'none recorded') }}
+    {{ tile('Sensors', mine['sensors'] | length, 'readings and inspections') }}
+  {% else %}
+  {{ tile('Design UR', '%.2f' | format(mine['design_ur']) if mine['design_ur'] is not none else '—',
+          'from Triton' if mine['design_from'] == 'Triton' else ('typed in' if mine['design_from'] else 'not known yet')) }}
+  {{ tile('UR at end of life',
+          ('no section left' if mine['ur_at_life'] > 1e9 else '%.2f' | format(mine['ur_at_life'])) if mine['ur_at_life'] is not none else '—',
+          'design UR with the projected section loss',
+          'critical' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else 'neutral',
+          'over capacity' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else '') }}
+  {{ tile('Corrosion allowance', ('%.2f mm' | format(mine['allowance'])) if mine['allowance'] else '—',
+          ('per face over ' ~ life ~ ' years') if mine['allowance'] else 'not steel, or not exposed') }}
+  {% endif %}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="Sensors" data-slug="sensors" data-count="{{ mine['sensors'] | length }}">
+{% if mine['advice'] %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head"><div><h2>What to do</h2></div></div>
+  <div class="card-body"><ul class="marine-advice">
+    {% for one in mine['advice'] %}<li>{{ state_badge(one['state']) }} {{ one['text'] }}</li>{% endfor %}
+  </ul></div>
+</div>
+{% endif %}
+
+{% for s in mine['sensors'] %}
+<div class="card" {% if not loop.first %}style="margin-top:16px"{% endif %}>
+  <div class="card-head">
+    <div>
+      <h2>{{ s['label'] }} <span class="small muted">{{ s['kind_name'] }}, {{ s['unit'] }}{% if s['simulated'] %}, simulated{% endif %}</span></h2>
+      <p class="small" style="margin-top:2px">{{ state_badge(s['state']) }} {{ s['headline'] }}
+        {% if s['silent'] %}<span class="state-warning">silent since {{ short_date(s['latest_at']) }}</span>{% endif %}</p>
+      {% if s.get('fit_a') is not none %}
+        <p class="small muted">Fitted loss = {{ '%.3f' | format(s['fit_a']) }}·t<sup>{{ '%.2f' | format(s['fit_b']) }}</sup> mm, t in years since commissioning;
+          {{ '%.2f' | format(s['projected_at_life']) }} mm by the end of the design life{% if s['exhausted_year'] %}, the allowance used up around {{ s['exhausted_year'] | int }}{% endif %}.</p>
+      {% endif %}
+    </div>
+    <form method="post" action="{{ url_for('marine.delete_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"
+          onsubmit="return confirm('Remove this sensor and its readings?')">
+      <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+    </form>
+  </div>
+  <div class="card-body">
+    {% if s.get('limit_source') and s['limit_source'] not in ('default', 'set on the sensor') %}
+      <p class="small muted">Limits from the rating in {{ s['limit_source'] }}: alert at 80% ({{ '{:,.0f}'.format(s['alert']) }} {{ s['unit'] }}),
+        alarm at the rating ({{ '{:,.0f}'.format(s['alarm']) }} {{ s['unit'] }}).</p>
+    {% endif %}
+    {{ charts[s['id']] }}
+    {% if s['kind'] == 'inspection' and history[s['id']] %}
+      <div class="table-scroll" style="margin-top:8px"><table class="table">
+        <thead><tr><th>Inspected</th><th>Grade</th><th>What was seen</th></tr></thead>
+        <tbody>{% for r in history[s['id']] | reverse %}
+          <tr><td class="small nowrap">{{ short_date(r['at']) }}</td><td class="small nowrap">{{ r['value'] | int }}: {{ grade_name[r['value'] | int] }}</td>
+              <td class="small">{{ r['note'] or '—' }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card" style="margin-top:16px"><div class="card-body">
+  {{ empty('No sensors on this element', 'Add one under Sensors and details; a simulated one starts with a history up to today.') }}
+</div></div>
+{% endfor %}
+
+</section>
+
+<section class="mt-panel" data-tab="Record an inspection" data-slug="inspection">
+<div class="card">
+  <div class="card-head"><div><h2>Record an inspection</h2>
+    <p class="small muted" style="margin-top:2px">What the inspector saw, graded 1 (as new) to 5 (failed). A 3 is watched, a 4 or 5 is acted on,
+      and the note goes with it into the recommendations. Damage no sensor can see (a torn fender, spalled concrete, a bent ladder) is reported this way.</p></div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.record_inspection', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="field w-lg"><span class="field-label">Inspected on</span><input type="date" name="at" value="{{ twin['today'] }}" required></label>
+      <label class="field w-lg"><span class="field-label">Grade</span>
+        <select name="grade" required>{% for g, w in grades %}<option value="{{ g }}">{{ g }}: {{ w }}</option>{% endfor %}</select></label>
+      <label class="field flex1"><span class="field-label">What was seen</span><input type="text" name="note" placeholder="e.g. cone torn at the lower flange; two panel pads missing"></label>
+      <button type="submit" class="btn btn-primary">Record it</button>
+    </form>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Sensors and details" data-slug="edit">
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><div><h2>Add a sensor</h2>
+      <p class="small muted" style="margin-top:2px">Leave the limits empty to use the defaults: strain at half and three quarters of S355's yield strain,
+        chlorides at 0.2 and 0.4% of cement, cracks at 0.2 and 0.3 mm, half-cell at −200 and −350 mV, rails at 5 and 10 mm,
+        and a fender's reaction or a bollard's load at 80 and 100% of its rating in Triton. Thickness loss is judged against the design allowance.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.add_sensor', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field w-lg"><span class="field-label">Measures</span>
+          <select name="kind">{% for k, v in sensor_kinds.items() %}<option value="{{ k }}">{{ v['name'] }} ({{ v['unit'] }})</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Label</span><input type="text" name="label" placeholder="{{ element['name'] }}-SG2"></label>
+        <label class="field w-md"><span class="field-label">Alert</span><input type="number" step="any" name="alert" placeholder="default"></label>
+        <label class="field w-md"><span class="field-label">Alarm</span><input type="number" step="any" name="alarm" placeholder="default"></label>
+        <label class="small"><input type="checkbox" name="simulated" value="1" checked> Simulate it</label>
+        <button type="submit" class="btn btn-primary">Add it</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>The element</h2></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.edit_element', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="field w-lg"><span class="field-label">Type</span>
+          <select name="kind">{% for k, n in element_kinds %}<option value="{{ k }}" {{ 'selected' if k == element['kind'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Material</span>
+          <select name="material">{% for k, n in materials %}<option value="{{ k }}" {{ 'selected' if k == element['material'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-lg"><span class="field-label">Zone</span>
+          <select name="zone">{% for k, n in zones %}<option value="{{ k }}" {{ 'selected' if k == element['zone'] }}>{{ n }}</option>{% endfor %}</select></label>
+        <label class="field w-md"><span class="field-label">Steel wall (mm)</span><input type="number" step="0.1" name="wall_mm" value="{{ element['wall_mm'] if element['wall_mm'] is not none }}"></label>
+        <label class="field w-md"><span class="field-label">Design UR</span><input type="number" step="0.01" name="design_ur" value="{{ element['design_ur'] if element['design_ur'] is not none }}" placeholder="from Triton"></label>
+        <label class="field w-md"><span class="field-label">Name in Triton</span><input type="text" name="triton_element" value="{{ element['triton_element'] }}" placeholder="{{ element['name'] }}"></label>
+        <label class="field w-lg"><span class="field-label">Model reference</span><input type="text" name="model_ref" value="{{ element['model_ref'] }}"></label>
+        <label class="field w-sm"><span class="field-label">x</span><input type="number" step="0.1" name="x" value="{{ element['x'] }}"></label>
+        <label class="field w-sm"><span class="field-label">y</span><input type="number" step="0.1" name="y" value="{{ element['y'] }}"></label>
+        <label class="field w-sm"><span class="field-label">z</span><input type="number" step="0.1" name="z" value="{{ element['z'] }}"></label>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+      <form method="post" action="{{ url_for('marine.delete_element', asset_id=asset['id'], element_id=element['id']) }}" style="margin-top:12px"
+            onsubmit="return confirm('Remove this element, its sensors and their readings?')">
+        <button type="submit" class="btn btn-danger btn-sm">Remove this element</button>
+      </form>
+    </div>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}

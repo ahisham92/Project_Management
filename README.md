@@ -16,6 +16,7 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Project Management** | Everything described in this README — programme, progress, budget, the register, the resource plan, the minutes. | `/projects` |
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
 | **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
+| **MarineTwin** | The digital twin of a structure after handover: its Revit model in 3D, its sensors, and its condition judged against the design Triton did for it. | `/marinetwin` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -440,6 +441,150 @@ the Admin page. Only administrators change the library, the options and the hous
 anybody given the program writes project specifications.
 
 ---
+
+### About MarineTwin (digital twin of marine structures)
+
+Once a quay, jetty or dolphin is handed over, MarineTwin follows it through its life. Each
+**asset** is made of **elements**: the structure (piles, combi wall panels, beams, the deck) and
+its **quay furniture** (fenders, bollards, crane rails, crane stoppers, storm pins, ladders). Each
+can carry **sensors**:
+
+| On | What is measured | Judged against |
+|---|---|---|
+| Steel | Strain, ultrasonic thickness loss, displacement, tilt | Half and three quarters of S355's yield strain; the corrosion allowance; 25/50 mm; 0.5/1° |
+| Concrete | Chloride at the rebar, crack width, half-cell potential | 0.2/0.4 % by mass of cement; 0.2/0.3 mm; −200/−350 mV CSE (ASTM C876) |
+| Fenders, bollards | Fender reaction, bollard line load | 80 % and 100 % of the rating in Triton's quay furniture |
+| Crane rails | Deviation from line and level | ±5 / ±10 mm |
+| Anything | **Inspection grade**, 1 (as new) to 5 (failed), with the inspector's note | 3 is watched, 4 or 5 acted on |
+
+The inspection grade is how damage no sensor can see (a torn fender, spalled concrete, a bent
+ladder) gets reported: it is typed in on the element's page and goes into the recommendations with
+its note. A fender or bollard that has ever gone over its rating stays flagged until somebody looks.
+Chlorides and crack widths are trended to the year they reach their limit.
+
+**It does no design of its own; it asks Triton.** Link an asset to a Triton section and each
+element (named as Triton names it: P01, CW2) takes its **design utilisation** from Triton's saved
+results, and the asset takes the project's own **corrosion allowances and design life** and its
+**fender and bollard ratings**. Unlinked,
+the allowances come from Triton's code defaults (BS 6349-1-4 or EN 1993-5) and the utilisation is
+typed in. Triton is only read, never written to, and a site without Triton still runs MarineTwin.
+
+For each element it answers three questions:
+
+- **How is it now?** Every sensor's latest reading against its limits (strain defaults to half and
+  three quarters of the S355 yield strain; movement and tilt are measured from installation).
+- **Where is it heading?** Thickness loss is fitted as loss = a·tᵇ and projected to the end of the
+  design life: the year the allowance is used up, and the design utilisation rescaled for the steel
+  that would be left (a thin-wall approximation, labelled as such).
+- **What should be done?** A recommendation for each element that needs one, most pressing first.
+
+
+**Finding your way.** Every MarineTwin page shows the same six numbered steps: **1 Assets** (the
+list), **2 Set up** (the Revit model, where it is, its details, elements and readings), **3
+Structure**, **4 Operations**, **5 Simulation** and **6 Facility** (equipment, comfort and air,
+carbon and compliance, safety and security). Long pages are split into tabs, so each opens about
+one screen long, with the most pressing tab first and a count on each. Moving between pages,
+running a scenario or uploading a model shows Triton's loading bar: a ship sailing to the quay as
+it counts up to 100%; the 3D view shows the same while it builds.
+**From the Revit model.** Export it as **IFC** (File → Export → IFC, with *Export IFC common
+property sets*, *Export base quantities* and the user-defined property sets ticked) or **glTF**.
+On upload MarineTwin reads the IFC itself, with no IFC library on the server:
+
+- **Where it is**: the IfcSite latitude and longitude (Revit's *Project Location*), or else
+  `MT_Latitude`/`MT_Longitude` in the `MT_Project` property set, or else the Survey Point through
+  IFC4's *IfcMapConversion* on a UTM grid (EPSG:326xx/327xx). The model's turn to grid north comes
+  from the map conversion or the true north direction.
+- **Its datum**: `MT_VerticalDatum` such as `CD = MSL − 0.9 m` gives mean sea level in metres above
+  chart datum, so levels modelled in mCD sit against the tide.
+- **Its terminal type and dates**: `MT_TerminalType`, `MT_Commissioned`, `MT_DesignLife`.
+- **Its elements**: anything with an `MT_Common` property set (`MT_Kind`, `MT_Material`, `MT_Zone`,
+  `MT_WallThickness`, `MT_TritonElement`, `MT_DesignUR`, `MT_Sensors`), or named the way the guide
+  names them (P01, CW2, F3, BOL1, RR1). Fender and bollard ratings come from `MT_Furniture`,
+  on the instance or its type. Anything else in the model (lamp posts, kerbs) is left out.
+
+The asset page then lists the elements MarineTwin does not track yet; tick them and *Import*. Each
+comes in with its GlobalId as its model reference, its position and the usual sensors for its kind.
+The full modelling guide (parameters, naming, export settings) is the *MarineTwin Revit Modelling
+Guide*.
+
+**Where it is.** Each asset with a location is a point on the world map on the MarineTwin front
+page, and its own page shows every element on the satellite picture of the site, placed from its
+model position and the model's rotation. Leaflet is vendored under `app/static/vendor/leaflet`;
+the tiles come from OpenStreetMap and the imagery from Esri World Imagery, in the browser.
+
+**The 3D view** shows the model, each element coloured by its condition (or as built), inside the
+terminal around it: the sky and the sun where they are at that place and time (so night falls at
+Lagos when it falls at Lagos, with the yard lights on), the sea at the tide's level in mCD, the
+temperature, wind and waves, the ship alongside (or the next one waiting off the quay) and the
+cranes, tractors, trucks or cars working it. A time slider moves the clock 12 hours back or a day
+on; *See under the water* shows the piles below the tide. Weather and sea level are read live in
+the browser from Open-Meteo (forecast and marine APIs, no key) when the asset has a location, and
+simulated otherwise. Elements are matched to the model by GlobalId, then Name, then Tag, exactly
+(P1 never matches P10). Without a model it draws a schematic from the elements' positions.
+three.js is vendored under `app/static/vendor/three`; web-ifc, which reads IFC in the browser, is
+fetched from jsDelivr only when an IFC model is opened.
+
+**Terminal types.** An asset is a *container*, *general cargo*, *RoRo*, *bulk* or *multipurpose*
+terminal (from the model, or set on its page). The type decides the ships that call, the
+equipment (STS cranes, mobile harbour cranes, ramp gangs, ship unloaders), the units counted
+(moves, lifts, vehicles, tonnes), the simulation's vocabulary and the 3D scene: container stacks
+and RTGs, sheds and steel coils, a car park and the stern ramp, or stockpiles and a conveyor.
+
+**Sensors are simulated for the prototype**, deterministically per sensor, so a demonstration
+berth always tells the same story; *Bring simulated sensors up to today* extends them. Real
+readings come in as a CSV with the columns `sensor`, `at`, `value`; a sensor that receives real
+readings stops being simulated. Models are kept under `marinetwin/models` in the data directory.
+
+**Operations.** Each asset also has an *Operations* tab that looks at the berth at work, not just
+the structure, and answers the same three questions for it:
+
+- **What is happening now?** Wind, gust, waves, tide and current; the ship alongside; each STS
+  crane working, stopped, stowed or down; and whether the berth is working normally, restricted
+  or stopped, and why.
+- **What will happen next?** A 72-hour wind and sea forecast against the operating limits (no
+  berthing above 15 m/s or 1.5 m Hs, cranes stop at 20 m/s gust and go to their storm pins at 25),
+  and each ship due: its berthing energy (BS 6349-4 / PIANC WG 33, abnormal ×1.5) against the
+  fenders' rated energy, and the beam-on wind pull of its stay shared over the bollards still fit
+  to use, against their capacity. The ratings come from Triton's quay furniture.
+- **What should we do?** One list across weather, ships, cranes and the structure, each with a
+  time: stow the cranes before a gale, hold a ship at anchor until it eases, shift a berthing
+  position off a damaged fender, double up lines, slow the gantry over a rail out of line.
+
+The last 30 days' downtime by cause, occupancy and availability sit below. **Every operational
+feed is simulated for the prototype** (deterministically per asset and day), in the shapes a port
+would later connect: a met forecast, the vessel line-up, crane status and the downtime log. The
+limits are typical values for a container berth; the figures are indicative, not a design check.
+
+**Simulation.** The *Simulation* tab runs the terminal hour by hour over a few weeks of ship calls:
+ships wait for a berth, quay cranes work them, terminal tractors carry each box to the yard, yard
+cranes stack it, and road trucks come through the gate. A scenario is a set of numbers anyone can
+edit (berths, quay cranes, cranes per ship, tractors, yard cranes, gate lanes and hours, ship calls
+a week, moves per call, the share of hours lost to wind). Every scenario sees the same ships, so
+scenarios kept side by side differ only by what was changed. The **bottleneck** is found by running
+the scenario again with one more of each resource: the addition that shortens ship stays, raises
+throughput or clears the gate queue most is the constraint, and the page says when fixing it moves
+the bottleneck on (more tractors often hand it to the yard cranes). It is for comparing options,
+not for sizing a terminal.
+
+**Beyond the structure** each asset has four more tabs, every feed simulated for the prototype in
+the shape the real system would supply:
+
+- **Equipment & maintenance** – the asset register (cranes, RTGs, reach stackers, tractors,
+  substations, shore power, lighting, fire pumps, gate portals, HVAC) with life used and documents;
+  service due against running hours, MTBF/MTTR and availability, hoist gearbox vibration against
+  ISO 10816-3, and the open work orders (as from a CMMS).
+- **Comfort & air** – temperature, humidity, CO₂ and noise indoors; PM2.5, PM10, NO₂, SO₂, noise
+  and heat stress (WBGT) outdoors, with pollutants judged on their 24-hour mean against the WHO
+  2021 guidelines.
+- **Carbon & compliance** – twelve months of diesel and electricity as scope 1 and 2 emissions,
+  carbon per container move against a 4.2% a year cut, shore power reported apart; and a register
+  of inspections, examinations and reports (LOLER, ISPS, environmental permit, NFPA 25, IEC 60364,
+  ISO 14001/45001, the quay's own inspections) with what is overdue or due in 30 days.
+- **Safety & security** – days since a lost-time injury, LTIFR and TRIFR, near misses, the
+  incident log, permits to work open now, ISPS level, gate access, CCTV, perimeter alarms and
+  people in crane exclusion zones, plus the quay ladders from the structure.
+
+The urgent items from every tab also appear on the Operations tab's *What should we do* list.
 
 ## Installing it on your computer
 

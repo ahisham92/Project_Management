@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, actions_card, bar %}
+{% block title %}{{ asset['name'] }} · Equipment · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "Every crane, vehicle and plant item: service due, reliability and open work orders. Simulated, in the shape a CMMS would supply.") }}
+{{ asset_tabs(asset) }}
+
+{% set u = upkeep %}
+<div class="grid grid-4">
+  {{ tile('Equipment', u['units'] | length, (u['fleet'] | length) ~ ' types, ' ~ (twin['elements'] | length) ~ ' structural elements; replacement value $' ~ '{:,.0f}'.format(u['replacement_value'] / 1e6) ~ 'M') }}
+  {{ tile('Overdue service', u['overdue'], 'past their service interval in running hours',
+          'critical' if u['overdue'] > 3 else 'warning' if u['overdue'] else 'good', 'to book' if u['overdue'] else 'none') }}
+  {{ tile('Work orders', u['open_orders'], u['p1'] ~ ' of them P1', 'warning' if u['p1'] else 'good', 'open') }}
+  {{ tile('Availability', u['availability'] ~ '%', 'critical equipment (class A), from MTBF and MTTR',
+          'good' if u['availability'] >= 98 else 'warning', 'good' if u['availability'] >= 98 else 'below 98%') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ u['actions'] | length }}"
+         {% if u['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif u['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(u['actions'], 'Nothing is overdue and nothing is wearing faster than it should.') }}</div>
+
+</section>
+
+<section class="mt-panel" data-tab="By type" data-slug="by-type">
+<div class="card">
+  <div class="card-head"><div><h2>By type</h2></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Type</th><th class="right">Units</th><th class="right">Availability</th><th class="right">Overdue service</th><th class="right">Due soon</th></tr></thead>
+      <tbody>
+        {% for f in u['fleet'] %}
+          <tr><td>{{ f['kind'] }}</td><td class="right tabular">{{ f['units'] }}</td><td class="right tabular">{{ f['availability'] }}%</td>
+            <td class="right tabular {{ 'state-critical' if f['overdue'] }}">{{ f['overdue'] or '—' }}</td><td class="right tabular">{{ f['due'] or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Work orders" data-slug="work-orders">
+<div class="card">
+  <div class="card-head"><div><h2>Work orders open</h2></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Number</th><th>Equipment</th><th>Type</th><th>Priority</th><th>Work</th><th>Opened</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for o in u['orders'] %}
+          <tr><td class="small tabular">{{ o['number'] }}</td><td><strong>{{ o['tag'] }}</strong></td><td class="small">{{ o['kind'] }}</td>
+            <td>{{ state_badge('critical' if o['priority'] == 'P1' else 'warning' if o['priority'] == 'P2' else 'good', o['priority']) }} <span class="small">{{ o['priority'] }}</span></td>
+            <td class="small">{{ o['text'] }}</td><td class="small">{{ o['opened'].strftime('%d/%m') }}, {{ o['age'] }} days</td><td class="small">{{ o['status'] }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Asset register" data-slug="register">
+<div class="card">
+  <div class="card-head"><div><h2>Asset register</h2>
+    <p class="small muted" style="margin-top:2px">Hoist gearbox vibration on the cranes is judged against ISO 10816-3: zone C from {{ u['vibration_limits'][0] }} mm/s, zone D from {{ u['vibration_limits'][1] }} mm/s.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Tag</th><th>Type</th><th>Location</th><th>Installed</th><th style="width:12%">Life used</th><th class="right">Next service</th>
+        <th class="right">Vibration</th><th class="right">Availability</th><th>Documents</th><th>Condition</th></tr></thead>
+      <tbody>
+        {% for r in u['units'] %}
+          <tr>
+            <td><strong>{{ r['tag'] }}</strong><div class="small muted">class {{ r['criticality'] }}</div></td>
+            <td class="small">{{ r['kind'] }}<div class="muted">{{ r['model'] }}</div></td>
+            <td class="small">{{ r['where'] }}</td>
+            <td class="small">{{ r['installed'].year }}{% if r['warranty'] >= today_date %}<div class="muted">warranty to {{ r['warranty'].strftime('%m/%Y') }}</div>{% endif %}</td>
+            <td>{{ bar(r['life_used'], 'critical' if r['life_used'] >= 90 else 'warning' if r['life_used'] >= 75 else '') }}<span class="small muted">{{ r['age'] }} of {{ r['life'] }} years</span></td>
+            <td class="right small tabular {{ 'state-critical' if r['to_next'] < 0 }}">{% if r['to_next'] < 0 %}{{ -r['to_next'] }} h overdue{% else %}in {{ r['to_next'] }} h{% endif %}</td>
+            <td class="right small tabular">{% if r['vibration'] is not none %}<span class="{{ 'state-critical' if r['vibration'] >= u['vibration_limits'][1] else 'state-warning' if r['vibration'] >= u['vibration_limits'][0] }}">{{ r['vibration'] }} mm/s</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="right small tabular">{{ r['availability'] }}%<div class="muted">MTBF {{ r['mtbf'] }} h</div></td>
+            <td class="small muted">{{ r['documents'] | join(', ') }}</td>
+            <td>{{ state_badge(r['state']) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}

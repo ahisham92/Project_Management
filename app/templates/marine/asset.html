@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "partials/bits.html" import empty, badge %}
+{% from "marine/_macros.html" import state_badge, health, ur, asset_tabs %}
+{% block title %}{{ asset['name'] }} · MarineTwin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>{{ asset['name'] }}</h1>
+    <p class="small muted" style="margin-top:2px">
+      {{ kind_name.get(asset['kind'], asset['kind']) }}{% if asset['location'] %} · {{ asset['location'] }}{% endif %}{% if asset['client'] %} · {{ asset['client'] }}{% endif %}
+      · commissioned {{ short_date(asset['commissioned']) }} · {{ twin['durability']['life'] }}-year design life
+    </p>
+  </div>
+  <form method="post" action="{{ url_for('marine.refresh', asset_id=asset['id']) }}">
+    <button type="submit" class="btn btn-ghost" title="Simulated sensors only: real ones keep what was imported">Bring simulated sensors up to today</button>
+  </form>
+</div>
+
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Health', twin['health'] if twin['health'] is not none else '—', 'out of 100, averaged over its elements',
+          {'critical': 'critical', 'warning': 'warning', 'good': 'good'}.get(twin['state'], 'neutral'),
+          {'critical': 'act now', 'warning': 'watch', 'good': 'good'}.get(twin['state'], '')) }}
+  {% set structure = twin['groups'].get('Structure') %}{% set furniture = twin['groups'].get('Quay furniture') %}
+  {{ tile('Elements', twin['elements'] | length,
+          (structure['count'] if structure else 0) ~ ' structural, ' ~ (furniture['count'] if furniture else 0) ~ ' furniture; '
+          ~ twin['counts']['critical'] ~ ' to act on, ' ~ twin['counts']['warning'] ~ ' to watch') }}
+  {{ tile('Sensors', twin['sensors'], 'readings up to ' ~ short_date(twin['today'])) }}
+  {{ tile('Judged against', 'Triton' if twin['triton_linked'] else 'Typed in',
+          twin['durability']['source'] ~ '; fender and bollard ratings from ' ~ twin['ratings']['source']) }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="The twin" data-slug="twin">
+<div class="card">
+  <div class="card-head">
+    <div>
+      <h2>The twin</h2>
+      <p class="small muted" style="margin-top:2px">
+        {% if asset['model_file'] %}{{ asset['model_name'] }}, coloured by each element's condition where its model reference matches.
+        {% else %}A schematic drawn from the elements' positions. Upload the Revit model in <a href="{{ url_for('marine.setup', asset_id=asset['id'], _anchor='model') }}">Set up</a> to see the real thing.{% endif %}
+        Drag to turn, scroll to zoom, click an element.
+      </p>
+    </div>
+    <div class="legend" style="margin:0">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>Good</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>Watch</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>Act</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--axis)"></span>No data / not monitored</span>
+    </div>
+  </div>
+  <div class="card-body marine-twin">
+    <div class="marine-view" data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
+         data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/">
+      
+    </div>
+    <aside class="marine-pick" aria-live="polite">
+      <p class="small muted">Click an element to see its sensors.</p>
+    </aside>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ twin['advice'] | length }}"
+         {% if twin['advice'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif twin['advice'] %}data-state="warning"{% endif %}>
+{% if twin['advice'] %}
+<div class="card">
+  <div class="card-head"><div><h2>What to do</h2>
+    <p class="small muted" style="margin-top:2px">Most pressing first. Each follows from the readings and the design; none of them is a substitute for an engineer's inspection.</p></div></div>
+  <div class="card-body">
+    <ul class="marine-advice">
+      {% for one in twin['advice'] %}
+        <li>{{ state_badge(one['state']) }} <strong>{{ one['element'] }}</strong> {{ one['text'] }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body"><p class="muted">Nothing to do: every element is within its limits.</p></div></div>
+{% endif %}
+</section>
+
+<section class="mt-panel" data-tab="Elements" data-slug="elements" data-count="{{ twin['elements'] | length }}">
+<div class="card">
+  <div class="card-head"><div><h2>Elements</h2></div></div>
+  <div class="card-body">
+    {% if not twin['elements'] %}
+      {{ empty('No elements yet', 'Import them from the Revit model, or add them one by one, in Set up.') }}
+      <p><a class="btn btn-primary" href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Go to Set up</a></p>
+    {% else %}
+    <div class="table-scroll">
+      <table class="table">
+        <thead><tr>
+          <th>Element</th><th>Type</th><th>Zone</th><th>Sensors</th>
+          <th class="right" title="The utilisation it was designed to">Design UR</th>
+          <th class="right" title="Design UR rescaled for the corrosion projected at the end of the design life (thin-wall approximation)">UR at end of life</th>
+          <th class="right">Health</th><th>Condition</th>
+        </tr></thead>
+        <tbody>
+          {% for group, members in twin['elements'] | groupby('furniture') %}
+            <tr><th colspan="8" class="small" style="background:var(--surface)">{{ 'Quay furniture' if group else 'Structure' }}</th></tr>
+          {% for e in members %}
+            <tr>
+              <td><a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=e['element']['id']) }}"><strong>{{ e['element']['name'] }}</strong></a></td>
+              <td class="small">{{ element_kind_name.get(e['element']['kind']) }}<span class="muted">, {{ e['element']['material'] }}</span></td>
+              <td class="small">{{ zone_name.get(e['element']['zone']) }}</td>
+              <td class="small">
+                {% for s in e['sensors'] %}<div><span class="state-{{ s['state'] }}" aria-hidden="true">●</span> {{ s['label'] }}: {{ s['headline'] }}{% if s['simulated'] %} <span class="muted">(simulated)</span>{% endif %}</div>
+                {% else %}<span class="muted">none</span>{% endfor %}
+              </td>
+              <td class="right">{{ ur(e['design_ur']) }}{% if e['design_from'] == 'Triton' %}<div class="small muted">Triton</div>{% endif %}</td>
+              <td class="right">{{ ur(e['ur_at_life']) }}</td>
+              <td class="right">{{ health(e['health']) }}</td>
+              <td>{{ state_badge(e['state']) }}</td>
+            </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="importmap">
+  {"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/') }}"}}
+</script>
+<script type="module" src="{{ url_for('static', filename='marinetwin.js') }}"></script>
+{% endblock %}

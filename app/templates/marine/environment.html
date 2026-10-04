@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, actions_card %}
+{% block title %}{{ asset['name'] }} · Comfort and air · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "Comfort indoors; air, noise and heat outdoors, last 24 hours, against the WHO 2021 guidelines. Simulated for the prototype.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {% for s in env['stations'][:4] %}
+    {{ tile(s['place'], s['inside'] | capitalize,
+            (s['measures'] | selectattr('state', 'ne', 'good') | list | length) ~ ' of ' ~ (s['measures'] | length) ~ ' measures over their limit',
+            s['state'], {'good': 'within limits', 'warning': 'watch', 'critical': 'act now'}[s['state']]) }}
+  {% endfor %}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ env['actions'] | length }}"
+         {% if env['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif env['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(env['actions'], 'Every measure is within its limit.') }}</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Last 24 hours" data-slug="charts">
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><div><h2>Fine particles (PM2.5) outdoors</h2></div></div>
+    <div class="card-body">{{ charts['pm25'] }}</div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>CO₂ indoors</h2><p class="small muted" style="margin-top:2px">A measure of fresh air: it rises with people in the room and too little ventilation.</p></div></div>
+    <div class="card-body">{{ charts['co2'] }}</div>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Every station" data-slug="stations">
+{% for s in env['stations'] %}
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>{{ s['place'] }}</h2><p class="small muted" style="margin-top:2px">{{ s['inside'] | capitalize }}</p></div>{{ state_badge(s['state']) }}</div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Measure</th><th class="right">Now</th><th class="right">24-hour mean</th><th class="right">24-hour peak</th><th>Limit</th><th>Judged on</th><th>Condition</th></tr></thead>
+      <tbody>
+        {% for r in s['measures'] %}
+          <tr><td>{{ r['name'] }}</td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['latest']) }} <span class="small muted">{{ r['unit'] }}</span></td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['mean']) }}</td>
+            <td class="right tabular">{{ '{:,.1f}'.format(r['peak']) }}</td>
+            <td class="small muted">{{ r['note'] }}</td><td class="small">{{ r['judged_on'] }}</td>
+            <td>{{ state_badge(r['state']) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+</section>
+</div>
+{% endblock %}

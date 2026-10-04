@@ -1,0 +1,120 @@
+/* MarineTwin: the 3D twin beside its picked element, and the advice list. */
+.marine-twin { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+.marine-view {
+  position: relative; height: 460px; border-radius: 10px; overflow: hidden;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--plane) 100%);
+  border: 1px solid var(--border);
+}
+.marine-view canvas { display: block; width: 100%; height: 100%; }
+.marine-view-note { position: absolute; left: 12px; bottom: 10px; margin: 0; pointer-events: none; }
+/* The readout over the 3D view: place, time, sun, tide and weather, with the clock and toggles. */
+.marine-hud {
+  position: absolute; left: 10px; top: 10px; max-width: min(360px, calc(100% - 20px));
+  padding: 8px 10px; border-radius: 8px; color: #f4f6f8; line-height: 1.45;
+  background: rgba(12, 20, 30, 0.62); backdrop-filter: blur(4px);
+}
+.marine-hud-read strong { color: #fff; }
+.marine-hud-controls { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
+.marine-hud-controls label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.marine-hud-controls input[type=range] { width: 120px; }
+.marine-pick { border-left: 1px solid var(--border); padding-left: 16px; font-size: 0.875rem; }
+.marine-pick h3 { margin: 0 0 4px; font-size: 1.05rem; }
+.marine-pick ul { margin: 8px 0; padding: 0; list-style: none; }
+.marine-pick li { margin: 0 0 6px; }
+.marine-advice { margin: 0; padding: 0; list-style: none; }
+.marine-advice li { padding: 8px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.marine-advice li:last-child { border-bottom: 0; }
+@media (max-width: 860px) {
+  .marine-twin { grid-template-columns: 1fr; }
+  .marine-pick { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; }
+  .marine-view { height: 340px; }
+  .marine-hud { font-size: 0.75rem; padding: 6px 8px; }
+  .marine-hud-controls input[type=range] { width: 90px; }
+}
+/* Operations: the three questions as section heads, and the downtime bars. */
+.marine-q { margin: 24px 0 10px; font-size: 1.1rem; }
+.marine-bar { height: 10px; border-radius: 3px; background: var(--series-1); min-width: 2px; }
+.marine-meter { background: var(--grid); border-radius: 3px; min-width: 60px; }
+.marine-bar-warning { background: var(--warning); }
+.marine-bar-critical { background: var(--critical); }
+.marine-scenarios th, .marine-scenarios td { min-width: 130px; }
+.marine-scenarios td.label { min-width: 190px; }
+.marine-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 16px; }
+.marine-params fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 12px; margin: 0; }
+.marine-params legend { font-size: 0.8rem; color: var(--muted); padding: 0 4px; }
+.marine-params .field { display: block; margin-top: 6px; }
+.marine-params input { width: 100%; }
+.link-button { background: none; border: 0; padding: 0; color: var(--critical); cursor: pointer; font: inherit; text-decoration: underline; }
+.marine-import { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 180px; overflow: auto; }
+.marine-map { height: 360px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); z-index: 0; }
+.marine-map-world { height: 420px; }
+
+/* The steps: where the person is, from the asset list on (marine/_macros.html flow). */
+.mt-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 0 0 10px; }
+.mt-step { --step: var(--series-1); display: flex; align-items: center; gap: 8px; flex: 1 1 130px; max-width: 210px;
+  padding: 7px 10px; border-radius: 10px; color: var(--ink); text-decoration: none;
+  background: color-mix(in srgb, var(--step) 6%, var(--raised)); border: 1px solid color-mix(in srgb, var(--step) 30%, var(--border)); }
+.mt-step:hover { background: color-mix(in srgb, var(--step) 14%, var(--raised)); }
+.mt-step-n { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  background: var(--raised); color: var(--step); border: 2px solid var(--step); }
+.mt-step.done .mt-step-n { background: var(--step); color: #fff; }
+.mt-step.here { box-shadow: 0 0 0 2px var(--step); background: color-mix(in srgb, var(--step) 16%, var(--raised)); }
+.mt-step.off { opacity: .5; pointer-events: none; }
+.mt-step-t { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.mt-step-t b { font-size: 0.875rem; color: var(--step); }
+.mt-step-t small { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
+.mt-step.s4 { --step: var(--series-2); } .mt-step.s5 { --step: var(--series-5); } .mt-step.s6 { --step: var(--series-6); }
+@media (max-width: 860px) {
+  .mt-flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .mt-step { flex: 0 0 auto; max-width: none; }
+  .mt-step-t small { display: none; }
+}
+
+/* Section tabs inside a page (marinetwin-ui.js): one section at a time keeps every page short. */
+.mt-subtabs { display: flex; gap: 4px; overflow-x: auto; margin: 4px 0 14px; border-bottom: 1px solid var(--border); }
+.mt-subtabs button { font: inherit; font-size: 0.9rem; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 12px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.mt-subtabs button:hover { color: var(--ink); }
+.mt-subtabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--series-1); }
+.mt-subtabs .mt-count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 0.75rem;
+  background: var(--grid); color: var(--ink-2); text-align: center; }
+.mt-subtabs .mt-tab-critical .mt-count { background: var(--critical); color: #fff; }
+.mt-subtabs .mt-tab-warning .mt-count { background: var(--warning); color: #000; }
+.mt-panels:not(.mt-tabbed) > .mt-panel + .mt-panel { margin-top: 24px; }
+.mt-more { margin-top: 8px; }
+.mt-more > summary { cursor: pointer; color: var(--series-1); font-size: 0.875rem; }
+
+/* The voyage: Triton's loading bar, a ship sailing to the quay as the work reaches 100%. */
+.mt-voyage-box { width: min(460px, 100%); }
+.mt-voyage { position: relative; height: 34px; margin: 4px 0 2px;
+  background: linear-gradient(180deg, transparent 0 21px, #bfe3f2 21px, #7cc3e2 34px); border-radius: 0 0 8px 8px; }
+.mt-voyage .sea { position: absolute; inset: 0 20px 0 0; }
+.mt-voyage .sea i { position: relative; display: block; height: 100%; min-width: 58px; border-radius: 0 0 0 8px; background:
+  linear-gradient(90deg, rgba(255,255,255,0) 0, rgba(255,255,255,.85) calc(100% - 30px), rgba(255,255,255,0) 100%) 0 23px / 100% 4px no-repeat,
+  repeating-linear-gradient(90deg, rgba(255,255,255,.55) 0 10px, rgba(255,255,255,0) 10px 18px) 0 29px / 100% 2px no-repeat,
+  linear-gradient(180deg, transparent 0 21px, #1e8fc0 21px) 0 0 / 100% 100% no-repeat; }
+.mt-voyage.moored .sea i { background-color: transparent; }
+.mt-voyage .ship { position: absolute; right: -1px; top: 4px; width: 56px; height: 23px; overflow: visible;
+  transform-origin: 50% 90%; animation: mt-bob 2.4s ease-in-out infinite; }
+.mt-voyage .hull { fill: #00467a; } .mt-voyage .boot { fill: #c0392b; } .mt-voyage .bridge { fill: #f4f6f8; stroke: #9aa7b3; stroke-width: .5; }
+.mt-voyage .win { fill: #00467a; } .mt-voyage .funnel { fill: #e0583a; }
+.mt-voyage .boxes rect { stroke: rgba(0,0,0,.25); stroke-width: .4; }
+.mt-voyage .line { fill: none; stroke: #5a4a2e; stroke-width: 1.2; opacity: 0; transition: opacity .6s; }
+.mt-voyage .quay { position: absolute; right: 0; top: 12px; bottom: 0; width: 20px; border-radius: 3px 0 8px 0;
+  background: repeating-linear-gradient(0deg, #b8b4aa 0 5px, #aaa59a 5px 6px); box-shadow: inset 2px 0 0 #8c877c; }
+.mt-voyage .quay b { position: absolute; left: 6px; top: -5px; width: 7px; height: 6px; border-radius: 3px 3px 1px 1px; background: #4a4f55; }
+.mt-voyage.moored .ship { animation: none; transform: none; }
+.mt-voyage.moored .line { opacity: 1; }
+.mt-voyage.moored .quay b { background: #2f9e6e; }
+.mt-voyage-text { margin: 2px 0 0; font-size: 0.875rem; color: var(--ink-2); }
+.mt-voyage-pct { color: var(--ink); }
+@keyframes mt-bob { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(1.5px) rotate(-1.2deg); } }
+@media (prefers-reduced-motion: reduce) { .mt-voyage .ship { animation: none; } }
+.mt-voyage-veil { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: flex-start;
+  padding: 18vh 16px 0; background: color-mix(in srgb, var(--plane) 55%, transparent); animation: mt-fade .25s ease-out .15s both; }
+.mt-voyage-veil .mt-voyage-box { background: var(--raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.15); }
+@keyframes mt-fade { from { opacity: 0; } to { opacity: 1; } }
+.marine-view > .mt-voyage-box { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 32px));
+  background: var(--raised); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px 8px; z-index: 2; }

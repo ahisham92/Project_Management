@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, actions_card %}
+{% block title %}{{ asset['name'] }} · Carbon and compliance · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "Twelve months of emissions, and the inspections and certificates to keep current. Simulated for the prototype.") }}
+{{ asset_tabs(asset) }}
+
+<div class="mt-panels">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ (co2['actions'] + rules['actions']) | length }}"
+         {% if (co2['actions'] + rules['actions']) | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif co2['actions'] + rules['actions'] %}data-state="warning"{% endif %}>
+{{ actions_card(co2['actions'] + rules['actions'], 'Everything is current and the carbon cut is on track.') }}
+</section>
+
+<section class="mt-panel" data-tab="Carbon" data-slug="carbon">
+<div class="grid grid-4">
+  {{ tile('Emissions, 12 months', '{:,}'.format(co2['total']) ~ ' t', 'CO₂e: scope 1 ' ~ '{:,}'.format(co2['scope1']) ~ ' t (diesel), scope 2 ' ~ '{:,}'.format(co2['scope2']) ~ ' t (electricity)') }}
+  {{ tile('Per container move', '%.2f kg' | format(co2['intensity']), 'against ' ~ ('%.2f' | format(co2['previous_intensity'])) ~ ' kg the year before',
+          'good' if co2['on_track'] else 'warning', ('%+.1f%%' | format(co2['change'])) ~ (' on track' if co2['on_track'] else ', off track')) }}
+  {{ tile('Target', '−' ~ co2['target'] ~ '% a year', 'a linear cut in line with 1.5 °C') }}
+  {{ tile('Shore power', '{:,}'.format(co2['avoided']) ~ ' t', 'CO₂e the ships did not emit at berth in 12 months, about ' ~ '{:,.0f}'.format(co2['shore_monthly'] / 1000) ~ ' MWh a month supplied') }}
+</div>
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Month by month</h2>
+    <p class="small muted" style="margin-top:2px">Factors: diesel {{ co2['factors']['diesel'] }} kg CO₂e per litre; grid {{ co2['factors']['grid'] }} kg per kWh; a ship's auxiliary engines {{ co2['factors']['aux'] }} kg per kWh. Shore power is reported apart, because it replaces the ships' own generation.</p></div></div>
+  <div class="card-body">{{ chart }}</div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Compliance" data-slug="compliance" {% if rules['overdue'] %}data-count="{{ rules['overdue'] }}" data-state="critical"{% endif %}>
+<div class="grid grid-3">
+  {{ tile('Overdue', rules['overdue'], 'inspections, examinations and reports past their date', 'critical' if rules['overdue'] else 'good', 'act now' if rules['overdue'] else 'none') }}
+  {{ tile('Due in 30 days', rules['due_soon'], 'to book now', 'warning' if rules['due_soon'] else 'good', 'book' if rules['due_soon'] else 'none') }}
+  {{ tile('Obligations tracked', rules['items'] | length, 'lifting equipment, structure, security, environment, fire, electrical, ISO') }}
+</div>
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Register</h2></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Obligation</th><th>Regime</th><th class="right">Every</th><th>Last done</th><th>Next due</th><th>Condition</th></tr></thead>
+      <tbody>
+        {% for i in rules['items'] %}
+          <tr><td>{{ i['what'] }}</td><td class="small muted">{{ i['regime'] }}</td>
+            <td class="right small tabular">{{ i['every'] }} month{{ 's' if i['every'] > 1 }}</td>
+            <td class="small">{{ i['last'].strftime('%d/%m/%Y') }}</td>
+            <td class="small {{ 'state-critical' if i['days'] < 0 else 'state-warning' if i['days'] <= 30 }}">{{ i['due'].strftime('%d/%m/%Y') }}
+              <div class="muted">{% if i['days'] < 0 %}{{ -i['days'] }} days late{% elif i['days'] == 0 %}today{% else %}in {{ i['days'] }} days{% endif %}</div></td>
+            <td>{{ state_badge(i['state']) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}

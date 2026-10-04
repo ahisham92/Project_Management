@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, actions_card %}
+{% block title %}{{ asset['name'] }} · Safety and security · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "Incidents, permits to work, access, CCTV and alarms. Simulated for the prototype.") }}
+{{ asset_tabs(asset) }}
+
+{% set k = safe['kpis'] %}
+<h2 class="marine-q">Safety</h2>
+<div class="grid grid-4">
+  {{ tile('Days since a lost-time injury', k['days_since_lti'], '', 'good' if k['days_since_lti'] >= 30 else 'warning') }}
+  {{ tile('LTIFR', k['ltifr'], 'lost-time injuries per million hours, 12 months; TRIFR ' ~ k['trifr']) }}
+  {{ tile('Near misses, 30 days', k['near_misses'], 'reported; a healthy culture reports many') }}
+  {{ tile('Under investigation', k['open'], 'incidents not yet closed', 'warning' if k['open'] else 'good', 'open' if k['open'] else 'all closed') }}
+</div>
+
+<h2 class="marine-q">Security</h2>
+<div class="grid grid-4">
+  {{ tile('ISPS level', safe['level'], 'port facility security level', 'critical' if safe['level'] > 1 else 'good', 'raised' if safe['level'] > 1 else 'normal') }}
+  {{ tile('CCTV', safe['cameras']['online'] ~ ' of ' ~ safe['cameras']['total'], ('offline in ' ~ safe['cameras']['offline_zones'] | join(', ')) if safe['cameras']['offline_zones'] else 'every camera online',
+          'warning' if safe['cameras']['offline_zones'] else 'good', 'cameras online') }}
+  {{ tile('Gate access today', '{:,}'.format(safe['access']['entries']), safe['access']['denied'] ~ ' refused, ' ~ safe['access']['tailgating'] ~ ' tailgating') }}
+  {{ tile('Crane exclusion zones', safe['proximity'], 'people detected inside in 24 h', 'warning' if safe['proximity'] >= 5 else 'good') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ safe['actions'] | length }}"
+         {% if safe['actions'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif safe['actions'] %}data-state="warning"{% endif %}>
+<div>{{ actions_card(safe['actions'], 'Nothing needs doing: no open serious incidents, no permits about to lapse, every camera online.') }}</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Permits and alarms" data-slug="permits">
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><div><h2>Permits to work open now</h2></div></div>
+    <div class="card-body table-scroll">
+      <table class="table"><tbody>
+        {% for p in safe['permits'] %}
+          <tr><td><strong>{{ p['kind'] }}</strong><div class="small muted">{{ p['where'] }}</div></td><td class="small">{{ p['text'] }}</td>
+            <td class="right small {{ 'state-warning' if p['left_h'] <= 1.5 }}">expires {{ p['expires'].strftime('%H:%M') }}</td></tr>
+        {% else %}<tr><td class="muted">None.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Perimeter alarms, 24 hours</h2></div></div>
+    <div class="card-body table-scroll">
+      <table class="table"><tbody>
+        {% for a in safe['alarms'] %}
+          <tr><td class="small">{{ a['at'].strftime('%a %H:%M') }}</td><td>{{ a['zone'] }}</td><td class="small muted">{{ a['outcome'] }}</td></tr>
+        {% else %}<tr><td class="muted">None.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Incidents" data-slug="incidents">
+<div class="card">
+  <div class="card-head"><div><h2>Incidents, last 90 days</h2></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Date</th><th>Type</th><th>Where</th><th>What happened</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for r in safe['log'] %}
+          <tr><td class="small">{{ r['date'].strftime('%d/%m') }}</td>
+            <td class="small {{ 'state-critical' if r['kind'] in ('Lost time', 'Medical treatment') }}">{{ r['kind'] }}</td>
+            <td class="small">{{ r['where'] }}</td><td class="small">{{ r['text'] }}</td><td class="small">{{ r['status'] }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if safe['structural'] %}
+</section>
+
+<section class="mt-panel" data-tab="On the structure" data-slug="structure" data-count="{{ safe['structural'] | length }}">
+<div class="card">
+  <div class="card-head"><div><h2>Safety items on the structure</h2><p class="small muted" style="margin-top:2px">Quay ladders, and any fender or bollard graded unsafe, from the Structure tab.</p></div></div>
+  <div class="card-body"><ul class="marine-advice">
+    {% for e in safe['structural'] %}<li>{{ state_badge(e['state']) }} <strong>{{ e['name'] }}</strong> <span class="muted">{{ element_kind_name.get(e['kind']) }}</span></li>{% endfor %}
+  </ul></div>
+</div>
+{% endif %}
+</section>
+</div>
+{% endblock %}

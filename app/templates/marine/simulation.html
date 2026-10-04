@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import state_badge, asset_tabs, page_head, bar %}
+{% block title %}{{ asset['name'] }} · Simulation · MarineTwin{% endblock %}
+
+{% macro kpi_row(label, key, unit='', better='lower', digits=0) %}
+  <tr>
+    <td class="label">{{ label }}</td>
+    {% set base = results[0]['result']['kpis'][key] %}
+    {% for r in results %}
+      {% set v = r['result']['kpis'][key] %}
+      <td class="right tabular">{{ ('{:,.' ~ digits ~ 'f}').format(v) }}{{ unit }}
+        {% if not loop.first and v != base %}
+          {% set good = (v < base) if better == 'lower' else (v > base) %}
+          <div class="small {{ 'state-good' if good else 'state-critical' }}">{{ '+' if v > base }}{{ ('{:,.' ~ digits ~ 'f}').format(v - base) }}</div>
+        {% endif %}
+      </td>
+    {% endfor %}
+  </tr>
+{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "Add or take away berths, cranes, trucks or ships and see where the bottleneck goes. For comparing options, not sizing a terminal.") }}
+{{ asset_tabs(asset) }}
+
+{% set d = detail %}
+<h2 class="marine-q" style="margin-top:4px">{{ shown['name'] }}: where is the bottleneck?</h2>
+<div class="grid grid-4">
+  {{ tile('Bottleneck', links.get(d['bottleneck'], 'None'), d['remedy'],
+          'critical' if d['bottleneck'] in ('berth', 'gate') else 'warning' if d['bottleneck'] else 'good',
+          'holds the terminal back' if d['bottleneck'] else 'room to spare') }}
+  {{ tile('Ship turnaround', '%.0f h' | format(d['kpis']['turnaround']),
+          'waiting ' ~ ('%.0f' | format(d['kpis']['mean_wait'])) ~ ' h for a berth, ' ~ ('%.0f' | format(d['kpis']['mean_service'])) ~ ' h alongside') }}
+  {{ tile('Throughput', '{:,}'.format(d['kpis']['teu']) ~ ' ' ~ words['unit'], 'in ' ~ d['params']['days'] ~ ' days, about ' ~ '{:,.0f}'.format(d['kpis']['teu_per_year'] / 1000) ~ 'k ' ~ words['unit'] ~ ' a year; '
+          ~ d['kpis']['finished'] ~ ' of ' ~ d['kpis']['calls'] ~ ' ships finished') }}
+  {{ tile('Gate', '{:,}'.format(d['kpis']['gate_backlog']), 'road trucks at the worst queue; yard up to ' ~ d['kpis']['yard_peak'] ~ '% full',
+          'critical' if d['kpis']['gate_backlog'] > 200 else 'warning' if d['kpis']['gate_backlog'] > 50 else 'good',
+          'queuing' if d['kpis']['gate_backlog'] > 50 else 'flowing') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="Bottleneck" data-slug="bottleneck">
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><div><h2>What one more of each would do</h2>
+      <p class="small muted" style="margin-top:2px">The same scenario run again with each addition on its own. The one that helps most is the bottleneck.</p></div></div>
+    <div class="card-body table-scroll">
+      <table class="table">
+        <thead><tr><th>Add</th><th class="right">Ship turnaround</th><th class="right">Throughput</th><th>Side effect</th></tr></thead>
+        <tbody>
+          {% for h in d['helps'] %}
+            <tr>
+              <td>{% if loop.first and d['bottleneck'] %}<strong>{{ h['words'] | capitalize }}</strong>{% else %}{{ h['words'] | capitalize }}{% endif %}</td>
+              <td class="right tabular {{ 'state-good' if h['saves'] >= 0.5 else 'state-critical' if h['saves'] <= -0.5 }}">
+                {% if h['saves'] | abs < 0.5 %}<span class="muted">no change</span>{% else %}{{ '%+.0f' | format(-h['saves']) }} h{% endif %}</td>
+              <td class="right tabular {{ 'state-good' if h['more_teu'] > 50 }}">{% if h['more_teu'] | abs <= 50 %}<span class="muted">no change</span>{% else %}{{ '{:+,}'.format(h['more_teu']) }} {{ words['unit'] }}{% endif %}</td>
+              <td class="small">{% if h['gate_worse'] %}gate queue grows by {{ '{:,}'.format(h['gate_worse']) }} trucks: the yard cranes become the next bottleneck
+                {% elif h['gate_backlog'] < d['kpis']['gate_backlog'] - 50 %}gate queue falls to {{ '{:,}'.format(h['gate_backlog']) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Pressure on each link</h2>
+      <p class="small muted" style="margin-top:2px">How often each link set the pace while ships were worked. For the berths, the time ships waited against the time they were worked; for the gate, the worst queue against a day's trucks. Utilisation is the share of each resource's capacity used.</p></div></div>
+    <div class="card-body table-scroll">
+      <table class="table">
+        <thead><tr><th>Link</th><th style="width:40%">Held the pace back</th><th class="right">Utilisation</th></tr></thead>
+        <tbody>
+          {% for key in ['berth', 'sts', 'trucks', 'rtgs', 'gate', 'weather'] %}
+            {% set held = d['held'].get(key, 0) %}
+            <tr>
+              <td>{{ links[key] }}</td>
+              <td>{{ bar(held, 'critical' if key == d['bottleneck'] else 'warning' if held >= 50 else '') }} <span class="small muted">{{ held }}%</span></td>
+              <td class="right tabular">{% if key in d['utilisation'] %}{{ d['utilisation'][key] }}%{% else %}<span class="muted">—</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Over time" data-slug="over-time">
+<div class="card">
+  <div class="card-head"><div><h2>Ships at the berths</h2></div></div>
+  <div class="card-body">{{ ships_chart }}</div>
+</div>
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Road trucks queuing at the gate</h2></div></div>
+  <div class="card-body">{{ gate_chart }}</div>
+</div>
+
+<details class="card" style="margin-top:16px">
+  <summary class="card-head" style="cursor:pointer"><h2>Every ship call in {{ shown['name'] }}</h2></summary>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Call</th><th>Arrives</th><th class="right">{{ words['move'] | capitalize }}</th><th class="right">Waited</th><th class="right">Alongside</th><th class="right">{{ words['move'] | capitalize }}/h</th></tr></thead>
+      <tbody>
+        {% for c in d['calls'] %}
+          <tr><td>{{ c['n'] }}</td><td class="small">{{ c['at'].strftime('%a %d/%m %H:%M') }}</td><td class="right tabular">{{ '{:,}'.format(c['moves']) }}</td>
+            <td class="right tabular {{ 'state-critical' if c['wait'] > 24 else 'state-warning' if c['wait'] > 6 }}">{{ '%.0f' | format(c['wait']) }} h</td>
+            <td class="right tabular">{% if c['finished'] %}{{ '%.0f' | format(c['service']) }} h{% else %}<span class="muted">not finished</span>{% endif %}</td>
+            <td class="right tabular">{{ c['rate'] or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+</section>
+
+<section class="mt-panel" data-tab="Compare scenarios" data-slug="compare" data-count="{{ results | length }}">
+<div class="card">
+  <div class="card-body table-scroll">
+    <table class="table marine-scenarios">
+      <thead><tr>
+        <th></th>
+        {% for r in results %}
+          <th class="right">
+            <a href="{{ url_for('marine.simulation', asset_id=asset['id'], show=r['id']) }}">{% if r['id'] == shown['id'] %}<strong>{{ r['name'] }}</strong>{% else %}{{ r['name'] }}{% endif %}</a>
+            <div class="small" style="font-weight:400">
+              <a href="{{ url_for('marine.simulation', asset_id=asset['id'], show=r['id'], edit=r['id']) }}#scenario-form">Edit</a> ·
+              <a href="{{ url_for('marine.simulation', asset_id=asset['id'], show=r['id'], copy=r['id']) }}#scenario-form">Copy</a>
+              {% if not loop.first %}·
+                <form method="post" action="{{ url_for('marine.delete_scenario', asset_id=asset['id'], scenario_id=r['id']) }}" style="display:inline">
+                  <button type="submit" class="link-button small" onclick="return confirm('Delete {{ r['name'] }}?')">Delete</button></form>
+              {% endif %}
+            </div>
+          </th>
+        {% endfor %}
+      </tr></thead>
+      <tbody>
+        <tr><td class="label">Changes from the baseline</td>
+          {% for r in results %}<td class="right small">{% if loop.first %}<span class="muted">the baseline</span>{% else %}{{ r['changes'] | join('; ') or 'none' }}{% endif %}</td>{% endfor %}</tr>
+        <tr><td class="label"><strong>Bottleneck</strong></td>
+          {% for r in results %}<td class="right"><strong>{{ links.get(r['result']['bottleneck'], 'None') }}</strong></td>{% endfor %}</tr>
+        {{ kpi_row('Ship turnaround', 'turnaround', ' h', 'lower', 1) }}
+        {{ kpi_row('Waiting for a berth, average', 'mean_wait', ' h', 'lower', 1) }}
+        {{ kpi_row('Waiting for a berth, longest', 'max_wait', ' h', 'lower', 0) }}
+        {{ kpi_row(words['move'] | capitalize ~ ' per hour at the berth', 'berth_rate', '', 'higher') }}
+        {{ kpi_row('Throughput', 'teu', ' ' ~ words['unit'], 'higher') }}
+        {{ kpi_row('Ships still waiting at the end', 'waiting_at_end', '', 'lower') }}
+        {{ kpi_row('Gate queue at its worst', 'gate_backlog', ' trucks', 'lower') }}
+        {{ kpi_row('Yard at its fullest', 'yard_peak', '%', 'lower') }}
+        {% for key in ['berth', 'sts', 'trucks', 'rtgs', 'gate'] %}
+          <tr><td class="label small">{{ links[key] }} utilisation</td>
+            {% for r in results %}<td class="right tabular small">{{ r['result']['utilisation'][key] }}%</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+
+<section class="mt-panel" data-tab="Try a scenario" data-slug="scenario-form" {% if editing or copying %}data-open="1"{% endif %}>
+<div class="card">
+  <div class="card-head"><div>
+    <h2>{% if editing %}Edit {{ editing['name'] }}{% else %}Try a scenario{% endif %}</h2>
+    <p class="small muted" style="margin-top:2px">{% if editing %}Change the numbers and run it again.{% else %}Starting from {{ (copying or shown)['name'] }}. Add or take away berths, cranes, tractors or yard cranes, change the ships, then run it.{% endif %}</p>
+  </div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.save_scenario', asset_id=asset['id']) }}" data-voyage="Running the scenario">
+      {% if editing %}<input type="hidden" name="scenario_id" value="{{ editing['id'] }}">{% endif %}
+      <label class="field w-lg" style="display:block;margin-bottom:12px"><span class="field-label">Name</span>
+        <input type="text" name="name" maxlength="60" required
+               value="{{ editing['name'] if editing else (copying['name'] ~ ' (copy)') if copying else 'Scenario ' ~ (results | length) }}"></label>
+      <div class="marine-params">
+        {% for group, fields in groups.items() %}
+          <fieldset>
+            <legend>{{ group }}</legend>
+            {% for f in fields %}
+              <label class="field"><span class="field-label">{{ f['label'] }}{% if f['unit'] %} ({{ f['unit'] }}){% endif %}</span>
+                <input type="number" name="{{ f['key'] }}" value="{{ f['value'] | int if f['value'] == f['value'] | int else f['value'] }}" min="{{ f['min'] }}" max="{{ f['max'] }}" step="{{ f['step'] }}"></label>
+            {% endfor %}
+          </fieldset>
+        {% endfor %}
+      </div>
+      <p style="margin-top:12px"><button type="submit" class="btn">{% if editing %}Run it again{% else %}Run and keep this scenario{% endif %}</button></p>
+    </form>
+  </div>
+</div>
+
+</section>
+</div>
+{% endblock %}

@@ -10,6 +10,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
   {% endif %}
+  {% if request.blueprint == 'marine' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
+  {% endif %}
   {% if request.blueprint == 'specs' %}
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themis/icon.svg') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='themis/apple-touch-icon.png') }}">
@@ -54,6 +57,9 @@
         {% endif %}
         {% if 'specs' in my_programs %}
           <a href="{{ url_for('specs.index') }}" class="small" style="text-decoration:none;color:var(--muted)">THEMIS</a>
+        {% endif %}
+        {% if 'marinetwin' in my_programs %}
+          <a href="{{ url_for('marine.index') }}" class="small" style="text-decoration:none;color:var(--muted)">MarineTwin</a>
         {% endif %}
         {% if 'pm' in my_programs %}
           <a href="{{ url_for('portfolio.guide') }}" class="small"
@@ -101,5 +107,6 @@
 
   {% include "partials/carmen.html" %}
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

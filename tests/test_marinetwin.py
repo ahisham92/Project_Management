@@ -902,7 +902,7 @@ def test_the_lifecycle_page_compares_doing_nothing_with_fixing(signed_in, demo):
     run = signed_in.get(demo + "/lifecycle.json?policy=nothing").get_json()
     assert run["finished"] and run["done"] == run["life"] * 12 == len(run["rows"]) == len(run["states"])
     assert len(run["states"][0]) == len(run["parts"])
-    assert {p["kind"] for p in run["parts"]} == {"fender", "wall", "deck", "bollard"}
+    assert {p["kind"] for p in run["parts"]} >= {"fender", "wall", "deck", "bollard", "pipes", "drainage", "power", "lighting"}
 
 
 def test_fixing_as_you_go_costs_less_and_lasts_longer(app, signed_in, demo):
@@ -920,7 +920,8 @@ def test_fixing_as_you_go_costs_less_and_lasts_longer(app, signed_in, demo):
     assert nothing["service_life"] < fixing["service_life"]
     # The cost in moves is the lost moves plus the repairs at the value of a move.
     value = both["fix"]["rates"]["value_per_move"]
-    assert fixing["cost_moves"] == round(fixing["lost"] + fixing["spend"] / value)
+    assert fixing["cost_moves"] == round(fixing["lost_all"] + fixing["spend"] / value)
+    assert fixing["lost_all"] == pytest.approx(fixing["lost"] + fixing["lost_weather"] + fixing["lost_hazard"] + fixing["lost_demand"], abs=2)
     # Fenders start to wear after about fifteen years, not before.
     first = min(e["m"] for e in both["fix"]["events"] if e.get("part", "") and e["part"].startswith("F") and e["kind"] == "warning")
     assert first >= 14 * 12
@@ -956,3 +957,71 @@ def test_the_rates_change_the_money_not_the_story(signed_in, demo):
     assert [e["m"] for e in dear["events"]] == [e["m"] for e in plain["events"]]
     assert dear["totals"]["spend"] < plain["totals"]["spend"]
     assert "220" in text(signed_in.get(demo + "/lifecycle?value_per_move=220"))
+
+
+def _demo_asset(app, demo):
+    from app.db import query, query_one
+    with app.app_context():
+        asset_id = int(demo.rstrip("/").split("/")[-1])
+        return (query_one("SELECT * FROM marine_assets WHERE id = ?", (asset_id,)),
+                query("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,)))
+
+
+def test_force_majeure_is_left_out_unless_asked_and_a_hit_closes_the_berth(app, signed_in, demo):
+    asset, elements = _demo_asset(app, demo)
+    plain = marine_life.run(asset, elements, "nothing")
+    assert not plain["risks"]["war_direct"] and not plain["risks"]["war_indirect"] and plain["risks"]["storms"]
+    assert not any(e.get("risk", "").startswith("war") for e in plain["events"])
+    war = marine_life.run(asset, elements, "nothing", risks={"risk_war_direct": "1", "risk_war_indirect": "1", "war_year": "20"})
+    hits = [e for e in war["events"] if e.get("risk") == "war_direct"]
+    assert len(hits) == 1 and 19 * 12 <= hits[0]["m"] < 20 * 12
+    assert war["totals"]["lost_demand"] > 0
+    assert war["totals"]["cost_moves"] > plain["totals"]["cost_moves"]
+    fixed = marine_life.run(asset, elements, "fix", risks={"risk_war_direct": "1", "war_year": "20"})
+    assert any(e["kind"] == "fix" and e["part"] == "X1" for e in fixed["events"])      # rebuilt after the hit
+
+
+def test_the_hazards_fall_in_the_same_months_however_the_berth_is_kept(app, signed_in, demo):
+    asset, elements = _demo_asset(app, demo)
+    asset = {**dict(asset), "id": 5}                    # a berth whose draws hold two earthquakes
+    risks = {"seismic": "high", "sea_level": "high", "freeboard": "0.8"}
+    nothing = marine_life.run(asset, elements, "nothing", risks=risks)
+    fixing = marine_life.run(asset, elements, "fix", risks=risks)
+    schedule = lambda r: [(m, h[0]) for m, w in enumerate(r["weather"]) for h in w["haz"]]  # noqa: E731
+    assert schedule(nothing) == schedule(fixing)[:len(schedule(nothing))]
+    quakes = [e["m"] for e in fixing["events"] if e.get("risk") == "earthquake"]
+    assert quakes and quakes == [m for m, key in schedule(fixing) if key == "earthquake"]
+    assert [w["slr"] for w in nothing["weather"]] == [w["slr"] for w in fixing["weather"]]
+    assert nothing["weather"][-1]["slr"] == pytest.approx(0.6, abs=0.02)
+    # A low cope and a rising sea: the sea comes over, and raising the quay is offered.
+    assert any(e.get("risk") == "sea_level" for e in nothing["events"])
+    assert any(e["kind"] == "fix" and e["part"] == "Q1" for e in fixing["events"])
+
+
+def test_the_utilities_silt_wear_out_and_are_kept_up(app, signed_in, demo):
+    asset, elements = _demo_asset(app, demo)
+    fixing = marine_life.run(asset, elements, "fix")
+    nothing = marine_life.run(asset, elements, "nothing")
+    fixed = {e["part"] for e in fixing["events"] if e["kind"] == "fix"}
+    assert {"U2", "U4"} <= fixed                                                  # drains cleaned, lights renewed
+    assert any(e.get("risk") == "drainage" for e in nothing["events"])            # blocked drains flood the apron
+    assert not any(e.get("risk") == "drainage" for e in fixing["events"])
+
+
+def test_each_part_carries_its_life_and_warranty_and_a_wear_repair_in_warranty_is_free(app, signed_in, demo):
+    asset, elements = _demo_asset(app, demo)
+    plain = marine_life.run(asset, elements, "fix")
+    fender = next(p for p in plain["parts"] if p["kind"] == "fender")
+    assert fender["expected_life"] == 20 and fender["warranty"] == 5 and fender["covers"]
+    generous = marine_life.run(asset, elements, "fix", rates={"warranty_fender": "40", "warranty_lighting": "40"})
+    assert generous["totals"]["warranty_fixes"] > plain["totals"]["warranty_fixes"]
+    assert generous["totals"]["spend"] < plain["totals"]["spend"]
+    assert any(e.get("warranty") for e in generous["events"] if e["kind"] == "fix")
+
+
+def test_the_risks_form_reads_the_box_ticked_after_its_hidden_zero(signed_in, demo):
+    page = text(signed_in.get(demo + "/lifecycle?risk_war_direct=0&risk_war_direct=1&risk_storms=0&war_year=12"))
+    assert "Risks to include" in page and "Expected life and warranty" in page
+    run = signed_in.get(demo + "/lifecycle.json?policy=nothing&risk_war_direct=0&risk_war_direct=1&risk_storms=0&war_year=12").get_json()
+    assert run["risks"]["war_direct"] and not run["risks"]["storms"] and run["risks"]["war_year"] == 12
+    assert all(w["storm"] == 0 for w in run["weather"])

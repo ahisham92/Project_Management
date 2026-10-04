@@ -9,7 +9,7 @@
 
 {% block content %}
 {{ page_head(asset, "The berth's " ~ both['fix']['life'] ~ "-year design life in a few minutes: the weather, the wear, the repairs, and what each costs in "
-   ~ both['fix']['units'] ~ " the berth could not handle. Watch it left alone, fixed as you go, or decide each issue yourself, and save any run as a video. Simulated for the prototype.") }}
+   ~ both['fix']['units'] ~ " the berth could not handle, with the weather, the rising sea, earthquakes, power cuts, the utilities and any force majeure you include. Click any part for its dates, warranty and life. Watch it left alone, fixed as you go, or decide each issue yourself, and save any run as a video. Simulated for the prototype.") }}
 {{ asset_tabs(asset) }}
 
 {% set n = both['nothing']['totals'] %}
@@ -68,10 +68,12 @@
       <tbody>
         <tr><td class="label">{{ both['fix']['units'] | capitalize }} handled</td><td class="right tabular">{{ '{:,}'.format(n['handled']) }}</td><td class="right tabular">{{ '{:,}'.format(f['handled']) }}</td></tr>
         <tr><td class="label">Lost to failed or closed parts</td><td class="right tabular">{{ '{:,}'.format(n['lost']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost']) }}</td></tr>
-        <tr><td class="label">Repairs</td><td class="right tabular">{{ n['fixes'] }}</td><td class="right tabular">{{ f['fixes'] }}, {{ money(f['spend']) }} = {{ '{:,}'.format(f['spend_moves']) }} {{ both['fix']['units'] }}</td></tr>
+        <tr><td class="label">Lost to the weather</td><td class="right tabular">{{ '{:,}'.format(n['lost_weather']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost_weather']) }}</td></tr>
+        <tr><td class="label">Lost to floods, power cuts and other events</td><td class="right tabular">{{ '{:,}'.format(n['lost_hazard']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost_hazard']) }}</td></tr>
+        <tr><td class="label">Lost to trade falling away (pandemic, war)</td><td class="right tabular">{{ '{:,}'.format(n['lost_demand']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost_demand']) }}</td></tr>
+        <tr><td class="label">Repairs</td><td class="right tabular">{{ n['fixes'] }}</td><td class="right tabular">{{ f['fixes'] }}{% if f['warranty_fixes'] %} ({{ f['warranty_fixes'] }} under warranty){% endif %}, {{ money(f['spend']) }} = {{ '{:,}'.format(f['spend_moves']) }} {{ both['fix']['units'] }}</td></tr>
         <tr><td class="label"><strong>Cost in {{ both['fix']['units'] }}</strong></td><td class="right tabular"><strong>{{ '{:,}'.format(n['cost_moves']) }}</strong></td><td class="right tabular"><strong>{{ '{:,}'.format(f['cost_moves']) }}</strong></td></tr>
         <tr><td class="label">In money</td><td class="right tabular">{{ money(n['cost']) }}</td><td class="right tabular">{{ money(f['cost']) }}</td></tr>
-        <tr><td class="label">Lost to the weather (both)</td><td class="right tabular">{{ '{:,}'.format(n['lost_weather']) }}</td><td class="right tabular">{{ '{:,}'.format(f['lost_weather']) }}</td></tr>
         <tr><td class="label">Service life</td><td class="right tabular">{{ life(n) }}</td><td class="right tabular">{{ life(f) }}</td></tr>
       </tbody>
     </table>
@@ -80,12 +82,53 @@
 </div>
 </section>
 
+<section class="mt-panel" data-tab="Risks" data-slug="risks">
+<div class="card">
+  <div class="card-head"><div><h2>Risks to include</h2>
+    <p class="small muted" style="margin-top:2px">What the {{ both['fix']['life'] }} years can throw at the berth. Force majeure is left out unless you add it. Every risk falls in the same months whichever way the berth is looked after.</p></div></div>
+  <div class="card-body">
+    <form method="get" action="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}" data-voyage="Running the design life again" class="mt-life-risks">
+      {% for key, value in given.items() if not (key.startswith('risk_') or key in ('sea_level', 'seismic', 'war_year', 'freeboard')) %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+      <div class="marine-params">
+        {% for group in ['Nature', 'Operations', 'Force majeure'] %}
+        <fieldset><legend>{{ group }}</legend>
+          {% for key, (name, g, default, what) in risk_list.items() if g == group %}
+            <input type="hidden" name="risk_{{ key }}" value="0">
+            <label class="mt-life-risk"><input type="checkbox" name="risk_{{ key }}" value="1" {% if risks[key] %}checked{% endif %}>
+              <span><b>{{ name }}</b><small class="muted">{{ what }}{% if both['fix']['totals']['hazards'].get(key) %} Happened {{ both['fix']['totals']['hazards'][key] }}× in this run.{% endif %}</small></span></label>
+            {% if key == 'sea_level' %}
+              <label class="field"><span class="field-label">Rise over the design life</span>
+                <select name="sea_level">{% for level, metres in sea_levels.items() %}<option value="{{ level }}" {% if (risks['sea_level'] or 'medium') == level %}selected{% endif %}>{{ level | capitalize }}: {{ '%.2f' | format(metres) }} m</option>{% endfor %}</select></label>
+              <label class="field"><span class="field-label">Cope above the highest storm tide today (m)</span>
+                <input type="number" name="freeboard" value="{{ risks['freeboard'] }}" min="0.2" max="9" step="0.1"></label>
+            {% elif key == 'earthquake' %}
+              <label class="field"><span class="field-label">Seismic zone</span>
+                <select name="seismic">{% for level, chance in seismic.items() %}<option value="{{ level }}" {% if (risks['earthquake'] or 'low') == level %}selected{% endif %}>{{ level | capitalize }}: about one in {{ (1 / chance) | round | int }} years</option>{% endfor %}</select></label>
+            {% elif key == 'war_direct' %}
+              <label class="field"><span class="field-label">Year of the war (blank: one is picked)</span>
+                <input type="number" name="war_year" value="{{ risks['war_year'] or '' }}" min="1" max="{{ both['fix']['life'] }}" step="1"></label>
+            {% endif %}
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+      <p style="margin-top:12px"><button type="submit" class="btn">Run it again</button></p>
+    </form>
+  </div>
+</div>
+</section>
+
 <section class="mt-panel" data-tab="Rates" data-slug="rates">
 <div class="card">
   <div class="card-head"><div><h2>Rates and prices</h2>
-    <p class="small muted" style="margin-top:2px">What a working day of the berth is worth and what each repair costs. Indicative, in US dollars.</p></div></div>
+    <p class="small muted" style="margin-top:2px">What a working day of the berth is worth, what each repair costs (US dollars), and how long each kind of part lasts and is guaranteed. A wear repair inside the warranty costs nothing. Indicative figures.</p></div></div>
   <div class="card-body">
-    <form method="get" action="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}" data-voyage="Running fifty years again">
+    <form method="get" action="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}" data-voyage="Running the design life again">
+      {% for key, value in given.items() if key.startswith('risk_') or key in ('sea_level', 'seismic', 'war_year', 'freeboard') %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
       <div class="marine-params">
         <fieldset><legend>The berth</legend>
           <label class="field"><span class="field-label">{{ both['fix']['units'] | capitalize }} a day at full working</span>
@@ -97,6 +140,16 @@
           {% for key, label, value in prices %}
             <label class="field"><span class="field-label">{{ label }}</span>
               <input type="number" name="{{ key }}" value="{{ value | int }}" min="1" step="1000"></label>
+          {% endfor %}
+        </fieldset>
+        <fieldset><legend>Expected life and warranty (years)</legend>
+          {% for key, name, life_years, warranty, covers in kinds %}
+            <div class="mt-life-kind">
+              <label class="field"><span class="field-label">{{ name }}: life</span>
+                <input type="number" name="life_{{ key }}" value="{{ life_years | int }}" min="1" max="150" step="1"></label>
+              <label class="field"><span class="field-label">warranty</span>
+                <input type="number" name="warranty_{{ key }}" value="{{ warranty | int }}" min="0" max="50" step="1" title="Covers {{ covers }}"></label>
+            </div>
           {% endfor %}
         </fieldset>
       </div>

@@ -238,12 +238,17 @@ def live_json(asset_id: int):
 
 
 def _life_rates() -> dict:
-    """The rates and prices the person changed, from the query string (the page's form) or a JSON body."""
+    """What the person changed (rates, prices, lives and warranties, the risks included), from the
+    query string (the page's forms) or a JSON body."""
     body = request.get_json(silent=True) if request.is_json else None
     given = body.get("rates") if isinstance(body, dict) else None
     source = given if isinstance(given, dict) else request.args
-    keys = ("moves_per_day", "value_per_move", *marine_life.PRICES)
-    return {k: source.get(k) for k in keys if source.get(k) not in (None, "")}
+    keys = ("moves_per_day", "value_per_move", *marine_life.PRICES,
+            *(f"life_{k}" for k in marine_life.KIND_INFO), *(f"warranty_{k}" for k in marine_life.KIND_INFO),
+            *(f"risk_{k}" for k in marine_life.RISKS), "sea_level", "seismic", "war_year", "freeboard")
+    # A ticked box sends its hidden 0 and then its 1: the last one is what was meant.
+    last = (lambda k: (source.getlist(k) or [None])[-1]) if hasattr(source, "getlist") else source.get
+    return {k: str(last(k))[:20] for k in keys if last(k) not in (None, "")}
 
 
 def _life_elements(asset_id: int):
@@ -257,9 +262,13 @@ def lifecycle(asset_id: int):
     """The design life in a few minutes: doing nothing against fixing as you go, or deciding each issue."""
     asset = _asset_or_404(asset_id)
     given = _life_rates()
-    both = marine_life.compare(asset, _life_elements(asset_id), given)
+    both = marine_life.compare(asset, _life_elements(asset_id), given, given)
     rates = both["fix"]["rates"]
     return render_template("marine/lifecycle.html", asset=asset, both=both, rates=rates, given=given,
+                           risks=both["fix"]["risks"], risk_list=marine_life.RISKS,
+                           sea_levels=marine_life.SEA_LEVEL, seismic=marine_life.SEISMIC,
+                           kinds=[(k, marine_life.KIND_NAME[k], rates[f"life_{k}"], rates[f"warranty_{k}"], v[2])
+                                  for k, v in marine_life.KIND_INFO.items()],
                            prices=[(k, marine_life.PRICE_NAMES[k], rates[k]) for k in marine_life.PRICES],
                            chart=life_costs(marine_life.yearly(both["nothing"]), marine_life.yearly(both["fix"]),
                                             both["fix"]["units"]),
@@ -275,7 +284,8 @@ def lifecycle_json(asset_id: int):
     body = body if isinstance(body, dict) else {}
     policy = body.get("policy") or request.args.get("policy") or "fix"
     choices = body.get("choices") if isinstance(body.get("choices"), list) else []
-    return jsonify(marine_life.run(asset, _life_elements(asset_id), policy, choices[:2000], _life_rates()))
+    given = _life_rates()
+    return jsonify(marine_life.run(asset, _life_elements(asset_id), policy, choices[:2000], given, risks=given))
 
 
 # --- beyond the structure ----------------------------------------------------------

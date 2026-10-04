@@ -78,6 +78,14 @@ TERMINAL_TYPES = [
     ("bulk", "Dry bulk"),
     ("multipurpose", "Multipurpose"),
 ]
+# What a berth without crane stoppers (no rail-mounted cranes) is used for: the user sets it per
+# berth in the live port. The ships that call, the cranes and what is stored behind follow it.
+BERTH_USES = [
+    ("container", "Containers, mobile cranes"),
+    ("general_cargo", "General cargo, mobile cranes"),
+    ("roro", "RoRo, vehicles over the ramp"),
+    ("mixed", "Both: cargo and RoRo ships"),
+]
 ZONES = [
     ("atmospheric", "Atmospheric"),
     ("splash", "Splash"),
@@ -296,6 +304,7 @@ CREATE TABLE IF NOT EXISTS marine_assets (
   msl_cd          REAL NOT NULL DEFAULT 1.0,        -- mean sea level above chart datum, m: model levels are mCD
   epsg            TEXT NOT NULL DEFAULT '',         -- the project's map grid, from the model
   feed_key        TEXT NOT NULL DEFAULT '',         -- the key a logger sends readings with; blank: none can
+  berth_uses      TEXT NOT NULL DEFAULT '{}',       -- JSON, berth number -> BERTH_USES key, for berths without crane stoppers
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -364,6 +373,7 @@ LATER_COLUMNS = [
     ("marine_assets", "msl_cd", "REAL NOT NULL DEFAULT 1.0"),
     ("marine_assets", "epsg", "TEXT NOT NULL DEFAULT ''"),
     ("marine_assets", "feed_key", "TEXT NOT NULL DEFAULT ''"),
+    ("marine_assets", "berth_uses", "TEXT NOT NULL DEFAULT '{}'"),
     ("marine_sensors", "feed_device", "TEXT NOT NULL DEFAULT ''"),
 ]
 

@@ -911,6 +911,46 @@ def test_ships_berth_only_inside_the_weather_limits():
                     assert kit["state"] in ("stopped", "stowed")
 
 
+def test_the_live_port_plays_each_situation():
+    now = datetime(2026, 10, 4, 21)
+    normal = marine_ops.live(3, now, "container")
+    assert normal["scenario"]["key"] == "normal" and all(h["power"] for h in normal["hours"])
+    cut = marine_ops.live(3, now, "container", scenario="power_cut")
+    dark = [h for h in cut["hours"] if not h["power"]]
+    assert len(dark) == 4 and dark[0]["at"].hour == 20 and dark[0]["at"] > cut["start"]
+    assert all(k["state"] == "down" for h in dark for k in h["equipment"])
+    assert any("Power cut" in e["text"] for e in cut["events"]) and any("Power restored" in e["text"] for e in cut["events"])
+    # Ramp gangs drive diesel vehicles: a power cut does not stop them.
+    roro = marine_ops.live(3, now, "roro", scenario="power_cut")
+    assert not any(k["why"].startswith("power cut") for h in roro["hours"] for k in h["equipment"])
+    storm = marine_ops.live(3, now, "container", scenario="storm")
+    assert any(k["state"] == "stowed" for h in storm["hours"] for k in h["equipment"])
+    assert not all(h["berthing"] for h in storm["hours"])
+    fog = marine_ops.live(3, now, "container", scenario="fog")
+    foggy = [h for h in fog["hours"] if h["fog"]]
+    assert foggy and all(not h["berthing"] and h["visibility"] < 0.5 for h in foggy)
+    fault = marine_ops.live(3, now, "container", scenario="crane_fault")
+    assert sum(1 for h in fault["hours"] if h["equipment"][0]["state"] == "down") >= 20
+    peak = marine_ops.live(3, now, "container", scenario="peak")
+    assert peak["scenario"]["name"] == "Peak week" and len(peak["calls"]) >= len(normal["calls"])
+    assert marine_ops.live(3, now, "container", scenario="nonsense")["scenario"]["key"] == "normal"
+
+
+def test_situations_and_berth_uses_over_the_web(signed_in, demo):
+    plan = signed_in.get(demo + "/live.json?scenario=storm").get_json()
+    assert plan["scenario"]["key"] == "storm" and [s["key"] for s in plan["scenarios"]][0] == "normal"
+    assert "data-scenario=\"fog\"" in text(signed_in.get(demo + "/live?scenario=fog"))
+    assert "/live?scenario=power_cut" in text(signed_in.get(demo + "/simulation"))
+    twin = signed_in.get(demo + "/twin.json").get_json()
+    assert twin["asset"]["berth_uses"] == {} and "roro" in twin["asset"]["berth_use_names"]
+    answer = signed_in.post(demo + "/berths", json={"berth": 6, "use": "roro"})
+    assert answer.status_code == 200 and answer.get_json()["berth_uses"] == {"6": "roro"}
+    signed_in.post(demo + "/berths", json={"berth": 7, "use": "mixed"})
+    assert signed_in.get(demo + "/twin.json").get_json()["asset"]["berth_uses"] == {"6": "roro", "7": "mixed"}
+    assert signed_in.post(demo + "/berths", json={"berth": 6, "use": "swimming"}).status_code == 400
+    assert signed_in.post(demo + "/berths", json={"berth": "x", "use": "roro"}).status_code == 400
+
+
 # --- the lifecycle --------------------------------------------------------------
 
 def test_the_lifecycle_page_compares_doing_nothing_with_fixing(signed_in, demo):

@@ -23,6 +23,16 @@
 {{ page_head(asset, "Add or take away berths, cranes, trucks or ships and see where the bottleneck goes. For comparing options, not sizing a terminal.") }}
 {{ asset_tabs(asset) }}
 
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head"><div><h2>See a situation play out</h2>
+    <p class="small muted" style="margin-top:2px">The same port in the live view under one situation at a time: ships, cranes, lights and weather.</p></div></div>
+  <div class="card-body mt-situations">
+    {% for key, name, words in situations %}
+      <a class="btn btn-sm{{ ' btn-primary' if loop.first }}" href="{{ url_for('marine.live', asset_id=asset['id'], scenario=key) }}" title="{{ words }}">{{ name }}</a>
+    {% endfor %}
+  </div>
+</div>
+
 {% set d = detail %}
 <h2 class="marine-q" style="margin-top:4px">{{ shown['name'] }}: where is the bottleneck?</h2>
 <div class="grid grid-4">

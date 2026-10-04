@@ -258,7 +258,7 @@ const MB = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
 
 async function loadKept(url) {
   const zipped = await fetchWithProgress(url, (f, got, total) =>
-    progress(0.15 + 0.35 * f, `Opening the Revit model: ${MB(got)} of ${MB(total)} MB`));
+    progress(0.8 * f, `Opening the Revit model: ${MB(got)} of ${MB(total)} MB`, 0, true));
   const raw = await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const { parts, origin } = unpackShapes(raw);
   return meshesFrom(parts, origin);
@@ -269,11 +269,11 @@ function readIfc(url, base, refs, keepAt) {
     const worker = new Worker(new URL('marinetwin-ifc-worker.js', import.meta.url), { type: 'module' });
     const parts = [];
     let reading = null;
-    const slow = () => progress(0.36, 'Reading the model. A big Revit model can take a minute or two the first time', 0.08);
+    const slow = () => progress(0.6, 'Reading the model. A big Revit model can take a minute or two the first time', 0.1);
     worker.onmessage = (ev) => {
       const m = ev.data;
       if (m.type === 'progress' && m.stage === 'download') {
-        progress(0.15 + 0.2 * (m.loaded / m.total), `Downloading the Revit model: ${MB(m.loaded)} of ${MB(m.total)} MB`);
+        progress(0.6 * (m.loaded / m.total), `Downloading the Revit model: ${MB(m.loaded)} of ${MB(m.total)} MB`, 0, true);
       } else if (m.type === 'progress' && m.stage === 'open') {
         slow();
         reading = setTimeout(() => note('Still reading the model: big Revit exports take a while the first time. It is kept after that.'), 45000);
@@ -281,7 +281,7 @@ function readIfc(url, base, refs, keepAt) {
         clearTimeout(reading);
         note('Loading the IFC model…');
         const f = m.total ? m.done / m.total : 0;
-        progress(0.45 + 0.1 * f, m.total ? `Building the model: ${m.done.toLocaleString()} of ${m.total.toLocaleString()} objects` : 'Building the model');
+        progress(0.7 + 0.15 * f, m.total ? `Building the model: ${m.done.toLocaleString()} of ${m.total.toLocaleString()} objects` : 'Building the model');
       } else if (m.type === 'part') {
         parts.push(m);
       } else if (m.type === 'kept') {
@@ -753,15 +753,18 @@ function terminal(scene, frame, twin, rng) {
 
 // The ship loader (marinetwin-ui.js) over the view while it builds, as in Triton.
 let voyage = null;
-function progress(f, words, ahead = 0) {
+// With a Revit model the download (or the kept copy) is the first 60–80%, measured in bytes; the
+// steps after it share the rest. exact shows f at once, without sailing up to it.
+function progress(f, words, ahead = 0, exact = false) {
   if (!voyage && window.MarineVoyage) voyage = window.MarineVoyage(view, words);
-  if (voyage) voyage.set(f, words, ahead);
+  if (voyage) voyage.set(f, words, ahead, exact);
 }
 
 async function main() {
-  progress(0.04, 'Loading the twin', 0.1);
+  progress(0, 'Loading the twin', 0.02);
   const twin = await (await fetch(view.dataset.twin, { credentials: 'same-origin' })).json();
-  progress(0.15, twin.model ? 'Opening the Revit model' : 'Drawing the berth', twin.model ? 0.05 : 0.2);
+  if (twin.model) progress(0, 'Opening the Revit model');
+  else progress(0.15, 'Drawing the berth', 0.2);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, (view.clientWidth || 800) / (view.clientHeight || 460), 0.5, 30000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -807,7 +810,7 @@ async function main() {
     if (!twin.model) note(twin.elements.length ? 'Schematic: no Revit model uploaded yet.' : 'No elements yet.');
   }
   scene.add(content);
-  progress(0.55, 'Building the terminal around it', 0.15);
+  progress(twin.model ? 0.85 : 0.55, 'Building the terminal around it', twin.model ? 0.04 : 0.15);
 
   // Turn the model so its fenders face the sea (-z) and the berth runs along x.
   const centreOf = (kind) => {
@@ -939,7 +942,7 @@ async function main() {
   const sim = twin.now;
   let live = null;
   if (twin.asset.latitude !== null && twin.asset.longitude !== null) {
-    progress(0.72, 'Reading the weather and tide there', 0.18);
+    progress(twin.model ? 0.9 : 0.72, 'Reading the weather and tide there', twin.model ? 0.05 : 0.18);
     try { live = await liveWeather(lat, lon); } catch (err) { live = null; }
   }
   const utcOffset = live ? live.met.utc_offset_seconds : Math.round(lon / 15) * 3600;
@@ -1099,7 +1102,7 @@ async function main() {
   // The live port: the player takes over the clock, the ships, the cranes and the weather.
   let player = null;
   if (LIVE) {
-    progress(0.8, 'Loading the next two days at the berth', 0.1);
+    progress(twin.model ? 0.95 : 0.8, 'Loading the next two days at the berth', twin.model ? 0.03 : 0.1);
     const { startLive } = await import('./marinetwin-live.js');
     player = await startLive({
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,

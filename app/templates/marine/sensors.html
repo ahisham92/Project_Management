@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Real sensors · MarineTwin{% endblock %}
+
+{% macro kit_table(k, empty_text) %}
+  {% if k['lines'] %}
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th>Item</th><th>What it is for</th><th class="right">Quantity</th><th class="right">Each</th><th class="right">Total</th></tr></thead>
+    <tbody>
+      {% for l in k['lines'] %}
+        {% if loop.changed(l['group']) %}<tr class="mt-kit-group"><td colspan="5"><strong>{{ l['group'] }}</strong></td></tr>{% endif %}
+        <tr><td>{{ l['item'] }}</td><td class="small muted">{{ l['why'] }}</td>
+          <td class="right tabular">{{ '{:,}'.format(l['qty']) }}{{ ' m' if 'cable' in l['item'] }}</td>
+          <td class="right tabular small">{{ money(l['low']) }}–{{ money(l['high']) }}</td>
+          <td class="right tabular">{{ money(l['total_low']) }}–{{ money(l['total_high']) }}</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="4"><strong>Hardware</strong></td><td class="right tabular"><strong>{{ money(k['hardware_low']) }}–{{ money(k['hardware_high']) }}</strong></td></tr>
+      <tr><td colspan="4">Installation and commissioning <span class="small muted">(about 1 to 2 times the hardware; more where divers are needed)</span></td>
+        <td class="right tabular">{{ money(k['install_low']) }}–{{ money(k['install_high']) }}</td></tr>
+      <tr><td colspan="4"><strong>Installed and working</strong></td><td class="right tabular"><strong>{{ money(k['total_low']) }}–{{ money(k['total_high']) }}</strong></td></tr>
+      <tr><td colspan="4">Each year to keep it running <span class="small muted">(data SIMs, calibration, batteries, repairs)</span></td>
+        <td class="right tabular">{{ money(k['yearly_low']) }}–{{ money(k['yearly_high']) }}</td></tr>
+    </tfoot>
+  </table>
+  </div>
+  {% if k['surveys'] %}<p class="small muted" style="margin-top:8px">Crane rails are measured by a surveyor twice a year
+    ($2,000–$5,000 a survey) and the results imported as CSV.</p>{% endif %}
+  {% else %}<p class="muted">{{ empty_text }}</p>{% endif %}
+{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "Connecting real sensors: what the kit costs, what you do, and readings arriving live. Costs are 2026 budget figures in US dollars, not quotes.") }}
+{{ asset_tabs(asset) }}
+
+{% set live = feed['fed'] | length %}
+<div class="grid grid-4">
+  {{ tile('Sensors on this asset', '{:,}'.format(whole['sensors']), '{:,}'.format(whole['channels']) ~ ' read by a logger, the rest surveyed or wireless') }}
+  {{ tile('Junction boxes and loggers', whole['boxes'] ~ ' + ' ~ whole['loggers'], 'one box per 16 sensors, one logger per 64') }}
+  {{ tile('Whole asset, installed', money(whole['total_low']) ~ '–' ~ money(whole['total_high']), 'hardware ' ~ money(whole['hardware_low']) ~ '–' ~ money(whole['hardware_high']) ~ ' plus installation') }}
+  {{ tile('Live now', live, 'sensors a logger feeds', 'good' if live else 'neutral', 'receiving' if live else 'none yet') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="Kit and cost" data-slug="kit" data-open="1">
+<div class="card">
+  <div class="card-head"><div><h2>Start with one element</h2>
+    <p class="small muted" style="margin-top:2px">A pilot proves the whole chain (sensor, junction box, logger, 4G, MarineTwin) before the berth is fitted out.</p></div>
+    <form method="get" class="inline-form" style="align-items:flex-end">
+      <label class="field"><span class="field-label">Element</span>
+        <select name="element" onchange="this.form.submit()">
+          {% for e in elements %}<option value="{{ e['id'] }}" {{ 'selected' if e['id'] == pilot_id }}>{{ e['name'] }} ({{ e['n'] }} sensor{{ 's' if e['n'] != 1 }})</option>{% endfor %}
+        </select></label>
+      <noscript><button class="btn btn-ghost btn-sm">Show</button></noscript>
+    </form>
+  </div>
+  <div class="card-body">{{ kit_table(pilot, 'Add an element with sensors in Set up to see its kit.') }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>The whole asset</h2>
+    <p class="small muted" style="margin-top:2px">Every sensor MarineTwin tracks on {{ asset['name'] }}, wired the usual way.</p></div></div>
+  <div class="card-body">{{ kit_table(whole, 'No sensors yet. Import the elements in Set up.') }}</div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="What you do" data-slug="steps">
+<div class="card">
+  <div class="card-head"><div><h2>From buying to live readings</h2>
+    <p class="small muted" style="margin-top:2px">Who does each step. MarineTwin's part is already done: the address and the key are on the Live feed tab.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table mt-steps-table">
+      <thead><tr><th class="right">#</th><th>Step</th><th>Who</th></tr></thead>
+      <tbody>
+        <tr><td class="right tabular">1</td><td><strong>Pick the pilot element</strong> on the Kit and cost tab and print its kit list.</td><td>You</td></tr>
+        <tr><td class="right tabular">2</td><td><strong>Ask two monitoring contractors to quote</strong> against it. Say three things: each sensor carries its MarineTwin label (for example {{ channels[0]['sensor'] if channels else 'MP1-DS03-01-SG1' }}), the logger stores engineering units, and it sends readings by HTTPS POST.</td><td>You</td></tr>
+        <tr><td class="right tabular">3</td><td><strong>Install</strong> the sensors, cable in conduit to a junction box above the splash zone, and the logger cabinet on the quay. Take a zero reading of every sensor.</td><td>Installer</td></tr>
+        <tr><td class="right tabular">4</td><td><strong>Set the logger to send</strong> to the address on the Live feed tab with the asset's key, hourly or every 10 minutes. Give the installer the key only, never your password.</td><td>Installer, with the key from you</td></tr>
+        <tr><td class="right tabular">5</td><td><strong>Watch the Live feed tab</strong>: each delivery shows with what it wrote and anything it could not place.</td><td>You</td></tr>
+        <tr><td class="right tabular">6</td><td><strong>Read the results</strong> on the Structure step. A sensor that gets real readings stops being simulated; its chart, state and advice now come from the berth.</td><td>MarineTwin</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted" style="margin-top:8px">No logger yet? Readings a surveyor or a logger exports can still come in as a CSV file in
+      <a href="{{ url_for('marine.setup', asset_id=asset['id'], _anchor='readings') }}">Set up, Sensor readings</a>.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>What each reading is measured with</h2>
+    <p class="small muted" style="margin-top:2px">Sensors cast into concrete cannot be replaced, so fit 20–30% spares. The logger, modem and battery fail first; they sit in the cabinet, reached from the quay.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Reading</th><th>Instrument</th><th>How it reaches MarineTwin</th><th class="right">Each</th><th>Lasts</th></tr></thead>
+      <tbody>
+        {% for kind, spec in sensor_kit.items() %}
+        <tr><td><strong>{{ sensor_kinds[kind]['name'] }}</strong> <span class="small muted">{{ sensor_kinds[kind]['unit'] }}</span></td>
+          <td class="small">{{ spec['item'] }}</td><td class="small">{{ route_words[spec['route']] }}</td>
+          <td class="right tabular small">{% if spec['high'] %}{{ money(spec['low']) }}–{{ money(spec['high']) }}{% else %}—{% endif %}</td>
+          <td class="small">{{ spec['life'] }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Live feed" data-slug="live-feed" data-count="{{ live if live }}">
+<div class="card">
+  <div class="card-head"><div><h2>Where a logger sends readings</h2>
+    <p class="small muted" style="margin-top:2px">HTTPS POST to this address with the key. The key lets a logger in without a password; anyone holding it can send readings to this asset, so give it only to the installer.</p></div>
+    <form method="post" action="{{ url_for('marine.renew_feed_key', asset_id=asset['id']) }}"
+          onsubmit="return confirm('Make a new key? Loggers using the old one stop being accepted.')">
+      <button class="btn btn-ghost btn-sm">Make a new key</button></form>
+  </div>
+  <div class="card-body">
+    <div class="mt-feed-keys">
+      <label class="field"><span class="field-label">Address</span>
+        <span class="mt-copy"><input type="text" readonly value="{{ endpoint }}" id="mt-feed-url"><button type="button" class="btn btn-ghost btn-sm" data-copy="mt-feed-url">Copy</button></span></label>
+      <label class="field"><span class="field-label">Key</span>
+        <span class="mt-copy"><input type="text" readonly value="{{ key }}" id="mt-feed-key"><button type="button" class="btn btn-ghost btn-sm" data-copy="mt-feed-key">Copy</button></span></label>
+    </div>
+    <details class="mt-more" style="margin-top:10px"><summary>What the logger sends</summary>
+<pre class="mt-code">POST {{ endpoint }}
+Authorization: Bearer {{ key }}
+Content-Type: application/json
+
+{"device": "cabinet-1", "readings": [
+  {"sensor": "{{ channels[0]['sensor'] if channels else 'MP1-DS03-01-SG1' }}", "at": "2026-10-04T13:00", "value": {{ channels[0]['start'] if channels else 312 }}}
+]}</pre>
+      <p class="small muted">Or the same columns as CSV text (<code>sensor,at,value,note</code>) with <code>Content-Type: text/csv</code>. A logger that cannot set headers can add <code>?key=…</code> to the address.
+        MarineTwin answers with what it wrote and, row by row, anything it could not place.</p>
+    </details>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Try it with a fake logger</h2>
+    <p class="small muted" style="margin-top:2px">It acts as the logger in the cabinet: sends the last 24 hours it kept, then a reading every few seconds, through the same address and key a real one uses.
+      It reads {{ channels | length }} sensor{{ 's' if channels | length != 1 }}, one of each kind a logger reads.</p></div></div>
+  <div class="card-body">
+    {% if channels %}
+    <div class="inline-form" style="flex-wrap:wrap;gap:8px">
+      <button type="button" class="btn btn-primary" id="mt-fake-start">Start the fake logger</button>
+      <button type="button" class="btn btn-ghost" id="mt-fake-stop" disabled>Stop</button>
+      <button type="button" class="btn btn-ghost" id="mt-fake-alarm" title="One reading past its alarm limit, as after a hard berthing">Send an alarm reading</button>
+      <a class="btn btn-ghost" download href="{{ url_for('marine.fake_logger', asset_id=asset['id']) }}">Download it to run on a computer</a>
+    </div>
+    <p class="small muted" style="margin-top:8px">The download is one Python file with this asset's address and key in it: <code>python fake_logger.py</code> on any computer with Python 3, nothing to install.</p>
+    <pre class="mt-code mt-fake-log" id="mt-fake-log" aria-live="polite">Waiting to start.</pre>
+    {% else %}<p class="muted">This asset has no sensors a logger reads (strain, tilt, cracks, chloride, half-cell, fender or bollard loads). Add some in Set up first.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>Arriving now</h2>
+    <p class="small muted" style="margin-top:2px" id="mt-feed-when">Refreshes every few seconds.</p></div>
+    {% if feed['fed'] | selectattr('feed_device', 'equalto', fake_device) | list %}
+    <form method="post" action="{{ url_for('marine.reset_fake_feed', asset_id=asset['id']) }}">
+      <button class="btn btn-ghost btn-sm">Put the fake logger's sensors back on simulation</button></form>
+    {% endif %}
+  </div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Sensor</th><th>Reading</th><th class="right">Latest</th><th>At</th><th class="right">Readings</th><th>From</th></tr></thead>
+      <tbody id="mt-feed-sensors">
+        {% for s in feed['fed'] %}
+        <tr><td><a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=s['element_id']) }}"><strong>{{ s['label'] }}</strong></a></td>
+          <td class="small">{{ s['kind_name'] }}</td><td class="right tabular">{{ s['latest'] }} <span class="small muted">{{ s['unit'] }}</span></td>
+          <td class="small tabular">{{ s['latest_at'] | replace('T', ' ') }}</td><td class="right tabular">{{ s['count'] }}</td><td class="small">{{ s['feed_device'] }}</td></tr>
+        {% else %}<tr><td colspan="6" class="muted">No logger has sent anything yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <h3 class="small" style="margin:14px 0 6px">Deliveries</h3>
+    <table class="table">
+      <thead><tr><th>Arrived (UTC)</th><th>From</th><th class="right">Written</th><th>Problems</th></tr></thead>
+      <tbody id="mt-feed-deliveries">
+        {% for d in feed['deliveries'] %}
+        <tr><td class="small tabular">{{ d['at'] | replace('T', ' ') }}</td><td class="small">{{ d['device'] or '—' }}</td>
+          <td class="right tabular">{{ d['written'] }}</td><td class="small {{ 'state-warning' if d['problems'] }}">{{ d['first_problem'] if d['problems'] else '—' }}{% if d['problems'] > 1 %} (+{{ d['problems'] - 1 }} more){% endif %}</td></tr>
+        {% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+</div>
+
+<script type="application/json" id="mt-feed-config">{{ {
+  'endpoint': endpoint, 'key': key, 'device': fake_device, 'channels': channels,
+  'status': url_for('marine.feed_status', asset_id=asset['id']),
+  'element': url_for('marine.element', asset_id=asset['id'], element_id=0)} | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='marinetwin-feed.js') }}" defer></script>
+{% endblock %}

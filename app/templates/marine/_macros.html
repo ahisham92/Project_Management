@@ -27,7 +27,7 @@
   {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}
   {% set steps = [
       ('marine.index', 'Assets', asset['name'] if asset else 'pick or add one', ['marine.index']),
-      ('marine.setup', 'Set up', 'model, place, details', ['marine.setup']),
+      ('marine.setup', 'Set up', 'model, place, sensors', ['marine.setup', 'marine.sensors']),
       ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
       ('marine.live', 'Live port', 'ships, cranes, weather', ['marine.live']),
       ('marine.lifecycle', 'Lifecycle', '50 years, fix or wait', ['marine.lifecycle']),

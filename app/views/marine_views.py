@@ -20,7 +20,7 @@ from flask import (
     Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
 )
 
-from .. import marine, marine_facility, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton
+from .. import marine, marine_facility, marine_feed, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
 from ..marine_charts import (
@@ -42,6 +42,7 @@ def _redirect_for_the_voyage(response):
 MODEL_TYPES = {".ifc": "ifc", ".glb": "glb", ".gltf": "gltf"}
 MODEL_LIMIT = 200 * 1024 * 1024
 SHAPES_LIMIT = 600 * 1024 * 1024
+FEED_LIMIT = 4 * 1024 * 1024                         # one logger delivery
 
 
 def models_dir() -> Path:
@@ -835,3 +836,103 @@ def delete_sensor(asset_id: int, sensor_id: int):
     get_db().commit()
     flash(f"{sensor['label']} and its readings were removed.", "success")
     return redirect(url_for("marine.element", asset_id=asset_id, element_id=sensor["element_id"]))
+
+
+# --- real sensors: the kit, and the door a logger sends readings through --------------------------
+
+@bp.get("/assets/<int:asset_id>/sensors")
+@login_required
+def sensors(asset_id: int):
+    """Connecting real sensors: what the kit costs, what the person does, and the live feed."""
+    asset = _asset_or_404(asset_id)
+    db = get_db()
+    key = marine_feed.key_for(db, asset_id)
+    db.commit()
+    logged = [k for k, v in marine_feed.SENSOR_KIT.items() if v["route"] == "logger"]
+    elements = query(
+        "SELECT e.id, e.name, COUNT(s.id) AS n, SUM(s.kind IN (%s)) AS wired FROM marine_elements e"
+        " JOIN marine_sensors s ON s.element_id = e.id WHERE e.asset_id = ? GROUP BY e.id ORDER BY e.name"
+        % ",".join("?" * len(logged)), (*logged, asset_id))
+    pilot_id = request.args.get("element", type=int)
+    if pilot_id is None or not any(e["id"] == pilot_id for e in elements):
+        # The pilot: the element a logger reads most sensors on.
+        pilot_id = max(elements, key=lambda e: (e["wired"] or 0, -e["id"]))["id"] if elements else None
+    pilot_counts = marine_feed.counts_for(db, asset_id, pilot_id) if pilot_id else {}
+    channels = marine_feed.fake_channels(db, asset)
+    base = request.url_root.rstrip("/")
+    return render_template(
+        "marine/sensors.html", asset=asset, key=key,
+        endpoint=f"{base}{url_for('marine.feed_readings', asset_id=asset_id)}",
+        whole=marine_feed.kit(marine_feed.counts_for(db, asset_id)), pilot=marine_feed.kit(pilot_counts),
+        pilot_id=pilot_id, elements=elements, channels=channels, sensor_kit=marine_feed.SENSOR_KIT,
+        route_words=marine_feed.ROUTE_WORDS, money=marine_feed.money, feed=marine_feed.status(db, asset_id),
+        fake_device=marine_feed.FAKE_DEVICE, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/feed.json")
+@login_required
+def feed_status(asset_id: int):
+    _asset_or_404(asset_id)
+    return jsonify(marine_feed.status(get_db(), asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/feed/key")
+@login_required
+def renew_feed_key(asset_id: int):
+    _asset_or_404(asset_id)
+    marine_feed.key_for(get_db(), asset_id, renew=True)
+    get_db().commit()
+    flash("A new key is made. Loggers using the old one are shut out until they get the new one.", "success")
+    return redirect(url_for("marine.sensors", asset_id=asset_id, _anchor="live-feed"))
+
+
+@bp.post("/assets/<int:asset_id>/feed/reset")
+@login_required
+def reset_fake_feed(asset_id: int):
+    _asset_or_404(asset_id)
+    n = marine_feed.back_to_simulation(get_db(), asset_id)
+    get_db().commit()
+    flash(f"{n} sensor{'s' if n != 1 else ''} the fake logger fed went back to simulation." if n
+          else "The fake logger has not fed any sensors yet.", "success")
+    return redirect(url_for("marine.sensors", asset_id=asset_id, _anchor="live-feed"))
+
+
+@bp.get("/assets/<int:asset_id>/fake_logger.py")
+@login_required
+def fake_logger(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    db = get_db()
+    key = marine_feed.key_for(db, asset_id)
+    db.commit()
+    body = marine_feed.fake_script(request.url_root.rstrip("/"), query_one(
+        "SELECT * FROM marine_assets WHERE id = ?", (asset_id,)), key, marine_feed.fake_channels(db, asset))
+    return Response(body, mimetype="text/x-python",
+                    headers={"Content-Disposition": "attachment; filename=fake_logger.py"})
+
+
+@bp.post("/api/assets/<int:asset_id>/readings")
+def feed_readings(asset_id: int):
+    """Where a logger sends its readings: HTTPS POST with the asset's key, as JSON
+    (``{"device": …, "readings": [{"sensor", "at", "value", "note"}]}``) or as CSV text in the import's
+    columns. Not behind the sign-in, since a logger cannot sign in: the key is what lets it in."""
+    asset = query_one("SELECT * FROM marine_assets WHERE id = ?", (asset_id,))
+    given = request.headers.get("X-MarineTwin-Key") or request.args.get("key") or ""
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        given = auth[7:]
+    if asset is None or not marine_feed.key_matches(asset, given):
+        return jsonify(ok=False, error="Unknown asset or wrong key."), 403
+    if (request.content_length or 0) > FEED_LIMIT:
+        return jsonify(ok=False, error="Too much at once; send smaller batches."), 413
+    device = (request.args.get("device") or request.headers.get("X-MarineTwin-Device") or "")[:60]
+    db = get_db()
+    if request.is_json:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify(ok=False, error="The body is not valid JSON."), 400
+        result = marine_feed.receive(db, asset_id, payload, device)
+    else:
+        result = marine_feed.receive_csv(db, asset_id, request.get_data(as_text=True), device)
+    db.commit()
+    return jsonify(ok=not result["problems"], written=result["written"], sensors=result["sensors"],
+                   problems=result["problems"]), 200 if result["written"] or not result["problems"] else 422

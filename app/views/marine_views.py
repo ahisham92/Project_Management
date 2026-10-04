@@ -763,6 +763,25 @@ def delete_element(asset_id: int, element_id: int):
     return redirect(url_for("marine.asset", asset_id=asset_id))
 
 
+# To bring a model's elements in again (after a new export, or to take the newer import's sensors),
+# all of them go at once, with their sensors and readings; the model file stays.
+@bp.post("/assets/<int:asset_id>/elements/delete")
+@login_required
+def delete_elements(asset_id: int):
+    _asset_or_404(asset_id)
+    db = get_db()
+    # Children first, by set: sensors have no index on element_id, so a cascade per element would
+    # scan them all once for each of thousands of elements.
+    mine = "SELECT s.id FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id WHERE e.asset_id = ?"
+    db.execute(f"DELETE FROM marine_readings WHERE sensor_id IN ({mine})", (asset_id,))
+    db.execute(f"DELETE FROM marine_sensors WHERE id IN ({mine})", (asset_id,))
+    gone = db.execute("DELETE FROM marine_elements WHERE asset_id = ?", (asset_id,)).rowcount
+    db.commit()
+    flash(f"{gone} element{'s' if gone != 1 else ''} and their sensors were removed. Import them again from the model below."
+          if gone else "There were no elements to remove.", "success")
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
+
+
 @bp.get("/assets/<int:asset_id>/elements/<int:element_id>")
 @login_required
 def element(asset_id: int, element_id: int):

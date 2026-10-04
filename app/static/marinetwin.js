@@ -1159,7 +1159,7 @@ async function main() {
 
   // The lifecycle: the design life month by month, the parts wearing and being mended on the model.
   if (LIFE) {
-    progress(0.9, 'Running the design life', 0.08);
+    progress(twin.model ? 0.95 : 0.9, 'Running the design life', twin.model ? 0.03 : 0.08);
     const { startLife } = await import('./marinetwin-life.js');
     player = await startLife({
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,

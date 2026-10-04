@@ -907,6 +907,7 @@ function terminal(scene, frame, twin, rng, quay) {
       const p = quayPoint(quay, along, inland);
       crane.position.set(p.x, top, p.z);
       crane.rotation.y = facing(p.leg.sea);
+      crane.userData.along = along;
       if (Math.hypot(p.x - berthAt[0], p.z - berthAt[1]) > reach) { crane.userData.working = false; crane.userData.idle = true; }
       g.add(crane);
       return crane;
@@ -1027,7 +1028,48 @@ function terminal(scene, frame, twin, rng, quay) {
     }
   }
   scene.add(g);
-  return { group: g, movers, cranes, lights, kind, yardDepth };
+  // Along a traced quay, every berth is a working one: each stretch of about 300 m of a leg is a
+  // berth with its own ships (the live port brings them in and out), and the yard behind every
+  // leg has its stacks and its tractors.
+  const berths = [];
+  if (quay) {
+    const mainAt = onQuay(quay, [centre, front]).s;
+    for (const leg of quay.legs) {
+      if (leg.len < 200) continue;
+      const n = Math.max(1, Math.floor(leg.len / 300));
+      for (let k = 0; k < n; k++) {
+        const from = leg.from + (k * leg.len) / n;
+        const to = leg.from + ((k + 1) * leg.len) / n;
+        berths.push({ leg, from, to, mid: (from + to) / 2, length: to - from, main: mainAt >= from && mainAt <= to });
+      }
+    }
+    for (const c of cranes) {
+      const b = berths.find((x) => !x.main && c.userData.along >= x.from && c.userData.along <= x.to);
+      if (b) c.userData.berth = b;
+    }
+    for (const leg of quay.legs) {
+      if (leg.len < 150 || berths.some((b) => b.main && b.leg === leg)) continue;     // the main leg has its own
+      const yardOf = new THREE.Group();
+      // Local x along the leg, local z inland.
+      const inland = Math.sign(leg.land[0] * -leg.dir[1] + leg.land[1] * leg.dir[0]) || 1;
+      yardOf.position.set(leg.a[0], top, leg.a[1]);
+      yardOf.rotation.y = Math.atan2(-leg.dir[1], leg.dir[0]);
+      const blocks = [];
+      const bays = Math.max(4, Math.floor(leg.len / 3 / 12.6) - 1);
+      for (let b = 0; b < 6; b++) blocks.push({ x: 10 + (b % 3) * (leg.len / 3), y: 0, z: inland * (60 + Math.floor(b / 3) * 70) - (inland < 0 ? 15 : 0), bays, rows: 6, tiers: 4 });
+      if (kind === 'container' || kind === 'multipurpose') yardOf.add(containerStacks(blocks, rng));
+      g.add(yardOf);
+      // Tractors between the quay and the stacks of this leg.
+      const p = (t, z) => [leg.a[0] + leg.dir[0] * t + leg.land[0] * z, leg.a[1] + leg.dir[1] * t + leg.land[1] * z];
+      const route = loop([p(20, 14), p(leg.len - 20, 14), p(leg.len - 10, 50), p(10, 50)], top + 0.1);
+      for (let k = 0; k < 4; k++) {
+        const v = vehicle(kind === 'roro' ? 'car' : kind === 'container' || kind === 'multipurpose' ? 'tractor' : 'truck', [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825][k]);
+        g.add(v);
+        movers.push({ object: v, curve: route, offset: k / 4, speed: 6 / route.getLength() });
+      }
+    }
+  }
+  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -1204,6 +1246,23 @@ async function main() {
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     scene.add(vessel);
   }
+  // The other berths along the quay: most have a ship alongside, worked by their own cranes.
+  if (!LIVE && !LIFE) {
+    for (const b of site.berths.filter((x) => !x.main)) {
+      if (rng() > 0.7) continue;
+      const loa = Math.min(b.length - 30, 180 + rng() * 170);
+      if (loa < 120) continue;
+      const beam = Math.round(loa * 0.14);
+      const m = ship(site.kind === 'roro' ? 'ro-ro' : site.kind === 'bulk' ? 'bulk carrier' : 'container ship', loa, beam, 12, rng);
+      const p = quayPoint(site.quay, b.mid, -(beam / 2 + 2));
+      m.position.set(p.x, 0, p.z);
+      m.rotation.y = Math.atan2(-p.leg.dir[1], p.leg.dir[0]);
+      m.traverse((n) => { if (n.isMesh) n.castShadow = true; });
+      scene.add(m);
+      b.ship = m;
+      for (const c of site.cranes) if (c.userData.berth === b) { c.userData.idle = false; c.userData.working = true; }
+    }
+  }
   const lamps = [];
   for (const mast of site.lights.slice(0, 4)) {
     const light = new THREE.PointLight(0xffd9a0, 0, 160, 1.6);
@@ -1329,6 +1388,7 @@ async function main() {
     const tide = tideAt(when);
     water.position.y = tide;
     if (vessel) vessel.position.y = tide;
+    for (const b of site.berths) if (b.ship && !LIVE) b.ship.position.y = tide;
     if (Math.abs(day - lastEnv) > 0.08) {
       // Reflections from the sky as it is now.
       if (envTarget) envTarget.dispose();

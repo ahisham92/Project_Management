@@ -10,6 +10,7 @@
     <p class="small muted" style="margin-top:2px">
       The next two days at the berth, played like a camera: ships coming in and sailing, the {{ 'ramp gangs' if asset['terminal_type'] == 'roro' else 'cranes' }} working,
       people and vehicles on the apron, day and night, wind, rain and the tide. 10× by default; 600× shows a day in under three minutes.
+      Pick a situation (a storm, a power cut, fog, a peak week) to see how the port copes, and set what each berth without crane stoppers is used for under Berths.
       Feeds simulated for the prototype.
     </p>
   </div>
@@ -22,6 +23,8 @@
     <div class="marine-view marine-live-view" data-mode="live"
          data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
          data-live="{{ url_for('marine.live_json', asset_id=asset['id']) }}"
+         data-scenario="{{ request.args.get('scenario', 'normal') }}"
+         data-berths="{{ url_for('marine.save_berth_use', asset_id=asset['id']) }}"
          data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/"></div>
   </div>
 </div>

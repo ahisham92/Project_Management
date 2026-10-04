@@ -225,3 +225,18 @@
 .mt-live-bar select.mt-life-part option { color: #0b1b2b; }
 .mt-live-ticks i.k-hazard { background: #ce93d8; }
 .mt-live-log li.k-hazard { border-color: #9c27b0; }
+
+/* The situations to play, and the berths along the quay with what each is doing and used for. */
+.mt-situations { display: flex; flex-wrap: wrap; gap: 6px; }
+.mt-berths { position: absolute; left: 12px; top: 72px; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 150px); overflow: auto;
+  background: rgba(10, 18, 28, .86); border-radius: 10px; padding: 8px 10px; }
+.mt-berths h3 { font-size: 13px; margin: 0 0 6px; }
+.mt-berths ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mt-berths li { display: grid; gap: 2px; padding: 4px 0; border-top: 1px solid rgba(255,255,255,.12); }
+.mt-berths li small { opacity: .75; }
+.mt-berths li.is-busy strong::after { content: ' ●'; color: #66bb6a; }
+.mt-berths select { background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 6px; padding: 3px 6px; font: inherit; }
+.mt-berths select option { color: #0b1b2b; }
+.mt-berths .close { position: absolute; right: 8px; top: 4px; background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
+.mt-live-scenario-words { opacity: .8; }
+@media (max-width: 720px) { .mt-berths { top: auto; bottom: 110px; max-height: 45%; } }

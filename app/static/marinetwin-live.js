@@ -19,7 +19,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export async function startLive(ctx) {
   const { THREE, view, scene, camera, controls, frame, site, rng, focus, radius, water, sky, sunLight, hemi, REAL } = ctx;
-  const plan = await (await fetch(view.dataset.live, { credentials: 'same-origin' })).json();
+  const planUrl = (key) => `${view.dataset.live}?scenario=${encodeURIComponent(key)}`;
+  let plan = await (await fetch(planUrl(view.dataset.scenario || 'normal'), { credentials: 'same-origin' })).json();
   const startMs = Date.parse(plan.start);
   const hourOf = (iso) => (Date.parse(iso) - startMs) / 3600000;
   const total = plan.hours.length - 1;
@@ -40,12 +41,13 @@ export async function startLive(ctx) {
     return { hour: a, wind: mix('wind'), gust: mix('gust'), hs: mix('hs'), tide: mix('tide'), rain: mix('rain'), visibility: mix('visibility') };
   }
   ctx.setTide((when) => at((when.getTime() - realStart) / 3600000).tide);
-  const calls = plan.calls.map((c) => ({ ...c, from: hourOf(c.eta), to: hourOf(c.etd) }));
-  const events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
+  let calls = plan.calls.map((c) => ({ ...c, from: hourOf(c.eta), to: hourOf(c.etd) }));
+  let events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
 
   // --- ships and their tugs ----------------------------------------------------------------
   const APPROACH = 1.5;   // hours from the pilot to all fast
   const ANCHOR = 6;       // hours a ship is seen waiting off the port before that
+  function shipCalls() {
   for (const c of calls) {
     c.mesh = ctx.ship(c.type, c.loa, c.beam, c.draught, rng);
     c.mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
@@ -61,6 +63,8 @@ export async function startLive(ctx) {
       new THREE.Vector3(centre + 900, 0, berth.z - 330), new THREE.Vector3(centre + 1800, 0, berth.z - 650)]);
     c.anchorage = new THREE.Vector3(centre - 1900, 0, berth.z - 950 - (calls.indexOf(c) % 2) * 160);
   }
+  }
+  shipCalls();
   const tugMat = new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.5 });
   const tugs = [0, 1].map(() => {
     const g = new THREE.Group();
@@ -72,58 +76,119 @@ export async function startLive(ctx) {
   });
 
   // --- the other berths along the quay ------------------------------------------------------
-  // Each has its own line of ships, one after another: in from the sea, alongside while its own
-  // cranes work it (stopping in gusts like the rest), then out to sea, and a gap before the next.
+  // Each has its own line of ships, one after another: waiting at anchor if the berth or the
+  // weather is not ready, in from the sea, alongside while its cranes discharge and then load it
+  // (stopping in gusts like the rest), out to sea, and a gap before the next. Storms and fog hold
+  // them at anchor or alongside as they hold the main berth's ships; a peak week leaves no gap.
   const SHIP_NAMES = ['Maersk Elba', 'CMA CGM Thalia', 'MSC Rania', 'ONE Harmony', 'Hapag Lisbon', 'Evergreen Lyra',
     'COSCO Pride', 'Zim Atlantic', 'Yang Ming Unity', 'HMM Oslo', 'Grande Abidjan', 'Arkas Lagos'];
-  const shipType = kind === 'roro' ? 'ro-ro' : kind === 'bulk' ? 'bulk carrier' : kind === 'general_cargo' ? 'general cargo' : 'container ship';
-  const others = (site.berths || []).filter((b) => !b.main).map((b, i) => {
-    const loa = Math.min(b.length - 30, 180 + rng() * 170);
-    if (loa < 120) return null;
-    const beam = Math.round(loa * 0.14);
-    const mesh = ctx.ship(shipType, loa, beam, 12, rng);
-    mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-    mesh.visible = false;
-    scene.add(mesh);
+  const CARGO_NAMES = ['BBC Rhine', 'Atlantic Pioneer', 'Nordic Steel', 'Spliethoff Sea', 'Jumbo Vision', 'Hansa Coaster'];
+  const RORO_NAMES = ['Höegh Trigger', 'Glovis Sky', 'Grande Marocco', 'Morning Lily', 'Neptune Ace', 'Tonsberg'];
+  const nameFor = (type, n, k) => {
+    const list = /ro-ro/.test(type) ? RORO_NAMES : /general/.test(type) ? CARGO_NAMES : SHIP_NAMES;
+    return list[(n * 3 + k) % list.length];
+  };
+  // A number in [0, 1) for berth n, call k and what it is for: the same every time it is asked.
+  const draw = (n, k, what) => { const x = Math.sin(n * 127.1 + k * 311.7 + what * 74.7) * 43758.5453; return x - Math.floor(x); };
+  const okAt = (h) => {
+    const i = clamp(Math.floor(h), 0, total);
+    return plan.hours[i].berthing && (i === 0 || plan.hours[i - 1].berthing);
+  };
+  function makeOther(b) {
+    const types = b.use === 'mixed' ? ['general cargo', 'ro-ro'] : [ctx.berthShipType(b.use)];
+    const meshes = types.map((type) => {
+      const mesh = ctx.ship(type, b.loa, b.beam, 12, rng);
+      mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+      mesh.visible = false;
+      mesh.userData.type = type;
+      scene.add(mesh);
+      return mesh;
+    });
     const leg = b.leg;
     const t = b.mid - leg.from;
+    const { bow, rot } = ctx.shipPose(b);
     // `along` metres along the leg from its start, `out` metres out to sea from the fender line.
     const P = (along, out) => new THREE.Vector3(leg.a[0] + leg.dir[0] * along - leg.land[0] * out, 0, leg.a[1] + leg.dir[1] * along - leg.land[1] * out);
-    const berth = P(t, beam / 2 + 2);
-    const stay = 8 + rng() * 16;
-    const gap = 1 + rng() * 7;
+    const berth = P(t, b.beam / 2 + 2);
     return {
-      b, mesh, berth, beam, loa, stay, name: SHIP_NAMES[i % SHIP_NAMES.length],
-      period: stay + gap + 2 * APPROACH, offset: rng() * (stay + gap + 2 * APPROACH),
-      rot: Math.atan2(-leg.dir[1], leg.dir[0]), alongside: false,
-      inbound: new THREE.CatmullRomCurve3([P(t - 1500, 700), P(t - 700, 300), P(t - 200, beam / 2 + 45), P(t - 40, beam / 2 + 8), berth.clone()]),
-      outbound: new THREE.CatmullRomCurve3([berth.clone(), P(t + 60, beam / 2 + 12), P(t + 300, beam / 2 + 80), P(t + 900, 330), P(t + 1700, 650)]),
+      b, meshes, berth, rot, alongside: false, ship: null,
+      anchorage: P(t - bow * 900, 900 + (b.n % 3) * 140),
+      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1500, 700), P(t - bow * 700, 300), P(t - bow * 200, b.beam / 2 + 45), P(t - bow * 40, b.beam / 2 + 8), berth.clone()]),
+      outbound: new THREE.CatmullRomCurve3([berth.clone(), P(t + bow * 60, b.beam / 2 + 12), P(t + bow * 300, b.beam / 2 + 80), P(t + bow * 900, 330), P(t + bow * 1700, 650)]),
     };
-  }).filter(Boolean);
+  }
+  // The calls at a berth over the timeline, for the situation playing.
+  function schedule(o) {
+    const n = o.b.n;
+    const peak = plan.scenario && plan.scenario.key === 'peak';
+    const calls = [];
+    let t = -draw(n, 0, 1) * 20;
+    let gone = -99;
+    for (let k = 0; t < total + 12 && k < 40; k++) {
+      const stay = 8 + draw(n, k, 2) * 16;
+      const gap = peak ? 0.2 + draw(n, k, 3) * 1.2 : 1 + draw(n, k, 3) * 7;
+      let arrive = Math.max(t, gone + 0.25);
+      while (arrive < total && !okAt(arrive)) arrive += 0.25;       // held at anchor by the weather
+      const along = arrive + APPROACH;
+      let sail = along + stay;
+      while (sail < total && !okAt(sail)) sail += 0.25;               // held alongside
+      const mesh = o.meshes[k % o.meshes.length];
+      calls.push({ k, due: t, anchorFrom: Math.max(gone, t - (peak ? 6 : 3)), arrive, along, sail, gone: sail + APPROACH,
+        held: arrive > t + 0.2, mesh, name: nameFor(mesh.userData.type, n, k), type: mesh.userData.type });
+      gone = sail + APPROACH;
+      t = gone + gap;
+    }
+    o.calls = calls;
+  }
+  const others = (site.berths || []).filter((b) => !b.main && b.loa >= 120).map(makeOther);
+  for (const o of others) schedule(o);
   const otherOf = new Map(others.map((o) => [o.b, o]));
   let busy = 0;          // berths with a ship alongside, the main one included
+  let anchored = 0;      // ships waiting at anchor for the other berths
   function placeOthers(h, tide) {
     let alongside = 0;
+    anchored = 0;
     for (const o of others) {
-      const ph = (((h + o.offset) % o.period) + o.period) % o.period;
+      for (const m of o.meshes) m.visible = false;
+      o.alongside = false;
+      o.ship = null;
+      o.b.state = null;
+      const c = o.calls.find((x) => h >= x.anchorFrom && h < x.gone);
+      if (!c) continue;
       let pos = null;
       let ahead = null;
-      o.alongside = false;
-      if (ph < APPROACH) {
-        const u = ease(ph / APPROACH);
+      let rot = o.rot;
+      if (h < c.arrive) {
+        pos = o.anchorage; rot = o.rot + 0.4; anchored++;
+      } else if (h < c.along) {
+        const u = ease((h - c.arrive) / APPROACH);
         pos = o.inbound.getPointAt(u); ahead = o.inbound.getTangentAt(Math.min(u, 0.999));
-      } else if (ph < APPROACH + o.stay) {
+      } else if (h < c.sail) {
         pos = o.berth; o.alongside = true; alongside++;
-      } else if (ph < 2 * APPROACH + o.stay) {
-        const u = ease((ph - APPROACH - o.stay) / APPROACH);
+        o.b.state = h < (c.along + c.sail) / 2 ? 'discharging' : 'loading';
+        o.b.shipKind = c.mesh.userData.kind;
+      } else {
+        const u = ease((h - c.sail) / APPROACH);
         pos = o.outbound.getPointAt(u); ahead = o.outbound.getTangentAt(Math.min(u, 0.999));
       }
-      o.mesh.visible = !!pos;
-      if (!pos) continue;
-      o.mesh.position.set(pos.x, tide, pos.z);
-      o.mesh.rotation.y = ahead ? Math.atan2(-ahead.z, ahead.x) : o.rot;
+      o.ship = c;
+      c.mesh.visible = true;
+      c.mesh.position.set(pos.x, tide, pos.z);
+      c.mesh.rotation.y = ahead ? Math.atan2(-ahead.z, ahead.x) : rot;
     }
     return alongside;
+  }
+  // A berth set to another use: dressed again, with its own ships for it.
+  function redress(b, use) {
+    site.dress(b, use);
+    const old = otherOf.get(b);
+    if (old) {
+      for (const m of old.meshes) scene.remove(m);
+      const o = makeOther(b);
+      schedule(o);
+      others[others.indexOf(old)] = o;
+      otherOf.set(b, o);
+    }
   }
 
   function placeShips(h, tide) {
@@ -185,14 +250,26 @@ export async function startLive(ctx) {
       u.carried = carried;
     }
   }
-  function workCranes(states, mainShip, visualT, gust) {
+  function workCranes(states, mainShip, visualT, w) {
+    const gust = w.gust;
+    const power = w.hour.power !== false;
+    const main = site.mainBerth || {};
     site.cranes.forEach((c, i) => {
       const u = c.userData;
-      // A crane at another berth works that berth's ship, and stops in gusts over the limit.
+      if (u.offset === undefined) u.offset = (i * 0.37) % 1;
+      // A crane at another berth works that berth's ship (not a car carrier: that drives off over
+      // its ramp), stops in gusts over the limit, and, if it runs on the grid, in a power cut.
       const other = u.berth ? otherOf.get(u.berth) : null;
-      const state = u.berth ? (gust >= plan.limits.crane_stop_gust ? 'stopped' : 'working') : states[i] ? states[i].state : 'working';
-      const alongside = u.berth ? (other && other.alongside ? other : null) : u.idle ? null : mainShip;
+      let state;
+      if (u.berth) {
+        state = gust >= plan.limits.crane_stow_gust && !u.mobile ? 'stowed' : gust >= plan.limits.crane_stop_gust ? 'stopped'
+          : !power && !u.mobile ? 'down' : 'working';
+      } else {
+        state = states[i] ? states[i].state : 'working';
+      }
+      const alongside = u.berth ? (other && other.alongside && other.b.shipKind !== 'roro' ? other.b : null) : u.idle ? null : mainShip;
       const working = state === 'working' && !!alongside;
+      const loading = (u.berth ? u.berth.state : main.state) === 'loading';
       if (u.boom) {
         const up = state === 'stowed' ? -1.25 : 0;
         u.boom.rotation.x += (up - u.boom.rotation.x) * 0.1;
@@ -203,15 +280,18 @@ export async function startLive(ctx) {
         let y = -10;
         let carrying = false;
         if (working) {
+          // One move: down into the ship, up, across to the quay, down to the tractor, up, back.
+          // Discharging it carries a box on the way to the quay; loading, on the way to the ship.
           const p = (visualT / CYCLE + u.offset) % 1;
-          const reach = -28 - (alongside.beam - 32) * 0.4;
+          const reach = -28 - ((alongside.beam || 32) - 32) * 0.4;
           if (p < 0.2) { z = reach; y = -10 - 22 * (p / 0.2); }
-          else if (p < 0.3) { z = reach; y = -32 + 22 * ((p - 0.2) / 0.1); carrying = true; }
-          else if (p < 0.5) { z = reach + (12 - reach) * ease((p - 0.3) / 0.2); carrying = true; }
-          else if (p < 0.6) { z = 12; y = -10 - 28 * ((p - 0.5) / 0.1); carrying = true; }
+          else if (p < 0.3) { z = reach; y = -32 + 22 * ((p - 0.2) / 0.1); }
+          else if (p < 0.5) { z = reach + (12 - reach) * ease((p - 0.3) / 0.2); }
+          else if (p < 0.6) { z = 12; y = -10 - 28 * ((p - 0.5) / 0.1); }
           else if (p < 0.7) { z = 12; y = -38 + 28 * ((p - 0.6) / 0.1); }
           else if (p < 0.9) { z = 12 + (reach - 12) * ease((p - 0.7) / 0.2); }
           else { z = reach; }
+          carrying = loading ? p >= 0.6 || p < 0.2 : p >= 0.2 && p < 0.6;
         }
         u.trolley.position.z += (z - u.trolley.position.z) * (working ? 1 : 0.05);
         u.spreader.position.y += (y - u.spreader.position.y) * (working ? 1 : 0.05);
@@ -219,7 +299,10 @@ export async function startLive(ctx) {
         u.trolley.visible = state !== 'stowed';
       }
       if (u.top) {
-        u.top.rotation.y = working ? 0.9 * Math.sin(visualT / CYCLE * 2 * Math.PI + i) : u.top.rotation.y * 0.98;
+        // A mobile crane slews between the ship and the quay, the load on its hook one way.
+        const a = visualT / CYCLE * 2 * Math.PI + i;
+        u.top.rotation.y = working ? 0.9 * Math.sin(a) : u.top.rotation.y * 0.98;
+        if (u.load) u.load.visible = working && (loading ? Math.cos(a) < 0 : Math.cos(a) > 0);
       }
     });
   }
@@ -327,6 +410,8 @@ export async function startLive(ctx) {
       <span class="mt-live-speeds" role="group" aria-label="Speed">${SPEEDS.map((s) => `<button type="button" data-speed="${s}">${s}×</button>`).join('')}</span>
       <span class="mt-live-track"><input type="range" class="mt-live-scrub" min="0" max="${total}" step="0.01" aria-label="Time in the next two days"></span>
       <span class="mt-live-cams" role="group" aria-label="Camera">${CAMERAS.map(([k, label]) => `<button type="button" data-cam="${k}">${label}</button>`).join('')}</span>
+      <select class="mt-life-part mt-live-scenario" aria-label="Situation">${(plan.scenarios || []).map((x) => `<option value="${esc(x.key)}" title="${esc(x.words)}">${esc(x.name)}</option>`).join('')}</select>
+      ${others.length ? '<button type="button" class="mt-live-berths-btn" aria-pressed="false">Berths</button>' : ''}
     </div>`;
   view.appendChild(overlay);
   const $ = (sel) => overlay.querySelector(sel);
@@ -334,14 +419,99 @@ export async function startLive(ctx) {
   // The day's events as ticks along the scrubber.
   const ticks = document.createElement('div');
   ticks.className = 'mt-live-ticks';
-  for (const e of events) {
-    const tick = document.createElement('i');
-    tick.className = 'k-' + e.kind;
-    tick.style.left = `${(100 * e.h) / total}%`;
-    tick.title = e.text;
-    ticks.appendChild(tick);
+  function drawTicks() {
+    ticks.replaceChildren();
+    for (const e of events) {
+      const tick = document.createElement('i');
+      tick.className = 'k-' + e.kind;
+      tick.style.left = `${(100 * e.h) / total}%`;
+      tick.title = e.text;
+      ticks.appendChild(tick);
+    }
   }
+  drawTicks();
   scrub.insertAdjacentElement('afterend', ticks);
+
+  // The situation playing: the same two days with a storm, a power cut, fog... laid over them.
+  const situation = $('.mt-live-scenario');
+  situation.value = plan.scenario ? plan.scenario.key : 'normal';
+  situation.addEventListener('change', async () => {
+    const key = situation.value;
+    situation.disabled = true;
+    try {
+      const next = await (await fetch(planUrl(key), { credentials: 'same-origin' })).json();
+      for (const c of calls) scene.remove(c.mesh);
+      plan = next;
+      calls = plan.calls.map((c) => ({ ...c, from: hourOf(c.eta), to: hourOf(c.etd) }));
+      events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
+      shipCalls();
+      for (const o of others) schedule(o);
+      drawTicks();
+      refreshLog(true);
+      const url = new URL(window.location.href);
+      if (key === 'normal') url.searchParams.delete('scenario'); else url.searchParams.set('scenario', key);
+      window.history.replaceState(null, '', url);
+    } finally {
+      situation.disabled = false;
+    }
+  });
+
+  // The berths along the quay: what each is doing now, and what each without crane stoppers is used for.
+  const USE_NAMES = (ctx.twin.asset && ctx.twin.asset.berth_use_names) || {};
+  const panel = document.createElement('div');
+  panel.className = 'mt-berths';
+  panel.hidden = true;
+  const allBerths = [...(site.berths || [])].sort((a, b) => a.n - b.n);
+  panel.innerHTML = `<button type="button" class="close" aria-label="Close">×</button><h3>Berths along the quay</h3><ol>${allBerths.map((b) => `
+    <li data-n="${b.n}"><strong>Berth ${b.n}</strong><small>${Math.round(b.length)} m · ${b.main ? 'the berth this line-up is for' : b.sts ? 'crane stoppers: rail-mounted cranes' : 'no crane stoppers'}</small>
+      ${b.assignable ? `<label class="small">Used for <select data-n="${b.n}">${Object.entries(USE_NAMES).map(([k, v]) => `<option value="${esc(k)}"${k === b.use ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
+      <small class="mt-b-now"></small></li>`).join('')}</ol>`;
+  overlay.appendChild(panel);
+  const berthsBtn = $('.mt-live-berths-btn');
+  const showBerths = (on) => { panel.hidden = !on; if (berthsBtn) berthsBtn.setAttribute('aria-pressed', String(on)); };
+  if (berthsBtn) berthsBtn.addEventListener('click', () => showBerths(panel.hidden));
+  panel.querySelector('.close').addEventListener('click', () => showBerths(false));
+  for (const sel of panel.querySelectorAll('select[data-n]')) {
+    sel.addEventListener('change', async () => {
+      const b = allBerths.find((x) => String(x.n) === sel.dataset.n);
+      const was = b.use;
+      sel.disabled = true;
+      try {
+        const answer = await fetch(view.dataset.berths, {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ berth: b.n, use: sel.value }),
+        });
+        if (!answer.ok) throw new Error(`the server answered ${answer.status}`);
+        redress(b, sel.value);
+      } catch (err) {
+        sel.value = was;
+        sel.title = 'Not saved: ' + (err.message || err);
+      } finally {
+        sel.disabled = false;
+      }
+    });
+  }
+  const fmtHour = (h) => new Date(realStart + h * 3600000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  function berthNow(b, mainCall, mainMoving, mainWaiting) {
+    if (b.main) {
+      if (mainCall) return `${mainCall.name} ${b.state || 'alongside'}`;
+      if (mainMoving) return `${mainMoving.c.name} ${mainMoving.inbound ? 'berthing' : 'sailing'}`;
+      if (mainWaiting) return `${mainWaiting.name} at anchor`;
+      return 'Empty';
+    }
+    const o = otherOf.get(b);
+    if (!o) return 'Too short for a ship';
+    const c = o.ship;
+    if (!c) {
+      const next = o.calls.find((x) => x.anchorFrom > simH);
+      return next ? `Empty; ${next.name} due ${fmtHour(next.arrive)}` : 'Empty';
+    }
+    const what = c.type.replace('ro-ro', 'car carrier');
+    if (simH < c.arrive) return `${c.name} (${what}) at anchor${c.held && simH >= c.due ? ', held by the weather' : ''}`;
+    if (simH < c.along) return `${c.name} (${what}) berthing`;
+    if (simH < c.sail) return `${c.name} (${what}) ${c.type === 'ro-ro' ? (b.state === 'discharging' ? 'driving vehicles off' : 'driving vehicles on') : b.state}`;
+    return `${c.name} sailing`;
+  }
 
   function setSpeed(s) {
     speed = s;
@@ -433,7 +603,12 @@ export async function startLive(ctx) {
     const working = !!alongside && states.some((s) => s.state === 'working');
     player.working = working;
     busy = placeOthers(simH, tide) + (alongside ? 1 : 0);
-    workCranes(states, alongside, visualT, w.gust);
+    if (site.mainBerth) {
+      site.mainBerth.state = alongside ? (simH < (alongside.from + alongside.to) / 2 ? 'discharging' : 'loading') : null;
+      site.mainBerth.shipKind = alongside ? alongside.mesh.userData.kind : null;
+    }
+    ctx.setPower(w.hour.power !== false);
+    workCranes(states, alongside, visualT, w);
     movePeople(dt * Math.min(pace, 4), alongside);
     weather(w, dt, pace);
     if (cam === 'drone') {
@@ -462,6 +637,13 @@ export async function startLive(ctx) {
   }
 
   function text(now, w, alongside, moving, waiting, states) {
+    if (!panel.hidden) {
+      for (const li of panel.querySelectorAll('li[data-n]')) {
+        const b = allBerths.find((x) => String(x.n) === li.dataset.n);
+        li.classList.toggle('is-busy', !!b.state);
+        li.querySelector('.mt-b-now').textContent = berthNow(b, alongside, moving, waiting);
+      }
+    }
     const when = new Date(now);
     $('.mt-live-clock').textContent = when.toLocaleString([], { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: speed <= 10 ? '2-digit' : undefined });
     const chip = (label, value, bad) => `<span class="mt-chip${bad ? ' bad' : ''}"><small>${label}</small> ${value}</span>`;
@@ -474,8 +656,11 @@ export async function startLive(ctx) {
       ship = `${esc(waiting.name)} at anchor, ${waiting.held ? 'held by the weather' : 'due alongside ' + due}`;
     }
     $('.mt-live-state').innerHTML =
+      (plan.scenario && plan.scenario.key !== 'normal' ? `<div class="small mt-live-scenario-words"><strong>${esc(plan.scenario.name)}</strong>: ${esc(plan.scenario.words)}</div>` : '') +
       `<div>${ship}</div>` +
-      (others.length ? `<div class="small">${busy} of ${others.length + 1} berths with a ship alongside</div>` : '') +
+      (others.length ? `<div class="small">${busy} of ${others.length + 1} berths with a ship alongside${anchored ? ` · ${anchored} more at anchor` : ''}</div>` : '') +
+      (w.hour.power === false ? `<div class="small"><strong>Power cut</strong>: electric cranes stopped, yard lights out</div>` : '') +
+      (w.hour.fog ? `<div class="small"><strong>Fog</strong>: no pilotage, ships held</div>` : '') +
       `<div class="mt-chips">${chip('wind', `${w.wind.toFixed(0)} m/s`, w.wind >= L.berthing_wind)}${chip('gusts', `${w.gust.toFixed(0)} m/s`, w.gust >= L.crane_stop_gust)}` +
       `${chip('waves', `${w.hs.toFixed(1)} m`, w.hs >= L.berthing_hs)}${chip('rain', w.rain > 0.05 ? `${w.rain.toFixed(1)} mm/h` : 'dry', w.rain > 4)}` +
       `${chip('tide', `${w.tide >= 0 ? '+' : ''}${w.tide.toFixed(2)} mCD`)}</div>` +
@@ -485,6 +670,8 @@ export async function startLive(ctx) {
     let alert = '';
     if (alongside && idle.length) {
       alert = `Downtime: ${idle.map((s) => `${s.name} ${s.why || s.state}`).join('; ')}`;
+    } else if (waiting && waiting.held && w.hour.fog) {
+      alert = `Downtime: ${waiting.name} waiting at anchor, no pilotage in fog`;
     } else if (waiting && waiting.held) {
       alert = `Downtime: ${waiting.name} waiting at anchor, no berthing in this wind and sea`;
     } else if (alongside && !states.some((s) => s.state === 'working')) {

@@ -236,7 +236,29 @@ def downtime(asset_id: int, now: datetime, days: int = 30) -> dict[str, Any]:
             "availability": round(100 * (days * 24 - lost) / (days * 24))}
 
 
-def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48) -> dict[str, Any]:
+# The situations the live port can play: the forecast as it is, or the same two days with
+# something laid over them, to see how the port copes. Key, name, what it shows.
+SCENARIOS = [
+    ("normal", "Normal day", "The forecast as it is, the line-up as booked."),
+    ("peak", "Peak week", "Ships back to back at every berth and waiting at anchor for a slot."),
+    ("storm", "Storm", "A gale later today: cranes stop, then go to their storm pins; no berthing or sailing."),
+    ("power_cut", "Power cut at night", "The grid drops for four hours in the evening: electric cranes stop and the yard lights go out."),
+    ("crane_fault", "Crane breakdown", "Two of the berth's cranes break down in the first day; the ship is worked on what is left."),
+    ("fog", "Fog", "Thick fog through the night and morning: the pilots stop bringing ships in; cranes keep working."),
+]
+SCENARIO_KEYS = {key for key, *_ in SCENARIOS}
+
+
+def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any]:
+    """When the scenario's event happens on this timeline, in hours from the start."""
+    first_evening = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 20)
+    first_night = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 0)
+    return {"storm": (6, 20), "power_cut": (first_evening, first_evening + 4), "fog": (first_night, first_night + 9),
+            "crane_fault": (4, 28)}.get(scenario, (None, None))
+
+
+def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
+         scenario: str = "normal") -> dict[str, Any]:
     """The berth over the next ``hours``, hour by hour, for the live view to play back.
 
     The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
@@ -245,7 +267,17 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     the events a duty manager would log along the way.
     """
     start = _hour(now)
+    scenario = scenario if scenario in SCENARIO_KEYS else "normal"
     weather = metocean(asset_id, now, hours_back=0, hours_ahead=hours)
+    s_from, s_to = _scenario_hours(scenario, start, hours)
+    if scenario == "storm":
+        # A gale front: up over a few hours to gusts past the stow limit, holding, then easing.
+        for i, w in enumerate(weather):
+            rise = min(1.0, max(0.0, (i - s_from) / 4)) * min(1.0, max(0.0, (s_to + 4 - i) / 6))
+            if rise > 0:
+                w["wind"] = round(max(w["wind"], 8 + 13 * rise), 1)
+                w["gust"] = round(max(w["gust"], w["wind"] * 1.32), 1)
+                w["hs"] = round(max(w["hs"], 0.4 + 2.2 * rise), 2)
     rng = _rng(asset_id, now.date().isoformat(), "rain")
     showers = [(rng.uniform(0, hours), rng.uniform(0.8, 2.5), rng.uniform(1, 8)) for _ in range(rng.randint(1, 4))]
     prefix, equipment_name = EQUIPMENT.get(terminal, EQUIPMENT["container"])
@@ -261,17 +293,27 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     for k in range(2 if prefix == "RAMP" else 3):
         name = f"Ramp gang {k + 1}" if prefix == "RAMP" else f"{prefix}{k + 1}"
         breaks = [(rng.uniform(0, hours), rng.uniform(1, 6), rng.choice(reasons)) for _ in range(rng.choice([0, 0, 1, 1, 2]))]
+        if scenario == "crane_fault" and k < 2:
+            # The first fails for a day, the second for a shift in the middle of it.
+            breaks.append((s_from, s_to - s_from, reasons[2 if prefix != "RAMP" else 0]) if k == 0
+                          else (s_from + 8, 7, reasons[1 if prefix != "RAMP" else 1]))
         faults.append((name, breaks))
+    # Electric machines stop when the grid drops; ramp gangs drive diesel vehicles and carry on.
+    electric = prefix in ("STS", "SU")
     hourly = []
     stopped_before: dict[str, tuple[str, str]] = {}
     for i, w in enumerate(weather):
         storm_rain = max(0.0, (w["wind"] - 11) * 1.4)
         shower = sum(rate * math.exp(-((i - at) / width) ** 2) for at, width, rate in showers)
         rain = round(storm_rain + shower if storm_rain + shower > 0.3 else 0.0, 1)
+        power = not (scenario == "power_cut" and s_from <= i < s_to)
+        fog = scenario == "fog" and s_from <= i < s_to
         kit = []
         for name, breaks in faults:
             fault = next((why for at, length, why in breaks if at <= i < at + length), None)
-            if prefix != "RAMP" and w["gust"] >= LIMITS["crane_stow_gust"]:
+            if not power and electric:
+                kit.append({"name": name, "state": "down", "why": "power cut, no grid supply"})
+            elif prefix != "RAMP" and w["gust"] >= LIMITS["crane_stow_gust"]:
                 kit.append({"name": name, "state": "stowed", "why": "on storm pins, gusts over the stow limit"})
             elif prefix != "RAMP" and w["gust"] >= LIMITS["crane_stop_gust"]:
                 kit.append({"name": name, "state": "stopped", "why": "wind stop, gusts over the operating limit"})
@@ -280,9 +322,18 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
             else:
                 kit.append({"name": name, "state": "working", "why": ""})
         hourly.append({"at": w["at"], "wind": w["wind"], "gust": w["gust"], "hs": w["hs"], "tide": w["tide"],
-                       "rain": rain, "visibility": round(max(0.4, 10 - rain * 0.9), 1),
+                       "rain": rain, "visibility": 0.2 if fog else round(max(0.4, 10 - rain * 0.9), 1),
                        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"]} for c in kit],
-                       "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"]})
+                       "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"] and not fog,
+                       "power": power, "fog": fog})
+        if scenario == "power_cut" and i == s_from:
+            log(w["at"], "critical", "Power cut: the grid supply is lost. Electric cranes stop, the yard lights go out; reefers on the standby generators.")
+        if scenario == "power_cut" and i == s_to:
+            log(w["at"], "good", "Power restored: cranes back on and the yard lit again.")
+        if fog and i == s_from:
+            log(w["at"], "warning", "Fog down to 200 m: the pilots stop bringing ships in or out.")
+        if scenario == "fog" and i == s_to:
+            log(w["at"], "good", "Fog lifting: pilotage resumes.")
         stopped = {c["name"]: (c["state"], c["why"]) for c in kit if c["state"] != "working"}
         changes: dict[tuple[str, str], list[str]] = {}
         for c in kit:
@@ -309,7 +360,14 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         return None
 
     calls = []
-    for s in lineup(asset_id, now, terminal):
+    booked = lineup(asset_id, now, terminal)
+    if scenario == "peak":
+        # Back to back: each ship is due as the one before sails, and waits for the berth if early.
+        for prev, s in zip(booked, booked[1:]):
+            stay = s["etd"] - s["eta"]
+            s["eta"] = min(s["eta"], prev["etd"] - timedelta(hours=3))
+            s["etd"] = s["eta"] + stay
+    for s in booked:
         eta, etd, waited = s["eta"], s["etd"], None
         if eta >= start:
             if calls and eta < calls[-1]["etd"] + timedelta(hours=1):
@@ -335,9 +393,15 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
             log(etd, "info", f"{s['name']} sails.")
         calls.append({"name": s["name"], "type": s["type"], "loa": s["loa"], "beam": s["beam"], "draught": s["draught"],
                       "eta": eta, "etd": etd, "moves": s["moves"], "held": waited is not None})
+    if scenario == "peak":
+        log(start, "warning", "Peak week: every berth booked back to back, ships waiting at anchor for a slot.")
+    if scenario == "storm":
+        log(start + timedelta(hours=s_from), "warning", "Gale warning: wind rising to storm force within hours.")
     events.sort(key=lambda e: e["at"])
+    name, words = next((n, w) for k, n, w in SCENARIOS if k == scenario)
     return {"start": start, "hours": hourly, "calls": calls, "events": events,
-            "equipment_name": equipment_name, "units": UNITS.get(terminal, "moves"), "limits": LIMITS}
+            "equipment_name": equipment_name, "units": UNITS.get(terminal, "moves"), "limits": LIMITS,
+            "scenario": {"key": scenario, "name": name, "words": words}}
 
 
 # --- putting it together ----------------------------------------------------------

@@ -227,10 +227,12 @@ def live_json(asset_id: int):
     """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
     asset = _asset_or_404(asset_id)
     now = datetime.now()
-    plan = marine_ops.live(asset_id, now, asset["terminal_type"])
+    plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"))
     iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
     return jsonify({
         "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
+        "scenario": plan["scenario"],
+        "scenarios": [{"key": k, "name": n, "words": w} for k, n, w in marine_ops.SCENARIOS],
         "hours": [{**h, "at": iso(h["at"])} for h in plan["hours"]],
         "calls": [{**c, "eta": iso(c["eta"]), "etd": iso(c["etd"])} for c in plan["calls"]],
         "events": [{**e, "at": iso(e["at"])} for e in plan["events"]],
@@ -318,6 +320,7 @@ def simulation(asset_id: int):
         groups.setdefault(group, []).append({"key": key, "label": label, "unit": unit, "min": lo, "max": hi,
                                              "step": step, "value": form[key]})
     return render_template("marine/simulation.html", asset=asset, results=results, shown=shown, detail=detail,
+                           situations=marine_ops.SCENARIOS,
                            editing=editing, copying=copying, groups=groups, links=words["links"], words=words,
                            ships_chart=sim_ships(detail["timeline"], detail["params"]["berths"]),
                            gate_chart=sim_gate(detail["timeline"]), **_context())
@@ -415,7 +418,8 @@ def twin_json(asset_id: int):
     return jsonify({
         "asset": {"id": asset["id"], "name": asset["name"], "kind": asset["kind"],
                   "terminal": asset["terminal_type"], "latitude": asset["latitude"], "longitude": asset["longitude"],
-                  "rotation": asset["rotation"], "msl_cd": asset["msl_cd"], "location": asset["location"]},
+                  "rotation": asset["rotation"], "msl_cd": asset["msl_cd"], "location": asset["location"],
+                  "berth_uses": _berth_uses(asset), "berth_use_names": dict(marine.BERTH_USES)},
         "now": {"at": now.isoformat(timespec="minutes"), "wind": weather[0]["wind"], "gust": weather[0]["gust"],
                 "hs": weather[0]["hs"], "tide": weather[0]["tide"],
                 "tides": [{"at": w["at"].isoformat(timespec="minutes"), "tide": w["tide"]} for w in weather],
@@ -440,6 +444,30 @@ def twin_json(asset_id: int):
             "sensors": [{"label": s["label"], "headline": s["headline"], "state": s["state"]} for s in e["sensors"]],
         } for e in twin["elements"]],
     })
+
+
+def _berth_uses(asset) -> dict[str, str]:
+    try:
+        uses = json.loads(asset["berth_uses"] or "{}")
+    except (TypeError, ValueError):
+        return {}
+    valid = dict(marine.BERTH_USES)
+    return {str(k): v for k, v in uses.items() if v in valid} if isinstance(uses, dict) else {}
+
+
+@bp.post("/assets/<int:asset_id>/berths")
+@login_required
+def save_berth_use(asset_id: int):
+    """What one berth without crane stoppers is used for, set from the live port."""
+    asset = _asset_or_404(asset_id)
+    data = request.get_json(silent=True) or {}
+    berth, use = str(data.get("berth", "")).strip(), data.get("use")
+    if not berth.isdigit() or not 0 < int(berth) <= 200 or use not in dict(marine.BERTH_USES):
+        return jsonify({"error": "Pick a berth and one of its uses."}), 400
+    uses = {**_berth_uses(asset), berth: use}
+    get_db().execute("UPDATE marine_assets SET berth_uses = ? WHERE id = ?", (json.dumps(uses), asset_id))
+    get_db().commit()
+    return jsonify({"berth_uses": uses})
 
 
 @bp.post("/assets/<int:asset_id>/settings")

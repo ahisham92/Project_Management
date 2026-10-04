@@ -236,6 +236,110 @@ def downtime(asset_id: int, now: datetime, days: int = 30) -> dict[str, Any]:
             "availability": round(100 * (days * 24 - lost) / (days * 24))}
 
 
+def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48) -> dict[str, Any]:
+    """The berth over the next ``hours``, hour by hour, for the live view to play back.
+
+    The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
+    one timeline: rain with the weather, berthing held back while the wind or the waves are over
+    the limits (the ship waits at anchor), the cranes stopping in gusts or breaking down, and
+    the events a duty manager would log along the way.
+    """
+    start = _hour(now)
+    weather = metocean(asset_id, now, hours_back=0, hours_ahead=hours)
+    rng = _rng(asset_id, now.date().isoformat(), "rain")
+    showers = [(rng.uniform(0, hours), rng.uniform(0.8, 2.5), rng.uniform(1, 8)) for _ in range(rng.randint(1, 4))]
+    prefix, equipment_name = EQUIPMENT.get(terminal, EQUIPMENT["container"])
+    events: list[dict[str, Any]] = []
+
+    def log(at: datetime, kind: str, text: str) -> None:
+        events.append({"at": at, "kind": kind, "text": text})
+
+    # Breakdowns come and go: each machine may fail once or twice, for a few hours.
+    reasons = ["ramp hydraulic pump fault", "short of drivers"] if prefix == "RAMP" else \
+        ["spreader twistlock fault", "hoist brake alarm", "gantry drive fault", "trolley rope inspection"]
+    faults = []
+    for k in range(2 if prefix == "RAMP" else 3):
+        name = f"Ramp gang {k + 1}" if prefix == "RAMP" else f"{prefix}{k + 1}"
+        breaks = [(rng.uniform(0, hours), rng.uniform(1, 6), rng.choice(reasons)) for _ in range(rng.choice([0, 0, 1, 1, 2]))]
+        faults.append((name, breaks))
+    hourly = []
+    stopped_before: dict[str, tuple[str, str]] = {}
+    for i, w in enumerate(weather):
+        storm_rain = max(0.0, (w["wind"] - 11) * 1.4)
+        shower = sum(rate * math.exp(-((i - at) / width) ** 2) for at, width, rate in showers)
+        rain = round(storm_rain + shower if storm_rain + shower > 0.3 else 0.0, 1)
+        kit = []
+        for name, breaks in faults:
+            fault = next((why for at, length, why in breaks if at <= i < at + length), None)
+            if prefix != "RAMP" and w["gust"] >= LIMITS["crane_stow_gust"]:
+                kit.append({"name": name, "state": "stowed", "why": "on storm pins, gusts over the stow limit"})
+            elif prefix != "RAMP" and w["gust"] >= LIMITS["crane_stop_gust"]:
+                kit.append({"name": name, "state": "stopped", "why": "wind stop, gusts over the operating limit"})
+            elif fault:
+                kit.append({"name": name, "state": "down", "why": fault})
+            else:
+                kit.append({"name": name, "state": "working", "why": ""})
+        hourly.append({"at": w["at"], "wind": w["wind"], "gust": w["gust"], "hs": w["hs"], "tide": w["tide"],
+                       "rain": rain, "visibility": round(max(0.4, 10 - rain * 0.9), 1),
+                       "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"]} for c in kit],
+                       "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"]})
+        stopped = {c["name"]: (c["state"], c["why"]) for c in kit if c["state"] != "working"}
+        changes: dict[tuple[str, str], list[str]] = {}
+        for c in kit:
+            if c["name"] in stopped and stopped_before.get(c["name"]) != stopped[c["name"]]:
+                changes.setdefault(stopped[c["name"]], []).append(c["name"])
+            elif c["name"] in stopped_before and c["name"] not in stopped:
+                changes.setdefault(("working", ""), []).append(c["name"])
+        for (state, why), names in changes.items():
+            who = " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
+            if state == "working":
+                log(w["at"], "good", f"{who} back at work.")
+            else:
+                log(w["at"], "critical" if state in ("stowed", "down") else "warning", f"{who} {state}: {why}.")
+        stopped_before = stopped
+        if i and rain and not hourly[i - 1]["rain"]:
+            log(w["at"], "info", f"Rain starting, {rain:.1f} mm/h.")
+
+    def allowed(at: datetime) -> datetime | None:
+        """The first time from ``at`` that a ship may berth or sail: the hour of the manoeuvre and
+        the hour before it (the approach with the pilot and tugs) both within the limits."""
+        for i, h in enumerate(hourly):
+            if h["at"] >= _hour(at) and h["berthing"] and (i == 0 or hourly[i - 1]["berthing"]):
+                return max(h["at"], at)
+        return None
+
+    calls = []
+    for s in lineup(asset_id, now, terminal):
+        eta, etd, waited = s["eta"], s["etd"], None
+        if eta >= start:
+            if calls and eta < calls[-1]["etd"] + timedelta(hours=1):
+                eta = calls[-1]["etd"] + timedelta(hours=1)  # the berth is still busy: it waits its turn
+            berth_at = allowed(eta)
+            if berth_at is None:
+                continue
+            if berth_at > eta:
+                waited = eta
+            eta, etd = berth_at, berth_at + (s["etd"] - s["eta"])
+        elif calls:
+            continue
+        if eta >= start:
+            if waited:
+                log(waited, "warning", f"{s['name']} waits at anchor: no berthing in this wind and sea.")
+            log(eta - timedelta(hours=1), "info", f"{s['name']} ({s['type']}, {s['loa']} m) takes the pilot.")
+            log(eta, "good", f"{s['name']} all fast.")
+        if etd <= start + timedelta(hours=hours):
+            sail_at = allowed(etd) or etd
+            if sail_at > etd:
+                log(etd, "warning", f"{s['name']} held alongside: too windy to sail.")
+            etd = sail_at
+            log(etd, "info", f"{s['name']} sails.")
+        calls.append({"name": s["name"], "type": s["type"], "loa": s["loa"], "beam": s["beam"], "draught": s["draught"],
+                      "eta": eta, "etd": etd, "moves": s["moves"], "held": waited is not None})
+    events.sort(key=lambda e: e["at"])
+    return {"start": start, "hours": hourly, "calls": calls, "events": events,
+            "equipment_name": equipment_name, "units": UNITS.get(terminal, "moves"), "limits": LIMITS}
+
+
 # --- putting it together ----------------------------------------------------------
 
 def _when(at: datetime, now: datetime) -> str:

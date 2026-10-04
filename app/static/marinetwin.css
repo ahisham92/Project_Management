@@ -51,7 +51,7 @@
 
 /* The steps: where the person is, from the asset list on (marine/_macros.html flow). */
 .mt-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 0 0 10px; }
-.mt-step { --step: var(--series-1); display: flex; align-items: center; gap: 8px; flex: 1 1 130px; max-width: 210px;
+.mt-step { --step: var(--series-1); display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; max-width: 210px;
   padding: 7px 10px; border-radius: 10px; color: var(--ink); text-decoration: none;
   background: color-mix(in srgb, var(--step) 6%, var(--raised)); border: 1px solid color-mix(in srgb, var(--step) 30%, var(--border)); }
 .mt-step:hover { background: color-mix(in srgb, var(--step) 14%, var(--raised)); }
@@ -64,7 +64,8 @@
 .mt-step-t b { font-size: 0.875rem; color: var(--step); }
 .mt-step-t small { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
-.mt-step.s4 { --step: var(--series-2); } .mt-step.s5 { --step: var(--series-5); } .mt-step.s6 { --step: var(--series-6); }
+.mt-step.s4 { --step: var(--series-4); } .mt-step.s5 { --step: var(--series-2); } .mt-step.s6 { --step: var(--series-5); }
+.mt-step.s7 { --step: var(--series-6); }
 @media (max-width: 860px) {
   .mt-flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .mt-step { flex: 0 0 auto; max-width: none; }
@@ -123,3 +124,51 @@
 @keyframes mt-fade { from { opacity: 0; } to { opacity: 1; } }
 .marine-view > .mt-voyage-box { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 32px));
   background: var(--raised); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px 8px; z-index: 2; }
+
+/* The live port: the view as a camera feed, with its caption, the berth's state and the controls. */
+.marine-live-view { height: min(72vh, 720px); border-radius: 12px; overflow: hidden; }
+.mt-live { position: absolute; inset: 0; pointer-events: none; font-size: 13px; color: #fff; }
+.mt-live > * { pointer-events: auto; }
+.mt-live-cam { position: absolute; left: 12px; top: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em; text-shadow: 0 1px 2px rgba(0,0,0,.8); pointer-events: none; }
+.mt-live-rec { color: #ff4d4d; animation: mt-blink 1.6s steps(2, start) infinite; }
+@keyframes mt-blink { to { visibility: hidden; } }
+.mt-live-clock { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.mt-live-state { position: absolute; right: 12px; top: 10px; max-width: min(460px, 60%); background: rgba(10, 18, 28, .72);
+  border-radius: 10px; padding: 8px 10px; display: grid; gap: 6px; text-align: right; }
+.mt-chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.mt-chip { background: rgba(255,255,255,.12); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.mt-chip small { opacity: .7; }
+.mt-chip.bad, .mt-chip.st-stopped, .mt-chip.st-down, .mt-chip.st-stowed { background: #c62828; }
+.mt-chip.st-working { background: #2e7d32; }
+.mt-live-alert { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); background: #c62828; color: #fff;
+  font-weight: 600; padding: 6px 14px; border-radius: 8px; max-width: calc(100% - 24px); text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.mt-live-bar { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  background: rgba(10, 18, 28, .72); border-radius: 10px; padding: 6px 10px; }
+.mt-live-bar button { background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 6px; padding: 4px 9px; font: inherit; cursor: pointer; }
+.mt-live-bar button[aria-pressed="true"] { background: #fff; color: #0b1b2b; font-weight: 600; }
+.mt-live-speeds, .mt-live-cams { display: inline-flex; gap: 3px; }
+.mt-live-track { position: relative; flex: 1 1 160px; min-width: 120px; display: flex; padding-top: 8px; }
+.mt-live-scrub { width: 100%; accent-color: #fff; margin: 0; }
+.mt-live-ticks { position: absolute; left: 8px; right: 8px; top: 0; height: 6px; pointer-events: none; }
+.marine-live-view .marine-view-note { bottom: 64px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.mt-live-ticks i { position: absolute; top: 0; width: 2px; height: 6px; background: #90caf9; border-radius: 1px; }
+.mt-live-ticks i.k-critical { background: #ff5252; } .mt-live-ticks i.k-warning { background: #ffb300; } .mt-live-ticks i.k-good { background: #66bb6a; }
+.mt-live-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.mt-live-log li { padding: 4px 8px; border-left: 3px solid var(--border); cursor: pointer; border-radius: 2px; }
+.mt-live-log li:hover { background: var(--surface); }
+.mt-live-log li time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.mt-live-log li.k-critical { border-color: var(--critical); } .mt-live-log li.k-warning { border-color: var(--warning); }
+.mt-live-log li.k-good { border-color: var(--good); } .mt-live-log li.k-info { border-color: var(--series-1); }
+.mt-live-log li.mt-live-next { border: 0; cursor: default; margin-top: 6px; padding-left: 0; }
+.mt-live-log li.mt-live-later { opacity: .65; }
+@media (max-width: 720px) {
+  .marine-live-view { height: 70vh; }
+  .mt-live { font-size: 11px; }
+  .mt-live-clock { font-size: 16px; }
+  .marine-live-view .marine-view-note { display: none; }
+  .mt-live-state { left: 10px; right: 10px; top: 52px; max-width: none; text-align: left; padding: 6px 8px; gap: 4px; }
+  .mt-chips { justify-content: flex-start; }
+  .mt-live-alert { top: auto; bottom: 120px; }
+  .mt-live-cams button { padding: 4px 6px; }
+}

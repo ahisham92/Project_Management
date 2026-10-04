@@ -9,6 +9,7 @@ only gather and show them. Every page is behind the site's one sign-in and the
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import math
@@ -40,6 +41,7 @@ def _redirect_for_the_voyage(response):
 # What the 3D view can open: a Revit model exported as IFC, or as glTF / GLB.
 MODEL_TYPES = {".ifc": "ifc", ".glb": "glb", ".gltf": "gltf"}
 MODEL_LIMIT = 200 * 1024 * 1024
+SHAPES_LIMIT = 600 * 1024 * 1024
 
 
 def models_dir() -> Path:
@@ -210,6 +212,30 @@ def operations(asset_id: int):
                            sea_chart=sea_forecast(ops["weather"], ops["limits"]), **_context())
 
 
+@bp.get("/assets/<int:asset_id>/live")
+@login_required
+def live(asset_id: int):
+    """The port as a camera would see it: the next two days played back at 10× or faster."""
+    asset = _asset_or_404(asset_id)
+    return render_template("marine/live.html", asset=asset, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/live.json")
+@login_required
+def live_json(asset_id: int):
+    """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
+    asset = _asset_or_404(asset_id)
+    now = datetime.now()
+    plan = marine_ops.live(asset_id, now, asset["terminal_type"])
+    iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
+    return jsonify({
+        "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
+        "hours": [{**h, "at": iso(h["at"])} for h in plan["hours"]],
+        "calls": [{**c, "eta": iso(c["eta"]), "etd": iso(c["etd"])} for c in plan["calls"]],
+        "events": [{**e, "at": iso(e["at"])} for e in plan["events"]],
+    })
+
+
 # --- beyond the structure ----------------------------------------------------------
 
 @bp.get("/assets/<int:asset_id>/simulation")
@@ -349,6 +375,7 @@ def twin_json(asset_id: int):
                            for s in ships if s["eta"] > now), None),
         "equipment": [{"name": c["name"], "state": c["state"]} for c in equipment],
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
+        **_shapes_links(asset, twin["elements"]),
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
         "elements": [{
             "id": e["element"]["id"], "name": e["element"]["name"], "kind": e["element"]["kind"],
@@ -473,6 +500,7 @@ def upload_model(asset_id: int):
                      (stored, upload.filename, asset_id))
     message = f"{upload.filename} is the model now. Elements are matched to it by their model reference."
     _found_path(asset_id).unlink(missing_ok=True)
+    _forget_shapes(asset_id)
     if suffix == ".ifc":
         try:
             found = marine_ifc.read_file(target)
@@ -553,6 +581,75 @@ def model(asset_id: int):
     return send_file(path, download_name=asset["model_name"] or path.name, max_age=0)
 
 
+# The 3D view reads a Revit IFC in the browser, which takes a while for a big model. It then keeps
+# the shapes it built here, so the next visit opens in seconds. They are kept per model and per set
+# of tracked elements (each tracked element is a shape of its own): change either and they are
+# built again.
+
+def _shapes_key(asset, elements) -> str:
+    path = models_dir() / asset["model_file"]
+    refs = sorted({str(e["element"]["model_ref"] or e["element"]["name"]).strip().lower() for e in elements}
+                  | {str(e["element"]["name"]).strip().lower() for e in elements})
+    seed = f"{asset['model_file']}|{path.stat().st_size if path.exists() else 0}|{path.stat().st_mtime_ns if path.exists() else 0}|" + "\n".join(refs)
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _shapes_path(asset_id: int, key: str) -> Path:
+    return models_dir() / f"asset-{asset_id}.{key}.shapes"
+
+
+def _forget_shapes(asset_id: int, keep: str | None = None) -> None:
+    for old in models_dir().glob(f"asset-{asset_id}.*.shapes"):
+        if keep is None or old.name != _shapes_path(asset_id, keep).name:
+            old.unlink(missing_ok=True)
+
+
+def _shapes_links(asset, elements) -> dict:
+    if MODEL_TYPES.get(Path(asset["model_file"] or "").suffix.lower()) != "ifc":
+        return {}
+    key = _shapes_key(asset, elements)
+    url = url_for("marine.model_shapes", asset_id=asset["id"], key=key)
+    kept = _shapes_path(asset["id"], key).exists()
+    return {"model_shapes": url if kept else None, "model_shapes_save": None if kept else url}
+
+
+@bp.get("/assets/<int:asset_id>/model/shapes/<key>")
+@login_required
+def model_shapes(asset_id: int, key: str):
+    _asset_or_404(asset_id)
+    path = _shapes_path(asset_id, key) if key.isalnum() else None
+    if path is None or not path.exists():
+        abort(404)
+    return send_file(path, mimetype="application/octet-stream", max_age=0)
+
+
+@bp.post("/assets/<int:asset_id>/model/shapes/<key>")
+@login_required
+def keep_model_shapes(asset_id: int, key: str):
+    asset = _asset_or_404(asset_id)
+    if not asset["model_file"] or key != _shapes_key(asset, marine.assess_asset(get_db(), asset)["elements"]):
+        return jsonify(kept=False, why="the model or its elements changed"), 409
+    if (request.content_length or 0) > SHAPES_LIMIT:
+        return jsonify(kept=False, why="too big"), 413
+    target = _shapes_path(asset_id, key)
+    partial = target.with_suffix(".part")
+    size = 0
+    with partial.open("wb") as out:                   # streamed: a big model's shapes never sit in memory
+        while chunk := request.stream.read(1 << 20):
+            if size == 0 and chunk[:2] != b"\x1f\x8b":
+                break
+            size += len(chunk)
+            if size > SHAPES_LIMIT:
+                break
+            out.write(chunk)
+    if size == 0 or size > SHAPES_LIMIT:
+        partial.unlink(missing_ok=True)
+        return jsonify(kept=False, why="not gzipped shapes" if size == 0 else "too big"), 400
+    partial.replace(target)
+    _forget_shapes(asset_id, keep=key)
+    return jsonify(kept=True, bytes=size)
+
+
 @bp.post("/assets/<int:asset_id>/model/delete")
 @login_required
 def delete_model(asset_id: int):
@@ -560,6 +657,7 @@ def delete_model(asset_id: int):
     if asset["model_file"]:
         (models_dir() / asset["model_file"]).unlink(missing_ok=True)
     _found_path(asset_id).unlink(missing_ok=True)
+    _forget_shapes(asset_id)
     get_db().execute("UPDATE marine_assets SET model_file = '', model_name = '' WHERE id = ?", (asset_id,))
     get_db().commit()
     flash("The model was removed; the view draws the schematic again.", "success")

@@ -19,6 +19,8 @@ import { Sky } from 'three/addons/Sky.js';
 import { Water } from 'three/addons/Water.js';
 
 const view = document.querySelector('.marine-view');
+// The live port (step 4) plays the next two days through the same scene: marinetwin-live.js drives it.
+const LIVE = view && view.dataset.mode === 'live';
 const pick = document.querySelector('.marine-pick');
 
 function css(name, fallback) {
@@ -84,6 +86,7 @@ const REAL_FOR_KIND = {
 const BOX_COLOURS = [0x1f4e8c, 0xe2b007, 0x2a7ab0, 0xb3261e, 0x2e7d32, 0xe0e0e0, 0xef6c00, 0x5d4037, 0x00838f, 0x8e24aa];
 
 function showElement(element) {
+  if (!pick) return;                    // the live port has no side panel
   if (!element) {
     pick.innerHTML = '<p class="small muted">Click an element to see its sensors.</p>';
     return;
@@ -188,70 +191,123 @@ function sameId(name, want) {
   return n === want || (n.startsWith(want) && /^[^0-9a-z]/.test(n.slice(want.length)));
 }
 
-async function loadIfc(url, base) {
-  const WebIFC = await import(base + 'web-ifc-api.js');
-  const api = new WebIFC.IfcAPI();
-  api.SetWasmPath(base, true);
-  await api.Init();
-  const bytes = new Uint8Array(await (await fetch(url, { credentials: 'same-origin' })).arrayBuffer());
-  // Keep the model's own coordinates, so its levels stay in mCD and line up with the tide.
-  const modelID = api.OpenModel(bytes, { COORDINATE_TO_ORIGIN: false });
+// The model's shapes, read by marinetwin-ifc-worker.js (or kept from an earlier visit), as meshes:
+// one per tracked element, so it can be coloured and clicked, and a few big ones for the rest.
+function meshesFrom(parts, origin) {
   const group = new THREE.Group();
-  const byExpress = new Map();
-  api.StreamAllMeshes(modelID, (flat) => {
-    const placed = flat.geometries;
-    for (let i = 0; i < placed.size(); i++) {
-      const pg = placed.get(i);
-      const geometry = api.GetGeometry(modelID, pg.geometryExpressID);
-      const verts = api.GetVertexArray(geometry.GetVertexData(), geometry.GetVertexDataSize());
-      const index = api.GetIndexArray(geometry.GetIndexData(), geometry.GetIndexDataSize());
-      const buffer = new THREE.BufferGeometry();
-      const positions = new Float32Array(verts.length / 2);
-      const normals = new Float32Array(verts.length / 2);
-      for (let k = 0; k < verts.length; k += 6) {
-        positions.set([verts[k], verts[k + 1], verts[k + 2]], k / 2);
-        normals.set([verts[k + 3], verts[k + 4], verts[k + 5]], k / 2);
-      }
-      buffer.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      buffer.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-      buffer.setIndex(new THREE.BufferAttribute(index, 1));
-      const mesh = new THREE.Mesh(buffer, REAL.concrete);
-      mesh.applyMatrix4(new THREE.Matrix4().fromArray(pg.flatTransformation));
-      mesh.castShadow = mesh.receiveShadow = true;
-      mesh.userData.expressID = flat.expressID;
-      group.add(mesh);
-      if (!byExpress.has(flat.expressID)) byExpress.set(flat.expressID, []);
-      byExpress.get(flat.expressID).push(mesh);
-      geometry.delete();
+  const byKey = new Map();
+  for (const part of parts) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.BufferAttribute(part.positions, 3));
+    buffer.setAttribute('normal', new THREE.BufferAttribute(part.normals, 3, true));
+    buffer.setIndex(new THREE.BufferAttribute(part.index, 1));
+    const mesh = new THREE.Mesh(buffer, REAL.concrete);
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
+    for (const key of [part.global, part.name, part.tag]) {
+      if (!key) continue;
+      const k = String(key).trim().toLowerCase();
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(mesh);
     }
-  });
-  const ids = new Map();
-  for (const id of byExpress.keys()) {
-    try {
-      const line = api.GetLine(modelID, id);
-      ids.set(id, { global: line.GlobalId?.value, name: line.Name?.value, tag: line.Tag?.value });
-    } catch (err) { /* a product without properties is still drawn */ }
-  }
-  api.CloseModel(modelID);
-  // A model on its map grid sits hundreds of kilometres from the origin: bring it
-  // across, but leave its heights alone.
-  const box = new THREE.Box3().setFromObject(group);
-  const centre = box.getCenter(new THREE.Vector3());
-  if (Math.abs(centre.x) > 1000 || Math.abs(centre.z) > 1000) {
-    for (const child of group.children) child.position.sub(new THREE.Vector3(centre.x, 0, centre.z));
   }
   return {
     group,
-    meshesFor(ref) {
-      const want = String(ref).trim().toLowerCase();
-      for (const key of ['global', 'name', 'tag']) {
-        for (const [id, keys] of ids) {
-          if (keys[key] && String(keys[key]).trim().toLowerCase() === want) return byExpress.get(id);
-        }
-      }
-      return [];
-    },
+    origin,
+    meshesFor(ref) { return byKey.get(String(ref).trim().toLowerCase()) || []; },
   };
+}
+
+// The kept shapes, as marinetwin-ifc-worker.js packs them: "MTM1", the header's length, a JSON
+// header (origin, and each part's ids and sizes), then each part's positions (float32), indices
+// (uint32) and normals (int8, padded to 4), all gzipped.
+function unpackShapes(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (new TextDecoder().decode(bytes.subarray(0, 4)) !== 'MTM1') throw new Error('not a MarineTwin shape file');
+  const length = new DataView(buffer).getUint32(4, true);
+  const header = JSON.parse(new TextDecoder().decode(bytes.subarray(8, 8 + length)));
+  let at = 8 + length + ((4 - (length % 4)) % 4);
+  const parts = header.parts.map((p) => {
+    const positions = new Float32Array(buffer, at, p.nv * 3); at += p.nv * 12;
+    const index = new Uint32Array(buffer, at, p.ni); at += p.ni * 4;
+    const normals = new Int8Array(buffer, at, p.nv * 3); at += p.nv * 3 + ((4 - ((p.nv * 3) % 4)) % 4);
+    return { ...p, positions, normals, index };
+  });
+  return { parts, origin: header.origin };
+}
+
+async function fetchWithProgress(url, onProgress) {
+  const answer = await fetch(url, { credentials: 'same-origin' });
+  if (!answer.ok) throw new Error(`error ${answer.status}`);
+  const total = Number(answer.headers.get('Content-Length')) || 0;
+  if (!answer.body || !total) return answer.arrayBuffer();
+  const reader = answer.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    onProgress(Math.min(got / total, 1), got, total);
+  }
+  return new Blob(chunks).arrayBuffer();
+}
+
+const MB = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+
+async function loadKept(url) {
+  const zipped = await fetchWithProgress(url, (f, got, total) =>
+    progress(0.15 + 0.35 * f, `Opening the Revit model: ${MB(got)} of ${MB(total)} MB`));
+  const raw = await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  const { parts, origin } = unpackShapes(raw);
+  return meshesFrom(parts, origin);
+}
+
+function readIfc(url, base, refs, keepAt) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('marinetwin-ifc-worker.js', import.meta.url), { type: 'module' });
+    const parts = [];
+    let reading = null;
+    const slow = () => progress(0.36, 'Reading the model. A big Revit model can take a minute or two the first time', 0.08);
+    worker.onmessage = (ev) => {
+      const m = ev.data;
+      if (m.type === 'progress' && m.stage === 'download') {
+        progress(0.15 + 0.2 * (m.loaded / m.total), `Downloading the Revit model: ${MB(m.loaded)} of ${MB(m.total)} MB`);
+      } else if (m.type === 'progress' && m.stage === 'open') {
+        slow();
+        reading = setTimeout(() => note('Still reading the model: big Revit exports take a while the first time. It is kept after that.'), 45000);
+      } else if (m.type === 'progress' && m.stage === 'shapes') {
+        clearTimeout(reading);
+        note('Loading the IFC model…');
+        const f = m.total ? m.done / m.total : 0;
+        progress(0.45 + 0.1 * f, m.total ? `Building the model: ${m.done.toLocaleString()} of ${m.total.toLocaleString()} objects` : 'Building the model');
+      } else if (m.type === 'part') {
+        parts.push(m);
+      } else if (m.type === 'kept') {
+        if (!m.ok) console.warn('The shapes could not be kept on the server', m.why || '');
+      } else if (m.type === 'done') {
+        clearTimeout(reading);
+        resolve({ parts, origin: m.origin });   // the reader closes itself once it has kept the shapes
+      } else if (m.type === 'error') {
+        clearTimeout(reading);
+        worker.terminate();
+        reject(new Error(m.message));
+      }
+    };
+    worker.onerror = (ev) => { clearTimeout(reading); worker.terminate(); reject(new Error(ev.message || 'the model reader stopped')); };
+    worker.postMessage({ url: new URL(url, location.href).href, base, refs, keepAt: keepAt ? new URL(keepAt, location.href).href : null });
+  });
+}
+
+async function loadIfc(twin, base) {
+  if (twin.model_shapes) {
+    try { return await loadKept(twin.model_shapes); } catch (err) { console.warn('Kept shapes unusable, reading the IFC again', err); }
+  }
+  const refs = twin.elements.flatMap((e) => [e.ref, e.name]);
+  // The reader also keeps the shapes on the server, so the next visit opens in seconds.
+  const { parts, origin } = await readIfc(twin.model, base, refs, twin.model_shapes_save);
+  return meshesFrom(parts, origin);
 }
 
 async function loadGltf(url) {
@@ -424,7 +480,7 @@ function stsCrane(state) {
   trolley.add(spreader);
   trolley.position.set(0, 43, -20);
   if (state !== 'stowed') g.add(trolley);
-  g.userData = { trolley, spreader, working: state === 'working', gauge };
+  g.userData = { trolley, spreader, boom, working: state === 'working', gauge };
   return g;
 }
 
@@ -681,16 +737,16 @@ function terminal(scene, frame, twin, rng) {
     }
   }
   // Road trucks on the access road at the back.
-  loops.push({ curve: loop([[centre - 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 2], [centre - 400, front + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6 });
+  loops.push({ curve: loop([[centre - 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 2], [centre - 400, front + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
   for (const l of loops) {
     for (let k = 0; k < l.n; k++) {
       const v = vehicle(l.kind, [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825, 0x2e7d32, 0x37474f][Math.floor(rng() * 6)]);
       g.add(v);
-      movers.push({ object: v, curve: l.curve, offset: k / l.n + rng() * 0.05, speed: (l.kind === 'car' ? 7 : 6) / l.curve.getLength() });
+      movers.push({ object: v, curve: l.curve, offset: k / l.n + rng() * 0.05, speed: (l.kind === 'car' ? 7 : 6) / l.curve.getLength(), apron: !l.road });
     }
   }
   scene.add(g);
-  return { group: g, movers, cranes, lights, kind };
+  return { group: g, movers, cranes, lights, kind, yardDepth };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -705,7 +761,7 @@ function progress(f, words, ahead = 0) {
 async function main() {
   progress(0.04, 'Loading the twin', 0.1);
   const twin = await (await fetch(view.dataset.twin, { credentials: 'same-origin' })).json();
-  progress(0.15, twin.model ? 'Opening the Revit model' : 'Drawing the berth', twin.model ? 0.4 : 0.2);
+  progress(0.15, twin.model ? 'Opening the Revit model' : 'Drawing the berth', twin.model ? 0.05 : 0.2);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, (view.clientWidth || 800) / (view.clientHeight || 460), 0.5, 30000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -727,7 +783,7 @@ async function main() {
   if (twin.model) {
     note('Loading ' + (twin.model_kind === 'ifc' ? 'the IFC model' : 'the model') + '…');
     try {
-      const model = twin.model_kind === 'ifc' ? await loadIfc(twin.model, view.dataset.webIfc) : await loadGltf(twin.model);
+      const model = twin.model_kind === 'ifc' ? await loadIfc(twin, view.dataset.webIfc) : await loadGltf(twin.model);
       for (const e of twin.elements) {
         const meshes = model.meshesFor(e.ref);
         if (!meshes.length && e.ref !== e.name) meshes.push(...model.meshesFor(e.name));
@@ -818,7 +874,9 @@ async function main() {
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng);
   let vessel = null;
-  if (twin.alongside) {
+  if (LIVE) {
+    // The live player brings the ships in and out itself.
+  } else if (twin.alongside) {
     const a = twin.alongside;
     vessel = ship(a.type, a.loa, a.beam, a.draught, rng);
     vessel.position.set((frame.minX + frame.maxX) / 2, 0, frame.fenderFace - a.beam / 2 - 0.4);
@@ -874,6 +932,7 @@ async function main() {
       <label><input type="checkbox" class="marine-hud-move" checked> Operations moving</label>
     </div>`;
   view.appendChild(hud);
+  if (LIVE) hud.hidden = true;           // the live player has its own
   const read = hud.querySelector('.marine-hud-read');
 
   // What the weather is: live from Open-Meteo where the browser can reach it.
@@ -890,7 +949,9 @@ async function main() {
     : null;
   const simTides = (sim.tides || []).map((t) => [Date.parse(t.at), t.tide]);
 
+  let tideSource = null;                 // the live player's tide, when it plays its own timeline
   function tideAt(when) {
+    if (tideSource) return tideSource(when);
     // Sea level above chart datum: the live sea level on the site's MSL, or the simulated tide.
     const series = seaLevels && seaLevels.length ? seaLevels.map(([t, v]) => [t, v + (twin.asset.msl_cd || 0)]) : simTides;
     if (!series.length) return 1.0;
@@ -925,8 +986,9 @@ async function main() {
   sky.material.uniforms.mieDirectionalG.value = 0.8;
 
   let lastEnv = -99;
+  let clock = null;                      // the live player's clock, when it runs one
   function setTime() {
-    const when = new Date(Date.now() + offsetHours * 3600000);
+    const when = clock ? new Date(clock) : new Date(Date.now() + offsetHours * 3600000);
     const { alt, az } = sunPosition(when, lat, lon);
     // Sun direction, geographic to the model's frame (x along the berth, -z to the sea side).
     const east = Math.cos(alt) * Math.sin(az);
@@ -1034,19 +1096,37 @@ async function main() {
     renderer.setSize(view.clientWidth, view.clientHeight);
   });
 
+  // The live port: the player takes over the clock, the ships, the cranes and the weather.
+  let player = null;
+  if (LIVE) {
+    progress(0.8, 'Loading the next two days at the berth', 0.1);
+    const { startLive } = await import('./marinetwin-live.js');
+    player = await startLive({
+      THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
+      ship, vehicle, box, REAL, BOX_COLOURS,
+      setClock(ms) { clock = ms; setTime(); },
+      setTide(fn) { tideSource = fn; },
+      setMoving(on) { moving = on; },
+    });
+  }
+
   // The terminal at work.
-  const clock = new THREE.Clock();
+  const timer = new THREE.Clock();
   let t = 0;
   const point = new THREE.Vector3();
   const ahead = new THREE.Vector3();
   function animate() {
-    const dt = Math.min(clock.getDelta(), 0.1);
-    water.material.uniforms.time.value += dt * 0.6 * (1 + hs);
+    const dt = Math.min(timer.getDelta(), 0.1);
+    water.material.uniforms.time.value += dt * 0.6 * (1 + (player ? player.hs : hs));
+    if (player) player.tick(dt);
     if (moving) {
-      t += dt;
+      const pace = player ? player.pace : 1;
+      t += dt * pace;
       for (const m of site.movers) {
         if (m.curve) {
-          const u = (m.offset + t * m.speed) % 1;
+          if (player && m.apron && !player.working) continue;      // nothing to carry: the apron waits
+          m.u = ((m.u ?? m.offset) + dt * pace * m.speed) % 1;
+          const u = m.u;
           m.curve.getPointAt(u, point);
           m.curve.getPointAt((u + 0.002) % 1, ahead);
           m.object.position.copy(point);
@@ -1057,7 +1137,7 @@ async function main() {
           m.object.position[m.swing.axis] = m.swing.from + (m.swing.to - m.swing.from) * s;
         }
       }
-      for (const c of site.cranes) {
+      for (const c of player ? [] : site.cranes) {     // the live player works the cranes itself
         const u = c.userData;
         if (u.trolley && u.working) {
           const s = (Math.sin(t * 0.35 + c.position.x) + 1) / 2;

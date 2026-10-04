@@ -225,14 +225,15 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
     A new element takes its kind, material, zone, wall and Triton name from the
     model's MT_Common properties (or what its name and IFC class imply), its
     position from the model, and the sensors MT_Sensors lists or the usual ones
-    for its kind. A fender or bollard rated in the model (MT_Furniture) has its
+    for its kind (for elements sharing a name, only the first of them). A fender or bollard rated in the model (MT_Furniture) has its
     sensor's limits set from that rating.
     """
     wanted = set(names) if names is not None else None
     existing = {r["name"]: r for r in conn.execute("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))}
     kinds, materials, zones = dict(ELEMENT_KINDS), dict(MATERIALS), dict(ZONES)
     made, linked = [], []
-    for e in found.get("elements", []):
+    instrumented = {e["group"] for e in found.get("elements", []) if e.get("group") and e["name"] in existing}
+    for e in sorted(found.get("elements", []), key=lambda e: e["name"]):
         if wanted is not None and e["name"] not in wanted:
             continue
         if e["name"] in existing:
@@ -250,7 +251,15 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
             (asset_id, e["name"], kind, e["material"] if e["material"] in materials else "steel",
              e["zone"] if e["zone"] in zones else "splash", e.get("wall_mm"), e.get("design_ur"),
              e.get("triton_element") or "", e["global_id"], e["x"], e["y"], e["z"])).lastrowid
-        chosen = [k for k in e.get("sensors", []) if k in SENSOR_KINDS] or suggested(kind)
+        chosen = [k for k in e.get("sensors", []) if k in SENSOR_KINDS]
+        if not chosen and e.get("group"):
+            # Elements sharing one design (every MP1-DS03 pile) are monitored through one of them,
+            # as on a real quay: the first along the berth gets the usual sensors.
+            if e["group"] not in instrumented:
+                instrumented.add(e["group"])
+                chosen = suggested(kind)
+        elif not chosen:
+            chosen = suggested(kind)
         for sensor_kind in dict.fromkeys(chosen):
             alarm = e.get("rated_reaction") if sensor_kind == "fender_reaction" else \
                 e.get("bollard_capacity") if sensor_kind == "bollard_load" else None

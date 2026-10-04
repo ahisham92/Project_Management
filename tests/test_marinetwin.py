@@ -7,6 +7,7 @@ corrosion is running past its allowance, and the utilisation that follows.
 
 from __future__ import annotations
 
+import gzip
 import io
 import math
 from datetime import date
@@ -706,11 +707,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/live", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 6 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 7 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 6 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 7 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -727,3 +728,76 @@ def test_the_top_bar_is_ahm_home_with_only_the_admin_links(signed_in, demo):
     assert "Admin" in bar and "Backups" in bar
     for app_name in ("Portfolio", "Triton", "THEMIS", ">MarineTwin<", "How to use", "Project Control"):
         assert app_name not in bar
+
+
+def test_dar_legend_names_are_recognised():
+    kind = marine_ifc._kind_from_name
+    assert [kind(n) for n in ("MP1-DS03", "RP", "RP2-DS01-L1", "FKS", "FKC-DS02", "SPW")] == \
+        ["pile", "pile", "pile", "pile", "pile", "sheet_pile"]
+    assert kind("Detail:Rebar chair") is None and kind("MPX") is None
+
+
+def test_piles_sharing_a_design_are_monitored_through_one_of_them(app, signed_in):
+    page = _berth(app, signed_in, "Berth 9")
+    pile = {"kind": "pile", "material": "steel", "zone": "splash", "y": 0, "z": 0}
+    found = {"elements": [{**pile, "name": f"MP1-DS03-0{i}", "group": "MP1-DS03", "global_id": f"g{i}", "x": i} for i in (1, 2, 3)]
+             + [{**pile, "name": "MP2-DS01-01", "group": "MP2-DS01", "global_id": "h1", "x": 9},
+                {**pile, "name": "MP2-DS01-02", "group": "MP2-DS01", "global_id": "h2", "x": 10, "sensors": ["strain"]},
+                {**pile, "name": "P07", "global_id": "p7", "x": 12}]}
+    with app.app_context():
+        db = connect(app.config["DATABASE"])
+        asset_id = int(page.rsplit("/", 1)[1])
+        marine.import_elements(db, asset_id, found)
+        db.commit()
+    by = {e["name"]: e for e in signed_in.get(page + "/twin.json").get_json()["elements"]}
+    assert by["MP1-DS03-01"]["sensors"] and not by["MP1-DS03-02"]["sensors"] and not by["MP1-DS03-03"]["sensors"]
+    assert by["MP2-DS01-01"]["sensors"] and by["MP2-DS01-02"]["sensors"]   # listed in MT_Sensors: always fitted
+    assert by["P07"]["sensors"]                                           # a pile of its own keeps its sensors
+
+
+def test_the_3d_view_keeps_the_shapes_it_built(app, signed_in):
+    page = _berth(app, signed_in, "Berth 10")
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")
+    twin = signed_in.get(page + "/twin.json").get_json()
+    assert twin["model_shapes"] is None and twin["model_shapes_save"]
+    shapes = gzip.compress(b"MTM1" + b"\0" * 64)
+    assert signed_in.post(twin["model_shapes_save"], data=b"not gzip").status_code == 400
+    assert signed_in.post(twin["model_shapes_save"], data=shapes).get_json()["kept"]
+    twin = signed_in.get(page + "/twin.json").get_json()
+    assert twin["model_shapes_save"] is None and signed_in.get(twin["model_shapes"]).data == shapes
+    # New elements are shapes of their own: what was kept no longer fits, and is built again.
+    signed_in.post(page + "/model/import", data={"kinds": ["fender"]})
+    again = signed_in.get(page + "/twin.json").get_json()
+    assert again["model_shapes"] is None and again["model_shapes_save"] != twin["model_shapes"]
+    assert signed_in.post(twin["model_shapes"], data=shapes).status_code == 409
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")
+    assert signed_in.get(twin["model_shapes"]).status_code == 404
+
+
+def test_the_live_port_plays_two_days_at_the_berth(signed_in, demo):
+    page = text(signed_in.get(demo + "/live"))
+    assert 'data-mode="live"' in page and "/live.json" in page and "Duty log" in page
+    plan = signed_in.get(demo + "/live.json").get_json()
+    assert len(plan["hours"]) == 49 and plan["calls"] and plan["events"]
+    hour = plan["hours"][0]
+    assert {"wind", "gust", "hs", "tide", "rain", "visibility", "equipment", "berthing"} <= set(hour)
+    starts = [c["eta"] for c in plan["calls"]]
+    assert starts == sorted(starts)
+    for before, after in zip(plan["calls"], plan["calls"][1:]):
+        assert after["eta"] >= before["etd"]                       # one ship at a time on the berth
+
+
+def test_ships_berth_only_inside_the_weather_limits():
+    now = datetime(2026, 10, 4, 12)
+    for asset_id in range(1, 30):
+        plan = marine_ops.live(asset_id, now, "container")
+        by_hour = {h["at"]: h for h in plan["hours"]}
+        for c in plan["calls"]:
+            if c["eta"] > plan["start"]:
+                hour = by_hour[c["eta"].replace(minute=0, second=0, microsecond=0)]
+                before = by_hour.get(hour["at"] - timedelta(hours=1), hour)
+                assert hour["berthing"] and before["berthing"], (asset_id, c["name"])
+        for h in plan["hours"]:
+            for kit in h["equipment"]:
+                if h["gust"] >= marine_ops.LIMITS["crane_stop_gust"]:
+                    assert kit["state"] in ("stopped", "stowed")

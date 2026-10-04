@@ -93,6 +93,10 @@
       {{ empty('No elements yet', 'Import them from the Revit model, or add them one by one, in Set up.') }}
       <p><a class="btn btn-primary" href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Go to Set up</a></p>
     {% else %}
+    {% set quiet = twin['elements'] | rejectattr('sensors') | selectattr('state', 'equalto', 'neutral') | list | length %}
+    {% set many = twin['elements'] | length > 300 and quiet and not request.args.get('all') %}
+    {% if many %}<p class="small muted">Showing the elements with sensors or something to report. {{ '{:,}'.format(quiet) }} more have neither:
+      <a href="{{ url_for('marine.asset', asset_id=asset['id'], all=1, _anchor='elements') }}">show all {{ '{:,}'.format(twin['elements'] | length) }}</a>.</p>{% endif %}
     <div class="table-scroll">
       <table class="table">
         <thead><tr>
@@ -104,7 +108,7 @@
         <tbody>
           {% for group, members in twin['elements'] | groupby('furniture') %}
             <tr><th colspan="8" class="small" style="background:var(--surface)">{{ 'Quay furniture' if group else 'Structure' }}</th></tr>
-          {% for e in members %}
+          {% for e in members if not many or e['sensors'] or e['state'] != 'neutral' %}
             <tr>
               <td><a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=e['element']['id']) }}"><strong>{{ e['element']['name'] }}</strong></a></td>
               <td class="small">{{ element_kind_name.get(e['element']['kind']) }}<span class="muted">, {{ e['element']['material'] }}</span></td>

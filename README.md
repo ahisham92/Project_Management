@@ -479,13 +479,29 @@ For each element it answers three questions:
 - **What should be done?** A recommendation for each element that needs one, most pressing first.
 
 
-**Finding your way.** Every MarineTwin page shows the same six numbered steps: **1 Assets** (the
+**Finding your way.** Every MarineTwin page shows the same seven numbered steps: **1 Assets** (the
 list), **2 Set up** (the Revit model, where it is, its details, elements and readings), **3
-Structure**, **4 Operations**, **5 Simulation** and **6 Facility** (equipment, comfort and air,
-carbon and compliance, safety and security). Long pages are split into tabs, so each opens about
+Structure**, **4 Live port**, **5 Operations**, **6 Simulation** and **7 Facility** (equipment,
+comfort and air, carbon and compliance, safety and security). Long pages are split into tabs, so each opens about
 one screen long, with the most pressing tab first and a count on each. Moving between pages,
 running a scenario or uploading a model shows Triton's loading bar: a ship sailing to the quay as
 it counts up to 100%; the 3D view shows the same while it builds.
+
+**Live port.** The next 48 hours at the berth played through the 3D twin like a camera feed:
+ships waiting at anchor, taking the pilot, berthing with two tugs and sailing; cranes (or ramp
+gangs, unloaders, harbour cranes) moving boxes ship to quay; tractors and people on the apron;
+rain, mist, waves, the tide, a windsock, and day and night from the real sun. It plays at 10× by
+default (1×, 60× and 600× too, with a scrubber marked with the day's events) from quay, crane
+and drone cameras. Berthing waits while the wind or waves are over the limits, cranes stop or go
+to storm pins in gusts, machines break down for a few hours, and the view says plainly when the
+berth is losing time and why. A duty log under it lists what happened and what is coming. The
+timeline comes from `marine_ops.live` (simulated feeds, like the Operations page).
+
+**Big Revit models.** The 3D view reads the IFC in a background worker, showing the megabytes
+downloaded and the objects built, then keeps the shapes it built on the server (gzipped, keyed by
+the model and the tracked elements), so later visits open in seconds. Elements that share a
+legend name (every MP1-DS03 pile) are imported numbered along the berth, MP1-DS03-01, -02…, and
+monitored through the first of them.
 **From the Revit model.** Export it as **IFC** (File → Export → IFC, with *Export IFC common
 property sets*, *Export base quantities* and the user-defined property sets ticked) or **glTF**.
 On upload MarineTwin reads the IFC itself, with no IFC library on the server:

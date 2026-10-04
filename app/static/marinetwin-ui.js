@@ -50,6 +50,7 @@
       const dt = Math.max(0, Math.min((now - last) / 1000, 0.25));   // a frame stamped before go() ran
       last = now;
       if (target > shown) shown = Math.min(target, shown + Math.max(0.25 * dt, (target - shown) * Math.min(1, 4 * dt)));
+      if (target - shown < 1e-3) shown = Math.max(shown, target);
       else if (creep > shown && target < 1) shown = Math.min(creep, shown + (creep - shown) * 0.35 * dt + 0.004 * dt);
       paint();
       frame = shown < Math.max(target, creep) - 1e-4 ? requestAnimationFrame(tick) : null;
@@ -58,8 +59,10 @@
     paint();
     return {
       element: box,
-      set(f, words, ahead = 0) {
+      // exact: show f now, without sailing up to it (an upload's bytes sent).
+      set(f, words, ahead = 0, exact = false) {
         target = Math.max(target, Math.min(f, 1));
+        if (exact) { shown = Math.max(shown, target); paint(); }
         creep = Math.max(creep, Math.min(target + ahead, 0.97));
         if (words) what.textContent = words;
         go();
@@ -78,13 +81,13 @@
 
   // Over the page while the next one comes: a card at the top that sails on as the server works.
   let leaving = null;
-  function sail(words) {
+  function sail(words, ahead = 0.8) {
     if (leaving) return;
     const veil = document.createElement('div');
     veil.className = 'mt-voyage-veil';
     document.body.appendChild(veil);
     const v = voyage(veil, words);
-    v.set(0.12, words, 0.8);
+    v.set(ahead ? 0.12 : 0, words, ahead);
     leaving = { veil, v };
   }
   window.addEventListener('pageshow', () => {
@@ -132,12 +135,15 @@
     } else location.href = u.href;
   }
 
-  // A file upload goes through the page so the voyage shows the bytes actually sent (to 80%),
-  // then creeps on while the server reads the model, and says so if it fails.
+  // A file upload goes through the page so the voyage shows exactly the share of bytes sent
+  // (9.4 of 100 MB is 9%), then counts the seconds while the server reads the model, and says so
+  // if it fails.
   function upload(form) {
     const words = form.dataset.voyage || 'Uploading';
-    sail(words);
+    sail(words, 0);
     const { v } = leaving;
+    let reading = null;
+    const stopReading = () => { if (reading) clearInterval(reading); reading = null; };
     const xhr = new XMLHttpRequest();
     xhr.open('POST', form.action);
     xhr.setRequestHeader('X-MarineTwin-Xhr', '1');
@@ -146,9 +152,14 @@
       if (!e.lengthComputable) return;
       const f = e.loaded / e.total;
       const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
-      if (f < 1) v.set(0.02 + 0.78 * f, `${words}: ${mb(e.loaded)} of ${mb(e.total)} MB sent`);
-      else v.set(0.8, 'Uploaded. The server is reading the model', 0.17);
+      if (f < 1) { v.set(f, `${words}: ${mb(e.loaded)} of ${mb(e.total)} MB sent`, 0, true); return; }
+      if (reading) return;
+      const since = Date.now();
+      const say = () => v.set(1, `Uploaded ${mb(e.total)} MB. The server is reading the model (${Math.round((Date.now() - since) / 1000)} s)`, 0, true);
+      say();
+      reading = setInterval(say, 1000);
     });
+    xhr.addEventListener('loadend', stopReading);
     xhr.addEventListener('load', () => {
       let to = null;
       try { to = JSON.parse(xhr.responseText).redirect; } catch (e) { /* not ours */ }

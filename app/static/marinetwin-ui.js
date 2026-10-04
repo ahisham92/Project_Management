@@ -135,9 +135,9 @@
     } else location.href = u.href;
   }
 
-  // A file upload goes through the page so the voyage shows exactly the share of bytes sent
-  // (9.4 of 100 MB is 9%), then counts the seconds while the server reads the model, and says so
-  // if it fails.
+  // A file upload goes through the page so the voyage's first 90% is exactly the share of bytes
+  // sent; the last 10% is the server reading the model, counting the seconds, and says so if it
+  // fails.
   function upload(form) {
     const words = form.dataset.voyage || 'Uploading';
     sail(words, 0);
@@ -152,10 +152,10 @@
       if (!e.lengthComputable) return;
       const f = e.loaded / e.total;
       const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
-      if (f < 1) { v.set(f, `${words}: ${mb(e.loaded)} of ${mb(e.total)} MB sent`, 0, true); return; }
+      if (f < 1) { v.set(0.9 * f, `${words}: ${mb(e.loaded)} of ${mb(e.total)} MB sent`, 0, true); return; }
       if (reading) return;
       const since = Date.now();
-      const say = () => v.set(1, `Uploaded ${mb(e.total)} MB. The server is reading the model (${Math.round((Date.now() - since) / 1000)} s)`, 0, true);
+      const say = () => v.set(0.9, `Uploaded ${mb(e.total)} MB. The server is reading the model (${Math.round((Date.now() - since) / 1000)} s)`, 0.09);
       say();
       reading = setInterval(say, 1000);
     });

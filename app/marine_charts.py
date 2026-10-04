@@ -309,3 +309,54 @@ def env_chart(timeline: Sequence[dict[str, Any]], series: Sequence[tuple[str, st
     return _hourly(timeline, [(label, key, colours[i % 4]) for i, (label, key) in enumerate(series)],
                    [(label, value, ALERT if i == 0 else CRITICAL) for i, (label, value) in enumerate(limits)],
                    unit, h=200, now=False)
+
+
+def life_costs(nothing: Sequence[dict[str, Any]], fixing: Sequence[dict[str, Any]], unit: str) -> Markup:
+    """What looking after the berth cost, year by year, both ways: lost moves plus repairs turned
+    into moves, added up. Doing nothing is free until the parts fail; then it is not."""
+    if not nothing or not fixing:
+        return _empty("Nothing to show.")
+    w, h, left, right, top, bottom = 800, 280, 70, 16, 14, 30
+    plot_w, plot_h = w - left - right, h - top - bottom
+    years = max(len(nothing), len(fixing))
+    hi = max([r["cost"] for r in nothing] + [r["cost"] for r in fixing] + [1.0]) * 1.08
+
+    def x_of(year: float) -> float:
+        return left + plot_w * year / years
+
+    def y_of(v: float) -> float:
+        return top + plot_h * (1 - v / hi)
+
+    parts: list[str] = []
+    step = _nice_step(hi)
+    tick = 0.0
+    while tick <= hi + 1e-9:
+        y = y_of(tick)
+        label = f"{tick / 1e6:,.1f}M" if hi >= 2e6 else f"{tick / 1e3:,.0f}k" if hi >= 2e3 else f"{tick:,.0f}"
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{w - right}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="tick">{label}</text>')
+        tick += step
+    for year in range(0, years + 1, 5 if years <= 60 else 10):
+        x = x_of(year)
+        parts.append(f'<text x="{x:.1f}" y="{h - bottom + 18}" text-anchor="middle" class="tick">year {year}</text>')
+    parts.append(f'<text x="{left}" y="{top - 2}" class="tick">{unit} lost or spent, to date</text>')
+    series = [("Do nothing", nothing, CRITICAL), ("Fix as you go", fixing, READING)]
+    for _, rows, colour in series:
+        path = f"M{x_of(0):.1f},{y_of(0):.1f} " + " ".join(f"L{x_of(r['year']):.1f},{y_of(r['cost']):.1f}" for r in rows)
+        parts.append(f'<path d="{path}" fill="none" stroke="{colour}" stroke-width="2" stroke-linejoin="round"/>')
+    out = next((r["year"] for r in nothing if r["factor"] == 0), None)
+    if out:
+        x = x_of(out - 1)
+        parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{h - bottom}" stroke="{CRITICAL}" stroke-dasharray="4 4"/>')
+        parts.append(f'<text x="{x - 6:.1f}" y="{top + 12}" text-anchor="end" class="tick-value">berth out of service</text>')
+    band = plot_w / years
+    for i in range(years):
+        a = nothing[i] if i < len(nothing) else nothing[-1]
+        b = fixing[i] if i < len(fixing) else fixing[-1]
+        rows = [{"label": label, "color": colour, "value": f"{r['cost']:,.0f} {unit}"}
+                for (label, _, colour), r in zip(series, (a, b))]
+        parts.append(f'<rect class="hit" x="{x_of(i + 1) - band / 2:.1f}" y="{top}" width="{band:.1f}" height="{plot_h}" '
+                     f'fill="transparent" data-x="{x_of(i + 1):.1f}" data-tip="{_tip(f"Year {i + 1}", rows)}"/>')
+    parts.append(f'<line class="crosshair" x1="0" y1="{top}" x2="0" y2="{h - bottom}" stroke="{MUTED}" '
+                 f'stroke-width="1" visibility="hidden"/>')
+    return _chart("".join(parts), _legend([(label, colour) for label, _, colour in series]), w, h)

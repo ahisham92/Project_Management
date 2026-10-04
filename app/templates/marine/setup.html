@@ -48,6 +48,15 @@
       {% elif model_found %}
         <p class="small muted" style="margin-top:8px">Every element the model names is tracked here{% if model_found['elements'] %} ({{ model_found['elements'] | length }}){% endif %}.</p>
       {% endif %}
+      {% set tracked = twin['elements'] | length %}
+      {% if tracked %}
+      <form method="post" action="{{ url_for('marine.delete_elements', asset_id=asset['id']) }}" style="margin-top:12px"
+            data-voyage="Removing the elements"
+            onsubmit="return confirm('Remove all {{ tracked }} elements, their sensors and readings? The model stays, so you can import them again.')">
+        <button type="submit" class="btn btn-ghost btn-sm">Remove all {{ '{:,}'.format(tracked) }} elements</button>
+        <span class="small muted">to import them again from the model</span>
+      </form>
+      {% endif %}
       {% if asset['model_file'] %}
       <form method="post" action="{{ url_for('marine.delete_model', asset_id=asset['id']) }}" style="margin-top:8px">
         <button type="submit" class="btn btn-ghost btn-sm">Remove the model</button>

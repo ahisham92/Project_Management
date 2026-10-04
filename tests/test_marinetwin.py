@@ -737,6 +737,24 @@ def test_piles_sharing_a_name_each_become_an_element(app, signed_in):
     assert "nothing" in text(signed_in.post(page + "/model/import", data={"kinds": ["pile"]}, follow_redirects=True)).lower()
 
 
+def test_all_elements_can_be_removed_and_imported_again(app, signed_in):
+    page = _berth(app, signed_in, "Berth 9")
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")
+    signed_in.post(page + "/model/import")
+    before = signed_in.get(page + "/twin.json").get_json()["elements"]
+    assert before and "Remove all" in text(signed_in.get(page + "/setup"))
+    answer = signed_in.post(page + "/elements/delete", follow_redirects=True)
+    assert f"{len(before)} elements and their sensors were removed" in text(answer)
+    assert signed_in.get(page + "/twin.json").get_json()["elements"] == []
+    with app.app_context():
+        from app.db import get_db
+        orphans = get_db().execute("SELECT COUNT(*) FROM marine_readings r LEFT JOIN marine_sensors s ON s.id = r.sensor_id"
+                                   " WHERE s.id IS NULL").fetchone()[0]
+        assert orphans == 0
+    signed_in.post(page + "/model/import")                   # the model stayed: it comes back
+    assert len(signed_in.get(page + "/twin.json").get_json()["elements"]) == len(before)
+
+
 def test_an_import_that_fails_says_so_instead_of_a_server_error(app, signed_in, monkeypatch):
     page = _berth(app, signed_in, "Berth 7")
     signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")

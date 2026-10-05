@@ -26,13 +26,14 @@
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
                      ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
   {% set setup_tabs = [('marine.setup', 'Model and place'), ('marine.sensors', 'Sensors'), ('marine.inputs', 'Inputs')] %}
+  {% set port_tabs = [('marine.live', 'Live port'), ('marine.berthplan', 'Berth plan'), ('marine.ships', 'Ships')] %}
   {% set here = request.endpoint %}
   {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}
   {% set steps = [
       ('marine.index', 'Assets', asset['name'] if asset else 'pick or add one', ['marine.index']),
       ('marine.setup', 'Set up', 'model, place, sensors, inputs', setup_tabs | map('first') | list),
       ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
-      ('marine.live', 'Live port', 'ships, cranes, weather', ['marine.live']),
+      ('marine.live', 'Live port', 'ships, berth plan, cranes', port_tabs | map('first') | list),
       ('marine.lifecycle', 'Lifecycle', '50 years, fix or wait', ['marine.lifecycle']),
       ('marine.risks', 'Risks', 'extreme events, cost, recovery', ['marine.risks']),
       ('marine.plan', 'Sensors plan', 'what to buy, where, return', ['marine.plan']),
@@ -73,6 +74,13 @@
   {% if asset and here in setup_tabs | map('first') | list %}
   <nav class="tabs" style="margin:0 0 16px">
     {% for endpoint, label in setup_tabs %}
+      <a href="{{ url_for(endpoint, asset_id=asset['id']) }}" class="{{ 'active' if here == endpoint }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  {% if asset and here in port_tabs | map('first') | list %}
+  <nav class="tabs" style="margin:0 0 16px">
+    {% for endpoint, label in port_tabs %}
       <a href="{{ url_for(endpoint, asset_id=asset['id']) }}" class="{{ 'active' if here == endpoint }}">{{ label }}</a>
     {% endfor %}
   </nav>

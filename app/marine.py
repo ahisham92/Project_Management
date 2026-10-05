@@ -510,6 +510,40 @@ CREATE TABLE IF NOT EXISTS marine_inputs (
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS marine_berths (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  n               INTEGER NOT NULL,                 -- numbered along the quay from 1, as the 3D view numbers them
+  name            TEXT NOT NULL,
+  length          REAL NOT NULL,                    -- m
+  depth           REAL NOT NULL,                    -- m below chart datum alongside
+  cranes          INTEGER NOT NULL DEFAULT 2,
+  crane_kind      TEXT NOT NULL DEFAULT 'MHC',      -- marine_berths.CRANE_KINDS
+  use             TEXT NOT NULL DEFAULT 'mixed',    -- marine_berths.USES
+  main            INTEGER NOT NULL DEFAULT 0,       -- the berth the live port's line-up is for
+  source          TEXT NOT NULL DEFAULT 'estimate', -- estimate | model (found by the 3D view) | user
+  UNIQUE (asset_id, n)
+);
+CREATE TABLE IF NOT EXISTS marine_calls (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  ship            TEXT NOT NULL,
+  imo             TEXT NOT NULL DEFAULT '',
+  flag            TEXT NOT NULL DEFAULT '',         -- ISO 3166 alpha-2
+  type            TEXT NOT NULL DEFAULT 'Container',
+  line            TEXT NOT NULL DEFAULT '',
+  loa             REAL NOT NULL,
+  beam            REAL,
+  draught         REAL NOT NULL,
+  dwt             REAL,
+  moves           INTEGER NOT NULL DEFAULT 0,       -- containers or units to work in the call
+  eta             TEXT NOT NULL,                    -- ISO, local time
+  window          INTEGER NOT NULL DEFAULT 0,       -- a contracted berth window
+  wish            INTEGER,                          -- the berth asked for
+  notes           TEXT NOT NULL DEFAULT '',
+  source          TEXT NOT NULL DEFAULT 'user',     -- typical | user | csv
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

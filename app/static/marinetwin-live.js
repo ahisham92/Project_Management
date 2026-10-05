@@ -85,13 +85,37 @@ export async function startLive(ctx) {
     const off = beam / 2 + 2;
     const abreast = beam + 60;                 // clear of a neighbour's ship, with room for the tugs
     const berth = P(t, off);
-    return {
-      berth, rot, abreast: P(t, abreast),
-      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1700, 900), P(t - bow * 800, 380), P(t - bow * (loa / 2 + 60), abreast + 10), P(t, abreast)]),
-      outbound: new THREE.CatmullRomCurve3([P(t, abreast), P(t + bow * (loa / 2 + 60), abreast + 10), P(t + bow * 800, 380), P(t + bow * 1700, 900)]),
-      // Anchorages a few hundred metres apart, each berth's well clear of the others'.
-      anchorage: P(t - bow * 400, 1000 + ((b ? b.n : 0) % 3) * 320 + (k % 2) * 160),
+    // In up the fairway from astern of the berth, out ahead of it, both well off the quay; where
+    // the quay bends round (a basin, a corner) and that would cross land, a route that stays on
+    // the water: further out, more square to the quay, or in from the other side.
+    const sea = ctx.atSea;
+    const routes = [[1700, 900, 800, 380], [1200, 1300, 500, 520], [600, 1400, 250, 600], [200, 1200, 80, 500],
+      [-600, 1400, -250, 600], [-1700, 900, -800, 380], [0, 700, 0, 320]];
+    const curve = (side, r) => new THREE.CatmullRomCurve3([P(t + side * r[0], r[1]), P(t + side * r[2], r[3]),
+      P(t + side * Math.sign(r[2] || 1) * Math.min(Math.abs(r[2]) || 1, loa / 2 + 60), abreast + 10), P(t, abreast)]);
+    const pick = (side) => {
+      for (const r of routes) {
+        const c = curve(side, r);
+        if (!sea || sea.clear(c, beam / 2 + 10)) return c;
+      }
+      return curve(side, routes[routes.length - 1]);
     };
+    const inbound = pick(-bow);
+    const out = pick(bow);
+    const outbound = new THREE.CatmullRomCurve3(out.points.slice().reverse());
+    // Anchorages a few hundred metres apart, each berth's well clear of the others', on open water.
+    const n = b ? b.n : 0;
+    const start = inbound.points[0];
+    let anchorage = P(t - bow * 400, 1000 + (n % 3) * 320 + (k % 2) * 160);
+    if (sea && !sea(anchorage.x, anchorage.z, 250)) {
+      anchorage = null;
+      for (const d of [0, 300, 600, 900, 1300]) {
+        const a = start.clone().add(P(0, d + (n % 3) * 200 + (k % 2) * 120).sub(P(0, 0)));     // further out to sea
+        if (sea(a.x, a.z, 250)) { anchorage = a; break; }
+      }
+      if (!anchorage) anchorage = start.clone();
+    }
+    return { berth, rot, abreast: P(t, abreast), inbound, outbound, anchorage };
   }
   // Heading along a path, turned to lie alongside (`settle` from 0 to 1) at the berth.
   const turnTo = (heading, rot, settle) => {

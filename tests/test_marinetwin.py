@@ -956,7 +956,7 @@ def test_the_live_port_plays_each_situation():
     assert normal["scenario"]["key"] == "normal" and all(h["power"] for h in normal["hours"])
     cut = marine_ops.live(3, now, "container", scenario="power_cut")
     dark = [h for h in cut["hours"] if not h["power"]]
-    assert len(dark) == 4 and dark[0]["at"].hour == 20 and dark[0]["at"] > cut["start"]
+    assert len(dark) == 4 and dark[0]["at"].hour == 11 and dark[0]["at"] > cut["start"]   # in daylight, to be seen
     assert all(k["state"] == "down" for h in dark for k in h["equipment"])
     assert any("Power cut" in e["text"] for e in cut["events"]) and any("Power restored" in e["text"] for e in cut["events"])
     # Ramp gangs drive diesel vehicles: a power cut does not stop them.
@@ -1334,8 +1334,10 @@ def test_knowing_early_always_saves_and_costs_add_up():
 
 def test_the_live_port_plays_an_extreme_event(signed_in, demo):
     plan = signed_in.get(demo + "/live.json?scenario=quake_moderate").get_json()
-    assert plan["scenario"]["strikes_at"] == 6 and any(s["key"] == "great_storm" for s in plan["scenarios"])
-    after = plan["hours"][8]
+    at = plan["scenario"]["strikes_at"]
+    assert any(s["key"] == "great_storm" for s in plan["scenarios"])
+    assert plan["hours"][at]["at"][11:13] == "10"          # in the morning, so it can be seen
+    after = plan["hours"][at + 2]
     assert not after["berthing"] and all(c["state"] == "down" for c in after["equipment"])
     assert any("closed" in e["text"] for e in plan["events"])
 

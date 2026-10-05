@@ -259,18 +259,25 @@ SCENARIOS = [
 # Every extreme event from the Risks page that closes the berth plays here too: it strikes a few
 # hours in, and the two days show the warning (when there is one), the strike, the area closed and
 # the cranes stopped. The 3D view draws its damage and closed area once it has struck.
-STRIKE_HOUR = 6
+STRIKE_CLOCK = 10      # an extreme event strikes at ten in the morning, in full daylight
 EXTREME = [e for e in marine_risk.EVENTS if e["days"]]
 SCENARIOS += [(e["key"], e["name"], e["what"]) for e in EXTREME]
 SCENARIO_KEYS = {key for key, *_ in SCENARIOS}
 
 
+def _next_hour(start: datetime, hours: int, at: int, lead: int = 1) -> int:
+    """Hours from the start to the next time the clock shows ``at`` o'clock, at least ``lead`` ahead."""
+    return next((i for i in range(lead, hours) if (start + timedelta(hours=i)).hour == at), lead)
+
+
 def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any]:
-    """When the scenario's event happens on this timeline, in hours from the start."""
-    first_evening = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 20)
-    first_night = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 0)
-    return {"storm": (6, 20), "power_cut": (first_evening, first_evening + 4), "fog": (first_night, first_night + 9),
-            "crane_fault": (4, 28)}.get(scenario, (None, None))
+    """When the scenario's event happens on this timeline, in hours from the start: in daylight, so it
+    can be seen (fog at dawn, when it forms)."""
+    morning = _next_hour(start, hours, STRIKE_CLOCK)
+    return {"storm": (_next_hour(start, hours, 8), _next_hour(start, hours, 8) + 14),
+            "power_cut": (_next_hour(start, hours, 11), _next_hour(start, hours, 11) + 4),
+            "fog": (_next_hour(start, hours, 5), _next_hour(start, hours, 5) + 6),
+            "crane_fault": (morning, morning + 24)}.get(scenario, (None, None))
 
 
 def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
@@ -288,7 +295,7 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     s_from, s_to = _scenario_hours(scenario, start, hours)
     extreme = marine_risk.BY_KEY.get(scenario)
     if extreme:
-        s_from, s_to = STRIKE_HOUR, hours + 1
+        s_from, s_to = _next_hour(start, hours, STRIKE_CLOCK), hours + 1
         if extreme["weather"]:
             # The storm that brings it: up over a few hours to its peak, holding for half a day, easing.
             peak = extreme["weather"]

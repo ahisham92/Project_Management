@@ -73,18 +73,17 @@
       <div class="mt-panels" style="margin-top:12px">
         {% for group, items in groups.items() %}
         <section class="mt-panel" data-tab="{{ group }}" data-slug="{{ group | lower | replace(' ', '-') }}">
-          <div class="mt-inputs">{% for f in items %}{{ field(f) }}{% endfor %}</div>
-        </section>
-        {% endfor %}
-        <section class="mt-panel" data-tab="Extreme events" data-slug="events">
-          <p class="small muted">The extreme events on the Risks page: how often each happens, the area it closes, and how long and how much it costs not knowing and knowing early.</p>
-          {% for sub, items in events.items() %}
-          <details class="mt-input-event" {% if items | selectattr('changed') | list %}open{% endif %}>
-            <summary><b>{{ sub }}</b>{% if items | selectattr('changed') | list %} <span class="badge warning">changed</span>{% endif %}</summary>
-            <div class="mt-inputs">{% for f in items %}{{ field(f) }}{% endfor %}</div>
+          {% if group == 'Extreme events' %}<p class="small muted">The extreme events on the Risks page: how often each happens, the area it closes, and how long and how much it costs not knowing and knowing early.</p>{% endif %}
+          {% if group == 'Sensors plan' %}<p class="small muted">What the Sensors plan counts on: the return it credits, and each product's price, installation and life (with where the price was found).</p>{% endif %}
+          {% if items['plain'] %}<div class="mt-inputs">{% for f in items['plain'] %}{{ field(f) }}{% endfor %}</div>{% endif %}
+          {% for sub, fs in items['subs'].items() %}
+          <details class="mt-input-event" {% if fs | selectattr('changed') | list %}open{% endif %}>
+            <summary><b>{{ sub }}</b>{% if fs | selectattr('changed') | list %} <span class="badge warning">changed</span>{% endif %}</summary>
+            <div class="mt-inputs">{% for f in fs %}{{ field(f) }}{% endfor %}</div>
           </details>
           {% endfor %}
         </section>
+        {% endfor %}
       </div>
       <p style="margin-top:12px"><button type="submit" class="btn">{% if editing %}Save{% else %}Keep this set{% endif %}</button></p>
     </form>

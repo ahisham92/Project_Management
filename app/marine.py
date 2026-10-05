@@ -578,7 +578,8 @@ def _rng(sensor_id: int, kind: str) -> random.Random:
 
 
 def simulate(sensor: Any, element: Any, asset: Any, allowance: float | None,
-             until: date | None = None, ratings: dict[str, Any] | None = None) -> list[tuple[str, float]]:
+             until: date | None = None, ratings: dict[str, Any] | None = None,
+             history_years: float = SIM_HISTORY_YEARS, step_days: int | None = None) -> list[tuple[str, float]]:
     """The readings a simulated sensor would have logged up to ``until`` (today).
 
     Deterministic: one sensor always tells the same story, and running it again
@@ -590,9 +591,9 @@ def simulate(sensor: Any, element: Any, asset: Any, allowance: float | None,
     """
     until = until or date.today()
     commissioned = _day(asset["commissioned"])
-    start = max(commissioned, until - timedelta(days=round(365.25 * SIM_HISTORY_YEARS)))
+    start = max(commissioned, until - timedelta(days=round(365.25 * history_years)))
     kind = sensor["kind"]
-    step = SIM_STEP_DAYS.get(kind, 7)
+    step = step_days or SIM_STEP_DAYS.get(kind, 7)
     rng = _rng(int(sensor["id"]), kind)
     life = float(asset["design_life"] or 50)
     _, alarm, _ = limits(sensor, ratings or {})

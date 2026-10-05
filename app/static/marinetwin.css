@@ -65,7 +65,7 @@
 .mt-step-t small { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
 .mt-step.s4 { --step: var(--series-4); } .mt-step.s5 { --step: var(--series-2); } .mt-step.s6 { --step: var(--series-5); }
-.mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); } .mt-step.s9 { --step: var(--series-1); }
+.mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); } .mt-step.s9 { --step: var(--series-1); } .mt-step.s10 { --step: var(--series-3); }
 @media (max-width: 860px) {
   .mt-flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .mt-step { flex: 0 0 auto; max-width: none; }

@@ -815,11 +815,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/lifecycle", "/risks", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/inputs", "/live", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 9 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 10 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 9 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 10 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -1320,3 +1320,35 @@ def test_the_live_port_plays_an_extreme_event(signed_in, demo):
 def test_container_terminals_count_containers_not_moves(signed_in, demo):
     from app import marine_ops, marine_sim
     assert marine_ops.UNITS["container"] == "containers" and marine_sim.vocab("container")["move"] == "containers"
+
+
+def test_the_sensors_plan_places_prices_and_pays_back(signed_in, demo):
+    page = text(signed_in.get(demo + "/plan"))
+    assert "What to buy" in page and "Buy or ask for a quote" in page and "Return on investment" in page
+    assert "Would more sensors help?" in page and "Sensors as IFC" in page
+    year4 = signed_in.get(demo + "/plan.json?year=4").get_json()
+    assert year4["year"] == 4 and year4["sensors"] and {"check", "state", "value"} <= set(year4["sensors"][0])
+    strain = next(s for s in year4["sensors"] if s["key"] == "strain")
+    series = signed_in.get(demo + f"/plan/{strain['id']}.json").get_json()
+    assert series["points"][-1][0] > 49 and series["unit"] == "µε"
+    ifc = signed_in.get(demo + "/plan/sensors.ifc")
+    body = ifc.get_data(as_text=True)
+    assert body.startswith("ISO-10303-21;") and "IFCSENSOR(" in body and "'MT_Sensor'" in body
+    csv_text = signed_in.get(demo + "/plan/sensors.csv").get_data(as_text=True)
+    assert csv_text.splitlines()[0].startswith("tag,sensor,product,host_element")
+    assert signed_in.get(demo + "/plan/sensors.pdf").status_code == 404
+
+
+def test_more_sensors_cost_more_and_return_less_on_each_extra_dollar():
+    from app import marine_life, marine_plan
+    rates = marine_life.rates_for("container")
+    elements = [{"name": f"P{i}", "kind": k, "model_ref": "", "x": i * 10.0, "y": 0.0, "z": 0.0}
+                for i in range(120) for k in ("pile", "slab", "fender", "bollard")]
+    r = marine_plan.assess({"id": 5, "name": "Q", "design_life": 50}, elements, rates, {}, 50, repair_saving=5e6)
+    costs = [o["cost"] for o in r["options"]]
+    assert costs == sorted(costs)
+    marginal = [o["marginal"] for o in r["options"][1:]]
+    assert marginal == sorted(marginal, reverse=True)
+    assert r["layout"]["counts"]["tide_gauge"] == 1 and r["layout"]["support"]["logger"] >= 1
+    hosts = {s["host_kind"] for s in r["layout"]["sensors"] if s["key"] == "strain"}
+    assert hosts == {"pile"}

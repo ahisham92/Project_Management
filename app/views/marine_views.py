@@ -22,7 +22,7 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_risk, marine_sim,
+    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_plan, marine_risk, marine_sim,
     marine_triton, marine_versions,
 )
 from ..auth import login_required
@@ -374,15 +374,17 @@ def inputs(asset_id: int):
     editing = next((s for s in kept if s["id"] and str(s["id"]) == request.args.get("edit")), None)
     copying = next((s for s in kept if str(s["id"]) == request.args.get("copy")), None)
     base = editing or copying or next(s for s in kept if s["active"])
-    groups: dict[str, list] = {}
+    groups: dict[str, dict] = {}
     for f in marine_inputs.fields(terminal):
         value = base["values"].get(f["key"], f["default"])
-        groups.setdefault(f["group"], []).append({**f, "value": value, "changed": f["key"] in base["values"]})
-    subs: dict[str, list] = {}
-    for f in groups.pop("Extreme events", []):
-        subs.setdefault(f["sub"], []).append(f)
+        group = groups.setdefault(f["group"], {"plain": [], "subs": {}})
+        one = {**f, "value": value, "changed": f["key"] in base["values"]}
+        if f.get("sub"):
+            group["subs"].setdefault(f["sub"], []).append(one)
+        else:
+            group["plain"].append(one)
     return render_template("marine/inputs.html", asset=asset, kept=kept, editing=editing, copying=copying, base=base,
-                           groups=groups, events=subs, **_context())
+                           groups=groups, **_context())
 
 
 @bp.post("/assets/<int:asset_id>/inputs")
@@ -448,6 +450,79 @@ def risks(asset_id: int):
                            groups=marine_risk.GROUPS, units=marine_ops.UNITS.get(asset["terminal_type"], "containers"),
                            life=int(asset["design_life"] or 50), inputs_name=marine_inputs.active_name(get_db(), asset_id),
                            **_context())
+
+
+def _plan_run(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    given = _given(asset_id)
+    rates = marine_life.rates_for(asset["terminal_type"], given)
+    life = int(asset["design_life"] or 50)
+    elements = [dict(e) for e in _life_elements(asset_id)]
+    return asset, given, rates, life, elements
+
+
+@bp.get("/assets/<int:asset_id>/plan")
+@login_required
+def plan(asset_id: int):
+    """The sensors plan: what to buy and where it goes, what it costs over the life and what it pays back."""
+    asset, given, rates, life, elements = _plan_run(asset_id)
+    fixing = marine_life.run(asset, elements, "fix", rates=given, risks=given)
+    result = marine_plan.assess(asset, elements, rates, given, life, repair_saving=fixing["totals"]["spend"])
+    groups: dict[str, list] = {}
+    for line in result["cost"]["lines"]:
+        groups.setdefault(line["group"], []).append(line)
+    try:
+        year = min(max(int(request.args.get("year", 4)), 0), life)
+    except ValueError:
+        year = 4
+    return render_template("marine/plan.html", asset=asset, r=result, groups=groups, rates=rates, life=life, year=year,
+                           units=marine_ops.UNITS.get(asset["terminal_type"], "containers"),
+                           inputs_name=marine_inputs.active_name(get_db(), asset_id), **_context())
+
+
+@bp.get("/assets/<int:asset_id>/plan.json")
+@login_required
+def plan_json(asset_id: int):
+    """Every planned sensor in a year of service: where, its assumed reading, its maintenance check."""
+    asset, given, rates, life, elements = _plan_run(asset_id)
+    try:
+        year = min(max(float(request.args.get("year", 4)), 0), life)
+    except ValueError:
+        year = 4.0
+    lay = marine_plan.layout(asset, elements, given)
+    rows = marine_plan.year_view(asset, lay, year, None, given, life)
+    return jsonify({"year": year, "sensors": [{k: s[k] for k in ("id", "tag", "key", "name", "host", "ref", "face", "value", "unit",
+                                                                 "reading_state", "check", "check_note", "state")} for s in rows]})
+
+
+@bp.get("/assets/<int:asset_id>/plan/<sensor_id>.json")
+@login_required
+def plan_sensor_json(asset_id: int, sensor_id: str):
+    """One planned sensor's assumed readings over the design life."""
+    asset, given, rates, life, elements = _plan_run(asset_id)
+    lay = marine_plan.layout(asset, elements, given)
+    s = next((x for x in lay["sensors"] if x["id"] == sensor_id), None)
+    if s is None:
+        abort(404)
+    spec = marine.SENSOR_KINDS.get(s["reads"] or "", {})
+    return jsonify({"id": s["id"], "tag": s["tag"], "name": s["name"], "host": s["host"], "unit": spec.get("unit", ""),
+                    "reads": spec.get("name", ""), "points": marine_plan.series(asset, s, None, life)})
+
+
+@bp.get("/assets/<int:asset_id>/plan/sensors.<fmt>")
+@login_required
+def plan_export(asset_id: int, fmt: str):
+    """The planned sensors on their own: a CSV, or an IFC with just the sensors to link into Revit."""
+    asset, given, rates, life, elements = _plan_run(asset_id)
+    lay = marine_plan.layout(asset, elements, given)
+    stem = "".join(ch if ch.isalnum() else "-" for ch in asset["name"]).strip("-").lower() or "asset"
+    if fmt == "csv":
+        body, mime = marine_plan.export_csv(lay, given), "text/csv"
+    elif fmt == "ifc":
+        body, mime = marine_plan.export_ifc(asset, lay, given), "application/x-step"
+    else:
+        abort(404)
+    return Response(body, mimetype=mime, headers={"Content-Disposition": f'attachment; filename="{stem}-sensors.{fmt}"'})
 
 
 @bp.get("/assets/<int:asset_id>/risks/<key>.json")

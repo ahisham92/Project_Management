@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Sensors plan · MarineTwin{% endblock %}
+
+{% macro money(n) %}{% if n < 0 %}−{% endif %}{% set n = n | abs %}{% if n >= 1e9 %}${{ '{:,.1f}'.format(n / 1e9) }}B{% elif n >= 1e6 %}${{ '{:,.1f}'.format(n / 1e6) }}M{% elif n >= 1e3 %}${{ '{:,.0f}'.format(n / 1e3) }}k{% else %}${{ '{:,.0f}'.format(n) }}{% endif %}{% endmacro %}
+
+{% block content %}
+{% set lay = r['layout'] %}
+{% set c = r['cost'] %}
+{% set b = r['benefit'] %}
+{{ page_head(asset, "The sensors this berth needs, where each goes on the model and how it is installed, what to buy and where, what it all costs over " ~ life ~ " years, and what it pays back. Until the real sensors are connected, every one has assumed readings for the whole design life: pick a year to see them. Prices checked October 2026; change any figure in Inputs.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Sensors', '{:,}'.format(lay['sensors'] | length), 'on ' ~ '{:,}'.format(lay['length']) ~ ' m of quay, ' ~ lay['berths'] ~ ' berth' ~ ('s' if lay['berths'] > 1 else ''), 'neutral', 'plus ' ~ (lay['support']['logger']) ~ ' logger cabinets') }}
+  {{ tile('Cost over ' ~ life ~ ' years', money(c['total']), money(c['capex']) ~ ' to buy and install, then about ' ~ money(c['upkeep'] + c['data']) ~ ' a year', 'warning', 'with replacements') }}
+  {{ tile('Pays back', money(b['total']), money(b['event_saving']) ~ ' extreme events, ' ~ money(b['repairs']) ~ ' repairs, ' ~ money(b['extra_value']) ~ ' from ' ~ ('%.0f' | format(b['life_ext'])) ~ ' more years', 'good', 'over the design life') }}
+  {{ tile('Return on investment', ('%.1f' | format(r['roi'] + 1)) ~ '×', 'every $1 spent returns $' ~ ('%.1f' | format(r['roi'] + 1)) ~ (', paid back in year ' ~ r['payback'] if r['payback'] else ''), 'good' if r['roi'] > 0 else 'critical', 'net present value ' ~ money(r['npv'])) }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-body" style="padding:0;position:relative">
+    <div class="marine-view" data-mode="plan"
+         data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
+         data-plan="{{ url_for('marine.plan_json', asset_id=asset['id']) }}"
+         data-year="{{ year }}"
+         data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/"></div>
+  </div>
+  <div class="card-body" style="padding-top:8px">
+    <label class="mt-plan-year-label"><b>Year of service: <span class="mt-plan-year-out tabular">{{ year }}</span></b>
+      <input type="range" class="mt-plan-year" min="0" max="{{ life }}" step="1" value="{{ year }}" aria-label="Year of service"></label>
+    <div class="mt-risk-legend">
+      <span><i style="background:#0ca30c"></i>Working, reading within limits</span>
+      <span><i style="background:#fab219"></i>Reading near its limit, or a visit due</span>
+      <span><i style="background:#d03b3b"></i>Reading past its limit, a fault, or to replace</span>
+      <span class="muted">Click a pin for its reading and check.</span>
+    </div>
+  </div>
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="What to buy" data-slug="buy" data-open="1">
+<div class="card">
+  <div class="card-head"><div><h2>What to buy</h2>
+    <p class="small muted" style="margin-top:2px">A published price where one was found, otherwise a quote is needed and the price is indicative (the range is shown). Installation includes cable to the logger.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Each</th><th class="right">Buying</th><th class="right">Installing</th><th>Where to buy</th><th class="right">Life</th></tr></thead>
+      {% for group, lines in groups.items() %}
+      <tbody>
+        <tr><td colspan="7" class="small muted"><strong>{{ group }}</strong></td></tr>
+        {% for l in lines %}
+        <tr>
+          <td><strong>{{ l['name'] }}</strong><br><a class="small" href="{{ l['url'] }}" target="_blank" rel="noopener">{{ l['product'] }}</a>
+            {% if l['tells'] %}<br><small class="muted">{{ l['tells'] }}</small>{% endif %}</td>
+          <td class="right tabular">{{ '{:,}'.format(l['qty']) }}</td>
+          <td class="right tabular">{{ money(l['price']) }}<br><small class="muted">{{ money(l['low']) }}–{{ money(l['high']) }}</small></td>
+          <td class="right tabular">{{ money(l['buy_total']) }}</td>
+          <td class="right tabular">{{ money(l['install_total']) }}</td>
+          <td class="small"><a href="{{ l['buy'] }}" target="_blank" rel="noopener">Buy or ask for a quote</a><br><span class="muted">{{ l['buy_note'] }}</span></td>
+          <td class="right tabular">{{ '%.0f' | format(l['life']) }} y</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+      <tfoot><tr><td><strong>To buy and install</strong></td><td></td><td></td><td class="right tabular"><strong>{{ money(c['hardware']) }}</strong></td><td class="right tabular"><strong>{{ money(c['install']) }}</strong></td><td colspan="2"><strong>{{ money(c['capex']) }}</strong> in all</td></tr></tfoot>
+    </table>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Where and how" data-slug="where">
+<div class="card">
+  <div class="card-head"><div><h2>Where they go and how they are installed</h2>
+    <p class="small muted" style="margin-top:2px">Each kind is spread evenly over the elements of the model it is fixed to. The tag is what the sensor is called on the model, in the exports and in the readings.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Sensor</th><th class="right">How many</th><th>On</th><th>How it is installed</th></tr></thead>
+      <tbody>
+        {% for l in c['lines'] if l['key'] in lay['counts'] %}
+        <tr><td><strong>{{ l['name'] }}</strong></td><td class="right tabular">{{ l['qty'] }}</td>
+          <td class="small">{% set hosts = lay['sensors'] | selectattr('key', 'equalto', l['key']) | map(attribute='host') | reject('equalto', '') | unique | list %}{{ hosts[:3] | join(', ') }}{% if hosts | length > 3 %} and {{ hosts | length - 3 }} more{% endif %}{% if not hosts %}<span class="muted">{{ 'off the berth' if l['key'] == 'wave_buoy' else 'no element of the kind in the model yet' }}</span>{% endif %}</td>
+          <td class="small">{{ l['how'] }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <details class="mt-more" style="margin-top:10px"><summary>Every sensor, by tag ({{ lay['sensors'] | length }})</summary>
+      <table class="table small"><thead><tr><th>Tag</th><th>Sensor</th><th>On element</th><th>Face</th></tr></thead><tbody>
+        {% for s in lay['sensors'] %}<tr><td class="tabular">{{ s['tag'] }}</td><td>{{ s['name'] }}</td><td>{{ s['host'] or '—' }}</td><td>{{ s['face'] }}</td></tr>{% endfor %}
+      </tbody></table></details>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Maintenance check" data-slug="check">
+<div class="card">
+  <div class="card-head"><div><h2>Maintenance check, year <span class="mt-plan-year-out">{{ year }}</span></h2>
+    <p class="small muted" style="margin-top:2px">Which sensors need a visit in the year picked under the view: routine calibration and cleaning, faults, and the ones at the end of their life. Simulated until real sensors report.</p></div></div>
+  <div class="card-body"><p class="mt-plan-check-sum small">Loading…</p><ul class="marine-advice mt-plan-check"></ul></div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Cost and return" data-slug="return">
+<div class="card">
+  <div class="card-head"><div><h2>{{ life }} years: what it costs and what it pays back</h2>
+    <p class="small muted" style="margin-top:2px">Running on <a href="{{ url_for('marine.inputs', asset_id=asset['id']) }}">{{ inputs_name }}</a>. Discounted at {{ '%.0f' | format(c['rate'] * 100) }}% a year for the net present value.</p></div></div>
+  <div class="card-body grid grid-2">
+    <div>
+      <h3 class="small">Costs</h3>
+      <table class="table">
+        <tbody>
+          <tr><td class="label">Buying the sensors and cabinets</td><td class="right tabular">{{ money(c['hardware']) }}</td></tr>
+          <tr><td class="label">Installing them</td><td class="right tabular">{{ money(c['install']) }}</td></tr>
+          <tr><td class="label">Visits, calibration and repairs, a year</td><td class="right tabular">{{ money(c['upkeep']) }}</td></tr>
+          <tr><td class="label">Data, software and an engineer watching, a year</td><td class="right tabular">{{ money(c['data']) }}</td></tr>
+          <tr><td class="label">Replacing each at the end of its life</td><td class="right tabular">{{ money(c['renewals']) }}</td></tr>
+          <tr><td class="label"><strong>Over {{ life }} years</strong></td><td class="right tabular"><strong>{{ money(c['total']) }}</strong></td></tr>
+          <tr><td class="label small">Present value</td><td class="right tabular small">{{ money(c['pv']) }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 class="small">What it pays back</h3>
+      <table class="table">
+        <tbody>
+          <tr><td class="label">{{ '%.0f' | format(b['life_ext']) }} more years of service: {{ '{:,}'.format(b['extra_containers']) }} more {{ units }}, worth {{ money(b['extra_income']) }}, at a {{ '%.0f' | format(b['margin']) }}% margin</td><td class="right tabular">{{ money(b['extra_value']) }}</td></tr>
+          <tr><td class="label">Extreme events seen coming or measured at once (expected over the life)</td><td class="right tabular">{{ money(b['event_saving']) }}</td></tr>
+          <tr><td class="label">Repairs done early and smaller (a share of the repair bill)</td><td class="right tabular">{{ money(b['repairs']) }}</td></tr>
+          <tr><td class="label"><strong>Over the life</strong></td><td class="right tabular"><strong>{{ money(b['total']) }}</strong></td></tr>
+          <tr><td class="label small">Present value</td><td class="right tabular small">{{ money(b['pv']) }}</td></tr>
+          <tr><td class="label"><strong>Return</strong></td><td class="right tabular"><strong>{{ '%.1f' | format(r['roi'] + 1) }}× · NPV {{ money(r['npv']) }}</strong></td></tr>
+        </tbody>
+      </table>
+      {% if b['events'] %}
+      <p class="small" style="margin-top:8px"><strong>Events it helps with most:</strong>
+        {% for e in b['events'][:6] %}{{ e['name'] }} ({{ money(e['saving']) }}){{ ', ' if not loop.last }}{% endfor %}. See each on <a href="{{ url_for('marine.risks', asset_id=asset['id']) }}">Risks</a>.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="More sensors?" data-slug="more">
+<div class="card">
+  <div class="card-head"><div><h2>Would more sensors help?</h2>
+    <p class="small muted" style="margin-top:2px">The same plan with fewer or more of every sensor. Each extra sensor sees a little less that the others have not, so the return falls as the cost keeps rising.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Sensors</th><th class="right">How many</th><th class="right">Cost over {{ life }} years</th><th class="right">Pays back</th><th class="right">Return</th><th class="right">Each extra $1 returns</th><th class="right">Net present value</th></tr></thead>
+      <tbody>
+        {% for o in r['options'] %}
+        <tr class="{{ 'shown' if o['density'] == lay['density'] }}">
+          <td>{{ 'The plan' if o['density'] == lay['density'] else ('%g' | format(o['density'])) ~ '× the plan' }}{% if o is sameas r['best'] %} <span class="badge good">best value</span>{% endif %}</td>
+          <td class="right tabular">{{ '{:,}'.format(o['sensors']) }}</td>
+          <td class="right tabular">{{ money(o['cost']) }}</td>
+          <td class="right tabular">{{ money(o['benefit']) }}</td>
+          <td class="right tabular">{{ '%.1f' | format(o['roi'] + 1) }}×</td>
+          <td class="right tabular">{% if o.get('marginal') is not none and o.get('marginal') is defined %}${{ '%.2f' | format(o['marginal']) }}{% else %}—{% endif %}</td>
+          <td class="right tabular">{{ money(o['npv']) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">{% set best = r['best'] %}{% if best['density'] > lay['density'] %}More sensors would still pay: {{ '%g' | format(best['density']) }}× the plan gives the best net value.{% elif best['density'] < lay['density'] %}Fewer would do: {{ '%g' | format(best['density']) }}× the plan gives the best net value.{% else %}The plan is about right: more sensors add cost faster than they add value.{% endif %}
+      Change the plan's size under Inputs, Sensors plan.</p>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Assumed data" data-slug="data">
+<div class="card">
+  <div class="card-head"><div><h2>Assumed readings over {{ life }} years</h2>
+    <p class="small muted" style="margin-top:2px">Until the real sensors are connected, each planned sensor tells a simulated story over the whole design life, the shape an engineer would expect: corrosion slowing as rust builds, chlorides creeping in, cracks opening, strain riding the seasons with the odd hard berthing. The line marks the year picked.</p></div></div>
+  <div class="card-body">
+    <label class="field"><span class="field-label">Sensor</span>
+      <select class="mt-plan-sensor">{% for s in lay['sensors'] if s['reads'] %}<option value="{{ s['id'] }}">{{ s['tag'] }} · {{ s['name'] }}{% if s['host'] %} on {{ s['host'] }}{% endif %}</option>{% endfor %}</select></label>
+    <div class="mt-plan-chart" style="margin-top:10px"></div>
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Export" data-slug="export">
+<div class="card">
+  <div class="card-head"><div><h2>The sensors on their own</h2>
+    <p class="small muted" style="margin-top:2px">A small file with only the planned sensors instead of the whole model: each at its host element's position, with its tag, kind, product, host and how it is installed.</p></div></div>
+  <div class="card-body">
+    <p><a class="btn" href="{{ url_for('marine.plan_export', asset_id=asset['id'], fmt='ifc') }}">Sensors as IFC</a>
+       <a class="btn btn-ghost" href="{{ url_for('marine.plan_export', asset_id=asset['id'], fmt='csv') }}">Sensors as CSV</a></p>
+    <ul class="small" style="margin-top:8px">
+      <li><strong>IFC</strong>: every sensor an IfcSensor with an MT_Sensor property set, in the same coordinates as the model it came from. In Revit, Insert, Link IFC, and it sits on the model; in Navisworks or any IFC viewer, append it.</li>
+      <li><strong>CSV</strong>: one line per sensor with its tag, host element and GlobalId and position, for a schedule, a logger's channel list, or readings: put the tag in the first column of a readings file and import it under Set up, Sensor readings.</li>
+    </ul>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="importmap">
+  {"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/') }}"}}
+</script>
+<script type="module" src="{{ url_for('static', filename='marinetwin.js') }}"></script>
+<script>
+  // The year under the view drives the pins, the maintenance check and the line on the chart.
+  (function () {
+    const view = document.querySelector('.marine-view');
+    const slider = document.querySelector('.mt-plan-year');
+    const plan = view.dataset.plan;
+    const base = plan.replace(/\.json$/, '/');
+    const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let year = Number(slider.value);
+    let series = null;
+    async function check() {
+      const data = await (await fetch(`${plan}?year=${year}`, { credentials: 'same-origin' })).json();
+      const need = data.sensors.filter((s) => s.check !== 'ok');
+      const over = data.sensors.filter((s) => s.check === 'ok' && s.reading_state !== 'good' && s.reading_state !== 'neutral');
+      document.querySelector('.mt-plan-check-sum').textContent =
+        `${data.sensors.length - need.length} of ${data.sensors.length} working with nothing due; ${need.length} need a visit; ${over.length} reading near or past a limit.`;
+      const word = { due: 'Visit due', fault: 'Fault', replace: 'Replace' };
+      const st = { due: 'warning', fault: 'critical', replace: 'critical' };
+      document.querySelector('.mt-plan-check').innerHTML = need.slice(0, 60).map((s) =>
+        `<li><span class="badge ${st[s.check]}">${word[s.check]}</span> <strong>${esc(s.tag)}</strong> ${esc(s.name)}${s.host ? ` on ${esc(s.host)}` : ''}<br>${esc(s.check_note)}</li>`).join('') +
+        (need.length > 60 ? `<li class="muted">and ${need.length - 60} more</li>` : '') ||
+        '<li class="muted">Nothing due this year.</li>';
+    }
+    function draw() {
+      const box = document.querySelector('.mt-plan-chart');
+      if (!series || !series.points.length) { box.innerHTML = '<p class="muted small">No reading series for this sensor.</p>'; return; }
+      const W = 760, H = 240, L = 56, B = 28, T = 10, R = 10;
+      const xs = series.points.map((p) => p[0]); const ys = series.points.map((p) => p[1]);
+      const x0 = 0, x1 = Math.max(...xs, 1); let y0 = Math.min(...ys), y1 = Math.max(...ys);
+      if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
+      const X = (x) => L + ((x - x0) / (x1 - x0)) * (W - L - R); const Y = (y) => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
+      const path = series.points.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+      const ticks = [0, 10, 20, 30, 40, 50].filter((t) => t <= x1).map((t) => `<text x="${X(t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="currentColor" opacity=".7">${t}</text>`).join('');
+      const yt = [y0, (y0 + y1) / 2, y1].map((v) => `<text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="currentColor" opacity=".7">${Number(v.toPrecision(3))}</text>`).join('');
+      const at = series.points.filter((p) => p[0] <= year).pop();
+      box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(series.reads)} over the design life">
+        <path d="${path}" fill="none" stroke="var(--series-1)" stroke-width="1.5"/>
+        <line x1="${X(year)}" x2="${X(year)}" y1="${T}" y2="${H - B}" stroke="var(--critical)" stroke-dasharray="4 3"/>${ticks}${yt}
+        <text x="${L}" y="${H - 8}" font-size="11" fill="currentColor" opacity=".7" dx="-50">year</text></svg>
+        <p class="small">${esc(series.tag)} · ${esc(series.reads)} (${esc(series.unit)})${at ? `: <strong>${Number(at[1]).toLocaleString()} ${esc(series.unit)}</strong> in year ${year}` : ''}.</p>`;
+    }
+    async function pick(id) {
+      if (!id) return;
+      series = await (await fetch(`${base}${encodeURIComponent(id)}.json`, { credentials: 'same-origin' })).json();
+      draw();
+    }
+    let timer = null;
+    slider.addEventListener('input', () => {
+      year = Number(slider.value);
+      for (const o of document.querySelectorAll('.mt-plan-year-out')) o.textContent = year;
+      draw();
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        view.dispatchEvent(new CustomEvent('mt-plan-year', { detail: year }));
+        check();
+        const url = new URL(window.location.href); url.searchParams.set('year', year); window.history.replaceState(null, '', url);
+      }, 250);
+    });
+    const select = document.querySelector('.mt-plan-sensor');
+    if (select) select.addEventListener('change', () => pick(select.value));
+    check();
+    if (select) pick(select.value);
+  })();
+</script>
+{% endblock %}

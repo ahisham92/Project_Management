@@ -366,3 +366,13 @@
   .mt-radar-side { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
   .mt-g-head, .mt-g-row { grid-template-columns: 80px minmax(0, 1fr); }
 }
+
+/* An extreme event: its banner (a cyber attack, a strike, an occupation), and the shimmer of extreme heat. */
+.mt-event-banner { position: absolute; left: 50%; top: 104px; transform: translateX(-50%); z-index: 5; background: #b71c1c; color: #fff; font-weight: 700;
+  letter-spacing: .03em; padding: 8px 16px; border-radius: 8px; max-width: calc(100% - 24px); text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.4);
+  animation: mt-event-pulse 1.2s ease-in-out infinite alternate; }
+.mt-event-banner[hidden] { display: none; }
+@keyframes mt-event-pulse { from { background: #b71c1c; } to { background: #e53935; } }
+.mt-heat canvas { animation: mt-heat 0.9s ease-in-out infinite alternate; }
+@keyframes mt-heat { from { filter: saturate(1.25) sepia(.18) blur(0px); } to { filter: saturate(1.3) sepia(.22) blur(.7px); } }
+@media (max-width: 720px) { .mt-event-banner { top: auto; bottom: 150px; font-size: .8rem; } }

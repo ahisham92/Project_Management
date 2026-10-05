@@ -25,8 +25,28 @@ const cargoFill = (h, from, to) => {
 
 export async function startLive(ctx) {
   const { THREE, view, scene, camera, controls, frame, site, rng, focus, radius, water, sky, sunLight, hemi, REAL } = ctx;
-  const planUrl = (key) => `${view.dataset.live}?scenario=${encodeURIComponent(key)}`;
-  let plan = await (await fetch(planUrl(view.dataset.scenario || 'normal'), { credentials: 'same-origin' })).json();
+  // Every plan after the first is asked for at the first one's "now", so that its hours line up with
+  // the timeline already drawn (the real clock may have passed the hour since).
+  let pinned = '';
+  const planUrl = (key) => `${view.dataset.live}?scenario=${encodeURIComponent(key)}${pinned ? `&now=${encodeURIComponent(pinned)}` : ''}`;
+  // A situation's plan. For an event that closes an area round a point, the cranes standing in it
+  // (found on the model) are the ones the server stops and logs, so the list, the log and the 3D agree.
+  async function fetchPlan(key) {
+    const get = async (url) => (await fetch(url, { credentials: 'same-origin' })).json();
+    let got = await get(planUrl(key));
+    const sc = got.scenario;
+    const list = got.hours[0] ? got.hours[0].equipment : [];
+    if (sc && sc.strikes_at != null && ctx.eventArea && list.length && list[0].berth !== undefined) {
+      const a = await ctx.eventArea(key);
+      if (a && a.ev.radius) {
+        const idx = a.down.filter((c) => c.userData.fleet !== undefined).map((c) => c.userData.fleet);
+        got = await get(`${planUrl(key)}&closed=${idx.join(',')}`);
+      }
+    }
+    return got;
+  }
+  let plan = await fetchPlan(view.dataset.scenario || 'normal');
+  pinned = plan.now || '';
   const startMs = Date.parse(plan.start);
   const hourOf = (iso) => (Date.parse(iso) - startMs) / 3600000;
   const total = plan.hours.length - 1;
@@ -431,6 +451,7 @@ export async function startLive(ctx) {
     }
   }
   function workCranes(states, mainShip, visualT, w) {
+    const fleetList = states.length > 0 && states[0].berth !== undefined;
     const gust = w.gust;
     const power = w.hour.power !== false;
     const main = site.mainBerth || {};
@@ -441,22 +462,33 @@ export async function startLive(ctx) {
       // its ramp), stops in gusts over the limit, and, if it runs on the grid, in a power cut.
       const other = u.berth ? otherOf.get(u.berth) : null;
       let state;
-      if (u.berth) {
+      let why = '';
+      // With the server's list naming every crane on the quay (each with its berth), a crane's state
+      // is its own entry, STS1 at the start of the quay; otherwise the main berth's cranes take the
+      // list's and the others go by the wind and the power.
+      const entry = fleetList && u.fleet !== undefined ? states[u.fleet] : !fleetList && !u.berth ? states[i] : null;
+      if (u.fallen || (u.closed && !entry)) {
+        state = 'down';
+        why = u.fallen ? 'wrecked' : `${(plan.scenario.name || 'event').toLowerCase()}: area closed`;
+      } else if (entry || (!u.berth && !fleetList)) {
+        state = entry ? entry.state : 'working';
+        why = entry ? entry.why : '';
+      } else {
         state = gust >= plan.limits.crane_stow_gust && !u.mobile ? 'stowed' : gust >= plan.limits.crane_stop_gust ? 'stopped'
           : !power && !u.mobile ? 'down' : 'working';
-      } else {
-        state = states[i] ? states[i].state : 'working';
+        why = state === 'stowed' ? 'on its storm pins: gusts over the stow limit' : state === 'stopped' ? 'wind stop: gusts over the operating limit'
+          : state === 'down' ? 'power cut, no grid supply' : '';
       }
       const alongside = u.berth ? (other && other.alongside && other.b.shipKind !== 'roro' ? other.b : null) : u.idle ? null : mainShip;
       const working = state === 'working' && !!alongside;
       const loading = (u.berth ? u.berth.state : main.state) === 'loading';
       // For its card.
       u.state = state === 'working' && !alongside ? 'idle' : state;
-      u.why = u.berth ? (state === 'stowed' ? 'on its storm pins: gusts over the stow limit' : state === 'stopped' ? 'wind stop: gusts over the operating limit'
-        : state === 'down' ? 'power cut, no grid supply' : '') : (states[i] && states[i].why) || '';
+      u.why = why;
       const call = u.berth ? other && other.ship : mainShip;
       u.shipName = alongside && call ? call.name : '';
-      u.doing = working ? (loading ? 'Loading, quay to ship' : 'Discharging, ship to quay') : alongside ? 'Stopped with a ship alongside' : 'Waiting for a ship';
+      u.doing = u.fallen ? 'Fallen: a wreck' : working ? (loading ? 'Loading, quay to ship' : 'Discharging, ship to quay') : alongside ? 'Stopped with a ship alongside' : 'Waiting for a ship';
+      if (u.fallen) { if (u.carried) u.carried.visible = false; return; }      // the event has it now
       if (u.boom) {
         const up = state === 'stowed' ? -1.25 : 0;
         u.boom.rotation.x += (up - u.boom.rotation.x) * 0.1;
@@ -622,19 +654,56 @@ export async function startLive(ctx) {
   // The situation playing: the same two days with a storm, a power cut, fog... laid over them.
   const situation = $('.mt-live-scenario');
   situation.value = plan.scenario ? plan.scenario.key : 'normal';
+  // A situation's plan in place of the one playing: its ships, its log, its event's area.
+  async function loadPlan(key) {
+    const next = await fetchPlan(key);
+    for (const c of calls) scene.remove(c.mesh);
+    plan = next;
+    calls = plan.calls.map((c) => ({ ...c, from: hourOf(c.eta), to: hourOf(c.etd) }));
+    events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
+    shipCalls();
+    for (const o of others) schedule(o);
+    shownEvent = undefined;                 // drawn again (or cleared) for the new plan
+    drawTicks();
+    refreshLog(true);
+    await loadArea();
+  }
+  // When the situation starts: the moment an extreme event strikes, or the storm, the power cut,
+  // the fog or the first breakdown sets in.
+  function startOf() {
+    const sc = plan.scenario || {};
+    if (sc.strikes_at != null) return sc.strikes_at;
+    const first = (test) => { const i = plan.hours.findIndex(test); return i < 0 ? null : i; };
+    if (sc.key === 'power_cut') return first((x) => x.power === false);
+    if (sc.key === 'fog') return first((x) => x.fog);
+    if (sc.key === 'storm') { const e = events.find((x) => /^Gale warning/.test(x.text)); return e ? e.h : null; }
+    if (sc.key === 'crane_fault') { const e = events.find((x) => x.kind === 'critical'); return e ? e.h : null; }
+    return null;
+  }
+  // Picking a situation goes to half an hour before it starts and plays it at 60×, slowing to 10×
+  // as it starts, the drone over the place it hits: it is seen happening at once.
+  let slowAt = null;
+  function goToStart() {
+    const h = startOf();
+    if (h === null) return;
+    simH = clamp(h - 0.5, 0, total - 0.01);
+    lastSimH = simH;
+    slowAt = h;
+    playing = true;
+    $('.mt-live-play').textContent = '❚❚';
+    setSpeed(60);
+    if (area && area.centre && !ctx.following()) {
+      Object.assign(spot, { x: area.centre.x, z: area.centre.z, r: area.radius ? 230 : 320 });   // close enough to see what happens
+      setCamera('drone');
+    }
+    refreshLog(true);
+  }
   situation.addEventListener('change', async () => {
     const key = situation.value;
     situation.disabled = true;
     try {
-      const next = await (await fetch(planUrl(key), { credentials: 'same-origin' })).json();
-      for (const c of calls) scene.remove(c.mesh);
-      plan = next;
-      calls = plan.calls.map((c) => ({ ...c, from: hourOf(c.eta), to: hourOf(c.etd) }));
-      events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
-      shipCalls();
-      for (const o of others) schedule(o);
-      drawTicks();
-      refreshLog(true);
+      await loadPlan(key);
+      goToStart();
       const url = new URL(window.location.href);
       if (key === 'normal') url.searchParams.delete('scenario'); else url.searchParams.set('scenario', key);
       window.history.replaceState(null, '', url);
@@ -658,7 +727,17 @@ export async function startLive(ctx) {
   if (view.dataset.layout && allBerths.length) {
     fetch(view.dataset.layout, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ berths: allBerths.map((b) => ({ n: b.n, length: Math.round(b.length), sts: !!b.sts, main: !!b.main, use: b.use || null })) }),
+      body: JSON.stringify({ berths: allBerths.map((b) => ({ n: b.n, length: Math.round(b.length), sts: !!b.sts, main: !!b.main, use: b.use || null,
+        // the ship-to-shore cranes drawn at it, so the server's crane list numbers the same ones
+        cranes: b.sts ? site.cranes.filter((c) => c.userData.fleet !== undefined && c.userData.berthN === b.n).length : null })) }),
+    }).then((answer) => {
+      // The first visit: the list came before the server knew the quay's cranes. Ask again.
+      const drawn = site.cranes.filter((c) => c.userData.fleet !== undefined).length;
+      const listed = plan.hours[0].equipment;
+      if (answer.ok && drawn && plan.equipment_name !== undefined && (listed.length !== drawn || listed[0].berth === undefined) && !/Ramp/.test(listed[0] ? listed[0].name : '')) {
+        return loadPlan(situation.value);
+      }
+      return null;
     }).catch(() => {});
   }
   const berthsBtn = $('.mt-live-berths-btn');
@@ -864,6 +943,7 @@ export async function startLive(ctx) {
   const player = { pace: 1, working: false, hs: 0.5, tick };
   let visualT = 0;
   let shownEvent = null;
+  let lastSimH = simH;
   let lastText = 0;
   let lastClock = 0;
   let lastReal = performance.now();
@@ -879,6 +959,8 @@ export async function startLive(ctx) {
     player.pace = pace;
     visualT += dt * pace;
     const w = at(simH);
+    const extraRain = ctx.eventRain ? ctx.eventRain() : 0;          // a cloudburst the event brings
+    if (extraRain) w.rain = Math.max(w.rain, extraRain);
     player.hs = w.hs;
     const now = realStart + simH * 3600000;
     // The sky and the lights follow the real sun; a few times a second is plenty.
@@ -892,8 +974,9 @@ export async function startLive(ctx) {
     const tide = w.tide;
     startFrame();
     const { alongside, moving, waiting, mooring } = placeShips(simH, tide);
-    const states = w.hour.equipment;
-    const working = !!alongside && states.some((s) => s.state === 'working');
+    const states = fixStates(w.hour.equipment, w.hour);
+    const mainStates = atMain(states);
+    const working = !!alongside && mainStates.some((s) => s.state === 'working');
     player.working = working;
     busy = placeOthers(simH, tide) + (alongside ? 1 : 0);
     endFrame();
@@ -903,8 +986,17 @@ export async function startLive(ctx) {
     }
     ctx.setPower(w.hour.power !== false);
     // An extreme event: its damage and the area it closes drawn on the model once it has struck.
-    const struck = plan.scenario && plan.scenario.strikes_at != null && simH >= plan.scenario.strikes_at ? plan.scenario.key : null;
-    if (struck !== shownEvent && ctx.showEvent) { shownEvent = struck; ctx.showEvent(struck); }
+    // It plays out (the blast, the fall) when the clock runs through the moment it strikes, and is
+    // drawn as it was left when the clock is put well after it.
+    const strikes = plan.scenario && plan.scenario.strikes_at != null ? plan.scenario.strikes_at : null;
+    const struck = strikes !== null && simH >= strikes ? plan.scenario.key : null;
+    if (struck !== shownEvent && ctx.showEvent) {
+      shownEvent = struck;
+      ctx.showEvent(struck, { fresh: !!struck && lastSimH < strikes + 0.02 && simH - strikes < 0.5 });
+    }
+    // Picked from the list, the situation was fast-forwarded to just before it: back to 10× for it.
+    if (slowAt !== null && simH >= slowAt) { slowAt = null; if (speed > 10) setSpeed(10); }
+    lastSimH = simH;
     for (const y of site.yards || []) ctx.setFill(y.mesh, ctx.yardFill(y.berth));
     workCranes(states, alongside, visualT, w);
     movePeople(dt * Math.min(pace, 4), alongside);
@@ -923,12 +1015,44 @@ export async function startLive(ctx) {
     }
   }
 
+  // --- the crane list, as drawn -------------------------------------------------------------
+  // The server's list names every crane on the quay (each with its berth) once it knows them; an
+  // extreme event stops a share of them from the start of the quay, or, closing an area round a
+  // point, the ones standing in it (fetchPlan tells it which).
+  let area = null;                      // the event's area, from the twin (eventArea)
+  let downSet = new Set();              // the list's indexes of the cranes it stops
+  const mainN = site.mainBerth && site.mainBerth.n;
+  const atMain = (states) => states.filter((s) => s.berth === undefined || mainN === undefined || s.berth === mainN);
+  // (the crane list already says which the event stops: see fetchPlan)
+  const fixStates = (states) => states;
+  const downNames = () => [...downSet].sort((a, b) => a - b).map((k) => (plan.hours[0].equipment[k] || {}).name).filter(Boolean);
+  // The cranes as chips: each by name with a few, or how many are working and the ones that are not.
+  function craneChips(states) {
+    const one = (s) => `<span class="mt-chip st-${s.state}" title="${esc(s.why)}">${esc(s.name)}${s.berth !== undefined ? ` <small>B${s.berth}</small>` : ''} ${esc(s.state)}</span>`;
+    if (states.length <= 6) return states.map(one).join('');
+    const off = states.filter((s) => s.state !== 'working');
+    const word = plan.equipment_name ? plan.equipment_name : 'cranes';
+    return `<span class="mt-chip st-${off.length ? (off.length === states.length ? 'down' : 'stopped') : 'working'}">${states.length - off.length} of ${states.length} ${esc(word)} working</span>`
+      + off.slice(0, 8).map(one).join('') + (off.length > 8 ? `<span class="mt-chip">+${off.length - 8} more</span>` : '');
+  }
+  // The event's area for the situation playing, once its plan is in.
+  async function loadArea() {
+    area = null;
+    downSet = new Set();
+    const key = plan.scenario && plan.scenario.strikes_at != null ? plan.scenario.key : null;
+    if (!key || !ctx.eventArea) return;
+    const got = await ctx.eventArea(key);
+    if (!got || !plan.scenario || plan.scenario.key !== key) return;
+    area = { ...got, radius: got.ev.radius, partial: (got.ev.crane_share ?? 1) < 1 };
+    for (const c of got.down) if (c.userData.fleet !== undefined) downSet.add(c.userData.fleet);
+  }
+
   function movesDone(c) {
     let done = 0;
     for (let h = Math.floor(c.from); h < Math.min(simH, c.to); h++) {
       const span = Math.min(h + 1, simH, c.to) - Math.max(h, c.from);
       if (span <= 0) continue;
-      const n = plan.hours[clamp(h, 0, total)].equipment.filter((s) => s.state === 'working').length;
+      const n = atMain(fixStates(plan.hours[clamp(h, 0, total)].equipment, null, h)).filter((s) => s.state === 'working').length;
       done += n * RATE * span;
     }
     return Math.min(c.moves, Math.round(done));
@@ -963,17 +1087,32 @@ export async function startLive(ctx) {
       `<div class="mt-chips">${chip('wind', `${w.wind.toFixed(0)} m/s`, w.wind >= L.berthing_wind)}${chip('gusts', `${w.gust.toFixed(0)} m/s`, w.gust >= L.crane_stop_gust)}` +
       `${chip('waves', `${w.hs.toFixed(1)} m`, w.hs >= L.berthing_hs)}${chip('rain', w.rain > 0.05 ? `${w.rain.toFixed(1)} mm/h` : 'dry', w.rain > 4)}` +
       `${chip('tide', `${w.tide >= 0 ? '+' : ''}${w.tide.toFixed(2)} mCD`)}</div>` +
-      `<div class="mt-chips">${states.map((s) => `<span class="mt-chip st-${s.state}" title="${esc(s.why)}">${esc(s.name)} ${esc(s.state)}</span>`).join('')}</div>`;
-    // Lost time, said plainly.
-    const idle = states.filter((s) => s.state !== 'working');
+      `<div class="mt-chips">${craneChips(states)}</div>`;
+    // Lost time, said plainly: an event's closure first, then the main berth's own cranes.
+    const idle = atMain(states).filter((s) => s.state !== 'working');
     let alert = '';
-    if (alongside && idle.length) {
-      alert = `Downtime: ${idle.map((s) => `${s.name} ${s.why || s.state}`).join('; ')}`;
+    if (shownEvent && area && area.ev && area.ev.days) {
+      // The cranes down: those the event stops, and any other down now (the grid lost with it).
+      const names = [...new Set([...downNames(), ...states.filter((s) => s.state === 'down').map((s) => s.name)])];
+      // Closed to ships along the whole quay, with only part of it fenced off (an oil spill): both said.
+      const fenced = area.closed.length ? area.closed.map((b) => `berth ${b.n}`).join(', ') : 'an area';
+      alert = `${plan.scenario.name}: ${!area.whole ? `${fenced} closed` : area.partial ? `the whole quay closed to ships · ${fenced} fenced off` : 'the whole quay closed'}`
+        + `${names.length ? ` · ${names.length > 6 ? `${names.length} cranes` : names.join(', ')} down` : ''} · no berthing`;
+    } else if ((alongside && idle.length) || states.filter((s) => s.state !== 'working').length > idle.length) {
+      // Every crane that is not working, along the whole quay, grouped by why (a power cut stops all
+      // of them, not only the three at the main berth).
+      const groups = new Map();
+      for (const s of states) {
+        if (s.state === 'working') continue;
+        const why = s.why ? `${s.state}: ${s.why}` : s.state;
+        groups.set(why, [...(groups.get(why) || []), s.name]);
+      }
+      alert = `Downtime: ${[...groups].map(([why, names]) => `${names.length > 6 ? `${names.length} of ${states.length} cranes` : names.join(', ')} ${why}`).join('; ')}`;
     } else if (waiting && waiting.held && w.hour.fog) {
       alert = `Downtime: ${waiting.name} waiting at anchor, no pilotage in fog`;
     } else if (waiting && waiting.held) {
       alert = `Downtime: ${waiting.name} waiting at anchor, no berthing in this wind and sea`;
-    } else if (alongside && !states.some((s) => s.state === 'working')) {
+    } else if (alongside && !atMain(states).some((s) => s.state === 'working')) {
       alert = 'Downtime: nothing working the ship';
     }
     const box = $('.mt-live-alert');
@@ -983,5 +1122,7 @@ export async function startLive(ctx) {
 
   refreshLog(true);
   ctx.setMoving(true);
+  // Opened on a situation (from a link): its event's area, and straight to it.
+  loadArea().then(() => { if (plan.scenario && plan.scenario.key !== 'normal') goToStart(); });
   return player;
 }

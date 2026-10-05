@@ -299,14 +299,33 @@ def live(asset_id: int):
     return render_template("marine/live.html", asset=asset, **_context())
 
 
+def _crane_indexes(text: str | None) -> set[int] | None:
+    """The cranes (by their place in the crane list) the 3D view found in an event's closed area: "3,4,5"."""
+    if text is None:
+        return None
+    return {int(x) for x in text.split(",") if x.strip().isdigit() and int(x) < 200}
+
+
+def _pinned_now(text: str | None) -> datetime:
+    """The moment the live view's timeline was first drawn ("now" of its first plan), so that a
+    situation picked later lines up hour for hour with it; the real now when absent or stale."""
+    real = datetime.now()
+    try:
+        at = datetime.fromisoformat(text) if text else None
+    except ValueError:
+        at = None
+    return at if at is not None and at.tzinfo is None and abs(real - at) < timedelta(days=2) else real
+
+
 @bp.get("/assets/<int:asset_id>/live.json")
 @login_required
 def live_json(asset_id: int):
     """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
     asset = _asset_or_404(asset_id)
-    now = datetime.now()
+    now = _pinned_now(request.args.get("now"))
     plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"),
-                           booked=_main_berth_calls(asset, now))
+                           booked=_main_berth_calls(asset, now), fleet=marine_berths.crane_fleet(get_db(), asset_id),
+                           closed=_crane_indexes(request.args.get("closed")))
     iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
     return jsonify({
         "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
@@ -758,7 +777,9 @@ def risk_json(asset_id: int, key: str):
     e = marine_risk.assess(asset, _life_elements(asset_id), key, rates, given, int(asset["design_life"] or 50))
     return jsonify({"key": e["key"], "name": e["name"], "days": e["days"], "days_known": e["days_known"],
                     "whole": bool(e["share"] and not e["radius"] and e["days"]), "closed_m": e["closed_m"],
-                    "damaged": e["damaged"], "closed": e["closed_refs"]})
+                    "damaged": e["damaged"], "closed": e["closed_refs"], "radius": e["radius"],
+                    # the share of the quay's cranes the live port stops for it (marine_ops.live)
+                    "crane_share": marine_ops.crane_share(marine_risk.BY_KEY[key])})
 
 
 @bp.route("/assets/<int:asset_id>/lifecycle.json", methods=["GET", "POST"])
@@ -898,7 +919,8 @@ def twin_json(asset_id: int):
     weather = marine_ops.metocean(asset_id, now, hours_back=0, hours_ahead=24)
     ships = marine_ops.lineup(asset_id, now, asset["terminal_type"])
     alongside = next((s for s in ships if s["eta"] <= now < s["etd"]), None)
-    equipment = marine_ops.cranes(asset_id, now, weather[0]["gust"], asset["terminal_type"])
+    fleet = marine_berths.crane_fleet(get_db(), asset_id)
+    equipment = marine_ops.cranes(asset_id, now, weather[0]["gust"], asset["terminal_type"], len(fleet) if fleet else 3)
     return jsonify({
         "asset": {"id": asset["id"], "name": asset["name"], "kind": asset["kind"],
                   "terminal": asset["terminal_type"], "latitude": asset["latitude"], "longitude": asset["longitude"],
@@ -913,7 +935,8 @@ def twin_json(asset_id: int):
         "next_ship": next(({"name": s["name"], "type": s["type"], "eta": s["eta"].isoformat(timespec="minutes"),
                             "loa": s["loa"], "beam": s["beam"], "draught": s["draught"]}
                            for s in ships if s["eta"] > now), None),
-        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"], "service_in_h": c["service_in_h"]} for c in equipment],
+        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"], "service_in_h": c["service_in_h"],
+                       **({"berth": fleet[k]} if fleet and k < len(fleet) else {})} for k, c in enumerate(equipment)],
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
         **_shapes_links(asset, twin["elements"]),
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),

@@ -201,11 +201,11 @@ def lineup(asset_id: int, now: datetime, terminal: str = "container") -> list[di
     return out
 
 
-def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container") -> list[dict[str, Any]]:
+def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container", count: int = 3) -> list[dict[str, Any]]:
     rng = _rng(asset_id, now.date().isoformat(), "cranes")
     prefix = EQUIPMENT.get(terminal, EQUIPMENT["container"])[0]
     out = []
-    for i in range(3 if prefix != "RAMP" else 2):
+    for i in range(count if prefix != "RAMP" else 2):
         hours = rng.uniform(150, 520)                          # running hours to the next service
         broken = rng.random() < 0.12
         if prefix == "RAMP":
@@ -259,22 +259,36 @@ SCENARIOS = [
 # Every extreme event from the Risks page that closes the berth plays here too: it strikes a few
 # hours in, and the two days show the warning (when there is one), the strike, the area closed and
 # the cranes stopped. The 3D view draws its damage and closed area once it has struck.
-STRIKE_HOUR = 6
+STRIKE_CLOCK = 10      # an extreme event strikes at ten in the morning, in full daylight
 EXTREME = [e for e in marine_risk.EVENTS if e["days"]]
 SCENARIOS += [(e["key"], e["name"], e["what"]) for e in EXTREME]
 SCENARIO_KEYS = {key for key, *_ in SCENARIOS}
 
 
+def _next_hour(start: datetime, hours: int, at: int, lead: int = 1) -> int:
+    """Hours from the start to the next time the clock shows ``at`` o'clock, at least ``lead`` ahead."""
+    return next((i for i in range(lead, hours) if (start + timedelta(hours=i)).hour == at), lead)
+
+
 def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any]:
-    """When the scenario's event happens on this timeline, in hours from the start."""
-    first_evening = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 20)
-    first_night = next(i for i in range(3, hours) if (start + timedelta(hours=i)).hour == 0)
-    return {"storm": (6, 20), "power_cut": (first_evening, first_evening + 4), "fog": (first_night, first_night + 9),
-            "crane_fault": (4, 28)}.get(scenario, (None, None))
+    """When the scenario's event happens on this timeline, in hours from the start: in daylight, so it
+    can be seen (fog at dawn, when it forms)."""
+    morning = _next_hour(start, hours, STRIKE_CLOCK)
+    return {"storm": (_next_hour(start, hours, 8), _next_hour(start, hours, 8) + 14),
+            "power_cut": (_next_hour(start, hours, 20, 3), _next_hour(start, hours, 20, 3) + 4),   # at night, as it shows the lights
+            "fog": (_next_hour(start, hours, 5), _next_hour(start, hours, 5) + 6),
+            "crane_fault": (morning, morning + 24)}.get(scenario, (None, None))
+
+
+def crane_share(extreme: dict[str, Any]) -> float:
+    """The share of the quay's cranes an extreme event stops, counted from the start of the quay. The
+    3D view stops the ones in the closed area instead where the event closes an area round a point."""
+    return extreme["share"] if extreme["share"] is not None else 1.0 if not extreme["radius"] else 0.5
 
 
 def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
-         scenario: str = "normal", booked: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+         scenario: str = "normal", booked: list[dict[str, Any]] | None = None,
+         fleet: list[int] | None = None, closed: set[int] | None = None) -> dict[str, Any]:
     """The berth over the next ``hours``, hour by hour, for the live view to play back.
 
     The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
@@ -288,7 +302,7 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     s_from, s_to = _scenario_hours(scenario, start, hours)
     extreme = marine_risk.BY_KEY.get(scenario)
     if extreme:
-        s_from, s_to = STRIKE_HOUR, hours + 1
+        s_from, s_to = _next_hour(start, hours, STRIKE_CLOCK), hours + 1
         if extreme["weather"]:
             # The storm that brings it: up over a few hours to its peak, holding for half a day, easing.
             peak = extreme["weather"]
@@ -318,7 +332,9 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     reasons = ["ramp hydraulic pump fault", "short of drivers"] if prefix == "RAMP" else \
         ["spreader twistlock fault", "hoist brake alarm", "gantry drive fault", "trolley rope inspection"]
     faults = []
-    for k in range(2 if prefix == "RAMP" else 3):
+    # The cranes along the quay, each with its berth (``fleet``: the berth of each, as the 3D view found
+    # them); without it, the main berth's three.
+    for k in range(2 if prefix == "RAMP" else len(fleet) if fleet else 3):
         name = f"Ramp gang {k + 1}" if prefix == "RAMP" else f"{prefix}{k + 1}"
         breaks = [(rng.uniform(0, hours), rng.uniform(1, 6), rng.choice(reasons)) for _ in range(rng.choice([0, 0, 1, 1, 2]))]
         if scenario == "crane_fault" and k < 2:
@@ -334,15 +350,21 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         storm_rain = max(0.0, (w["wind"] - 11) * 1.4)
         shower = sum(rate * math.exp(-((i - at) / width) ** 2) for at, width, rate in showers)
         rain = round(storm_rain + shower if storm_rain + shower > 0.3 else 0.0, 1)
+        # An event that closes an area round one point takes the supply down with it only there: the
+        # cranes in that area are already stopped. A grid-wide cut is for the events that reach the
+        # whole terminal (the grid itself, a quake, a storm, a missile).
+        grid_wide = bool(extreme) and extreme["power"] and (extreme["radius"] is None or extreme["key"] == "war_direct")
         power = not (scenario == "power_cut" and s_from <= i < s_to) and \
-            not (extreme and extreme["power"] and s_from <= i < s_from + 12)
+            not (grid_wide and s_from <= i < s_from + 12)
         struck = bool(extreme) and i >= s_from
         fog = scenario == "fog" and s_from <= i < s_to
         kit = []
         for k, (name, breaks) in enumerate(faults):
             fault = next((why for at, length, why in breaks if at <= i < at + length), None)
-            share = extreme["share"] if extreme and extreme["share"] is not None else 1.0 if extreme and not extreme["radius"] else 0.5
-            if struck and k < max(1, round(share * len(faults))):
+            share = crane_share(extreme) if extreme else 0.5
+            # ``closed``: the cranes the 3D view found standing in the event's closed area (by their
+            # place in the list); without it, the event's share of them from the start of the quay.
+            if struck and (k in closed if closed is not None else k < max(1, round(share * len(faults)))):
                 kit.append({"name": name, "state": "down", "why": f"{extreme['name'].lower()}: area closed"})
             elif not power and electric:
                 kit.append({"name": name, "state": "down", "why": "power cut, no grid supply"})
@@ -356,7 +378,8 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
                 kit.append({"name": name, "state": "working", "why": ""})
         hourly.append({"at": w["at"], "wind": w["wind"], "gust": w["gust"], "hs": w["hs"], "tide": w["tide"],
                        "rain": rain, "visibility": 0.2 if fog else round(max(0.4, 10 - rain * 0.9), 1),
-                       "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"]} for c in kit],
+                       "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"],
+                                      **({"berth": fleet[k]} if fleet and prefix != "RAMP" else {})} for k, c in enumerate(kit)],
                        "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"] and not fog and not struck,
                        "power": power, "fog": fog})
         if extreme and i == 0 and extreme["warn_h"] >= 1:

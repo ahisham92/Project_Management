@@ -20,6 +20,7 @@ import { Water } from 'three/addons/Water.js';
 import { mergeGeometries } from 'three/addons/BufferGeometryUtils.js';
 import { yardStacks, yardCrane, boxesIn, BAY } from './marinetwin-yard.js';
 import { addFlag, flagCode, FLAG_NAMES } from './marinetwin-flags.js';
+import { eventEffects } from './marinetwin-events.js';
 
 const view = document.querySelector('.marine-view');
 // The live port (step 4) plays the next two days through the same scene: marinetwin-live.js drives it.
@@ -874,12 +875,18 @@ function shipCardStill(a, now, mesh, b) {
 
 function tagSite(site, twin) {
   const equipment = twin.equipment || [];
+  const fleet = equipment.length && equipment[0].berth !== undefined;     // the list names every crane on the quay
   const perBerth = new Map();
   site.cranes.forEach((c, i) => {
     const u = c.userData;
     const what = u.mobile ? 'Mobile harbour crane' : u.trolley ? (site.kind === 'bulk' ? 'Ship unloader' : 'Ship-to-shore crane') : 'Crane';
     let name;
-    if (u.berth) {
+    if (u.fleet !== undefined && (fleet || u.berth)) {
+      // Numbered along the quay, as the crane list and the live port's log name it.
+      const e = fleet ? equipment[u.fleet] : null;
+      name = `${(e && e.name) || `${site.kind === 'bulk' ? 'SU' : 'STS'}${u.fleet + 1}`}${u.berthN ? ` · Berth ${u.berthN}` : ''}`;
+      if (e) i = u.fleet;
+    } else if (u.berth) {
       const k = (perBerth.get(u.berth) || 0) + 1;
       perBerth.set(u.berth, k);
       name = `${berthName(u.berth)} · ${u.mobile ? 'MHC' : 'STS'} ${k}`;
@@ -888,15 +895,16 @@ function tagSite(site, twin) {
     }
     u.pick = () => {
       // The live port sets state, why, doing and shipName each frame; the still view has the day's.
-      const state = u.state || (u.idle ? 'idle' : !u.berth && equipment[i] ? equipment[i].state : u.working ? 'working' : 'idle');
-      const why = u.why !== undefined ? u.why : !u.berth && equipment[i] ? equipment[i].why : '';
+      const own = fleet ? u.fleet !== undefined : !u.berth;       // whether the list's entry i is this crane
+      const state = u.state || (u.idle ? 'idle' : own && equipment[i] ? equipment[i].state : u.working ? 'working' : 'idle');
+      const why = u.why !== undefined ? u.why : own && equipment[i] ? equipment[i].why : '';
       const b = u.berth || site.mainBerth;
       const doing = u.doing || (state !== 'working' ? '' : b && b.state === 'loading' ? 'Loading, quay to ship' : b && b.state ? 'Discharging, ship to quay' : 'No ship to work');
       return {
         kind: what, title: name, state: CRANE_STATE[state] || 'neutral', stateWord: capital(state),
         rows: [['Berth', berthName(b)], ['Doing', doing], ['Why', why], ['Ship', u.shipName || ''],
           ['Power', u.mobile ? 'Diesel, on its own' : 'Electric, from the grid'],
-          ['Next service', !u.berth && equipment[i] && equipment[i].service_in_h ? `in ${equipment[i].service_in_h} h` : '']],
+          ['Next service', own && equipment[i] && equipment[i].service_in_h ? `in ${equipment[i].service_in_h} h` : '']],
       };
     };
   });
@@ -1292,12 +1300,13 @@ function terminal(scene, frame, twin, rng, quay) {
     };
     const order = [];
     // A bay as long as a berth takes several cranes on its rails, about one for every 80 m of it
-    // (a ship is worked by three or four at once); the main berth's as many as its register lists.
+    // (a ship is worked by three or four at once). The count depends on the quay alone: the live
+    // port tells the server how many it drew, and the crane list comes back numbered to match.
     const mainAt = onQuay(quay, berthAt).s;
     bays.forEach((b) => {
       const len = b.to - b.from;
       const isMain = mainAt >= b.from && mainAt <= b.to;
-      const n = Math.max(1, Math.min(isMain && equipment.length ? equipment.length : 4, Math.floor(len / (isMain ? 55 : 80))));
+      const n = Math.max(1, Math.min(4, Math.floor(len / 80)));
       for (let k = 0; k < n; k++) {
         const along = b.from + ((k + 0.5) * len) / n;
         // (the main berth's come first once sorted, so the i-th takes the register's i-th state)
@@ -1319,6 +1328,18 @@ function terminal(scene, frame, twin, rng, quay) {
     const dist = (o) => { const p = quayPoint(quay, o.along); return Math.hypot(p.x - berthAt[0], p.z - berthAt[1]); };
     order.sort((x, y) => dist(x) - dist(y));
     order.slice(0, 40).forEach((o, i) => cranes.push(place(o.make(i), o.along, o.inland)));
+    // The rail-mounted cranes numbered along the quay, STS1 at its start, as the crane list names
+    // them once the server knows the quay's cranes (each entry then carries its berth).
+    const rail = cranes.filter((c) => c.userData.trolley).sort((a, b) => a.userData.along - b.userData.along);
+    rail.forEach((c, k) => { c.userData.fleet = k; });
+    if (equipment.length && equipment[0].berth !== undefined) {
+      for (const c of rail) {
+        const e = equipment[c.userData.fleet];
+        if (!e) continue;
+        c.userData.working = e.state === 'working' && !c.userData.idle;
+        if (e.state === 'stowed' && c.userData.boom) { c.userData.boom.rotation.x = -1.25; c.userData.boom.position.z = 26; }
+      }
+    }
   }
 
   if (kind === 'container' || kind === 'multipurpose') {
@@ -1461,6 +1482,9 @@ function terminal(scene, frame, twin, rng, quay) {
   for (const c of cranes) {
     const b = berths.find((x) => !x.main && c.userData.along >= x.from && c.userData.along <= x.to);
     if (b) c.userData.berth = b;
+    // The berth it stands at, main or not, by number (the crane list's `berth`).
+    const at = berths.find((x) => c.userData.along >= x.from && c.userData.along <= x.to);
+    if (at) { c.userData.berthN = at.n; c.userData.home = at; }
   }
   for (const mv of movers) if (mv.apron || mv.main) mv.berth = mainBerth;
   for (const y of yards) if (y.main) y.berth = mainBerth;
@@ -1865,6 +1889,37 @@ async function main() {
     }
   }
   for (const y of site.yards) setFill(y.mesh, yardFill(y.berth));
+  // Extreme events as they happen (marinetwin-events.js), drawn where they hit.
+  const effects = eventEffects({
+    scene, camera, renderer, site, frame, view, ship, vehicle, box, REAL, atSea: site.quay ? seaChecker(site.quay, frame) : null,
+    tide: () => water.position.y,
+    // Which way is the sea and which way along the quay, at a point.
+    seaAt(x, z) {
+      if (!site.quay) return { sea: [0, -1], along: [1, 0] };
+      const leg = onQuay(site.quay, [x, z]).leg;
+      return { sea: leg.sea, along: leg.dir };
+    },
+    // How far a point is inland of the quay's edge (negative: over the water).
+    inlandOf(x, z) {
+      if (!site.quay) return z - frame.front;
+      const q = onQuay(site.quay, [x, z]);
+      const l = q.leg;
+      return (x - (l.a[0] + l.dir[0] * q.t)) * l.land[0] + (z - (l.a[1] + l.dir[1] * q.t)) * l.land[1];
+    },
+    // The apron and yard, as quads along the quay (front edge first).
+    apron() {
+      const D = site.yardDepth;
+      if (!site.quay) return [[[frame.minX - 300, frame.front], [frame.maxX + 300, frame.front], [frame.maxX + 300, frame.front + D], [frame.minX - 300, frame.front + D]]];
+      const P = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
+      return site.quay.legs.map((l) => [P(l.a, l.land, 2), P(l.b, l.land, 2), P(l.b, l.land, D), P(l.a, l.land, D)]);
+    },
+    // The gate, at the back of the main berth's yard.
+    gate() {
+      const b = site.mainBerth;
+      if (b && b.leg) { const p = quayPoint(site.quay, b.mid, site.yardDepth - 30); return { x: p.x, z: p.z }; }
+      return { x: (frame.minX + frame.maxX) / 2, z: frame.front + site.yardDepth - 30 };
+    },
+  });
   const lamps = [];
   for (const mast of site.lights.slice(0, 4)) {
     const light = new THREE.PointLight(0xffd9a0, 0, 160, 1.6);
@@ -1982,11 +2037,11 @@ async function main() {
     const centre = new THREE.Vector3((frame.minX + frame.maxX) / 2, frame.top, frame.front + 60);
     sunLight.position.copy(centre).addScaledVector(dir.y > 0 ? dir : new THREE.Vector3(0.3, 1, 0.2).normalize(), 1200);
     sunLight.target.position.copy(centre);
-    sunLight.intensity = 3.2 * day + 0.08;
+    sunLight.intensity = 3.2 * day + 0.25;
     sunLight.color.setHSL(0.09 + 0.05 * day, 0.6 * (1 - day) + 0.1, 0.75 + 0.2 * day);
-    hemi.intensity = 0.15 + 0.75 * day;
+    hemi.intensity = 0.4 + 0.5 * day;              // moonlight: the quay still shows at night with its lights out
     hemi.color.setHSL(0.6, 0.4, 0.35 + 0.5 * day);
-    renderer.toneMappingExposure = 0.25 + 0.3 * day;
+    renderer.toneMappingExposure = 0.42 + 0.13 * day;
     stars.material.opacity = THREE.MathUtils.clamp(1 - day * 3, 0, 1);
     const night = day < 0.35;
     const lit = night && power;          // the yard is lit at night, unless the power is cut
@@ -2234,8 +2289,10 @@ async function main() {
   // deck as a red carpet of 10 m squares, with a banner saying what it is.
   // The live port shows the same when it plays an extreme event, once the event has struck.
   let showEvent = null;
+  let eventArea = null;
   if ((RISK || LIVE) && view.dataset.eventUrl) {
-    const closedMat = new THREE.MeshBasicMaterial({ color: 0xd03b3b, transparent: true, opacity: 0.3, depthWrite: false });
+    // Faint now: the cordon round it says it is closed.
+    const closedMat = new THREE.MeshBasicMaterial({ color: 0xd03b3b, transparent: true, opacity: 0.14, depthWrite: false });
     const cellGeo = new THREE.BoxGeometry(1, 1, 1);
     let carpet = null;
     const banner = document.createElement('div');
@@ -2245,26 +2302,26 @@ async function main() {
     const homeTarget = controls.target.clone();
     const homeCamera = camera.position.clone();
     let asked = 0;
-    showEvent = async (key) => {
-      const mine = ++asked;
+    // What an event closes, worked out once per event: its cells of 10 m on the deck, the deck's
+    // level, the point it hits, the cranes it stops and the berths it closes.
+    const areas = new Map();
+    eventArea = async (key) => {
+      if (!key) return null;
+      if (areas.has(key)) return areas.get(key);
       let ev = null;
       try {
-        if (key) ev = await (await fetch(view.dataset.eventUrl.replace('KEY', encodeURIComponent(key)), { credentials: 'same-origin' })).json();
+        ev = await (await fetch(view.dataset.eventUrl.replace('KEY', encodeURIComponent(key)), { credentials: 'same-origin' })).json();
       } catch (err) { ev = null; }
-      if (mine !== asked) return;              // another event was picked meanwhile
-      if (carpet) { scene.remove(carpet); carpet.dispose(); carpet = null; }
-      if (!ev) { eventStates = null; paint(); banner.hidden = true; return; }
-      eventStates = new Map();
-      for (const d of ev.damaged) { eventStates.set(d.ref, d.state); eventStates.set(d.name, d.state); }
-      paint();
+      if (!ev) return null;
       // The deck's level: the top of the slabs and beams, or of everything when there are none.
       content.updateMatrixWorld(true);
       const box = new THREE.Box3();
       let deck = -Infinity;
       let top = -Infinity;
       const closed = new Set(ev.closed);
-      const cells = new Map();
+      let cells = new Map();
       const CELL = 10;
+      const cellOf = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
       content.traverse((m) => {
         const e = m.isMesh && m.userData.element;
         if (!e) return;
@@ -2278,7 +2335,91 @@ async function main() {
         }
       });
       if (!Number.isFinite(deck)) deck = Number.isFinite(top) ? top : frame.top;
+      // The cranes it stops. Round a point: those standing in the closed area. Over a share of the
+      // quay: that share of the ship-to-shore cranes from the start of the quay, as the server's
+      // crane list stops them, with the berths they work closed and fenced off.
+      const rail = site.cranes.filter((c) => c.userData.fleet !== undefined).sort((a, b) => a.userData.fleet - b.userData.fleet);
+      let down;
+      let closedBerths;
+      const near = (c) => { for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) if (cells.has(cellOf(c.position.x + dx * CELL, c.position.z + dz * CELL))) return true; return false; };
+      // A crane collapse needs a quay crane in its area. When the server's spot is a stretch with
+      // none (a bulk or ro-ro berth), the area slides along the quay to the nearest one, keeping
+      // its shape and its distance from the edge.
+      if (ev.days && ev.radius && key === 'crane_collapse' && cells.size && site.quay && rail.length && !rail.some(near)) {
+        let cx = 0;
+        let cz = 0;
+        for (const [x, z] of cells.values()) { cx += (x + 0.5) * CELL; cz += (z + 0.5) * CELL; }
+        cx /= cells.size;
+        cz /= cells.size;
+        const here = onQuay(site.quay, [cx, cz]);
+        const inland = (cx - (here.leg.a[0] + here.leg.dir[0] * here.t)) * here.leg.land[0] + (cz - (here.leg.a[1] + here.leg.dir[1] * here.t)) * here.leg.land[1];
+        const along = (c) => onQuay(site.quay, [c.position.x, c.position.z]).s;
+        const crane = rail.slice().sort((a, b) => Math.abs(along(a) - here.s) - Math.abs(along(b) - here.s))[0];
+        const to = quayPoint(site.quay, along(crane), inland);
+        const dx = Math.round((to.x - cx) / CELL);
+        const dz = Math.round((to.z - cz) / CELL);
+        const moved = new Map();
+        for (const [x, z] of cells.values()) moved.set(`${x + dx},${z + dz}`, [x + dx, z + dz]);
+        cells = moved;
+      }
+      if (ev.days && ev.radius) {
+        down = site.cranes.filter(near);
+        closedBerths = site.berths.filter((b) => down.some((c) => c.userData.home === b)
+          || [0.1, 0.3, 0.5, 0.7, 0.9].some((f) => { const p = quayPoint(site.quay, b.from + f * b.length, 15); return cells.has(cellOf(p.x, p.z)); }));
+      } else if (ev.days && (ev.crane_share ?? 1) < 1 && rail.length && site.quay) {
+        const k = Math.max(1, Math.round(ev.crane_share * rail.length));
+        down = rail.slice(0, k);
+        closedBerths = site.berths.filter((b) => down.some((c) => c.userData.home === b));
+        // The closed area: the apron of those berths, not the whole quay.
+        cells = new Map();
+        for (const b of closedBerths) {
+          for (let a = b.from + 3; a < b.to - 3; a += CELL / 2) {
+            for (let d = -2; d <= 55; d += CELL / 2) {
+              const p = quayPoint(site.quay, a, d);
+              const key2 = cellOf(p.x, p.z);
+              cells.set(key2, key2.split(',').map(Number));
+            }
+          }
+        }
+      } else if (ev.days) {
+        down = site.cranes.slice();
+        closedBerths = site.berths.slice();
+      } else {
+        down = [];
+        closedBerths = [];
+      }
       const centre = new THREE.Vector3();
+      for (const [x, z] of cells.values()) { centre.x += (x + 0.5) * CELL; centre.z += (z + 0.5) * CELL; }
+      if (cells.size && ev.radius) centre.divideScalar(cells.size);
+      else {
+        // Spread over the quay: it is seen at the main berth (or the first berth closed).
+        const b = closedBerths.includes(site.mainBerth) || !closedBerths.length ? site.mainBerth : closedBerths[0];
+        const p = b && b.leg ? quayPoint(site.quay, b.mid, 10) : { x: (frame.minX + frame.maxX) / 2, z: frame.front + 10 };
+        centre.set(p.x, 0, p.z);
+      }
+      centre.y = deck;
+      const area = { ev, cells, CELL, deck, centre, down, closed: closedBerths, whole: !!ev.whole };
+      areas.set(key, area);
+      return area;
+    };
+    // Draw an event: its damage on the elements, the closed area faintly red on the deck and fenced
+    // off, the cranes it stops marked, and its effect playing (`fresh`: striking now).
+    showEvent = async (key, opts = {}) => {
+      const mine = ++asked;
+      const area = key ? await eventArea(key) : null;
+      if (mine !== asked) return null;              // another event was picked meanwhile
+      if (carpet) { scene.remove(carpet); carpet.dispose(); carpet = null; }
+      effects.clear();
+      for (const b of site.berths) b.closed = false;
+      if (site.mainBerth) site.mainBerth.closed = false;
+      for (const c of site.cranes) c.userData.closed = false;
+      if (!area) { eventStates = null; paint(); banner.hidden = true; return null; }
+      const { ev, cells, CELL, deck, centre } = area;
+      eventStates = new Map();
+      for (const d of ev.damaged) { eventStates.set(d.ref, d.state); eventStates.set(d.name, d.state); }
+      paint();
+      for (const b of area.closed) b.closed = true;
+      for (const c of area.down) c.userData.closed = true;
       if (cells.size) {
         carpet = new THREE.InstancedMesh(cellGeo, closedMat, cells.size);
         const mat = new THREE.Matrix4();
@@ -2286,13 +2427,12 @@ async function main() {
         for (const [x, z] of cells.values()) {
           mat.makeScale(CELL, 0.05, CELL).setPosition((x + 0.5) * CELL, deck + 0.35, (z + 0.5) * CELL);
           carpet.setMatrixAt(i++, mat);
-          centre.x += (x + 0.5) * CELL; centre.z += (z + 0.5) * CELL;
         }
-        centre.divideScalar(cells.size).setY(deck);
         carpet.renderOrder = 2;
         scene.add(carpet);
       }
-      if (LIVE) return;                      // the live player keeps its own camera and log
+      effects.show(key, { ...area, cells: new Set(cells.keys()), fresh: opts.fresh !== false });
+      if (LIVE) return area;                 // the live player keeps its own camera and log
       // A closed berth is not worked: the cranes and tractors stand still while it is shown.
       moving = !ev.days;
       const moveBox = hud.querySelector('.marine-hud-move');
@@ -2394,6 +2534,7 @@ async function main() {
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
       ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint, setFill, yardFill, berthSpot, atSea: seaChecker(site.quay, frame),
       flagCode, FLAG_NAMES, follow: startFollow, stopFollow, following: () => follow && follow.object,
+      eventArea, eventRain: () => effects.rain(),
       setClock(ms) { clock = ms; setTime(); },
       setPower(on) { if (on !== power) { power = on; setTime(); } },
       setTide(fn) { tideSource = fn; },
@@ -2434,6 +2575,7 @@ async function main() {
           // At the other berths: only while a ship is worked, cars for a car carrier, tractors otherwise.
           const b = m.dressed ? m.berth : null;
           if (b && (!b.state || (m.needs === 'roro') !== (b.shipKind === 'roro'))) continue;
+          if (m.berth && m.berth.closed) continue;                        // closed by an event: all stopped
           m.u = ((m.u ?? m.offset) + dt * pace * m.speed) % 1;
           const u = m.u;
           // A tractor runs full from the cranes to the stacks when the ship is discharging, and
@@ -2453,12 +2595,13 @@ async function main() {
           // tractors for any other), and parked otherwise.
           const b = m.berth;
           // (a road truck from the gate comes whether a ship is in or not)
-          const busy = m.gate || (b && b.state && (m.needs === 'roro') === (b.shipKind === 'roro'));
+          const busy = !(b && b.closed) && (m.gate || (b && b.state && (m.needs === 'roro') === (b.shipKind === 'roro')));
           const tr = m.trip;
           if (tr.mode === 'oneway') m.object.visible = false;
           if (!busy) {
             if (m.job) { m.rtg.cancel(m.job); m.job = null; }
             m.hold = false;
+            if (b && b.closed) { m.status = 'Stopped where it was: the area is closed'; if (tr.mode === 'oneway') m.object.visible = false; continue; }
             m.status = tr.mode === 'oneway' ? 'Waiting for a car carrier' : 'Parked by its crane: no ship being worked';
             if (!m.parked && tr.mode !== 'oneway') {            // waiting by its crane for the next ship
               tr.curve.getPointAt(0, point); tr.curve.getPointAt(0.02, ahead);
@@ -2534,13 +2677,13 @@ async function main() {
       }
       // The yard cranes work the boxes the tractors and trucks bring and fetch; the stacks follow
       // the berth's ship a few boxes at a time where the cranes are not working.
-      for (const r of site.yardCranes) r.tick(dt * pace);
+      for (const r of site.yardCranes) if (!(r.berth || site.mainBerth || {}).closed) r.tick(dt * pace);
       for (const y of site.yards) if (y.mesh.userData.yard) y.mesh.userData.yard.tick(dt);
       for (const c of player ? [] : site.cranes) {     // the live player works the cranes itself
         const u = c.userData;
         // Only with a ship alongside its berth to work.
         const b = u.berth || site.mainBerth;
-        if (!b || !b.state) { if (u.load) u.load.visible = false; continue; }
+        if (!b || !b.state || u.closed || u.fallen) { if (u.load) u.load.visible = false; continue; }
         if (u.trolley && u.working) {
           const s = (Math.sin(t * 0.35 + c.position.x) + 1) / 2;
           u.trolley.position.z = -28 + 40 * s;
@@ -2554,17 +2697,21 @@ async function main() {
     }
     followShip(dt);
     controls.update();
+    effects.tick(dt * ((view.twin && view.twin.slow) || 1));      // (slow: slow motion, for the browser tests' pictures)
+    const shake = effects.shake();
     // The near plane moves out as the camera does, so the land and the sea a few metres below it
     // stay apart in the depth buffer when looking over a quay kilometres long.
     const near = Math.max(0.5, camera.position.distanceTo(controls.target) / 400);
     if (Math.abs(near - camera.near) > camera.near * 0.2) { camera.near = near; camera.updateProjectionMatrix(); }
+    camera.position.add(shake);           // an earthquake or a blast shakes the view...
     renderer.render(scene, camera);
+    camera.position.sub(shake);           // ...about where the person left it
   }
   renderer.setAnimationLoop(animate);
   if (voyage) await voyage.done('Ready');
   if (voyage) voyage.remove();
   // For scripts and the browser tests: the scene, its camera and what is on the quay.
-  view.twin = { THREE, scene, camera, controls, site, frame };
+  view.twin = { THREE, scene, camera, controls, site, frame, effects };
   view.dataset.ready = String(clickable.length);
   view.dataset.cranes = String(site.cranes.length);
 

@@ -298,3 +298,16 @@
 .mt-risk-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
 .mt-risk-banner { position: absolute; left: 12px; bottom: 30px; z-index: 3; max-width: min(420px, 70%); padding: 8px 12px; border-radius: 8px;
   background: rgba(150, 20, 20, .88); color: #fff; font-size: .85rem; pointer-events: none; }
+
+/* Following a ship: the buttons on her card, and the bar over the view while the camera goes with her. */
+.mt-card-follow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px !important; }
+.mt-card-follow button, .mt-follow button { background: rgba(255,255,255,.14); color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+.mt-card-follow button:first-child { background: #1e88e5; font-weight: 600; }
+.mt-follow { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(10, 18, 28, .82); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: .86rem; max-width: calc(100% - 24px); }
+.mt-follow[hidden] { display: none; }
+.mt-follow [role="group"] { display: inline-flex; gap: 3px; }
+.mt-follow button[aria-pressed="true"] { background: #fff; color: #0b1b2b; font-weight: 600; }
+.mt-follow kbd { font: inherit; font-size: .72rem; opacity: .7; border: 1px solid rgba(255,255,255,.4); border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+.marine-live-view .mt-follow { bottom: 70px; }
+@media (max-width: 720px) { .marine-live-view .mt-follow { bottom: 120px; } }

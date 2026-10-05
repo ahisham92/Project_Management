@@ -239,7 +239,7 @@ export async function startLife(ctx) {
   // --- a ship when the berth can take one, the cranes, the rain ------------------------------
   const kind = site.kind;
   const s0 = twin.alongside || twin.next_ship || { type: 'Container', loa: 300, beam: 42, draught: 14 };
-  const vessel = ctx.ship(s0.type, s0.loa, s0.beam, s0.draught, rng);
+  const vessel = ctx.ship(s0.type, s0.loa, s0.beam, s0.draught, rng, ctx.flagCode(s0.name, s0.flag));
   vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
   const berthX = (frame.minX + frame.maxX) / 2;
   vessel.position.set(berthX, 0, frame.fenderFace - s0.beam / 2 - 0.4);

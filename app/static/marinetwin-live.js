@@ -8,7 +8,7 @@
 // the berth is losing time and why.
 
 const SPEEDS = [1, 10, 60, 600];
-const CAMERAS = [['quay', 'Quay camera'], ['crane', 'Crane camera'], ['drone', 'Drone'], ['free', 'Free']];
+const CAMERAS = [['quay', 'Quay camera'], ['crane', 'Crane camera'], ['drone', 'Drone'], ['ship', 'Ship'], ['free', 'Free']];
 const CYCLE = 110;            // seconds a crane takes for one move, ship to quay and back
 const RATE = 3600 / CYCLE;    // moves an hour, per crane
 const VISUAL_PACE = 20;       // above this, things move no faster on screen: a timelapse, not a blur
@@ -259,7 +259,7 @@ export async function startLive(ctx) {
     calls.forEach((c, k) => {
       // No longer than her berth, so she does not overlap the ships at the next ones.
       const loa = main ? Math.min(c.loa, main.length - 20) : c.loa;
-      c.mesh = ctx.ship(c.type, loa, c.beam, c.draught, rng);
+      c.mesh = ctx.ship(c.type, loa, c.beam, c.draught, rng, ctx.flagCode(c.name, c.flag));
       c.mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
       c.mesh.visible = false;
       scene.add(c.mesh);
@@ -291,7 +291,7 @@ export async function startLive(ctx) {
   function makeOther(b) {
     const types = b.use === 'mixed' ? ['general cargo', 'ro-ro'] : [ctx.berthShipType(b.use)];
     const meshes = types.map((type) => {
-      const mesh = ctx.ship(type, b.loa, b.beam, 12, rng);
+      const mesh = ctx.ship(type, b.loa, b.beam, 12, rng, ctx.flagCode(nameFor(type, b.n, 0)));
       mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
       mesh.visible = false;
       mesh.userData.type = type;
@@ -341,6 +341,7 @@ export async function startLive(ctx) {
       if (!c) continue;
       const v = h >= c.arrive ? voyage(h, c.along, c.sail, o) : null;
       o.ship = c;
+      c.mesh.userData.setFlag(ctx.flagCode(c.name, c.flag));        // the model is reused from call to call
       o.phase = v ? v.phase : 'anchor';
       c.stage = o.phase;
       c.mesh.visible = true;
@@ -700,7 +701,9 @@ export async function startLive(ctx) {
     const sail = c.to ?? c.sail;
     return {
       kind: c.type.replace('ro-ro', 'car carrier (RoRo)'), title: c.name,
+      follow: mesh,
       rows: [['Berth', b ? (b.n !== undefined ? `Berth ${b.n}${b.main ? ' (main)' : ''}` : 'Main berth') : ''], ['Now', stage],
+        ['Flag', c.flag_name || ctx.FLAG_NAMES[mesh.userData.flag] || ''],
         ['Length overall', `${Math.round(c.shown || c.loa || mesh.userData.loa)} m`], ['Beam', `${Math.round(c.beam || mesh.userData.beam)} m`],
         ['Draught', c.draught ? `${c.draught} m` : ''], ['Cargo aboard', fill === null ? '' : `${Math.round(fill * 100)}%`],
         ['Alongside from', fmtHour(arrive)], ['Sails', fmtHour(sail)],
@@ -761,6 +764,9 @@ export async function startLive(ctx) {
 
   // Cameras.
   let cam = 'drone';
+  let prevCam = 'drone';       // the camera before the ship camera, to go back to
+  let shipName = '';
+  let leaving = false;
   let droneAngle = 0;
   // What the drone circles and the free view turns about: the main berth at first, then whichever
   // berth is picked under Berths, or any spot double-clicked.
@@ -768,9 +774,27 @@ export async function startLive(ctx) {
   function setCamera(k, keep = false) {
     cam = k;
     for (const b of overlay.querySelectorAll('[data-cam]')) b.setAttribute('aria-pressed', String(b.dataset.cam === k));
-    $('.mt-live-camname').textContent = { quay: 'CAM 1 · QUAY', crane: 'CAM 2 · CRANE', drone: 'CAM 3 · DRONE', free: 'FREE VIEW · double-click to centre on a spot' }[k];
+    $('.mt-live-camname').textContent = { quay: 'CAM 1 · QUAY', crane: 'CAM 2 · CRANE', drone: 'CAM 3 · DRONE', ship: `CAM 4 · SHIP${shipName ? ' · ' + shipName.toUpperCase() : ''}`, free: 'FREE VIEW · double-click to centre on a spot' }[k];
     const crane = site.cranes[1] || site.cranes[0];
+    if (k !== 'ship' && ctx.following()) { leaving = true; ctx.stopFollow(); leaving = false; }
     if (keep) return;                   // the view stays where it is
+    if (k === 'ship') {
+      // The main berth's ship if one is about (in, alongside, out or at anchor), else the ship
+      // nearest the middle of the view.
+      const main = calls.find((c) => c.mesh.visible && c.stage && c.stage !== 'anchor') || calls.find((c) => c.mesh.visible);
+      let best = main ? { c: main, mesh: main.mesh, b: site.mainBerth } : null;
+      if (!best) {
+        let d = Infinity;
+        for (const o of others) {
+          if (!o.ship || !o.ship.mesh.visible) continue;
+          const e = o.ship.mesh.position.distanceTo(controls.target);
+          if (e < d) { d = e; best = { c: o.ship, mesh: o.ship.mesh, b: o.b }; }
+        }
+      }
+      if (best) ctx.follow(best.mesh, 'orbit', best.c.name);
+      else setCamera(prevCam === 'ship' ? 'drone' : prevCam);     // no ship in port to follow
+      return;
+    }
     if (k === 'quay') {
       // On a mast at the end of the quay, looking along the berth and the ship.
       camera.position.set(frame.minX - 70, frame.top + 24, frame.front + 14);
@@ -805,7 +829,26 @@ export async function startLive(ctx) {
     if (cam !== 'free') setCamera('free', true);
     controls.update();
   });
-  for (const b of overlay.querySelectorAll('[data-cam]')) b.addEventListener('click', () => setCamera(b.dataset.cam));
+  for (const b of overlay.querySelectorAll('[data-cam]')) {
+    b.addEventListener('click', () => {
+      if (b.dataset.cam === 'ship' && cam !== 'ship') prevCam = cam;
+      setCamera(b.dataset.cam);
+    });
+  }
+  // Following a ship (from her card, or the Ship camera) is the ship camera; when it stops (Esc,
+  // Stop following, her call over) the camera before it comes back.
+  view.addEventListener('mt-follow', (ev) => {
+    if (ev.detail.on) {
+      if (cam !== 'ship') prevCam = cam;
+      shipName = ev.detail.name || '';
+      setCamera('ship', true);
+    } else if (!leaving) {
+      shipName = '';
+      // The free, quay and crane cameras are where they were (the twin put the view back); the
+      // drone carries on circling.
+      setCamera(prevCam === 'ship' ? 'drone' : prevCam, true);
+    }
+  });
   // Taking hold of the view leaves the drone to it.
   ctx.renderer.domElement.addEventListener('pointerdown', () => { if (cam === 'drone') setCamera('free', true); });
   setCamera('drone');

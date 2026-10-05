@@ -350,8 +350,12 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         storm_rain = max(0.0, (w["wind"] - 11) * 1.4)
         shower = sum(rate * math.exp(-((i - at) / width) ** 2) for at, width, rate in showers)
         rain = round(storm_rain + shower if storm_rain + shower > 0.3 else 0.0, 1)
+        # An event that closes an area round one point takes the supply down with it only there: the
+        # cranes in that area are already stopped. A grid-wide cut is for the events that reach the
+        # whole terminal (the grid itself, a quake, a storm, a missile).
+        grid_wide = bool(extreme) and extreme["power"] and (extreme["radius"] is None or extreme["key"] == "war_direct")
         power = not (scenario == "power_cut" and s_from <= i < s_to) and \
-            not (extreme and extreme["power"] and s_from <= i < s_from + 12)
+            not (grid_wide and s_from <= i < s_from + 12)
         struck = bool(extreme) and i >= s_from
         fog = scenario == "fog" and s_from <= i < s_to
         kit = []

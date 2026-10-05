@@ -25,7 +25,10 @@ const cargoFill = (h, from, to) => {
 
 export async function startLive(ctx) {
   const { THREE, view, scene, camera, controls, frame, site, rng, focus, radius, water, sky, sunLight, hemi, REAL } = ctx;
-  const planUrl = (key) => `${view.dataset.live}?scenario=${encodeURIComponent(key)}`;
+  // Every plan after the first is asked for at the first one's "now", so that its hours line up with
+  // the timeline already drawn (the real clock may have passed the hour since).
+  let pinned = '';
+  const planUrl = (key) => `${view.dataset.live}?scenario=${encodeURIComponent(key)}${pinned ? `&now=${encodeURIComponent(pinned)}` : ''}`;
   // A situation's plan. For an event that closes an area round a point, the cranes standing in it
   // (found on the model) are the ones the server stops and logs, so the list, the log and the 3D agree.
   async function fetchPlan(key) {
@@ -43,6 +46,7 @@ export async function startLive(ctx) {
     return got;
   }
   let plan = await fetchPlan(view.dataset.scenario || 'normal');
+  pinned = plan.now || '';
   const startMs = Date.parse(plan.start);
   const hourOf = (iso) => (Date.parse(iso) - startMs) / 3600000;
   const total = plan.hours.length - 1;
@@ -689,7 +693,7 @@ export async function startLive(ctx) {
     $('.mt-live-play').textContent = '❚❚';
     setSpeed(60);
     if (area && area.centre && !ctx.following()) {
-      Object.assign(spot, { x: area.centre.x, z: area.centre.z, r: area.radius ? 230 : Math.max(radius * 1.2, 380) });
+      Object.assign(spot, { x: area.centre.x, z: area.centre.z, r: area.radius ? 230 : 320 });   // close enough to see what happens
       setCamera('drone');
     }
     refreshLog(true);
@@ -1088,11 +1092,22 @@ export async function startLive(ctx) {
     const idle = atMain(states).filter((s) => s.state !== 'working');
     let alert = '';
     if (shownEvent && area && area.ev && area.ev.days) {
-      const names = downNames();
-      alert = `${plan.scenario.name}: ${area.whole && !area.partial ? 'the whole quay closed' : `${area.closed.length ? area.closed.map((b) => `berth ${b.n}`).join(', ') : 'an area'} closed`}`
+      // The cranes down: those the event stops, and any other down now (the grid lost with it).
+      const names = [...new Set([...downNames(), ...states.filter((s) => s.state === 'down').map((s) => s.name)])];
+      // Closed to ships along the whole quay, with only part of it fenced off (an oil spill): both said.
+      const fenced = area.closed.length ? area.closed.map((b) => `berth ${b.n}`).join(', ') : 'an area';
+      alert = `${plan.scenario.name}: ${!area.whole ? `${fenced} closed` : area.partial ? `the whole quay closed to ships · ${fenced} fenced off` : 'the whole quay closed'}`
         + `${names.length ? ` · ${names.length > 6 ? `${names.length} cranes` : names.join(', ')} down` : ''} · no berthing`;
-    } else if (alongside && idle.length) {
-      alert = `Downtime: ${idle.map((s) => `${s.name} ${s.why || s.state}`).join('; ')}`;
+    } else if ((alongside && idle.length) || states.filter((s) => s.state !== 'working').length > idle.length) {
+      // Every crane that is not working, along the whole quay, grouped by why (a power cut stops all
+      // of them, not only the three at the main berth).
+      const groups = new Map();
+      for (const s of states) {
+        if (s.state === 'working') continue;
+        const why = s.why ? `${s.state}: ${s.why}` : s.state;
+        groups.set(why, [...(groups.get(why) || []), s.name]);
+      }
+      alert = `Downtime: ${[...groups].map(([why, names]) => `${names.length > 6 ? `${names.length} of ${states.length} cranes` : names.join(', ')} ${why}`).join('; ')}`;
     } else if (waiting && waiting.held && w.hour.fog) {
       alert = `Downtime: ${waiting.name} waiting at anchor, no pilotage in fog`;
     } else if (waiting && waiting.held) {

@@ -306,12 +306,23 @@ def _crane_indexes(text: str | None) -> set[int] | None:
     return {int(x) for x in text.split(",") if x.strip().isdigit() and int(x) < 200}
 
 
+def _pinned_now(text: str | None) -> datetime:
+    """The moment the live view's timeline was first drawn ("now" of its first plan), so that a
+    situation picked later lines up hour for hour with it; the real now when absent or stale."""
+    real = datetime.now()
+    try:
+        at = datetime.fromisoformat(text) if text else None
+    except ValueError:
+        at = None
+    return at if at is not None and at.tzinfo is None and abs(real - at) < timedelta(days=2) else real
+
+
 @bp.get("/assets/<int:asset_id>/live.json")
 @login_required
 def live_json(asset_id: int):
     """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
     asset = _asset_or_404(asset_id)
-    now = datetime.now()
+    now = _pinned_now(request.args.get("now"))
     plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"),
                            booked=_main_berth_calls(asset, now), fleet=marine_berths.crane_fleet(get_db(), asset_id),
                            closed=_crane_indexes(request.args.get("closed")))

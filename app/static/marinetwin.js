@@ -1899,6 +1899,13 @@ async function main() {
       const leg = onQuay(site.quay, [x, z]).leg;
       return { sea: leg.sea, along: leg.dir };
     },
+    // How far a point is inland of the quay's edge (negative: over the water).
+    inlandOf(x, z) {
+      if (!site.quay) return z - frame.front;
+      const q = onQuay(site.quay, [x, z]);
+      const l = q.leg;
+      return (x - (l.a[0] + l.dir[0] * q.t)) * l.land[0] + (z - (l.a[1] + l.dir[1] * q.t)) * l.land[1];
+    },
     // The apron and yard, as quads along the quay (front edge first).
     apron() {
       const D = site.yardDepth;
@@ -2030,11 +2037,11 @@ async function main() {
     const centre = new THREE.Vector3((frame.minX + frame.maxX) / 2, frame.top, frame.front + 60);
     sunLight.position.copy(centre).addScaledVector(dir.y > 0 ? dir : new THREE.Vector3(0.3, 1, 0.2).normalize(), 1200);
     sunLight.target.position.copy(centre);
-    sunLight.intensity = 3.2 * day + 0.08;
+    sunLight.intensity = 3.2 * day + 0.25;
     sunLight.color.setHSL(0.09 + 0.05 * day, 0.6 * (1 - day) + 0.1, 0.75 + 0.2 * day);
-    hemi.intensity = 0.15 + 0.75 * day;
+    hemi.intensity = 0.4 + 0.5 * day;              // moonlight: the quay still shows at night with its lights out
     hemi.color.setHSL(0.6, 0.4, 0.35 + 0.5 * day);
-    renderer.toneMappingExposure = 0.25 + 0.3 * day;
+    renderer.toneMappingExposure = 0.42 + 0.13 * day;
     stars.material.opacity = THREE.MathUtils.clamp(1 - day * 3, 0, 1);
     const night = day < 0.35;
     const lit = night && power;          // the yard is lit at night, unless the power is cut
@@ -2335,6 +2342,26 @@ async function main() {
       let down;
       let closedBerths;
       const near = (c) => { for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) if (cells.has(cellOf(c.position.x + dx * CELL, c.position.z + dz * CELL))) return true; return false; };
+      // A crane collapse needs a quay crane in its area. When the server's spot is a stretch with
+      // none (a bulk or ro-ro berth), the area slides along the quay to the nearest one, keeping
+      // its shape and its distance from the edge.
+      if (ev.days && ev.radius && key === 'crane_collapse' && cells.size && site.quay && rail.length && !rail.some(near)) {
+        let cx = 0;
+        let cz = 0;
+        for (const [x, z] of cells.values()) { cx += (x + 0.5) * CELL; cz += (z + 0.5) * CELL; }
+        cx /= cells.size;
+        cz /= cells.size;
+        const here = onQuay(site.quay, [cx, cz]);
+        const inland = (cx - (here.leg.a[0] + here.leg.dir[0] * here.t)) * here.leg.land[0] + (cz - (here.leg.a[1] + here.leg.dir[1] * here.t)) * here.leg.land[1];
+        const along = (c) => onQuay(site.quay, [c.position.x, c.position.z]).s;
+        const crane = rail.slice().sort((a, b) => Math.abs(along(a) - here.s) - Math.abs(along(b) - here.s))[0];
+        const to = quayPoint(site.quay, along(crane), inland);
+        const dx = Math.round((to.x - cx) / CELL);
+        const dz = Math.round((to.z - cz) / CELL);
+        const moved = new Map();
+        for (const [x, z] of cells.values()) moved.set(`${x + dx},${z + dz}`, [x + dx, z + dz]);
+        cells = moved;
+      }
       if (ev.days && ev.radius) {
         down = site.cranes.filter(near);
         closedBerths = site.berths.filter((b) => down.some((c) => c.userData.home === b)
@@ -2684,7 +2711,7 @@ async function main() {
   if (voyage) await voyage.done('Ready');
   if (voyage) voyage.remove();
   // For scripts and the browser tests: the scene, its camera and what is on the quay.
-  view.twin = { THREE, scene, camera, controls, site, frame };
+  view.twin = { THREE, scene, camera, controls, site, frame, effects };
   view.dataset.ready = String(clickable.length);
   view.dataset.cranes = String(site.cranes.length);
 

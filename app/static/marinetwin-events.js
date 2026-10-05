@@ -255,17 +255,24 @@ export function eventEffects(ctx) {
   // Cracks across the deck: dark jagged lines in the area.
   function cracks(centre, r, count, y) {
     const segs = [];
+    // Cracks only on the deck: a start over the water is tried again, and a crack stops at the edge.
+    const onDeck = (x, z) => !ctx.inlandOf || ctx.inlandOf(x, z) > 1.5;
     for (let c = 0; c < count; c++) {
-      let x = centre.x + rand(-r, r);
-      let z = centre.z + rand(-r, r);
+      let x;
+      let z;
+      let tries = 0;
+      do { x = centre.x + rand(-r, r); z = centre.z + rand(-r, r); } while (!onDeck(x, z) && ++tries < 20);
+      if (!onDeck(x, z)) continue;
       let a = rand(0, Math.PI * 2);
       for (let k = 0; k < 14; k++) {
         const l = rand(2, 6);
+        if (!onDeck(x + Math.cos(a) * l, z + Math.sin(a) * l)) break;
         segs.push([x, z, a, l]);
         x += Math.cos(a) * l; z += Math.sin(a) * l;
         a += rand(-0.7, 0.7);
       }
     }
+    if (!segs.length) return;
     const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.1, 0.35), new THREE.MeshBasicMaterial({ color: 0x050505 }), segs.length);
     const m = new THREE.Matrix4();
     segs.forEach(([x, z, a, l], i) => {
@@ -381,7 +388,7 @@ export function eventEffects(ctx) {
   }
 
   // An armoured vehicle: an eight-wheeled hull in olive drab with a turret and gun.
-  const OLIVE = new THREE.MeshStandardMaterial({ color: 0x4b5320, roughness: 0.8 });
+  const OLIVE = new THREE.MeshStandardMaterial({ color: 0x7a7d3c, roughness: 0.8 });   // light enough to read on dark paving
   const TYRE = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
   function armour(x, y, z, heading) {
     const g = new THREE.Group();
@@ -565,14 +572,19 @@ export function eventEffects(ctx) {
   // A missile from high over the sea onto the point, its exhaust and smoke trail behind it.
   function missile(target, then) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 5, 10), new THREE.MeshStandardMaterial({ color: 0x9e9e9e, metalness: 0.6, roughness: 0.4 }));
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.4, 10), body.material);
-    nose.position.y = 3.2;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 7, 10), new THREE.MeshStandardMaterial({ color: 0x9e9e9e, metalness: 0.6, roughness: 0.4 }));
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.6, 2, 10), body.material);
+    nose.position.y = 4.5;
     g.add(body, nose);
     root.add(g);
-    const sea = ctx.seaAt(target.x, target.z);
-    const from = target.clone().add(new THREE.Vector3(sea.sea[0] * 2600 + sea.along[0] * 500, 1400, sea.sea[1] * 2600 + sea.along[1] * 500));
-    const mid = target.clone().lerp(from, 0.45).add(new THREE.Vector3(0, 380, 0));
+    // It comes in from beyond the target as the camera sees it, so that it is in the picture as it
+    // dives, whichever way the camera looks.
+    const away = new THREE.Vector3(target.x - camera.position.x, 0, target.z - camera.position.z);
+    if (away.lengthSq() < 1) away.set(1, 0, 0);
+    away.normalize();
+    const side = new THREE.Vector3(-away.z, 0, away.x);
+    const from = target.clone().addScaledVector(away, 1600).addScaledVector(side, 300).add(new THREE.Vector3(0, 700, 0));
+    const mid = target.clone().lerp(from, 0.45).add(new THREE.Vector3(0, 160, 0));
     const curve = new THREE.QuadraticBezierCurve3(from, mid, target);
     const T = 4.0;
     let t = 0;
@@ -588,8 +600,8 @@ export function eventEffects(ctx) {
       const dir = p.clone().sub(was);
       if (dir.lengthSq() > 1e-6) g.quaternion.setFromUnitVectors(UP, dir.normalize());
       for (let k = 0; k < 6; k++) {
-        smoke.spawn(p, new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)), rand(3, 6), 2, 9, [0.9, 0.9, 0.9, 0.7], [0.8, 0.8, 0.8, 0], 0.4, 0.3);
-        glow.spawn(p, new THREE.Vector3(rand(-2, 2), rand(-2, 2), rand(-2, 2)), 0.25, 3, 1, [1, 0.85, 0.5, 1], [1, 0.4, 0.1, 0], 1, 0);
+        smoke.spawn(p, new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)), rand(3, 6), 4, 16, [0.9, 0.9, 0.9, 0.7], [0.8, 0.8, 0.8, 0], 0.4, 0.3);
+        glow.spawn(p, new THREE.Vector3(rand(-2, 2), rand(-2, 2), rand(-2, 2)), 0.4, 10, 2, [1, 0.9, 0.6, 1], [1, 0.4, 0.1, 0], 1, 0);
       }
       if (u >= 1) { done = true; g.visible = false; then(); }
     };
@@ -645,11 +657,14 @@ export function eventEffects(ctx) {
           if (near[0]) T.push(topple(near[0], 0.6));
           if (near[1]) tilt(near[1], 0.12, -0.08);
         };
-        if (info.fresh) T.push(missile(at, hit));
-        else { if (near[0]) T.push(topple(near[0], 0, -1.62)); if (near[1]) tilt(near[1], 0.12, -0.08); }
-        scorch(at, 26, true);
-        for (const c of near.slice(0, 2)) burn(c);
-        T.push(fire(at, 1.6, { grow: 5 }), fire(inland(45, 20), 1.0, { grow: 10 }), fire(inland(8, -30), 0.8));
+        // The crater, the burnt cranes and the fires come with the impact, not before it.
+        const after = () => {
+          scorch(at, 26, true);
+          for (const c of near.slice(0, 2)) burn(c);
+          T.push(fire(at, 1.6, { grow: 5 }), fire(inland(45, 20), 1.0, { grow: 10 }), fire(inland(8, -30), 0.8));
+        };
+        if (info.fresh) T.push(missile(at, () => { hit(); after(); }));
+        else { if (near[0]) T.push(topple(near[0], 0, -1.62)); if (near[1]) tilt(near[1], 0.12, -0.08); after(); }
         break;
       }
       case 'sabotage': {
@@ -790,8 +805,19 @@ export function eventEffects(ctx) {
       }
       case 'fire_vessel':
       case 'dg_explosion': {
-        const s = shipNear(centre, 400);
-        const onShip = (dx) => () => (s && s.visible ? s.localToWorld(new THREE.Vector3(dx, s.userData.deck + 2, 0)) : null);
+        // The ship alongside in the closed area; when the live port has none there, a burning ship of
+        // the event's own is moored at the closed berth, so the fire is where the cordon is.
+        let s = shipNear(centre, 150);
+        if (!s) {
+          s = aShip('container ship', 200, 32);
+          const d = (ctx.inlandOf ? ctx.inlandOf(centre.x, centre.z) : 10) + 16 + 3;
+          s.position.set(centre.x + sea.sea[0] * d, ctx.tide(), centre.z + sea.sea[1] * d);
+          // Her side towards the sea is her local -z, where the fire boats lie.
+          const seawardSide = sea.along[1] * sea.sea[0] - sea.along[0] * sea.sea[1] > 0;
+          s.rotation.y = quayHeading + (seawardSide ? 0 : Math.PI);
+          T.push(() => { s.position.y = ctx.tide(); });
+        }
+        const onShip = (dx) => () => (s && s.visible ? s.localToWorld(new THREE.Vector3(dx, s.userData.deck + 14, 0)) : null);   // on top of her deck cargo
         if (key === 'dg_explosion') {
           const at = s ? onShip(-10)() : inland(30);
           if (info.fresh) { T.push(explosion(at, 2.4)); on.shake = 1.8; on.shakeAmp = 1.8; }
@@ -800,7 +826,7 @@ export function eventEffects(ctx) {
           T.push(fire(s ? onShip(-10) : at, 1.6, { grow: 2 }), fire(inland(30), 0.9), fire(s ? onShip(20) : inland(40, 20), 1.2, { toxic: true }));
         } else {
           const p = s ? [onShip(-0.1 * s.userData.loa), onShip(0.12 * s.userData.loa)] : [() => seaward(20)];
-          T.push(...p.map((f, k) => fire(f, k ? 1.1 : 1.6, { grow: 12 })));
+          T.push(...p.map((f, k) => fire(f, k ? 1.3 : 1.9, { grow: 5 })));
           // Fire boats off her seaward side, their monitors on the fire.
           if (s) {
             const fb = (k) => () => s.localToWorld(new THREE.Vector3((k - 0.5) * 60, 0, -(s.userData.beam / 2 + 40)));
@@ -830,7 +856,7 @@ export function eventEffects(ctx) {
         const slick = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: slickTexture(), transparent: true, depthWrite: false }));
         slick.rotation.x = -Math.PI / 2;
         slick.renderOrder = 2;
-        const at = seaward(140);
+        const at = seaward((ctx.inlandOf ? Math.max(0, ctx.inlandOf(centre.x, centre.z)) : 10) + 90);   // in the basin off the closed berths
         root.add(slick);
         const boom = new THREE.Mesh(new THREE.TorusGeometry(1, 0.012, 6, 64), new THREE.MeshStandardMaterial({ color: 0xff8f00 }));
         boom.rotation.x = Math.PI / 2;
@@ -920,12 +946,14 @@ export function eventEffects(ctx) {
         const soldiers = [];
         for (let i = 0; i < 40; i++) soldiers.push([g.x + rand(-30, 30), deck, g.z + rand(-14, 14)]);
         // On the quay, by the cranes: vehicles and soldiers at points along the apron.
-        for (let k = -2; k <= 2; k++) {
-          const p = inland(25, k * 120);
+        // They stand on the pale strip at the quay's edge, in front of the cranes, where they show.
+        for (let k = -3; k <= 3; k++) {
+          const p = inland(12, k * 70);
           armour(p.x, deck, p.z, quayHeading + (k % 2) * 0.4);
-          for (let i = 0; i < 8; i++) soldiers.push([p.x + rand(-10, 10), deck, p.z + rand(-10, 10)]);
+          const q = inland(5, k * 70 + 14);
+          for (let i = 0; i < 14; i++) soldiers.push([q.x + rand(-6, 6), deck, q.z + rand(-3, 3)]);
         }
-        crowd(soldiers, 0x556b2f);
+        crowd(soldiers, 0x6b6e35);
         on.text = 'PORT OCCUPIED · armed forces at the gate and on the quay; all work stopped';
         break;
       }
@@ -1003,6 +1031,7 @@ export function eventEffects(ctx) {
     smoke.clear();
     flash.intensity = fireLight.intensity = 0;
     banner.hidden = true;
+    banner.textContent = '';
   }
 
   // Each frame, in real seconds: the effects, the particles, the flashing lights, and the shaking.

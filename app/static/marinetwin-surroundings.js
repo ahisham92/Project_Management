@@ -1,9 +1,10 @@
 // MarineTwin: the real surroundings of the site, from the map, around the modelled terminal.
 //
-// Where the site's location is set, the land around the terminal is laid with satellite imagery
-// (Esri World Imagery, the same as the Map tab), cut away where the map has water (the coastline
-// and the lakes, creeks and docks of OpenStreetMap), and the map's buildings, roads and railways
-// are drawn on it at their real places, with traffic on the main roads. The terminal's own yard,
+// Where the site's location is set, the land around the terminal is cut away where the map has
+// water (the coastline and the lakes, creeks and docks of OpenStreetMap), and the map's
+// buildings, roads and railways are drawn on it at their real places, with traffic on the main
+// roads. Where the map's coastline runs along the modelled quay, the map is lined up with it, so
+// a site location that is a little out still puts the town where it is. The terminal's own yard,
 // drawn from the model, is kept clear. Move the site and the next visit fetches the new place.
 //
 // The map data comes from OpenStreetMap through Overpass, fetched by the browser and kept on the
@@ -12,17 +13,16 @@
 
 import { mergeGeometries } from 'three/addons/BufferGeometryUtils.js';
 
-const RADIUS = 1600;                  // metres from the berth to each side, map data and imagery
+const RADIUS = 1600;                  // metres from the berth to each side
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'];
-const IMAGERY = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 const ROAD_WIDTH = {
   motorway: 22, trunk: 18, primary: 14, secondary: 11, tertiary: 9, unclassified: 7, residential: 6, living_street: 5,
   road: 7, service: 5, motorway_link: 8, trunk_link: 8, primary_link: 7, secondary_link: 7, tertiary_link: 6,
 };
 const BUSY = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link']);
 
-// --- where things are: metres east and north of the site's location, and Web Mercator pixels ---
+// --- where things are: metres east and north of the site's location -------------------------
 const M_PER_DEG = 111320;
 function enToLatLon(e, n, lat0, lon0) {
   return [lat0 + n / M_PER_DEG, lon0 + e / (M_PER_DEG * Math.max(Math.cos((lat0 * Math.PI) / 180), 1e-6))];
@@ -30,24 +30,22 @@ function enToLatLon(e, n, lat0, lon0) {
 function latLonToEn(lat, lon, lat0, lon0) {
   return [(lon - lon0) * M_PER_DEG * Math.max(Math.cos((lat0 * Math.PI) / 180), 1e-6), (lat - lat0) * M_PER_DEG];
 }
-// The pixel at zoom z (256-pixel tiles) for a latitude and longitude.
-function mercator(lat, lon, z) {
-  const s = 256 * 2 ** z;
-  const r = (Math.max(-85, Math.min(85, lat)) * Math.PI) / 180;
-  return [((lon + 180) / 360) * s, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * s];
-}
 
 // --- the map data ------------------------------------------------------------------------
-function query(s, w, n, e) {
+// Two questions, as one for a dense town can run past Overpass's time: the lines (roads,
+// railways, the coast and the water) and the buildings.
+function queries(s, w, n, e) {
   const bb = `(${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)})`;
   const roads = Object.keys(ROAD_WIDTH).join('|');
-  return `[out:json][timeout:90];(
-way["building"]${bb};relation["building"]["type"="multipolygon"]${bb};
+  return [
+    `[out:json][timeout:120];(
 way["highway"~"^(${roads})$"]${bb};
 way["railway"~"^(rail|light_rail|narrow_gauge)$"]${bb};
 way["natural"="coastline"]${bb};
 way["natural"="water"]${bb};relation["natural"="water"]${bb};way["waterway"="riverbank"]${bb};way["landuse"="basin"]${bb};
-);out geom;`;
+);out geom;`,
+    `[out:json][timeout:180][maxsize:200000000];(way["building"]${bb};relation["building"]["type"="multipolygon"]${bb};);out geom;`,
+  ];
 }
 
 // Overpass's answer, cut down to what is drawn: points as [east, north] metres, to 0.1 m.
@@ -84,19 +82,36 @@ function digest(osm, lat0, lon0) {
   return out;
 }
 
-async function fromOverpass(lat0, lon0, centre) {
-  const [s, w] = enToLatLon(centre[0] - RADIUS, centre[1] - RADIUS, lat0, lon0);
-  const [n, e] = enToLatLon(centre[0] + RADIUS, centre[1] + RADIUS, lat0, lon0);
-  const body = 'data=' + encodeURIComponent(query(s, w, n, e));
+// One question to Overpass, trying each server in turn. An answer that ran out of time or
+// memory says so in its remark and may be cut short, so it does not count.
+async function ask(q) {
+  const body = 'data=' + encodeURIComponent(q);
+  let why = 'no answer';
   for (const url of OVERPASS) {
     try {
       const answer = await fetch(url, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-      if (answer.ok) return digest(await answer.json(), lat0, lon0);
+      if (!answer.ok) { why = `Overpass answered ${answer.status}`; continue; }
+      const got = await answer.json();
+      if (got.remark && /error|timed out|out of memory/i.test(got.remark)) { why = got.remark; continue; }
+      return { got };
     } catch (err) {
+      why = String(err.message || err);
       console.warn('Overpass', url, err);
     }
   }
-  return null;
+  return { why };
+}
+
+async function fromOverpass(lat0, lon0, centre) {
+  const [s, w] = enToLatLon(centre[0] - RADIUS, centre[1] - RADIUS, lat0, lon0);
+  const [n, e] = enToLatLon(centre[0] + RADIUS, centre[1] + RADIUS, lat0, lon0);
+  const [lines, buildings] = queries(s, w, n, e);
+  const first = await ask(lines);
+  if (!first.got) return { why: first.why };
+  const second = await ask(buildings);
+  const out = digest({ elements: [...first.got.elements, ...(second.got ? second.got.elements : [])] }, lat0, lon0);
+  out.complete = !!second.got;
+  return { got: out, why: second.got ? '' : second.why };
 }
 
 async function mapData(twin, lat0, lon0, centre) {
@@ -104,58 +119,21 @@ async function mapData(twin, lat0, lon0, centre) {
   if (s.kept) {
     try {
       const answer = await fetch(s.url, { credentials: 'same-origin' });
-      if (answer.ok) return await answer.json();
+      if (answer.ok) return { got: await answer.json() };
     } catch (err) { /* fetched again below */ }
   }
-  const got = await fromOverpass(lat0, lon0, centre);
-  if (got) {
-    // Kept for the next visit; a failure only means the next visit asks Overpass again.
+  const { got, why } = await fromOverpass(lat0, lon0, centre);
+  if (got && got.complete) {
+    // Kept for the next visit; a failure only means the next visit asks Overpass again. Only a
+    // whole answer is kept, so a busy day's half answer is asked again next time.
     fetch(s.url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: s.key, ...got, source: 'OpenStreetMap via Overpass' }) }).catch(() => {});
   }
-  return got;
+  return { got, why };
 }
 
-// --- the ground: imagery, cut away where the map has water ------------------------------
-async function imagery(lat0, lon0, centre) {
-  const [s, w] = enToLatLon(centre[0] - RADIUS, centre[1] - RADIUS, lat0, lon0);
-  const [n, e] = enToLatLon(centre[0] + RADIUS, centre[1] + RADIUS, lat0, lon0);
-  let z = 17;
-  let a;
-  let b;
-  for (; z > 12; z--) {
-    a = mercator(n, w, z);
-    b = mercator(s, e, z);
-    if (b[0] - a[0] <= 4000 && b[1] - a[1] <= 4000) break;
-  }
-  const tx0 = Math.floor(a[0] / 256);
-  const ty0 = Math.floor(a[1] / 256);
-  const tx1 = Math.floor(b[0] / 256);
-  const ty1 = Math.floor(b[1] / 256);
-  const canvas = document.createElement('canvas');
-  canvas.width = (tx1 - tx0 + 1) * 256;
-  canvas.height = (ty1 - ty0 + 1) * 256;
-  const g = canvas.getContext('2d');
-  g.fillStyle = '#8c8a6c';
-  g.fillRect(0, 0, canvas.width, canvas.height);
-  let got = 0;
-  const jobs = [];
-  for (let x = tx0; x <= tx1; x++) {
-    for (let y = ty0; y <= ty1; y++) {
-      jobs.push(fetch(IMAGERY(z, x, y)).then((r) => (r.ok ? r.blob() : null)).then((blob) => (blob ? createImageBitmap(blob) : null))
-        .then((img) => { if (img) { g.drawImage(img, (x - tx0) * 256, (y - ty0) * 256); got++; } }).catch(() => {}));
-    }
-  }
-  await Promise.all(jobs);
-  if (!got) return null;
-  // A plain band round the edge, so the land past the imagery is plain land, not smeared pixels.
-  g.strokeStyle = '#8c8a6c';
-  g.lineWidth = 6;
-  g.strokeRect(0, 0, canvas.width, canvas.height);
-  return { canvas, z, ox: tx0 * 256, oy: ty0 * 256 };
-}
-
-// Land white, water black, in the imagery's pixels: the coastline drawn and the sea side of it
+// --- the ground, cut away where the map has water ----------------------------------------
+// Land white, water black, on a square of the scene round the berth: the coastline drawn and the sea side of it
 // flooded (the sea lies to the right of a coastline as it is drawn), lakes and docks filled.
 function waterMask(data, toPx, width, height, keepLand, keepSea = []) {
   const canvas = document.createElement('canvas');
@@ -212,7 +190,7 @@ function waterMask(data, toPx, width, height, keepLand, keepSea = []) {
     g.fillStyle = colour;
     for (const r of rings) {
       g.beginPath();
-      r.p.forEach((p, i) => { const [x, y] = toPx(p); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      r.p.forEach((p, i) => { const [x, y] = r.px ? p : toPx(p); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
       g.closePath();
       g.fill();
     }
@@ -222,6 +200,10 @@ function waterMask(data, toPx, width, height, keepLand, keepSea = []) {
   // The modelled terminal is land, and the water in front of its quay is water, whatever the map says.
   fill(keepSea, '#000');
   fill(keepLand, '#fff');
+  // Past the square the land behind the quay carries on as land.
+  g.strokeStyle = '#fff';
+  g.lineWidth = 8;
+  g.strokeRect(0, 0, width, height);
   return canvas;
 }
 
@@ -241,72 +223,124 @@ function colourOf(b, i) {
   return list[i % list.length];
 }
 
+// The map turned and moved onto the modelled quay: where the map's coastline runs along the
+// quay's longest leg (within 25° and 300 m), the turn and shift that lay it on the quay's face.
+// A site location a little out, or a model turned a little on the map, then still puts the town
+// where it is behind the quay. Nothing is moved when the coast is not there to go by.
+function lineUp(coast, at, leg) {
+  if (!leg || !coast.length) return null;
+  const [ax, az] = leg.a;
+  const [bx, bz] = leg.b;
+  const len = Math.hypot(bx - ax, bz - az);
+  const u = [(bx - ax) / len, (bz - az) / len];
+  const n = [-u[1], u[0]];
+  const mid = [(ax + bx) / 2, (az + bz) / 2];
+  let w = 0;
+  let turn = 0;
+  for (const c of coast) {
+    const pts = c.p.map(at);
+    for (let i = 1; i < pts.length; i++) {
+      const [p, q] = [pts[i - 1], pts[i]];
+      const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
+      const along = m[0] * u[0] + m[1] * u[1];
+      const across = m[0] * n[0] + m[1] * n[1];
+      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (l < 1) continue;
+      // The angle between the segment and the leg, either way along it, in (-90°, 90°].
+      let d = Math.atan2(q[1] - p[1], q[0] - p[0]) - Math.atan2(u[1], u[0]);
+      d = Math.atan2(Math.sin(2 * d), Math.cos(2 * d)) / 2;
+      if (Math.abs(d) > (25 * Math.PI) / 180) continue;
+      w += l;
+      turn += d * l;
+    }
+  }
+  if (w < 0.3 * len) return null;
+  turn /= w;
+  // Turned about the leg's middle, then the coast's mean distance off the leg taken out.
+  const [c, s] = [Math.cos(-turn), Math.sin(-turn)];
+  const rot = ([x, z]) => [mid[0] + (x - mid[0]) * c - (z - mid[1]) * s, mid[1] + (x - mid[0]) * s + (z - mid[1]) * c];
+  let off = 0;
+  let ow = 0;
+  for (const cst of coast) {
+    const pts = cst.p.map((p) => rot(at(p)));
+    for (let i = 1; i < pts.length; i++) {
+      const [p, q] = [pts[i - 1], pts[i]];
+      const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
+      const along = m[0] * u[0] + m[1] * u[1];
+      const across = m[0] * n[0] + m[1] * n[1];
+      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      off += across * l;
+      ow += l;
+    }
+  }
+  if (!ow) return null;
+  off /= ow;
+  return { turn, shift: off, move: (p) => { const [x, z] = rot(p); return [x - n[0] * off, z - n[1] * off]; } };
+}
+
 export async function addSurroundings(o) {
   const { THREE, scene, twin, toScene, toEn, top, keepOut, keepLand, keepSea, grounds, vehicle, view } = o;
   const lat0 = twin.asset.latitude;
   const lon0 = twin.asset.longitude;
   const centre = toEn(o.centre.x, o.centre.z);
-  const [data, sat] = await Promise.all([mapData(twin, lat0, lon0, centre).catch(() => null), imagery(lat0, lon0, centre).catch(() => null)]);
+  const { got: data, why } = await mapData(twin, lat0, lon0, centre).catch((err) => ({ why: String(err) }));
   const group = new THREE.Group();
   group.name = 'surroundings';
   const credits = [];
+  const where = `${lat0.toFixed(4)}, ${lon0.toFixed(4)}`;
+  if (!data) {
+    credits.push(`The map around ${where} could not be fetched (${why}); it is asked for again on the next visit`);
+  } else if (!data.buildings.length && !data.roads.length) {
+    credits.push(`OpenStreetMap has no buildings or roads around ${where}: check the site's location in Set up`);
+  }
 
-  // The ground: imagery, with the water cut away so the sea shows through.
-  if (sat) {
-    const toPx = ([e, n]) => {
-      const [lat, lon] = enToLatLon(e, n, lat0, lon0);
-      const [x, y] = mercator(lat, lon, sat.z);
-      return [x - sat.ox, y - sat.oy];
-    };
-    const map = new THREE.CanvasTexture(sat.canvas);
-    map.colorSpace = THREE.SRGBColorSpace;
-    map.anisotropy = 8;
-    const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.95, metalness: 0 });
-    const shore = data && ((data.coast || []).length || (data.water || []).length);
-    if (data) {
-      const land = keepLand.map((p) => ({ p: p.map(([x, z]) => toEn(x, z)) }));
-      const sea = keepSea.map((p) => ({ p: p.map(([x, z]) => toEn(x, z)) }));
-      mat.alphaMap = new THREE.CanvasTexture(waterMask(data, toPx, sat.canvas.width, sat.canvas.height, land, sea));
-      mat.alphaTest = 0.5;
-    }
+  // The map in the scene, lined up on the quay where its coastline runs along it.
+  const fit = data ? lineUp(data.coast || [], ([e, n]) => toScene(e, n), o.mainLeg) : null;
+  const at = fit ? ([e, n]) => fit.move(toScene(e, n)) : ([e, n]) => toScene(e, n);
+
+  // The ground: the land behind the quay (and a sheet for a far shore) with the map's water cut
+  // away, on a square of the scene round the berth.
+  const shore = data && ((data.coast || []).length || (data.water || []).length);
+  if (shore) {
+    const SIZE = 2048;
+    const x0 = o.centre.x - RADIUS;
+    const z0 = o.centre.z - RADIUS;
+    const scale = SIZE / (2 * RADIUS);
+    const sceneToPx = ([x, z]) => [(x - x0) * scale, (z - z0) * scale];
+    const toPx = (p) => sceneToPx(at(p));
+    const raw = (polys) => polys.map((p) => ({ px: true, p: p.map(sceneToPx) }));
+    const mask = new THREE.CanvasTexture(waterMask(data, toPx, SIZE, SIZE, raw(keepLand), raw(keepSea)));
+    const mat = grounds.length ? grounds[0].material.clone() : new THREE.MeshStandardMaterial({ color: 0x8c8a6c, roughness: 1 });
+    mat.alphaMap = mask;
+    mat.alphaTest = 0.5;
     // Where the map has land beyond the land drawn behind the quay (a far shore, a headland, an
-    // island), a sheet of it, just under the quay's own land; only when the map says where its
-    // water is, or the sheet would cover the sea.
-    if (shore) {
-      const sheet = new THREE.PlaneGeometry(2 * RADIUS, 2 * RADIUS, 24, 24);
-      sheet.rotateX(-Math.PI / 2);
-      const pos = sheet.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const [x, z] = toScene(centre[0] + pos.getX(i), centre[1] - pos.getZ(i));
-        pos.setXYZ(i, x, top - 0.45, z);
-      }
-      sheet.computeVertexNormals();
-      const far = new THREE.Mesh(sheet, mat);
-      far.receiveShadow = true;
-      group.add(far);
-      grounds.push(far);
-    }
-    for (const mesh of grounds) {
+    // island), a sheet of it, just under the quay's own land.
+    const sheet = new THREE.PlaneGeometry(2 * RADIUS, 2 * RADIUS, 1, 1);
+    sheet.rotateX(-Math.PI / 2);
+    sheet.translate(o.centre.x, top - 0.45, o.centre.z);
+    const far = new THREE.Mesh(sheet, mat);
+    far.receiveShadow = true;
+    group.add(far);
+    for (const mesh of [...grounds, far]) {
       const pos = mesh.geometry.attributes.position;
       const uv = new Float32Array(pos.count * 2);
       const v = new THREE.Vector3();
       mesh.updateMatrixWorld(true);
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-        const [x, y] = toPx(toEn(v.x, v.z));
-        uv[i * 2] = x / sat.canvas.width;
-        uv[i * 2 + 1] = 1 - y / sat.canvas.height;
+        const [x, y] = sceneToPx([v.x, v.z]);
+        uv[i * 2] = x / SIZE;
+        uv[i * 2 + 1] = 1 - y / SIZE;
       }
       mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       mesh.material = mat;
     }
-    credits.push('Imagery © Esri, Maxar, Earthstar Geographics');
   }
 
   const movers = [];
   if (data) {
-    const at = ([e, n]) => toScene(e, n);
-    const outside = (pts) => pts.filter((p) => { const [x, z] = at(p); return !keepOut(x, z); });
     // Buildings, walls and roofs coloured, all as one mesh.
     const parts = [];
     const colour = new THREE.Color();
@@ -398,7 +432,8 @@ export async function addSurroundings(o) {
         movers.push({ object: v, curve, len, s: (k / 6 + Math.random() * 0.1) * len, dir: k % 2 ? -1 : 1, speed: truck ? 9 : 12 });
       }
     }
-    credits.push('Map data © OpenStreetMap contributors');
+    const lined = fit ? `, lined up on the quay (turned ${(fit.turn * 180 / Math.PI).toFixed(1)}°, moved ${Math.abs(fit.shift).toFixed(0)} m)` : '';
+    credits.push(`Map data © OpenStreetMap contributors: ${data.buildings.length.toLocaleString()} buildings, ${data.roads.length.toLocaleString()} roads${lined}`);
   }
   scene.add(group);
   if (credits.length && view) {
@@ -412,7 +447,7 @@ export async function addSurroundings(o) {
   const side = new THREE.Vector3();
   return {
     group,
-    found: !!(data || sat),
+    found: !!data,
     // Moves the traffic on by dt seconds of the twin's own clock.
     tick(dt) {
       for (const m of movers) {

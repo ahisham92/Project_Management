@@ -170,6 +170,16 @@ def metocean(asset_id: int, now: datetime, hours_back: int = 24, hours_ahead: in
     return out
 
 
+def flag_of(name: str) -> str:
+    """The flag a ship of the typical fleets flies."""
+    from . import marine_berths
+    for fleet in marine_berths.FLEET.values():
+        for ship in fleet:
+            if ship[0] == name:
+                return ship[3]
+    return ""
+
+
 def lineup(asset_id: int, now: datetime, terminal: str = "container") -> list[dict[str, Any]]:
     """The ship alongside, if any, and the calls due in the next three days."""
     rng = _rng(asset_id, now.date().isoformat(), "lineup")
@@ -184,7 +194,7 @@ def lineup(asset_id: int, now: datetime, terminal: str = "container") -> list[di
         if i == 0 and rng.random() < 0.25:                    # some days the berth is empty this morning
             eta = _hour(now) + timedelta(hours=rng.uniform(3, 8))
             etd = eta + stay
-        out.append({"name": name, "type": kind, "loa": loa, "beam": beam, "draught": draught,
+        out.append({"name": name, "type": kind, "loa": loa, "beam": beam, "draught": draught, "flag": flag_of(name),
                     "displacement": disp, "windage": windage, "eta": eta, "etd": etd,
                     "moves": int(rng.uniform(0.5, 1.0) * loa * 6)})
         t = etd + timedelta(hours=rng.uniform(2, 10))
@@ -264,7 +274,7 @@ def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any
 
 
 def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
-         scenario: str = "normal") -> dict[str, Any]:
+         scenario: str = "normal", booked: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The berth over the next ``hours``, hour by hour, for the live view to play back.
 
     The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
@@ -393,7 +403,7 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         return None
 
     calls = []
-    booked = lineup(asset_id, now, terminal)
+    booked = [dict(b) for b in booked] if booked else lineup(asset_id, now, terminal)
     if scenario == "peak":
         # Back to back: each ship is due as the one before sails, and waits for the berth if early.
         for prev, s in zip(booked, booked[1:]):
@@ -425,7 +435,8 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
             etd = sail_at
             log(etd, "info", f"{s['name']} sails.")
         calls.append({"name": s["name"], "type": s["type"], "loa": s["loa"], "beam": s["beam"], "draught": s["draught"],
-                      "eta": eta, "etd": etd, "moves": s["moves"], "held": waited is not None})
+                      "eta": eta, "etd": etd, "moves": s["moves"], "held": waited is not None,
+                      "flag": s.get("flag") or flag_of(s["name"]), "line": s.get("line", "")})
     if scenario == "peak":
         log(start, "warning", "Peak week: every berth booked back to back, ships waiting at anchor for a slot.")
     if scenario == "storm":

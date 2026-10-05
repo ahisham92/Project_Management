@@ -653,6 +653,13 @@ export async function startLive(ctx) {
       ${b.assignable ? `<label class="small">Used for <select data-n="${b.n}">${Object.entries(USE_NAMES).map(([k, v]) => `<option value="${esc(k)}"${k === b.use ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
       <small class="mt-b-now"></small></li>`).join('')}</ol>`;
   overlay.appendChild(panel);
+  // The berths as found here, so the Berth plan numbers them the same way.
+  if (view.dataset.layout && allBerths.length) {
+    fetch(view.dataset.layout, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ berths: allBerths.map((b) => ({ n: b.n, length: Math.round(b.length), sts: !!b.sts, main: !!b.main, use: b.use || null })) }),
+    }).catch(() => {});
+  }
   const berthsBtn = $('.mt-live-berths-btn');
   const showBerths = (on) => { panel.hidden = !on; if (berthsBtn) berthsBtn.setAttribute('aria-pressed', String(on)); };
   if (berthsBtn) berthsBtn.addEventListener('click', () => showBerths(panel.hidden));

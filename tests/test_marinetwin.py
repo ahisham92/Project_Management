@@ -815,7 +815,7 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
         assert page.count('class="mt-step ') == 10 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
@@ -1375,3 +1375,71 @@ def test_more_sensors_cost_more_and_return_less_on_each_extra_dollar():
     assert r["layout"]["counts"]["tide_gauge"] == 1 and r["layout"]["support"]["logger"] >= 1
     hosts = {s["host_kind"] for s in r["layout"]["sensors"] if s["key"] == "strain"}
     assert hosts == {"pile"}
+
+
+# --- who berths where -----------------------------------------------------------------------
+
+def test_the_berth_plan_gives_every_ship_a_berth_that_fits(signed_in, demo):
+    page = text(signed_in.get(demo + "/berthplan"))
+    assert "mt-radar" in page and "First come, first served" in page and "Berth windows first" in page
+    plan = signed_in.get(demo + "/berthplan.json?policy=fcfs").get_json()
+    assert plan["placed"] and plan["berths"] and plan["policy"] == "fcfs"
+    by_n = {b["n"]: b for b in plan["berths"]}
+    for c in plan["placed"]:
+        length = sum(by_n[n]["length"] for n in c["berths"])
+        assert c["loa"] + 15 <= length and c["draught"] * 1.1 <= min(by_n[n]["depth"] for n in c["berths"])
+        assert c["wait"] >= 0 and c["end_h"] > c["begin_h"] >= c["eta_h"] - 1e-6 and c["flag_name"]
+    # No two ships at one berth at once.
+    for n in by_n:
+        spans = sorted((c["begin_h"], c["end_h"]) for c in plan["placed"] if n in c["berths"])
+        assert all(a[1] <= b[0] + 1e-6 for a, b in zip(spans, spans[1:]))
+
+
+def test_the_berths_follow_the_3d_view_and_can_be_changed(signed_in, demo):
+    found = [{"n": 1, "length": 320, "sts": True, "main": True}, {"n": 2, "length": 250, "sts": False, "use": "roro"}]
+    assert signed_in.post(demo + "/berthplan/layout", json={"berths": found}).get_json()["saved"] == 2
+    plan = signed_in.get(demo + "/berthplan.json").get_json()
+    assert [(b["n"], b["length"], b["crane_kind"], b["use"]) for b in plan["berths"]] == [(1, 320, "STS", "container"), (2, 250, "ramp", "roro")]
+    signed_in.post(demo + "/berthplan/berths/2", data={"name": "RoRo 2", "length": "260", "depth": "12", "cranes": "1",
+                                                      "crane_kind": "ramp", "use": "roro"})
+    signed_in.post(demo + "/berthplan/layout", json={"berths": [{"n": 2, "length": 999, "sts": True}]})
+    two = signed_in.get(demo + "/berthplan.json").get_json()["berths"][1]
+    assert two["name"] == "RoRo 2" and two["length"] == 260      # the person's change is kept
+
+
+def test_ships_start_typical_and_are_the_persons_to_change(signed_in, demo):
+    page = text(signed_in.get(demo + "/ships"))
+    assert "a typical week" in page.lower() and 'class="mt-flag"' in page and "Download as CSV" in page
+    csv_text = text(signed_in.get(demo + "/ships.csv"))
+    assert csv_text.startswith("ship,imo,flag,type,line,loa")
+    answer = signed_in.post(demo + "/ships", data={"ship": "Test Venture", "flag": "LR", "type": "Container", "line": "Test Line",
+                                                   "loa": "250", "draught": "12", "moves": "900", "eta": "2026-10-06T10:00"})
+    assert answer.status_code == 302
+    page = text(signed_in.get(demo + "/ships"))
+    assert "Test Venture" in page and "Your list" in page
+    from io import BytesIO
+    upload = "ship,flag,loa,draught,moves,eta\nCSV Star,MT,200,10,500,2026-10-07 08:00\nBad,,x,1,1,soon\n"
+    signed_in.post(demo + "/ships/import", data={"file": (BytesIO(upload.encode()), "calls.csv"), "replace": "1"},
+                   content_type="multipart/form-data")
+    plan = signed_in.get(demo + "/berthplan.json").get_json()
+    assert [c["ship"] for c in plan["placed"] + plan["unplaced"]] == ["CSV Star"]
+    signed_in.post(demo + "/ships/reset")
+    assert "CSV Star" not in text(signed_in.get(demo + "/ships"))
+
+
+def test_the_rules_compare_and_a_long_ship_holds_two_berths():
+    from datetime import datetime
+    from app import marine_berths
+    berths = [{"n": i, "name": f"B{i}", "length": 250, "depth": 17, "cranes": 2, "crane_kind": "STS", "use": "container"} for i in (1, 2, 3)]
+    start = datetime(2026, 10, 5)
+    calls = [{"ship": "Big", "flag": "PA", "type": "Container", "line": "X", "loa": 366, "beam": 51, "draught": 15, "dwt": 0,
+              "moves": 2000, "eta": start, "window": 0, "wish": None},
+             {"ship": "Small", "flag": "DK", "type": "Container", "line": "Y", "loa": 200, "beam": 30, "draught": 11, "dwt": 0,
+              "moves": 500, "eta": start, "window": 1, "wish": 3}]
+    every = marine_berths.compare(berths, calls, start)
+    assert set(every) == set(marine_berths.POLICIES)
+    plan = every["windows"]
+    big = next(c for c in plan["placed"] if c["ship"] == "Big")
+    small = next(c for c in plan["placed"] if c["ship"] == "Small")
+    assert len(big["berths"]) == 2 and small["berths"] == [3] and "the berth asked for" in small["why"]
+    assert marine_berths.flag_svg("DK").startswith("<svg") and marine_berths.flag_name("LR") == "Liberia"

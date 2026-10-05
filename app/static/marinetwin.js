@@ -637,6 +637,7 @@ function shore(quay, top, yardDepth) {
   line.push(pt(last.b, last.land, set));
   line.push(pt(pt(last.b, last.land, set), last.dir, 3000));
   const outline = [...line, pt(line[line.length - 1], last.land, 6000), pt(line[0], first.land, 6000)];
+  quay.landOutline = outline;           // for keeping the ships on the water (seaChecker)
   const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
   const below = 8;
   const land = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: top - 0.3 + below, bevelEnabled: false }), REAL.land);
@@ -717,6 +718,56 @@ function berthSpot(site, frame, beam) {
     return { x: p.x, z: p.z, rot: shipPose(b).rot, room: b.length - 20, sea: [-b.leg.land[0], -b.leg.land[1]] };
   }
   return { x: (frame.minX + frame.maxX) / 2, z: frame.fenderFace - beam / 2 - 0.4, rot: 0, room: Infinity, sea: [0, -1] };
+}
+
+// Whether a point in plan is on the water, `margin` metres clear of the land behind the quay (and
+// of the land past its ends), so no ship is drawn or steered across the deck or the yard.
+function seaChecker(quay, frame) {
+  const poly = quay && quay.landOutline;
+  const inside = (x, z) => {
+    if (!poly) return z > frame.fenderFace;
+    let inn = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, zi] = poly[i];
+      const [xj, zj] = poly[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inn = !inn;
+    }
+    return inn;
+  };
+  const at = (x, z, margin = 0) => {
+    if (inside(x, z)) return false;
+    for (let k = 0; k < 8 && margin; k++) {
+      const a = (k * Math.PI) / 4;
+      if (inside(x + Math.cos(a) * margin, z + Math.sin(a) * margin)) return false;
+    }
+    return true;
+  };
+  // Every point along a run of points (or a curve) on the water.
+  at.clear = (pts, margin = 0, steps = 60) => {
+    if (pts.getPointAt) {
+      for (let i = 0; i <= steps; i++) { const p = pts.getPointAt(i / steps); if (!at(p.x, p.z, margin)) return false; }
+      return true;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const [a, b] = [pts[i - 1], pts[i]];
+      const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 20));
+      for (let k = 0; k <= n; k++) if (!at(a.x + (b.x - a.x) * k / n, a.z + (b.z - a.z) * k / n, margin)) return false;
+    }
+    return true;
+  };
+  return at;
+}
+
+// Where the next ship waits at anchor off the berth: seaward, on open water, with a clear run in.
+function anchorSpot(spot, atSea) {
+  const along = [-spot.sea[1], spot.sea[0]];
+  for (const d of [700, 900, 500, 1200, 1600, 2200, 3000]) {
+    for (const s of [0, 300, -300, 600, -600, 1000, -1000, 1600, -1600]) {
+      const p = { x: spot.x + spot.sea[0] * d + along[0] * s, z: spot.z + spot.sea[1] * d + along[1] * s };
+      if (atSea(p.x, p.z, 250) && atSea.clear([{ x: spot.x + spot.sea[0] * 80, z: spot.z + spot.sea[1] * 80 }, p], 40)) return p;
+    }
+  }
+  return null;
 }
 
 // The ship type a berth takes for the use it is set to; a berth used for both alternates.
@@ -1644,8 +1695,10 @@ async function main() {
     // The berth is empty: the next ship waits at anchor off the port, clear of the ships alongside.
     const a = twin.next_ship;
     const spot = berthSpot(site, frame, a.beam);
+    const at = anchorSpot(spot, seaChecker(site.quay, frame));
     vessel = ship(a.type, Math.min(a.loa, spot.room), a.beam, a.draught, rng);
-    vessel.position.set(spot.x - spot.sea[0] * 700, 0, spot.z - spot.sea[1] * 700);
+    if (at) vessel.position.set(at.x, 0, at.z);
+    else vessel.visible = false;                 // no open water near enough to show her on
     vessel.rotation.y = spot.rot + 0.4;
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     scene.add(vessel);
@@ -1949,7 +2002,7 @@ async function main() {
     const { startLive } = await import('./marinetwin-live.js');
     player = await startLive({
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
-      ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint, setFill, yardFill, berthSpot,
+      ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint, setFill, yardFill, berthSpot, atSea: seaChecker(site.quay, frame),
       setClock(ms) { clock = ms; setTime(); },
       setPower(on) { if (on !== power) { power = on; setTime(); } },
       setTide(fn) { tideSource = fn; },

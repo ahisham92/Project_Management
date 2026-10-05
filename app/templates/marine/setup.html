@@ -188,6 +188,24 @@
     </div>
   </div>
 </section>
+
+<section class="mt-panel" data-tab="History" data-slug="history" data-count="{{ changes | length }}">
+<div class="card">
+  <div class="card-head"><div><h2>History</h2>
+    <p class="small muted" style="margin-top:2px">Who changed this asset, what, and when (UTC). The latest {{ changes | length }} changes.</p></div></div>
+  <div class="card-body">
+    {% if changes %}
+    <div class="table-scroll"><table class="table small">
+      <thead><tr><th>When</th><th>Who</th><th>What</th><th>Result</th></tr></thead>
+      <tbody>{% for c in changes %}
+        <tr><td class="tabular" style="white-space:nowrap">{{ c['at'][:16] }}</td><td>{{ c['who'] or 'a removed user' }}</td>
+          <td>{{ c['action'] }}</td><td class="muted">{{ c['detail'] }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="small muted">No changes yet. Each one made from here on is listed.</p>{% endif %}
+  </div>
+</div>
+</section>
 </div>
 {% endblock %}
 

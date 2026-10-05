@@ -443,6 +443,15 @@ CREATE TABLE IF NOT EXISTS marine_feed_log (
   problems        INTEGER NOT NULL DEFAULT 0,
   first_problem   TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS marine_changes (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  at              TEXT NOT NULL DEFAULT (datetime('now')),   -- UTC
+  user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action          TEXT NOT NULL,                    -- what was done, in words
+  detail          TEXT NOT NULL DEFAULT ''          -- what the page said came of it
+);
+CREATE INDEX IF NOT EXISTS marine_changes_asset ON marine_changes (asset_id, id);
 CREATE TABLE IF NOT EXISTS marine_scenarios (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
@@ -766,6 +775,55 @@ def trend_year(points: list[tuple[float, float]], limit: float, start_year: floa
     return start_year + xs[-1] + (limit - ys[-1]) / slope
 
 
+# How wide a forecast's range is: about 90 % of outcomes fall inside ± this many standard errors.
+RANGE_Z = 1.645
+
+
+def trend_range(points: list[tuple[float, float]], limit: float, start_year: float) -> tuple[float, float | None] | None:
+    """(earliest, latest) years a rising trend reaches ``limit``, from the scatter of the readings.
+
+    The slope's standard error gives a fast and a slow line; the latest is None
+    when the slow line is flat, i.e. the readings cannot rule out it never getting there.
+    """
+    if len(points) < 4:
+        return None
+    xs, ys = [t for t, _ in points], [v for _, v in points]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    if slope <= 0 or ys[-1] >= limit:
+        return None
+    resid = [y - (my + slope * (x - mx)) for x, y in zip(xs, ys)]
+    se = math.sqrt(sum(r * r for r in resid) / (n - 2) / sxx)
+    fast, slow = slope + RANGE_Z * se, slope - RANGE_Z * se
+    gap = limit - ys[-1]
+    early = start_year + xs[-1] + gap / fast
+    late = start_year + xs[-1] + gap / slow if slow > 0 else None
+    return early, late
+
+
+def corrosion_spread(points: list[tuple[float, float]], fit: tuple[float, float]) -> float:
+    """The factor (≥ 1) the fitted loss may be off by either way, from the readings' scatter about it."""
+    a, b = fit
+    logs = [math.log(v) - math.log(a * t ** b) for t, v in points if t > 0.05 and v > 0]
+    if len(logs) < 4:
+        return 1.0
+    sigma = math.sqrt(sum(r * r for r in logs) / (len(logs) - 2))
+    return math.exp(RANGE_Z * sigma)
+
+
+def _years(early: float | None, late: float | None) -> str:
+    """'2036 to 2049', or 'from 2036' when the latest cannot be told."""
+    if early is None:
+        return ""
+    if late is None:
+        return f"from {int(early)}, maybe never"
+    return f"{int(early)} to {int(late)}" if int(late) != int(early) else f"{int(early)}"
+
+
 def _state(value: float, alert: float | None, alarm: float | None) -> str:
     if alarm is not None and value >= alarm:
         return "critical"
@@ -818,8 +876,16 @@ def assess_sensor(sensor: Any, readings: list[Any], element: Any, asset: Any,
             state="critical" if ratio >= 1 else "warning" if ratio >= 0.85 else "good",
             score=score(ratio, 0.7, 1.3),
         )
+        spread = corrosion_spread(points, fit)
+        out["projected_range"] = (round(at_life / spread, 2), round(at_life * spread, 2))
+        if spread > 1 and math.isfinite(exhausted):
+            # Faster loss (a × spread) uses the allowance up sooner, slower loss later.
+            soon, later = (allowance / (a * spread)) ** (1 / b), (allowance / (a / spread)) ** (1 / b)
+            out["exhausted_range"] = (commissioned.year + soon, commissioned.year + later)
         if out["exhausted_year"] is not None and ratio >= 0.85:
             when = f"used up around {int(out['exhausted_year'])}"
+            if out.get("exhausted_range"):
+                when += f" (likely {_years(*out['exhausted_range'])})"
         else:
             when = f"{round(100 * ratio)}% of the allowance by the end of the design life"
         out["headline"] = f"{latest['value']:.2f} of {allowance:.2f} mm lost; {when}"
@@ -875,9 +941,13 @@ def assess_sensor(sensor: Any, readings: list[Any], element: Any, asset: Any,
         points = [(years_between(commissioned, _day(r["at"])), r["value"]) for r in readings[-12:]]
         year = trend_year(points, alarm, commissioned.year + (commissioned.timetuple().tm_yday - 1) / 365.25)
         out["limit_year"] = year
+        spread = trend_range(points, alarm, commissioned.year + (commissioned.timetuple().tm_yday - 1) / 365.25)
+        out["limit_year_range"] = spread
         end = commissioned.year + life
         if year is not None and current < alarm:
             out["headline"] += f"; reaches {_fmt(alarm, unit)} around {int(year)}"
+            if spread:
+                out["headline"] += f" (likely {_years(*spread)})"
             if year < end and out["state"] == "good":
                 out["state"] = "warning"                    # heading past its limit within the design life
                 out["score"] = min(out["score"], 80)

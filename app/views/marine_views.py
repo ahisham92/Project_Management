@@ -17,7 +17,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from flask import (
-    Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for,
+    Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, session,
+    url_for,
 )
 
 from .. import marine, marine_facility, marine_feed, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton
@@ -37,6 +38,50 @@ def _redirect_for_the_voyage(response):
     if request.headers.get("X-MarineTwin-Xhr") and response.status_code in (301, 302, 303):
         return jsonify(redirect=response.headers["Location"])
     return response
+
+# Every change to an asset is kept in its history, in these words. Views missing here change nothing worth keeping.
+CHANGES = {
+    "save_scenario": "Saved a simulation scenario", "delete_scenario": "Deleted a simulation scenario",
+    "save_berth_use": "Set a berth's use", "save_asset": "Changed the asset's details",
+    "refresh": "Brought the simulated sensors up to date", "import_readings": "Imported readings from a CSV",
+    "upload_model": "Uploaded the Revit model", "import_model_elements": "Imported elements from the model",
+    "trim_sensors": "Kept sensors on one element per design", "delete_model": "Removed the model",
+    "add_element": "Added an element", "delete_element": "Removed an element", "delete_elements": "Removed all elements",
+    "edit_element": "Changed an element", "add_sensor": "Added a sensor", "record_inspection": "Recorded an inspection",
+    "delete_sensor": "Removed a sensor", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
+}
+
+
+@bp.after_request
+def _keep_history(response):
+    """Note who changed an asset, what, and what came of it, once the change went through."""
+    action = CHANGES.get((request.endpoint or "").rsplit(".", 1)[-1])
+    asset_id = (request.view_args or {}).get("asset_id")
+    if request.method != "POST" or not action or asset_id is None or response.status_code >= 400 or not g.get("user"):
+        return response
+    try:
+        db = get_db()
+        if db.execute("SELECT 1 FROM marine_assets WHERE id = ?", (asset_id,)).fetchone() is None:
+            return response                          # the asset itself went
+        said = [m for c, m in session.get("_flashes", []) if c != "error"]
+        if len(said) < len(session.get("_flashes", [])):
+            return response                          # it said it could not: nothing changed
+        what = request.form.get("name") or ""
+        if request.endpoint.endswith(("element", "sensor", "inspection")) and "element_id" in request.view_args:
+            row = db.execute("SELECT name FROM marine_elements WHERE id = ?", (request.view_args["element_id"],)).fetchone()
+            what = row["name"] if row else what
+        db.execute("INSERT INTO marine_changes (asset_id, user_id, action, detail) VALUES (?, ?, ?, ?)",
+                   (asset_id, g.user["id"], action + (f": {what}" if what else ""), (said[-1] if said else "")[:400]))
+        db.commit()
+    except Exception:                                 # noqa: BLE001 - history must never break the change itself
+        current_app.logger.exception("Keeping the history of asset %s failed", asset_id)
+    return response
+
+
+def history(asset_id: int, limit: int = 40) -> list:
+    return query("SELECT c.*, u.name AS who FROM marine_changes c LEFT JOIN users u ON u.id = c.user_id"
+                 " WHERE c.asset_id = ? ORDER BY c.id DESC LIMIT ?", (asset_id, limit))
+
 
 # What the 3D view can open: a Revit model exported as IFC, or as glTF / GLB.
 MODEL_TYPES = {".ifc": "ifc", ".glb": "glb", ".gltf": "gltf"}
@@ -190,7 +235,7 @@ def setup(asset_id: int):
     return render_template("marine/setup.html", asset=asset, twin=twin, may_remove=_may_remove(asset),
                            site_map=site_map,
                            model_found=found, model_new=_new_in_model(asset_id, found) if found else [],
-                           triton_projects=marine_triton.projects(),
+                           triton_projects=marine_triton.projects(), changes=history(asset_id),
                            model_kind=MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
                            **_context())
 

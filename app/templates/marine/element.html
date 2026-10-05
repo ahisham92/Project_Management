@@ -67,7 +67,9 @@
         {% if s['silent'] %}<span class="state-warning">silent since {{ short_date(s['latest_at']) }}</span>{% endif %}</p>
       {% if s.get('fit_a') is not none %}
         <p class="small muted">Fitted loss = {{ '%.3f' | format(s['fit_a']) }}·t<sup>{{ '%.2f' | format(s['fit_b']) }}</sup> mm, t in years since commissioning;
-          {{ '%.2f' | format(s['projected_at_life']) }} mm by the end of the design life{% if s['exhausted_year'] %}, the allowance used up around {{ s['exhausted_year'] | int }}{% endif %}.</p>
+          {{ '%.2f' | format(s['projected_at_life']) }} mm by the end of the design life{% if s.get('projected_range') and s['projected_range'][0] != s['projected_range'][1] %}
+          (likely {{ '%.2f' | format(s['projected_range'][0]) }} to {{ '%.2f' | format(s['projected_range'][1]) }} mm){% endif %}{% if s['exhausted_year'] %}, the allowance used up around {{ s['exhausted_year'] | int }}{% if s.get('exhausted_range') %} (likely {{ s['exhausted_range'][0] | int }} to {{ s['exhausted_range'][1] | int }}){% endif %}{% endif %}.
+          The range covers about 9 in 10 outcomes, from the scatter of the readings.</p>
       {% endif %}
     </div>
     <form method="post" action="{{ url_for('marine.delete_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"

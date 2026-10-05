@@ -644,6 +644,7 @@ function shore(quay, top, yardDepth) {
   land.rotation.x = -Math.PI / 2;
   land.position.y = -below;
   land.receiveShadow = true;
+  land.userData.ground = true;            // laid with the map's imagery where the site is located
   g.add(land);
   // The apron and yard: a band along each leg, and a wedge at each bend to close it.
   const v = [];
@@ -1152,6 +1153,7 @@ function terminal(scene, frame, twin, rng, quay) {
   land.rotation.x = -Math.PI / 2;
   land.position.set(centre, top - 0.3, front + yardDepth + 2000);
   land.receiveShadow = true;
+  land.userData.ground = true;            // laid with the map's imagery where the site is located
   g.add(land);
   // The quay wall either side of the modelled berth, so the berth sits in a longer quay.
   for (const [a, b] of [[minX - 300, minX - 1], [maxX + 1, maxX + 300]]) {
@@ -1579,6 +1581,27 @@ async function main() {
     if (!twin.model) note(twin.elements.length ? 'Schematic: no Revit model uploaded yet.' : 'No elements yet.');
   }
   scene.add(content);
+  // Where the elements' own positions (metres from the site's origin, x and y) are in the scene
+  // before it is turned: the model's meshes sit around the IFC's first placement, so the offset is
+  // read from them (the middle of many, as an element's mesh centre is not its insertion point).
+  const geoOff = { x: 0, z: 0 };
+  {
+    const dx = [];
+    const dz = [];
+    const box3 = new THREE.Box3();
+    const c = new THREE.Vector3();
+    const step = Math.max(1, Math.floor(clickable.length / 2000));
+    for (let i = 0; i < clickable.length; i += step) {
+      const e = clickable[i].userData.element;
+      if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+      box3.setFromObject(clickable[i]).getCenter(c);
+      dx.push(c.x - e.x);
+      dz.push(c.z + e.y);
+    }
+    const middle = (a) => (a.length ? a.sort((p, q) => p - q)[Math.floor(a.length / 2)] : 0);
+    geoOff.x = middle(dx);
+    geoOff.z = middle(dz);
+  }
   progress(twin.model ? 0.85 : 0.55, 'Building the terminal around it', twin.model ? 0.04 : 0.15);
 
   // Turn the model so its quay faces the sea (-z): the longest leg of the quay, traced from its
@@ -1638,6 +1661,20 @@ async function main() {
   const lat = twin.asset.latitude ?? 0;
   const lon = twin.asset.longitude ?? -new Date().getTimezoneOffset() / 4;
   const theta = THREE.MathUtils.degToRad(twin.asset.rotation || 0);
+  // The scene and the map: a point in the scene as metres east and north of the site's location,
+  // and back. The model is turned in the scene (content.rotation) and on the map (theta).
+  const turn = content.rotation.y;
+  const toEn = (x, z) => {
+    const [lx, lz] = turned([x, z], -turn);
+    const mx = lx - geoOff.x;
+    const my = geoOff.z - lz;
+    return [mx * Math.cos(theta) - my * Math.sin(theta), mx * Math.sin(theta) + my * Math.cos(theta)];
+  };
+  const toScene = (e, n) => {
+    const mx = e * Math.cos(theta) + n * Math.sin(theta);
+    const my = -e * Math.sin(theta) + n * Math.cos(theta);
+    return turned([mx + geoOff.x, geoOff.z - my], turn);
+  };
   const sky = new Sky();
   sky.scale.setScalar(20000);
   scene.add(sky);
@@ -1831,7 +1868,9 @@ async function main() {
     const north = Math.cos(alt) * Math.cos(az);
     const mx = east * Math.cos(theta) + north * Math.sin(theta);
     const my = -east * Math.sin(theta) + north * Math.cos(theta);
-    const dir = new THREE.Vector3(mx, Math.sin(alt), -my).normalize();
+    // ...and turned with the model, as the scene turns it so its quay faces the sea.
+    const [sx, sz] = turned([mx, -my], turn);
+    const dir = new THREE.Vector3(sx, Math.sin(alt), sz).normalize();
     sky.material.uniforms.sunPosition.value.copy(dir);
     water.material.uniforms.sunDirection.value.copy(dir).normalize();
     const day = THREE.MathUtils.clamp((Math.sin(alt) + 0.1) / 0.35, 0, 1);
@@ -2028,6 +2067,7 @@ async function main() {
   let t = 0;
   const point = new THREE.Vector3();
   const ahead = new THREE.Vector3();
+  let around = null;                     // the real surroundings, once the map has given them
   function animate() {
     const dt = Math.min(timer.getDelta(), 0.1);
     water.material.uniforms.time.value += dt * 0.6 * (1 + (player ? player.hs : hs));
@@ -2126,6 +2166,7 @@ async function main() {
         if (u.load) u.load.visible = !!u.working && Math.cos(t * 0.18 + c.position.x) > 0;
       }
       if (vessel) vessel.rotation.x = 0.004 * Math.sin(t * 0.6) * (1 + hs);
+      if (around) around.tick(dt * Math.min(pace, 30));
     }
     controls.update();
     // The near plane moves out as the camera does, so the land and the sea a few metres below it
@@ -2139,6 +2180,48 @@ async function main() {
   if (voyage) voyage.remove();
   view.dataset.ready = String(clickable.length);
   view.dataset.cranes = String(site.cranes.length);
+
+  // The real surroundings, from the map at the site's location: after the twin is up, as they
+  // come from the internet and the twin does not need them.
+  if (twin.surroundings) {
+    const D = site.yardDepth + 15;
+    const keepLand = [];
+    const keepSea = [];                    // the water in front of the quay, where the ships berth
+    if (site.quay) {
+      const legs = site.quay.legs;
+      const P = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
+      legs.forEach((l, i) => {
+        keepLand.push([P(l.a, l.land, -3), P(l.b, l.land, -3), P(l.b, l.land, D), P(l.a, l.land, D)]);
+        const [a, b] = [P(l.a, l.dir, -60), P(l.b, l.dir, 60)];
+        keepSea.push([P(a, l.land, -3), P(b, l.land, -3), P(b, l.land, -400), P(a, l.land, -400)]);
+        if (i + 1 < legs.length) keepLand.push([l.b, P(l.b, l.land, D), P(l.b, legs[i + 1].land, D)]);
+      });
+    } else {
+      keepLand.push([[frame.minX - 300, frame.fenderFace - 3], [frame.maxX + 300, frame.fenderFace - 3],
+        [frame.maxX + 300, frame.front + D], [frame.minX - 300, frame.front + D]]);
+      keepSea.push([[frame.minX - 300, frame.fenderFace - 3], [frame.maxX + 300, frame.fenderFace - 3],
+        [frame.maxX + 300, frame.fenderFace - 400], [frame.minX - 300, frame.fenderFace - 400]]);
+    }
+    const inside = (poly, x, z) => {
+      let inn = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, zi] = poly[i];
+        const [xj, zj] = poly[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inn = !inn;
+      }
+      return inn;
+    };
+    const grounds = [];
+    scene.traverse((m) => { if (m.isMesh && m.userData.ground) grounds.push(m); });
+    import('./marinetwin-surroundings.js')
+      .then(({ addSurroundings }) => addSurroundings({
+        THREE, scene, twin, toScene, toEn, top: frame.top, grounds, vehicle, view, keepLand, keepSea,
+        keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
+        centre: { x: (frame.minX + frame.maxX) / 2, z: frame.front + 100 },
+      }))
+      .then((got) => { around = got; view.dataset.surroundings = got && got.found ? 'yes' : 'no'; })
+      .catch((err) => { console.warn('Surroundings', err); view.dataset.surroundings = 'no'; });
+  }
 }
 
 if (view) {

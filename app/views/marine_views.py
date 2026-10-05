@@ -510,6 +510,7 @@ def twin_json(asset_id: int):
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
         **_shapes_links(asset, twin["elements"]),
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
+        "surroundings": _surroundings_link(asset),
         "elements": [{
             "id": e["element"]["id"], "name": e["element"]["name"], "kind": e["element"]["kind"],
             "material": e["element"]["material"], "zone": e["element"]["zone"],
@@ -582,6 +583,7 @@ def delete_asset(asset_id: int):
         abort(403)
     if asset["model_file"]:
         (models_dir() / asset["model_file"]).unlink(missing_ok=True)
+    _surroundings_path(asset_id).unlink(missing_ok=True)
     get_db().execute("DELETE FROM marine_assets WHERE id = ?", (asset_id,))
     get_db().commit()
     flash(f"{asset['name']} and all its readings were deleted.", "success")
@@ -822,6 +824,78 @@ def _shapes_links(asset, elements) -> dict:
     url = url_for("marine.model_shapes", asset_id=asset["id"], key=key)
     kept = _shapes_path(asset["id"], key).exists()
     return {"model_shapes": url if kept else None, "model_shapes_save": None if kept else url}
+
+
+# --- the surroundings from the map ------------------------------------------------------
+# Roads, buildings, railways and water around the site, from OpenStreetMap. The browser asks
+# Overpass for them (PythonAnywhere's free plan cannot reach it from the server) and keeps what it
+# got here, so the next visit, and everyone else's, draws them at once. The key is the site's
+# location: move the site and the next visit fetches the new place's surroundings.
+SURROUNDINGS_LIMIT = 12 * 1024 * 1024
+
+
+def _surroundings_key(asset) -> str | None:
+    if asset["latitude"] is None or asset["longitude"] is None:
+        return None
+    return f"v1:{asset['latitude']:.4f}:{asset['longitude']:.4f}"
+
+
+def _surroundings_path(asset_id: int) -> Path:
+    return models_dir() / f"asset-{asset_id}.surroundings.json"
+
+
+def _kept_surroundings_key(asset_id: int) -> str | None:
+    path = _surroundings_path(asset_id)
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as f:
+            head = f.read(200).decode("utf-8", "ignore")
+        return json.loads(head[: head.index(",")] + "}").get("key") if head.startswith('{"key"') else None
+    except (ValueError, OSError):
+        return None
+
+
+def _surroundings_link(asset) -> dict | None:
+    key = _surroundings_key(asset)
+    if key is None:
+        return None
+    return {"url": url_for("marine.surroundings", asset_id=asset["id"]), "key": key,
+            "kept": _kept_surroundings_key(asset["id"]) == key}
+
+
+@bp.get("/assets/<int:asset_id>/surroundings.json")
+@login_required
+def surroundings(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    key = _surroundings_key(asset)
+    if key is None or _kept_surroundings_key(asset_id) != key:
+        abort(404)
+    return send_file(_surroundings_path(asset_id), mimetype="application/json", max_age=0)
+
+
+@bp.post("/assets/<int:asset_id>/surroundings.json")
+@login_required
+def keep_surroundings(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    key = _surroundings_key(asset)
+    if key is None:
+        return jsonify(kept=False, why="the site has no location"), 409
+    if (request.content_length or 0) > SURROUNDINGS_LIMIT:
+        return jsonify(kept=False, why="too big"), 413
+    got = request.get_json(silent=True)
+    if not isinstance(got, dict) or got.get("key") != key:
+        return jsonify(kept=False, why="not for this site's location"), 409
+    lists = ("buildings", "roads", "rail", "water", "coast")
+    if any(not isinstance(got.get(k, []), list) for k in lists):
+        return jsonify(kept=False, why="not surroundings"), 400
+    # The key first, so a visit can tell what is kept without reading the whole file.
+    body = {"key": key, **{k: got.get(k, []) for k in lists}, "source": str(got.get("source", ""))[:200]}
+    target = _surroundings_path(asset_id)
+    partial = target.with_suffix(".part")
+    partial.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
+    partial.replace(target)
+    return jsonify(kept=True)
 
 
 @bp.get("/assets/<int:asset_id>/model/shapes/<key>")

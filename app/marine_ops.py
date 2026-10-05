@@ -280,9 +280,15 @@ def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any
             "crane_fault": (morning, morning + 24)}.get(scenario, (None, None))
 
 
+def crane_share(extreme: dict[str, Any]) -> float:
+    """The share of the quay's cranes an extreme event stops, counted from the start of the quay. The
+    3D view stops the ones in the closed area instead where the event closes an area round a point."""
+    return extreme["share"] if extreme["share"] is not None else 1.0 if not extreme["radius"] else 0.5
+
+
 def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
          scenario: str = "normal", booked: list[dict[str, Any]] | None = None,
-         fleet: list[int] | None = None) -> dict[str, Any]:
+         fleet: list[int] | None = None, closed: set[int] | None = None) -> dict[str, Any]:
     """The berth over the next ``hours``, hour by hour, for the live view to play back.
 
     The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
@@ -351,8 +357,10 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         kit = []
         for k, (name, breaks) in enumerate(faults):
             fault = next((why for at, length, why in breaks if at <= i < at + length), None)
-            share = extreme["share"] if extreme and extreme["share"] is not None else 1.0 if extreme and not extreme["radius"] else 0.5
-            if struck and k < max(1, round(share * len(faults))):
+            share = crane_share(extreme) if extreme else 0.5
+            # ``closed``: the cranes the 3D view found standing in the event's closed area (by their
+            # place in the list); without it, the event's share of them from the start of the quay.
+            if struck and (k in closed if closed is not None else k < max(1, round(share * len(faults)))):
                 kit.append({"name": name, "state": "down", "why": f"{extreme['name'].lower()}: area closed"})
             elif not power and electric:
                 kit.append({"name": name, "state": "down", "why": "power cut, no grid supply"})

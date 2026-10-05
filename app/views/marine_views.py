@@ -299,6 +299,13 @@ def live(asset_id: int):
     return render_template("marine/live.html", asset=asset, **_context())
 
 
+def _crane_indexes(text: str | None) -> set[int] | None:
+    """The cranes (by their place in the crane list) the 3D view found in an event's closed area: "3,4,5"."""
+    if text is None:
+        return None
+    return {int(x) for x in text.split(",") if x.strip().isdigit() and int(x) < 200}
+
+
 @bp.get("/assets/<int:asset_id>/live.json")
 @login_required
 def live_json(asset_id: int):
@@ -306,7 +313,8 @@ def live_json(asset_id: int):
     asset = _asset_or_404(asset_id)
     now = datetime.now()
     plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"),
-                           booked=_main_berth_calls(asset, now), fleet=marine_berths.crane_fleet(get_db(), asset_id))
+                           booked=_main_berth_calls(asset, now), fleet=marine_berths.crane_fleet(get_db(), asset_id),
+                           closed=_crane_indexes(request.args.get("closed")))
     iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
     return jsonify({
         "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
@@ -758,7 +766,9 @@ def risk_json(asset_id: int, key: str):
     e = marine_risk.assess(asset, _life_elements(asset_id), key, rates, given, int(asset["design_life"] or 50))
     return jsonify({"key": e["key"], "name": e["name"], "days": e["days"], "days_known": e["days_known"],
                     "whole": bool(e["share"] and not e["radius"] and e["days"]), "closed_m": e["closed_m"],
-                    "damaged": e["damaged"], "closed": e["closed_refs"]})
+                    "damaged": e["damaged"], "closed": e["closed_refs"], "radius": e["radius"],
+                    # the share of the quay's cranes the live port stops for it (marine_ops.live)
+                    "crane_share": marine_ops.crane_share(marine_risk.BY_KEY[key])})
 
 
 @bp.route("/assets/<int:asset_id>/lifecycle.json", methods=["GET", "POST"])

@@ -16,6 +16,12 @@ const VISUAL_PACE = 20;       // above this, things move no faster on screen: a 
 const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// How full a ship alongside from `from` to `to` is at hour h: discharged from full to the last
+// tiers over the first half of her stay, then loaded up again for her next port.
+const cargoFill = (h, from, to) => {
+  const mid = (from + to) / 2;
+  return h < mid ? 1 - 0.85 * clamp((h - from) / Math.max(mid - from, 0.1), 0, 1) : 0.15 + 0.75 * clamp((h - mid) / Math.max(to - mid, 0.1), 0, 1);
+};
 
 export async function startLive(ctx) {
   const { THREE, view, scene, camera, controls, frame, site, rng, focus, radius, water, sky, sunLight, hemi, REAL } = ctx;
@@ -47,22 +53,50 @@ export async function startLive(ctx) {
   // --- ships and their tugs ----------------------------------------------------------------
   const APPROACH = 1.5;   // hours from the pilot to all fast
   const ANCHOR = 6;       // hours a ship is seen waiting off the port before that
-  function shipCalls() {
-  for (const c of calls) {
-    c.mesh = ctx.ship(c.type, c.loa, c.beam, c.draught, rng);
-    c.mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-    c.mesh.visible = false;
-    scene.add(c.mesh);
-    const berth = new THREE.Vector3(centre, 0, frame.fenderFace - c.beam / 2 - 0.4);
-    c.berth = berth;
-    c.inbound = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(centre - 1700, 0, berth.z - 650), new THREE.Vector3(centre - 800, 0, berth.z - 300),
-      new THREE.Vector3(centre - 220, 0, berth.z - 45), new THREE.Vector3(centre - 40, 0, berth.z - 6), berth.clone()]);
-    c.outbound = new THREE.CatmullRomCurve3([
-      berth.clone(), new THREE.Vector3(centre + 60, 0, berth.z - 10), new THREE.Vector3(centre + 300, 0, berth.z - 70),
-      new THREE.Vector3(centre + 900, 0, berth.z - 330), new THREE.Vector3(centre + 1800, 0, berth.z - 650)]);
-    c.anchorage = new THREE.Vector3(centre - 1900, 0, berth.z - 950 - (calls.indexOf(c) % 2) * 160);
+  // The way in and out of a berth, clear of the ships lying at the berths either side: up the
+  // fairway well off the quay, slowing abreast of the berth, then pushed sideways onto the fenders
+  // by the tugs; out the same way. `b` is a berth along a traced quay, or null for the model's own.
+  function berthPath(b, beam, loa, k = 0) {
+    let P;
+    let t;
+    let bow;
+    let rot;
+    if (b && b.leg) {
+      const leg = b.leg;
+      ({ bow, rot } = ctx.shipPose(b));
+      t = b.mid - leg.from;
+      P = (along, out) => new THREE.Vector3(leg.a[0] + leg.dir[0] * along - leg.land[0] * out, 0, leg.a[1] + leg.dir[1] * along - leg.land[1] * out);
+    } else {
+      bow = 1; rot = 0; t = 0;
+      P = (along, out) => new THREE.Vector3(centre + along, 0, frame.fenderFace - out);
+    }
+    const off = beam / 2 + 2;
+    const abreast = beam + 60;                 // clear of a neighbour's ship, with room for the tugs
+    const berth = P(t, off);
+    return {
+      berth, rot,
+      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1700, 900), P(t - bow * 800, 380), P(t - bow * (loa / 2 + 60), abreast + 10), P(t, abreast), berth.clone()]),
+      outbound: new THREE.CatmullRomCurve3([berth.clone(), P(t, abreast), P(t + bow * (loa / 2 + 60), abreast + 10), P(t + bow * 800, 380), P(t + bow * 1700, 900)]),
+      // Anchorages a few hundred metres apart, each berth's well clear of the others'.
+      anchorage: P(t - bow * 400, 1000 + ((b ? b.n : 0) % 3) * 320 + (k % 2) * 160),
+    };
   }
+  // Heading along a path, turned to lie alongside (`settle` from 0 to 1) at the berth.
+  const turnTo = (heading, rot, settle) => {
+    const d = ((((rot - heading) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+    return heading + d * settle;
+  };
+  function shipCalls() {
+    const main = site.mainBerth && site.mainBerth.leg ? site.mainBerth : null;
+    calls.forEach((c, k) => {
+      // No longer than her berth, so she does not overlap the ships at the next ones.
+      const loa = main ? Math.min(c.loa, main.length - 20) : c.loa;
+      c.mesh = ctx.ship(c.type, loa, c.beam, c.draught, rng);
+      c.mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+      c.mesh.visible = false;
+      scene.add(c.mesh);
+      Object.assign(c, berthPath(main, c.beam, loa, k), { shown: loa });
+    });
   }
   shipCalls();
   const tugMat = new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.5 });
@@ -104,18 +138,7 @@ export async function startLive(ctx) {
       scene.add(mesh);
       return mesh;
     });
-    const leg = b.leg;
-    const t = b.mid - leg.from;
-    const { bow, rot } = ctx.shipPose(b);
-    // `along` metres along the leg from its start, `out` metres out to sea from the fender line.
-    const P = (along, out) => new THREE.Vector3(leg.a[0] + leg.dir[0] * along - leg.land[0] * out, 0, leg.a[1] + leg.dir[1] * along - leg.land[1] * out);
-    const berth = P(t, b.beam / 2 + 2);
-    return {
-      b, meshes, berth, rot, alongside: false, ship: null,
-      anchorage: P(t - bow * 900, 900 + (b.n % 3) * 140),
-      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1500, 700), P(t - bow * 700, 300), P(t - bow * 200, b.beam / 2 + 45), P(t - bow * 40, b.beam / 2 + 8), berth.clone()]),
-      outbound: new THREE.CatmullRomCurve3([berth.clone(), P(t + bow * 60, b.beam / 2 + 12), P(t + bow * 300, b.beam / 2 + 80), P(t + bow * 900, 330), P(t + bow * 1700, 650)]),
-    };
+    return { b, meshes, alongside: false, ship: null, ...berthPath(b, b.beam, b.loa) };
   }
   // The calls at a berth over the timeline, for the situation playing.
   function schedule(o) {
@@ -158,23 +181,28 @@ export async function startLive(ctx) {
       let pos = null;
       let ahead = null;
       let rot = o.rot;
+      let settle = 0;
       if (h < c.arrive) {
         pos = o.anchorage; rot = o.rot + 0.4; anchored++;
       } else if (h < c.along) {
         const u = ease((h - c.arrive) / APPROACH);
         pos = o.inbound.getPointAt(u); ahead = o.inbound.getTangentAt(Math.min(u, 0.999));
+        settle = clamp((u - 0.75) / 0.25, 0, 1);
       } else if (h < c.sail) {
         pos = o.berth; o.alongside = true; alongside++;
         o.b.state = h < (c.along + c.sail) / 2 ? 'discharging' : 'loading';
         o.b.shipKind = c.mesh.userData.kind;
+        o.b.fill = cargoFill(h, c.along, c.sail);
       } else {
         const u = ease((h - c.sail) / APPROACH);
         pos = o.outbound.getPointAt(u); ahead = o.outbound.getTangentAt(Math.min(u, 0.999));
+        settle = 1 - clamp(u / 0.3, 0, 1);
       }
       o.ship = c;
       c.mesh.visible = true;
       c.mesh.position.set(pos.x, tide, pos.z);
-      c.mesh.rotation.y = ahead ? Math.atan2(-ahead.z, ahead.x) : rot;
+      c.mesh.rotation.y = ahead ? turnTo(Math.atan2(-ahead.z, ahead.x), o.rot, settle) : rot;
+      ctx.setFill(c.mesh.userData.stacks, o.alongside ? o.b.fill : h < c.arrive ? 1 : 0.9);
     }
     return alongside;
   }
@@ -217,9 +245,17 @@ export async function startLive(ctx) {
         // Coming in it turns to lie alongside; going out it straightens up towards the sea.
         const heading = Math.atan2(-ahead.z, ahead.x);
         const settle = moving && moving.inbound ? clamp((moving.u - 0.75) / 0.25, 0, 1) : moving ? 1 - clamp(moving.u / 0.3, 0, 1) : 0;
-        m.rotation.y = heading * (1 - settle);
+        m.rotation.y = turnTo(heading, c.rot, settle);
       } else {
-        m.rotation.y = pos === c.anchorage ? 0.35 : 0;
+        m.rotation.y = c.rot + (pos === c.anchorage ? 0.35 : 0);
+      }
+      // Discharged down to the last tiers over the first half of her stay, loaded up again over the second.
+      if (pos === c.berth) {
+        const fill = cargoFill(h, c.from, c.to);
+        ctx.setFill(m.userData.stacks, fill);
+        if (site.mainBerth) site.mainBerth.fill = fill;
+      } else {
+        ctx.setFill(m.userData.stacks, h < c.from ? 1 : 0.9);
       }
     }
     // Two tugs on the ship coming in or going out, near the berth.
@@ -462,8 +498,8 @@ export async function startLive(ctx) {
   panel.className = 'mt-berths';
   panel.hidden = true;
   const allBerths = [...(site.berths || [])].sort((a, b) => a.n - b.n);
-  panel.innerHTML = `<button type="button" class="close" aria-label="Close">×</button><h3>Berths along the quay</h3><ol>${allBerths.map((b) => `
-    <li data-n="${b.n}"><strong>Berth ${b.n}</strong><small>${Math.round(b.length)} m · ${b.main ? 'the berth this line-up is for' : b.sts ? 'crane stoppers: rail-mounted cranes' : 'no crane stoppers'}</small>
+  panel.innerHTML = `<button type="button" class="close" aria-label="Close">×</button><h3>Berths along the quay</h3><p class="small" style="margin:0 0 6px;opacity:.75">Look takes the drone to a berth; drag to turn about it, double-click to centre anywhere.</p><ol>${allBerths.map((b) => `
+    <li data-n="${b.n}"><strong>Berth ${b.n} ${site.quay ? `<button type="button" class="mt-b-look" data-n="${b.n}">Look</button>` : ''}</strong><small>${Math.round(b.length)} m · ${b.main ? 'the berth this line-up is for' : b.sts ? 'crane stoppers: rail-mounted cranes' : 'no crane stoppers'}</small>
       ${b.assignable ? `<label class="small">Used for <select data-n="${b.n}">${Object.entries(USE_NAMES).map(([k, v]) => `<option value="${esc(k)}"${k === b.use ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
       <small class="mt-b-now"></small></li>`).join('')}</ol>`;
   overlay.appendChild(panel);
@@ -471,6 +507,9 @@ export async function startLive(ctx) {
   const showBerths = (on) => { panel.hidden = !on; if (berthsBtn) berthsBtn.setAttribute('aria-pressed', String(on)); };
   if (berthsBtn) berthsBtn.addEventListener('click', () => showBerths(panel.hidden));
   panel.querySelector('.close').addEventListener('click', () => showBerths(false));
+  for (const btn of panel.querySelectorAll('.mt-b-look')) {
+    btn.addEventListener('click', () => lookAt(allBerths.find((x) => String(x.n) === btn.dataset.n)));
+  }
   for (const sel of panel.querySelectorAll('select[data-n]')) {
     sel.addEventListener('change', async () => {
       const b = allBerths.find((x) => String(x.n) === sel.dataset.n);
@@ -546,11 +585,15 @@ export async function startLive(ctx) {
   // Cameras.
   let cam = 'drone';
   let droneAngle = 0;
-  function setCamera(k) {
+  // What the drone circles and the free view turns about: the main berth at first, then whichever
+  // berth is picked under Berths, or any spot double-clicked.
+  const spot = { x: centre, z: frame.fenderFace - 20, r: Math.max(radius * 1.4, 320) };
+  function setCamera(k, keep = false) {
     cam = k;
     for (const b of overlay.querySelectorAll('[data-cam]')) b.setAttribute('aria-pressed', String(b.dataset.cam === k));
-    $('.mt-live-camname').textContent = { quay: 'CAM 1 · QUAY', crane: 'CAM 2 · CRANE', drone: 'CAM 3 · DRONE', free: 'FREE VIEW' }[k];
+    $('.mt-live-camname').textContent = { quay: 'CAM 1 · QUAY', crane: 'CAM 2 · CRANE', drone: 'CAM 3 · DRONE', free: 'FREE VIEW · double-click to centre on a spot' }[k];
     const crane = site.cranes[1] || site.cranes[0];
+    if (keep) return;                   // the view stays where it is
     if (k === 'quay') {
       // On a mast at the end of the quay, looking along the berth and the ship.
       camera.position.set(frame.minX - 70, frame.top + 24, frame.front + 14);
@@ -559,14 +602,35 @@ export async function startLive(ctx) {
       camera.position.set(crane.position.x + 6, frame.top + 52, crane.position.z + 34);
       controls.target.set(crane.position.x + 4, 0, frame.fenderFace - 28);
     } else if (k === 'free') {
-      camera.position.copy(focus).add(new THREE.Vector3(radius * 0.8, radius * 0.95, -radius * 1.25));
-      controls.target.copy(focus);
+      controls.target.set(spot.x, frame.top, spot.z);
+      camera.position.set(spot.x + spot.r * 0.55, frame.top + spot.r * 0.6, spot.z - spot.r * 0.8);
     }
     controls.update();
   }
+  // Look at a berth: the drone circles it, and taking hold of the view turns about it.
+  function lookAt(b) {
+    const p = ctx.quayPoint(site.quay, b.mid, 10);
+    Object.assign(spot, { x: p.x, z: p.z, r: Math.max(b.length * 1.1, 280) });
+    setCamera('drone');
+  }
+  // A double-click on the scene moves the centre of the view there, keeping the angle.
+  const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -frame.top);
+  const ray = new THREE.Raycaster();
+  ctx.renderer.domElement.addEventListener('dblclick', (ev) => {
+    const rect = ctx.renderer.domElement.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1), camera);
+    const hit = ray.ray.intersectPlane(ground, new THREE.Vector3());
+    if (!hit) return;
+    const shift = hit.clone().sub(controls.target);
+    controls.target.add(shift);
+    camera.position.add(shift);
+    Object.assign(spot, { x: hit.x, z: hit.z });
+    if (cam !== 'free') setCamera('free', true);
+    controls.update();
+  });
   for (const b of overlay.querySelectorAll('[data-cam]')) b.addEventListener('click', () => setCamera(b.dataset.cam));
   // Taking hold of the view leaves the drone to it.
-  ctx.renderer.domElement.addEventListener('pointerdown', () => { if (cam === 'drone') setCamera('free'); });
+  ctx.renderer.domElement.addEventListener('pointerdown', () => { if (cam === 'drone') setCamera('free', true); });
   setCamera('drone');
 
   // --- each frame --------------------------------------------------------------------------
@@ -608,14 +672,15 @@ export async function startLive(ctx) {
       site.mainBerth.shipKind = alongside ? alongside.mesh.userData.kind : null;
     }
     ctx.setPower(w.hour.power !== false);
+    for (const y of site.yards || []) ctx.setFill(y.mesh, ctx.yardFill(y.berth));
     workCranes(states, alongside, visualT, w);
     movePeople(dt * Math.min(pace, 4), alongside);
     weather(w, dt, pace);
     if (cam === 'drone') {
       droneAngle += dt * 0.025;
-      const r = Math.max(radius * 1.4, 320);
-      camera.position.set(centre + r * Math.sin(droneAngle), frame.top + r * 0.55, frame.fenderFace - 40 - r * Math.cos(droneAngle) * 0.9);
-      controls.target.set(centre, frame.top, frame.fenderFace - 20);
+      const r = spot.r;
+      camera.position.set(spot.x + r * Math.sin(droneAngle), frame.top + r * 0.55, spot.z - 20 - r * Math.cos(droneAngle) * 0.9);
+      controls.target.set(spot.x, frame.top, spot.z);
     }
     if (performance.now() - lastText > 250) {
       lastText = performance.now();

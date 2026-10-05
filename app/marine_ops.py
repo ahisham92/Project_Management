@@ -201,11 +201,11 @@ def lineup(asset_id: int, now: datetime, terminal: str = "container") -> list[di
     return out
 
 
-def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container") -> list[dict[str, Any]]:
+def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container", count: int = 3) -> list[dict[str, Any]]:
     rng = _rng(asset_id, now.date().isoformat(), "cranes")
     prefix = EQUIPMENT.get(terminal, EQUIPMENT["container"])[0]
     out = []
-    for i in range(3 if prefix != "RAMP" else 2):
+    for i in range(count if prefix != "RAMP" else 2):
         hours = rng.uniform(150, 520)                          # running hours to the next service
         broken = rng.random() < 0.12
         if prefix == "RAMP":
@@ -275,13 +275,14 @@ def _scenario_hours(scenario: str, start: datetime, hours: int) -> dict[str, Any
     can be seen (fog at dawn, when it forms)."""
     morning = _next_hour(start, hours, STRIKE_CLOCK)
     return {"storm": (_next_hour(start, hours, 8), _next_hour(start, hours, 8) + 14),
-            "power_cut": (_next_hour(start, hours, 11), _next_hour(start, hours, 11) + 4),
+            "power_cut": (_next_hour(start, hours, 20, 3), _next_hour(start, hours, 20, 3) + 4),   # at night, as it shows the lights
             "fog": (_next_hour(start, hours, 5), _next_hour(start, hours, 5) + 6),
             "crane_fault": (morning, morning + 24)}.get(scenario, (None, None))
 
 
 def live(asset_id: int, now: datetime, terminal: str = "container", hours: int = 48,
-         scenario: str = "normal", booked: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+         scenario: str = "normal", booked: list[dict[str, Any]] | None = None,
+         fleet: list[int] | None = None) -> dict[str, Any]:
     """The berth over the next ``hours``, hour by hour, for the live view to play back.
 
     The same simulated feeds as the Operations page (weather, the line-up, the cranes), put on
@@ -325,7 +326,9 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     reasons = ["ramp hydraulic pump fault", "short of drivers"] if prefix == "RAMP" else \
         ["spreader twistlock fault", "hoist brake alarm", "gantry drive fault", "trolley rope inspection"]
     faults = []
-    for k in range(2 if prefix == "RAMP" else 3):
+    # The cranes along the quay, each with its berth (``fleet``: the berth of each, as the 3D view found
+    # them); without it, the main berth's three.
+    for k in range(2 if prefix == "RAMP" else len(fleet) if fleet else 3):
         name = f"Ramp gang {k + 1}" if prefix == "RAMP" else f"{prefix}{k + 1}"
         breaks = [(rng.uniform(0, hours), rng.uniform(1, 6), rng.choice(reasons)) for _ in range(rng.choice([0, 0, 1, 1, 2]))]
         if scenario == "crane_fault" and k < 2:
@@ -363,7 +366,8 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
                 kit.append({"name": name, "state": "working", "why": ""})
         hourly.append({"at": w["at"], "wind": w["wind"], "gust": w["gust"], "hs": w["hs"], "tide": w["tide"],
                        "rain": rain, "visibility": 0.2 if fog else round(max(0.4, 10 - rain * 0.9), 1),
-                       "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"]} for c in kit],
+                       "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"],
+                                      **({"berth": fleet[k]} if fleet and prefix != "RAMP" else {})} for k, c in enumerate(kit)],
                        "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"] and not fog and not struck,
                        "power": power, "fog": fog})
         if extreme and i == 0 and extreme["warn_h"] >= 1:

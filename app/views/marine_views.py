@@ -306,7 +306,7 @@ def live_json(asset_id: int):
     asset = _asset_or_404(asset_id)
     now = datetime.now()
     plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"),
-                           booked=_main_berth_calls(asset, now))
+                           booked=_main_berth_calls(asset, now), fleet=marine_berths.crane_fleet(get_db(), asset_id))
     iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
     return jsonify({
         "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
@@ -898,7 +898,8 @@ def twin_json(asset_id: int):
     weather = marine_ops.metocean(asset_id, now, hours_back=0, hours_ahead=24)
     ships = marine_ops.lineup(asset_id, now, asset["terminal_type"])
     alongside = next((s for s in ships if s["eta"] <= now < s["etd"]), None)
-    equipment = marine_ops.cranes(asset_id, now, weather[0]["gust"], asset["terminal_type"])
+    fleet = marine_berths.crane_fleet(get_db(), asset_id)
+    equipment = marine_ops.cranes(asset_id, now, weather[0]["gust"], asset["terminal_type"], len(fleet) if fleet else 3)
     return jsonify({
         "asset": {"id": asset["id"], "name": asset["name"], "kind": asset["kind"],
                   "terminal": asset["terminal_type"], "latitude": asset["latitude"], "longitude": asset["longitude"],
@@ -913,7 +914,8 @@ def twin_json(asset_id: int):
         "next_ship": next(({"name": s["name"], "type": s["type"], "eta": s["eta"].isoformat(timespec="minutes"),
                             "loa": s["loa"], "beam": s["beam"], "draught": s["draught"]}
                            for s in ships if s["eta"] > now), None),
-        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"], "service_in_h": c["service_in_h"]} for c in equipment],
+        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"], "service_in_h": c["service_in_h"],
+                       **({"berth": fleet[k]} if fleet and k < len(fleet) else {})} for k, c in enumerate(equipment)],
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
         **_shapes_links(asset, twin["elements"]),
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),

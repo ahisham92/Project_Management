@@ -956,7 +956,7 @@ def test_the_live_port_plays_each_situation():
     assert normal["scenario"]["key"] == "normal" and all(h["power"] for h in normal["hours"])
     cut = marine_ops.live(3, now, "container", scenario="power_cut")
     dark = [h for h in cut["hours"] if not h["power"]]
-    assert len(dark) == 4 and dark[0]["at"].hour == 11 and dark[0]["at"] > cut["start"]   # in daylight, to be seen
+    assert len(dark) == 4 and dark[0]["at"].hour == 20 and dark[0]["at"] > cut["start"]
     assert all(k["state"] == "down" for h in dark for k in h["equipment"])
     assert any("Power cut" in e["text"] for e in cut["events"]) and any("Power restored" in e["text"] for e in cut["events"])
     # Ramp gangs drive diesel vehicles: a power cut does not stop them.
@@ -1395,6 +1395,15 @@ def test_the_berth_plan_gives_every_ship_a_berth_that_fits(signed_in, demo):
     for n in by_n:
         spans = sorted((c["begin_h"], c["end_h"]) for c in plan["placed"] if n in c["berths"])
         assert all(a[1] <= b[0] + 1e-6 for a, b in zip(spans, spans[1:]))
+
+
+def test_the_cranes_listed_are_the_cranes_along_the_quay(signed_in, demo):
+    found = [{"n": 1, "length": 320, "sts": True, "cranes": 4, "main": True}, {"n": 2, "length": 400, "sts": True, "cranes": 5}]
+    signed_in.post(demo + "/berthplan/layout", json={"berths": found})
+    plan = signed_in.get(demo + "/live.json?scenario=storm").get_json()
+    kit = plan["hours"][0]["equipment"]
+    assert len(kit) == 9 and [k["berth"] for k in kit] == [1] * 4 + [2] * 5
+    assert len(signed_in.get(demo + "/twin.json").get_json()["equipment"]) == 9
 
 
 def test_the_berths_follow_the_3d_view_and_can_be_changed(signed_in, demo):

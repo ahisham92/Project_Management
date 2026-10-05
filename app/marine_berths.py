@@ -232,15 +232,26 @@ def save_layout(db, asset: Any, found: Iterable[dict[str, Any]]) -> int:
         if old and old["source"] == "user":
             continue
         sts = bool(b.get("sts"))
+        try:
+            seen = int(b.get("cranes")) if b.get("cranes") is not None else None   # the cranes the 3D view drew
+        except (TypeError, ValueError):
+            seen = None
         use = b.get("use") or ("container" if sts else {"roro": "roro", "bulk": "bulk"}.get(terminal, "mixed"))
         kind = "STS" if sts else "ramp" if use == "roro" else "MHC"
         db.execute("INSERT INTO marine_berths (asset_id, n, name, length, depth, cranes, crane_kind, use, main, source)"
                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'model') ON CONFLICT(asset_id, n) DO UPDATE SET length = excluded.length,"
                    " crane_kind = excluded.crane_kind, cranes = excluded.cranes, use = excluded.use, main = excluded.main",
-                   (asset["id"], n, f"Berth {n}", round(length), depth, max(1, min(4, round(length / 130))) if sts else 2 if kind == "MHC" else 1,
+                   (asset["id"], n, f"Berth {n}", round(length), depth, (seen if seen and 0 < seen <= 12 else max(1, min(6, round(length / 80)))) if sts else 2 if kind == "MHC" else 1,
                     kind, use, int(bool(b.get("main")))))
         written += 1
     return written
+
+
+def crane_fleet(db, asset_id: int) -> list[int] | None:
+    """The berth of each ship-to-shore crane along the quay, in order (none until the berths are known)."""
+    rows = db.execute("SELECT n, cranes FROM marine_berths WHERE asset_id = ? AND crane_kind = 'STS' ORDER BY n", (asset_id,)).fetchall()
+    out = [r["n"] for r in rows for _ in range(max(0, int(r["cranes"] or 0)))]
+    return out[:60] or None
 
 
 def save_berth(db, asset_id: int, n: int, form: dict[str, Any]) -> None:

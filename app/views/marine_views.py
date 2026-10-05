@@ -506,7 +506,7 @@ def twin_json(asset_id: int):
         "next_ship": next(({"name": s["name"], "type": s["type"], "eta": s["eta"].isoformat(timespec="minutes"),
                             "loa": s["loa"], "beam": s["beam"], "draught": s["draught"]}
                            for s in ships if s["eta"] > now), None),
-        "equipment": [{"name": c["name"], "state": c["state"]} for c in equipment],
+        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"], "service_in_h": c["service_in_h"]} for c in equipment],
         "model": url_for("marine.model", asset_id=asset_id) if asset["model_file"] else None,
         **_shapes_links(asset, twin["elements"]),
         "model_kind": MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),

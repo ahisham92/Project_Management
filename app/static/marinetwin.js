@@ -784,6 +784,79 @@ function setFill(mesh, f) {
   mesh.count = Math.round(mesh.userData.total * Math.max(0, Math.min(1, f)));
 }
 
+// --- the cards ---------------------------------------------------------------------------
+// What a click on a crane, a vehicle, a stack or a ship shows on the right of the view: each
+// gets a userData.pick that says what it is and, asked again as the clock runs, what it is doing.
+const CRANE_STATE = { working: 'good', idle: 'neutral', stopped: 'warning', stowed: 'warning', down: 'critical' };
+const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const pct = (f) => `${Math.round(Math.max(0, Math.min(1, f)) * 100)}%`;
+const berthName = (b) => (!b ? '' : b.n !== undefined ? `Berth ${b.n}${b.main ? ' (main)' : ''}` : 'Main berth');
+function fillOf(mesh, b) {
+  const s = mesh.userData.stacks;
+  if (s && s.userData.total) return s.count / s.userData.total;
+  return b && b.fill !== undefined ? b.fill : null;
+}
+function shipKindWord(type) { return String(type || 'ship').replace('ro-ro', 'car carrier (RoRo)'); }
+
+function shipCardStill(a, now, mesh, b) {
+  return {
+    kind: shipKindWord(a.type), title: a.name,
+    rows: [['Berth', berthName(b)], ['Now', now], ['Length overall', `${a.loa} m`], ['Beam', `${a.beam} m`], ['Draught', `${a.draught} m`],
+      ['Cargo aboard', fillOf(mesh, b) === null ? '' : pct(fillOf(mesh, b))],
+      ['Arrives', a.eta ? new Date(a.eta).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '']],
+  };
+}
+
+function tagSite(site, twin) {
+  const equipment = twin.equipment || [];
+  const perBerth = new Map();
+  site.cranes.forEach((c, i) => {
+    const u = c.userData;
+    const what = u.mobile ? 'Mobile harbour crane' : u.trolley ? (site.kind === 'bulk' ? 'Ship unloader' : 'Ship-to-shore crane') : 'Crane';
+    let name;
+    if (u.berth) {
+      const k = (perBerth.get(u.berth) || 0) + 1;
+      perBerth.set(u.berth, k);
+      name = `${berthName(u.berth)} · ${u.mobile ? 'MHC' : 'STS'} ${k}`;
+    } else {
+      name = (equipment[i] && equipment[i].name) || `Crane ${i + 1}`;
+    }
+    u.pick = () => {
+      // The live port sets state, why, doing and shipName each frame; the still view has the day's.
+      const state = u.state || (u.idle ? 'idle' : !u.berth && equipment[i] ? equipment[i].state : u.working ? 'working' : 'idle');
+      const why = u.why !== undefined ? u.why : !u.berth && equipment[i] ? equipment[i].why : '';
+      const b = u.berth || site.mainBerth;
+      const doing = u.doing || (state !== 'working' ? '' : b && b.state === 'loading' ? 'Loading, quay to ship' : b && b.state ? 'Discharging, ship to quay' : 'No ship to work');
+      return {
+        kind: what, title: name, state: CRANE_STATE[state] || 'neutral', stateWord: capital(state),
+        rows: [['Berth', berthName(b)], ['Doing', doing], ['Why', why], ['Ship', u.shipName || ''],
+          ['Power', u.mobile ? 'Diesel, on its own' : 'Electric, from the grid'],
+          ['Next service', !u.berth && equipment[i] && equipment[i].service_in_h ? `in ${equipment[i].service_in_h} h` : '']],
+      };
+    };
+  });
+  for (const m of site.movers) {
+    const o = m.object;
+    if (o.userData.pick) continue;
+    const what = m.swing ? 'Rubber-tyred gantry crane' : m.needs === 'roro' || (!o.userData.load && m.curve && !m.load && site.kind === 'roro') ? 'Car'
+      : o.userData.load ? 'Terminal tractor' : 'Truck';
+    o.userData.pick = () => ({
+      kind: what, title: `${what}${m.berth ? ' at ' + berthName(m.berth).toLowerCase() : ''}`,
+      rows: [['Berth', berthName(m.berth)],
+        ['Doing', m.status || (m.swing ? 'Moving boxes between the stacks and the tractors' : m.curve && !m.apron ? 'On the access road, to and from the gate' : 'Driving its round')],
+        ['Carrying', m.load ? (m.load.visible ? 'A box' : 'Nothing') : '']],
+    });
+  }
+  for (const y of site.yards) {
+    y.mesh.userData.pick = () => ({
+      kind: 'Container yard', title: `${berthName(y.berth) || 'Yard'} stacks`,
+      rows: [['Boxes in the stacks', `${y.mesh.count.toLocaleString()} of ${y.mesh.userData.total.toLocaleString()} slots`],
+        ['Full', pct(y.mesh.count / y.mesh.userData.total)],
+        ['Why', y.berth && y.berth.state ? `${capital(y.berth.state)} the ship alongside: the stacks ${y.berth.state === 'loading' ? 'empty' : 'fill'} as she is worked` : 'No ship being worked']],
+    });
+  }
+}
+
 function makeRng(seed) {
   let s = seed >>> 0;
   return () => {
@@ -1550,6 +1623,9 @@ async function main() {
   // The terminal around it.
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng, quay);
+  tagSite(site, twin);
+  const dressOnly = site.dress;
+  site.dress = (b, use) => { dressOnly(b, use); tagSite(site, twin); };
   let vessel = null;
   if (LIVE || LIFE) {
     // The live and lifecycle players bring the ships in and out themselves.
@@ -1563,6 +1639,7 @@ async function main() {
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     setFill(vessel.userData.stacks, 0.7);
     scene.add(vessel);
+    vessel.userData.pick = () => shipCardStill(a, 'Alongside, discharging', vessel, site.mainBerth);
   } else if (twin.next_ship) {
     // The berth is empty: the next ship waits at anchor off the port, clear of the ships alongside.
     const a = twin.next_ship;
@@ -1572,6 +1649,7 @@ async function main() {
     vessel.rotation.y = spot.rot + 0.4;
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     scene.add(vessel);
+    vessel.userData.pick = () => shipCardStill(a, 'At anchor, waiting for the berth', vessel, site.mainBerth);
   }
   // The other berths along the quay: most have a ship alongside, worked by their own cranes.
   if (!LIVE && !LIFE) {
@@ -1587,6 +1665,10 @@ async function main() {
       scene.add(m);
       Object.assign(b, { ship: m, state: rng() < 0.5 ? 'discharging' : 'loading', shipKind: m.userData.kind, fill: 0.3 + rng() * 0.6 });
       setFill(m.userData.stacks, b.fill);
+      m.userData.pick = () => ({
+        kind: shipKindWord(berthShipType(b.use, b.n)), title: `Ship at ${berthName(b).toLowerCase()}`,
+        rows: [['Berth', berthName(b)], ['Now', `Alongside, ${b.state}`], ['Length overall', `${b.loa} m`], ['Beam', `${b.beam} m`], ['Cargo aboard', pct(fillOf(m, b))]],
+      });
       if (m.userData.kind !== 'roro') for (const c of site.cranes) if (c.userData.berth === b) { c.userData.idle = false; c.userData.working = true; }
     }
   }
@@ -1772,19 +1854,70 @@ async function main() {
   controls.maxDistance = 4000;
   camera.updateProjectionMatrix();
 
-  // Picking: a click (not a drag) on an element shows it beside the view.
+  // Picking: a click (not a drag) on anything with something to say (an element of the model, a
+  // ship, a crane, a tractor, a stack) opens its card on the right of the view; an element is also
+  // shown beside the view where the page has room for it.
   const ray = new THREE.Raycaster();
   let downAt = null;
   let picked = null;
+  const card = document.createElement('aside');
+  card.className = 'mt-card';
+  card.hidden = true;
+  card.setAttribute('aria-live', 'polite');
+  view.appendChild(card);
+  let cardOf = null;
+  let cardTimer = null;
+  function drawCard() {
+    if (!cardOf) return;
+    const c = cardOf();
+    if (!c) { closeCard(); return; }
+    const rows = (c.rows || []).filter(([, v]) => v !== null && v !== undefined && v !== '');
+    card.innerHTML = `<button type="button" class="close" aria-label="Close">×</button>
+      <p class="mt-card-kind">${escapeHtml(c.kind || '')}</p><h3>${escapeHtml(c.title)}</h3>
+      ${c.state ? `<p><span class="badge ${c.state}">${escapeHtml(c.stateWord || STATE_WORD[c.state] || c.state)}</span></p>` : ''}
+      <dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
+      ${c.list && c.list.length ? `<h4>${escapeHtml(c.listTitle || '')}</h4><ul>${c.list.map((x) => `<li><span class="state-${x.state}" aria-hidden="true">●</span> <strong>${escapeHtml(x.label)}</strong><br><span>${escapeHtml(x.text)}</span></li>`).join('')}</ul>` : ''}
+      ${c.link ? `<p><a href="${c.link.href}">${escapeHtml(c.link.text)} →</a></p>` : ''}`;
+    card.querySelector('.close').addEventListener('click', closeCard);
+  }
+  function openCard(source) {
+    cardOf = source;
+    card.hidden = false;
+    view.classList.add('has-card');
+    drawCard();
+    clearInterval(cardTimer);
+    cardTimer = setInterval(drawCard, 600);         // what it is doing changes as the clock runs
+  }
+  function closeCard() {
+    cardOf = null;
+    card.hidden = true;
+    view.classList.remove('has-card');
+    clearInterval(cardTimer);
+  }
+  const elementCard = (e) => () => ({
+    kind: (e.kind || 'element').replace(/_/g, ' '), title: e.name, state: e.state,
+    rows: [['Material', e.material], ['Zone', (e.zone || '').replace(/_/g, ' ')], ['Health', e.health ?? '—'],
+      ['Design utilisation', e.design_ur == null ? '—' : Number(e.design_ur).toFixed(2)],
+      ['Utilisation at end of life', e.ur_at_life == null ? '—' : Number(e.ur_at_life).toFixed(2)]],
+    listTitle: 'Sensors', list: e.sensors.map((x) => ({ state: x.state, label: x.label, text: x.headline })),
+    link: { href: e.href, text: 'Condition, maintenance and history' },
+  });
+  const notScenery = new Set([sky, water, stars]);
   renderer.domElement.addEventListener('pointerdown', (ev) => { downAt = [ev.clientX, ev.clientY]; });
   renderer.domElement.addEventListener('pointerup', (ev) => {
     if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
     const rect = renderer.domElement.getBoundingClientRect();
     const at = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(at, camera);
-    const hit = ray.intersectObjects(clickable, false)[0];
+    // The nearest thing hit that has a card, looking up from the mesh to whatever it belongs to.
+    let found = null;
+    for (const hit of ray.intersectObjects(scene.children.filter((o) => !notScenery.has(o) && o.visible), true)) {
+      let o = hit.object;
+      while (o && !o.userData.element && !o.userData.pick) o = o.parent;
+      if (o && o.visible !== false) { found = { object: hit.object, owner: o }; break; }
+    }
     if (picked) for (const m of clickable) if (m.userData.element === picked) m.material.emissive?.setHex(0x000000);
-    picked = hit ? hit.object.userData.element : null;
+    picked = found && found.owner.userData.element ? found.owner.userData.element : null;
     if (picked) {
       for (const m of clickable) {
         if (m.userData.element === picked) {
@@ -1796,6 +1929,10 @@ async function main() {
       paint();
     }
     showElement(picked);
+    if (LIFE) return;                    // the lifecycle player has its own card for the parts
+    if (picked) openCard(elementCard(picked));
+    else if (found) openCard(() => found.owner.userData.pick(found.object));
+    else closeCard();
   });
 
   window.addEventListener('resize', () => {
@@ -1873,6 +2010,7 @@ async function main() {
           const tr = m.trip;
           if (tr.mode === 'oneway') m.object.visible = false;
           if (!busy) {
+            m.status = tr.mode === 'oneway' ? 'Waiting for a car carrier' : 'Parked by its crane: no ship being worked';
             if (!m.parked && tr.mode !== 'oneway') {            // waiting by its crane for the next ship
               tr.curve.getPointAt(0, point); tr.curve.getPointAt(0.02, ahead);
               m.object.position.copy(point); m.object.lookAt(ahead.x, point.y, ahead.z); m.object.rotateY(-Math.PI / 2);
@@ -1893,6 +2031,7 @@ async function main() {
             if (m.s >= travel) continue;
             u = m.s / travel;
             if (loading) { u = 1 - u; back = true; }
+            m.status = loading ? 'Driving from the park onto the ship' : 'Driving off the ship to the park';
             m.object.visible = true;
           } else {
             const T = 2 * travel + 2 * m.wait;
@@ -1904,6 +2043,10 @@ async function main() {
             else { u = 1 - (p - 2 * m.wait - travel) / travel; back = true; } // back to the crane
             // Full on the way to the stack when the ship is discharging, back to the crane when loading.
             const out = p >= m.wait && p < 2 * m.wait + travel;
+            m.status = p < m.wait ? (loading ? 'Under the ship crane, its box being lifted aboard' : 'Under the ship crane, taking a box off the ship')
+              : !back && u < 1 ? (loading ? 'Back to the stack for the next box' : 'Taking the box to the stack')
+              : u === 1 ? (loading ? 'At the stack, a box being put on' : 'At the stack, its box being lifted off')
+              : (loading ? 'Taking a box to the ship' : 'Back to the ship crane, empty');
             if (m.load) m.load.visible = loading ? !out : out;
             if (u === 0 || u === 1) { tr.curve.getPointAt(u, point); m.object.position.copy(point); continue; }
           }

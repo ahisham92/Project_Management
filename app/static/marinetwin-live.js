@@ -240,6 +240,7 @@ export async function startLive(ctx) {
       c.mesh.visible = false;
       scene.add(c.mesh);
       Object.assign(c, berthPath(main, c.beam, loa, k), { shown: loa });
+      c.mesh.userData.pick = () => shipCard(c, site.mainBerth, c.mesh);
     });
   }
   shipCalls();
@@ -270,6 +271,7 @@ export async function startLive(ctx) {
       mesh.traverse((m) => { if (m.isMesh) m.castShadow = true; });
       mesh.visible = false;
       mesh.userData.type = type;
+      mesh.userData.pick = () => { const o = otherOf.get(b); return o && o.ship ? shipCard(o.ship, b, mesh) : null; };
       scene.add(mesh);
       return mesh;
     });
@@ -316,6 +318,7 @@ export async function startLive(ctx) {
       const v = h >= c.arrive ? voyage(h, c.along, c.sail, o) : null;
       o.ship = c;
       o.phase = v ? v.phase : 'anchor';
+      c.stage = o.phase;
       c.mesh.visible = true;
       moor(c.mesh, v, tide);
       tugsFor(c.mesh, v, tide);
@@ -371,6 +374,7 @@ export async function startLive(ctx) {
         m.rotation.y = c.rot + 0.35;
       }
       m.visible = !!pos;
+      c.stage = v ? v.phase : pos ? 'anchor' : null;
       moor(m, v, tide);
       tugsFor(m, v, tide);
       if (!pos) continue;
@@ -421,6 +425,13 @@ export async function startLive(ctx) {
       const alongside = u.berth ? (other && other.alongside && other.b.shipKind !== 'roro' ? other.b : null) : u.idle ? null : mainShip;
       const working = state === 'working' && !!alongside;
       const loading = (u.berth ? u.berth.state : main.state) === 'loading';
+      // For its card.
+      u.state = state === 'working' && !alongside ? 'idle' : state;
+      u.why = u.berth ? (state === 'stowed' ? 'on its storm pins: gusts over the stow limit' : state === 'stopped' ? 'wind stop: gusts over the operating limit'
+        : state === 'down' ? 'power cut, no grid supply' : '') : (states[i] && states[i].why) || '';
+      const call = u.berth ? other && other.ship : mainShip;
+      u.shipName = alongside && call ? call.name : '';
+      u.doing = working ? (loading ? 'Loading, quay to ship' : 'Discharging, ship to quay') : alongside ? 'Stopped with a ship alongside' : 'Waiting for a ship';
       if (u.boom) {
         const up = state === 'stowed' ? -1.25 : 0;
         u.boom.rotation.x += (up - u.boom.rotation.x) * 0.1;
@@ -654,6 +665,25 @@ export async function startLive(ctx) {
     in: 'coming in with the pilot and tugs', 'push-in': 'being pushed alongside by the tugs', 'lines-in': 'making fast her lines',
     'lines-out': 'letting go her lines', 'push-out': 'being pulled off by the tugs', out: 'sailing',
   };
+  // A ship's card: what she is, where she is in her call and how much cargo is aboard.
+  function shipCard(c, b, mesh) {
+    const stage = c.stage === 'alongside' ? `Alongside, ${b && b.state ? b.state : 'working'}`
+      : c.stage === 'anchor' ? (c.held && simH >= (c.due ?? 0) ? 'At anchor, held by the weather' : 'At anchor, waiting for the berth')
+      : c.stage ? capital(PHASE_WORDS[c.stage] || c.stage) : 'Not in port now';
+    const stacks = mesh.userData.stacks;
+    const fill = stacks && stacks.userData.total ? stacks.count / stacks.userData.total : b && b.fill !== undefined ? b.fill : null;
+    const arrive = c.from ?? c.along;
+    const sail = c.to ?? c.sail;
+    return {
+      kind: c.type.replace('ro-ro', 'car carrier (RoRo)'), title: c.name,
+      rows: [['Berth', b ? (b.n !== undefined ? `Berth ${b.n}${b.main ? ' (main)' : ''}` : 'Main berth') : ''], ['Now', stage],
+        ['Length overall', `${Math.round(c.shown || c.loa || mesh.userData.loa)} m`], ['Beam', `${Math.round(c.beam || mesh.userData.beam)} m`],
+        ['Draught', c.draught ? `${c.draught} m` : ''], ['Cargo aboard', fill === null ? '' : `${Math.round(fill * 100)}%`],
+        ['Alongside from', fmtHour(arrive)], ['Sails', fmtHour(sail)],
+        ['Cargo work', c.moves ? `${movesDone(c).toLocaleString()} of ${c.moves.toLocaleString()} ${plan.units}` : '']],
+    };
+  }
+  const capital = (s) => s[0].toUpperCase() + s.slice(1);
   function berthNow(b, mainCall, mainMoving, mainWaiting, mainMooring) {
     if (b.main) {
       if (mainCall) return `${mainCall.name} ${b.state || 'alongside'}`;

@@ -248,3 +248,24 @@
 .mt-berths .mt-b-look { margin-left: 6px; background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 5px; padding: 1px 8px;
   font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
 .mt-berths .mt-b-look:hover { background: rgba(255,255,255,.3); }
+
+/* The card for whatever was clicked in the 3D view, on its right. */
+.mt-card { position: absolute; right: 12px; top: 12px; width: min(320px, calc(100% - 24px)); max-height: calc(100% - 110px); overflow: auto;
+  background: rgba(10, 18, 28, .92); color: #fff; border-radius: 10px; padding: 12px 14px; z-index: 6; font-size: .86rem;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+.mt-card[hidden] { display: none; }
+.mt-card h3 { margin: 0 24px 6px 0; font-size: 1.05rem; color: #fff; }
+.mt-card h4 { margin: 10px 0 4px; font-size: .85rem; color: #cfe3f2; }
+.mt-card .mt-card-kind { margin: 0 0 2px; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: #9fb7c9; }
+.mt-card .close { position: absolute; right: 8px; top: 6px; background: none; border: 0; color: #fff; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 2px 6px; }
+.mt-card dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0 0; }
+.mt-card dt { color: #9fb7c9; }
+.mt-card dd { margin: 0; }
+.mt-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.mt-card a { color: #8fd3ff; }
+.mt-card p { margin: 4px 0; }
+.has-card .mt-live-state { right: calc(min(320px, 100% - 24px) + 24px); }
+@media (max-width: 720px) {
+  .mt-card { top: auto; bottom: 10px; left: 10px; right: 10px; width: auto; max-height: 55%; }
+  .has-card .mt-live-state { right: 10px; }
+}

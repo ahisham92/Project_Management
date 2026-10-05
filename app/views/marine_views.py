@@ -21,7 +21,9 @@ from flask import (
     url_for,
 )
 
-from .. import marine, marine_facility, marine_feed, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton
+from .. import (
+    marine, marine_facility, marine_feed, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton, marine_versions,
+)
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
 from ..marine_charts import (
@@ -45,7 +47,8 @@ CHANGES = {
     "save_berth_use": "Set a berth's use", "save_asset": "Changed the asset's details",
     "refresh": "Brought the simulated sensors up to date", "import_readings": "Imported readings from a CSV",
     "upload_model": "Uploaded the Revit model", "import_model_elements": "Imported elements from the model",
-    "trim_sensors": "Kept sensors on one element per design", "delete_model": "Removed the model",
+    "trim_sensors": "Kept sensors on one element per design", "remove_orphans": "Removed elements no longer in the model",
+    "delete_model": "Removed the model",
     "add_element": "Added an element", "delete_element": "Removed an element", "delete_elements": "Removed all elements",
     "edit_element": "Changed an element", "add_sensor": "Added a sensor", "record_inspection": "Recorded an inspection",
     "delete_sensor": "Removed a sensor", "calibrate_sensor": "Calibrated a sensor",
@@ -263,6 +266,8 @@ def setup(asset_id: int):
                            site_map=site_map,
                            model_found=found, model_new=_new_in_model(asset_id, found) if found else [],
                            triton_projects=marine_triton.projects(), changes=history(asset_id),
+                           versions=marine_versions.versions(get_db(), asset_id),
+                           orphans=marine_versions.orphans(get_db(), asset_id, found),
                            model_kind=MODEL_TYPES.get(Path(asset["model_file"]).suffix.lower(), ""),
                            **_context())
 
@@ -653,8 +658,10 @@ def upload_model(asset_id: int):
     get_db().execute("UPDATE marine_assets SET model_file = ?, model_name = ? WHERE id = ?",
                      (stored, upload.filename, asset_id))
     message = f"{upload.filename} is the model now. Elements are matched to it by their model reference."
+    before = _model_found(asset_id)                   # the last read, for a model uploaded before versions were kept
     _found_path(asset_id).unlink(missing_ok=True)
     _forget_shapes(asset_id)
+    found = None
     if suffix == ".ifc":
         try:
             found = marine_ifc.read_file(target)
@@ -670,6 +677,11 @@ def upload_model(asset_id: int):
                 message += " From the model MarineTwin took " + "; ".join(took) + "."
             if new:
                 message += f" It also has {len(new)} element{'s' if len(new) > 1 else ''} MarineTwin does not track yet: import them below."
+    version = marine_versions.record(get_db(), asset_id, g.user["id"], upload.filename, target.stat().st_size, found,
+                                     before=[marine_versions._slim(e) for e in before["elements"]] if before else None)
+    if version["compared"]:
+        what = [f"{version[k]:,} {k}" for k in ("added", "removed", "moved", "changed") if version[k]]
+        message += f" Version {version['number']}: " + (", ".join(what) if what else "no element changed") + " since the last one."
     get_db().commit()
     flash(message, "success")
     return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
@@ -748,6 +760,26 @@ def trim_sensors(asset_id: int):
           f"{done['left']:,} sensor{'s' if done['left'] != 1 else ''} left." if done["removed"]
           else f"Every design already has its sensors on one element ({done['left']:,} sensors).", "success")
     return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
+
+
+@bp.post("/assets/<int:asset_id>/model/orphans/remove")
+@login_required
+def remove_orphans(asset_id: int):
+    """Remove the tracked elements the model no longer has, unless they carry real readings."""
+    _asset_or_404(asset_id)
+    db = get_db()
+    gone = [o for o in marine_versions.orphans(db, asset_id, _model_found(asset_id)) if not o["real"]]
+    for i in range(0, len(gone), 500):
+        ids = [o["id"] for o in gone[i:i + 500]]
+        marks = ",".join("?" * len(ids))
+        mine = f"SELECT id FROM marine_sensors WHERE element_id IN ({marks})"
+        db.execute(f"DELETE FROM marine_readings WHERE sensor_id IN ({mine})", ids)
+        db.execute(f"DELETE FROM marine_sensors WHERE element_id IN ({marks})", ids)
+        db.execute(f"DELETE FROM marine_elements WHERE id IN ({marks})", ids)
+    db.commit()
+    flash(f"{len(gone):,} element{'s' if len(gone) != 1 else ''} no longer in the model removed; any with real readings were kept."
+          if gone else "No element to remove: those left carry real readings.", "success")
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="versions"))
 
 
 @bp.get("/assets/<int:asset_id>/model")

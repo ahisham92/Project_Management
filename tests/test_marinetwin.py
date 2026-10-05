@@ -1194,3 +1194,40 @@ def test_an_alarm_opens_with_the_reading_is_acknowledged_and_closes(app, client,
     with app.app_context():
         closed = connect(app.config["DATABASE"]).execute("SELECT closed_at FROM marine_alarms WHERE id = ?", (alarm["id"],)).fetchone()
     assert closed["closed_at"] is not None
+
+
+def test_each_model_upload_is_a_version_compared_with_the_last(app, signed_in):
+    from app import marine_ifc
+    page = _berth(app, signed_in, "Berth 14")
+    first = FIXTURE.read_bytes()
+    signed_in.post(page + "/model", data={"model": (io.BytesIO(first), "berth-v1.ifc")}, content_type="multipart/form-data")
+    signed_in.post(page + "/model/import")
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        asset_id = int(page.rsplit("/", 1)[1])
+        names = [r["name"] for r in conn.execute("SELECT name FROM marine_elements WHERE asset_id = ? ORDER BY name", (asset_id,))]
+    assert names
+    # The next export drops one element and renames none: the same GlobalIds come back.
+    text_ifc = first.decode("utf-8", "replace")
+    found = marine_ifc.read(first)
+    gone = next(e for e in found["elements"] if not e.get("group"))
+    second = "\n".join(line for line in text_ifc.split("\n") if f"'{gone['global_id']}'" not in line).encode()
+    answer = text(signed_in.post(page + "/model", data={"model": (io.BytesIO(second), "berth-v2.ifc")},
+                                 content_type="multipart/form-data", follow_redirects=True))
+    assert "Version 2: 1 removed since the last one" in answer
+    setup = text(signed_in.get(page + "/setup"))
+    assert "Version 2" in setup and "berth-v1.ifc" in setup and "the model no longer has" in setup
+    signed_in.post(page + "/model/orphans/remove")
+    with app.app_context():
+        left = {r["name"] for r in connect(app.config["DATABASE"]).execute("SELECT name FROM marine_elements WHERE asset_id = ?", (asset_id,))}
+    assert gone["name"] not in left and len(left) == len(names) - 1
+
+
+def test_comparing_exports_finds_moves_and_changes():
+    from app import marine_versions
+    a = [{"id": "g1", "name": "P01", "kind": "pile", "x": 0, "y": 0, "z": 0}, {"id": "g2", "name": "P02", "kind": "pile", "x": 5, "y": 0, "z": 0}]
+    b = [{"id": "g1", "name": "P01", "kind": "pile", "x": 0, "y": 0.5, "z": 0}, {"id": "g2", "name": "MP02", "kind": "pile", "x": 5, "y": 0, "z": 0},
+         {"id": "g3", "name": "P03", "kind": "pile", "x": 10, "y": 0, "z": 0}]
+    diff = marine_versions.compare(a, b)
+    assert diff["added"] == ["P03"] and diff["removed"] == [] and diff["moved"] == [{"name": "P01", "by": 0.5}]
+    assert diff["changed"] == [{"name": "MP02", "what": ["name was P02"]}]

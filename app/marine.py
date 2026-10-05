@@ -466,6 +466,23 @@ CREATE TABLE IF NOT EXISTS marine_alarms (
   closed_at       TEXT                              -- back within its limits; NULL: still on
 );
 CREATE INDEX IF NOT EXISTS marine_alarms_asset ON marine_alarms (asset_id, closed_at);
+CREATE TABLE IF NOT EXISTS marine_model_versions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  number          INTEGER NOT NULL,                 -- 1, 2, 3 ... per asset
+  at              TEXT NOT NULL DEFAULT (datetime('now')),   -- UTC
+  user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  name            TEXT NOT NULL,                    -- the file as it was uploaded
+  size            INTEGER NOT NULL DEFAULT 0,       -- bytes
+  elements        INTEGER,                          -- tracked elements the model names; NULL: not read (glTF)
+  added           INTEGER NOT NULL DEFAULT 0,       -- against the version before
+  removed         INTEGER NOT NULL DEFAULT 0,
+  moved           INTEGER NOT NULL DEFAULT 0,
+  changed         INTEGER NOT NULL DEFAULT 0,
+  diff            TEXT NOT NULL DEFAULT '{}',       -- JSON, see marine_versions.compare
+  snapshot        BLOB,                             -- gzipped JSON of its elements, for the next comparison
+  UNIQUE (asset_id, number)
+);
 CREATE TABLE IF NOT EXISTS marine_changes (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,

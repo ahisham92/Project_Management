@@ -74,6 +74,54 @@
     the <a href="https://claude.ai/code/artifact/3df0a95a-4e2d-4a60-b45d-1db7f11c720e" target="_blank" rel="noopener">MarineTwin Revit Modelling Guide</a>.</p>
 </section>
 
+<section class="mt-panel" data-tab="Model versions" data-slug="versions" data-count="{{ versions | length }}"
+         {% if orphans %}data-state="warning"{% endif %}>
+<div class="card">
+  <div class="card-head"><div><h2>Model versions</h2>
+    <p class="small muted" style="margin-top:2px">Each model uploaded here, newest first, with what changed from the one before.
+      Elements are matched by their GlobalId, which Revit keeps from one export to the next. Times are UTC.</p></div></div>
+  <div class="card-body">
+    {% if orphans %}
+    <div class="marine-note" style="margin-bottom:12px">
+      <p class="small"><strong>{{ '{:,}'.format(orphans | length) }} tracked element{{ 's' if orphans | length > 1 }} the model no longer has</strong>
+        ({{ orphans[:8] | map(attribute='name') | join(', ') }}{% if orphans | length > 8 %}, …{% endif %}).
+        {% set real = orphans | selectattr('real') | list %}
+        {% if real %}{{ real | length }} of them carr{{ 'y' if real | length > 1 else 'ies' }} real readings and stay{{ '' if real | length > 1 else 's' }}.{% endif %}</p>
+      {% if orphans | length > real | length %}
+      <form method="post" action="{{ url_for('marine.remove_orphans', asset_id=asset['id']) }}" style="margin-top:6px"
+            onsubmit="return confirm('Remove the elements the model no longer has, with their simulated sensors?')">
+        <button type="submit" class="btn btn-ghost btn-sm">Remove the {{ '{:,}'.format(orphans | length - real | length) }} without real readings</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if versions %}
+    {% for v in versions %}
+    <details class="marine-version" {% if loop.first %}open{% endif %} style="margin-top:{{ '0' if loop.first else '8px' }}">
+      <summary class="small"><strong>Version {{ v['number'] }}</strong> · {{ v['name'] }} · {{ v['at'][:16] }} · {{ v['who'] or 'a removed user' }}
+        · {{ '{:,.1f}'.format(v['size'] / 1048576) }} MB
+        {% if v['elements'] is not none %} · {{ '{:,}'.format(v['elements']) }} elements{% endif %}
+        {% if v['diff'].get('compared') %} · <span class="tabular">+{{ v['added'] }} −{{ v['removed'] }}, {{ v['moved'] }} moved, {{ v['changed'] }} changed</span>
+        {% elif loop.last %} · the first kept{% else %} · not compared (glTF){% endif %}</summary>
+      {% if v['diff'].get('compared') %}
+      <div class="small" style="margin:6px 0 0 14px">
+        {% for key, title in [('added', 'Added'), ('removed', 'Removed')] %}{% if v['diff'][key] %}
+          <p><strong>{{ title }} ({{ '{:,}'.format(v[key]) }})</strong>: {{ v['diff'][key][:60] | join(', ') }}{% if v[key] > 60 %}, …{% endif %}</p>
+        {% endif %}{% endfor %}
+        {% if v['diff']['moved'] %}<p><strong>Moved ({{ '{:,}'.format(v['moved']) }})</strong>:
+          {% for m in v['diff']['moved'][:40] %}{{ m['name'] }} {{ m['by'] }} m{{ ', ' if not loop.last }}{% endfor %}{% if v['moved'] > 40 %}, …{% endif %}</p>{% endif %}
+        {% if v['diff']['changed'] %}<p><strong>Changed ({{ '{:,}'.format(v['changed']) }})</strong>:
+          {% for c in v['diff']['changed'][:40] %}{{ c['name'] }} ({{ c['what'] | join('; ') }}){{ ', ' if not loop.last }}{% endfor %}{% if v['changed'] > 40 %}, …{% endif %}</p>{% endif %}
+        {% if not (v['added'] or v['removed'] or v['moved'] or v['changed']) %}<p class="muted">No element changed.</p>{% endif %}
+      </div>
+      {% endif %}
+    </details>
+    {% endfor %}
+    {% else %}<p class="small muted">No versions yet. Each model uploaded from now on is kept here, compared with the one before.</p>{% endif %}
+  </div>
+</div>
+</section>
+
 <section class="mt-panel" data-tab="Where it is" data-slug="where">
 <div class="card">
   <div class="card-head"><div><h2>Where it is</h2>

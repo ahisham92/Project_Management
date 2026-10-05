@@ -815,11 +815,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/live", "/lifecycle", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/inputs", "/live", "/lifecycle", "/risks", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 8 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 9 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 8 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 9 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -1261,3 +1261,62 @@ def test_comparing_exports_finds_moves_and_changes():
     diff = marine_versions.compare(a, b)
     assert diff["added"] == ["P03"] and diff["removed"] == [] and diff["moved"] == [{"name": "P01", "by": 0.5}]
     assert diff["changed"] == [{"name": "MP02", "what": ["name was P02"]}]
+
+
+def test_input_sets_can_be_kept_duplicated_used_and_change_what_the_pages_run_on(signed_in, demo):
+    page = text(signed_in.get(demo + "/inputs"))
+    assert "Typical figures" in page and "terminal handling charge" in page and "Value of one container" in page
+    before = text(signed_in.get(demo + "/lifecycle"))
+    assert "$110 a container" in before
+    answer = signed_in.post(demo + "/inputs", data={"name": "Lagos 2026", "value_per_move": "150", "use": "1",
+                                                    "ev_tsunami_on": ["0"], "ev_ship_strike_days": "40"})
+    assert answer.status_code == 302
+    page = text(signed_in.get(demo + "/inputs"))
+    assert "Lagos 2026" in page and "Value of one container 150 USD" in page and "in use" in page
+    assert "$150 a container" in text(signed_in.get(demo + "/lifecycle"))
+    risks = text(signed_in.get(demo + "/risks?event=ship_strike"))
+    assert "running on Lagos 2026" in risks and "left out in Inputs" in risks
+    # A change for one run on the lifecycle page still wins over the set.
+    assert "$90 a container" in text(signed_in.get(demo + "/lifecycle?value_per_move=90"))
+    # Back to the typical figures.
+    signed_in.post(demo + "/inputs/0/use")
+    assert "$110 a container" in text(signed_in.get(demo + "/lifecycle"))
+
+
+def test_every_extreme_event_has_its_damage_closure_time_cost_and_saving(signed_in, demo):
+    from app import marine_risk
+    page = text(signed_in.get(demo + "/risks"))
+    for e in marine_risk.EVENTS:
+        assert e["name"] in page
+    for key in ("great_storm", "quake_major", "war_direct", "ship_strike", "fire_apron", "dg_explosion"):
+        one = signed_in.get(demo + f"/risks/{key}.json").get_json()
+        assert one["days"] > one["days_known"] and one["damaged"]
+    strike = signed_in.get(demo + "/risks/ship_strike.json").get_json()
+    assert strike["closed"] and not strike["whole"]
+    assert signed_in.get(demo + "/risks/no_such.json").status_code == 404
+
+
+def test_knowing_early_always_saves_and_costs_add_up():
+    from app import marine_life, marine_risk
+    rates = marine_life.rates_for("container")
+    elements = [{"name": f"F{i}", "kind": "fender", "model_ref": "", "x": i * 20.0, "y": 0.0, "z": 0.0} for i in range(30)]
+    asset = {"id": 3}
+    for e in marine_risk.catalogue(asset, elements, rates):
+        assert e["saving"] >= 0, e["key"]
+        b = e["blind"]
+        assert b["total"] == b["lost_value"] + b["repair"]
+    strike = marine_risk.assess(asset, elements, "ship_strike", rates, {"ev_ship_strike_days": "50"})
+    assert strike["days"] == 50 and strike["length"] > 500
+
+
+def test_the_live_port_plays_an_extreme_event(signed_in, demo):
+    plan = signed_in.get(demo + "/live.json?scenario=quake_moderate").get_json()
+    assert plan["scenario"]["strikes_at"] == 6 and any(s["key"] == "great_storm" for s in plan["scenarios"])
+    after = plan["hours"][8]
+    assert not after["berthing"] and all(c["state"] == "down" for c in after["equipment"])
+    assert any("closed" in e["text"] for e in plan["events"])
+
+
+def test_container_terminals_count_containers_not_moves(signed_in, demo):
+    from app import marine_ops, marine_sim
+    assert marine_ops.UNITS["container"] == "containers" and marine_sim.vocab("container")["move"] == "containers"

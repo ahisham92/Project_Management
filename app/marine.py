@@ -500,6 +500,16 @@ CREATE TABLE IF NOT EXISTS marine_scenarios (
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS marine_inputs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  vals            TEXT NOT NULL DEFAULT '{}',       -- JSON, marine_inputs field key -> value, only what differs from the typical
+  active          INTEGER NOT NULL DEFAULT 0,       -- the set the pages run on (one per asset at most)
+  created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

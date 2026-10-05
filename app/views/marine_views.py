@@ -22,7 +22,8 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_life, marine_ops, marine_sim, marine_triton, marine_versions,
+    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_risk, marine_sim,
+    marine_triton, marine_versions,
 )
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
@@ -330,6 +331,11 @@ def _life_rates() -> dict:
     return {k: str(last(k))[:20] for k in keys if last(k) not in (None, "")}
 
 
+def _given(asset_id: int) -> dict:
+    """The inputs a page runs on: the set in use, with whatever the page's forms change for this run."""
+    return {**marine_inputs.active(get_db(), asset_id), **_life_rates()}
+
+
 def _life_elements(asset_id: int):
     return query("SELECT name, kind, material, zone, model_ref, x, y, z FROM marine_elements WHERE asset_id = ?"
                  " ORDER BY x, name", (asset_id,))
@@ -340,7 +346,7 @@ def _life_elements(asset_id: int):
 def lifecycle(asset_id: int):
     """The design life in a few minutes: doing nothing against fixing as you go, or deciding each issue."""
     asset = _asset_or_404(asset_id)
-    given = _life_rates()
+    given = _given(asset_id)
     both = marine_life.compare(asset, _life_elements(asset_id), given, given)
     rates = both["fix"]["rates"]
     return render_template("marine/lifecycle.html", asset=asset, both=both, rates=rates, given=given,
@@ -351,7 +357,112 @@ def lifecycle(asset_id: int):
                            prices=[(k, marine_life.PRICE_NAMES[k], rates[k]) for k in marine_life.PRICES],
                            chart=life_costs(marine_life.yearly(both["nothing"]), marine_life.yearly(both["fix"]),
                                             both["fix"]["units"]),
+                           inputs_name=marine_inputs.active_name(get_db(), asset_id), **_context())
+
+
+# --- the inputs and the extreme events -------------------------------------------------
+
+@bp.get("/assets/<int:asset_id>/inputs")
+@login_required
+def inputs(asset_id: int):
+    """The figures every page runs on, in named sets to duplicate and amend, each with its source."""
+    asset = _asset_or_404(asset_id)
+    terminal = asset["terminal_type"]
+    kept = marine_inputs.sets(get_db(), asset_id)
+    for one in kept:
+        one["changes"] = marine_inputs.changes(one["values"], terminal)
+    editing = next((s for s in kept if s["id"] and str(s["id"]) == request.args.get("edit")), None)
+    copying = next((s for s in kept if str(s["id"]) == request.args.get("copy")), None)
+    base = editing or copying or next(s for s in kept if s["active"])
+    groups: dict[str, list] = {}
+    for f in marine_inputs.fields(terminal):
+        value = base["values"].get(f["key"], f["default"])
+        groups.setdefault(f["group"], []).append({**f, "value": value, "changed": f["key"] in base["values"]})
+    subs: dict[str, list] = {}
+    for f in groups.pop("Extreme events", []):
+        subs.setdefault(f["sub"], []).append(f)
+    return render_template("marine/inputs.html", asset=asset, kept=kept, editing=editing, copying=copying, base=base,
+                           groups=groups, events=subs, **_context())
+
+
+@bp.post("/assets/<int:asset_id>/inputs")
+@login_required
+def save_inputs(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    name = (request.form.get("name") or "").strip()[:60] or "My inputs"
+    try:
+        set_id = int(request.form.get("set_id") or 0) or None
+    except ValueError:
+        set_id = None
+    if set_id and query_one("SELECT 1 FROM marine_inputs WHERE id = ? AND asset_id = ?", (set_id, asset_id)) is None:
+        abort(404)
+    values = marine_inputs.clean(request.form.to_dict(flat=False), asset["terminal_type"])
+    saved = marine_inputs.save(get_db(), asset_id, name, values, set_id, g.user["id"], use=bool(request.form.get("use")))
+    get_db().commit()
+    flash(f"{name} is kept{' and in use' if request.form.get('use') else ''}: {len(values)} figures changed from the typical.", "success")
+    back = request.form.get("back")
+    if back in ("lifecycle", "risks"):
+        return redirect(url_for(f"marine.{back}", asset_id=asset_id))
+    return redirect(url_for("marine.inputs", asset_id=asset_id, edit=saved))
+
+
+@bp.post("/assets/<int:asset_id>/inputs/<int:set_id>/use")
+@login_required
+def use_inputs(asset_id: int, set_id: int):
+    _asset_or_404(asset_id)
+    if set_id and query_one("SELECT 1 FROM marine_inputs WHERE id = ? AND asset_id = ?", (set_id, asset_id)) is None:
+        abort(404)
+    marine_inputs.make_active(get_db(), asset_id, set_id)
+    get_db().commit()
+    flash(f"The pages now run on {marine_inputs.active_name(get_db(), asset_id)}.", "success")
+    return redirect(url_for("marine.inputs", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/inputs/<int:set_id>/delete")
+@login_required
+def delete_inputs(asset_id: int, set_id: int):
+    _asset_or_404(asset_id)
+    get_db().execute("DELETE FROM marine_inputs WHERE id = ? AND asset_id = ?", (set_id, asset_id))
+    get_db().commit()
+    flash("The input set is deleted.", "success")
+    return redirect(url_for("marine.inputs", asset_id=asset_id))
+
+
+def _risk_run(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    given = _given(asset_id)
+    rates = marine_life.rates_for(asset["terminal_type"], given)
+    life = int(asset["design_life"] or 50)
+    return asset, given, marine_risk.catalogue(asset, _life_elements(asset_id), rates, given, life), rates
+
+
+@bp.get("/assets/<int:asset_id>/risks")
+@login_required
+def risks(asset_id: int):
+    """Every extreme event at this berth: damage, area closed, time, cost, what knowing early saves, the way back."""
+    asset, given, events, rates = _risk_run(asset_id)
+    shown = next((e for e in events if e["key"] == request.args.get("event")), None) or max(events, key=lambda e: e["expected"])
+    included = [e for e in events if e["on"]]
+    totals = {"expected": sum(e["expected"] for e in included), "expected_saving": sum(e["expected_saving"] for e in included)}
+    return render_template("marine/risks.html", asset=asset, events=events, shown=shown, totals=totals, rates=rates,
+                           groups=marine_risk.GROUPS, units=marine_ops.UNITS.get(asset["terminal_type"], "containers"),
+                           life=int(asset["design_life"] or 50), inputs_name=marine_inputs.active_name(get_db(), asset_id),
                            **_context())
+
+
+@bp.get("/assets/<int:asset_id>/risks/<key>.json")
+@login_required
+def risk_json(asset_id: int, key: str):
+    """One event for the 3D view: the elements it damages and the area it closes."""
+    if key not in marine_risk.BY_KEY:
+        abort(404)
+    asset = _asset_or_404(asset_id)
+    given = _given(asset_id)
+    rates = marine_life.rates_for(asset["terminal_type"], given)
+    e = marine_risk.assess(asset, _life_elements(asset_id), key, rates, given, int(asset["design_life"] or 50))
+    return jsonify({"key": e["key"], "name": e["name"], "days": e["days"], "days_known": e["days_known"],
+                    "whole": bool(e["share"] and not e["radius"] and e["days"]), "closed_m": e["closed_m"],
+                    "damaged": e["damaged"], "closed": e["closed_refs"]})
 
 
 @bp.route("/assets/<int:asset_id>/lifecycle.json", methods=["GET", "POST"])
@@ -363,7 +474,7 @@ def lifecycle_json(asset_id: int):
     body = body if isinstance(body, dict) else {}
     policy = body.get("policy") or request.args.get("policy") or "fix"
     choices = body.get("choices") if isinstance(body.get("choices"), list) else []
-    given = _life_rates()
+    given = _given(asset_id)
     return jsonify(marine_life.run(asset, _life_elements(asset_id), policy, choices[:2000], given, risks=given))
 
 

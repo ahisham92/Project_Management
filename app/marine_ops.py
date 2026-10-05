@@ -35,7 +35,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import marine, marine_triton
+from . import marine, marine_risk, marine_triton
 
 # --- operating limits ----------------------------------------------------------------
 # Typical values for a container berth; a port sets its own in its operating manual.
@@ -130,7 +130,7 @@ EQUIPMENT = {
     "container": ("STS", "quay cranes"), "general_cargo": ("MHC", "mobile harbour cranes"),
     "roro": ("RAMP", "ramp gangs"), "bulk": ("SU", "ship unloaders"), "multipurpose": ("MHC", "mobile harbour cranes"),
 }
-UNITS = {"container": "moves", "general_cargo": "lifts", "roro": "vehicles", "bulk": "tonnes ×10", "multipurpose": "lifts"}
+UNITS = {"container": "containers", "general_cargo": "lifts", "roro": "vehicles", "bulk": "tonnes ×10", "multipurpose": "lifts"}
 
 
 def _rng(asset_id: int, day: str, what: str) -> random.Random:
@@ -246,6 +246,12 @@ SCENARIOS = [
     ("crane_fault", "Crane breakdown", "Two of the berth's cranes break down in the first day; the ship is worked on what is left."),
     ("fog", "Fog", "Thick fog through the night and morning: the pilots stop bringing ships in; cranes keep working."),
 ]
+# Every extreme event from the Risks page that closes the berth plays here too: it strikes a few
+# hours in, and the two days show the warning (when there is one), the strike, the area closed and
+# the cranes stopped. The 3D view draws its damage and closed area once it has struck.
+STRIKE_HOUR = 6
+EXTREME = [e for e in marine_risk.EVENTS if e["days"]]
+SCENARIOS += [(e["key"], e["name"], e["what"]) for e in EXTREME]
 SCENARIO_KEYS = {key for key, *_ in SCENARIOS}
 
 
@@ -270,6 +276,18 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     scenario = scenario if scenario in SCENARIO_KEYS else "normal"
     weather = metocean(asset_id, now, hours_back=0, hours_ahead=hours)
     s_from, s_to = _scenario_hours(scenario, start, hours)
+    extreme = marine_risk.BY_KEY.get(scenario)
+    if extreme:
+        s_from, s_to = STRIKE_HOUR, hours + 1
+        if extreme["weather"]:
+            # The storm that brings it: up over a few hours to its peak, holding for half a day, easing.
+            peak = extreme["weather"]
+            for i, w in enumerate(weather):
+                rise = min(1.0, max(0.0, (i - s_from + 4) / 4)) * min(1.0, max(0.0, (s_from + 16 - i) / 6))
+                if rise > 0:
+                    w["wind"] = round(max(w["wind"], peak["wind"] * rise), 1)
+                    w["gust"] = round(max(w["gust"], w["wind"] * 1.32), 1)
+                    w["hs"] = round(max(w["hs"], peak["hs"] * rise), 2)
     if scenario == "storm":
         # A gale front: up over a few hours to gusts past the stow limit, holding, then easing.
         for i, w in enumerate(weather):
@@ -306,12 +324,17 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         storm_rain = max(0.0, (w["wind"] - 11) * 1.4)
         shower = sum(rate * math.exp(-((i - at) / width) ** 2) for at, width, rate in showers)
         rain = round(storm_rain + shower if storm_rain + shower > 0.3 else 0.0, 1)
-        power = not (scenario == "power_cut" and s_from <= i < s_to)
+        power = not (scenario == "power_cut" and s_from <= i < s_to) and \
+            not (extreme and extreme["power"] and s_from <= i < s_from + 12)
+        struck = bool(extreme) and i >= s_from
         fog = scenario == "fog" and s_from <= i < s_to
         kit = []
-        for name, breaks in faults:
+        for k, (name, breaks) in enumerate(faults):
             fault = next((why for at, length, why in breaks if at <= i < at + length), None)
-            if not power and electric:
+            share = extreme["share"] if extreme and extreme["share"] is not None else 1.0 if extreme and not extreme["radius"] else 0.5
+            if struck and k < max(1, round(share * len(faults))):
+                kit.append({"name": name, "state": "down", "why": f"{extreme['name'].lower()}: area closed"})
+            elif not power and electric:
                 kit.append({"name": name, "state": "down", "why": "power cut, no grid supply"})
             elif prefix != "RAMP" and w["gust"] >= LIMITS["crane_stow_gust"]:
                 kit.append({"name": name, "state": "stowed", "why": "on storm pins, gusts over the stow limit"})
@@ -324,8 +347,18 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
         hourly.append({"at": w["at"], "wind": w["wind"], "gust": w["gust"], "hs": w["hs"], "tide": w["tide"],
                        "rain": rain, "visibility": 0.2 if fog else round(max(0.4, 10 - rain * 0.9), 1),
                        "equipment": [{"name": c["name"], "state": c["state"], "why": c["why"]} for c in kit],
-                       "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"] and not fog,
+                       "berthing": w["wind"] < LIMITS["berthing_wind"] and w["hs"] < LIMITS["berthing_hs"] and not fog and not struck,
                        "power": power, "fog": fog})
+        if extreme and i == 0 and extreme["warn_h"] >= 1:
+            log(w["at"], "warning", f"Warning: {extreme['name'].lower()} expected, from {extreme['warn_with']}. Getting ready.")
+        if extreme and i == max(0, s_from - 1) and 0 < extreme["warn_h"] < 1:
+            log(w["at"], "warning", f"Alarm from {extreme['warn_with']}: minutes to act.")
+        if extreme and i == s_from:
+            log(w["at"], "critical", f"{extreme['name']}: {extreme['what']}")
+            log(w["at"], "critical", ("The whole quay is closed" if not extreme["radius"] else f"About {2 * extreme['radius']:.0f} m of the quay closed")
+                + f" for about {extreme['days']:.0f} days ({extreme['days_known']:.0f} knowing early). No berthing.")
+            if extreme["steps"]:
+                log(w["at"] + timedelta(hours=1), "info", "Recovery: " + "; ".join(extreme["steps"][:3]).lower() + ".")
         if scenario == "power_cut" and i == s_from:
             log(w["at"], "critical", "Power cut: the grid supply is lost. Electric cranes stop, the yard lights go out; reefers on the standby generators.")
         if scenario == "power_cut" and i == s_to:
@@ -400,8 +433,8 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     events.sort(key=lambda e: e["at"])
     name, words = next((n, w) for k, n, w in SCENARIOS if k == scenario)
     return {"start": start, "hours": hourly, "calls": calls, "events": events,
-            "equipment_name": equipment_name, "units": UNITS.get(terminal, "moves"), "limits": LIMITS,
-            "scenario": {"key": scenario, "name": name, "words": words}}
+            "equipment_name": equipment_name, "units": UNITS.get(terminal, "containers"), "limits": LIMITS,
+            "scenario": {"key": scenario, "name": name, "words": words, "strikes_at": s_from if extreme else None}}
 
 
 # --- putting it together ----------------------------------------------------------
@@ -554,6 +587,6 @@ def operations(conn: Any, asset: Any, now: datetime | None = None, twin: dict[st
         "cranes_working": sum(1 for c in crane_list if c["state"] == "working"),
         "downtime": lost, "actions": actions, "limits": LIMITS, "limit_notes": LIMIT_NOTES,
         "ratings": ratings, "twin": twin, "terminal": terminal,
-        "equipment_name": EQUIPMENT.get(terminal, EQUIPMENT["container"])[1], "units": UNITS.get(terminal, "moves"),
+        "equipment_name": EQUIPMENT.get(terminal, EQUIPMENT["container"])[1], "units": UNITS.get(terminal, "containers"),
         "windows": {"stop": stop, "stow": stow, "no_berth": no_berth},
     }

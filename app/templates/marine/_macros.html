@@ -23,14 +23,16 @@
 {% macro asset_tabs(asset=None) %}
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
                      ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
+  {% set setup_tabs = [('marine.setup', 'Model and place'), ('marine.sensors', 'Sensors'), ('marine.inputs', 'Inputs')] %}
   {% set here = request.endpoint %}
   {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}
   {% set steps = [
       ('marine.index', 'Assets', asset['name'] if asset else 'pick or add one', ['marine.index']),
-      ('marine.setup', 'Set up', 'model, place, sensors', ['marine.setup', 'marine.sensors']),
+      ('marine.setup', 'Set up', 'model, place, sensors, inputs', setup_tabs | map('first') | list),
       ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
       ('marine.live', 'Live port', 'ships, cranes, weather', ['marine.live']),
       ('marine.lifecycle', 'Lifecycle', '50 years, fix or wait', ['marine.lifecycle']),
+      ('marine.risks', 'Risks', 'extreme events, cost, recovery', ['marine.risks']),
       ('marine.operations', 'Operations', 'now, next, what to do', ['marine.operations']),
       ('marine.simulation', 'Simulation', 'scenarios, bottleneck', ['marine.simulation']),
       ('marine.equipment', 'Facility', 'equipment, air, carbon, safety', facility | map('first') | list)] %}
@@ -45,6 +47,13 @@
       </a>
     {% endfor %}
   </nav>
+  {% if asset and here in setup_tabs | map('first') | list %}
+  <nav class="tabs" style="margin:0 0 16px">
+    {% for endpoint, label in setup_tabs %}
+      <a href="{{ url_for(endpoint, asset_id=asset['id']) }}" class="{{ 'active' if here == endpoint }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
   {% if asset and here in facility | map('first') | list %}
   <nav class="tabs" style="margin:0 0 16px">
     {% for endpoint, label in facility %}

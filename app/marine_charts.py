@@ -298,7 +298,7 @@ def carbon_months(months: Sequence[dict[str, Any]]) -> Markup:
         v = ihi * frac
         parts.append(f'<text x="{w - right + 4}" y="{top + plot_h * (1 - frac) + 4:.1f}" class="tick">{v:.1f}</text>')
     parts.append(f'<line class="crosshair" x1="0" y1="{top}" x2="0" y2="{h - bottom}" stroke="{MUTED}" stroke-width="1" visibility="hidden"/>')
-    legend = _legend([("Scope 2, electricity", READING), ("Scope 1, diesel", GUST), ("kg CO₂e per move", TIDE)])
+    legend = _legend([("Scope 2, electricity", READING), ("Scope 1, diesel", GUST), ("kg CO₂e per container", TIDE)])
     return _chart("".join(parts), legend, w, h)
 
 

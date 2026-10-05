@@ -399,7 +399,7 @@ def carbon(asset: Any, today: date | None = None) -> dict[str, Any]:
     actions = []
     if not on_track:
         actions.append({"state": "warning", "area": "Carbon",
-                        "text": f"Carbon per move {'fell' if change < 0 else 'rose'} {abs(change):.1f}% on the year before, against a {TARGET_CUT}% cut a year. "
+                        "text": f"Carbon per container {'fell' if change < 0 else 'rose'} {abs(change):.1f}% on the year before, against a {TARGET_CUT}% cut a year. "
                                 f"Diesel is {100 * sum(m['scope1'] for m in months) / total:.0f}% of the total: "
                                 f"price converting the tractors to electric or the RTGs to cable reel."})
     share_shore = sum(m["shore"] for m in months[-3:]) / 3

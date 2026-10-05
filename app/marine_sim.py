@@ -38,18 +38,18 @@ from typing import Any
 PARAMS = [
     ("days", "Simulated period", "days", 28, 7, 90, 1, "Demand"),
     ("ships_per_week", "Ship calls", "per week", 6, 1, 40, 0.5, "Demand"),
-    ("moves_per_call", "Moves per call", "moves", 1800, 100, 8000, 50, "Demand"),
+    ("moves_per_call", "Containers per call", "containers", 1800, 100, 8000, 50, "Demand"),
     ("road_share", "Boxes leaving or arriving by road", "%", 70, 0, 100, 5, "Demand"),
     ("berths", "Berths", "", 2, 1, 8, 1, "Quay"),
     ("sts", "Quay cranes (STS)", "", 6, 1, 24, 1, "Quay"),
     ("max_sts_per_ship", "Most cranes on one ship", "", 4, 1, 8, 1, "Quay"),
-    ("sts_rate", "Quay crane rate", "moves/h", 28, 10, 45, 1, "Quay"),
+    ("sts_rate", "Quay crane rate", "containers/h", 28, 10, 45, 1, "Quay"),
     ("sts_availability", "Quay crane availability", "%", 95, 50, 100, 1, "Quay"),
     ("weather_downtime", "Hours lost to wind", "%", 3, 0, 30, 0.5, "Quay"),
     ("trucks", "Terminal tractors", "", 18, 1, 120, 1, "Horizontal transport"),
     ("truck_cycle", "Tractor cycle, crane to yard and back", "min", 15, 5, 45, 1, "Horizontal transport"),
     ("rtgs", "Yard cranes (RTG)", "", 8, 1, 60, 1, "Yard"),
-    ("rtg_rate", "Yard crane rate", "moves/h", 18, 8, 35, 1, "Yard"),
+    ("rtg_rate", "Yard crane rate", "containers/h", 18, 8, 35, 1, "Yard"),
     ("yard_capacity", "Yard capacity", "TEU", 14000, 1000, 100000, 500, "Yard"),
     ("dwell_days", "Average dwell", "days", 4, 1, 14, 0.5, "Yard"),
     ("gate_lanes", "Gate lanes", "", 6, 1, 30, 1, "Gate"),
@@ -96,7 +96,7 @@ REMEDY = {
 # equipment that works them, the transport to the storage area, the storage area's own
 # handling, and the gate. Only the words, the default numbers and the unit change.
 TERMINAL = {
-    "container": {"unit": "TEU", "per_move": TEU_PER_MOVE, "move": "moves"},
+    "container": {"unit": "TEU", "per_move": TEU_PER_MOVE, "move": "containers"},
     "general_cargo": {
         "unit": "freight tonnes", "per_move": 8.0, "move": "lifts",
         "links": {"sts": "Harbour cranes", "trucks": "Trailers", "rtgs": "Forklifts", "berth": "Berths"},

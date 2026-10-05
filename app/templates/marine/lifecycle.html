@@ -19,7 +19,7 @@
           'berth out of service in year ' ~ ('%.0f' | format(n['condemned_year'])) if n['condemned_year'] else 'lasts ' ~ life(n)) }}
   {{ tile('Fix as you go', moves(f['cost_moves']), money(f['spend']) ~ ' on ' ~ f['fixes'] ~ ' repairs, ' ~ '{:,.0f}'.format(f['lost']) ~ ' ' ~ both['fix']['units'] ~ ' lost', 'good',
           'lasts ' ~ life(f)) }}
-  {{ tile('Saved by fixing', moves(both['saved_moves']), 'about ' ~ money(both['saved']) ~ ' at $' ~ '{:,.0f}'.format(rates['value_per_move']) ~ ' a move',
+  {{ tile('Saved by fixing', moves(both['saved_moves']), 'about ' ~ money(both['saved']) ~ ' at $' ~ '{:,.0f}'.format(rates['value_per_move']) ~ ' a ' ~ (both['fix']['units'][:-1] if both['fix']['units'].endswith('s') else both['fix']['units']),
           'good' if both['saved_moves'] > 0 else 'warning', 'fixing pays' if both['saved_moves'] > 0 else 'fixing costs more here') }}
   {{ tile('Service life', life(f), 'design life ' ~ both['fix']['life'] ~ ' years; left alone, ' ~ life(n), 'good', 'with the repairs') }}
 </div>
@@ -77,7 +77,7 @@
         <tr><td class="label">Service life</td><td class="right tabular">{{ life(n) }}</td><td class="right tabular">{{ life(f) }}</td></tr>
       </tbody>
     </table>
-    <p class="small muted" style="margin-top:8px">Corrosion allowance {{ both['fix']['allowance'] }} mm from {{ both['fix']['allowance_source'] }}. Rates and prices are typical figures, change them under Rates.</p>
+    <p class="small muted" style="margin-top:8px">Corrosion allowance {{ both['fix']['allowance'] }} mm from {{ both['fix']['allowance_source'] }}. Running on <a href="{{ url_for('marine.inputs', asset_id=asset['id']) }}">{{ inputs_name }}</a>: every figure, where it comes from, and your own sets are under Set up, Inputs. Each extreme event on its own, with its cost and the way back: <a href="{{ url_for('marine.risks', asset_id=asset['id']) }}">Risks</a>.</p>
   </div>
 </div>
 </section>
@@ -114,7 +114,9 @@
         </fieldset>
         {% endfor %}
       </div>
-      <p style="margin-top:12px"><button type="submit" class="btn">Run it again</button></p>
+      <p style="margin-top:12px"><button type="submit" class="btn">Run it again</button>
+        <button type="submit" class="btn btn-ghost" formmethod="post" formaction="{{ url_for('marine.save_inputs', asset_id=asset['id']) }}" name="back" value="lifecycle" title="Saved under Set up, Inputs, and used on every page">Keep as an input set</button>
+        <input type="hidden" name="use" value="1"><input type="hidden" name="name" value="From the lifecycle"></p>
     </form>
   </div>
 </div>
@@ -154,6 +156,8 @@
         </fieldset>
       </div>
       <p style="margin-top:12px"><button type="submit" class="btn">Run it again</button>
+        <button type="submit" class="btn btn-ghost" formmethod="post" formaction="{{ url_for('marine.save_inputs', asset_id=asset['id']) }}" name="back" value="lifecycle" title="Saved under Set up, Inputs, and used on every page">Keep as an input set</button>
+        <input type="hidden" name="use" value="1"><input type="hidden" name="name" value="From the lifecycle">
         <a class="btn btn-ghost" href="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}">Back to the typical figures</a></p>
     </form>
   </div>

@@ -23,7 +23,7 @@ from flask import (
 
 from .. import (
     marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_plan, marine_risk, marine_sim,
-    marine_triton, marine_versions,
+    marine_triton, marine_value, marine_versions,
 )
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
@@ -323,7 +323,7 @@ def _life_rates() -> dict:
     body = request.get_json(silent=True) if request.is_json else None
     given = body.get("rates") if isinstance(body, dict) else None
     source = given if isinstance(given, dict) else request.args
-    keys = ("moves_per_day", "value_per_move", *marine_life.PRICES,
+    keys = ("moves_per_day", "value_per_move", "rebuild_months", *marine_life.PRICES, *marine_life.DREDGE,
             *(f"life_{k}" for k in marine_life.KIND_INFO), *(f"warranty_{k}" for k in marine_life.KIND_INFO),
             *(f"risk_{k}" for k in marine_life.RISKS), "sea_level", "seismic", "war_year", "freeboard")
     # A ticked box sends its hidden 0 and then its 1: the last one is what was meant.
@@ -334,6 +334,16 @@ def _life_rates() -> dict:
 def _given(asset_id: int) -> dict:
     """The inputs a page runs on: the set in use, with whatever the page's forms change for this run."""
     return {**marine_inputs.active(get_db(), asset_id), **_life_rates()}
+
+
+@bp.app_template_global("marine_value")
+def _value_for(asset) -> dict | None:
+    """What MarineTwin is worth at this berth, for the strip under the steps (none when it cannot be worked out)."""
+    try:
+        return marine_value.summary(asset, _life_elements(int(asset["id"])), _given(int(asset["id"])))
+    except Exception:  # noqa: BLE001 - the strip is a summary; the page itself must still open
+        current_app.logger.exception("MarineTwin value for asset %s", asset["id"])
+        return None
 
 
 def _life_elements(asset_id: int):

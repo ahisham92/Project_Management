@@ -66,6 +66,16 @@
 .mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
 .mt-step.s4 { --step: var(--series-4); } .mt-step.s5 { --step: var(--series-2); } .mt-step.s6 { --step: var(--series-5); }
 .mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); } .mt-step.s9 { --step: var(--series-1); } .mt-step.s10 { --step: var(--series-3); }
+/* What MarineTwin is worth at this berth (under the steps). */
+.mt-value { margin: 0 0 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--good) 35%, var(--border));
+  background: color-mix(in srgb, var(--good) 7%, var(--raised)); font-size: 0.875rem; }
+.mt-value summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.mt-value summary::-webkit-details-marker { display: none; }
+.mt-value-tag { font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--good); }
+.mt-value-loss { color: var(--critical); }
+.mt-value-how { margin-left: auto; color: var(--muted); text-decoration: underline; font-size: 0.8rem; }
+.mt-value[open] .mt-value-how { display: none; }
+.mt-value-body { display: grid; gap: 6px; padding: 0 12px 10px; }
 @media (max-width: 860px) {
   .mt-flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .mt-step { flex: 0 0 auto; max-width: none; }

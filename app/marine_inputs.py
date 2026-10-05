@@ -20,7 +20,21 @@ INDICATIVE = "Indicative figure for a West African container port, 2025 prices; 
 PRICE_SOURCES = {
     "fender": "A 2 m cone fender with its frontal panel, supplied and fitted (Trelleborg, ShibataFenderTeam class). " + INDICATIVE,
     "bollard": "A 150 t cast bollard with its anchor bolts, fitted. " + INDICATIVE,
+    "new_quay_m": "A new piled or combi-wall container quay with its deck, fenders, bollards and services, per metre of "
+                  "berth: USD 40,000 to 90,000 a metre at recent West African and Gulf projects. " + INDICATIVE,
     "war_rebuild": "A bay of wall and deck with the cranes on it rebuilt after a direct hit; insurance seldom covers war. " + INDICATIVE,
+}
+DREDGE_SOURCES = {
+    "silt_rate": "From the bathymetric surveys: 0.1 to 0.5 m a year is usual at river-mouth and lagoon ports (PIANC "
+                 "WG 102); a muddy estuary can reach 1 m.",
+    "dredge_trigger": "The over-dredge allowance below the declared depth (often 0.5 m): when the silt fills it, the "
+                      "berth is dredged before the depth alongside is lost.",
+    "dredge_width": "The berth pocket: about 1.5 times the beam of the largest ship, 50 to 60 m for a container berth.",
+    "dredge_m3": "Maintenance dredging by trailing suction hopper dredger, USD 5 to 12 a cubic metre including disposal "
+                 "offshore; a grab or water injection dredger near the wall costs more per cubic metre. " + INDICATIVE,
+    "dredge_mob": "Mobilising a hopper dredger and its crew to site and back. " + INDICATIVE,
+    "dredge_day": "What a mid-size hopper dredger takes out at a working berth, round the ships.",
+    "dredge_survey": "A multibeam survey of the berth pocket by a survey launch.",
 }
 LIFE_SOURCE = ("Typical design or service life: BS 6349-1-1 (maritime structures, 50 years), the maker's figure for fenders "
                "(PIANC WG 33 suggests 15–25 years), utilities by CIBSE Guide M. The warranty is the usual supplier's or "
@@ -55,6 +69,12 @@ def fields(terminal: str = "container") -> list[dict[str, Any]]:
     for key, name in marine_life.PRICE_NAMES.items():
         out.append({"key": key, "group": "Repairs", "label": name, "unit": "USD", "default": marine_life.PRICES[key],
                     "source": PRICE_SOURCES.get(key, INDICATIVE)})
+    out.append({"key": "rebuild_months", "group": "Repairs", "label": "A new quay: months the berth stands idle", "unit": "months",
+                "default": marine_life.REBUILD_MONTHS,
+                "source": "Design, tender and building a replacement quay: 24 to 36 months is usual; ships go elsewhere meanwhile."})
+    for key, (default, label, unit) in marine_life.DREDGE.items():
+        out.append({"key": key, "group": "Seabed and dredging", "label": label, "unit": unit, "default": default,
+                    "source": DREDGE_SOURCES.get(key, INDICATIVE)})
     for key, (life, warranty, covers) in marine_life.KIND_INFO.items():
         name = marine_life.KIND_NAME[key]
         out.append({"key": f"life_{key}", "group": "Lives and warranties", "label": f"{name}: expected life", "unit": "years",
@@ -102,7 +122,7 @@ def fields(terminal: str = "container") -> list[dict[str, Any]]:
     return out
 
 
-GROUPS = ["The berth", "Repairs", "Lives and warranties", "Lifecycle risks", "Extreme events", "Sensors plan"]
+GROUPS = ["The berth", "Repairs", "Seabed and dredging", "Lives and warranties", "Lifecycle risks", "Extreme events", "Sensors plan"]
 
 
 def clean(form: dict[str, Any], terminal: str = "container") -> dict[str, str]:

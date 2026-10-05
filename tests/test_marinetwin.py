@@ -1040,7 +1040,12 @@ def test_fixing_as_you_go_costs_less_and_lasts_longer(app, signed_in, demo):
         elements = query("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))
         both = marine_life.compare(asset, elements)
     nothing, fixing = both["nothing"]["totals"], both["fix"]["totals"]
-    assert nothing["spend"] == 0 and nothing["fixes"] == 0
+    # Left alone, nothing is mended: the only spend is a new quay once the berth is lost.
+    assert nothing["fixes"] == 0 and nothing["spend"] == nothing["rebuild_cost"]
+    if nothing["condemned_year"] is not None:
+        assert nothing["rebuilds"] == 1 and nothing["rebuild_cost"] > 0
+    # Fixing as you go dredges the berth pocket; left alone it silts up.
+    assert fixing["dredges"] > 0 and fixing["dredge_cost"] > 0 and nothing["dredges"] == 0 and nothing["silt"] > 1
     assert fixing["fixes"] > 0 and fixing["spend"] > 0
     assert fixing["cost_moves"] < nothing["cost_moves"] and both["saved_moves"] > 0
     assert fixing["service_life"] > both["fix"]["life"]
@@ -1294,6 +1299,24 @@ def test_every_extreme_event_has_its_damage_closure_time_cost_and_saving(signed_
     strike = signed_in.get(demo + "/risks/ship_strike.json").get_json()
     assert strike["closed"] and not strike["whole"]
     assert signed_in.get(demo + "/risks/no_such.json").status_code == 404
+
+
+def test_the_risks_cover_security_ships_and_occupation(signed_in, demo):
+    from app import marine_risk
+    keys = {e["key"] for e in marine_risk.EVENTS}
+    assert {"terrorist_attack", "ship_collision", "forced_occupation", "mooring_breakaway", "channel_blocked",
+            "sanctions", "uxo", "lightning", "hazmat_leak"} <= keys
+    assert {e["group"] for e in marine_risk.EVENTS} <= set(marine_risk.GROUPS)
+    occupied = signed_in.get(demo + "/risks/forced_occupation.json").get_json()
+    assert occupied["whole"] and occupied["days"] >= 300
+    collision = signed_in.get(demo + "/risks/ship_collision.json").get_json()
+    assert collision["damaged"] and not collision["whole"]
+
+
+def test_every_page_shows_what_marinetwin_is_worth(signed_in, demo):
+    for path in ("/live", "/risks", "/plan"):
+        page = text(signed_in.get(demo + path))
+        assert "MarineTwin here" in page and "Without it" in page and "not a day or a month" in page
 
 
 def test_knowing_early_always_saves_and_costs_add_up():

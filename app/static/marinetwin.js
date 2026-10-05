@@ -23,6 +23,8 @@ const view = document.querySelector('.marine-view');
 const LIVE = view && view.dataset.mode === 'live';
 // The lifecycle (step 5) plays the whole design life through it: marinetwin-life.js drives that.
 const LIFE = view && view.dataset.mode === 'life';
+// The risks page (step 6) shows one extreme event at a time on the model: damage and the area closed.
+const RISK = view && view.dataset.mode === 'risk';
 const pick = document.querySelector('.marine-pick');
 
 function css(name, fallback) {
@@ -1774,14 +1776,17 @@ async function main() {
   // Colours: by condition (the twin's job), or as built.
   const conditionMats = new Map();
   let byCondition = true;
+  let eventStates = null;                // on the risks page: what the event shown did to each element
+  const stateOf = (e) => (eventStates ? eventStates.get(e.ref) || eventStates.get(e.name) || 'neutral' : e.state);
   function paint() {
     content.traverse((m) => {
       if (!m.isMesh) return;
       const e = m.userData.element;
       if (byCondition) {
         if (e) {
-          if (!conditionMats.has(e.state)) conditionMats.set(e.state, material(e.state));
-          m.material = conditionMats.get(e.state);
+          const state = stateOf(e);
+          if (!conditionMats.has(state)) conditionMats.set(state, material(state));
+          m.material = conditionMats.get(state);
         } else {
           m.material = REAL.concrete;
         }
@@ -1987,8 +1992,9 @@ async function main() {
     clearInterval(cardTimer);
   }
   const elementCard = (e) => () => ({
-    kind: (e.kind || 'element').replace(/_/g, ' '), title: e.name, state: e.state,
-    rows: [['Material', e.material], ['Zone', (e.zone || '').replace(/_/g, ' ')], ['Health', e.health ?? '—'],
+    kind: (e.kind || 'element').replace(/_/g, ' '), title: e.name, state: stateOf(e),
+    rows: [...(eventStates ? [['In this event', { critical: 'destroyed or failed: replace', warning: 'damaged: repair' }[stateOf(e)] || 'not damaged']] : []),
+      ['Material', e.material], ['Zone', (e.zone || '').replace(/_/g, ' ')], ['Health', e.health ?? '—'],
       ['Design utilisation', e.design_ur == null ? '—' : Number(e.design_ur).toFixed(2)],
       ['Utilisation at end of life', e.ur_at_life == null ? '—' : Number(e.ur_at_life).toFixed(2)]],
     listTitle: 'Sensors', list: e.sensors.map((x) => ({ state: x.state, label: x.label, text: x.headline })),
@@ -2034,6 +2040,98 @@ async function main() {
     renderer.setSize(view.clientWidth, view.clientHeight);
   });
 
+  // The risks page: the event shown, its damage on the elements and the area it closes laid over the
+  // deck as a red carpet of 10 m squares, with a banner saying what it is.
+  // The live port shows the same when it plays an extreme event, once the event has struck.
+  let showEvent = null;
+  if ((RISK || LIVE) && view.dataset.eventUrl) {
+    const closedMat = new THREE.MeshBasicMaterial({ color: 0xd03b3b, transparent: true, opacity: 0.3, depthWrite: false });
+    const cellGeo = new THREE.BoxGeometry(1, 1, 1);
+    let carpet = null;
+    const banner = document.createElement('div');
+    banner.className = 'mt-risk-banner';
+    banner.hidden = true;
+    view.appendChild(banner);
+    const homeTarget = controls.target.clone();
+    const homeCamera = camera.position.clone();
+    let asked = 0;
+    showEvent = async (key) => {
+      const mine = ++asked;
+      let ev = null;
+      try {
+        if (key) ev = await (await fetch(view.dataset.eventUrl.replace('KEY', encodeURIComponent(key)), { credentials: 'same-origin' })).json();
+      } catch (err) { ev = null; }
+      if (mine !== asked) return;              // another event was picked meanwhile
+      if (carpet) { scene.remove(carpet); carpet.dispose(); carpet = null; }
+      if (!ev) { eventStates = null; paint(); banner.hidden = true; return; }
+      eventStates = new Map();
+      for (const d of ev.damaged) { eventStates.set(d.ref, d.state); eventStates.set(d.name, d.state); }
+      paint();
+      // The deck's level: the top of the slabs and beams, or of everything when there are none.
+      content.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      let deck = -Infinity;
+      let top = -Infinity;
+      const closed = new Set(ev.closed);
+      const cells = new Map();
+      const CELL = 10;
+      content.traverse((m) => {
+        const e = m.isMesh && m.userData.element;
+        if (!e) return;
+        box.setFromObject(m);
+        if (box.isEmpty()) return;
+        top = Math.max(top, box.max.y);
+        if (e.kind === 'slab' || e.kind === 'beam') deck = Math.max(deck, box.max.y);
+        if (!(ev.whole || closed.has(e.ref) || closed.has(e.name))) return;
+        for (let x = Math.floor((box.min.x - 3) / CELL); x <= Math.floor((box.max.x + 3) / CELL); x++) {
+          for (let z = Math.floor((box.min.z - 3) / CELL); z <= Math.floor((box.max.z + 3) / CELL); z++) cells.set(`${x},${z}`, [x, z]);
+        }
+      });
+      if (!Number.isFinite(deck)) deck = Number.isFinite(top) ? top : frame.top;
+      const centre = new THREE.Vector3();
+      if (cells.size) {
+        carpet = new THREE.InstancedMesh(cellGeo, closedMat, cells.size);
+        const mat = new THREE.Matrix4();
+        let i = 0;
+        for (const [x, z] of cells.values()) {
+          mat.makeScale(CELL, 0.05, CELL).setPosition((x + 0.5) * CELL, deck + 0.35, (z + 0.5) * CELL);
+          carpet.setMatrixAt(i++, mat);
+          centre.x += (x + 0.5) * CELL; centre.z += (z + 0.5) * CELL;
+        }
+        centre.divideScalar(cells.size).setY(deck);
+        carpet.renderOrder = 2;
+        scene.add(carpet);
+      }
+      if (LIVE) return;                      // the live player keeps its own camera and log
+      // A closed berth is not worked: the cranes and tractors stand still while it is shown.
+      moving = !ev.days;
+      const moveBox = hud.querySelector('.marine-hud-move');
+      if (moveBox) moveBox.checked = moving;
+      // The camera goes to the area hit, or back to the whole berth when the whole quay is closed.
+      if (cells.size && !ev.whole) {
+        const span = Math.sqrt(cells.size) * CELL;
+        const back = Math.max(120, span * 1.6);
+        const dir = homeCamera.clone().sub(homeTarget).normalize();
+        controls.target.copy(centre);
+        camera.position.copy(centre).addScaledVector(dir, back);
+      } else {
+        controls.target.copy(homeTarget);
+        camera.position.copy(homeCamera);
+      }
+      controls.update();
+      const d = (n) => (n >= 60 ? `${Math.round(n / 30.4)} months` : n >= 1 ? `${Math.round(n)} days` : `${Math.round(n * 24)} h`);
+      const replace = ev.damaged.filter((x) => x.state === 'critical').length;
+      const repair = ev.damaged.length - replace;
+      banner.innerHTML = `<strong>${escapeHtml(ev.name)}</strong><br>` +
+        (ev.days ? `${ev.whole ? 'The whole quay' : `${ev.closed_m.toLocaleString()} m of the quay`} closed ${d(ev.days)}` +
+          (ev.days_known !== ev.days ? ` (${d(ev.days_known)} knowing early)` : '') : 'Nothing closed: trade falls away') +
+        (ev.damaged.length ? `<br>${replace ? `${replace} to replace` : ''}${replace && repair ? ', ' : ''}${repair ? `${repair} to repair` : ''}` : '');
+      banner.hidden = false;
+    };
+    view.addEventListener('mt-event', (ev) => showEvent(ev.detail));
+    if (RISK && view.dataset.event) showEvent(view.dataset.event);
+  }
+
   // The live port: the player takes over the clock, the ships, the cranes and the weather.
   let player = null;
   if (LIVE) {
@@ -2046,6 +2144,7 @@ async function main() {
       setPower(on) { if (on !== power) { power = on; setTime(); } },
       setTide(fn) { tideSource = fn; },
       setMoving(on) { moving = on; },
+      showEvent,
     });
   }
 

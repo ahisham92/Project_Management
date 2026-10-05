@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Risks · MarineTwin{% endblock %}
+
+{% macro money(n) %}{% if n >= 1e9 %}${{ '{:,.1f}'.format(n / 1e9) }}B{% elif n >= 1e6 %}${{ '{:,.1f}'.format(n / 1e6) }}M{% elif n >= 1e3 %}${{ '{:,.0f}'.format(n / 1e3) }}k{% else %}${{ '{:,.0f}'.format(n) }}{% endif %}{% endmacro %}
+{% macro days(d) %}{% if d == 0 %}none{% elif d < 1 %}{{ '%.0f' | format(d * 24) }} h{% elif d >= 60 %}{{ '%.0f' | format(d / 30.4) }} months{% else %}{{ '%.0f' | format(d) }} days{% endif %}{% endmacro %}
+{% macro warn(h) %}{% if not h %}none{% elif h < 1 %}{{ '%.0f' | format(h * 60) }} min{% elif h < 48 %}{{ '%.0f' | format(h) }} h{% else %}{{ '%.0f' | format(h / 24) }} days{% endif %}{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "Everything that could hit the berth, one event at a time: what it damages and the area it closes, how long until the berth is back, what it costs in " ~ units ~ " lost and repairs, and how much knowing early saves. Pick an event to see it on the model. Figures are indicative; change any of them in Inputs.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Expected over ' ~ life ~ ' years', money(totals['expected']), 'every included event at its chance, not knowing early', 'critical', 'running on ' ~ inputs_name) }}
+  {{ tile('Knowing early saves', money(totals['expected_saving']), 'over the design life, from sensors, forecasts and readiness', 'good', 'see each event below') }}
+  {{ tile('Worst single event', (events | max(attribute='blind.total'))['name'], money((events | max(attribute='blind.total'))['blind']['total']) ~ ' if it happens', 'warning', '') }}
+  {{ tile('Value of one ' ~ (units[:-1] if units.endswith('s') else units), '$' ~ '{:,.0f}'.format(rates['value_per_move']), '{:,.0f}'.format(rates['moves_per_day']) ~ ' ' ~ units ~ ' a day at full working', 'neutral', 'from Inputs') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-body" style="padding:0;position:relative">
+    <div class="marine-view" data-mode="risk"
+         data-twin="{{ url_for('marine.twin_json', asset_id=asset['id']) }}"
+         data-event-url="{{ url_for('marine.risk_json', asset_id=asset['id'], key='KEY') }}"
+         data-event="{{ shown['key'] }}"
+         data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/"></div>
+  </div>
+  <div class="card-body" style="padding-top:6px">
+    <div class="mt-risk-legend">
+      <span><i style="background:#d03b3b"></i>Destroyed or failed: replace</span>
+      <span><i style="background:#fab219"></i>Damaged: repair</span>
+      <span><i style="background:rgba(208,59,59,.35);border:1px solid #d03b3b"></i>Area closed while it is inspected and repaired</span>
+      <span><i style="background:#c3c2b7"></i>Not affected</span>
+    </div>
+  </div>
+</div>
+
+{% for e in events %}
+<div class="card mt-risk-detail" style="margin-top:16px" data-event="{{ e['key'] }}" {% if e['key'] != shown['key'] %}hidden{% endif %}>
+  <div class="card-head"><div>
+    <h2>{{ e['name'] }}{% if not e['on'] %} <span class="badge warning">left out in Inputs</span>{% endif %}</h2>
+    <p class="small muted" style="margin-top:2px">{{ e['what'] }} About once in {{ '{:,.0f}'.format(e['years']) }} years: a {{ '%.0f' | format(100 * e['in_life']) }}% chance in the {{ life }}-year design life.</p>
+  </div></div>
+  <div class="card-body">
+    <div class="mt-risk-time">
+      <div><small class="muted">Warning</small><b>{{ warn(e['warn_h']) }}</b><small>{{ e['warn_with'] or 'it comes without warning' }}</small></div>
+      <div><small class="muted">Area closed</small><b>{% if e['closed_m'] %}{{ '{:,}'.format(e['closed_m']) }} m{% else %}none{% endif %}</b>
+        <small>{% if e['share'] %}{{ '%.0f' | format(100 * e['share']) }}% of the berth's work stops{% else %}nothing closes; trade falls{% endif %}</small></div>
+      <div><small class="muted">Closed, not knowing early</small><b>{{ days(e['days']) }}</b><small>back to full in {{ days(e['back_in']) }}</small></div>
+      <div><small class="muted">Closed, knowing early</small><b>{{ days(e['days_known']) }}</b><small>back to full in {{ days(e['back_in_known']) }}</small></div>
+      <div><small class="muted">Repairs take</small><b>{{ days(e['repair_days']) }}</b><small>much of it with the berth working round them</small></div>
+    </div>
+
+    <div class="grid grid-2">
+      <div>
+        <h3 class="small">What it costs</h3>
+        <table class="table">
+          <thead><tr><th></th><th class="right">Not knowing early</th><th class="right">Knowing early</th><th class="right">Saved</th></tr></thead>
+          <tbody>
+            <tr><td class="label">{{ units | capitalize }} lost</td><td class="right tabular">{{ '{:,}'.format(e['blind']['lost']) }}</td><td class="right tabular">{{ '{:,}'.format(e['known']['lost']) }}</td><td class="right tabular">{{ '{:,}'.format(e['blind']['lost'] - e['known']['lost']) }}</td></tr>
+            <tr><td class="label">Their value</td><td class="right tabular">{{ money(e['blind']['lost_value']) }}</td><td class="right tabular">{{ money(e['known']['lost_value']) }}</td><td class="right tabular">{{ money(e['blind']['lost_value'] - e['known']['lost_value']) }}</td></tr>
+            <tr><td class="label">Repairs</td><td class="right tabular">{{ money(e['blind']['repair']) }}</td><td class="right tabular">{{ money(e['known']['repair']) }}</td><td class="right tabular">{{ money(e['blind']['repair'] - e['known']['repair']) }}</td></tr>
+            <tr><td class="label"><strong>Total</strong></td><td class="right tabular"><strong>{{ money(e['blind']['total']) }}</strong></td><td class="right tabular"><strong>{{ money(e['known']['total']) }}</strong></td><td class="right tabular state-good"><strong>{{ money(e['saving']) }}</strong></td></tr>
+            <tr><td class="label small">Expected over {{ life }} years</td><td class="right tabular small">{{ money(e['expected']) }}</td><td class="right tabular small">{{ money(e['expected'] - e['expected_saving']) }}</td><td class="right tabular small">{{ money(e['expected_saving']) }}</td></tr>
+          </tbody>
+        </table>
+        <p class="small muted">{{ units | capitalize }} lost = {{ '{:,.0f}'.format(rates['moves_per_day']) }} a day × the share of the berth closed × the days closed (and half the days back to full){% if e['fall'] %}, plus trade falling {{ '%.0f' | format(100 * e['fall']) }}% for {{ '%.0f' | format(e['fall_months']) }} months{% endif %}; at ${{ '{:,.0f}'.format(rates['value_per_move']) }} each.</p>
+      </div>
+      <div>
+        <h3 class="small">Knowing early</h3>
+        <p class="small">{{ e['early'] }}</p>
+        {% if e['sensor_words'] %}<p class="small"><strong>What tells you:</strong> {{ e['sensor_words'] | join(', ') }}.</p>{% endif %}
+        <h3 class="small" style="margin-top:12px">What it damages here</h3>
+        {% if e['by_kind'] %}
+          <p class="small">{% for kind, n in e['by_kind'] | dictsort %}{{ n }} {{ element_kind_name.get(kind, kind) | lower }}{{ 's' if n > 1 and not element_kind_name.get(kind, kind).endswith('s') }}{{ ', ' if not loop.last }}{% endfor %}, shown on the model.</p>
+        {% else %}<p class="small muted">Nothing on the model: the cost is the berth standing idle{% if e['fall'] %} and trade falling away{% endif %}.</p>{% endif %}
+        <h3 class="small" style="margin-top:12px">The way back</h3>
+        <ol class="mt-risk-steps small">{% for s in e['steps'] %}<li>{{ s }}</li>{% endfor %}</ol>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>All the events</h2>
+    <p class="small muted" style="margin-top:2px">Click one to see it on the model. Costs are for one event at this berth; “over {{ life }} years” weighs each by its chance. Running on <a href="{{ url_for('marine.inputs', asset_id=asset['id']) }}">{{ inputs_name }}</a>.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table mt-risk-table">
+      <thead><tr><th>Event</th><th class="right">Once in</th><th class="right">Warning</th><th class="right">Closed</th><th class="right">{{ units | capitalize }} lost</th>
+        <th class="right">Cost</th><th class="right">Knowing early</th><th class="right">Saved</th><th class="right">Over {{ life }} years</th></tr></thead>
+      {% for group in groups %}
+      <tbody>
+        <tr><td colspan="9" class="small muted"><strong>{{ group }}</strong></td></tr>
+        {% for e in events if e['group'] == group %}
+        <tr data-event="{{ e['key'] }}" class="{{ 'shown' if e['key'] == shown['key'] }} {{ 'off' if not e['on'] }}" tabindex="0">
+          <td><a href="?event={{ e['key'] }}">{{ e['name'] }}</a></td>
+          <td class="right tabular">{{ '{:,.0f}'.format(e['years']) }} y</td>
+          <td class="right tabular">{{ warn(e['warn_h']) }}</td>
+          <td class="right tabular">{{ days(e['days']) }}{% if e['days'] != e['days_known'] %} → {{ days(e['days_known']) }}{% endif %}</td>
+          <td class="right tabular">{{ '{:,}'.format(e['blind']['lost']) }}</td>
+          <td class="right tabular">{{ money(e['blind']['total']) }}</td>
+          <td class="right tabular">{{ money(e['known']['total']) }}</td>
+          <td class="right tabular state-good">{{ money(e['saving']) }}</td>
+          <td class="right tabular">{{ money(e['expected']) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="importmap">
+  {"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/') }}"}}
+</script>
+<script type="module" src="{{ url_for('static', filename='marinetwin.js') }}"></script>
+<script>
+  // Picking an event: its card shows, the table marks it, and the 3D view redraws the damage.
+  (function () {
+    const view = document.querySelector('.marine-view');
+    function show(key) {
+      for (const d of document.querySelectorAll('.mt-risk-detail')) d.hidden = d.dataset.event !== key;
+      for (const r of document.querySelectorAll('.mt-risk-table tr[data-event]')) r.classList.toggle('shown', r.dataset.event === key);
+      view.dataset.event = key;
+      view.dispatchEvent(new CustomEvent('mt-event', { detail: key }));
+      const url = new URL(window.location.href);
+      url.searchParams.set('event', key);
+      window.history.replaceState(null, '', url);
+      view.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    for (const r of document.querySelectorAll('.mt-risk-table tr[data-event]')) {
+      r.addEventListener('click', (ev) => { ev.preventDefault(); show(r.dataset.event); });
+      r.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); show(r.dataset.event); } });
+    }
+  })();
+</script>
+{% endblock %}

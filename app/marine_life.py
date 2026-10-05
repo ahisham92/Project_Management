@@ -634,7 +634,7 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
             cost=round(price), issue=issue_id, warranty=covered)
         return price
 
-    units = marine_ops.UNITS.get(asset["terminal_type"] or "container", "moves")
+    units = marine_ops.UNITS.get(asset["terminal_type"] or "container", "containers")
     targets = [p for p in parts if p.kind in ("wall", "deck")]
     for m in range(months):
         year = m / 12

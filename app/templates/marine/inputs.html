@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Inputs · MarineTwin{% endblock %}
+
+{% macro field(f) %}
+  <div class="mt-input {{ 'changed' if f['changed'] }}">
+    {% if f.get('kind') == 'bool' %}
+      <input type="hidden" name="{{ f['key'] }}" value="0">
+      <label class="mt-input-check"><input type="checkbox" name="{{ f['key'] }}" value="1" {% if f['value'] | string == '1' %}checked{% endif %}>
+        <b>{{ f['label'] }}</b></label>
+    {% elif f.get('kind') == 'choice' %}
+      <label class="field"><span class="field-label">{{ f['label'] }}</span>
+        <select name="{{ f['key'] }}">{% for k, words in f['choices'] %}<option value="{{ k }}" {% if k == f['value'] %}selected{% endif %}>{{ words }}</option>{% endfor %}</select></label>
+    {% else %}
+      <label class="field"><span class="field-label">{{ f['label'] }}{% if f.get('unit') %} ({{ f['unit'] }}){% endif %}</span>
+        <input type="number" name="{{ f['key'] }}" value="{{ f['value'] }}" min="0" step="any"></label>
+    {% endif %}
+    <small class="muted">{% if f['default'] != '' and f.get('kind') != 'bool' %}Typical: {{ '{:,}'.format(f['default']) if f['default'] is number else f['default'] }}. {% endif %}{{ f['source'] }}</small>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "Every figure the Lifecycle, Risks and Sensors pages run on, with where its typical value comes from. Keep your own sets, duplicate one to try a change, and pick the set the pages use.") }}
+{{ asset_tabs(asset) }}
+
+<div class="card">
+  <div class="card-head"><div><h2>Input sets</h2>
+    <p class="small muted" style="margin-top:2px">The one in use is what every page runs on. A set keeps only what it changes from the typical figures.</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table">
+      <thead><tr><th>Set</th><th>Changes from the typical figures</th><th></th></tr></thead>
+      <tbody>
+        {% for s in kept %}
+        <tr>
+          <td><strong>{{ s['name'] }}</strong>{% if s['active'] %} <span class="badge good">in use</span>{% endif %}
+            {% if s['updated_at'] %}<br><small class="muted">saved {{ s['updated_at'][:16] }} UTC</small>{% endif %}</td>
+          <td class="small">{% if s['id'] == 0 %}<span class="muted">the figures as given, with their sources below</span>{% else %}{{ s['changes'][:6] | join('; ') or 'none' }}{% if s['changes'] | length > 6 %}; and {{ s['changes'] | length - 6 }} more{% endif %}{% endif %}</td>
+          <td class="right" style="white-space:nowrap">
+            {% if not s['active'] %}
+              <form method="post" action="{{ url_for('marine.use_inputs', asset_id=asset['id'], set_id=s['id']) }}" style="display:inline">
+                <button type="submit" class="btn btn-ghost btn-sm">Use</button></form>
+            {% endif %}
+            {% if s['id'] %}<a class="btn btn-ghost btn-sm" href="{{ url_for('marine.inputs', asset_id=asset['id'], edit=s['id'], _anchor='form') }}">Edit</a>{% endif %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('marine.inputs', asset_id=asset['id'], copy=s['id'], _anchor='form') }}">Duplicate</a>
+            {% if s['id'] %}
+              <form method="post" action="{{ url_for('marine.delete_inputs', asset_id=asset['id'], set_id=s['id']) }}" style="display:inline">
+                <button type="submit" class="link-button small" onclick="return confirm('Delete {{ s['name'] }}?')">Delete</button></form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px" id="form">
+  <div class="card-head"><div>
+    <h2>{% if editing %}Edit {{ editing['name'] }}{% elif copying %}Duplicate {{ copying['name'] }}{% else %}{{ base['name'] }}, to duplicate and amend{% endif %}</h2>
+    <p class="small muted" style="margin-top:2px">Changed figures are marked. Under each figure: its typical value and where it comes from.
+      {% if not editing %}Saving makes a new set; the one you started from stays as it was.{% endif %}</p>
+  </div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('marine.save_inputs', asset_id=asset['id']) }}" data-voyage="Keeping the inputs">
+      {% if editing %}<input type="hidden" name="set_id" value="{{ editing['id'] }}">{% endif %}
+      <div class="mt-input-head">
+        <label class="field w-lg"><span class="field-label">Name</span>
+          <input type="text" name="name" maxlength="60" required
+                 value="{{ editing['name'] if editing else (base['name'] ~ ' (copy)') if base['id'] else 'My inputs' }}"></label>
+        <label class="mt-input-check"><input type="checkbox" name="use" value="1" {% if not editing or editing['active'] %}checked{% endif %}> Use it on every page</label>
+        <button type="submit" class="btn">{% if editing %}Save{% else %}Keep this set{% endif %}</button>
+      </div>
+      <div class="mt-panels" style="margin-top:12px">
+        {% for group, items in groups.items() %}
+        <section class="mt-panel" data-tab="{{ group }}" data-slug="{{ group | lower | replace(' ', '-') }}">
+          <div class="mt-inputs">{% for f in items %}{{ field(f) }}{% endfor %}</div>
+        </section>
+        {% endfor %}
+        <section class="mt-panel" data-tab="Extreme events" data-slug="events">
+          <p class="small muted">The extreme events on the Risks page: how often each happens, the area it closes, and how long and how much it costs not knowing and knowing early.</p>
+          {% for sub, items in events.items() %}
+          <details class="mt-input-event" {% if items | selectattr('changed') | list %}open{% endif %}>
+            <summary><b>{{ sub }}</b>{% if items | selectattr('changed') | list %} <span class="badge warning">changed</span>{% endif %}</summary>
+            <div class="mt-inputs">{% for f in items %}{{ field(f) }}{% endfor %}</div>
+          </details>
+          {% endfor %}
+        </section>
+      </div>
+      <p style="margin-top:12px"><button type="submit" class="btn">{% if editing %}Save{% else %}Keep this set{% endif %}</button></p>
+    </form>
+  </div>
+</div>
+{% endblock %}

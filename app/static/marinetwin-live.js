@@ -813,6 +813,7 @@ export async function startLive(ctx) {
   // --- each frame --------------------------------------------------------------------------
   const player = { pace: 1, working: false, hs: 0.5, tick };
   let visualT = 0;
+  let shownEvent = null;
   let lastText = 0;
   let lastClock = 0;
   let lastReal = performance.now();
@@ -851,6 +852,9 @@ export async function startLive(ctx) {
       site.mainBerth.shipKind = alongside ? alongside.mesh.userData.kind : null;
     }
     ctx.setPower(w.hour.power !== false);
+    // An extreme event: its damage and the area it closes drawn on the model once it has struck.
+    const struck = plan.scenario && plan.scenario.strikes_at != null && simH >= plan.scenario.strikes_at ? plan.scenario.key : null;
+    if (struck !== shownEvent && ctx.showEvent) { shownEvent = struck; ctx.showEvent(struck); }
     for (const y of site.yards || []) ctx.setFill(y.mesh, ctx.yardFill(y.berth));
     workCranes(states, alongside, visualT, w);
     movePeople(dt * Math.min(pace, 4), alongside);

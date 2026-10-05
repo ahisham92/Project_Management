@@ -863,6 +863,45 @@ def test_piles_sharing_a_design_are_monitored_through_one_of_them(app, signed_in
     assert by["P07"]["sensors"]                                           # a pile of its own keeps its sensors
 
 
+def test_uniquely_named_elements_of_one_design_share_their_sensors(app, signed_in):
+    # The Revit add-in names every element (MP001, MP002, ...) and keeps the design in MT_Legend;
+    # a slab without a legend is grouped with its like along each stretch of quay.
+    page = _berth(app, signed_in, "Berth 11")
+    pile = {"kind": "pile", "material": "steel", "zone": "splash", "y": 0, "z": 0}
+    slab = {"kind": "slab", "material": "concrete", "zone": "atmospheric", "y": 0, "z": 0}
+    fender = {"kind": "fender", "material": "rubber", "zone": "splash", "y": 0, "z": 0}
+    found = {"elements": [{**pile, "name": f"MP{i:03d}", "legend": "MP1-DS03", "global_id": f"p{i}", "x": i} for i in range(1, 41)]
+             + [{**slab, "name": f"DK{i:03d}", "global_id": f"d{i}", "x": i * 10} for i in range(1, 40)]
+             + [{**fender, "name": f"F{i:02d}", "global_id": f"f{i}", "x": i * 20} for i in range(1, 6)]}
+    with app.app_context():
+        db = connect(app.config["DATABASE"])
+        asset_id = int(page.rsplit("/", 1)[1])
+        marine.import_elements(db, asset_id, found)
+        db.commit()
+    by = {e["name"]: e for e in signed_in.get(page + "/twin.json").get_json()["elements"]}
+    assert sum(1 for n, e in by.items() if n.startswith("MP") and e["sensors"]) == 1
+    assert sum(1 for n, e in by.items() if n.startswith("DK") and e["sensors"]) == 2      # 0-200 m and 200-400 m
+    assert all(by[f"F{i:02d}"]["sensors"] for i in range(1, 6))                         # every fender is rated alone
+
+
+def test_trimming_keeps_one_sensored_element_per_design_and_real_feeds(app, signed_in):
+    page = _berth(app, signed_in, "Berth 12")
+    pile = {"kind": "pile", "material": "steel", "zone": "splash", "y": 0, "z": 0, "sensors": ["corrosion", "strain"]}
+    found = {"elements": [{**pile, "name": f"MP{i:03d}", "legend": "MP1-DS03", "global_id": f"p{i}", "x": i} for i in range(1, 11)]}
+    with app.app_context():
+        db = connect(app.config["DATABASE"])
+        asset_id = int(page.rsplit("/", 1)[1])
+        marine.import_elements(db, asset_id, found)             # listed in MT_Sensors: all ten fitted, as before the fix
+        real = db.execute("SELECT s.id FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
+                          " WHERE e.name = 'MP005' AND s.kind = 'strain'").fetchone()["id"]
+        db.execute("UPDATE marine_sensors SET simulated = 0, feed_device = 'logger-1' WHERE id = ?", (real,))
+        db.commit()
+    assert "18 simulated sensors removed" in text(signed_in.post(page + "/sensors/trim", follow_redirects=True))
+    by = {e["name"]: e for e in signed_in.get(page + "/twin.json").get_json()["elements"]}
+    assert len(by["MP005"]["sensors"]) == 2 and not any(by[f"MP{i:03d}"]["sensors"] for i in range(1, 11) if i != 5)
+    assert "already has its sensors" in text(signed_in.post(page + "/sensors/trim", follow_redirects=True))
+
+
 def test_the_3d_view_keeps_the_shapes_it_built(app, signed_in):
     page = _berth(app, signed_in, "Berth 10")
     signed_in.post(page + "/model", data={"model": (io.BytesIO(FIXTURE.read_bytes()), "berth.ifc")}, content_type="multipart/form-data")

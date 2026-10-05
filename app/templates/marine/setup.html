@@ -56,6 +56,12 @@
         <button type="submit" class="btn btn-ghost btn-sm">Remove all {{ '{:,}'.format(tracked) }} elements</button>
         <span class="small muted">to import them again from the model</span>
       </form>
+      <form method="post" action="{{ url_for('marine.trim_sensors', asset_id=asset['id']) }}" style="margin-top:8px"
+            data-voyage="Keeping one sensored element per design">
+        <button type="submit" class="btn btn-ghost btn-sm">Sensors on one element per design</button>
+        <span class="small muted">{{ '{:,}'.format(twin['sensors']) }} sensors on {{ '{:,}'.format(tracked) }} elements.
+          Piles, slabs and walls of one design are monitored through one of them; real feeds and inspections stay.</span>
+      </form>
       {% endif %}
       {% if asset['model_file'] %}
       <form method="post" action="{{ url_for('marine.delete_model', asset_id=asset['id']) }}" style="margin-top:8px">

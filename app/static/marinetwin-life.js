@@ -442,6 +442,7 @@ export async function startLife(ctx) {
     if (w) {
       const words = [w.storm === 2 ? 'GREAT STORM' : w.storm ? 'storm' : w.rain > 3 ? 'rain' : 'fair', `wind ${Math.round(w.wind)} m/s`, `${Math.round(w.temp)} °C`];
       if (w.slr > 0.005) words.push(`sea +${Math.round(w.slr * 100)} cm`);
+      if (row[8] >= 0.2) words.push(`silt ${row[8].toFixed(1)} m`);
       g.fillText(words.join(' · '), 26 * s, 134 * s);
     }
     // Top right: the berth's account.
@@ -513,9 +514,9 @@ export async function startLife(ctx) {
       const lines = [
         `${life} years, ${POLICIES.find(([k]) => k === policy)[1].toLowerCase()}`,
         `Cost ${big(t.cost_moves)} ${units} ≈ ${money(t.cost)}`,
-        t.condemned_year !== null ? `Berth out of service in year ${Math.round(t.condemned_year)}` : `Service life ${t.service_life >= 100 ? 'over 100' : Math.round(t.service_life)} years`,
+        t.condemned_year !== null ? `Berth lost in year ${Math.round(t.condemned_year)}: new quay ${money(t.rebuild_cost)}, ${t.rebuild_months} months idle` : `Service life ${t.service_life >= 100 ? 'over 100' : Math.round(t.service_life)} years`,
       ];
-      const ow = 460 * s;
+      const ow = 580 * s;
       panel(W / 2 - ow / 2, H / 2 - 70 * s, ow, 128 * s);
       g.textAlign = 'center';
       g.fillStyle = '#fff';

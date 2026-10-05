@@ -13,7 +13,7 @@ import hashlib
 import io
 import json
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import (
@@ -23,7 +23,7 @@ from flask import (
 
 from .. import (
     marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_plan, marine_risk, marine_sim,
-    marine_triton, marine_versions,
+    marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
 from ..db import data_dir, get_db, query, query_one
@@ -305,7 +305,8 @@ def live_json(asset_id: int):
     """The timeline the live view plays: hourly weather and equipment, the ship calls, the events."""
     asset = _asset_or_404(asset_id)
     now = datetime.now()
-    plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"))
+    plan = marine_ops.live(asset_id, now, asset["terminal_type"], scenario=request.args.get("scenario", "normal"),
+                           booked=_main_berth_calls(asset, now))
     iso = lambda at: at.isoformat(timespec="minutes")  # noqa: E731
     return jsonify({
         "start": iso(plan["start"]), "now": iso(now), "equipment_name": plan["equipment_name"], "units": plan["units"], "limits": plan["limits"],
@@ -317,13 +318,223 @@ def live_json(asset_id: int):
     })
 
 
+# --- who berths where ---------------------------------------------------------------------
+
+def _berth_setup(asset):
+    """The berths, the ship calls (and whether they are the person's), and the week they start."""
+    db = get_db()
+    elements = [dict(e) for e in _life_elements(int(asset["id"]))]
+    stoppers = sum(1 for e in elements if e["kind"] == "crane_stopper")
+    the_berths = marine_berths.berths(db, asset, marine_risk.berth_length(elements), stoppers)
+    start = marine_berths.week_start(datetime.now())
+    the_calls, own = marine_berths.calls(db, asset, the_berths, start)
+    if own and the_calls:
+        start = marine_berths.week_start(min(c["eta"] for c in the_calls))
+    return the_berths, the_calls, own, start
+
+
+def _call_json(c: dict) -> dict:
+    iso = lambda at: at.isoformat(timespec="minutes") if isinstance(at, datetime) else at  # noqa: E731
+    return {k: iso(v) for k, v in c.items() if not k.startswith("_")} | {"flag_name": marine_berths.flag_name(c.get("flag"))}
+
+
+def _main_berth_calls(asset, now: datetime) -> list[dict] | None:
+    """The person's own ship calls given to the live port's berth, for its line-up (none: the simulated one)."""
+    the_berths, the_calls, own, start = _berth_setup(asset)
+    main = next((b["n"] for b in the_berths if b.get("main")), None)
+    if not own or main is None:
+        return None
+    plan = marine_berths.allocate(the_berths, the_calls, "windows", start)
+    out = []
+    for c in plan["placed"]:
+        if main in c["berths"] and c["end"] > now - timedelta(hours=12) and c["begin"] < now + timedelta(hours=72):
+            out.append({"name": c["ship"], "type": c["type"], "loa": c["loa"], "beam": c["beam"] or round(c["loa"] / 7.2, 1),
+                        "draught": c["draught"], "displacement": (c["dwt"] or c["loa"] * 300) * 1.3, "windage": 30,
+                        "eta": c["begin"], "etd": c["end"], "moves": c["moves"], "flag": c["flag"], "line": c["line"]})
+    return out[:6] or None
+
+
+@bp.get("/assets/<int:asset_id>/berthplan")
+@login_required
+def berthplan(asset_id: int):
+    """Who berths where: the berths, the week's ships on a radar and a timeline, and the rule that places them."""
+    asset = _asset_or_404(asset_id)
+    the_berths, the_calls, own, start = _berth_setup(asset)
+    policy = request.args.get("policy", "windows")
+    every = marine_berths.compare(the_berths, the_calls, start)
+    plan = every.get(policy) or every["windows"]
+    best = min(every.values(), key=lambda r: (len(r["unplaced"]), r["wait_total"]))
+    return render_template("marine/berthplan.html", asset=asset, berths=the_berths, calls=the_calls, own=own, start=start,
+                           plan=plan, every=every, best=best, policies=marine_berths.POLICIES,
+                           uses=marine_berths.USES, crane_kinds=marine_berths.CRANE_KINDS, flag=marine_berths.flag_svg,
+                           units=marine_ops.UNITS.get(asset["terminal_type"], "containers"),
+                           ukc=marine_berths.UKC, margin=marine_berths.LENGTH_MARGIN, rates=marine_berths.RATE, **_context())
+
+
+@bp.get("/assets/<int:asset_id>/berthplan.json")
+@login_required
+def berthplan_json(asset_id: int):
+    """The plan for the radar: the berths, and each call with its berth, its times and why."""
+    asset = _asset_or_404(asset_id)
+    the_berths, the_calls, own, start = _berth_setup(asset)
+    plan = marine_berths.allocate(the_berths, the_calls, request.args.get("policy", "windows"), start)
+    return jsonify({"start": start.isoformat(timespec="minutes"), "horizon": plan["horizon"], "policy": plan["policy"],
+                    "now_h": round((datetime.now() - start).total_seconds() / 3600, 2),
+                    "berths": [{k: b[k] for k in ("n", "name", "length", "depth", "cranes", "crane_kind", "use")} | {"main": bool(b.get("main"))}
+                               for b in the_berths],
+                    "placed": [_call_json(c) for c in plan["placed"]],
+                    "unplaced": [_call_json(c) for c in plan["unplaced"]],
+                    "flags": {code: marine_berths.flag_svg(code, 30) for code in {c.get("flag") or "" for c in the_calls}}})
+
+
+@bp.post("/assets/<int:asset_id>/berthplan/layout")
+@login_required
+def berth_layout(asset_id: int):
+    """The berths the 3D view found along the quay, so the plan numbers them the same way."""
+    asset = _asset_or_404(asset_id)
+    found = (request.get_json(silent=True) or {}).get("berths")
+    if not isinstance(found, list) or not found or len(found) > 200:
+        return jsonify({"error": "No berths sent."}), 400
+    written = marine_berths.save_layout(get_db(), asset, found)
+    get_db().commit()
+    return jsonify({"saved": written})
+
+
+@bp.post("/assets/<int:asset_id>/berthplan/berths/<int:n>")
+@login_required
+def save_berth(asset_id: int, n: int):
+    asset = _asset_or_404(asset_id)
+    if not 0 < n <= 200:
+        abort(404)
+    the_berths, *_ = _berth_setup(asset)
+    marine_berths.keep_estimate(get_db(), asset, the_berths)
+    marine_berths.save_berth(get_db(), asset_id, n, request.form)
+    get_db().commit()
+    flash(f"Berth {n} saved.", "success")
+    return redirect(url_for("marine.berthplan", asset_id=asset_id, policy=request.form.get("policy", "windows"), _anchor="berths"))
+
+
+@bp.get("/assets/<int:asset_id>/ships")
+@login_required
+def ships(asset_id: int):
+    """The ships calling: a typical week to start from, every figure the person's to change."""
+    asset = _asset_or_404(asset_id)
+    the_berths, the_calls, own, start = _berth_setup(asset)
+    if the_calls and the_calls[0].get("id") is None:
+        # Every ship in the typical week is there to be changed: keep it, so each has its own form.
+        marine_berths.keep_typical(get_db(), asset_id, the_calls)
+        get_db().commit()
+        the_berths, the_calls, own, start = _berth_setup(asset)
+    plan = marine_berths.allocate(the_berths, the_calls, "windows", start)
+    where = {(c["ship"], c["eta"]): c for c in plan["placed"] + plan["unplaced"]}
+    return render_template("marine/ships.html", asset=asset, calls=the_calls, own=own, start=start, where=where,
+                           fields=marine_berths.FIELDS, flags=marine_berths.FLAGS, flag=marine_berths.flag_svg,
+                           berths=the_berths, units=marine_ops.UNITS.get(asset["terminal_type"], "containers"), **_context())
+
+
+def _own_calls(asset):
+    """Before the first change the typical week becomes the person's, so a change keeps the rest."""
+    the_berths, the_calls, own, start = _berth_setup(asset)
+    if the_calls and the_calls[0].get("id") is None:
+        marine_berths.keep_typical(get_db(), int(asset["id"]), the_calls)
+
+
+@bp.post("/assets/<int:asset_id>/ships")
+@login_required
+def add_ship(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    call, why = marine_berths.clean_call(request.form)
+    if call is None:
+        flash(why, "error")
+        return redirect(url_for("marine.ships", asset_id=asset_id, _anchor="add"))
+    _own_calls(asset)
+    marine_berths.insert_call(get_db(), asset_id, call)
+    get_db().commit()
+    flash(f"{call['ship']} added.", "success")
+    return redirect(url_for("marine.ships", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/ships/<int:call_id>")
+@login_required
+def edit_ship(asset_id: int, call_id: int):
+    _asset_or_404(asset_id)
+    if query_one("SELECT id FROM marine_calls WHERE id = ? AND asset_id = ?", (call_id, asset_id)) is None:
+        abort(404)
+    call, why = marine_berths.clean_call(request.form)
+    if call is None:
+        flash(why, "error")
+        return redirect(url_for("marine.ships", asset_id=asset_id))
+    get_db().execute("UPDATE marine_calls SET ship = ?, imo = ?, flag = ?, type = ?, line = ?, loa = ?, beam = ?, draught = ?, dwt = ?,"
+                     " moves = ?, eta = ?, window = ?, wish = ?, notes = ?, source = 'user' WHERE id = ? AND asset_id = ?",
+                     (call["ship"], call["imo"], call["flag"], call["type"], call["line"], call["loa"], call["beam"], call["draught"],
+                      call["dwt"], call["moves"], call["eta"], call["window"], call["wish"], call["notes"], call_id, asset_id))
+    get_db().commit()
+    flash(f"{call['ship']} saved.", "success")
+    return redirect(url_for("marine.ships", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/ships/<int:call_id>/delete")
+@login_required
+def delete_ship(asset_id: int, call_id: int):
+    _asset_or_404(asset_id)
+    get_db().execute("DELETE FROM marine_calls WHERE id = ? AND asset_id = ?", (call_id, asset_id))
+    get_db().commit()
+    flash("Ship call removed.", "success")
+    return redirect(url_for("marine.ships", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/ships/import")
+@login_required
+def import_ships(asset_id: int):
+    """Ship calls from a CSV (the port community system's, or the lines' schedules), replacing the list or added to it."""
+    _asset_or_404(asset_id)
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        flash("Pick a CSV file.", "error")
+        return redirect(url_for("marine.ships", asset_id=asset_id, _anchor="import"))
+    text_ = upload.read(5_000_000).decode("utf-8-sig", errors="replace")
+    good, bad = marine_berths.import_csv(text_)
+    if not good:
+        flash("No ship calls read. " + " ".join(bad[:3]), "error")
+        return redirect(url_for("marine.ships", asset_id=asset_id, _anchor="import"))
+    if request.form.get("replace"):
+        get_db().execute("DELETE FROM marine_calls WHERE asset_id = ?", (asset_id,))
+    else:
+        _own_calls(_asset_or_404(asset_id))
+    for call in good:
+        marine_berths.insert_call(get_db(), asset_id, call, "csv")
+    get_db().commit()
+    flash(f"{len(good):,} ship calls read." + (f" {len(bad)} rows skipped: " + " ".join(bad[:3]) if bad else ""),
+          "success" if not bad else "warning")
+    return redirect(url_for("marine.ships", asset_id=asset_id))
+
+
+@bp.get("/assets/<int:asset_id>/ships.csv")
+@login_required
+def ships_csv(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    _, the_calls, _, _ = _berth_setup(asset)
+    return Response(marine_berths.export_csv(the_calls), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="ship-calls-{asset_id}.csv"'})
+
+
+@bp.post("/assets/<int:asset_id>/ships/reset")
+@login_required
+def reset_ships(asset_id: int):
+    _asset_or_404(asset_id)
+    get_db().execute("DELETE FROM marine_calls WHERE asset_id = ?", (asset_id,))
+    get_db().commit()
+    flash("Back to a typical week of ships.", "success")
+    return redirect(url_for("marine.ships", asset_id=asset_id))
+
+
 def _life_rates() -> dict:
     """What the person changed (rates, prices, lives and warranties, the risks included), from the
     query string (the page's forms) or a JSON body."""
     body = request.get_json(silent=True) if request.is_json else None
     given = body.get("rates") if isinstance(body, dict) else None
     source = given if isinstance(given, dict) else request.args
-    keys = ("moves_per_day", "value_per_move", *marine_life.PRICES,
+    keys = ("moves_per_day", "value_per_move", "rebuild_months", *marine_life.PRICES, *marine_life.DREDGE,
             *(f"life_{k}" for k in marine_life.KIND_INFO), *(f"warranty_{k}" for k in marine_life.KIND_INFO),
             *(f"risk_{k}" for k in marine_life.RISKS), "sea_level", "seismic", "war_year", "freeboard")
     # A ticked box sends its hidden 0 and then its 1: the last one is what was meant.
@@ -334,6 +545,16 @@ def _life_rates() -> dict:
 def _given(asset_id: int) -> dict:
     """The inputs a page runs on: the set in use, with whatever the page's forms change for this run."""
     return {**marine_inputs.active(get_db(), asset_id), **_life_rates()}
+
+
+@bp.app_template_global("marine_value")
+def _value_for(asset) -> dict | None:
+    """What MarineTwin is worth at this berth, for the strip under the steps (none when it cannot be worked out)."""
+    try:
+        return marine_value.summary(asset, _life_elements(int(asset["id"])), _given(int(asset["id"])))
+    except Exception:  # noqa: BLE001 - the strip is a summary; the page itself must still open
+        current_app.logger.exception("MarineTwin value for asset %s", asset["id"])
+        return None
 
 
 def _life_elements(asset_id: int):

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Ships · MarineTwin{% endblock %}
+
+{% macro call_fields(c, prefix) %}
+  <div class="mt-ship-form">
+    {% for key, label, kind, required in fields %}
+      {% set v = c.get(key) if c else none %}
+      <label class="field"><span>{{ label }}{% if required %} *{% endif %}</span>
+        {% if kind == 'flag' %}
+          <select name="flag"><option value="">Not given</option>
+            {% for code, (name, _l, _c) in flags.items() | sort(attribute='1.0') %}<option value="{{ code }}" {% if v == code %}selected{% endif %}>{{ name }} ({{ code }})</option>{% endfor %}
+            {% if v and v not in flags %}<option value="{{ v }}" selected>{{ v }}</option>{% endif %}
+          </select>
+        {% elif kind == 'bool' %}
+          <input type="hidden" name="{{ key }}" value="0"><input type="checkbox" name="{{ key }}" value="1" {% if v %}checked{% endif %}>
+        {% elif kind == 'datetime' %}
+          <input type="datetime-local" name="{{ key }}" value="{{ v.strftime('%Y-%m-%dT%H:%M') if v else '' }}" {% if required %}required{% endif %}>
+        {% elif kind == 'number' %}
+          <input type="number" step="any" name="{{ key }}" value="{{ '' if v is none else ('%g' % v) }}" {% if required %}required{% endif %}>
+        {% else %}
+          <input name="{{ key }}" value="{{ v or '' }}" {% if required %}required{% endif %}>
+        {% endif %}
+      </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The ships calling at the quay, with their flag, line, size and what is to be worked. It starts from a typical week for a " ~ terminal_name.get(asset['terminal_type'], 'container') | lower ~ " terminal; change any ship, add your own, or bring the list in as a CSV from the port community system or the lines' schedules. The Berth plan and the Live port use this list.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Ship calls', calls | length, 'this list', 'neutral', 'your own' if own else 'a typical week to start from') }}
+  {{ tile('To work', '{:,}'.format(calls | sum(attribute='moves')), units, 'neutral', 'over the week') }}
+  {{ tile('Longest ship', '%.0f' | format((calls | max(attribute='loa'))['loa'] if calls else 0) ~ ' m', (calls | max(attribute='loa'))['ship'] if calls else '', 'neutral', '') }}
+  {{ tile('Deepest draught', ((calls | max(attribute='draught'))['draught'] if calls else 0) ~ ' m', 'needs ' ~ '%.1f' | format(((calls | max(attribute='draught'))['draught'] if calls else 0) * 1.1) ~ ' m alongside', 'neutral', '') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><div><h2>The ship calls</h2>
+    <p class="small muted" style="margin-top:2px">{% if own %}Your list.{% else %}A typical week, moving on with the calendar until you change a ship: then it is yours.{% endif %} Click a ship to change her details. The berth is from the Berth plan (berth windows first).</p></div>
+    <div class="row" style="gap:8px">
+      <a class="btn" href="{{ url_for('marine.ships_csv', asset_id=asset['id']) }}">Download as CSV</a>
+      <a class="btn" href="{{ url_for('marine.berthplan', asset_id=asset['id']) }}">Berth plan</a>
+    </div></div>
+  <div class="card-body table-scroll">
+    <table class="table mt-ship-table">
+      <thead><tr><th>Flag</th><th>Ship</th><th>Line</th><th>Type</th><th class="right">Length</th><th class="right">Draught</th><th class="right">To work</th><th>Arrives</th><th>Berth</th><th class="right">Waits</th></tr></thead>
+      <tbody>
+      {% for c in calls %}
+        {% set w = where.get((c['ship'], c['eta'])) %}
+        <tr class="mt-ship-row" id="call-{{ c['id'] or loop.index }}">
+          <td>{{ flag(c['flag']) | safe }}</td>
+          <td><details><summary><b>{{ c['ship'] }}</b>{% if c['imo'] %} <small class="muted">IMO {{ c['imo'] }}</small>{% endif %}{% if c['window'] %} <span class="badge neutral">window</span>{% endif %}</summary>
+            <form method="post" action="{{ url_for('marine.edit_ship', asset_id=asset['id'], call_id=c['id']) }}">
+              {{ call_fields(c, 'e') }}
+              <div class="row" style="gap:8px;margin-top:8px"><button class="btn primary">Save</button>
+                <button class="btn" formaction="{{ url_for('marine.delete_ship', asset_id=asset['id'], call_id=c['id']) }}" formnovalidate>Remove</button></div>
+            </form>
+          </details></td>
+          <td>{{ c['line'] }}</td><td>{{ c['type'] }}</td>
+          <td class="right tabular">{{ '%.0f' | format(c['loa']) }} m</td><td class="right tabular">{{ c['draught'] }} m</td>
+          <td class="right tabular">{{ '{:,}'.format(c['moves']) }}</td>
+          <td class="tabular">{{ c['eta'].strftime('%a %d %b %H:%M') }}</td>
+          <td>{% if w and w.get('berth_name') %}{{ w['berth_name'] }}{% else %}<span class="badge critical" title="{{ w['why'] if w else '' }}">none fits</span>{% endif %}</td>
+          <td class="right tabular">{% if w and w.get('wait') is not none %}{{ '%.0f' | format(w['wait']) }} h{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card" id="add">
+    <div class="card-head"><div><h2>Add a ship call</h2>
+      <p class="small muted" style="margin-top:2px">From the line's booking or the agent's pre-arrival notice; the IMO number and flag are on the ship's certificate or AIS.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.add_ship', asset_id=asset['id']) }}">
+        {{ call_fields({'eta': start, 'type': 'Container'}, 'a') }}
+        <button class="btn primary" style="margin-top:8px">Add</button>
+      </form>
+    </div>
+  </div>
+  <div class="card" id="import">
+    <div class="card-head"><div><h2>Bring in a list</h2>
+      <p class="small muted" style="margin-top:2px">A CSV with a header row: {{ fields | map('first') | join(', ') }}. Download the list above for a file to start from. ETA as 2026-10-06 14:00; flag as the two-letter country code.</p></div></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('marine.import_ships', asset_id=asset['id']) }}" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,text/csv" required>
+        <label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="replace" value="1" checked> Replace the list (otherwise add to it)</label>
+        <button class="btn primary" style="margin-top:8px">Read the file</button>
+      </form>
+      {% if own %}
+      <form method="post" action="{{ url_for('marine.reset_ships', asset_id=asset['id']) }}" style="margin-top:16px" onsubmit="return confirm('Remove your ship list and go back to a typical week?')">
+        <button class="btn">Back to a typical week</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

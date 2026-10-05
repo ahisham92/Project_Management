@@ -26,6 +26,7 @@
          data-scenario="{{ request.args.get('scenario', 'normal') }}"
          data-event-url="{{ url_for('marine.risk_json', asset_id=asset['id'], key='KEY') }}"
          data-berths="{{ url_for('marine.save_berth_use', asset_id=asset['id']) }}"
+         data-layout="{{ url_for('marine.berth_layout', asset_id=asset['id']) }}"
          data-web-ifc="https://cdn.jsdelivr.net/npm/web-ifc@0.0.66/"></div>
   </div>
 </div>

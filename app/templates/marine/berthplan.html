@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Berth plan · MarineTwin{% endblock %}
+
+{% macro hours(h) %}{% if h < 0.05 %}none{% elif h < 1 %}{{ '%.0f' | format(h * 60) }} min{% elif h < 48 %}{{ '%.0f' | format(h) }} h{% else %}{{ '%.1f' | format(h / 24) }} days{% endif %}{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "Who berths where: the week's ships on a radar, coming in from sea to the berth each is given, and on a timeline berth by berth. Each ship gets a berth long and deep enough for her and set up for her cargo, by the rule you pick; a ship longer than one berth holds two next to each other. Ships are under the Ships tab, berths below.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Ships this week', calls | length, '{:,}'.format((calls | sum(attribute='moves')) | int) ~ ' ' ~ units ~ ' to work', 'neutral', 'your list' if own else 'a typical week: change it under Ships') }}
+  {{ tile('Waiting at anchor', hours(plan['wait_mean']) ~ ' each', plan['waited'] ~ ' of ' ~ plan['placed'] | length ~ ' ships waited; longest ' ~ hours(plan['wait_max']), 'good' if plan['wait_mean'] < 6 else 'warning', plan['policy_name']) }}
+  {{ tile('Berths busy', plan['occupancy_all'] ~ '%', berths | length ~ ' berths, ' ~ '{:,.0f}'.format(berths | sum(attribute='length')) ~ ' m of quay', 'warning' if plan['occupancy_all'] > 80 else 'good', 'over 80% and ships start to queue') }}
+  {{ tile('Best rule this week', best['policy_name'], hours(best['wait_mean']) ~ ' average wait' ~ ((', ' ~ best['unplaced'] | length ~ ' ships fit nowhere') if best['unplaced'] else ''), 'good', 'compare the rules below') }}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-body" style="padding:0">
+    <div class="mt-radar" data-plan="{{ url_for('marine.berthplan_json', asset_id=asset['id'], policy=plan['policy']) }}"
+         data-ships="{{ url_for('marine.ships', asset_id=asset['id']) }}">
+      <div class="mt-radar-screen"><canvas></canvas>
+        <div class="mt-radar-controls">
+          <button type="button" class="btn mt-radar-play" aria-pressed="false">Play</button>
+          <input type="range" min="0" max="168" step="0.25" value="0" aria-label="Time in the week">
+          <span class="mt-radar-time"></span>
+        </div>
+      </div>
+      <aside class="mt-radar-side">
+        <div class="mt-radar-card"><p class="muted small">Click a ship on the radar or the timeline.</p></div>
+        <h3 class="small">At the berths</h3><ul class="mt-radar-list" data-list="alongside"></ul>
+        <h3 class="small">At anchor, waiting</h3><ul class="mt-radar-list" data-list="anchor"></ul>
+        <h3 class="small">Coming in</h3><ul class="mt-radar-list" data-list="coming"></ul>
+      </aside>
+    </div>
+    <noscript><p class="muted" style="padding:16px">The radar needs JavaScript.</p></noscript>
+  </div>
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+<section class="mt-panel" data-tab="Timeline" data-slug="timeline" data-open="1">
+<div class="card">
+  <div class="card-head"><div><h2>Berth by berth</h2>
+    <p class="small muted" style="margin-top:2px">Each bar is a ship alongside, with her flag; the amber before it is time waiting at anchor. The line is the radar's time.</p></div></div>
+  <div class="card-body"><div class="mt-gantt"></div></div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="The rules" data-slug="rules">
+<div class="card">
+  <div class="card-head"><div><h2>How a ship is given a berth</h2>
+    <p class="small muted" style="margin-top:2px">First what she needs, then the rule for who goes first.</p></div></div>
+  <div class="card-body">
+    <ol class="mt-rules">
+      <li><b>Long enough:</b> the berth is at least her length plus {{ '%.0f' | format(margin) }} m for her lines. A ship longer than one berth takes two next to each other.</li>
+      <li><b>Deep enough:</b> the depth alongside is her draught plus {{ '%.0f' | format(ukc * 100) }}% under the keel (PIANC). Deep ships can also be held for the high tide.</li>
+      <li><b>Set up for her cargo:</b> container ships to berths with ship-to-shore or mobile cranes, RoRo and car carriers to a berth with a ramp, bulk to a bulk berth; any ship to a berth set to "Any ship".</li>
+      <li><b>Cranes:</b> her time alongside is what is to be worked over the cranes she gets (about one crane for every 110 m of ship, up to the berth's: {{ rates['STS'] | int }} boxes an hour each for ship-to-shore cranes, {{ rates['MHC'] | int }} for mobile ones), plus three hours to berth, lash and sail.</li>
+      <li><b>The berth asked for:</b> a line's own or preferred berth is used when it is free at the same time as another.</li>
+      <li><b>Then who goes first,</b> by the rule below. Other rules ports use: priority to ships with dangerous goods or passengers, tidal windows for the deepest ships, and a fixed berth for each line (dedicated terminals).</li>
+    </ol>
+    <form method="get" class="mt-rule-pick">
+      <table class="table">
+        <thead><tr><th>Rule</th><th class="right">Average wait</th><th class="right">Longest wait</th><th class="right">Ships that waited</th><th class="right">Fit nowhere</th><th class="right">Berths busy</th></tr></thead>
+        <tbody>
+          {% for key, (name, words) in policies.items() %}{% set r = every[key] %}
+          <tr{% if key == plan['policy'] %} class="mt-row-here"{% endif %}>
+            <td><label><input type="radio" name="policy" value="{{ key }}" {% if key == plan['policy'] %}checked{% endif %} onchange="this.form.submit()"> <b>{{ name }}</b>{% if r is sameas best %} <span class="badge good">best this week</span>{% endif %}</label>
+              <br><small class="muted">{{ words }}</small></td>
+            <td class="right tabular">{{ hours(r['wait_mean']) }}</td><td class="right tabular">{{ hours(r['wait_max']) }}</td>
+            <td class="right tabular">{{ r['waited'] }}</td><td class="right tabular">{{ r['unplaced'] | length }}</td><td class="right tabular">{{ r['occupancy_all'] }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <noscript><button class="btn">Use this rule</button></noscript>
+    </form>
+    {% if plan['unplaced'] %}
+    <h3 class="small" style="margin-top:12px">Ships no berth takes</h3>
+    <ul>{% for c in plan['unplaced'] %}<li>{{ flag(c['flag']) | safe }} <b>{{ c['ship'] }}</b> ({{ '%.0f' | format(c['loa']) }} m, {{ c['draught'] }} m draught): {{ c['why'] }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+</div>
+</section>
+
+<section class="mt-panel" data-tab="Berths" data-slug="berths">
+<div class="card">
+  <div class="card-head"><div><h2>The berths</h2>
+    <p class="small muted" style="margin-top:2px">{% if berths and berths[0]['source'] == 'estimate' %}Estimated from the quay's length until the Live port has been opened: it then finds the berths from the crane stoppers and numbers them as the 3D view does.{% else %}Found along the quay by the 3D view, numbered from one end; change any figure.{% endif %}</p></div></div>
+  <div class="card-body table-scroll">
+    <table class="table mt-berth-table">
+      <thead><tr><th>Berth</th><th>Length, m</th><th>Depth, m</th><th>Cranes</th><th>Kind</th><th>Used for</th><th class="right">Busy</th><th></th></tr></thead>
+      <tbody>
+      {% for b in berths %}
+        {% set fid = 'berth-' ~ b['n'] %}
+        <tr>
+          <td><input form="{{ fid }}" name="name" value="{{ b['name'] }}" style="width:110px">{% if b.get('main') %} <span class="badge neutral">live port</span>{% endif %}</td>
+          <td><input form="{{ fid }}" name="length" type="number" step="1" value="{{ '%.0f' | format(b['length']) }}" style="width:80px"></td>
+          <td><input form="{{ fid }}" name="depth" type="number" step="0.1" value="{{ b['depth'] }}" style="width:70px"></td>
+          <td><input form="{{ fid }}" name="cranes" type="number" step="1" min="0" value="{{ b['cranes'] }}" style="width:60px"></td>
+          <td><select form="{{ fid }}" name="crane_kind">{% for k, n in crane_kinds %}<option value="{{ k }}" {% if k == b['crane_kind'] %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></td>
+          <td><select form="{{ fid }}" name="use">{% for k, n in uses %}<option value="{{ k }}" {% if k == b['use'] %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></td>
+          <td class="right tabular">{{ plan['occupancy'].get(b['n'], 0) }}%</td>
+          <td><form id="{{ fid }}" method="post" action="{{ url_for('marine.save_berth', asset_id=asset['id'], n=b['n']) }}">
+            <input type="hidden" name="policy" value="{{ plan['policy'] }}"><button class="btn small">Save</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='marinetwin-radar.js') }}" defer></script>
+{% endblock %}

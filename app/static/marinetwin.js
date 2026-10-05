@@ -952,6 +952,7 @@ function ship(type, loa, beam, draught, rng) {
   g.userData.lights = lights;
   g.userData.kind = kind;
   g.userData.draught = draught;
+  Object.assign(g.userData, { loa, beam, deck });
   return g;
 }
 

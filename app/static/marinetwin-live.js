@@ -51,7 +51,19 @@ export async function startLive(ctx) {
   let events = plan.events.map((e) => ({ ...e, h: hourOf(e.at) }));
 
   // --- ships and their tugs ----------------------------------------------------------------
-  const APPROACH = 1.5;   // hours from the pilot to all fast
+  // A call, as the hours go: up the fairway with the pilot and two tugs towing; stopped abreast
+  // of the berth and pushed slowly sideways onto the fenders; the linesmen making her lines fast
+  // one by one; worked; her lines let go; pushed off; out to sea. Cargo is worked only once she is
+  // all fast and stops before she lets go.
+  const T_IN = 1.0;         // h, fairway to abreast of the berth
+  const PUSH_IN = 0.6;      // h, pushed in sideways, the last metres at a few centimetres a second
+  const LINES_IN = 0.5;     // h, eight lines out and made fast
+  const LINES_OUT = 0.3;    // h, lines let go
+  const PUSH_OUT = 0.4;     // h, pulled off the berth
+  const T_OUT = 1.0;        // h, out to sea
+  const ARRIVE = T_IN + PUSH_IN;
+  const DEPART = LINES_OUT + PUSH_OUT + T_OUT;
+  const LINE_COUNT = 8;
   const ANCHOR = 6;       // hours a ship is seen waiting off the port before that
   // The way in and out of a berth, clear of the ships lying at the berths either side: up the
   // fairway well off the quay, slowing abreast of the berth, then pushed sideways onto the fenders
@@ -74,9 +86,9 @@ export async function startLive(ctx) {
     const abreast = beam + 60;                 // clear of a neighbour's ship, with room for the tugs
     const berth = P(t, off);
     return {
-      berth, rot,
-      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1700, 900), P(t - bow * 800, 380), P(t - bow * (loa / 2 + 60), abreast + 10), P(t, abreast), berth.clone()]),
-      outbound: new THREE.CatmullRomCurve3([berth.clone(), P(t, abreast), P(t + bow * (loa / 2 + 60), abreast + 10), P(t + bow * 800, 380), P(t + bow * 1700, 900)]),
+      berth, rot, abreast: P(t, abreast),
+      inbound: new THREE.CatmullRomCurve3([P(t - bow * 1700, 900), P(t - bow * 800, 380), P(t - bow * (loa / 2 + 60), abreast + 10), P(t, abreast)]),
+      outbound: new THREE.CatmullRomCurve3([P(t, abreast), P(t + bow * (loa / 2 + 60), abreast + 10), P(t + bow * 800, 380), P(t + bow * 1700, 900)]),
       // Anchorages a few hundred metres apart, each berth's well clear of the others'.
       anchorage: P(t - bow * 400, 1000 + ((b ? b.n : 0) % 3) * 320 + (k % 2) * 160),
     };
@@ -86,6 +98,138 @@ export async function startLive(ctx) {
     const d = ((((rot - heading) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
     return heading + d * settle;
   };
+  // Where a ship is at hour h on a call all fast at A and sailing at D, along `path`.
+  function voyage(h, A, D, path) {
+    let pos;
+    let rot = path.rot;
+    let phase;
+    let u = 0;
+    let lines = 0;
+    if (h < A - ARRIVE || h >= D + DEPART) return null;
+    if (h < A - PUSH_IN) {
+      phase = 'in'; u = ease((h - (A - ARRIVE)) / T_IN);
+      pos = path.inbound.getPointAt(u);
+      const ahead = path.inbound.getTangentAt(Math.min(u, 0.999));
+      rot = turnTo(Math.atan2(-ahead.z, ahead.x), path.rot, clamp((u - 0.7) / 0.3, 0, 1));
+    } else if (h < A) {
+      phase = 'push-in'; u = ease((h - (A - PUSH_IN)) / PUSH_IN);
+      pos = path.abreast.clone().lerp(path.berth, u);
+    } else if (h < A + LINES_IN) {
+      phase = 'lines-in'; pos = path.berth; lines = Math.min(LINE_COUNT, 1 + Math.floor((LINE_COUNT * (h - A)) / LINES_IN));
+    } else if (h < D) {
+      phase = 'alongside'; pos = path.berth; lines = LINE_COUNT;
+    } else if (h < D + LINES_OUT) {
+      phase = 'lines-out'; pos = path.berth; lines = LINE_COUNT - Math.floor((LINE_COUNT * (h - D)) / LINES_OUT);
+    } else if (h < D + LINES_OUT + PUSH_OUT) {
+      phase = 'push-out'; u = ease((h - D - LINES_OUT) / PUSH_OUT);
+      pos = path.berth.clone().lerp(path.abreast, u);
+    } else {
+      phase = 'out'; u = ease((h - D - LINES_OUT - PUSH_OUT) / T_OUT);
+      pos = path.outbound.getPointAt(u);
+      const ahead = path.outbound.getTangentAt(Math.min(u, 0.999));
+      rot = turnTo(Math.atan2(-ahead.z, ahead.x), path.rot, 1 - clamp(u / 0.3, 0, 1));
+    }
+    return { pos, rot, phase, u, lines };
+  }
+
+  // Mooring lines, from the ship's fairleads to bollards on the quay: head lines, breast lines and
+  // springs at each end, as fractions of her length (on board, on the quay). Made fast springs
+  // first, then breasts, then head and stern lines; let go in the reverse order.
+  const LINES = [[0.47, 0.62], [0.45, 0.57], [0.37, 0.38], [0.26, 0.04], [-0.26, -0.04], [-0.37, -0.38], [-0.45, -0.57], [-0.47, -0.62]];
+  const LINE_ORDER = [3, 4, 2, 5, 1, 6, 0, 7];
+  // The lines are drawn as ropes (thin cylinders), thick enough to see from the drone.
+  const ROPES = 192;
+  const ropes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.22, 1, 5), new THREE.MeshStandardMaterial({ color: 0xead27a, roughness: 0.8 }), ROPES);
+  ropes.frustumCulled = false;
+  scene.add(ropes);
+  let ropesUsed = 0;
+  const UP = new THREE.Vector3(0, 1, 0);
+  const rq = new THREE.Quaternion();
+  const ra = new THREE.Vector3();
+  const rb = new THREE.Vector3();
+  function rope(a, b) {
+    if (ropesUsed >= ROPES) return;
+    const d = rb.copy(b).sub(a);
+    const len = d.length();
+    rq.setFromUnitVectors(UP, d.divideScalar(len || 1));
+    mm.compose(ra.copy(a).add(b).multiplyScalar(0.5), rq, new THREE.Vector3(1, len, 1));
+    ropes.setMatrixAt(ropesUsed++, mm);
+  }
+  const MEN = 64;
+  const menBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3, 0.26, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0xff7a00, emissive: 0x442200 }), MEN);
+  const menHead = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffffff }), MEN);
+  scene.add(menBody, menHead);
+  let menUsed = 0;
+  const mm = new THREE.Matrix4();
+  function linesman(x, z) {
+    if (menUsed >= MEN) return;
+    menBody.setMatrixAt(menUsed, mm.makeTranslation(x, frame.top + 0.7, z));
+    menHead.setMatrixAt(menUsed, mm.makeTranslation(x, frame.top + 1.6, z));
+    menUsed++;
+  }
+  function moor(mesh, v, tide) {
+    const ud = mesh.userData;
+    if (!v || !v.lines) return;
+    const a = [Math.cos(v.rot), -Math.sin(v.rot)];            // along the ship, bow-wards
+    const l = [Math.sin(v.rot), Math.cos(v.rot)];             // towards the quay
+    for (const k of LINE_ORDER.slice(0, v.lines)) {
+      const [sx, qx] = LINES[k];
+      rope(new THREE.Vector3(v.pos.x + a[0] * sx * ud.loa + l[0] * (ud.beam / 2 - 0.5), tide + ud.deck, v.pos.z + a[1] * sx * ud.loa + l[1] * (ud.beam / 2 - 0.5)),
+        new THREE.Vector3(v.pos.x + a[0] * qx * ud.loa + l[0] * (ud.beam / 2 + 3.5), frame.top + 0.6, v.pos.z + a[1] * qx * ud.loa + l[1] * (ud.beam / 2 + 3.5)));
+    }
+    // The linesmen at the bollards of the lines being handled now.
+    if (v.phase === 'lines-in' || v.phase === 'lines-out') {
+      const now = v.phase === 'lines-in' ? v.lines - 1 : v.lines;
+      for (const k of LINE_ORDER.slice(Math.max(0, now - 1), now + 2)) {
+        const qx = LINES[k][1];
+        linesman(v.pos.x + a[0] * qx * ud.loa + l[0] * (ud.beam / 2 + 4.5), v.pos.z + a[1] * qx * ud.loa + l[1] * (ud.beam / 2 + 4.5));
+        linesman(v.pos.x + a[0] * (qx + 0.01) * ud.loa + l[0] * (ud.beam / 2 + 5.5), v.pos.z + a[1] * (qx + 0.01) * ud.loa + l[1] * (ud.beam / 2 + 5.5));
+      }
+    }
+  }
+  // Tugs: two on each ship near her berth, towing ahead and astern in the fairway, then on her
+  // seaward side pushing her on (or pulling her off) the berth.
+  const tugMat = new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.5 });
+  const tugs = Array.from({ length: 16 }, () => {
+    const g = new THREE.Group();
+    g.add(ctx.box(28, 4, 9, tugMat, 0, 1, 0));
+    g.add(ctx.box(9, 5, 7, REAL.white, -2, 5, 0));
+    g.visible = false;
+    scene.add(g);
+    return g;
+  });
+  let tugsUsed = 0;
+  function tugsFor(mesh, v, tide) {
+    if (!v) return;
+    const near = (v.phase === 'in' && v.u > 0.55) || v.phase === 'push-in' || v.phase === 'lines-in' || v.phase === 'lines-out'
+      || v.phase === 'push-out' || (v.phase === 'out' && v.u < 0.4);
+    if (!near) return;
+    const { loa, beam } = mesh.userData;
+    const pushing = v.phase !== 'in' && v.phase !== 'out';
+    for (const side of [1, -1]) {
+      const tug = tugs[tugsUsed++];
+      if (!tug) return;
+      // In the ship's frame: x along her, z towards the quay.
+      const local = pushing ? [side * 0.3 * loa, -(beam / 2 + 14)] : [side * (loa / 2 + 40), 0];
+      const off = new THREE.Vector3(local[0], 0, local[1]).applyAxisAngle(new THREE.Vector3(0, 1, 0), v.rot);
+      tug.position.set(v.pos.x + off.x, tide, v.pos.z + off.z);
+      tug.rotation.y = pushing ? v.rot - Math.PI / 2 : v.rot;
+      tug.visible = true;
+    }
+  }
+  function startFrame() {
+    for (const t of tugs) t.visible = false;
+    tugsUsed = 0;
+    menUsed = 0;
+    ropesUsed = 0;
+  }
+  function endFrame() {
+    for (let i = ropesUsed; i < ROPES; i++) ropes.setMatrixAt(i, mm.makeScale(0, 0, 0));
+    ropes.instanceMatrix.needsUpdate = true;
+    for (let i = menUsed; i < MEN; i++) { menBody.setMatrixAt(i, mm.makeScale(0, 0, 0)); menHead.setMatrixAt(i, mm); }
+    menBody.instanceMatrix.needsUpdate = menHead.instanceMatrix.needsUpdate = true;
+  }
+
   function shipCalls() {
     const main = site.mainBerth && site.mainBerth.leg ? site.mainBerth : null;
     calls.forEach((c, k) => {
@@ -99,15 +243,6 @@ export async function startLive(ctx) {
     });
   }
   shipCalls();
-  const tugMat = new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.5 });
-  const tugs = [0, 1].map(() => {
-    const g = new THREE.Group();
-    g.add(ctx.box(28, 4, 9, tugMat, 0, 1, 0));
-    g.add(ctx.box(9, 5, 7, REAL.white, -2, 5, 0));
-    g.visible = false;
-    scene.add(g);
-    return g;
-  });
 
   // --- the other berths along the quay ------------------------------------------------------
   // Each has its own line of ships, one after another: waiting at anchor if the berth or the
@@ -152,13 +287,13 @@ export async function startLive(ctx) {
       const gap = peak ? 0.2 + draw(n, k, 3) * 1.2 : 1 + draw(n, k, 3) * 7;
       let arrive = Math.max(t, gone + 0.25);
       while (arrive < total && !okAt(arrive)) arrive += 0.25;       // held at anchor by the weather
-      const along = arrive + APPROACH;
+      const along = arrive + ARRIVE;
       let sail = along + stay;
       while (sail < total && !okAt(sail)) sail += 0.25;               // held alongside
       const mesh = o.meshes[k % o.meshes.length];
-      calls.push({ k, due: t, anchorFrom: Math.max(gone, t - (peak ? 6 : 3)), arrive, along, sail, gone: sail + APPROACH,
+      calls.push({ k, due: t, anchorFrom: Math.max(gone, t - (peak ? 6 : 3)), arrive, along, sail, gone: sail + DEPART,
         held: arrive > t + 0.2, mesh, name: nameFor(mesh.userData.type, n, k), type: mesh.userData.type });
-      gone = sail + APPROACH;
+      gone = sail + DEPART;
       t = gone + gap;
     }
     o.calls = calls;
@@ -178,31 +313,28 @@ export async function startLive(ctx) {
       o.b.state = null;
       const c = o.calls.find((x) => h >= x.anchorFrom && h < x.gone);
       if (!c) continue;
-      let pos = null;
-      let ahead = null;
-      let rot = o.rot;
-      let settle = 0;
-      if (h < c.arrive) {
-        pos = o.anchorage; rot = o.rot + 0.4; anchored++;
-      } else if (h < c.along) {
-        const u = ease((h - c.arrive) / APPROACH);
-        pos = o.inbound.getPointAt(u); ahead = o.inbound.getTangentAt(Math.min(u, 0.999));
-        settle = clamp((u - 0.75) / 0.25, 0, 1);
-      } else if (h < c.sail) {
-        pos = o.berth; o.alongside = true; alongside++;
-        o.b.state = h < (c.along + c.sail) / 2 ? 'discharging' : 'loading';
-        o.b.shipKind = c.mesh.userData.kind;
-        o.b.fill = cargoFill(h, c.along, c.sail);
-      } else {
-        const u = ease((h - c.sail) / APPROACH);
-        pos = o.outbound.getPointAt(u); ahead = o.outbound.getTangentAt(Math.min(u, 0.999));
-        settle = 1 - clamp(u / 0.3, 0, 1);
-      }
+      const v = h >= c.arrive ? voyage(h, c.along, c.sail, o) : null;
       o.ship = c;
+      o.phase = v ? v.phase : 'anchor';
       c.mesh.visible = true;
-      c.mesh.position.set(pos.x, tide, pos.z);
-      c.mesh.rotation.y = ahead ? turnTo(Math.atan2(-ahead.z, ahead.x), o.rot, settle) : rot;
-      ctx.setFill(c.mesh.userData.stacks, o.alongside ? o.b.fill : h < c.arrive ? 1 : 0.9);
+      moor(c.mesh, v, tide);
+      tugsFor(c.mesh, v, tide);
+      if (!v) {
+        anchored++;
+        c.mesh.position.set(o.anchorage.x, tide, o.anchorage.z);
+        c.mesh.rotation.y = o.rot + 0.4;
+        ctx.setFill(c.mesh.userData.stacks, 1);
+        continue;
+      }
+      c.mesh.position.set(v.pos.x, tide, v.pos.z);
+      c.mesh.rotation.y = v.rot;
+      if (v.phase === 'alongside') {
+        o.alongside = true; alongside++;
+        o.b.state = h < (c.along + LINES_IN + c.sail) / 2 ? 'discharging' : 'loading';
+        o.b.shipKind = c.mesh.userData.kind;
+      }
+      if (v.phase === 'alongside' || v.phase.startsWith('lines')) o.b.fill = cargoFill(h, c.along + LINES_IN, c.sail);
+      ctx.setFill(c.mesh.userData.stacks, v.phase === 'alongside' || v.phase.startsWith('lines') ? o.b.fill : h < c.along ? 1 : 0.9);
     }
     return alongside;
   }
@@ -223,53 +355,36 @@ export async function startLive(ctx) {
     let alongside = null;
     let moving = null;
     let waiting = null;
+    let mooring = null;
     for (const c of calls) {
       const m = c.mesh;
+      const v = voyage(h, c.from, c.to, c);
       let pos = null;
-      let ahead = null;
-      if (h >= c.from && h < c.to) {
-        pos = c.berth; alongside = c;
-      } else if (h >= c.from - APPROACH && h < c.from) {
-        const u = ease((h - (c.from - APPROACH)) / APPROACH);
-        pos = c.inbound.getPointAt(u); ahead = c.inbound.getTangentAt(Math.min(u, 0.999)); moving = { c, u, inbound: true };
-      } else if (h >= c.to && h < c.to + APPROACH) {
-        const u = ease((h - c.to) / APPROACH);
-        pos = c.outbound.getPointAt(u); ahead = c.outbound.getTangentAt(Math.min(u, 0.999)); moving = { c, u, inbound: false };
-      } else if (h >= c.from - APPROACH - ANCHOR && h < c.from - APPROACH) {
+      if (v) {
+        pos = v.pos;
+        m.rotation.y = v.rot;
+        if (v.phase === 'alongside') alongside = c;
+        else if (v.phase === 'lines-in' || v.phase === 'lines-out') mooring = { c, making: v.phase === 'lines-in', lines: v.lines };
+        else moving = { c, u: v.u, inbound: v.phase === 'in' || v.phase === 'push-in', pushing: v.phase.startsWith('push') };
+      } else if (h >= c.from - ARRIVE - ANCHOR && h < c.from - ARRIVE) {
         pos = c.anchorage; waiting = c;
+        m.rotation.y = c.rot + 0.35;
       }
       m.visible = !!pos;
+      moor(m, v, tide);
+      tugsFor(m, v, tide);
       if (!pos) continue;
       m.position.set(pos.x, tide, pos.z);
-      if (ahead) {
-        // Coming in it turns to lie alongside; going out it straightens up towards the sea.
-        const heading = Math.atan2(-ahead.z, ahead.x);
-        const settle = moving && moving.inbound ? clamp((moving.u - 0.75) / 0.25, 0, 1) : moving ? 1 - clamp(moving.u / 0.3, 0, 1) : 0;
-        m.rotation.y = turnTo(heading, c.rot, settle);
-      } else {
-        m.rotation.y = c.rot + (pos === c.anchorage ? 0.35 : 0);
-      }
       // Discharged down to the last tiers over the first half of her stay, loaded up again over the second.
-      if (pos === c.berth) {
-        const fill = cargoFill(h, c.from, c.to);
+      if (v && (v.phase === 'alongside' || v.phase.startsWith('lines'))) {
+        const fill = cargoFill(h, c.from + LINES_IN, c.to);
         ctx.setFill(m.userData.stacks, fill);
         if (site.mainBerth) site.mainBerth.fill = fill;
       } else {
         ctx.setFill(m.userData.stacks, h < c.from ? 1 : 0.9);
       }
     }
-    // Two tugs on the ship coming in or going out, near the berth.
-    const near = moving && (moving.inbound ? moving.u > 0.45 : moving.u < 0.55);
-    tugs.forEach((tug, i) => {
-      tug.visible = !!near;
-      if (!near) return;
-      const m = moving.c.mesh;
-      const along = (i ? 0.38 : -0.38) * moving.c.loa;
-      const off = new THREE.Vector3(along, 0, -moving.c.beam / 2 - 12).applyAxisAngle(new THREE.Vector3(0, 1, 0), m.rotation.y);
-      tug.position.set(m.position.x + off.x, tide, m.position.z + off.z);
-      tug.rotation.y = m.rotation.y + (i ? 0.5 : -0.5);
-    });
-    return { alongside, moving, waiting };
+    return { alongside, moving, waiting, mooring };
   }
 
   // --- the cranes ----------------------------------------------------------------------------
@@ -531,10 +646,19 @@ export async function startLive(ctx) {
     });
   }
   const fmtHour = (h) => new Date(realStart + h * 3600000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-  function berthNow(b, mainCall, mainMoving, mainWaiting) {
+  function movingWords(mv) {
+    if (mv.pushing) return mv.inbound ? 'being pushed alongside by the tugs' : 'being pulled off the berth by the tugs';
+    return mv.inbound ? 'coming in with the pilot and tugs' : 'sailing';
+  }
+  const PHASE_WORDS = {
+    in: 'coming in with the pilot and tugs', 'push-in': 'being pushed alongside by the tugs', 'lines-in': 'making fast her lines',
+    'lines-out': 'letting go her lines', 'push-out': 'being pulled off by the tugs', out: 'sailing',
+  };
+  function berthNow(b, mainCall, mainMoving, mainWaiting, mainMooring) {
     if (b.main) {
       if (mainCall) return `${mainCall.name} ${b.state || 'alongside'}`;
-      if (mainMoving) return `${mainMoving.c.name} ${mainMoving.inbound ? 'berthing' : 'sailing'}`;
+      if (mainMooring) return `${mainMooring.c.name} ${mainMooring.making ? 'making fast her lines' : 'letting go her lines'}`;
+      if (mainMoving) return `${mainMoving.c.name} ${movingWords(mainMoving)}`;
       if (mainWaiting) return `${mainWaiting.name} at anchor`;
       return 'Empty';
     }
@@ -547,9 +671,8 @@ export async function startLive(ctx) {
     }
     const what = c.type.replace('ro-ro', 'car carrier');
     if (simH < c.arrive) return `${c.name} (${what}) at anchor${c.held && simH >= c.due ? ', held by the weather' : ''}`;
-    if (simH < c.along) return `${c.name} (${what}) berthing`;
-    if (simH < c.sail) return `${c.name} (${what}) ${c.type === 'ro-ro' ? (b.state === 'discharging' ? 'driving vehicles off' : 'driving vehicles on') : b.state}`;
-    return `${c.name} sailing`;
+    if (o.phase !== 'alongside') return `${c.name} (${what}) ${PHASE_WORDS[o.phase] || ''}`;
+    return `${c.name} (${what}) ${c.type === 'ro-ro' ? (b.state === 'discharging' ? 'driving vehicles off' : 'driving vehicles on') : b.state}`;
   }
 
   function setSpeed(s) {
@@ -662,13 +785,15 @@ export async function startLive(ctx) {
       lastClock = performance.now();
     }
     const tide = w.tide;
-    const { alongside, moving, waiting } = placeShips(simH, tide);
+    startFrame();
+    const { alongside, moving, waiting, mooring } = placeShips(simH, tide);
     const states = w.hour.equipment;
     const working = !!alongside && states.some((s) => s.state === 'working');
     player.working = working;
     busy = placeOthers(simH, tide) + (alongside ? 1 : 0);
+    endFrame();
     if (site.mainBerth) {
-      site.mainBerth.state = alongside ? (simH < (alongside.from + alongside.to) / 2 ? 'discharging' : 'loading') : null;
+      site.mainBerth.state = alongside ? (simH < (alongside.from + LINES_IN + alongside.to) / 2 ? 'discharging' : 'loading') : null;
       site.mainBerth.shipKind = alongside ? alongside.mesh.userData.kind : null;
     }
     ctx.setPower(w.hour.power !== false);
@@ -684,7 +809,7 @@ export async function startLive(ctx) {
     }
     if (performance.now() - lastText > 250) {
       lastText = performance.now();
-      text(now, w, alongside, moving, waiting, states);
+      text(now, w, alongside, moving, waiting, states, mooring);
       if (!scrub.matches(':active')) scrub.value = String(simH);
       refreshLog(false);
     }
@@ -701,12 +826,12 @@ export async function startLive(ctx) {
     return Math.min(c.moves, Math.round(done));
   }
 
-  function text(now, w, alongside, moving, waiting, states) {
+  function text(now, w, alongside, moving, waiting, states, mooring) {
     if (!panel.hidden) {
       for (const li of panel.querySelectorAll('li[data-n]')) {
         const b = allBerths.find((x) => String(x.n) === li.dataset.n);
         li.classList.toggle('is-busy', !!b.state);
-        li.querySelector('.mt-b-now').textContent = berthNow(b, alongside, moving, waiting);
+        li.querySelector('.mt-b-now').textContent = berthNow(b, alongside, moving, waiting, mooring);
       }
     }
     const when = new Date(now);
@@ -715,7 +840,8 @@ export async function startLive(ctx) {
     const L = plan.limits;
     let ship = 'Berth empty';
     if (alongside) ship = `${esc(alongside.name)} alongside · ${movesDone(alongside).toLocaleString()} of ${alongside.moves.toLocaleString()} ${esc(plan.units)}`;
-    else if (moving) ship = `${esc(moving.c.name)} ${moving.inbound ? 'berthing' : 'sailing'}`;
+    else if (mooring) ship = `${esc(mooring.c.name)} ${mooring.making ? `making fast, ${mooring.lines} of ${LINE_COUNT} lines` : `letting go, ${mooring.lines} lines still out`}`;
+    else if (moving) ship = `${esc(moving.c.name)} ${movingWords(moving)}`;
     else if (waiting) {
       const due = new Date(realStart + waiting.from * 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       ship = `${esc(waiting.name)} at anchor, ${waiting.held ? 'held by the weather' : 'due alongside ' + due}`;

@@ -240,3 +240,8 @@
 .mt-berths .close { position: absolute; right: 8px; top: 4px; background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
 .mt-live-scenario-words { opacity: .8; }
 @media (max-width: 720px) { .mt-berths { top: auto; bottom: 110px; max-height: 45%; } }
+
+/* Model versions: a note about elements the model left, and one row per version. */
+.marine-note { border-left: 3px solid var(--warning); background: var(--raised); padding: 8px 12px; border-radius: 4px; }
+.marine-version summary { cursor: pointer; overflow-wrap: anywhere; }
+.marine-version p { margin: 4px 0; overflow-wrap: anywhere; }

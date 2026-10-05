@@ -14,7 +14,7 @@ import json
 import math
 from typing import Any
 
-from . import marine_life, marine_ops, marine_risk
+from . import marine_life, marine_ops, marine_plan, marine_risk
 
 INDICATIVE = "Indicative figure for a West African container port, 2025 prices; use the project's own estimate when there is one."
 PRICE_SOURCES = {
@@ -97,10 +97,12 @@ def fields(terminal: str = "container") -> list[dict[str, Any]]:
                      "default": e["cost"], "source": EVENT_SOURCE},
                     {"key": f"ev_{e['key']}_cost_known", "group": g, "sub": sub, "label": "Repair, knowing early", "unit": "USD",
                      "default": e["cost_known"], "source": e["early"]}]
+    for f in marine_plan.plan_inputs():
+        out.append({**f, "group": "Sensors plan"})
     return out
 
 
-GROUPS = ["The berth", "Repairs", "Lives and warranties", "Lifecycle risks", "Extreme events"]
+GROUPS = ["The berth", "Repairs", "Lives and warranties", "Lifecycle risks", "Extreme events", "Sensors plan"]
 
 
 def clean(form: dict[str, Any], terminal: str = "container") -> dict[str, str]:

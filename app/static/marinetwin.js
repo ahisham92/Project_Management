@@ -25,6 +25,8 @@ const LIVE = view && view.dataset.mode === 'live';
 const LIFE = view && view.dataset.mode === 'life';
 // The risks page (step 6) shows one extreme event at a time on the model: damage and the area closed.
 const RISK = view && view.dataset.mode === 'risk';
+// The sensors plan (step 7) marks every planned sensor on the model, coloured by its check in a year.
+const PLAN = view && view.dataset.mode === 'plan';
 const pick = document.querySelector('.marine-pick');
 
 function css(name, fallback) {
@@ -2130,6 +2132,69 @@ async function main() {
     };
     view.addEventListener('mt-event', (ev) => showEvent(ev.detail));
     if (RISK && view.dataset.event) showEvent(view.dataset.event);
+  }
+
+  // The sensors plan: a pin on its host element for every planned sensor, coloured for the year
+  // picked under the view (its assumed reading, or its maintenance check when a visit is due).
+  if (PLAN && view.dataset.plan) {
+    // Pins big enough to see along the whole quay; the structure greyed so they stand out.
+    const size = Math.min(Math.max(bbox.getSize(new THREE.Vector3()).length() / 700, 1), 5);
+    const pinGeo = new THREE.SphereGeometry(1.1 * size, 14, 10);
+    const stemGeo = new THREE.CylinderGeometry(0.12 * size, 0.12 * size, 2.2 * size, 6);
+    eventStates = new Map();
+    paint();
+    const pinMats = {};
+    const pinMat = (state) => (pinMats[state] ||= new THREE.MeshStandardMaterial({
+      color: new THREE.Color(STATE_COLOUR[state || 'neutral']()), emissive: new THREE.Color(STATE_COLOUR[state || 'neutral']()), emissiveIntensity: 0.35 }));
+    const pins = new THREE.Group();
+    scene.add(pins);
+    // Where each element is: the top of its meshes.
+    content.updateMatrixWorld(true);
+    const tops = new Map();
+    const b = new THREE.Box3();
+    content.traverse((m) => {
+      const e = m.isMesh && m.userData.element;
+      if (!e) return;
+      b.setFromObject(m);
+      if (b.isEmpty()) return;
+      for (const k of [e.ref, e.name]) {
+        const had = tops.get(k);
+        tops.set(k, had ? had.union(b) : b.clone());
+      }
+    });
+    let asked = 0;
+    const showPlan = async (year) => {
+      const mine = ++asked;
+      let data;
+      try { data = await (await fetch(`${view.dataset.plan}?year=${encodeURIComponent(year)}`, { credentials: 'same-origin' })).json(); } catch (err) { return; }
+      if (mine !== asked) return;
+      pins.clear();
+      const stacked = new Map();
+      for (const s of data.sensors) {
+        const box = tops.get(s.ref) || tops.get(s.host);
+        if (!box) continue;
+        const n = stacked.get(s.ref) || 0;
+        stacked.set(s.ref, n + 1);
+        const c = box.getCenter(new THREE.Vector3());
+        const pin = new THREE.Group();
+        const head = new THREE.Mesh(pinGeo, pinMat(s.state));
+        head.position.y = (2.4 + n * 2.4) * size;
+        const stem = new THREE.Mesh(stemGeo, pinMat(s.state));
+        stem.position.y = 1.1 * size;
+        pin.add(head, stem);
+        pin.position.set(c.x + (s.face === 'back' ? 0.8 : 0), box.max.y, c.z);
+        pin.userData.pick = () => ({
+          kind: 'sensor', title: `${s.tag} · ${s.name}`, state: s.state,
+          rows: [['On', s.host || '—'], ['Year of service', String(data.year)],
+            ['Assumed reading', s.value == null ? 'no reading series' : `${Number(s.value).toLocaleString()} ${s.unit}`],
+            ['Maintenance check', s.check_note]],
+        });
+        pins.add(pin);
+      }
+      view.dataset.pins = String(pins.children.length);
+    };
+    view.addEventListener('mt-plan-year', (ev) => showPlan(ev.detail));
+    showPlan(view.dataset.year || 4);
   }
 
   // The live port: the player takes over the clock, the ships, the cranes and the weather.

@@ -1122,3 +1122,26 @@ def test_the_risks_form_reads_the_box_ticked_after_its_hidden_zero(signed_in, de
     run = signed_in.get(demo + "/lifecycle.json?policy=nothing&risk_war_direct=0&risk_war_direct=1&risk_storms=0&war_year=12").get_json()
     assert run["risks"]["war_direct"] and not run["risks"]["storms"] and run["risks"]["war_year"] == 12
     assert all(w["storm"] == 0 for w in run["weather"])
+
+
+def test_an_assets_history_says_who_changed_what(app, signed_in):
+    page = _berth(app, signed_in, "Berth 13")
+    signed_in.post(page + "/elements", data={"name": "P01", "kind": "pile", "material": "steel", "zone": "splash"})
+    signed_in.post(page + "/sensors/trim")
+    with app.app_context():
+        db = connect(app.config["DATABASE"])
+        rows = db.execute("SELECT action, user_id FROM marine_changes WHERE asset_id = ? ORDER BY id",
+                          (int(page.rsplit("/", 1)[1]),)).fetchall()
+    assert [r["action"] for r in rows] == ["Added an element: P01", "Kept sensors on one element per design"]
+    assert all(r["user_id"] for r in rows)
+    assert "Added an element: P01" in text(signed_in.get(page + "/setup"))
+
+
+def test_forecasts_come_with_a_range():
+    points = [(t, 0.1 + 0.02 * t + (0.004 if i % 2 else -0.004)) for i, t in enumerate(range(1, 11))]
+    early, late = marine.trend_range(points, 0.4, 2020)
+    likely = marine.trend_year(points, 0.4, 2020)
+    assert early < likely < late
+    assert marine.trend_range([(1, 0.1), (2, 0.1), (3, 0.1), (4, 0.1)], 0.4, 2020) is None    # not rising
+    fit = marine.fit_corrosion([(t, 0.1 * t ** 0.8 * (1.05 if t % 2 else 0.95)) for t in range(1, 11)])
+    assert marine.corrosion_spread([(t, 0.1 * t ** 0.8 * (1.05 if t % 2 else 0.95)) for t in range(1, 11)], fit) > 1

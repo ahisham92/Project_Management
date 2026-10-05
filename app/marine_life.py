@@ -84,6 +84,7 @@ PRICES = {
     "raise_quay": 4_500_000,    # raising the cope and the apron edge by 0.6 m
     "generators": 450_000,      # backup generators for the cranes and the reefers
     "war_rebuild": 40_000_000,  # rebuilding after a direct hit
+    "new_quay_m": 60_000,       # a new quay wall and deck, per metre of berth, when the old one is lost
 }
 PRICE_NAMES = {
     "fender": "Replace a fender", "bollard": "Replace a bollard", "wall_cp": "Wall bay: cathodic protection",
@@ -92,6 +93,7 @@ PRICE_NAMES = {
     "pipes": "Renew the water and fire mains", "drain_clean": "Clean the drains", "drain_repair": "Reline the drains",
     "power": "New substation and cables", "lighting": "Relamp the masts", "raise_quay": "Raise the quay 0.6 m",
     "generators": "Buy backup generators", "war_rebuild": "Rebuild after the hit",
+    "new_quay_m": "A new quay, per metre (when the berth is lost)",
 }
 
 # Expected life and warranty (years) of each kind of part, and what the warranty covers. A wear
@@ -197,6 +199,18 @@ RISKS = {
 }
 SEA_LEVEL = {"low": 0.15, "medium": 0.30, "high": 0.60}            # metres of rise over the design life
 SEISMIC = {"low": 0.004, "moderate": 0.015, "high": 0.04}           # a damaging earthquake, chance a year
+REBUILD_MONTHS = 30   # designing, procuring and building a new quay while the berth stands idle
+# The berth pocket silts up and is dredged back to its depth: the seabed in front of the quay.
+DREDGE = {
+    "silt_rate": (0.30, "Siltation in the berth pocket", "m a year"),
+    "dredge_trigger": (0.50, "Dredge when the silt is this deep (the over-dredge allowance)", "m"),
+    "dredge_width": (50.0, "Berth pocket width in front of the quay", "m"),
+    "dredge_m3": (8.0, "Maintenance dredging, per cubic metre", "USD"),
+    "dredge_mob": (350_000.0, "Bringing the dredger to site and back", "USD"),
+    "dredge_day": (8_000.0, "Dredged a day at the berth (alongside ships, in the gaps)", "m³"),
+    "dredge_survey": (8_000.0, "Hydrographic survey of the pocket (twice a year)", "USD"),
+}
+SILT_MAX = 3.0        # m: past this the pocket stops silting (the seabed is back to its old level)
 FREEBOARD = 1.5                                                     # m from the highest storm tide to the cope
 
 
@@ -230,6 +244,8 @@ def rates_for(terminal: str, given: dict[str, Any] | None = None) -> dict[str, f
     rates: dict[str, float] = {
         "moves_per_day": float(MOVES_PER_DAY.get(terminal, 1000)),
         "value_per_move": float(VALUE_PER_MOVE.get(terminal, 80)),
+        "rebuild_months": float(REBUILD_MONTHS),
+        **{k: float(v[0]) for k, v in DREDGE.items()},
         **{k: float(v) for k, v in PRICES.items()},
         **{f"life_{k}": float(v[0]) for k, v in KIND_INFO.items()},
         **{f"warranty_{k}": float(v[1]) for k, v in KIND_INFO.items()},
@@ -577,6 +593,7 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
     settings = settings_for(risks)
     months = life * 12
     asset_id = int(asset["id"])
+    elements = [dict(e) for e in elements]
     parts = parts_for(elements, allowance, life, asset_id, rates)
     by_kind = {k: [p for p in parts if p.kind == k] for k in KIND_NAME}
     one = {k: v[0] for k, v in by_kind.items() if len(v) == 1 and k in ("pipes", "drainage", "power", "lighting", "quay", "backup", "war")}
@@ -598,6 +615,14 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
     spend = handled = lost = lost_weather = lost_hazard = lost_demand = 0.0
     by_risk: dict[str, int] = {}
     condemned_at: int | None = None
+    out_until: int | None = None       # the berth is being rebuilt until this month
+    rebuilds = 0
+    rebuild_cost = 0.0
+    length = _quay_length(elements)
+    silt = 0.0                          # m of silt in the berth pocket above its dredged depth
+    dredges = 0
+    dredge_cost = dredge_days = survey_cost = 0.0
+    shallow_told = 0
     fixes = closures = covered_fixes = 0
     freeboard = settings["freeboard"]
     backup = False
@@ -641,7 +666,16 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
         w = sky[m]
         dt = 1 / 12
         stop_days = 0.0            # days the whole berth stands (inspections, cyber, floods)
-        if condemned_at is None:
+        if out_until is not None and m >= out_until:
+            # The new quay is finished: every part of it is new, and ships come back.
+            for p in parts:
+                p.occurrence += 1
+                p.repair_days = 0.0
+                _renew(p, asset_id, life, full=True, rates=rates)
+                p.installed = m
+            out_until = None
+            log(m, "fix", "The new quay is finished: ships are back alongside.")
+        if out_until is None:
             # What befell the berth this month.
             pick = lambda pool, k, salt: [pool[int(p_.draws[(2 * m + salt) % len(p_.draws)] * len(pool)) % len(pool)]  # noqa: E731
                                           for p_ in pool[:k]] if pool else []
@@ -743,6 +777,33 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
                 count("drainage")
             stop_days += flooded
 
+            # The seabed: silt settles in the pocket (more after a great storm); the surveys find it and the
+            # dredger takes it away, working round the ships. Left alone, the biggest ships come in light or not at all.
+            silt = min(SILT_MAX, silt + rates["silt_rate"] * dt + (0.15 if w["storm"] == 2 else 0.0))
+            if policy != "nothing" and m % 6 == 0:
+                spend += rates["dredge_survey"]
+                survey_cost += rates["dredge_survey"]
+            if policy != "nothing" and silt >= rates["dredge_trigger"]:
+                volume = length * rates["dredge_width"] * silt
+                price = rates["dredge_mob"] + volume * rates["dredge_m3"]
+                days = volume / max(rates["dredge_day"], 1.0)
+                spend += price
+                dredge_cost += price
+                dredge_days += days
+                dredges += 1
+                stop_days += days * 0.25        # a quarter of the berth is closed where the dredger works
+                log(m, "fix", f"Maintenance dredging: the survey found {silt:.1f} m of silt; a trailing suction hopper dredger "
+                              f"took {volume:,.0f} m³ in {days:.0f} days, working round the ships. Paid {_money(price)}.",
+                    cost=round(price), dredge=True)
+                silt = 0.0
+            elif policy == "nothing":
+                for depth in (rates["dredge_trigger"], 1.0, 2.0):
+                    if silt >= depth > shallow_told:
+                        shallow_told = depth
+                        log(m, "warning" if depth < 1.5 else "critical",
+                            f"The berth pocket has silted {silt:.1f} m: the biggest ships come in light-loaded or go elsewhere.",
+                            risk="siltation")
+
             # The parts age.
             for p in parts:
                 if p.repair_days > 0:
@@ -811,9 +872,16 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
             unsafe = [p for p in by_kind["wall"] if p.stage >= 3 and p.repair_days <= 0]
             walls = by_kind["wall"]
             if len(unsafe) >= max(2, math.ceil(len(walls) / 3)) or any(p.loss / p.allowance >= WALL_CONDEMNED for p in walls if p.repair_days <= 0):
-                condemned_at = m
-                log(m, "condemned", "Berth out of service: too much of the front wall is no longer safe. "
-                                    "It needs rebuilding before ships can come back.")
+                condemned_at = m if condemned_at is None else condemned_at
+                price = rates["new_quay_m"] * length
+                months_out = int(round(rates.get("rebuild_months", REBUILD_MONTHS)))
+                out_until = m + months_out
+                spend += price
+                rebuild_cost += price
+                rebuilds += 1
+                log(m, "condemned", f"Berth out of service: too much of the front wall is no longer safe. A new quay "
+                                    f"({length:,.0f} m at {_money(rates['new_quay_m'])} a metre) costs {_money(price)} "
+                                    f"and the berth stands idle {months_out} months while it is built.", cost=round(price))
 
         # How each part stands, for the 3D view: worn 0-99, +1000 being repaired, +2000 closed off, +10000 × the
         # stage of its open issue (none once it is mended, even where the mending leaves its loss).
@@ -821,7 +889,7 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
                        + (10000 * p.stage if p.issue else 0) for p in parts])
 
         # What the berth could do this month.
-        if condemned_at is not None:
+        if out_until is not None:
             factor = 0.0
         else:
             out = 0.0
@@ -834,6 +902,8 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
                     out += p.share
                 else:
                     out += p.share * RESTRICTION[p.kind].get(p.stage, 0.0)
+            if policy == "nothing":
+                out += _shallow(silt, rates["dredge_trigger"])
             factor = max(0.0, 1.0 - out)
         could = per_day * DAYS_IN_MONTH
         working = could * factor
@@ -847,10 +917,10 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
         lost_weather += weather_lost
         lost_hazard += hazard_lost
         lost_demand += demand_lost
-        if w["storm"] == 2 and condemned_at is None:
+        if w["storm"] == 2 and out_until is None:
             log(m, "weather", f"Great storm: the berth stopped for {w['storm_days']:.0f} days and the fenders took a battering.")
         rows.append([m, round(factor, 4), round(month_handled), round(month_lost), round(weather_lost), round(spend),
-                     round(hazard_lost), round(demand_lost)])
+                     round(hazard_lost), round(demand_lost), round(silt, 2)])
 
     done = len(rows)
     finished = not pending
@@ -890,8 +960,24 @@ def run(asset: Any, elements: Iterable[Any], policy: str = "fix", choices: Itera
                    "cost": round(cost_moves * value), "fixes": fixes, "closures": closures, "warranty_fixes": covered_fixes,
                    "hazards": by_risk,
                    "service_life": None if service_life is None else round(min(service_life, 150), 1),
-                   "condemned_year": None if condemned_at is None else round(condemned_at / 12, 1)},
+                   "condemned_year": None if condemned_at is None else round(condemned_at / 12, 1),
+                   "rebuilds": rebuilds, "rebuild_cost": round(rebuild_cost),
+                   "rebuild_months": int(round(rates.get("rebuild_months", REBUILD_MONTHS))), "length": round(length),
+                   "dredges": dredges, "dredge_cost": round(dredge_cost), "dredge_days": round(dredge_days),
+                   "survey_cost": round(survey_cost), "silt": round(silt, 2),
+                   "dredge_every": round(rates["dredge_trigger"] / rates["silt_rate"], 1) if rates["silt_rate"] else None},
     }
+
+
+def _shallow(silt: float, trigger: float) -> float:
+    """The share of the berth's work lost to silt: none within the over-dredge allowance, then the
+    deepest ships first, up to sixty per cent."""
+    return min(0.6, max(0.0, silt - trigger) * 0.35)
+
+
+def _quay_length(elements: Iterable[Any]) -> float:
+    from . import marine_risk          # it reads the catalogue's prices from here
+    return marine_risk.berth_length(elements)
 
 
 def _money(usd: float) -> str:

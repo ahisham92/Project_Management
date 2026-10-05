@@ -20,6 +20,8 @@
 {# The steps, from the asset list on: where the person is and what comes next. The four facility
    pages share the last step and get their own tabs under it. Every MarineTwin page calls this, so it also
    brings the page furniture (the ship loader and section tabs, marinetwin-ui.js). #}
+{% macro vmoney(n) %}{% if n >= 1e9 %}${{ '{:,.1f}'.format(n / 1e9) }}B{% elif n >= 1e6 %}${{ '{:,.1f}'.format(n / 1e6) }}M{% else %}${{ '{:,.0f}'.format(n / 1e3) }}k{% endif %}{% endmacro %}
+
 {% macro asset_tabs(asset=None) %}
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
                      ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
@@ -48,6 +50,26 @@
       </a>
     {% endfor %}
   </nav>
+  {% set v = marine_value(asset) if asset and asset['id'] else none %}
+  {% if v %}
+  <details class="mt-value">
+    <summary><span class="mt-value-tag">MarineTwin here</span>
+      <span>Worth about <b>{{ vmoney(v['value']) }}</b> over {{ v['life'] }} years for {{ vmoney(v['sensors']) }} of sensors{% if v['times'] %} ({{ '{:,}'.format(v['times']) }}× back){% endif %}.</span>
+      <span class="mt-value-loss">Without it: {% if v['condemned_year'] %}the berth lost in year {{ '%.0f' | format(v['condemned_year']) }}, a new quay {{ vmoney(v['rebuild_cost']) }} and {{ v['rebuild_months'] }} months with no ships{% else %}{{ vmoney(v['nothing_cost']) }} lost over the life{% endif %}.</span>
+      <span class="mt-value-how">How?</span></summary>
+    <div class="mt-value-body">
+      <div><b>{{ vmoney(v['wear']) }}</b> from finding wear early and fixing as you go, instead of leaving it
+        (<a href="{{ url_for('marine.lifecycle', asset_id=asset['id']) }}">Lifecycle</a>): {{ v['units'] }} not lost, the berth not condemned{% if v['dredges'] %}, the pocket dredged {{ v['dredges'] }} times before ships come in light{% endif %}.</div>
+      <div><b>{{ vmoney(v['risk_saving']) }}</b> from knowing early in {{ v['events'] }} extreme events: of the {{ vmoney(v['risk_blind']) }} they are expected to cost over the life
+        (<a href="{{ url_for('marine.risks', asset_id=asset['id']) }}">Risks</a>). Worst met blind:
+        {% for w in v['worst'] %}{{ w['name'] }} {{ vmoney(w['blind']) }} against {{ vmoney(w['known']) }} knowing early{{ '; ' if not loop.last else '.' }}{% endfor %}</div>
+      <div><b>{{ vmoney(v['sensors']) }}</b> for the sensors, the platform and their upkeep over the life{% if v['payback'] %}, paid back in year {{ v['payback'] }}{% endif %}
+        (<a href="{{ url_for('marine.plan', asset_id=asset['id']) }}">Sensors plan</a>).</div>
+      <div class="muted small">Every lost {{ v['units'][:-1] if v['units'].endswith('s') else v['units'] }} is counted at ${{ '{:,.0f}'.format(v['value_per_move']) }}, the terminal's handling charge for one, not a day or a month. Simulated on the figures in
+        <a href="{{ url_for('marine.inputs', asset_id=asset['id']) }}">Inputs</a>; change them and this follows.</div>
+    </div>
+  </details>
+  {% endif %}
   {% if asset and here in setup_tabs | map('first') | list %}
   <nav class="tabs" style="margin:0 0 16px">
     {% for endpoint, label in setup_tabs %}

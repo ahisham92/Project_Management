@@ -30,7 +30,7 @@ WALL = ("pile", "combi_wall", "sheet_pile")
 DECK = ("slab", "beam")
 RAIL = ("crane_rail", "crane_stopper", "storm_pin")
 
-GROUPS = ["Nature", "Ground", "Operations", "Fire and explosion", "Force majeure", "Trade"]
+GROUPS = ["Nature", "Ground", "Ships and navigation", "Operations", "Fire and explosion", "Security", "Force majeure", "Trade"]
 
 
 def _event(key, name, group, years, what, *, damage=(), radius=None, share=None, warn_h=0.0, warn_with="",
@@ -220,13 +220,93 @@ EVENTS = [
            sensors=["strain", "tilt", "accelerometer"],
            steps=["Evacuate", "Make safe and clear unexploded ordnance", "Map the damage", "Reopen the sound parts",
                   "Rebuild the destroyed bays and cranes"]),
-    _event("sabotage", "Sabotage or terrorism", "Force majeure", 100,
-           "Explosives or deliberate damage at a pile cap or a crane.",
+    # Ships and navigation
+    _event("ship_collision", "Ships collide in the basin", "Ships and navigation", 15,
+           "A ship turning in the basin hits a moored ship and drives it into the quay: fenders and bollards torn out, "
+           "lines parted, the basin closed for the investigation.",
+           damage=[(("fender",), 0.8, "critical"), (("bollard",), 0.4, "critical"), (("slab",), 0.15, "warning")],
+           radius=80, warn_h=0.3, warn_with="vessel traffic radar and AIS, and the berthing aid system",
+           days=10, days_known=4, repair_days=45, ramp_days=2, cost=3_000_000, cost_known=1_500_000,
+           early="Vessel traffic control sees the turning ship's track going wrong and calls the tugs; fender load cells and "
+                 "mooring hooks say at once what took the load, so the rest of the quay stays open.",
+           sensors=["vts", "berthing_aid", "fender_load", "mooring_load"],
+           steps=["Stop movements in the basin and make the ships fast", "Close the stretch hit", "Survey fenders, bollards and the deck edge",
+                  "Reopen what passes", "Repair; claim from the ships' insurers (P&I)"]),
+    _event("mooring_breakaway", "Ship breaks its moorings", "Ships and navigation", 8,
+           "A gust, a surge or a big ship passing too fast parts the lines: the ship drifts off, the gangway and a crane "
+           "boom are hit, bollards pulled.",
+           damage=[(("bollard",), 0.6, "critical"), (("fender",), 0.3, "warning")],
+           radius=50, warn_h=4, warn_with="smart mooring hooks (line loads) and the weather station",
+           days=5, days_known=1, repair_days=20, ramp_days=1, cost=1_200_000, cost_known=200_000,
+           early="Line loads rising are seen hours ahead: extra lines and tugs are put on and the cranes booms raised in time.",
+           sensors=["mooring_load", "weather_station"],
+           steps=["Recover the ship with tugs", "Close the stretch", "Check the bollards and fenders", "Replace what was pulled"]),
+    _event("channel_blocked", "A ship sinks or runs aground in the channel", "Ships and navigation", 30,
+           "The approach channel is blocked: no ship can come in or leave the port until the wreck is moved (as the "
+           "Ever Given did at Suez in 2021).",
+           share=1.0, warn_h=0, days=20, days_known=14, repair_days=0, ramp_days=7, cost=500_000, cost_known=300_000,
+           early="Channel surveys keep the depth known so groundings are rarer; a salvage contract signed in advance and a "
+                 "ready plan for a second way out shorten the closure.",
+           sensors=["vts", "bathymetry"],
+           steps=["Close the channel and hold ships at anchor", "Salvage: lighten, tow or lift the wreck",
+                  "Survey the channel", "Reopen; clear the queue at anchor"]),
+    # Security
+    _event("terrorist_attack", "Terrorist attack", "Security", 150,
+           "A vehicle or boat bomb at the quay, or an armed attack: people hurt, piles and the deck destroyed near it, "
+           "the port closed by the security forces for the investigation.",
+           damage=[(("pile",), 0.6, "critical"), (("slab", "beam"), 0.6, "critical"), (("fender",), 0.5, "critical")],
+           radius=60, warn_h=0.1, warn_with="CCTV, intrusion alarms and the waterside watch (ISPS security plan)",
+           days=60, days_known=35, repair_days=180, ramp_days=21, cost=15_000_000, cost_known=11_000_000, power=True,
+           fall=0.15, fall_months=6, fall_known=0.1,
+           early="Security alarms close the gates in time; strain gauges and tilt meters show within hours which bays still "
+                 "carry load, so the investigation releases the sound part of the quay weeks sooner.",
+           sensors=["cctv", "strain", "tilt", "accelerometer"],
+           steps=["Evacuate and treat the injured", "Hand the site to the security forces", "Make safe, map the damage",
+                  "Reopen the sound bays", "Rebuild; raise the ISPS security level"]),
+    _event("forced_occupation", "Forced occupation of the port", "Security", 300,
+           "An armed group or a foreign force takes the port: the operator's staff are sent out, ships stop calling, "
+           "equipment is looted or left unmaintained for months.",
+           damage=[(("fender", "bollard", "ladder"), 0.15, "warning")],
+           share=1.0, warn_h=24, warn_with="the security situation reports",
+           days=365, days_known=300, repair_days=120, ramp_days=90, cost=25_000_000, cost_known=17_000_000, power=True,
+           fall=0.4, fall_months=24, fall_known=0.3,
+           early="Sensors that report to the cloud keep the structure watched while no one can go in; with the records, "
+                 "spares and contracts kept off site, the restart is planned before the port is handed back.",
+           sensors=["strain", "corrosion", "cctv"],
+           steps=["Get the staff out safely", "Keep watching the structure remotely", "Claim under political risk insurance",
+                  "Survey everything when access returns", "Repair, recommission the cranes, win the lines back"]),
+    _event("sabotage", "Sabotage", "Security", 80,
+           "Someone inside or outside cuts cables, damages a crane's controls or plants a small charge at a pile cap.",
            damage=[(("pile",), 0.4, "critical"), (("slab", "beam"), 0.3, "warning")],
            radius=30, days=45, days_known=20, repair_days=90, ramp_days=7, cost=5_000_000, cost_known=3_000_000,
            early="CCTV, intrusion and vibration alarms raise it in time; strain gauges show what still carries load.",
            sensors=["cctv", "accelerometer", "strain"],
            steps=["Secure the site", "Make safe", "Assess the damage", "Repair", "Raise security"]),
+    _event("lightning", "Lightning strikes a crane", "Nature", 10,
+           "A strike on a quay crane burns out its drives and controls; the crane is down until they are replaced.",
+           share=0.33, warn_h=1, warn_with="the weather station's lightning detector",
+           days=6, days_known=2, repair_days=0, ramp_days=1, cost=400_000, cost_known=100_000, power=True,
+           early="A storm warning an hour ahead lowers and isolates the cranes; surge protection is checked every year.",
+           sensors=["weather_station"],
+           steps=["Stop crane work in the storm", "Test the crane's drives and controls", "Replace the burnt parts"]),
+    _event("uxo", "Unexploded ordnance found", "Ground", 40,
+           "Dredging or piling turns up an old bomb or mine: the area around it is evacuated until it is made safe.",
+           radius=250, days=8, days_known=4, repair_days=0, ramp_days=1, cost=300_000, cost_known=150_000,
+           early="A magnetometer survey before dredging and piling finds it first, so it is cleared on a planned day.",
+           sensors=["bathymetry"],
+           steps=["Stop work and evacuate the area", "Call the bomb disposal team", "Clear it", "Survey before working again"]),
+    _event("hazmat_leak", "Toxic leak from a container", "Fire and explosion", 15,
+           "A damaged tank container or drum of dangerous goods leaks in the stack: the area is evacuated and cleaned.",
+           radius=150, warn_h=0.2, warn_with="gas detectors at the dangerous goods stack",
+           days=3, days_known=1, repair_days=0, ramp_days=1, cost=600_000, cost_known=250_000,
+           early="Gas detectors raise it at the first leak, before it spreads; the stack plan says what is next to it.",
+           sensors=["gas_detector", "thermal_camera"],
+           steps=["Evacuate down-wind", "Fire brigade and the hazmat team", "Contain and clean", "Report to the authority"]),
+    _event("sanctions", "Sanctions or embargo", "Trade", 40,
+           "Sanctions on the country or a main customer: shipping lines and insurers stay away, trade falls by a third.",
+           fall=0.35, fall_months=24, fall_known=0.25,
+           early="A wider spread of customers and lines, and the berth's records kept to international standards, keep more of the trade.",
+           steps=["Check which cargo and lines are affected", "Win other lines and cargo", "Keep the berth in shape for the return"]),
     _event("pandemic", "Pandemic", "Trade", 30,
            "Trade falls by a quarter for a year and a half; crews short.",
            fall=0.25, fall_months=18, fall_known=0.2,
@@ -250,6 +330,7 @@ SENSOR_WORDS = {
     "half_cell": "half-cell potential", "berthing_aid": "berthing aid system", "power_monitor": "power monitoring",
     "network_monitor": "network monitoring", "thermal_camera": "thermal cameras", "gas_detector": "gas detectors",
     "hydrocarbon": "hydrocarbon sensors", "cctv": "CCTV and intrusion alarms",
+    "vts": "vessel traffic radar and AIS", "mooring_load": "smart mooring hooks",
 }
 FIELDS = ("years", "days", "days_known", "cost", "cost_known", "radius")
 DAYS_IN_MONTH = 365.25 / 12

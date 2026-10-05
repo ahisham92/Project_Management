@@ -590,6 +590,7 @@ def upload_model(asset_id: int):
         if found is not None:
             _found_path(asset_id).write_text(json.dumps(found), encoding="utf-8")
             took = marine.apply_site(get_db(), asset_id, found)
+            marine.regroup(get_db(), asset_id, found)
             new = _new_in_model(asset_id, found)
             if took:
                 message += " From the model MarineTwin took " + "; ".join(took) + "."
@@ -648,6 +649,30 @@ def import_model_elements(asset_id: int):
     if done["linked"]:
         words.append(f"{len(done['linked'])} existing element{'s' if len(done['linked']) > 1 else ''} now matched by GlobalId")
     flash((". ".join(words) or "Nothing new to import") + ".", "success")
+    return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
+
+
+@bp.post("/assets/<int:asset_id>/sensors/trim")
+@login_required
+def trim_sensors(asset_id: int):
+    """One monitored element per design: the others' simulated sensors go."""
+    asset = _asset_or_404(asset_id)
+    db = get_db()
+    found = None
+    if Path(asset["model_file"]).suffix.lower() == ".ifc" and (models_dir() / asset["model_file"]).exists():
+        try:
+            found = marine_ifc.read_file(models_dir() / asset["model_file"])   # again: older reads kept no legend
+            _found_path(asset_id).write_text(json.dumps(found), encoding="utf-8")
+        except Exception:                             # noqa: BLE001 - fall back on what the last read found
+            current_app.logger.exception("Reading the IFC model failed for asset %s", asset_id)
+    found = found or _model_found(asset_id)
+    if found:
+        marine.regroup(db, asset_id, found)
+    done = marine.trim_sensors(db, asset_id)
+    db.commit()
+    flash(f"{done['removed']:,} simulated sensor{'s' if done['removed'] != 1 else ''} removed: one element per design keeps them. "
+          f"{done['left']:,} sensor{'s' if done['left'] != 1 else ''} left." if done["removed"]
+          else f"Every design already has its sensors on one element ({done['left']:,} sensors).", "success")
     return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="model"))
 
 

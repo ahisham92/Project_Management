@@ -227,6 +227,90 @@ def apply_site(conn: sqlite3.Connection, asset_id: int, found: dict[str, Any]) -
     return took
 
 
+# --- one monitored element per design ----------------------------------------------------
+
+# Items each carry their own rating or are inspected one by one: every one keeps its sensors.
+PER_ITEM_KINDS = {"fender", "bollard", "ladder", "storm_pin", "crane_stopper", "ramp"}
+# Elements of one design with no legend in the model are still grouped, a stretch of quay at a time.
+GROUP_STRETCH_M = 200.0
+
+
+def design_group(e: Any) -> str:
+    """The design an element shares with others, so one of them carries the sensors for all.
+
+    The model's legend wins (MT_Legend, or the name every pile of a design section
+    shares, MP1-DS03). Without one, elements of the same kind, material, zone and
+    wall are one design along each 200 m of quay. A fender, bollard or ladder is
+    its own design: each is rated or inspected by itself.
+    """
+    keys = e.keys() if hasattr(e, "keys") else ()
+    get = (lambda k: e[k] if k in keys else None)
+    kind = get("kind") or "other"
+    if kind in PER_ITEM_KINDS:
+        return ""
+    named = (get("design_group") or get("group") or get("legend") or "").strip()
+    if named:
+        return f"{kind}:{named}"
+    wall = get("wall_mm")
+    cell = (math.floor((get("x") or 0) / GROUP_STRETCH_M), math.floor((get("y") or 0) / GROUP_STRETCH_M))
+    return f"{kind}|{get('material') or ''}|{get('zone') or ''}|{round(wall) if wall else ''}|{cell[0]},{cell[1]}"
+
+
+def trim_sensors(conn: sqlite3.Connection, asset_id: int) -> dict[str, int]:
+    """Keep the sensors of one element per design and remove the rest's simulated ones.
+
+    The element kept is one with a real feed or a typed-in inspection, else the
+    first by name. A sensor that ever got a real reading or an inspector's note
+    stays wherever it is. Returns how many sensors were removed and how many remain.
+    """
+    elements = conn.execute("SELECT * FROM marine_elements WHERE asset_id = ? ORDER BY name", (asset_id,)).fetchall()
+    sensors: dict[int, list[Any]] = {}
+    for s in conn.execute(
+            "SELECT s.id, s.element_id, s.simulated, s.feed_device,"
+            " EXISTS (SELECT 1 FROM marine_readings r WHERE r.sensor_id = s.id AND r.note != '') AS noted"
+            " FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id WHERE e.asset_id = ?", (asset_id,)):
+        sensors.setdefault(s["element_id"], []).append(s)
+
+    def real(s) -> bool:
+        return not s["simulated"] or bool(s["feed_device"]) or bool(s["noted"])
+
+    groups: dict[str, list[Any]] = {}
+    for e in elements:
+        group = design_group(e)
+        if group and sensors.get(e["id"]):
+            groups.setdefault(group, []).append(e)
+    gone: list[int] = []
+    for members in groups.values():
+        keep = next((e for e in members if any(real(s) for s in sensors[e["id"]])), members[0])
+        for e in members:
+            if e["id"] != keep["id"]:
+                gone += [s["id"] for s in sensors[e["id"]] if not real(s)]
+    for i in range(0, len(gone), 500):
+        chunk = gone[i:i + 500]
+        marks = ",".join("?" * len(chunk))
+        conn.execute(f"DELETE FROM marine_readings WHERE sensor_id IN ({marks})", chunk)
+        conn.execute(f"DELETE FROM marine_sensors WHERE id IN ({marks})", chunk)
+    left = conn.execute("SELECT COUNT(*) FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
+                        " WHERE e.asset_id = ?", (asset_id,)).fetchone()[0]
+    return {"removed": len(gone), "left": left}
+
+
+def regroup(conn: sqlite3.Connection, asset_id: int, found: dict[str, Any]) -> int:
+    """Copy each model element's legend onto the matching tracked element. Returns how many changed."""
+    by_ref, by_name = {}, {}
+    for e in found.get("elements", []):
+        named = e.get("group") or e.get("legend") or ""
+        by_ref[e.get("global_id")] = named
+        by_name[e["name"]] = named
+    changed = 0
+    for row in conn.execute("SELECT id, name, model_ref, design_group FROM marine_elements WHERE asset_id = ?", (asset_id,)).fetchall():
+        named = by_ref.get(row["model_ref"], by_name.get(row["name"]))
+        if named is not None and named != row["design_group"]:
+            conn.execute("UPDATE marine_elements SET design_group = ? WHERE id = ?", (named, row["id"]))
+            changed += 1
+    return changed
+
+
 def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, Any], names: Iterable[str] | None = None) -> dict[str, list[str]]:
     """Create MarineTwin elements for the model's elements, and point existing ones at their GlobalId.
 
@@ -240,7 +324,9 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
     existing = {r["name"]: r for r in conn.execute("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))}
     kinds, materials, zones = dict(ELEMENT_KINDS), dict(MATERIALS), dict(ZONES)
     made, linked = [], []
-    instrumented = {e["group"] for e in found.get("elements", []) if e.get("group") and e["name"] in existing}
+    with_sensors = {r[0] for r in conn.execute("SELECT DISTINCT s.element_id FROM marine_sensors s JOIN marine_elements e"
+                                               " ON e.id = s.element_id WHERE e.asset_id = ?", (asset_id,))}
+    instrumented = {design_group(r) for r in existing.values() if r["id"] in with_sensors} - {""}
     for e in sorted(found.get("elements", []), key=lambda e: e["name"]):
         if wanted is not None and e["name"] not in wanted:
             continue
@@ -255,16 +341,19 @@ def import_elements(conn: sqlite3.Connection, asset_id: int, found: dict[str, An
         kind = e["kind"] if e["kind"] in kinds else "other"
         element_id = conn.execute(
             "INSERT INTO marine_elements (asset_id, name, kind, material, zone, wall_mm, design_ur, triton_element,"
-            " model_ref, x, y, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model_ref, design_group, x, y, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (asset_id, e["name"], kind, e["material"] if e["material"] in materials else "steel",
              e["zone"] if e["zone"] in zones else "splash", e.get("wall_mm"), e.get("design_ur"),
-             e.get("triton_element") or "", e["global_id"], e["x"], e["y"], e["z"])).lastrowid
+             e.get("triton_element") or "", e["global_id"], e.get("group") or e.get("legend") or "",
+             e["x"], e["y"], e["z"])).lastrowid
+        row = conn.execute("SELECT * FROM marine_elements WHERE id = ?", (element_id,)).fetchone()
         chosen = [k for k in e.get("sensors", []) if k in SENSOR_KINDS]
-        if not chosen and e.get("group"):
+        group = design_group(row)
+        if not chosen and group:
             # Elements sharing one design (every MP1-DS03 pile) are monitored through one of them,
             # as on a real quay: the first along the berth gets the usual sensors.
-            if e["group"] not in instrumented:
-                instrumented.add(e["group"])
+            if group not in instrumented:
+                instrumented.add(group)
                 chosen = suggested(kind)
         elif not chosen:
             chosen = suggested(kind)
@@ -320,6 +409,7 @@ CREATE TABLE IF NOT EXISTS marine_elements (
   design_ur       REAL,                             -- typed in when the asset is not linked to Triton
   triton_element  TEXT NOT NULL DEFAULT '',         -- its name in Triton, when that differs
   model_ref       TEXT NOT NULL DEFAULT '',         -- its GlobalId, Tag or Name in the Revit model
+  design_group    TEXT NOT NULL DEFAULT '',         -- the design it shares with others (MP1-DS03), from the model
   x               REAL NOT NULL DEFAULT 0,          -- where the schematic view draws it, metres
   y               REAL NOT NULL DEFAULT 0,
   z               REAL NOT NULL DEFAULT 0,
@@ -375,6 +465,7 @@ LATER_COLUMNS = [
     ("marine_assets", "feed_key", "TEXT NOT NULL DEFAULT ''"),
     ("marine_assets", "berth_uses", "TEXT NOT NULL DEFAULT '{}'"),
     ("marine_sensors", "feed_device", "TEXT NOT NULL DEFAULT ''"),
+    ("marine_elements", "design_group", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

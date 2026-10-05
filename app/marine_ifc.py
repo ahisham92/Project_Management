@@ -514,6 +514,7 @@ def read(text: str | bytes | mmap.mmap) -> dict[str, Any]:
             "wall_mm": wall, "triton_element": str(common.get("MT_TritonElement") or ""),
             "design_ur": num(common.get("MT_DesignUR")),
             "sensors": [s.strip().lower().replace(" ", "_") for s in re.split(r"[;,]", str(common.get("MT_Sensors") or "")) if s.strip()],
+            "legend": str(common.get("MT_Legend") or "").strip(),
             "rated_reaction": num(furniture.get("MT_RatedReaction")), "rated_energy": num(furniture.get("MT_RatedEnergy")),
             "bollard_capacity": num(furniture.get("MT_BollardCapacity")),
             "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),

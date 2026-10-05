@@ -84,6 +84,15 @@ const REAL = {
 // have hundreds of them. Off by day and when the power is cut.
 const GLOW = new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
 GLOW.visible = false;
+// A ship's own lights: lit at night whatever the shore's power is doing.
+const SHIP_LAMP = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff0d0, emissiveIntensity: 0 });
+const SHIP_GLOW = new THREE.MeshBasicMaterial({ color: 0xfff1d6, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false });
+SHIP_GLOW.visible = false;
+const SHIP_HOUSE = new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.6, emissive: 0x4a3c26, emissiveIntensity: 0 });
+const NAV = {
+  red: new THREE.MeshBasicMaterial({ color: 0xff2a2a }), green: new THREE.MeshBasicMaterial({ color: 0x22ff66 }),
+  white: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+};
 const REAL_FOR_KIND = {
   pile: 'steel', combi_wall: 'steel', sheet_pile: 'steel', beam: 'concrete', slab: 'concrete', fender: 'rubber',
   bollard: 'steel', crane_rail: 'steel', crane_stopper: 'yellow', storm_pin: 'yellow', ladder: 'yellow', tie_rod: 'steel',
@@ -699,6 +708,17 @@ function shipPose(b) {
   return { bow, rot: Math.atan2(-dir[1], dir[0]) + (bow < 0 ? Math.PI : 0) };
 }
 
+// Where the main berth's ship lies: at the middle of the main berth along a traced quay (or of the
+// model), how she is turned, how long she may be to stay inside her berth, and which way is sea.
+function berthSpot(site, frame, beam) {
+  const b = site.mainBerth;
+  if (site.quay && b && b.leg) {
+    const p = quayPoint(site.quay, b.mid, -(beam / 2 + 2));
+    return { x: p.x, z: p.z, rot: shipPose(b).rot, room: b.length - 20, sea: [-b.leg.land[0], -b.leg.land[1]] };
+  }
+  return { x: (frame.minX + frame.maxX) / 2, z: frame.fenderFace - beam / 2 - 0.4, rot: 0, room: Infinity, sea: [0, -1] };
+}
+
 // The ship type a berth takes for the use it is set to; a berth used for both alternates.
 function berthShipType(use, k = 0) {
   return { container: 'container ship', general_cargo: 'general cargo', roro: 'ro-ro', bulk: 'bulk carrier' }[use]
@@ -721,30 +741,120 @@ function cylinder(r, h, mat, x, y, z, segments = 16) {
   return m;
 }
 
-// Containers, many at once: one instanced mesh with a colour per box.
-function containerStacks(blocks, rng) {
-  const count = blocks.reduce((n, b) => n + b.rows * b.bays * b.tiers, 0);
-  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(12.0, 2.55, 2.4), new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.2 }), count);
-  const m = new THREE.Matrix4();
-  const colour = new THREE.Color();
-  let i = 0;
+// Containers, many at once: one instanced mesh with a colour per box. The boxes are ordered tier
+// by tier, bottom first, so showing fewer of them (setFill) takes the top tiers off everywhere, as
+// a ship being discharged or a yard being emptied looks; `full` stacks every row to the top.
+function containerStacks(blocks, rng, full = false) {
+  const boxes = [];
   for (const b of blocks) {
     for (let bay = 0; bay < b.bays; bay++) {
       for (let row = 0; row < b.rows; row++) {
-        const height = Math.floor(rng() * (b.tiers + 1));
-        for (let tier = 0; tier < b.tiers; tier++) {
-          if (tier >= height) { m.makeScale(0, 0, 0); } else {
-            m.makeTranslation(b.x + bay * 12.6, b.y + 1.3 + tier * 2.6, b.z + row * 2.6);
-          }
-          mesh.setMatrixAt(i, m);
-          mesh.setColorAt(i, colour.setHex(BOX_COLOURS[Math.floor(rng() * BOX_COLOURS.length)]));
-          i++;
+        const height = full ? b.tiers : Math.floor(rng() * (b.tiers + 1));
+        for (let tier = 0; tier < height; tier++) {
+          boxes.push({ x: b.x + bay * 12.6, y: b.y + 1.3 + tier * 2.6, z: b.z + row * 2.6, tier, key: tier + rng() * 0.9,
+            colour: BOX_COLOURS[Math.floor(rng() * BOX_COLOURS.length)] });
         }
       }
     }
   }
+  boxes.sort((a, b) => a.key - b.key);
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(12.0, 2.55, 2.4), new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.2 }), Math.max(1, boxes.length));
+  const m = new THREE.Matrix4();
+  const colour = new THREE.Color();
+  boxes.forEach((x, i) => {
+    mesh.setMatrixAt(i, m.makeTranslation(x.x, x.y, x.z));
+    mesh.setColorAt(i, colour.setHex(x.colour));
+  });
+  mesh.count = boxes.length;
+  mesh.userData.total = boxes.length;
   mesh.castShadow = mesh.receiveShadow = true;
   return mesh;
+}
+
+// A berth's yard holds more while its ship is discharged into it and less as the ship is loaded
+// from it: the share of the yard's boxes shown for how full the ship lying there is.
+function yardFill(berth) {
+  const f = berth && berth.fill !== undefined ? berth.fill : 0.6;
+  return 0.55 + 0.4 * (1 - f);
+}
+
+// Show a share (0 to 1) of a stack's boxes, top tiers going first.
+function setFill(mesh, f) {
+  if (!mesh) return;
+  mesh.count = Math.round(mesh.userData.total * Math.max(0, Math.min(1, f)));
+}
+
+// --- the cards ---------------------------------------------------------------------------
+// What a click on a crane, a vehicle, a stack or a ship shows on the right of the view: each
+// gets a userData.pick that says what it is and, asked again as the clock runs, what it is doing.
+const CRANE_STATE = { working: 'good', idle: 'neutral', stopped: 'warning', stowed: 'warning', down: 'critical' };
+const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const pct = (f) => `${Math.round(Math.max(0, Math.min(1, f)) * 100)}%`;
+const berthName = (b) => (!b ? '' : b.n !== undefined ? `Berth ${b.n}${b.main ? ' (main)' : ''}` : 'Main berth');
+function fillOf(mesh, b) {
+  const s = mesh.userData.stacks;
+  if (s && s.userData.total) return s.count / s.userData.total;
+  return b && b.fill !== undefined ? b.fill : null;
+}
+function shipKindWord(type) { return String(type || 'ship').replace('ro-ro', 'car carrier (RoRo)'); }
+
+function shipCardStill(a, now, mesh, b) {
+  return {
+    kind: shipKindWord(a.type), title: a.name,
+    rows: [['Berth', berthName(b)], ['Now', now], ['Length overall', `${a.loa} m`], ['Beam', `${a.beam} m`], ['Draught', `${a.draught} m`],
+      ['Cargo aboard', fillOf(mesh, b) === null ? '' : pct(fillOf(mesh, b))],
+      ['Arrives', a.eta ? new Date(a.eta).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '']],
+  };
+}
+
+function tagSite(site, twin) {
+  const equipment = twin.equipment || [];
+  const perBerth = new Map();
+  site.cranes.forEach((c, i) => {
+    const u = c.userData;
+    const what = u.mobile ? 'Mobile harbour crane' : u.trolley ? (site.kind === 'bulk' ? 'Ship unloader' : 'Ship-to-shore crane') : 'Crane';
+    let name;
+    if (u.berth) {
+      const k = (perBerth.get(u.berth) || 0) + 1;
+      perBerth.set(u.berth, k);
+      name = `${berthName(u.berth)} · ${u.mobile ? 'MHC' : 'STS'} ${k}`;
+    } else {
+      name = (equipment[i] && equipment[i].name) || `Crane ${i + 1}`;
+    }
+    u.pick = () => {
+      // The live port sets state, why, doing and shipName each frame; the still view has the day's.
+      const state = u.state || (u.idle ? 'idle' : !u.berth && equipment[i] ? equipment[i].state : u.working ? 'working' : 'idle');
+      const why = u.why !== undefined ? u.why : !u.berth && equipment[i] ? equipment[i].why : '';
+      const b = u.berth || site.mainBerth;
+      const doing = u.doing || (state !== 'working' ? '' : b && b.state === 'loading' ? 'Loading, quay to ship' : b && b.state ? 'Discharging, ship to quay' : 'No ship to work');
+      return {
+        kind: what, title: name, state: CRANE_STATE[state] || 'neutral', stateWord: capital(state),
+        rows: [['Berth', berthName(b)], ['Doing', doing], ['Why', why], ['Ship', u.shipName || ''],
+          ['Power', u.mobile ? 'Diesel, on its own' : 'Electric, from the grid'],
+          ['Next service', !u.berth && equipment[i] && equipment[i].service_in_h ? `in ${equipment[i].service_in_h} h` : '']],
+      };
+    };
+  });
+  for (const m of site.movers) {
+    const o = m.object;
+    if (o.userData.pick) continue;
+    const what = m.swing ? 'Rubber-tyred gantry crane' : m.needs === 'roro' || (!o.userData.load && m.curve && !m.load && site.kind === 'roro') ? 'Car'
+      : o.userData.load ? 'Terminal tractor' : 'Truck';
+    o.userData.pick = () => ({
+      kind: what, title: `${what}${m.berth ? ' at ' + berthName(m.berth).toLowerCase() : ''}`,
+      rows: [['Berth', berthName(m.berth)],
+        ['Doing', m.status || (m.swing ? 'Moving boxes between the stacks and the tractors' : m.curve && !m.apron ? 'On the access road, to and from the gate' : 'Driving its round')],
+        ['Carrying', m.load ? (m.load.visible ? 'A box' : 'Nothing') : '']],
+    });
+  }
+  for (const y of site.yards) {
+    y.mesh.userData.pick = () => ({
+      kind: 'Container yard', title: `${berthName(y.berth) || 'Yard'} stacks`,
+      rows: [['Boxes in the stacks', `${y.mesh.count.toLocaleString()} of ${y.mesh.userData.total.toLocaleString()} slots`],
+        ['Full', pct(y.mesh.count / y.mesh.userData.total)],
+        ['Why', y.berth && y.berth.state ? `${capital(y.berth.state)} the ship alongside: the stacks ${y.berth.state === 'loading' ? 'empty' : 'fill'} as she is worked` : 'No ship being worked']],
+    });
+  }
 }
 
 function makeRng(seed) {
@@ -853,7 +963,7 @@ function ship(type, loa, beam, draught, rng) {
   const deck = freeboard;
   // The accommodation and bridge, aft (forward on a car carrier).
   const houseX = kind === 'roro' ? loa / 2 - beam * 1.4 : -loa / 2 + 18;
-  g.add(box(14, 16, beam * 0.9, REAL.white, houseX, deck + 8, 0));
+  g.add(box(14, 16, beam * 0.9, SHIP_HOUSE, houseX, deck + 8, 0));
   g.add(box(4, 1.4, beam * 0.92, REAL.glass, houseX + 7.2, deck + 14, 0));
   g.add(cylinder(2.2, 8, REAL.crane, houseX - 4, deck + 20, 0));
   const lights = [];
@@ -862,7 +972,8 @@ function ship(type, loa, beam, draught, rng) {
     for (let x = houseX + 14; x < loa / 2 - beam; x += 13.2 * 3 + 2) {
       blocks.push({ x, y: deck, z: -beam / 2 + 1.5, bays: 3, rows: Math.floor((beam - 2) / 2.6), tiers: 6 });
     }
-    g.add(containerStacks(blocks, rng));
+    g.userData.stacks = containerStacks(blocks, rng, true);
+    g.add(g.userData.stacks);
   } else if (kind === 'bulk' || kind === 'general') {
     for (let x = houseX + 20; x < loa / 2 - beam; x += 26) {
       g.add(box(16, 1.6, beam * 0.6, kind === 'bulk' ? REAL.hull : REAL.shed, x, deck + 0.8, 0));
@@ -882,9 +993,39 @@ function ship(type, loa, beam, draught, rng) {
     g.add(ramp);
     g.userData.rampFoot = new THREE.Vector3(-loa / 2 + 18, 0, beam / 2 + 28);
   }
+  // Her own lights, on her own generators: deck floodlights along both sides with the pools they
+  // throw on deck and on the water, and the navigation lights. All on at night, power cut or not.
+  const lampHeight = kind === 'container' ? deck + 19 : kind === 'roro' ? deck + 6 : deck + 12;
+  const spots = [];
+  for (let x = -loa / 2 + 24; x < loa / 2 - beam; x += 36) for (const z of [-beam / 2 + 0.6, beam / 2 - 0.6]) spots.push([x, z]);
+  const many = (geo, mat, n, place) => {
+    const im = new THREE.InstancedMesh(geo, mat, n);
+    const m4 = new THREE.Matrix4();
+    for (let i = 0; i < n; i++) im.setMatrixAt(i, place(m4, i));
+    g.add(im);
+    return im;
+  };
+  const flat = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  const post = lampHeight - deck;
+  many(new THREE.BoxGeometry(0.3, post, 0.3), REAL.steel, spots.length, (m, i) => m.makeTranslation(spots[i][0], deck + post / 2, spots[i][1]));
+  many(new THREE.BoxGeometry(1.4, 0.6, 1.4), SHIP_LAMP, spots.length, (m, i) => m.makeTranslation(spots[i][0], lampHeight, spots[i][1]));
+  // Pools on the water beside her, and on her deck where there are no boxes to hide it.
+  many(new THREE.CircleGeometry(18, 20), SHIP_GLOW, spots.length,
+    (m, i) => m.makeTranslation(spots[i][0], 0.35, spots[i][1] + Math.sign(spots[i][1]) * 14).multiply(flat));
+  if (kind !== 'container') {
+    const xs = spots.filter((_, i) => i % 2 === 0).map(([x]) => x);
+    many(new THREE.CircleGeometry(beam * 0.45, 20), SHIP_GLOW, xs.length,
+      (m, i) => m.makeTranslation(xs[i], deck + (kind === 'roro' ? 4.1 : 1.7), 0).multiply(flat));
+  }
+  const nav = (mat, x, y, z) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), mat); m.position.set(x, y, z); g.add(m); };
+  nav(NAV.red, houseX + 6, deck + 15, -beam * 0.47);
+  nav(NAV.green, houseX + 6, deck + 15, beam * 0.47);
+  nav(NAV.white, houseX - 4, deck + 25, 0);
+  nav(NAV.white, loa / 2 - 6, deck + 6, 0);
   g.userData.lights = lights;
   g.userData.kind = kind;
   g.userData.draught = draught;
+  Object.assign(g.userData, { loa, beam, deck });
   return g;
 }
 
@@ -898,6 +1039,28 @@ function mastLight(height) {
   pool.position.y = 0.12;
   g.add(pool);
   g.userData.head = head;
+  return g;
+}
+
+// Many high masts at once, as one group of instanced poles, lamps and light pools: [x, z] points
+// in the parent's frame, on the ground (y = 0).
+function mastRow(points, height = 30) {
+  const g = new THREE.Group();
+  const n = points.length;
+  if (!n) return g;
+  const parts = [
+    [new THREE.CylinderGeometry(0.35, 0.35, height, 8), REAL.steel, height / 2, false],
+    [new THREE.BoxGeometry(3.5, 0.8, 3.5), REAL.lamp, height, false],
+    [new THREE.CircleGeometry(height * 1.6, 32), GLOW, 0.12, true],
+  ];
+  const m = new THREE.Matrix4();
+  const flat = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  for (const [geo, mat, y, lie] of parts) {
+    const im = new THREE.InstancedMesh(geo, mat, n);
+    points.forEach(([x, z], i) => { m.makeTranslation(x, y, z); if (lie) m.multiply(flat); im.setMatrixAt(i, m); });
+    im.castShadow = !lie;
+    g.add(im);
+  }
   return g;
 }
 
@@ -915,6 +1078,14 @@ function terminal(scene, frame, twin, rng, quay) {
   const movers = [];
   const cranes = [];
   const lights = [];
+  const yards = [];            // container stacks that fill as ships are discharged and empty as they load
+  const mainBlocks = [];
+  // A vehicle's errand: along the points (x, z on the deck) and back, waiting at each end
+  // ('shuttle'), or one way and gone ('oneway', a car off or onto a ship).
+  const trip = (points, mode = 'shuttle') => {
+    const curve = new THREE.CatmullRomCurve3(points.map(([x, z]) => new THREE.Vector3(x, top + 0.1, z)), false, 'catmullrom', 0.2);
+    return { curve, len: curve.getLength(), mode };
+  };
 
   // Apron and yard: paved land behind the berth, and plain land beyond. Along a traced quay
   // they follow its legs; otherwise they are laid square behind the berth.
@@ -959,12 +1130,19 @@ function terminal(scene, frame, twin, rng, quay) {
     yardLength = Math.abs(q.x - p.x);
   }
   // High-mast lighting across the yard.
-  for (let i = 0; i < 6; i++) {
+  // Four carry real lamps (the ones the scene lights from); the rest stand every 70 m in three rows,
+  // in front of the stacks, between them and behind them.
+  for (let i = 0; i < 4; i++) {
     const mast = mastLight(30);
-    mast.position.set(yardFrom + (i % 3 + 0.5) * yardLength / 3, top, front + 60 + Math.floor(i / 3) * 110);
+    mast.position.set(yardFrom + (i % 2 + 0.5) * yardLength / 2, top, front + 45 + Math.floor(i / 2) * 60);
     g.add(mast);
     lights.push(mast);
   }
+  const rows = [];
+  for (let x = yardFrom + 35; x < yardFrom + yardLength; x += 70) for (const z of [45, 105, 165]) rows.push([x, front + z]);
+  const yardMasts = mastRow(rows.filter(([x, z]) => !lights.some((l) => Math.hypot(l.position.x - x, l.position.z - z) < 30)));
+  yardMasts.position.y = top;
+  g.add(yardMasts);
 
   const equipment = twin.equipment || [];
   const stateOf = (i) => (equipment[i] ? equipment[i].state : 'working');
@@ -1017,7 +1195,10 @@ function terminal(scene, frame, twin, rng, quay) {
     for (let b = 0; b < (kind === 'container' ? 6 : 2); b++) {
       blocks.push({ x: yardFrom + 10 + (b % 3) * (yardLength / 3), y: top, z: front + 60 + Math.floor(b / 3) * 70, bays: Math.max(4, Math.floor(yardLength / 3 / 12.6) - 1), rows: 6, tiers: 4 });
     }
-    g.add(containerStacks(blocks, rng));
+    const stacks = containerStacks(blocks, rng);
+    g.add(stacks);
+    yards.push({ mesh: stacks, main: true });
+    mainBlocks.push(...blocks);
     for (const b of blocks) {
       const rtg = new THREE.Group();
       for (const z of [-2, 18]) for (const x of [0, 6]) rtg.add(box(1, 18, 1, REAL.yellow, x, 9, z));
@@ -1090,8 +1271,21 @@ function terminal(scene, frame, twin, rng, quay) {
       loops.push({ curve: loop([[shipFootX, front + 2], [shipFootX + 20, front + 20], [centre - 60 + k * 30, front + 40], [centre - 60 + k * 30, front + 130], [centre + 80, front + 140], [centre + 90, front + 30], [shipFootX + 30, front + 8]], top + 0.1), kind: 'car', n: 7 });
     }
   } else {
-    for (let k = 0; k < 3; k++) {
-      loops.push({ curve: loop([[centre - 120 + k * 10, front + 12 + k * 3], [centre + 120 - k * 10, front + 12 + k * 3], [centre + 140, front + 56 + k * 20], [centre - 140, front + 56 + k * 20]], top + 0.1), kind: kind === 'container' || kind === 'multipurpose' ? 'tractor' : 'truck', n: 5 });
+    // Each crane working the main berth has two tractors (trucks at a cargo berth) of its own,
+    // each running between the crane and a stack (or a shed) and back.
+    const mainCranes = cranes.filter((c) => !c.userData.idle);
+    const kindOf = kind === 'container' || kind === 'multipurpose' ? 'tractor' : 'truck';
+    const targets = mainBlocks.filter((b) => b.z < front + 100).map((b) => () => [b.x + rng() * (b.bays - 1) * 12.6, front + 54]);
+    if (!targets.length) targets.push(() => [centre - 80 + rng() * 220, front + 66]);       // the sheds' doors
+    for (const c of mainCranes.length ? mainCranes : [{ position: new THREE.Vector3(centre, top, front) }]) {
+      for (let k = 0; k < 2; k++) {
+        const [bx, bz] = targets[Math.floor(rng() * targets.length)]();
+        const cx = c.position.x + (k ? 4 : -4);
+        const v = vehicle(kindOf, [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825, 0x2e7d32, 0x37474f][Math.floor(rng() * 6)]);
+        g.add(v);
+        movers.push({ object: v, trip: trip([[cx, front + 20], [cx, front + 34], [bx, front + 44], [bx, bz]]), offset: rng(), wait: 20 + rng() * 15,
+          speed: 6, main: true, needs: 'cargo', load: v.userData.load });
+      }
     }
   }
   // Road trucks on the access road at the back.
@@ -1121,16 +1315,22 @@ function terminal(scene, frame, twin, rng, quay) {
     const b = berths.find((x) => !x.main && c.userData.along >= x.from && c.userData.along <= x.to);
     if (b) c.userData.berth = b;
   }
-  for (const mv of movers) if (mv.apron) mv.berth = mainBerth;
+  for (const mv of movers) if (mv.apron || mv.main) mv.berth = mainBerth;
+  for (const y of yards) if (y.main) y.berth = mainBerth;
   for (const b of berths) if (!b.main && b.length >= 120) dress(b, b.use);
   // Lay out one berth for its use; called again when the use changes.
   function dress(b, use) {
     if (b.dress) {
       g.remove(b.dress);
-      for (let i = movers.length - 1; i >= 0; i--) if (movers[i].berth === b && movers[i].dressed) movers.splice(i, 1);
+      for (let i = movers.length - 1; i >= 0; i--) {
+        if (movers[i].berth !== b || !movers[i].dressed) continue;
+        if (movers[i].object.parent === g) g.remove(movers[i].object);
+        movers.splice(i, 1);
+      }
       for (let i = cranes.length - 1; i >= 0; i--) if (cranes[i].userData.berth === b && cranes[i].userData.dressed) { g.remove(cranes[i]); cranes.splice(i, 1); }
-      for (let i = lights.length - 1; i >= 0; i--) if (lights[i].userData.berth === b) lights.splice(i, 1);
+      for (let i = yards.length - 1; i >= 0; i--) if (yards[i].berth === b) yards.splice(i, 1);
     }
+    const blocksHere = [];
     b.use = use;
     const leg = b.leg;
     const d = new THREE.Group();
@@ -1153,7 +1353,10 @@ function terminal(scene, frame, twin, rng, quay) {
         const [, z] = at(0, 60 + Math.floor(k / per) * 70);
         blocks.push({ x: x0 + 15 + (k % per) * (w / per), y: 0, z: z - (inland < 0 ? 15 : 0), bays, rows: 6, tiers: 4 });
       }
-      d.add(containerStacks(blocks, rng));
+      const stacks = containerStacks(blocks, rng);
+      d.add(stacks);
+      yards.push({ mesh: stacks, berth: b });
+      blocksHere.push(...blocks.filter((bl) => Math.abs(bl.z) < 100));
       for (const bl of blocks) {
         const rtg = new THREE.Group();
         for (const z of [-2, 18]) for (const x of [0, 6]) rtg.add(box(1, 18, 1, REAL.yellow, x, 9, z));
@@ -1203,14 +1406,11 @@ function terminal(scene, frame, twin, rng, quay) {
       d.add(park);
     }
     // High masts along the berth, lit at night.
-    for (let k = 1; k <= 2; k++) {
-      const mast = mastLight(30);
-      const [x, z] = at(x0 + (k * w) / 3, 45);
-      mast.position.set(x, 0, z);
-      mast.userData.berth = b;
-      d.add(mast);
-      lights.push(mast);
+    const masts = [];
+    for (let x = x0 + 30; x < x1 - 10; x += 60) {
+      for (const z of use === 'container' ? [45, 105, 165] : [45, 165]) masts.push(at(x, z));
     }
+    d.add(mastRow(masts));
     g.add(d);
     b.dress = d;
     // Mobile harbour cranes on a berth without stoppers, unless it only takes RoRo ships.
@@ -1225,14 +1425,27 @@ function terminal(scene, frame, twin, rng, quay) {
         cranes.push(crane);
       }
     }
-    // Tractors (or trucks) between the cranes and the stacks or sheds; cars between the ramp and the park.
+    // Two tractors (trucks at a cargo berth) for each crane, each running between its crane and a
+    // stack (or a shed's door) and back; cars one way between the ship's ramp and the park.
     if (use !== 'roro' && use !== 'bulk') {
-      const [a, z] = cargo || [x0 + 10, x1 - 10];
-      const route = loop([P(a + 10, 14), P(z - 10, 14), P(z, 50), P(a, 50)], top + 0.1);
-      for (let k = 0; k < 4; k++) {
-        const v = vehicle(use === 'container' ? 'tractor' : 'truck', [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825][k]);
-        g.add(v);
-        movers.push({ object: v, curve: route, offset: k / 4, speed: 6 / route.getLength(), berth: b, dressed: true, needs: 'cargo', load: v.userData.load });
+      const here = cranes.filter((c) => c.userData.berth === b);
+      const sheds = cargo ? [cargo[0] + 40, cargo[1] - 40] : null;
+      for (const c of here.length ? here : [{ userData: { along: b.mid } }]) {
+        const a = c.userData.along - leg.from;
+        for (let k = 0; k < 2; k++) {
+          let target;
+          if (use === 'container' && blocksHere.length) {
+            const bl = blocksHere[Math.floor(rng() * blocksHere.length)];
+            target = [bl.x + rng() * (bl.bays - 1) * 12.6, 54];
+          } else {
+            target = [sheds[0] + rng() * (sheds[1] - sheds[0]), 86];
+          }
+          const v = vehicle(use === 'container' ? 'tractor' : 'truck', [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825][(k + here.indexOf(c) * 2) % 4]);
+          g.add(v);
+          const ax = a + (k ? 4 : -4);
+          movers.push({ object: v, trip: trip([P(ax, 22), P(ax, 34), P(target[0], 44), P(...target)]), offset: rng(), wait: 20 + rng() * 15, speed: 6,
+            berth: b, dressed: true, needs: 'cargo', load: v.userData.load });
+        }
       }
     }
     if (cars) {
@@ -1240,15 +1453,18 @@ function terminal(scene, frame, twin, rng, quay) {
       // or the end, whichever way it faces (see shipPose).
       const { bow } = shipPose(b);
       const stern = b.mid - leg.from - bow * (b.loa / 2 - 18);
-      const route = loop([P(stern, 6), P(stern + bow * 25, 24), P(cars[0] + 20, 52), P(cars[1] - 20, 52), P(stern - bow * 25, 24)], top + 0.1);
-      for (let k = 0; k < 8; k++) {
-        const v = vehicle('car', [0xffffff, 0x111111, 0x8a8f94, 0xb71c1c, 0x1a3c8c, 0xc0c4c8, 0x2e4b2e, 0xeeeeee][k]);
+      for (let k = 0; k < 10; k++) {
+        const v = vehicle('car', [0xffffff, 0x111111, 0x8a8f94, 0xb71c1c, 0x1a3c8c, 0xc0c4c8, 0x2e4b2e, 0xeeeeee][k % 8]);
+        v.visible = false;
         g.add(v);
-        movers.push({ object: v, curve: route, offset: k / 8, speed: 7 / route.getLength(), berth: b, dressed: true, needs: 'roro' });
+        const slot = cars[0] + 10 + rng() * (cars[1] - cars[0] - 20);
+        const row = 58 + Math.floor(rng() * 8) * 9;
+        movers.push({ object: v, trip: trip([P(stern, 24), P(stern + bow * 30, 40), P(slot, 50), P(slot, row)], 'oneway'), offset: k / 10, gap: 12, speed: 7,
+          berth: b, dressed: true, needs: 'roro' });
       }
     }
   }
-  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress };
+  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress, yards };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -1407,27 +1623,37 @@ async function main() {
   // The terminal around it.
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng, quay);
+  tagSite(site, twin);
+  const dressOnly = site.dress;
+  site.dress = (b, use) => { dressOnly(b, use); tagSite(site, twin); };
   let vessel = null;
   if (LIVE || LIFE) {
     // The live and lifecycle players bring the ships in and out themselves.
   } else if (twin.alongside) {
+    // At the main berth, no longer than it, so she does not overlap the ships at the next berths.
     const a = twin.alongside;
-    vessel = ship(a.type, a.loa, a.beam, a.draught, rng);
-    vessel.position.set((frame.minX + frame.maxX) / 2, 0, frame.fenderFace - a.beam / 2 - 0.4);
+    const spot = berthSpot(site, frame, a.beam);
+    vessel = ship(a.type, Math.min(a.loa, spot.room), a.beam, a.draught, rng);
+    vessel.position.set(spot.x, 0, spot.z);
+    vessel.rotation.y = spot.rot;
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+    setFill(vessel.userData.stacks, 0.7);
     scene.add(vessel);
+    vessel.userData.pick = () => shipCardStill(a, 'Alongside, discharging', vessel, site.mainBerth);
   } else if (twin.next_ship) {
-    // The berth is empty: the next ship waits off the quay, lined up to come alongside.
+    // The berth is empty: the next ship waits at anchor off the port, clear of the ships alongside.
     const a = twin.next_ship;
-    vessel = ship(a.type, a.loa, a.beam, a.draught, rng);
-    vessel.position.set(frame.minX - a.loa / 2 - 60, 0, frame.fenderFace - a.beam / 2 - 45);
-    vessel.rotation.y = 0.12;
+    const spot = berthSpot(site, frame, a.beam);
+    vessel = ship(a.type, Math.min(a.loa, spot.room), a.beam, a.draught, rng);
+    vessel.position.set(spot.x - spot.sea[0] * 700, 0, spot.z - spot.sea[1] * 700);
+    vessel.rotation.y = spot.rot + 0.4;
     vessel.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     scene.add(vessel);
+    vessel.userData.pick = () => shipCardStill(a, 'At anchor, waiting for the berth', vessel, site.mainBerth);
   }
   // The other berths along the quay: most have a ship alongside, worked by their own cranes.
   if (!LIVE && !LIFE) {
-    if (vessel) Object.assign(site.mainBerth, { state: 'discharging', shipKind: vessel.userData.kind });
+    if (vessel && twin.alongside) Object.assign(site.mainBerth, { state: 'discharging', shipKind: vessel.userData.kind, fill: 0.7 });
     for (const b of site.berths.filter((x) => !x.main)) {
       if (rng() > 0.7 || b.loa < 120) continue;
       const m = ship(berthShipType(b.use, b.n), b.loa, b.beam, 12, rng);
@@ -1437,10 +1663,16 @@ async function main() {
       m.rotation.y = rot;
       m.traverse((n) => { if (n.isMesh) n.castShadow = true; });
       scene.add(m);
-      Object.assign(b, { ship: m, state: 'discharging', shipKind: m.userData.kind });
+      Object.assign(b, { ship: m, state: rng() < 0.5 ? 'discharging' : 'loading', shipKind: m.userData.kind, fill: 0.3 + rng() * 0.6 });
+      setFill(m.userData.stacks, b.fill);
+      m.userData.pick = () => ({
+        kind: shipKindWord(berthShipType(b.use, b.n)), title: `Ship at ${berthName(b).toLowerCase()}`,
+        rows: [['Berth', berthName(b)], ['Now', `Alongside, ${b.state}`], ['Length overall', `${b.loa} m`], ['Beam', `${b.beam} m`], ['Cargo aboard', pct(fillOf(m, b))]],
+      });
       if (m.userData.kind !== 'roro') for (const c of site.cranes) if (c.userData.berth === b) { c.userData.idle = false; c.userData.working = true; }
     }
   }
+  for (const y of site.yards) setFill(y.mesh, yardFill(y.berth));
   const lamps = [];
   for (const mast of site.lights.slice(0, 4)) {
     const light = new THREE.PointLight(0xffd9a0, 0, 160, 1.6);
@@ -1564,6 +1796,10 @@ async function main() {
     for (const l of lamps) l.intensity = lit ? 900 : 0;
     REAL.lamp.emissiveIntensity = lit ? 3 : 0;
     GLOW.visible = lit;
+    SHIP_LAMP.emissiveIntensity = night ? 4 : 0;
+    SHIP_HOUSE.emissiveIntensity = night ? 1 : 0;      // her accommodation lit from inside
+    SHIP_GLOW.visible = night;
+    for (const m of Object.values(NAV)) m.visible = night;
     REAL.glass.emissive.setHex(night ? 0x665533 : 0x000000);
     water.material.uniforms.waterColor.value.setHex(day > 0.3 ? 0x0f3b4f : 0x041018);
     const tide = tideAt(when);
@@ -1618,19 +1854,70 @@ async function main() {
   controls.maxDistance = 4000;
   camera.updateProjectionMatrix();
 
-  // Picking: a click (not a drag) on an element shows it beside the view.
+  // Picking: a click (not a drag) on anything with something to say (an element of the model, a
+  // ship, a crane, a tractor, a stack) opens its card on the right of the view; an element is also
+  // shown beside the view where the page has room for it.
   const ray = new THREE.Raycaster();
   let downAt = null;
   let picked = null;
+  const card = document.createElement('aside');
+  card.className = 'mt-card';
+  card.hidden = true;
+  card.setAttribute('aria-live', 'polite');
+  view.appendChild(card);
+  let cardOf = null;
+  let cardTimer = null;
+  function drawCard() {
+    if (!cardOf) return;
+    const c = cardOf();
+    if (!c) { closeCard(); return; }
+    const rows = (c.rows || []).filter(([, v]) => v !== null && v !== undefined && v !== '');
+    card.innerHTML = `<button type="button" class="close" aria-label="Close">×</button>
+      <p class="mt-card-kind">${escapeHtml(c.kind || '')}</p><h3>${escapeHtml(c.title)}</h3>
+      ${c.state ? `<p><span class="badge ${c.state}">${escapeHtml(c.stateWord || STATE_WORD[c.state] || c.state)}</span></p>` : ''}
+      <dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
+      ${c.list && c.list.length ? `<h4>${escapeHtml(c.listTitle || '')}</h4><ul>${c.list.map((x) => `<li><span class="state-${x.state}" aria-hidden="true">●</span> <strong>${escapeHtml(x.label)}</strong><br><span>${escapeHtml(x.text)}</span></li>`).join('')}</ul>` : ''}
+      ${c.link ? `<p><a href="${c.link.href}">${escapeHtml(c.link.text)} →</a></p>` : ''}`;
+    card.querySelector('.close').addEventListener('click', closeCard);
+  }
+  function openCard(source) {
+    cardOf = source;
+    card.hidden = false;
+    view.classList.add('has-card');
+    drawCard();
+    clearInterval(cardTimer);
+    cardTimer = setInterval(drawCard, 600);         // what it is doing changes as the clock runs
+  }
+  function closeCard() {
+    cardOf = null;
+    card.hidden = true;
+    view.classList.remove('has-card');
+    clearInterval(cardTimer);
+  }
+  const elementCard = (e) => () => ({
+    kind: (e.kind || 'element').replace(/_/g, ' '), title: e.name, state: e.state,
+    rows: [['Material', e.material], ['Zone', (e.zone || '').replace(/_/g, ' ')], ['Health', e.health ?? '—'],
+      ['Design utilisation', e.design_ur == null ? '—' : Number(e.design_ur).toFixed(2)],
+      ['Utilisation at end of life', e.ur_at_life == null ? '—' : Number(e.ur_at_life).toFixed(2)]],
+    listTitle: 'Sensors', list: e.sensors.map((x) => ({ state: x.state, label: x.label, text: x.headline })),
+    link: { href: e.href, text: 'Condition, maintenance and history' },
+  });
+  const notScenery = new Set([sky, water, stars]);
   renderer.domElement.addEventListener('pointerdown', (ev) => { downAt = [ev.clientX, ev.clientY]; });
   renderer.domElement.addEventListener('pointerup', (ev) => {
     if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
     const rect = renderer.domElement.getBoundingClientRect();
     const at = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(at, camera);
-    const hit = ray.intersectObjects(clickable, false)[0];
+    // The nearest thing hit that has a card, looking up from the mesh to whatever it belongs to.
+    let found = null;
+    for (const hit of ray.intersectObjects(scene.children.filter((o) => !notScenery.has(o) && o.visible), true)) {
+      let o = hit.object;
+      while (o && !o.userData.element && !o.userData.pick) o = o.parent;
+      if (o && o.visible !== false) { found = { object: hit.object, owner: o }; break; }
+    }
     if (picked) for (const m of clickable) if (m.userData.element === picked) m.material.emissive?.setHex(0x000000);
-    picked = hit ? hit.object.userData.element : null;
+    picked = found && found.owner.userData.element ? found.owner.userData.element : null;
     if (picked) {
       for (const m of clickable) {
         if (m.userData.element === picked) {
@@ -1642,6 +1929,10 @@ async function main() {
       paint();
     }
     showElement(picked);
+    if (LIFE) return;                    // the lifecycle player has its own card for the parts
+    if (picked) openCard(elementCard(picked));
+    else if (found) openCard(() => found.owner.userData.pick(found.object));
+    else closeCard();
   });
 
   window.addEventListener('resize', () => {
@@ -1658,7 +1949,7 @@ async function main() {
     const { startLive } = await import('./marinetwin-live.js');
     player = await startLive({
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
-      ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint,
+      ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint, setFill, yardFill, berthSpot,
       setClock(ms) { clock = ms; setTime(); },
       setPower(on) { if (on !== power) { power = on; setTime(); } },
       setTide(fn) { tideSource = fn; },
@@ -1711,6 +2002,61 @@ async function main() {
           m.object.position.copy(point);
           m.object.lookAt(ahead.x, point.y, ahead.z);
           m.object.rotateY(-Math.PI / 2);
+        } else if (m.trip) {
+          // An errand: only while this berth's ship is being worked (cars for a car carrier,
+          // tractors for any other), and parked otherwise.
+          const b = m.berth;
+          const busy = b && b.state && (m.needs === 'roro') === (b.shipKind === 'roro');
+          const tr = m.trip;
+          if (tr.mode === 'oneway') m.object.visible = false;
+          if (!busy) {
+            m.status = tr.mode === 'oneway' ? 'Waiting for a car carrier' : 'Parked by its crane: no ship being worked';
+            if (!m.parked && tr.mode !== 'oneway') {            // waiting by its crane for the next ship
+              tr.curve.getPointAt(0, point); tr.curve.getPointAt(0.02, ahead);
+              m.object.position.copy(point); m.object.lookAt(ahead.x, point.y, ahead.z); m.object.rotateY(-Math.PI / 2);
+              if (m.load) m.load.visible = false;
+              m.parked = true;
+            }
+            continue;
+          }
+          m.parked = false;
+          const travel = tr.len / m.speed;
+          const loading = b.state === 'loading';
+          let u;
+          let back = false;
+          if (tr.mode === 'oneway') {
+            // A car off the ship to the park while discharging, from the park onto it while loading.
+            const T = travel + m.gap;
+            m.s = ((m.s ?? m.offset * T) + dt * pace) % T;
+            if (m.s >= travel) continue;
+            u = m.s / travel;
+            if (loading) { u = 1 - u; back = true; }
+            m.status = loading ? 'Driving from the park onto the ship' : 'Driving off the ship to the park';
+            m.object.visible = true;
+          } else {
+            const T = 2 * travel + 2 * m.wait;
+            m.s = ((m.s ?? m.offset * T) + dt * pace) % T;
+            const p = m.s;
+            if (p < m.wait) u = 0;                                            // under the crane
+            else if (p < m.wait + travel) u = (p - m.wait) / travel;          // to the stack
+            else if (p < 2 * m.wait + travel) u = 1;                          // under the yard crane
+            else { u = 1 - (p - 2 * m.wait - travel) / travel; back = true; } // back to the crane
+            // Full on the way to the stack when the ship is discharging, back to the crane when loading.
+            const out = p >= m.wait && p < 2 * m.wait + travel;
+            m.status = p < m.wait ? (loading ? 'Under the ship crane, its box being lifted aboard' : 'Under the ship crane, taking a box off the ship')
+              : !back && u < 1 ? (loading ? 'Back to the stack for the next box' : 'Taking the box to the stack')
+              : u === 1 ? (loading ? 'At the stack, a box being put on' : 'At the stack, its box being lifted off')
+              : (loading ? 'Taking a box to the ship' : 'Back to the ship crane, empty');
+            if (m.load) m.load.visible = loading ? !out : out;
+            if (u === 0 || u === 1) { tr.curve.getPointAt(u, point); m.object.position.copy(point); continue; }
+          }
+          tr.curve.getPointAt(u, point);
+          tr.curve.getPointAt(Math.max(0, Math.min(1, u + (back ? -0.004 : 0.004))), ahead);
+          m.object.position.copy(point);
+          if (ahead.distanceToSquared(point) > 1e-4) {
+            m.object.lookAt(ahead.x, point.y, ahead.z);
+            m.object.rotateY(-Math.PI / 2);
+          }
         } else if (m.swing) {
           const s = (Math.sin(2 * Math.PI * (t + m.swing.phase) / m.swing.period) + 1) / 2;
           m.object.position[m.swing.axis] = m.swing.from + (m.swing.to - m.swing.from) * s;

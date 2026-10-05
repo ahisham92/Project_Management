@@ -370,8 +370,8 @@ def live(asset_id: int, now: datetime, terminal: str = "container", hours: int =
     for s in booked:
         eta, etd, waited = s["eta"], s["etd"], None
         if eta >= start:
-            if calls and eta < calls[-1]["etd"] + timedelta(hours=1):
-                eta = calls[-1]["etd"] + timedelta(hours=1)  # the berth is still busy: it waits its turn
+            if calls and eta < calls[-1]["etd"] + timedelta(hours=2):
+                eta = calls[-1]["etd"] + timedelta(hours=2)  # the berth is still busy: it waits its turn
             berth_at = allowed(eta)
             if berth_at is None:
                 continue

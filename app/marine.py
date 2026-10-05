@@ -37,7 +37,7 @@ import io
 import math
 import random
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from . import marine_triton
@@ -150,6 +150,12 @@ SUGGESTED: dict[str, list[str]] = {
     "tie_rod": ["strain", "corrosion"],
     "other": ["inspection"],
 }
+
+# What a working gauge can read, calibrated. Anything outside is a fault or a typing slip and is refused.
+PLAUSIBLE = {"strain": (-5000.0, 5000.0), "corrosion": (-0.5, 40.0), "displacement": (-2000.0, 2000.0),
+             "tilt": (-30.0, 30.0), "chloride": (0.0, 5.0), "crack_width": (0.0, 50.0), "half_cell": (-1200.0, 400.0),
+             "fender_reaction": (-200.0, 30000.0), "bollard_load": (-20.0, 1000.0), "rail_gauge": (-300.0, 300.0),
+             "rail_level": (-300.0, 300.0), "inspection": (1.0, 5.0)}
 
 # A sensor that has said nothing for this long is reported as silent; an inspection, a year and a half.
 SILENT_AFTER_DAYS = 45
@@ -424,7 +430,9 @@ CREATE TABLE IF NOT EXISTS marine_sensors (
   alert           REAL,                             -- NULL: the kind's default, or the Triton rating
   alarm           REAL,
   simulated       INTEGER NOT NULL DEFAULT 1,
-  feed_device     TEXT NOT NULL DEFAULT ''          -- the logger whose readings it last got, blank: none
+  feed_device     TEXT NOT NULL DEFAULT '',         -- the logger whose readings it last got, blank: none
+  zero            REAL NOT NULL DEFAULT 0,          -- calibration: the raw reading at installation, taken off
+  factor          REAL NOT NULL DEFAULT 1           -- calibration: the gauge factor, multiplied in after
 );
 
 CREATE TABLE IF NOT EXISTS marine_readings (
@@ -432,6 +440,7 @@ CREATE TABLE IF NOT EXISTS marine_readings (
   at              TEXT NOT NULL,                    -- YYYY-MM-DD or YYYY-MM-DDTHH:MM
   value           REAL NOT NULL,
   note            TEXT NOT NULL DEFAULT '',         -- what an inspector saw
+  raw             REAL,                             -- what the logger sent, before calibration; NULL: the same
   PRIMARY KEY (sensor_id, at)
 );
 CREATE TABLE IF NOT EXISTS marine_feed_log (
@@ -443,6 +452,20 @@ CREATE TABLE IF NOT EXISTS marine_feed_log (
   problems        INTEGER NOT NULL DEFAULT 0,
   first_problem   TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS marine_alarms (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
+  sensor_id       INTEGER REFERENCES marine_sensors(id) ON DELETE SET NULL,
+  label           TEXT NOT NULL,                    -- the sensor and its element, kept if the sensor goes
+  state           TEXT NOT NULL,                    -- the worst it reached: warning | critical
+  headline        TEXT NOT NULL DEFAULT '',         -- what it said when it went off, or worsened
+  opened_at       TEXT NOT NULL DEFAULT (datetime('now')),   -- UTC
+  acked_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  acked_at        TEXT,
+  ack_note        TEXT NOT NULL DEFAULT '',
+  closed_at       TEXT                              -- back within its limits; NULL: still on
+);
+CREATE INDEX IF NOT EXISTS marine_alarms_asset ON marine_alarms (asset_id, closed_at);
 CREATE TABLE IF NOT EXISTS marine_changes (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   asset_id        INTEGER NOT NULL REFERENCES marine_assets(id) ON DELETE CASCADE,
@@ -475,6 +498,9 @@ LATER_COLUMNS = [
     ("marine_assets", "berth_uses", "TEXT NOT NULL DEFAULT '{}'"),
     ("marine_sensors", "feed_device", "TEXT NOT NULL DEFAULT ''"),
     ("marine_elements", "design_group", "TEXT NOT NULL DEFAULT ''"),
+    ("marine_sensors", "zero", "REAL NOT NULL DEFAULT 0"),
+    ("marine_sensors", "factor", "REAL NOT NULL DEFAULT 1"),
+    ("marine_readings", "raw", "REAL"),
 ]
 
 
@@ -647,6 +673,14 @@ def refresh_simulated(conn: sqlite3.Connection, asset_id: int, until: date | Non
 
 # --- real readings -----------------------------------------------------------------
 
+def calibrate(sensor: Any, raw: float) -> float:
+    """A logger's raw reading as the quantity: its zero taken off, times its gauge factor."""
+    keys = sensor.keys()
+    zero = sensor["zero"] if "zero" in keys and sensor["zero"] is not None else 0.0
+    factor = sensor["factor"] if "factor" in keys and sensor["factor"] is not None else 1.0
+    return (raw - zero) * factor
+
+
 def record(conn: sqlite3.Connection, sensor_id: int, at: str, value: float, note: str = "") -> None:
     """One real reading. The first for a simulated sensor clears its simulated history,
     so the two never mix."""
@@ -692,10 +726,12 @@ def write_rows(conn: sqlite3.Connection, asset_id: int, rows: Iterable[dict[str,
     """Readings as dicts with ``sensor``, ``at``, ``value`` and maybe ``note``: from a CSV file or a
     logger sending them. Rows it cannot place are listed (the first twenty), never guessed at.
     ``device`` names the logger that sent them, so its sensors can be found again."""
-    sensors = {str(r["label"]).strip().lower(): r["id"] for r in conn.execute(
-        "SELECT s.id, s.label FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
+    rows_by_id = {r["id"]: r for r in conn.execute(
+        "SELECT s.id, s.label, s.kind, s.zero, s.factor FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
         " WHERE e.asset_id = ?", (asset_id,))}
+    sensors = {str(r["label"]).strip().lower(): i for i, r in rows_by_id.items()}
     ids = set(sensors.values())
+    latest_ok = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
     written, problems, touched = 0, [], set()
     for number, row in enumerate(rows, start=first):
         if not isinstance(row, dict):
@@ -717,13 +753,71 @@ def write_rows(conn: sqlite3.Connection, asset_id: int, rows: Iterable[dict[str,
         except ValueError:
             problems.append(f"Row {number}: the date or the value could not be read.")
             continue
+        if at > latest_ok:
+            problems.append(f"Row {number}: {at} is in the future; check the logger's clock.")
+            continue
+        sensor = rows_by_id[sensor_id]
+        raw, value = value, calibrate(sensor, value)
+        low, high = PLAUSIBLE.get(sensor["kind"], (-math.inf, math.inf))
+        if not low <= value <= high:
+            problems.append(f"Row {number}: {value:g} is not a reading a working {SENSOR_KINDS.get(sensor['kind'], {}).get('name', 'gauge').lower()}"
+                            f" gauge gives ({low:g} to {high:g}); refused as a fault.")
+            continue
         record(conn, sensor_id, at, value, str(row.get("note") or "").strip())
+        if raw != value:
+            conn.execute("UPDATE marine_readings SET raw = ? WHERE sensor_id = ? AND at = ?", (raw, sensor_id, at))
         touched.add(sensor_id)
         written += 1
     if device and touched:
         marks = ",".join("?" * len(touched))
         conn.execute(f"UPDATE marine_sensors SET feed_device = ? WHERE id IN ({marks})", (device, *touched))
     return {"written": written, "problems": problems[:20], "problem_count": len(problems), "sensors": len(touched)}
+
+
+# --- alarms ----------------------------------------------------------------------
+
+def sync_alarms(conn: sqlite3.Connection, asset_id: int, twin: dict[str, Any]) -> dict[str, int]:
+    """Open an alarm for each sensor that has gone to warning or critical, raise one that got worse,
+    and close those back within their limits. Silent and simulated sensors are left out: an alarm
+    is for a real reading someone must look at. Returns how many opened and closed."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    current = {}
+    for e in twin["elements"]:
+        for sensor in e["sensors"]:
+            if sensor["simulated"] or sensor["silent"] or sensor["state"] not in ("warning", "critical"):
+                continue
+            current[sensor["id"]] = (sensor, e["element"]["name"])
+    open_rows = {r["sensor_id"]: r for r in conn.execute(
+        "SELECT * FROM marine_alarms WHERE asset_id = ? AND closed_at IS NULL", (asset_id,))}
+    opened = closed = 0
+    for sensor_id, (sensor, element) in current.items():
+        row = open_rows.get(sensor_id)
+        if row is None:
+            conn.execute("INSERT INTO marine_alarms (asset_id, sensor_id, label, state, headline, opened_at)"
+                         " VALUES (?, ?, ?, ?, ?, ?)",
+                         (asset_id, sensor_id, f"{sensor['label']} on {element}", sensor["state"], sensor["headline"], now))
+            opened += 1
+        elif STATE_RANK[sensor["state"]] > STATE_RANK[row["state"]]:
+            # Worse than when it was acknowledged: it needs looking at again.
+            conn.execute("UPDATE marine_alarms SET state = ?, headline = ?, acked_by = NULL, acked_at = NULL"
+                         " WHERE id = ?", (sensor["state"], sensor["headline"], row["id"]))
+    for sensor_id, row in open_rows.items():
+        if sensor_id not in current:
+            conn.execute("UPDATE marine_alarms SET closed_at = ? WHERE id = ?", (now, row["id"]))
+            closed += 1
+    return {"opened": opened, "closed": closed}
+
+
+def alarms(conn: sqlite3.Connection, asset_id: int, closed: int = 20) -> dict[str, list[Any]]:
+    """The asset's open alarms, worst and newest first, and the last few closed."""
+    cols = "a.*, u.name AS acked_name"
+    join = "FROM marine_alarms a LEFT JOIN users u ON u.id = a.acked_by WHERE a.asset_id = ?"
+    return {
+        "open": conn.execute(f"SELECT {cols} {join} AND a.closed_at IS NULL"
+                             " ORDER BY a.state = 'critical' DESC, a.opened_at DESC", (asset_id,)).fetchall(),
+        "closed": conn.execute(f"SELECT {cols} {join} AND a.closed_at IS NOT NULL ORDER BY a.closed_at DESC LIMIT ?",
+                               (asset_id, closed)).fetchall(),
+    }
 
 
 # --- the assessment ----------------------------------------------------------------
@@ -846,7 +940,9 @@ def assess_sensor(sensor: Any, readings: list[Any], element: Any, asset: Any,
     out: dict[str, Any] = {"id": sensor["id"], "label": sensor["label"], "kind": kind, "kind_name": spec["name"],
                            "unit": unit, "simulated": bool(sensor["simulated"]), "count": len(readings),
                            "state": "neutral", "score": None, "latest": None, "latest_at": None, "note": "",
-                           "headline": "No readings yet", "silent": False}
+                           "headline": "No readings yet", "silent": False,
+                           "zero": sensor["zero"] if "zero" in sensor.keys() else 0.0,
+                           "factor": sensor["factor"] if "factor" in sensor.keys() else 1.0}
     if not readings:
         return out
     latest = readings[-1]

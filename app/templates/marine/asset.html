@@ -66,6 +66,39 @@
 
 </section>
 
+<section class="mt-panel" data-tab="Alarms" data-slug="alarms" data-count="{{ alarms['open'] | length }}"
+         {% if alarms['open'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif alarms['open'] %}data-state="warning"{% endif %}>
+<div class="card">
+  <div class="card-head"><div><h2>Alarms</h2>
+    <p class="small muted" style="margin-top:2px">A real sensor past its alert or alarm limit opens one as its readings arrive. It closes when the readings are back within limits; acknowledge it to say someone is on it. Times are UTC.</p></div></div>
+  <div class="card-body">
+    {% if alarms['open'] %}
+    <div class="table-scroll"><table class="table small">
+      <thead><tr><th>Since</th><th>Sensor</th><th>State</th><th>What it said</th><th>Who is on it</th></tr></thead>
+      <tbody>{% for a in alarms['open'] %}
+        <tr><td class="tabular nowrap">{{ a['opened_at'][:16] }}</td><td>{{ a['label'] }}</td><td>{{ state_badge(a['state']) }}</td>
+          <td>{{ a['headline'] }}</td>
+          <td>{% if a['acked_at'] %}{{ a['acked_name'] or 'a removed user' }}, {{ a['acked_at'][:16] }}{% if a['ack_note'] %}: {{ a['ack_note'] }}{% endif %}
+              {% else %}<form method="post" action="{{ url_for('marine.acknowledge_alarm', asset_id=asset['id'], alarm_id=a['id']) }}" class="inline-form">
+                <input type="text" name="note" placeholder="What you are doing" maxlength="300" style="min-width:140px">
+                <button type="submit" class="btn btn-primary btn-sm">Acknowledge</button></form>{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="small muted">No alarms on: every real sensor is within its limits. Simulated sensors never raise one.</p>{% endif %}
+    {% if alarms['closed'] %}
+    <h3 class="small" style="margin-top:14px">Closed</h3>
+    <div class="table-scroll"><table class="table small">
+      <thead><tr><th>From</th><th>To</th><th>Sensor</th><th>Worst</th><th>Acknowledged by</th></tr></thead>
+      <tbody>{% for a in alarms['closed'] %}
+        <tr><td class="tabular nowrap">{{ a['opened_at'][:16] }}</td><td class="tabular nowrap">{{ a['closed_at'][:16] }}</td>
+          <td>{{ a['label'] }}</td><td>{{ state_badge(a['state']) }}</td><td>{{ a['acked_name'] or '—' }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  </div>
+</div>
+</section>
+
 <section class="mt-panel" data-tab="What to do" data-slug="what-to-do" data-count="{{ twin['advice'] | length }}"
          {% if twin['advice'] | selectattr('state', 'equalto', 'critical') | list | length %}data-state="critical"{% elif twin['advice'] %}data-state="warning"{% endif %}>
 {% if twin['advice'] %}

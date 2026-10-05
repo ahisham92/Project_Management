@@ -990,6 +990,36 @@ def test_situations_and_berth_uses_over_the_web(signed_in, demo):
     assert signed_in.post(demo + "/berths", json={"berth": "x", "use": "roro"}).status_code == 400
 
 
+def test_the_surroundings_from_the_map_are_kept_for_the_sites_location(app, signed_in, demo):
+    asset_id = int(demo.rstrip("/").split("/")[-1])
+
+    def place(lat, lon):
+        with app.app_context():
+            from app.db import get_db
+            get_db().execute("UPDATE marine_assets SET latitude = ?, longitude = ? WHERE id = ?", (lat, lon, asset_id))
+            get_db().commit()
+
+    place(None, None)
+    assert signed_in.get(demo + "/twin.json").get_json()["surroundings"] is None
+    place(6.4372, 3.3531)
+    link = signed_in.get(demo + "/twin.json").get_json()["surroundings"]
+    assert link["key"] == "v1:6.4372:3.3531" and not link["kept"] and link["url"].endswith("/surroundings.json")
+    assert signed_in.get(link["url"]).status_code == 404
+    got = {"buildings": [{"k": "warehouse", "h": 12, "c": "", "p": [[0, 0], [40, 0], [40, 20], [0, 20]]}],
+           "roads": [{"k": "primary", "b": 0, "p": [[0, -30], [500, -30]]}], "rail": [], "water": [],
+           "coast": [{"p": [[-900, 60], [900, 60]]}]}
+    assert signed_in.post(link["url"], json={"key": "v1:0.0000:0.0000", **got}).status_code == 409
+    assert signed_in.post(link["url"], json={"key": link["key"], "roads": "nope"}).status_code == 400
+    assert signed_in.post(link["url"], json={"key": link["key"], **got}).get_json()["kept"]
+    assert signed_in.get(demo + "/twin.json").get_json()["surroundings"]["kept"]
+    kept = signed_in.get(link["url"]).get_json()
+    assert kept["key"] == link["key"] and kept["buildings"] == got["buildings"] and kept["coast"] == got["coast"]
+    # Moved: the kept surroundings are of the old place, so the next visit fetches the new one's.
+    place(6.45, 3.36)
+    assert not signed_in.get(demo + "/twin.json").get_json()["surroundings"]["kept"]
+    assert signed_in.get(link["url"]).status_code == 404
+
+
 # --- the lifecycle --------------------------------------------------------------
 
 def test_the_lifecycle_page_compares_doing_nothing_with_fixing(signed_in, demo):

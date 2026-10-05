@@ -644,7 +644,7 @@ function shore(quay, top, yardDepth) {
   land.rotation.x = -Math.PI / 2;
   land.position.y = -below;
   land.receiveShadow = true;
-  land.userData.ground = true;            // laid with the map's imagery where the site is located
+  land.userData.ground = true;            // cut where the map has water, where the site is located
   g.add(land);
   // The apron and yard: a band along each leg, and a wedge at each bend to close it.
   const v = [];
@@ -1153,7 +1153,7 @@ function terminal(scene, frame, twin, rng, quay) {
   land.rotation.x = -Math.PI / 2;
   land.position.set(centre, top - 0.3, front + yardDepth + 2000);
   land.receiveShadow = true;
-  land.userData.ground = true;            // laid with the map's imagery where the site is located
+  land.userData.ground = true;            // cut where the map has water, where the site is located
   g.add(land);
   // The quay wall either side of the modelled berth, so the berth sits in a longer quay.
   for (const [a, b] of [[minX - 300, minX - 1], [maxX + 1, maxX + 300]]) {
@@ -1258,7 +1258,7 @@ function terminal(scene, frame, twin, rng, quay) {
       rtg.add(box(7, 1.4, 22, REAL.yellow, 3, 18, 8));
       rtg.position.set(b.x + 12.6 * 2, top, b.z - 1);
       g.add(rtg);
-      movers.push({ object: rtg, swing: { axis: 'x', from: b.x, to: b.x + 12.6 * (b.bays - 1), period: 90 + rng() * 60, phase: rng() * 100 } });
+      movers.push({ object: rtg, main: true, swing: { axis: 'x', from: b.x, to: b.x + 12.6 * (b.bays - 1), period: 90 + rng() * 60, phase: rng() * 100 } });
     }
   }
   if (kind === 'general_cargo' || kind === 'multipurpose') {
@@ -2151,12 +2151,16 @@ async function main() {
             m.object.rotateY(-Math.PI / 2);
           }
         } else if (m.swing) {
+          if (m.berth && !m.berth.state) continue;                    // a yard crane waits for a ship to work
           const s = (Math.sin(2 * Math.PI * (t + m.swing.phase) / m.swing.period) + 1) / 2;
           m.object.position[m.swing.axis] = m.swing.from + (m.swing.to - m.swing.from) * s;
         }
       }
       for (const c of player ? [] : site.cranes) {     // the live player works the cranes itself
         const u = c.userData;
+        // Only with a ship alongside its berth to work.
+        const b = u.berth || site.mainBerth;
+        if (!b || !b.state) { if (u.load) u.load.visible = false; continue; }
         if (u.trolley && u.working) {
           const s = (Math.sin(t * 0.35 + c.position.x) + 1) / 2;
           u.trolley.position.z = -28 + 40 * s;
@@ -2217,6 +2221,7 @@ async function main() {
       .then(({ addSurroundings }) => addSurroundings({
         THREE, scene, twin, toScene, toEn, top: frame.top, grounds, vehicle, view, keepLand, keepSea,
         keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
+        mainLeg: site.quay ? site.quay.legs.reduce((m, l) => (l.len > m.len ? l : m)) : { a: [frame.minX, frame.fenderFace], b: [frame.maxX, frame.fenderFace] },
         centre: { x: (frame.minX + frame.maxX) / 2, z: frame.front + 100 },
       }))
       .then((got) => { around = got; view.dataset.surroundings = got && got.found ? 'yes' : 'no'; })

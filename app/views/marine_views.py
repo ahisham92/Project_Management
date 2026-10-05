@@ -837,7 +837,7 @@ SURROUNDINGS_LIMIT = 12 * 1024 * 1024
 def _surroundings_key(asset) -> str | None:
     if asset["latitude"] is None or asset["longitude"] is None:
         return None
-    return f"v1:{asset['latitude']:.4f}:{asset['longitude']:.4f}"
+    return f"v2:{asset['latitude']:.4f}:{asset['longitude']:.4f}"
 
 
 def _surroundings_path(asset_id: int) -> Path:

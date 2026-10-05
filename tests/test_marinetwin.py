@@ -1003,7 +1003,7 @@ def test_the_surroundings_from_the_map_are_kept_for_the_sites_location(app, sign
     assert signed_in.get(demo + "/twin.json").get_json()["surroundings"] is None
     place(6.4372, 3.3531)
     link = signed_in.get(demo + "/twin.json").get_json()["surroundings"]
-    assert link["key"] == "v1:6.4372:3.3531" and not link["kept"] and link["url"].endswith("/surroundings.json")
+    assert link["key"] == "v2:6.4372:3.3531" and not link["kept"] and link["url"].endswith("/surroundings.json")
     assert signed_in.get(link["url"]).status_code == 404
     got = {"buildings": [{"k": "warehouse", "h": 12, "c": "", "p": [[0, 0], [40, 0], [40, 20], [0, 20]]}],
            "roads": [{"k": "primary", "b": 0, "p": [[0, -30], [500, -30]]}], "rail": [], "water": [],

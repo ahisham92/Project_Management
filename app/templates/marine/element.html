@@ -83,6 +83,17 @@
         alarm at the rating ({{ '{:,.0f}'.format(s['alarm']) }} {{ s['unit'] }}).</p>
     {% endif %}
     {{ charts[s['id']] }}
+    {% if s['kind'] != 'inspection' %}
+    <form method="post" action="{{ url_for('marine.calibrate_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"
+          class="inline-form" style="flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+      <label class="field w-md"><span class="field-label" title="The raw reading at installation, taken off every reading">Zero</span>
+        <input type="number" name="zero" step="any" value="{{ '%g' | format(s['zero']) }}"></label>
+      <label class="field w-md"><span class="field-label" title="The gauge factor from its calibration certificate, multiplied in after the zero">Factor</span>
+        <input type="number" name="factor" step="any" value="{{ '%g' | format(s['factor']) }}"></label>
+      <button type="submit" class="btn btn-ghost btn-sm">Save calibration</button>
+      <span class="small muted">Reading = (what the logger sends − zero) × factor.{% if not s['simulated'] %} Saving works out its real readings again.{% endif %}</span>
+    </form>
+    {% endif %}
     {% if s['kind'] == 'inspection' and history[s['id']] %}
       <div class="table-scroll" style="margin-top:8px"><table class="table">
         <thead><tr><th>Inspected</th><th>Grade</th><th>What was seen</th></tr></thead>

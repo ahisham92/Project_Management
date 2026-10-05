@@ -1145,3 +1145,52 @@ def test_forecasts_come_with_a_range():
     assert marine.trend_range([(1, 0.1), (2, 0.1), (3, 0.1), (4, 0.1)], 0.4, 2020) is None    # not rising
     fit = marine.fit_corrosion([(t, 0.1 * t ** 0.8 * (1.05 if t % 2 else 0.95)) for t in range(1, 11)])
     assert marine.corrosion_spread([(t, 0.1 * t ** 0.8 * (1.05 if t % 2 else 0.95)) for t in range(1, 11)], fit) > 1
+
+
+def _feed(app, signed_in, demo):
+    asset_id = _asset_id(demo)
+    signed_in.get(demo + "/sensors")
+    with app.app_context():
+        key = connect(app.config["DATABASE"]).execute("SELECT feed_key FROM marine_assets WHERE id = ?", (asset_id,)).fetchone()[0]
+    return f"/marinetwin/api/assets/{asset_id}/readings", {"X-MarineTwin-Key": key}
+
+
+def test_readings_are_calibrated_and_impossible_ones_refused(app, client, signed_in, demo):
+    url, headers = _feed(app, signed_in, demo)
+    day = date.today().isoformat()
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        sensor = conn.execute("SELECT s.id, e.id AS element_id FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
+                              " WHERE s.label = 'P01-SG1'").fetchone()
+    answer = client.post(url, headers=headers, json={"readings": [
+        {"sensor": "P01-SG1", "at": f"{day}T01:00", "value": 100},
+        {"sensor": "P01-SG1", "at": f"{day}T02:00", "value": 99999},           # a broken gauge
+        {"sensor": "P01-SG1", "at": "2099-01-01T00:00", "value": 120}]})       # a logger clock gone wrong
+    problems = answer.get_json()["problems"]
+    assert answer.get_json()["written"] == 1 and "refused as a fault" in problems[0] and "future" in problems[1]
+    page = f"{demo}/elements/{sensor['element_id']}"
+    signed_in.post(f"{demo}/sensors/{sensor['id']}/calibration", data={"zero": "20", "factor": "2"})
+    client.post(url, headers=headers, json={"readings": [{"sensor": "P01-SG1", "at": f"{day}T03:00", "value": 70}]})
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute(
+            "SELECT at, value, raw FROM marine_readings WHERE sensor_id = ? ORDER BY at", (sensor["id"],)).fetchall()
+    assert [(r["value"], r["raw"]) for r in rows] == [(160.0, 100.0), (100.0, 70.0)]   # (raw − 20) × 2, old ones redone
+    assert "Save calibration" in text(signed_in.get(page))
+
+
+def test_an_alarm_opens_with_the_reading_is_acknowledged_and_closes(app, client, signed_in, demo):
+    url, headers = _feed(app, signed_in, demo)
+    day = date.today().isoformat()
+    client.post(url, headers=headers, json={"readings": [{"sensor": "P01-SG1", "at": f"{day}T01:00", "value": 1400}]})
+    with app.app_context():
+        alarm = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_alarms WHERE label LIKE 'P01-SG1%'").fetchone()
+    assert alarm["state"] == "critical" and alarm["closed_at"] is None          # opened by the feed, nobody looking
+    signed_in.post(f"{demo}/alarms/{alarm['id']}/ack", data={"note": "inspecting at low tide"})
+    page = text(signed_in.get(demo))
+    assert "inspecting at low tide" in page and "Acknowledge" in page
+    # The peak counts for a quarter, so bring the record back down with a quiet season of readings.
+    later = [{"sensor": "P01-SG1", "at": f"{day}T{h:02d}:00", "value": 100} for h in range(2, 24)]
+    client.post(url, headers=headers, json={"readings": later})
+    with app.app_context():
+        closed = connect(app.config["DATABASE"]).execute("SELECT closed_at FROM marine_alarms WHERE id = ?", (alarm["id"],)).fetchone()
+    assert closed["closed_at"] is not None

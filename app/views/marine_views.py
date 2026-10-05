@@ -48,7 +48,8 @@ CHANGES = {
     "trim_sensors": "Kept sensors on one element per design", "delete_model": "Removed the model",
     "add_element": "Added an element", "delete_element": "Removed an element", "delete_elements": "Removed all elements",
     "edit_element": "Changed an element", "add_sensor": "Added a sensor", "record_inspection": "Recorded an inspection",
-    "delete_sensor": "Removed a sensor", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
+    "delete_sensor": "Removed a sensor", "calibrate_sensor": "Calibrated a sensor",
+    "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
 
 
@@ -211,8 +212,34 @@ def demo():
 def asset(asset_id: int):
     """Step 3, the structure: its health, the twin in 3D, what to do and every element."""
     asset = _asset_or_404(asset_id)
-    twin = marine.assess_asset(get_db(), asset)
-    return render_template("marine/asset.html", asset=asset, twin=twin, **_context())
+    db = get_db()
+    twin = marine.assess_asset(db, asset)
+    marine.sync_alarms(db, asset_id, twin)
+    db.commit()
+    return render_template("marine/asset.html", asset=asset, twin=twin, alarms=marine.alarms(db, asset_id), **_context())
+
+
+def _check_alarms(asset_id: int) -> None:
+    """After new real readings: open or close the asset's alarms now, not when someone next looks."""
+    db = get_db()
+    asset = db.execute("SELECT * FROM marine_assets WHERE id = ?", (asset_id,)).fetchone()
+    marine.sync_alarms(db, asset_id, marine.assess_asset(db, asset))
+
+
+@bp.post("/assets/<int:asset_id>/alarms/<int:alarm_id>/ack")
+@login_required
+def acknowledge_alarm(asset_id: int, alarm_id: int):
+    _asset_or_404(asset_id)
+    db = get_db()
+    alarm = db.execute("SELECT * FROM marine_alarms WHERE id = ? AND asset_id = ?", (alarm_id, asset_id)).fetchone()
+    if alarm is None:
+        abort(404)
+    note = (request.form.get("note") or "").strip()[:300]
+    db.execute("UPDATE marine_alarms SET acked_by = ?, acked_at = datetime('now'), ack_note = ? WHERE id = ?",
+               (g.user["id"], note, alarm_id))
+    db.commit()
+    flash(f"{alarm['label']}: acknowledged" + (f" ({note})" if note else "") + ".", "success")
+    return redirect(url_for("marine.asset", asset_id=asset_id, _anchor="alarms"))
 
 
 @bp.get("/assets/<int:asset_id>/setup")
@@ -576,6 +603,8 @@ def import_readings(asset_id: int):
         return redirect(url_for("marine.setup", asset_id=asset_id, _anchor="readings"))
     text = upload.read().decode("utf-8", errors="replace")
     result = marine.import_csv(get_db(), asset_id, text)
+    if result["written"]:
+        _check_alarms(asset_id)
     get_db().commit()
     if result["written"]:
         flash(f"{result['written']:,} readings imported for {result['sensors']} sensors.", "success")
@@ -965,6 +994,30 @@ def delete_sensor(asset_id: int, sensor_id: int):
     return redirect(url_for("marine.element", asset_id=asset_id, element_id=sensor["element_id"]))
 
 
+@bp.post("/assets/<int:asset_id>/sensors/<int:sensor_id>/calibration")
+@login_required
+def calibrate_sensor(asset_id: int, sensor_id: int):
+    """A sensor's zero and gauge factor. Its real readings are worked out again from what the logger sent."""
+    db = get_db()
+    sensor = db.execute("SELECT s.*, e.id AS element_id FROM marine_sensors s JOIN marine_elements e"
+                        " ON e.id = s.element_id WHERE s.id = ? AND e.asset_id = ?", (sensor_id, asset_id)).fetchone()
+    if sensor is None:
+        abort(404)
+    zero, factor = _number("zero", 0.0), _number("factor", 1.0)
+    if zero is None or factor is None or factor == 0:
+        flash("The zero must be a number and the factor a number other than 0.", "error")
+        return redirect(url_for("marine.element", asset_id=asset_id, element_id=sensor["element_id"]))
+    db.execute("UPDATE marine_sensors SET zero = ?, factor = ? WHERE id = ?", (zero, factor, sensor_id))
+    redone = 0
+    if not sensor["simulated"] and sensor["kind"] != "inspection":
+        # A reading with no raw value was taken with no calibration at all: its value is what was sent.
+        redone = db.execute("UPDATE marine_readings SET raw = COALESCE(raw, value), value = (COALESCE(raw, value) - ?) * ?"
+                            " WHERE sensor_id = ?", (zero, factor, sensor_id)).rowcount
+    db.commit()
+    flash(f"{sensor['label']}: zero {zero:g}, factor {factor:g}" + (f"; {redone:,} readings worked out again." if redone else "."), "success")
+    return redirect(url_for("marine.element", asset_id=asset_id, element_id=sensor["element_id"]))
+
+
 # --- real sensors: the kit, and the door a logger sends readings through --------------------------
 
 @bp.get("/assets/<int:asset_id>/sensors")
@@ -1060,6 +1113,8 @@ def feed_readings(asset_id: int):
         result = marine_feed.receive(db, asset_id, payload, device)
     else:
         result = marine_feed.receive_csv(db, asset_id, request.get_data(as_text=True), device)
+    if result["written"]:
+        _check_alarms(asset_id)
     db.commit()
     return jsonify(ok=not result["problems"], written=result["written"], sensors=result["sensors"],
                    problems=result["problems"]), 200 if result["written"] or not result["problems"] else 422

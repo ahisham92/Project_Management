@@ -645,11 +645,13 @@ input[type="checkbox"] { width: auto; }
 .door-mark-triton { background: #0f4c81; }
 .door-mark-specs { background: #7a4fb5; font-size: 0.78rem; }
 .door-mark-marine { background: #0b7a8a; font-size: 0.82rem; }
+.door-mark-workload { background: #1c5fa8; font-size: 0.82rem; }
 .door-name { font-size: 1.15rem; font-weight: 650; }
 .door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
 .door-go { margin-top: 4px; color: var(--series-1); font-size: 0.9rem; font-weight: 600; }
 /* A door with nothing behind it yet. Still a door — it explains itself. */
-.door-shut .door-mark-crs, .door-shut .door-mark-triton { background: var(--ink-2); }
+.door-shut .door-mark-crs, .door-shut .door-mark-triton,
+.door-shut .door-mark-workload { background: var(--ink-2); }
 .door-tag {
   margin-left: 6px; padding: 1px 7px; border-radius: 999px;
   background: var(--surface-2, rgba(127, 127, 127, 0.12));

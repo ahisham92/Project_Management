@@ -4,10 +4,11 @@ Hosts such as PythonAnywhere, or servers like gunicorn and uWSGI, serve the
 application themselves rather than running ``run.py``. They import this file and
 look for a module-level ``application``.
 
-Project control answers at the root. Two applications of their own are mounted
+Project control answers at the root. Three applications of their own are mounted
 beside it when they are installed: the older comment sheet in front of
-``/crs/classic``, and Triton, the quay element designer, in front of
-``/triton``, behind project control's sign-in. They are joined at the WSGI layer
+``/crs/classic``, Triton, the quay element designer, in front of ``/triton``,
+and Workload, the unit's workload and profit plan, in front of ``/workload`` —
+all behind project control's sign-in. They are joined at the WSGI layer
 rather than inside Flask, so none has to know how the others work and one web
 app on the host serves them all.
 
@@ -23,6 +24,7 @@ from app import create_app
 from app.crs import MOUNT, load as load_crs
 from app.programs import guard
 from app.triton_door import mounts as triton_mounts
+from app.workload_door import mounts as workload_mounts
 
 control = create_app()
 
@@ -33,6 +35,7 @@ crs = load_crs()
 # The older sheet answers only accounts the administrator gave the comment sheet.
 mounted = {MOUNT: guard(control, crs, "crs")} if crs else {}
 mounted.update(triton_mounts(control))
+mounted.update(workload_mounts(control))
 application = DispatcherMiddleware(control, mounted) if mounted else control
 
 # gunicorn and uWSGI look for "app" by convention; PythonAnywhere wants

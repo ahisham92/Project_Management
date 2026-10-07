@@ -1,0 +1,347 @@
+"""Administration from the command line: ``python -m workload_app.admin``.
+
+There is no public sign-up, so the first account has to be made here -- on the
+host's console, by whoever owns the installation.  Everything this does is also
+in the app's own Accounts panel, for an administrator who is already signed in.
+"""
+
+from __future__ import annotations
+
+import argparse
+import getpass
+import sys
+from pathlib import Path
+from typing import Optional
+
+from . import accounts as accounts_module, deployment, storage
+from .accounts import AccountError, Accounts
+
+
+def _accounts(data_dir: Optional[Path]) -> Accounts:
+    directory = Path(data_dir) if data_dir else accounts_module.data_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    return Accounts(directory / "accounts.db")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m workload_app.admin",
+        description="Create and manage the accounts that can sign in.",
+    )
+    parser.add_argument("--data-dir", type=Path, default=None,
+                        help="where accounts and workbooks live "
+                             "(default: $WORKLOAD_DATA_DIR, else ./instance)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    add = sub.add_parser("add", help="create an account")
+    add.add_argument("username")
+    add.add_argument("--name", default="", help="the name shown in the app")
+    add.add_argument("--admin", action="store_true",
+                     help="may create and remove other accounts")
+    add.add_argument("--member", action="store_true",
+                     help="a read-only team member account, given sight of one "
+                          "engineer by their manager")
+    add.add_argument("--password", default=None,
+                     help="omit to be asked, or to have one generated")
+
+    sub.add_parser("list", help="list the accounts")
+
+    password = sub.add_parser("password", help="set an account's password")
+    password.add_argument("username")
+    password.add_argument("--password", default=None)
+
+    remove = sub.add_parser("remove", help="delete an account and its workbooks")
+    remove.add_argument("username")
+    remove.add_argument("--yes", action="store_true", help="do not ask")
+
+    adopt = sub.add_parser(
+        "import", help="put an existing workbook into an account as a unit")
+    adopt.add_argument("username")
+    adopt.add_argument("workbook", type=Path)
+    adopt.add_argument("--name", default="", help="the unit's name")
+
+    restore = sub.add_parser(
+        "restore", help="put a workbook into a unit that already exists")
+    restore.add_argument("username")
+    restore.add_argument("unit", help="the unit's name, or its id")
+    restore.add_argument("workbook", type=Path)
+
+    units = sub.add_parser(
+        "units", help="what each unit actually holds: rows, hours, projects")
+    units.add_argument("username", nargs="?", default=None,
+                       help="omit for every account")
+
+    link = sub.add_parser(
+        "link", help="tie an account to its owner's sign-in on the surrounding "
+                     "site, when Workload is a tab of one")
+    link.add_argument("username")
+    link.add_argument("site_id", nargs="?", default=None,
+                      help="the site's identifier for that person; leave out "
+                           "to unlink")
+    link.add_argument("--login", default=None,
+                      help="what they sign in to the site with, for show")
+
+    checker = sub.add_parser(
+        "check", help="is this installation ready to serve, and what should "
+                      "the host's WSGI file say?")
+    checker.add_argument("--wsgi-only", action="store_true",
+                         help="print just the WSGI file, to redirect to it")
+
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.command == "check":
+        return _check(None, None, args)
+    db = _accounts(args.data_dir)
+    data_dir = db.path.parent
+    try:
+        return COMMANDS[args.command](db, data_dir, args)
+    except AccountError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+def _add(db: Accounts, data_dir: Path, args) -> int:
+    password = args.password or _ask_password()
+    generated = password is None
+    if generated:
+        password = accounts_module.generated_password()
+    role = accounts_module.ROLE_MEMBER if args.member else accounts_module.ROLE_MANAGER
+    user = db.create_user(args.username, password, display_name=args.name,
+                          is_admin=args.admin, role=role)
+    print(f"Created {user['username']} ({user['role']})"
+          + (", administrator" if user["is_admin"] else ""))
+    if user["role"] == accounts_module.ROLE_MEMBER:
+        print("  A manager gives them sight of one engineer from their Team tab.")
+    if generated:
+        print(f"  password: {password}")
+        print("  Write it down now; it cannot be read back.")
+    return 0
+
+
+def _list(db: Accounts, data_dir: Path, args) -> int:
+    users = db.users()
+    if not users:
+        print("No accounts yet. Make one with:  python -m workload_app.admin add <username> --admin")
+        return 0
+    width = max(len(u["username"]) for u in users)
+    for user in users:
+        marker = "admin" if user["is_admin"] else "     "
+        print(f"{user['username']:<{width}}  {user['role']:<7}  {marker}  "
+              f"{user['units'] or 0} unit(s)  last seen {user['last_seen'] or 'never'}")
+    return 0
+
+
+def _link(db: Accounts, data_dir: Path, args) -> int:
+    user = next((u for u in db.users() if u["username"] == args.username), None)
+    if user is None:
+        print(f"error: no account called {args.username}", file=sys.stderr)
+        return 2
+    if args.site_id:
+        # Somebody who opened the Workload tab before this was run was given
+        # an empty account of their own. It is in the way.
+        placeholder = db.site_user(args.site_id)
+        if placeholder and placeholder["id"] != user["id"]:
+            db.link_site(placeholder["id"], None)
+            if db.remove_if_empty(placeholder["id"]):
+                storage.remove_user_files(data_dir, placeholder["id"])
+            else:
+                db.link_site(placeholder["id"], args.site_id,
+                             placeholder["site_login"])
+                print(f"error: that sign-in already has units here as "
+                      f"{placeholder['username']}.", file=sys.stderr)
+                return 2
+    linked = db.link_site(user["id"], args.site_id, args.login)
+    if linked["site_key"]:
+        print(f"{linked['username']} is now reached by signing in to the site"
+              + (f" as {linked['site_login']}." if linked["site_login"] else "."))
+    else:
+        print(f"{linked['username']} is no longer linked to a site sign-in.")
+    return 0
+
+
+def _password(db: Accounts, data_dir: Path, args) -> int:
+    user = next((u for u in db.users() if u["username"] == args.username), None)
+    if user is None:
+        print(f"error: no account called {args.username}", file=sys.stderr)
+        return 2
+    password = args.password or _ask_password()
+    generated = password is None
+    if generated:
+        password = accounts_module.generated_password()
+    db.set_password(user["id"], password)
+    print(f"Password changed for {user['username']}; every session was ended.")
+    if generated:
+        print(f"  password: {password}")
+    return 0
+
+
+def _remove(db: Accounts, data_dir: Path, args) -> int:
+    user = next((u for u in db.users() if u["username"] == args.username), None)
+    if user is None:
+        print(f"error: no account called {args.username}", file=sys.stderr)
+        return 2
+    if not args.yes:
+        answer = input(f"Delete {user['username']} and every workbook they have? "
+                       f"[y/N] ")
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Left alone.")
+            return 0
+    db.delete_user(user["id"])
+    storage.remove_user_files(data_dir, user["id"])
+    print(f"Deleted {user['username']}.")
+    return 0
+
+
+def _import(db: Accounts, data_dir: Path, args) -> int:
+    from . import library
+
+    user = next((u for u in db.users() if u["username"] == args.username), None)
+    if user is None:
+        print(f"error: no account called {args.username}", file=sys.stderr)
+        return 2
+    source = Path(args.workbook).expanduser()
+    try:
+        library.validate(source)
+    except library.NotAWorkbook as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    unit = db.create_unit(user["id"], args.name or source.stem, "")
+    path = storage.save_upload(data_dir, user["id"], unit["id"],
+                               source.read_bytes())
+    with db._connect() as connection:                  # noqa: SLF001 - same package
+        connection.execute("UPDATE units SET filename = ? WHERE id = ?",
+                           (path.name, unit["id"]))
+    print(f"{source.name} is now {user['username']}'s unit {unit['name']!r}.")
+    print(f"  stored at {path}")
+    return 0
+
+
+def _restore(db: Accounts, data_dir: Path, args) -> int:
+    """The console half of the app's ⭱ button, for a file already on the host."""
+    from . import library
+
+    user = next((u for u in db.users() if u["username"] == args.username), None)
+    if user is None:
+        print(f"error: no account called {args.username}", file=sys.stderr)
+        return 2
+    wanted = str(args.unit).strip().lower()
+    units = db.units(user["id"])
+    unit = next((u for u in units
+                 if u["id"] == args.unit or u["name"].strip().lower() == wanted), None)
+    if unit is None:
+        print(f"error: {args.username} has no unit called {args.unit!r}. "
+              f"They have: {', '.join(repr(u['name']) for u in units) or 'none'}",
+              file=sys.stderr)
+        return 2
+
+    source = Path(args.workbook).expanduser()
+    if not source.is_file():
+        print(f"error: {source} is not there", file=sys.stderr)
+        return 2
+    try:
+        library.validate(source)
+    except library.NotAWorkbook as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    result = storage.replace_unit_file(data_dir, user["id"], unit["id"],
+                                       source.read_bytes())
+    with db._connect() as connection:                  # noqa: SLF001 - same package
+        connection.execute("UPDATE units SET filename = ? WHERE id = ?",
+                           (result["path"].name, unit["id"]))
+    print(f"{unit['name']!r} now holds {source.name} "
+          f"({source.stat().st_size / 1_048_576:.1f} MB).")
+    if result["backup"]:
+        print(f"  the file it had is kept as {result['backup'].name}")
+    print("  its timesheet rows are read from the new workbook on the next open")
+    return 0
+
+
+def _units(db: Accounts, data_dir: Path, args) -> int:
+    """Say what is in each unit, straight from the files, for when the app
+    looks empty and the question is whether the data is gone or unreachable."""
+    from . import metrics, storage
+    from .timesheet_store import TimesheetStore
+    from .workbook import WorkloadWorkbook
+
+    users = db.users()
+    if args.username:
+        users = [u for u in users if u["username"] == args.username]
+        if not users:
+            print(f"error: no account called {args.username}", file=sys.stderr)
+            return 2
+
+    for user in users:
+        print(f"{user['username']}:")
+        for unit in db.units(user["id"]):
+            path = storage.unit_path(data_dir, user["id"], unit["filename"])
+            print(f"  {unit['name']!r}  ({unit['filename']})")
+            if not path.is_file():
+                print("    THE FILE IS MISSING")
+                continue
+            print(f"    {path}  {path.stat().st_size / 1_048_576:.1f} MB")
+            try:
+                wb = WorkloadWorkbook(path)
+            except Exception as exc:
+                print(f"    cannot be opened: {exc}")
+                continue
+            store = TimesheetStore(path.with_suffix(".timesheets.db"))
+            on_sheets = metrics.TimesheetIndex.from_workbook(wb)
+            print(f"    projects {len(wb.projects())}, "
+                  f"deliverables {len(wb.deliverables())}, "
+                  f"engineers {', '.join(wb.ts_sheets()) or 'none'}")
+            print(f"    timesheet rows: {len(on_sheets):,} on the sheets, "
+                  f"{store.count():,} in the database")
+            if store.count():
+                print(f"      per person: {store.counts()}")
+                low, high = store.date_range()
+                print(f"      {low} to {high}, "
+                      f"{sum(r['hours'] for r in store.all_rows()):,.1f} hours")
+        backups = storage.backups_dir(data_dir, user["id"])
+        kept = sorted(backups.glob("*.xlsx")) if backups.is_dir() else []
+        print(f"  backups: {len(kept)}"
+              + (f", newest {kept[-1].name}" if kept else ""))
+    return 0
+
+
+def _check(db, data_dir, args) -> int:
+    """The one command to run on a host before -- and after -- a reload."""
+    if getattr(args, "wsgi_only", False):
+        print(deployment.wsgi_file(data_dir=args.data_dir))
+        return 0
+    report = deployment.check(args.data_dir)
+    print(deployment.render(report))
+    return 0 if report.ok else 1
+
+
+def _ask_password() -> Optional[str]:
+    """Ask twice, or return None to have one generated."""
+    if not sys.stdin.isatty():
+        return None
+    first = getpass.getpass("Password (blank to generate one): ")
+    if not first:
+        return None
+    again = getpass.getpass("Again: ")
+    if first != again:
+        raise AccountError("Those two passwords are not the same.")
+    return first
+
+
+COMMANDS = {
+    "add": _add,
+    "list": _list,
+    "password": _password,
+    "link": _link,
+    "remove": _remove,
+    "import": _import,
+    "check": _check,
+    "units": _units,
+    "restore": _restore,
+}
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

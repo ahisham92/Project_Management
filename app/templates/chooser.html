@@ -8,13 +8,17 @@
     <h1>Which one today?</h1>
     <p class="small muted" style="margin-top:2px">
       One sign-in for all of them: the programme, the client's comments on what it hands over,
-      the design of the quay itself, the specification it is built to, and how it stands up once it is in service.
+      the design of the quay itself, the specification it is built to, how it stands up once it is in
+      service, and the workload of the team doing all of it.
     </p>
   </div>
 </div>
 
 {% if request.args.get('not') == 'triton' %}
   <div class="flashes"><div class="flash error">Your account has not been given Triton. Ask the administrator.</div></div>
+{% endif %}
+{% if request.args.get('not') == 'workload' %}
+  <div class="flashes"><div class="flash error">Your account has not been given Workload. Ask the administrator.</div></div>
 {% endif %}
 {% if not my_programs %}
   <div class="card"><div class="card-body">
@@ -85,6 +89,19 @@
       it, with corrosion projected to the end of its life and what to do about it.
     </span>
     <span class="door-go">Open MarineTwin →</span>
+  </a>
+  {% endif %}
+
+  {% if 'workload' in my_programs %}
+  <a class="door{% if not workload['ready'] %} door-shut{% endif %}" href="{{ workload['href'] }}">
+    <span class="door-mark door-mark-workload" aria-hidden="true">WL</span>
+    <span class="door-name">Workload{% if not workload['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      The unit's workload and profit plan: timesheets in, each project's budget against what it
+      has earned, who is carrying what, and the tasks ahead. A unit is its manager's alone —
+      a colleague sees their own figures only once they are given access from its Team tab.
+    </span>
+    <span class="door-go">Open Workload →</span>
   </a>
   {% endif %}
 </div>

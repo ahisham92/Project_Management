@@ -134,14 +134,22 @@ function toast(message, kind = '') {
    request below has to be made under it rather than at the site's root. */
 const BASE = new URL('.', window.location.href).pathname.replace(/\/$/, '');
 
-async function api(path, options = {}) {
-  const response = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+async function api(path, { quiet = false, ...options } = {}) {
+  // Anything slow brings up the loading ship, so a wait never looks stuck;
+  // the background refreshes ask to stay quiet.
+  const done = quiet ? () => {} : voyage.trip(voyage.labelFor(path, options.method));
+  let response;
   let payload = {};
-  try { payload = await response.json(); } catch { /* empty body */ }
+  try {
+    response = await fetch(BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    try { payload = await response.json(); } catch { /* empty body */ }
+  } finally {
+    done();
+  }
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/api/auth/')) {
       // The session has ended -- somewhere else, or by simply expiring.
@@ -258,8 +266,11 @@ function chooserError(messages) {
 
 async function openUnit(unit) {
   try {
-    await api(`/api/units/${unit.id}/open`, { method: 'POST' });
-    await enterApp();
+    // One voyage from the click to the unit on screen, not one per request.
+    await voyage.during(`Opening ${unit.name || 'the unit'}`, async () => {
+      await api(`/api/units/${unit.id}/open`, { method: 'POST' });
+      await enterApp();
+    });
   } catch (error) {
     chooserError(error.errors || [error.message]);
   }
@@ -279,12 +290,15 @@ async function newUnit() {
     el('span', { class: 'spin' }),
     ` Reading ${files.length} export(s) and setting the unit up…`));
   try {
-    const result = await api('/api/units/from-timesheets', {
-      method: 'POST',
-      body: { name, files: await filesBase64(files) },
+    const result = await voyage.during('Uploading the timesheets', async () => {
+      const made = await api('/api/units/from-timesheets', {
+        method: 'POST',
+        body: { name, files: await filesBase64(files) },
+      });
+      await enterApp();
+      return made;
     });
     const made = result.imported || {};
-    await enterApp();
     toast(`${fmt.int(made.rows_written)} rows, ${(made.people || []).length} people `
       + `and ${(made.projects_added || []).length} projects read from the timesheets.`,
       'ok');
@@ -342,7 +356,8 @@ async function deleteUnit(unit) {
 /** Hand the unit back as a spreadsheet, so the account is never a trap. */
 async function downloadUnit(unit) {
   try {
-    const result = await api(`/api/units/${unit.id}/download`);
+    const result = await voyage.during('Preparing the download',
+      () => api(`/api/units/${unit.id}/download`));
     const bytes = Uint8Array.from(atob(result.content_base64), (c) => c.charCodeAt(0));
     const url = URL.createObjectURL(new Blob([bytes], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -1284,7 +1299,7 @@ function renderFormation(report) {
         el('p', { class: 'muted' },
           'Everyone in the unit by grade, the most senior at the back. The ring is how much '
           + `of their capacity ${periodName(report.period)} used; teammates are joined. `
-          + 'Choose someone to open their own report.')),
+          + 'Choose someone to open their profile.')),
       el('span', { class: 'legend formation-key' },
         ...[['ok', 'on plan'], ['warn', 'light'], ['bad', 'over, or far under']].map(
           ([key, label]) => el('span', { class: 'legend-item' },
@@ -1292,6 +1307,7 @@ function renderFormation(report) {
     charts.formation(rows, {
       groups: teams,
       onPick: (picked) => {
+        if (window.showcase) { window.showcase.profile(picked.id); return; }
         state.reportView = 'member';
         state.reportMember = picked.id;
         switchView('reports');
@@ -1675,9 +1691,9 @@ async function checkTimesheetFile() {
     el('span', { class: 'spin' }), ` Reading ${files.length} file(s)…`));
 
   try {
-    const staged = await api('/api/timesheets/exports/stage', {
-      method: 'POST', body: { files: await filesBase64(files) },
-    });
+    const staged = await voyage.during('Uploading', async () => api(
+      '/api/timesheets/exports/stage',
+      { method: 'POST', body: { files: await filesBase64(files) } }));
     state.stagedImport = staged;
     renderImportResult(staged);
   } catch (error) {
@@ -2535,12 +2551,14 @@ async function refreshAll() {
   if (!status.open) { showShell(false); await renderChooser(); return; }
 
   const yearParam = state.year === null ? 'all' : state.year;
-  const [overview, projects, people] = await Promise.all([
+  // Everything the first screen needs is asked for at once, not in turn.
+  const [overview, projects, people, firstReport] = await Promise.all([
     api(`/api/overview?year=${yearParam}`),
     api('/api/projects'),
     // Grades and teams, for the formation on the Overview. Without them the
     // team still shows, in one row.
     api('/api/people').catch(() => ({ people: [] })),
+    state.report ? null : api('/api/reports?period=year'),
   ]);
   state.overview = overview;
   state.people = people.people || [];
@@ -2562,18 +2580,18 @@ async function refreshAll() {
   renderTimesheets();
   renderProjects();
   renderReference();
-  await setupReports();
+  await setupReports(firstReport);
   if (state.team) await loadTeam();
   if (state.tasks) await loadTasks();
   if (window.planner) window.planner.afterRefresh();
   if (window.checkins) window.checkins.summary();
 }
 
-async function setupReports() {
+async function setupReports(prefetched) {
   const periods = state.report ? state.report.periods : null;
   if (!periods) {
     // First load: fetch once to learn which years the workbook covers.
-    const first = await api('/api/reports?period=year');
+    const first = prefetched || await api('/api/reports?period=year');
     state.report = first;
     state.year = first.period.year;
     if (!state.reportMember) state.reportMember = first.engineers[0];
@@ -2599,6 +2617,7 @@ function switchView(view) {
   if (view === 'resourcing') loadResourcing();
   if (view === 'planner' && window.planner) window.planner.load();
   if (view === 'checkins' && window.checkins) window.checkins.load();
+  if (view === 'team' && window.showcase) window.showcase.teamCards();
   for (const tab of $$('.tab')) tab.classList.toggle('is-active', tab.dataset.view === view);
   for (const section of $$('.view')) {
     section.classList.toggle('is-active', section.id === `view-${view}`);
@@ -2713,6 +2732,8 @@ function wire() {
   } catch (error) {
     document.body.prepend(el('div', { class: 'msg msg-bad', style: 'margin:20px' },
       `Could not start: ${error.message}`));
+  } finally {
+    voyage.ready();
   }
 })();
 

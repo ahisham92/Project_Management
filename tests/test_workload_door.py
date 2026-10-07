@@ -101,7 +101,7 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     body = text(page)
     assert "<title>Selecao+" in body
     # Its files are asked for relative to /workload/, and it has no login page here.
-    assert 'src="app.js"' in body and "login-form" not in body
+    assert 'src="app.js' in body and "login-form" not in body
     assert site.get("/workload/app.js").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200

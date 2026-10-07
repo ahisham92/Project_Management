@@ -104,6 +104,7 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert 'src="app.js"' in body and "login-form" not in body
     assert site.get("/workload/app.js").status_code == 200
     # The logo is served from under the mount too.
+    assert site.get("/workload/logo.svg").status_code == 200
     assert site.get("/workload/brand/selecao-mark.svg").status_code == 200
     assert site.get("/workload/brand/selecao-icon-192.png").status_code == 200
     moved = site.get("/workload/login.html")

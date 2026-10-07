@@ -1822,7 +1822,10 @@ it used to be a website of its own with a sign-in of its own. It is now mounted 
   there from then on; no file is moved or copied. Forgotten the old password? In a Bash
   console: `python -m workload_app.admin --data-dir ~/workload-data password <old-username>`.
   A workbook that is only on your own computer goes in with *Upload* on the same page.
-- **Its files** — its accounts and each account's workbooks — go in `workload` inside the data
+- **Units made by an older copy** are still workbooks on disk. The first time one is opened after
+  an update it becomes the unit's own database; the old workbook is kept in that account's
+  `backups` folder, untouched. Copy the `workload` folder before the first Reload all the same.
+- **Its files** — its accounts and each account's units — go in `workload` inside the data
   directory unless `WORKLOAD_DATA_DIR` says otherwise, so a pull never touches them. They are
   **not** in the nightly Drive backup, which takes the database; *⭳* beside a unit downloads
   its workbook.

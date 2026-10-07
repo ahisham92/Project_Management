@@ -19,9 +19,12 @@ what the last three months did and leaves the decision where it belongs.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import math
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+from .model import ValidationError
 
 #: What somebody is, in the order they rank. The label is what the app shows.
 GRADES = [
@@ -29,6 +32,7 @@ GRADES = [
     ("engineer", "Engineer"),
     ("junior", "Junior"),
     ("bim", "BIM modeller"),
+    ("drafter", "Draftsman"),
 ]
 GRADE_KEYS = [key for key, _label in GRADES]
 DEFAULT_GRADE = "engineer"
@@ -43,11 +47,31 @@ WINDOW = 3
 
 UNASSIGNED = "__none__"
 
+#: Two kinds of capacity, which do not stand in for each other: engineers
+#: design and check, the drawing office produces the drawings.  A team short
+#: of draftsmen is not helped by a spare engineer, so the two are counted and
+#: asked for separately.
+ROLE_ENGINEERING = "engineering"
+ROLE_DRAFTING = "drafting"
+ROLES = [(ROLE_ENGINEERING, "Engineers"), (ROLE_DRAFTING, "Draftsmen")]
+_DRAFTING_GRADES = {"drafter", "bim"}
 
-class PeopleError(ValueError):
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.errors = [message]
+
+def role_of(grade: Optional[str]) -> str:
+    return ROLE_DRAFTING if grade in _DRAFTING_GRADES else ROLE_ENGINEERING
+
+
+def role_label(role: str, count: Optional[float] = None) -> str:
+    singular = {ROLE_ENGINEERING: "engineer", ROLE_DRAFTING: "draftsman"}[role]
+    if count is None:
+        return dict(ROLES)[role]
+    if abs(count - 1) < 1e-9:
+        return singular
+    return "draftsmen" if role == ROLE_DRAFTING else "engineers"
+
+
+class PeopleError(ValidationError):
+    pass
 
 
 def grade_label(key: str) -> str:
@@ -473,7 +497,8 @@ def portfolio_map(store, projects: Sequence[Dict[str, Any]], *,
     live = [p for p in projects if (p.get("remaining_mm") or 0) > 0
             or hours.get(p["number"])]
     total_remaining = sum(max(0.0, p.get("remaining_mm") or 0.0) for p in live)
-    total_hours = sum(sum(people.values()) for people in hours.values()) or 0.0
+    # Measured against the same projects the need is, so the shares compare.
+    total_hours = sum(sum(hours.get(p["number"], {}).values()) for p in live)
 
     circles = []
     for project in live:
@@ -554,3 +579,53 @@ def _project_state(load: Optional[float], remaining: float) -> str:
     if load < STARVED:
         return "starved"
     return "steady"
+
+
+# --------------------------------------------------------------------------
+# teams the timesheets already state
+# --------------------------------------------------------------------------
+
+#: The setting that records who has been placed from their timesheets, so a
+#: person a manager has since moved, or taken out of a team, stays where the
+#: manager put them.
+_PLACED_SETTING = "teams_from_timesheets"
+
+
+def teams_from_timesheets(store, make_id) -> Dict[str, Any]:
+    """Put people in the team their own timesheets name, once.
+
+    Every export row carries ``CurrentUnitDesc``.  When one unit's timesheets
+    hold people from more than one of those, that is somebody with several
+    teams under them, and the export has already said who belongs where -- so
+    nobody should have to type it in.  When they all name the same one, the
+    unit *is* the team and nothing is made.
+
+    Only people nobody has placed are touched, and each person only once: a
+    manager's own move is never undone by the next import.
+    """
+    units = store.latest_units()
+    if len(set(units.values())) < 2:
+        return {"teams_made": [], "placed": []}
+    try:
+        placed = set(json.loads(store.setting(_PLACED_SETTING) or "[]"))
+    except ValueError:
+        placed = set()
+    teams = {team["name"].lower(): team for team in store.teams()}
+    have = {person["name"]: person for person in store.people()}
+    made: List[str] = []
+    moved: List[str] = []
+    for name, unit in sorted(units.items()):
+        if name in placed:
+            continue
+        placed.add(name)
+        if (have.get(name) or {}).get("team_id"):
+            continue
+        team = teams.get(unit.lower())
+        if team is None:
+            team = store.add_team(make_id(), unit)
+            teams[unit.lower()] = team
+            made.append(unit)
+        store.save_person(name, team_id=team["id"])
+        moved.append(name)
+    store.set_setting(_PLACED_SETTING, json.dumps(sorted(placed)))
+    return {"teams_made": made, "placed": moved}

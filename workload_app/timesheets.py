@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import datetime as _dt
 import io
+import math
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -33,6 +34,10 @@ _SIGNATURE_HEADERS = {"jobnumber", "fullname", "totalhours", "date"}
 def _normalise(header: Any) -> str:
     """Fold a header down to something comparable across exports."""
     return re.sub(r"[^a-z0-9]", "", str(header or "").lower())
+
+
+def _text(value: Any) -> str:
+    return " ".join(str(value).split()) if value not in (None, "") else ""
 
 
 class ImportError_(ValueError):
@@ -85,7 +90,8 @@ class ParsedTimesheet:
         index = {_normalise(h): i for i, h in enumerate(self.headers) if h}
 
         def value(row, key, default=None):
-            position = index.get(_normalise(cfg.TS_KEY_FIELDS[key]))
+            header = cfg.TS_KEY_FIELDS.get(key) or cfg.TS_SETUP_FIELDS[key]
+            position = index.get(_normalise(header))
             return row[position] if position is not None and position < len(row) \
                 else default
 
@@ -110,6 +116,10 @@ class ParsedTimesheet:
                 "regular_hours": float(value(row, "regular_hours") or 0.0),
                 "overtime_hours": float(value(row, "overtime_hours") or 0.0),
                 "hours": float(value(row, "total_hours") or 0.0),
+                "deliverable": _text(value(row, "deliverable")),
+                "job_status": _text(value(row, "job_status")),
+                "grade": _text(value(row, "grade")),
+                "unit": _text(value(row, "unit")),
                 "source": self.source_name,
             })
         return out
@@ -140,9 +150,16 @@ def _read_xlsx(data: bytes) -> List[List[Any]]:
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        book = openpyxl.load_workbook(
-            io.BytesIO(data), read_only=True, data_only=True
-        )
+        try:
+            book = openpyxl.load_workbook(
+                io.BytesIO(data), read_only=True, data_only=True
+            )
+        except Exception:
+            # Not a zip (damaged, or a password-protected workbook, which
+            # Excel stores differently), or a zip that is not a workbook.
+            raise ImportError_(
+                "That file could not be opened as an Excel workbook. If it "
+                "has a password, save a copy without one.")
         try:
             sheet = book.worksheets[0]
             # The reporting tool writes a stub `<dimension ref="A1"/>`, and in
@@ -158,7 +175,12 @@ def _read_xlsx(data: bytes) -> List[List[Any]]:
 
 
 def _read_delimited(data: bytes) -> List[List[Any]]:
-    for encoding in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+    # UTF-16 only with its byte-order mark: without one, any even-length
+    # Windows-1252 file "decodes" as UTF-16 into nonsense.
+    encodings = ["utf-8-sig", "cp1252", "latin-1"]
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        encodings.insert(0, "utf-16")
+    for encoding in encodings:
         try:
             text = data.decode(encoding)
         except (UnicodeDecodeError, UnicodeError):
@@ -233,9 +255,15 @@ def _coerce_date(value: Any) -> Optional[_dt.date]:
     text = str(value).strip()
     if not text:
         return None
+    try:
+        # ISO dates with a time, "T" or space separated, fractions included.
+        return _dt.datetime.fromisoformat(text).date()
+    except ValueError:
+        pass
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d %H:%M:%S",
                 "%d-%b-%Y", "%d-%b-%y", "%d.%m.%Y", "%m/%d/%Y %H:%M:%S",
-                "%d/%m/%Y %H:%M:%S", "%Y/%m/%d"):
+                "%d/%m/%Y %H:%M:%S", "%m/%d/%Y %I:%M:%S %p",
+                "%d/%m/%Y %I:%M:%S %p", "%Y/%m/%d"):
         try:
             return _dt.datetime.strptime(text, fmt).date()
         except ValueError:
@@ -244,6 +272,12 @@ def _coerce_date(value: Any) -> Optional[_dt.date]:
 
 
 def _coerce_number(value: Any) -> Optional[float]:
+    """A finite number, or None: NaN and infinity are not hours."""
+    number = _parse_number(value)
+    return number if number is not None and math.isfinite(number) else None
+
+
+def _parse_number(value: Any) -> Optional[float]:
     if isinstance(value, bool):
         return float(value)
     if isinstance(value, (int, float)):

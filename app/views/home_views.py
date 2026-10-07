@@ -1,8 +1,9 @@
 """The front door: which application you are here for.
 
 Several things live behind this address — the project control platform, the
-comment response sheets, THEMIS, MarineTwin, and Triton, the quay element
-designer, which is an application of its own mounted in front of ``/triton``. They are one application and one database now, but
+comment response sheets, THEMIS, MarineTwin, and two applications of their own
+mounted in front of this one: Triton, the quay element designer, at ``/triton``,
+and Workload, the unit's workload and profit plan, at ``/workload``. They are one application and one database now, but
 they are two different jobs on two different days, so the site opens on a
 choice rather than dropping everybody into whichever one happened to be written
 first.
@@ -19,6 +20,7 @@ from flask import Blueprint, Response, render_template
 from ..auth import login_required
 from ..crs import describe as describe_crs
 from ..triton_door import describe as describe_triton
+from ..workload_door import describe as describe_workload
 
 bp = Blueprint("home", __name__)
 
@@ -44,7 +46,8 @@ def favicon():
 @login_required
 def chooser():
     """Which of the two you are here for."""
-    return render_template("chooser.html", classic=describe_crs(), triton=describe_triton())
+    return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
+                           workload=describe_workload())
 
 
 @bp.get("/triton/")
@@ -52,3 +55,10 @@ def chooser():
 def triton_missing():
     """Only reached when Triton is not mounted in front of this address: say why."""
     return render_template("triton_missing.html", triton=describe_triton())
+
+
+@bp.get("/workload/")
+@login_required
+def workload_missing():
+    """Only reached when Workload is not mounted in front of this address: say why."""
+    return render_template("workload_missing.html", workload=describe_workload())

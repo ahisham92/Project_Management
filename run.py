@@ -30,6 +30,7 @@ def _serve(args: argparse.Namespace) -> int:
     from app import create_app
     from app.crs import MOUNT, NAME, load as load_crs
     from app.triton_door import MOUNT as TRITON, describe as describe_triton, mounts as triton_mounts
+    from app.workload_door import MOUNT as WORKLOAD, describe as describe_workload, mounts as workload_mounts
     from app.db import database_path
 
     app = create_app()
@@ -44,6 +45,8 @@ def _serve(args: argparse.Namespace) -> int:
     mounted = {MOUNT: guard(app, crs, "crs")} if crs is not None else {}
     triton = triton_mounts(app)
     mounted.update(triton)
+    workload = workload_mounts(app)
+    mounted.update(workload)
     served = app
     if mounted:
         from werkzeug.middleware.dispatcher import DispatcherMiddleware
@@ -56,6 +59,10 @@ def _serve(args: argparse.Namespace) -> int:
         print(f"Triton: {url}{TRITON}/")
     else:
         print(f"Triton: not installed ({describe_triton()['trouble'] or 'no triton package'})")
+    if workload:
+        print(f"Workload: {url}{WORKLOAD}/")
+    else:
+        print(f"Workload: not installed ({describe_workload()['trouble'] or 'no workload_app package'})")
     print(f"Database: {database_path()}")
     print("Press Ctrl+C to stop.\n")
 
@@ -64,7 +71,7 @@ def _serve(args: argparse.Namespace) -> int:
 
     if args.debug:
         # Flask's reloader wants the Flask app, so debugging runs the root
-        # application on its own; /crs/classic and /triton are not served then.
+        # application on its own; /crs/classic, /triton and /workload are not served then.
         app.run(host=args.host, port=args.port, debug=True)
     else:
         # Waitress is a production-quality pure-Python server, so the same

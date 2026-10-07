@@ -17,6 +17,7 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
 | **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
 | **MarineTwin** | The digital twin of a structure after handover: its Revit model in 3D, its sensors, and its condition judged against the design Triton did for it. | `/marinetwin` |
+| **Workload** | The unit's workload and profit plan: timesheets in, each project's budget against what it has earned, who is carrying what. | `/workload` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -1792,6 +1793,43 @@ then **Web** tab → **Reload**. Nothing changes in the WSGI file.
   512 MB, `--no-cache-dir` matters: without it pip keeps a second copy of every download.
 - **If it will not start** — a requirement missing, most likely — the rest of the site keeps
   serving, the Triton door is marked *not installed*, and `/triton/` says what went wrong.
+
+### Workload
+
+Workload is the sixth door on the front page. It is the front end of the Workload & Profit Plan
+workbook — timesheets in, projects and their deliverables, tasks, the team and the reports — and
+it used to be a website of its own with a sign-in of its own. It is now mounted in front of
+`/workload` by `wsgi.py`, the way Triton is, behind the same sign-in as everything else.
+
+- **One sign-in.** Whoever is signed in here *is* the Workload account. Its own login page is
+  never shown, and nobody needs a second password. An account is tied to the person (the
+  account's id), not to the email or username they type, so correcting an address in **Admin**
+  loses nobody their units.
+- **Who sees it.** Tick **Workload** for an account in **Admin**, as for any other program. An
+  account without it does not see the door and is refused by address too.
+- **A unit is its owner's alone.** Somebody who opens Workload for the first time has nothing
+  in it and sees nobody else's units — not on a list, and not by address. To let a colleague
+  see their own figures (and only those), open the unit, go to **Team**, and press *Give
+  access* beside their name: the list is everybody on this site who has been given Workload.
+  They can change nothing. *✕* beside their name takes it away again.
+- **Units from before the move.** In the WSGI file, point `WORKLOAD_DATA_DIR` at the folder the
+  old Workload site used (`/home/<you>/workload-data`). Then open Workload, press *Bring my
+  units across*, and type the old Workload username and password once. The units are simply
+  there from then on; no file is moved or copied. Forgotten the old password? In a Bash
+  console: `python -m workload_app.admin --data-dir ~/workload-data password <old-username>`.
+  A workbook that is only on your own computer goes in with *Upload* on the same page.
+- **Its files** — its accounts and each account's workbooks — go in `workload` inside the data
+  directory unless `WORKLOAD_DATA_DIR` says otherwise, so a pull never touches them. They are
+  **not** in the nightly Drive backup, which takes the database; *⭳* beside a unit downloads
+  its workbook.
+- **The code** is the `workload_app` folder, a copy of https://github.com/ahisham92/Workload;
+  `workload_app/SOURCE.txt` names the commit. Change Workload in its own repository and copy
+  it here again. It needs nothing that is not already in `requirements.txt`.
+- **If it will not start**, the rest of the site keeps serving, the door is marked *not
+  installed*, and `/workload/` says what went wrong.
+
+Once this is live the old Workload web app on the host can be deleted — after its units have
+been brought across, and without deleting its data folder.
 
 ### The older, browser-kept sheet
 

@@ -27,6 +27,22 @@ function svgEl(tag, attrs = {}, ...children) {
   return node;
 }
 
+/** The top of an axis: the next round number at or above the data, so the
+ *  four gridlines read 250, 500, 750, 1,000 rather than 295, 591, 886. */
+function niceMax(value) {
+  if (!(value > 0)) return 1;
+  const power = 10 ** Math.floor(Math.log10(value));
+  const step = [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10]
+    .find((s) => s * power >= value * 1.0001) || 10;
+  return step * power;
+}
+
+function tick(value) {
+  return value >= 1000 ? Math.round(value).toLocaleString()
+    : value >= 20 || Number.isInteger(value) ? String(Math.round(value))
+      : value.toFixed(1);
+}
+
 /* ------------------------------------------------------------- tooltip */
 
 let tip = null;
@@ -96,7 +112,7 @@ function figure(title, note, ...body) {
 
 /** Part-to-whole at a glance. Six segments at most; anything beyond folds
  *  into "Other", because past that adjacent slices stop being tellable apart. */
-function donut(data, { title, note, unit = 'MM', size = 190 } = {}) {
+function donut(data, { title, note, unit = 'MM', size = 190, digits = 2 } = {}) {
   const rows = data.filter((d) => (d.value || 0) > 0);
   const total = rows.reduce((sum, d) => sum + d.value, 0);
   const shown = rows.length <= 6 ? rows : rows.slice(0, 5).concat([{
@@ -134,7 +150,7 @@ function donut(data, { title, note, unit = 'MM', size = 190 } = {}) {
         fill: colorOf(row, i),
         class: 'slice',
       });
-      hoverable(path, `<b>${escape(row.label)}</b><br>${row.value.toFixed(2)} ${unit}`
+      hoverable(path, `<b>${escape(row.label)}</b><br>${row.value.toFixed(digits)} ${unit}`
         + ` · ${((row.value / total) * 100).toFixed(1)}%`);
       svg.append(path);
     }
@@ -144,14 +160,14 @@ function donut(data, { title, note, unit = 'MM', size = 190 } = {}) {
   svg.append(svgEl('text', {
     x: centre, y: centre - 2, 'text-anchor': 'middle',
     class: 'donut-total',
-  }, total.toFixed(total >= 100 ? 0 : 1)));
+  }, total.toFixed(total >= 100 || digits === 0 ? 0 : 1)));
   svg.append(svgEl('text', {
     x: centre, y: centre + 14, 'text-anchor': 'middle', class: 'donut-unit',
   }, unit));
 
   const items = shown.map((row, i) => ({
     color: colorOf(row, i),
-    label: `${row.label} — ${row.value.toFixed(2)} (${((row.value / total) * 100 || 0).toFixed(0)}%)`,
+    label: `${row.label} — ${row.value.toFixed(digits)} (${((row.value / total) * 100 || 0).toFixed(0)}%)`,
   }));
   return figure(title, note, wrap('donut-wrap', svg, legend(items)));
 }
@@ -179,12 +195,13 @@ function arc(cx, cy, outer, inner, from, to) {
 /** Compare a few measures across a few people. One axis, always. */
 function groupedBars(categories, series, { title, note, unit = 'MM',
   height = 210, target = null } = {}) {
-  const width = Math.max(420, categories.length * (series.length * 40 + 56));
+  // Sized so that, scaled into a half-width panel, the labels stay legible.
+  const width = Math.max(420, categories.length * (series.length * 22 + 34));
   const padLeft = 46, padBottom = 34, padTop = 12, padRight = 10;
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
-  const peak = Math.max(
-    ...series.flatMap((s) => s.values.map((v) => v || 0)), target || 0, 1);
+  const peak = niceMax(Math.max(
+    ...series.flatMap((s) => s.values.map((v) => v || 0)), target || 0));
   const scale = (v) => plotH - (v / peak) * plotH;
 
   // Capped at its natural width: a chart with few bars stretched to fill a
@@ -203,7 +220,7 @@ function groupedBars(categories, series, { title, note, unit = 'MM',
     }));
     plot.append(svgEl('text', {
       x: -8, y: y + 4, 'text-anchor': 'end', class: 'axis-label',
-    }, (peak * (1 - i / 4)).toFixed(peak >= 20 ? 0 : 1)));
+    }, tick(peak * (1 - i / 4))));
   }
 
   const groupW = plotW / categories.length;
@@ -234,7 +251,7 @@ function groupedBars(categories, series, { title, note, unit = 'MM',
       x1: 0, x2: plotW, y1: y, y2: y, class: 'target-line',
     }));
     plot.append(svgEl('text', {
-      x: plotW, y: y - 5, 'text-anchor': 'end', class: 'axis-label',
+      x: plotW, y: y - 5, 'text-anchor': 'end', class: 'axis-label target-label',
     }, `capacity ${target.toFixed(1)}`));
   }
 
@@ -250,14 +267,17 @@ function groupedBars(categories, series, { title, note, unit = 'MM',
 
 /** Change over time, split by person. Part-to-whole per column. */
 function stackedColumns(labels, series, { title, note, unit = 'MM',
-  height = 200 } = {}) {
-  const width = Math.max(360, labels.length * 46);
+  height = 200, target = null, targetLabel = 'capacity', wide = false } = {}) {
+  // A wide chart gets room per column so a dozen months fill a full-width
+  // panel; otherwise it keeps to its natural size.
+  const width = Math.max(wide ? 900 : 360, labels.length * (wide ? 120 : 46));
   const padLeft = 40, padBottom = 32, padTop = 12, padRight = 8;
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
   const totals = labels.map((_l, i) =>
     series.reduce((sum, s) => sum + (s.values[i] || 0), 0));
-  const peak = Math.max(...totals, 1);
+  const targets = Array.isArray(target) ? target : labels.map(() => target);
+  const peak = niceMax(Math.max(...totals, ...targets.map((t) => t || 0)));
 
   const svg = svgEl('svg', {
     viewBox: `0 0 ${width} ${height}`, class: 'chart', role: 'img',
@@ -270,11 +290,11 @@ function stackedColumns(labels, series, { title, note, unit = 'MM',
     plot.append(svgEl('line', { x1: 0, x2: plotW, y1: y, y2: y, class: 'gridline' }));
     plot.append(svgEl('text', {
       x: -8, y: y + 4, 'text-anchor': 'end', class: 'axis-label',
-    }, (peak * (1 - i / 4)).toFixed(0)));
+    }, tick(peak * (1 - i / 4))));
   }
 
   const slot = plotW / labels.length;
-  const barW = Math.min(28, slot - 10);
+  const barW = Math.min(wide ? 48 : 28, slot - 10);
   labels.forEach((label, i) => {
     let bottom = plotH;
     series.forEach((s, si) => {
@@ -299,10 +319,282 @@ function stackedColumns(labels, series, { title, note, unit = 'MM',
       }, label));
     }
   });
+  // The capacity each column is measured against: one step per column, so a
+  // month with less capacity shows it rather than being averaged away.
+  if (targets.some((t) => t)) {
+    let d = '';
+    targets.forEach((t, i) => {
+      if (!t) return;
+      const y = plotH - (t / peak) * plotH;
+      d += `${d ? 'L' : 'M'}${i * slot} ${y} L${(i + 1) * slot} ${y} `;
+    });
+    plot.append(svgEl('path', { d, class: 'target-line', fill: 'none' }));
+  }
   svg.append(plot);
-  return figure(title, note, wrap('chart-scroll', svg),
-    legend(series.map((s, i) => ({
-      color: s.color || SERIES[i % SERIES.length], label: s.label }))));
+  const items = series.map((s, i) => ({
+    color: s.color || SERIES[i % SERIES.length], label: s.label }));
+  const box = legend(items);
+  if (targets.some((t) => t)) {
+    const entry = document.createElement('span');
+    entry.className = 'legend-item';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch swatch-line';
+    entry.append(swatch, document.createTextNode(targetLabel));
+    box.append(entry);
+  }
+  return figure(title, note, wrap('chart-scroll', svg), box);
+}
+
+/* ------------------------------------------------------------ sparkline */
+
+/** A month-by-month trend small enough to sit inside a card. The dashed line
+ *  is the capacity; the last point is labelled, the rest is shape. */
+function sparkline(values, { labels = [], target = null, unit = 'h',
+  width = 220, height = 46, color = 'var(--series-1)' } = {}) {
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${width} ${height}`, class: 'sparkline', role: 'img',
+    preserveAspectRatio: 'none',
+  });
+  const points = values.map((v) => v || 0);
+  if (points.length < 2) return svg;
+  const peak = Math.max(...points, target || 0, 1) * 1.08;
+  const step = width / (points.length - 1);
+  const y = (v) => height - 3 - (v / peak) * (height - 6);
+  const line = points.map((v, i) => `${i ? 'L' : 'M'}${(i * step).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  svg.append(svgEl('path', {
+    d: `${line} L${width} ${height} L0 ${height} Z`, class: 'spark-area', fill: color,
+  }));
+  if (target) {
+    svg.append(svgEl('line', {
+      x1: 0, x2: width, y1: y(target), y2: y(target), class: 'spark-target',
+    }));
+  }
+  svg.append(svgEl('path', { d: line, class: 'spark-line', stroke: color }));
+  points.forEach((v, i) => {
+    const dot = svgEl('circle', {
+      cx: i * step, cy: y(v), r: i === points.length - 1 ? 3 : 6,
+      class: i === points.length - 1 ? 'spark-dot' : 'spark-hit', fill: color,
+    });
+    hoverable(dot, `<b>${escape(labels[i] || '')}</b><br>${v.toLocaleString()} ${unit}`
+      + (target ? ` · ${Math.round((v / target) * 100)}% of capacity` : ''));
+    svg.append(dot);
+  });
+  return svg;
+}
+
+/* ------------------------------------------------------------ formation */
+
+/** The team laid out on a plane seen in perspective: a row per rank, the most
+ *  senior at the back, and a lane per team across it. Each person is a node
+ *  whose ring is how much of their capacity they are using; teammates are
+ *  joined, so each team reads as its own shape.
+ *
+ *  rows:   [{ label, nodes: [{ id, name, initials, color, value, tone, group, caption, tip }] }]
+ *  groups: [{ id, label }], left to right; a node with no group gets a lane of its own.
+ */
+function formation(rows, { groups = [], onPick = null } = {}) {
+  const R = Math.max(rows.length, 1);
+  const W = 1000;
+  const H = 150 + R * 92;
+  const cx = W / 2;
+  const back = 26;                 // where the far edge of the plane sits
+  const front = H - 48;            // and the near edge
+  const far = 1.75;                // how much further away the far edge is
+  const horizon = (back - front / far) / (1 - 1 / far);
+  const depth = (v) => 1 + (1 - v) * (far - 1);  // v: 0 back .. 1 front
+  const at = (u, v) => {
+    const z = depth(v);
+    return [cx + (u * 450) / z, horizon + (front - horizon) / z];
+  };
+  // Room on both sides for the longest row name, which sits off the plane's
+  // left edge; both sides so the plane stays in the middle.
+  const longest = Math.max(0, ...rows.map((row) => String(row.label || '').length));
+  const pad = Math.max(0, Math.ceil(longest * 10 + 24 - (cx - 450)));
+  const svg = svgEl('svg', {
+    viewBox: `${-pad} 0 ${W + 2 * pad} ${H}`, class: 'chart formation', role: 'img',
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+
+  // Lanes: one per team, plus one for anyone not in a team yet.
+  const lanes = groups.map((g) => ({ id: g.id, label: g.label }));
+  if (rows.some((row) => row.nodes.some((n) => !lanes.some((l) => l.id === n.group)))) {
+    lanes.push({ id: null, label: lanes.length ? 'No team' : '' });
+  }
+  const L = Math.max(lanes.length, 1);
+  const laneOf = (node) => Math.max(0, lanes.findIndex((l) => l.id === (
+    lanes.some((x) => x.id === node.group) ? node.group : null)));
+  const laneCentre = (i) => -1 + (2 * i + 1) / L;
+
+  // The plane, its grid, and the lanes and rows marked on it.
+  const corners = [at(-1, 0), at(1, 0), at(1, 1), at(-1, 1)];
+  svg.append(svgEl('polygon', {
+    points: corners.map((p) => p.join(',')).join(' '), class: 'plane',
+  }));
+  const grid = svgEl('g', { class: 'plane-grid' });
+  for (let i = -6; i <= 6; i += 1) {
+    const [x1, y1] = at(i / 6, 0);
+    const [x2, y2] = at(i / 6, 1);
+    grid.append(svgEl('line', { x1, y1, x2, y2 }));
+  }
+  for (let k = 0; k <= 10; k += 1) {
+    const [x1, y1] = at(-1, k / 10);
+    const [x2, y2] = at(1, k / 10);
+    grid.append(svgEl('line', { x1, y1, x2, y2 }));
+  }
+  svg.append(grid);
+  for (let i = 1; i < L; i += 1) {
+    const u = -1 + (2 * i) / L;
+    const [x1, y1] = at(u, 0);
+    const [x2, y2] = at(u, 1);
+    svg.append(svgEl('line', { x1, y1, x2, y2, class: 'lane-line' }));
+  }
+  lanes.forEach((lane, i) => {
+    if (!lane.label) return;
+    const [x, y] = at(laneCentre(i), 1);
+    svg.append(svgEl('text', { x, y: y + 26, 'text-anchor': 'middle', class: 'lane-label' },
+      lane.label));
+  });
+
+  // Rows evenly spaced on the screen rather than on the plane, so the far
+  // rows, which perspective squeezes together, still have room for names.
+  const yOf = (v) => horizon + (front - horizon) / depth(v);
+  const vAt = (y) => 1 - ((front - horizon) / (y - horizon) - 1) / (far - 1);
+  const vOf = (r) => (R === 1 ? 0.6
+    : vAt(yOf(0.1) + ((yOf(0.86) - yOf(0.1)) * r) / (R - 1)));
+  const placed = [];
+  rows.forEach((row, r) => {
+    const v = vOf(r);
+    const [lx, ly] = at(-1, v);
+    if (row.label) {
+      svg.append(svgEl('text', {
+        x: lx - 14, y: ly + 4, 'text-anchor': 'end', class: 'row-label',
+      }, row.label));
+    }
+    lanes.forEach((_lane, li) => {
+      const here = row.nodes.filter((n) => laneOf(n) === li);
+      const width = 2 / L;
+      const gap = Math.min(0.34, (width * 0.82) / Math.max(here.length, 1));
+      here.forEach((node, i) => {
+        const u = laneCentre(li) + (i - (here.length - 1) / 2) * gap;
+        const [x, y] = at(u, v);
+        placed.push({ node, x, y, scale: 1 / depth(v) });
+      });
+    });
+  });
+
+  // Teammates joined, nearest first, before the people go on top.
+  const links = svgEl('g', { class: 'links' });
+  lanes.forEach((lane) => {
+    if (lane.id === null) return;
+    const members = placed.filter((p) => p.node.group === lane.id)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    for (let i = 1; i < members.length; i += 1) {
+      const me = members[i];
+      const near = members.slice(0, i).reduce((best, p) => (
+        Math.hypot(p.x - me.x, p.y - me.y) < Math.hypot(best.x - me.x, best.y - me.y)
+          ? p : best));
+      links.append(svgEl('line', { x1: near.x, y1: near.y, x2: me.x, y2: me.y, class: 'link' }));
+    }
+  });
+  svg.append(links);
+
+  const people = svgEl('g', {});
+  placed.sort((a, b) => a.y - b.y).forEach(({ node, x, y, scale }) => {
+    const r = 20 * scale + 9;
+    const g = svgEl('g', {
+      class: `person${onPick ? ' pickable' : ''}`,
+      transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`,
+      tabindex: onPick ? 0 : null,
+      role: onPick ? 'button' : null,
+      'aria-label': node.name,
+    });
+    g.append(svgEl('ellipse', { cx: 0, cy: r + 4, rx: r * 1.1, ry: r * 0.3, class: 'shadow' }));
+    const ring = r + 4;
+    const length = 2 * Math.PI * ring;
+    const share = Math.max(0, Math.min(1, node.value || 0));
+    g.append(svgEl('circle', { r: ring, class: 'ring-track' }));
+    g.append(svgEl('circle', {
+      r: ring, class: `ring ring-${node.tone || 'none'}`,
+      'stroke-dasharray': `${(share * length).toFixed(1)} ${length.toFixed(1)}`,
+      transform: 'rotate(-90)',
+    }));
+    g.append(svgEl('circle', { r, fill: node.color, class: 'disc' }));
+    g.append(svgEl('text', {
+      y: r * 0.34, 'text-anchor': 'middle', class: 'initials',
+      style: `font-size:${(r * 0.85).toFixed(1)}px`,
+    }, node.initials));
+    g.append(svgEl('text', { y: ring + 16, 'text-anchor': 'middle', class: 'person-name' },
+      node.name));
+    if (node.caption) {
+      g.append(svgEl('text', {
+        y: ring + 30, 'text-anchor': 'middle', class: `person-caption v-${node.tone || ''}`,
+      }, node.caption));
+    }
+    if (node.tip) hoverable(g, node.tip);
+    if (onPick) {
+      g.addEventListener('click', () => onPick(node));
+      g.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPick(node); }
+      });
+    }
+    people.append(g);
+  });
+  svg.append(people);
+  return wrap('formation-wrap', wrap('chart-scroll', svg));
+}
+
+/* --------------------------------------------------------- budget bars */
+
+/** Spend against budget, one project to a row: the track is the budget, the
+ *  bar what has been booked, the tick what has been earned. A bar past its
+ *  tick is costing more than it earns. */
+function budgetBars(rows, { title, note, unit = 'MM' } = {}) {
+  const box = document.createElement('div');
+  box.className = 'budget-bars';
+  const peak = Math.max(1, ...rows.map((r) => Math.max(r.budget || 0, r.actual || 0)));
+  for (const row of rows) {
+    const line = document.createElement('div');
+    line.className = 'budget-row';
+    const name = document.createElement('span');
+    name.className = 'budget-name';
+    name.textContent = row.label;
+    name.title = row.title || row.label;
+    const track = document.createElement('span');
+    track.className = 'budget-track';
+    const budget = document.createElement('span');
+    budget.className = 'budget-budget';
+    budget.style.width = `${((row.budget || 0) / peak) * 100}%`;
+    const actual = document.createElement('span');
+    const over = (row.actual || 0) > (row.earned || 0) + 0.005;
+    actual.className = `budget-actual${over ? ' over' : ''}`;
+    actual.style.width = `${Math.max(0.5, ((row.actual || 0) / peak) * 100)}%`;
+    const earned = document.createElement('span');
+    earned.className = 'budget-earned';
+    earned.style.left = `${((row.earned || 0) / peak) * 100}%`;
+    track.append(budget, actual, earned);
+    hoverable(track, `<b>${escape(row.title || row.label)}</b><br>`
+      + `Budget ${(row.budget || 0).toFixed(2)} ${unit}<br>`
+      + `Booked ${(row.actual || 0).toFixed(2)} ${unit}<br>`
+      + `Earned ${(row.earned || 0).toFixed(2)} ${unit}`);
+    const value = document.createElement('span');
+    value.className = 'budget-value';
+    value.textContent = row.budget
+      ? `${Math.round(((row.actual || 0) / row.budget) * 100)}% spent` : '—';
+    line.append(name, track, value);
+    box.append(line);
+  }
+  const key = legend([
+    { color: 'var(--surface-2)', label: 'budget' },
+    { color: 'var(--series-1)', label: 'booked, at or under earned' },
+    { color: 'var(--series-2)', label: 'booked, past earned' },
+  ]);
+  const tick = document.createElement('span');
+  tick.className = 'legend-item';
+  const mark = document.createElement('span');
+  mark.className = 'swatch swatch-tick';
+  tick.append(mark, document.createTextNode('earned'));
+  key.append(tick);
+  return figure(title, note, box, key);
 }
 
 /* --------------------------------------------------------- score bars */
@@ -338,4 +630,7 @@ function escape(text) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-window.charts = { donut, groupedBars, stackedColumns, scoreBars, legend, figure, SERIES };
+window.charts = {
+  donut, groupedBars, stackedColumns, scoreBars, sparkline, budgetBars, formation,
+  legend, figure, escape, SERIES,
+};

@@ -54,7 +54,7 @@ def colleague(site: Client, mounted, username="osama", programs=("pm", "workload
 
 def test_the_front_door_offers_workload(signed_in):
     page = text(signed_in.get("/"))
-    assert "Open Workload" in page
+    assert "Open Selecao+" in page
     assert 'href="/workload/"' in page
 
 
@@ -72,7 +72,7 @@ def test_a_stranger_is_sent_to_sign_in_and_back(site):
 def test_an_api_call_without_a_session_is_refused(site):
     answer = site.get("/workload/api/units")
     assert answer.status_code == 401
-    assert answer.json["error"] == "Sign in to use Workload."
+    assert answer.json["error"] == "Sign in to use Selecao+."
     # Workload's own sign-in is not a way round the site's.
     assert site.post("/workload/api/auth/login",
                      json={"username": "a", "password": "b"}).status_code == 401
@@ -99,10 +99,14 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     page = site.get("/workload/")
     assert page.status_code == 200
     body = text(page)
-    assert "<title>Workload" in body
+    assert "<title>Selecao+" in body
     # Its files are asked for relative to /workload/, and it has no login page here.
     assert 'src="app.js"' in body and "login-form" not in body
     assert site.get("/workload/app.js").status_code == 200
+    # The logo is served from under the mount too.
+    assert site.get("/workload/logo.svg").status_code == 200
+    assert site.get("/workload/brand/selecao-mark.svg").status_code == 200
+    assert site.get("/workload/brand/selecao-icon-192.png").status_code == 200
     moved = site.get("/workload/login.html")
     assert moved.status_code == 303 and moved.headers["Location"] == "/workload/"
 
@@ -185,11 +189,11 @@ def test_access_is_given_to_somebody_who_signs_in_here(app, site, mounted):
 def test_an_account_without_the_program_is_turned_back(site, mounted):
     sign_in(site)
     nour = colleague(site, mounted, username="nour", programs=("pm",))
-    assert "Open Workload" not in text(nour.get("/"))
+    assert "Open Selecao+" not in text(nour.get("/"))
     assert nour.get("/workload/api/units").status_code == 403
     answer = nour.get("/workload/")
     assert answer.status_code == 302 and answer.headers["Location"] == "/?not=workload"
-    assert "has not been given Workload" in text(nour.get("/?not=workload"))
+    assert "has not been given Selecao+" in text(nour.get("/?not=workload"))
 
 
 def test_units_from_before_the_move_come_across(site, tmp_path):

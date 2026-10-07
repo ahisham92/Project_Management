@@ -1,4 +1,7 @@
-"""Workload, the unit's workload and profit plan, mounted in front of ``/workload``.
+"""Selecao+, the unit's workload and profit plan, mounted in front of ``/workload``.
+
+Selecao+ is what the Workload application is called now; its package, its
+address and its files keep the old name, so "Workload" below is the same thing.
 
 Workload is the front end of the Workload & Profit Plan workbook: timesheets
 in, projects and their deliverables, tasks, the team, and the reports built on
@@ -48,7 +51,7 @@ from .db import connect, data_dir
 from .programs import account_in, may_open
 
 MOUNT = "/workload"
-NAME = "Workload"
+NAME = "Selecao+"
 KEY = "workload"
 
 _state: dict[str, Any] = {}
@@ -128,7 +131,7 @@ def load(control: Flask) -> Callable | None:
         user = account_in(control, environ)
         if user is None:
             if path.startswith("/api/"):
-                message = "Sign in to use Workload."
+                message = "Sign in to use Selecao+."
                 body = json.dumps({"error": message, "errors": [message]}).encode()
                 start_response("401 Unauthorized", [("Content-Type", "application/json")])
                 return [body]
@@ -136,7 +139,7 @@ def load(control: Flask) -> Callable | None:
             return [b""]
         if not may_open(user, KEY):
             if path.startswith("/api/"):
-                message = "Your account has not been given Workload."
+                message = "Your account has not been given Selecao+."
                 body = json.dumps({"error": message, "errors": [message]}).encode()
                 start_response("403 Forbidden", [("Content-Type", "application/json")])
                 return [body]

@@ -5,6 +5,8 @@ venv/
 env/
 .pytest_cache/
 data/
+# The blank workbook Workload starts a new unit from is code, not data.
+!/workload_app/data/
 *.sqlite
 *.sqlite-*
 secret_key

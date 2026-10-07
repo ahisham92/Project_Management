@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workload</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%228%22%20fill=%22%231c5fa8%22/%3E%3Crect%20x=%226%22%20y=%229.2%22%20width=%2220%22%20height=%221.6%22%20rx=%22.8%22%20fill=%22%23fff%22%20opacity=%22.55%22/%3E%3Crect%20x=%228%22%20y=%2216%22%20width=%224%22%20height=%228%22%20rx=%221.4%22%20fill=%22%23fff%22/%3E%3Crect%20x=%2214%22%20y=%2210%22%20width=%224%22%20height=%2214%22%20rx=%221.4%22%20fill=%22%23fff%22/%3E%3Crect%20x=%2220%22%20y=%2213%22%20width=%224%22%20height=%2211%22%20rx=%221.4%22%20fill=%22%23fff%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ===================================================== unit chooser -->
+<section id="chooser" class="chooser" hidden>
+  <div class="chooser-card">
+    <header class="chooser-head">
+      <span class="mark mark-lg" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect class="mark-bg" width="32" height="32" rx="8"/><rect class="mark-rule" x="6" y="9.2" width="20" height="1.6" rx=".8"/><rect class="mark-bar" x="8" y="16" width="4" height="8" rx="1.4"/><rect class="mark-bar" x="14" y="10" width="4" height="14" rx="1.4"/><rect class="mark-bar" x="20" y="13" width="4" height="11" rx="1.4"/></svg></span>
+      <div>
+        <h1>Workload</h1>
+        <p class="muted">Workload, efficiency and delivery planning</p>
+      </div>
+      <div class="chooser-account">
+        <a class="btn btn-sm btn-ghost site-home" href="/" hidden></a>
+        <span id="chooser-user" class="muted"></span>
+        <button class="btn btn-sm" id="btn-account-chooser" type="button">Account</button>
+        <button class="btn btn-sm" id="btn-signout-chooser" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <div id="unit-list"></div>
+
+    <div class="chooser-actions">
+      <div class="add-unit-body">
+        <p class="muted">
+          A unit is a name and the workbook behind it. Start a new one from the
+          blank template — the full model with no data in it — or bring a
+          Workload workbook you already have. Either way the file is yours
+          alone, and you can take a copy back out at any time.
+        </p>
+        <div class="row">
+          <label class="field grow">
+            <span>Unit name</span>
+            <input type="text" id="unit-name" placeholder="Marine Structures" spellcheck="false">
+          </label>
+          <button class="btn btn-primary" id="btn-new-unit" type="button">Start blank</button>
+        </div>
+        <div class="row">
+          <label class="field grow">
+            <span>Or upload a Workload workbook (.xlsx)</span>
+            <input type="file" id="unit-file" accept=".xlsx,.xlsm">
+          </label>
+          <button class="btn" id="btn-upload-unit" type="button">Upload</button>
+        </div>
+        <div id="chooser-error"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ shell -->
+<header class="topbar" id="topbar" hidden>
+  <div class="brand">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect class="mark-bg" width="32" height="32" rx="8"/><rect class="mark-rule" x="6" y="9.2" width="20" height="1.6" rx=".8"/><rect class="mark-bar" x="8" y="16" width="4" height="8" rx="1.4"/><rect class="mark-bar" x="14" y="10" width="4" height="14" rx="1.4"/><rect class="mark-bar" x="20" y="13" width="4" height="11" rx="1.4"/></svg></span>
+    <div class="brand-text">
+      <h1 id="unit-title">Workload</h1>
+      <p id="workbook-path" class="muted"></p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn btn-sm btn-ghost site-home" href="/" hidden></a>
+    <span id="save-state" class="pill pill-ok">saved</span>
+    <button id="btn-save" class="btn btn-ghost btn-sm" type="button">Save</button>
+    <button id="btn-reload" class="btn btn-ghost btn-sm" type="button">Reload</button>
+    <button id="btn-change" class="btn btn-sm" type="button">Switch unit</button>
+    <button id="btn-account" class="btn btn-sm" type="button">Account</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist" hidden>
+  <button class="tab is-active" data-view="overview" role="tab">Overview</button>
+  <button class="tab" data-view="timesheets" role="tab">Timesheets</button>
+  <button class="tab" data-view="projects" role="tab">Projects</button>
+  <button class="tab" data-view="reports" role="tab">Reports</button>
+  <button class="tab" data-view="tasks" role="tab">Tasks</button>
+  <button class="tab" data-view="team" role="tab">Team</button>
+  <button class="tab" data-view="reference" role="tab">Reference</button>
+  <button class="tab" data-view="resourcing" role="tab">Resourcing</button>
+  <button class="tab" data-view="admin" id="tab-admin" role="tab" hidden>Admin</button>
+</nav>
+
+<main id="main" hidden>
+
+  <!-- ------------------------------------------------------- overview -->
+  <section class="view is-active" id="view-overview">
+    <div class="view-head">
+      <div>
+        <h2>Portfolio and team</h2>
+        <p class="muted">Everything on this page is for the year chosen on the right — the budget in hand, what has been booked against it, and how the team is tracking.</p>
+      </div>
+      <label class="field inline">
+        <span>Workload year</span>
+        <select id="overview-year"></select>
+      </label>
+    </div>
+    <div id="overview-cards" class="cards"></div>
+    <div id="hero-strip"></div>
+    <div class="split">
+      <section class="panel">
+        <h3>Workload by engineer</h3>
+        <p class="muted">Effort in man-months against the capacity each person has in this period.</p>
+        <div id="engineer-cards"></div>
+      </section>
+      <section class="panel">
+        <h3>Data check</h3>
+        <div id="data-check"></div>
+      </section>
+    </div>
+    <section class="panel">
+      <h3>Things to fix</h3>
+      <div id="issues"></div>
+    </section>
+    <details class="panel" id="definitions-panel">
+      <summary><b>What these measures mean</b></summary>
+      <div id="definitions-body"></div>
+    </details>
+  </section>
+
+  <!-- ----------------------------------------------------- timesheets -->
+  <section class="view" id="view-timesheets">
+    <div class="view-head"><h2>Monthly timesheets</h2></div>
+    <div id="ts-capacity"></div>
+    <div id="ts-cards" class="cards cards-3"></div>
+    <section class="panel">
+      <h3>Import an export</h3>
+      <p class="muted">
+        Columns are matched to the sheet by heading name, so the order of the export
+        does not matter and its own header rows are skipped.
+      </p>
+      <div class="row">
+        <label class="field">
+          <span>Engineer</span>
+          <select id="ts-engineer"></select>
+        </label>
+        <label class="field grow">
+          <span>Export file (.xlsx or .csv)</span>
+          <input type="file" id="ts-file" accept=".xlsx,.xlsm,.csv,.tsv,.txt">
+        </label>
+        <button class="btn btn-primary" id="btn-ts-check" type="button">Check file</button>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="ts-registered" checked>
+        <span>Only rows for projects in the register
+          <span class="hint">— leaves out work the workbook has no project for, which is what keeps the sheet inside its row limit</span>
+        </span>
+      </label>
+      <div id="ts-result"></div>
+    </section>
+  </section>
+
+  <!-- ------------------------------------------------------- projects -->
+  <section class="view" id="view-projects">
+    <div id="projects-list">
+      <div class="view-head">
+        <h2>Projects</h2>
+        <button class="btn btn-primary" id="btn-new-project" type="button">Add project</button>
+      </div>
+      <div class="row">
+        <label class="field">
+          <span>Project</span>
+          <select id="project-filter"></select>
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select id="project-status-filter"></select>
+        </label>
+        <input type="search" id="project-search" class="grow" placeholder="Filter by number or name…">
+      </div>
+      <div class="table-wrap"><table id="projects-table"></table></div>
+    </div>
+
+    <div id="project-detail" hidden></div>
+  </section>
+
+  <!-- -------------------------------------------------------- reports -->
+  <section class="view" id="view-reports">
+    <div class="report-head no-print">
+      <div>
+        <h2>Reports</h2>
+        <p class="muted">The workbook's report sheets, computed here. Every figure is worked out once and shared between the views.</p>
+      </div>
+      <div class="row" style="margin:0">
+        <label class="field">
+          <span>Period</span>
+          <select id="report-period">
+            <option value="year">Full year</option>
+            <option value="quarter">Quarter</option>
+            <option value="all">All time</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Year</span>
+          <select id="report-year"></select>
+        </label>
+        <label class="field" id="report-quarter-field">
+          <span>Quarter</span>
+          <select id="report-quarter"></select>
+        </label>
+        <button class="btn btn-primary" id="btn-print" type="button">Print / Save as PDF</button>
+      </div>
+    </div>
+
+    <div class="subtabs no-print" id="report-subtabs"></div>
+    <div id="report-header" class="print-only"></div>
+    <div id="report-body"></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- tasks -->
+  <section class="view" id="view-tasks">
+    <div class="view-head">
+      <div>
+        <h2>Task management</h2>
+        <p class="muted">The work in front of the team, who it belongs to, and whether it fits in the days available. This tab stands on its own — nothing here touches the timesheet, a project's progress or anyone's CPI.</p>
+      </div>
+      <div class="row-actions">
+        <button class="btn" id="btn-task-settings" type="button">Working day…</button>
+        <button class="btn" id="btn-task-submissions" type="button">Submission tasks…</button>
+        <button class="btn" id="btn-task-meeting" type="button">Weekly meeting…</button>
+        <button class="btn btn-primary" id="btn-add-task" type="button">Add task</button>
+      </div>
+    </div>
+    <div id="task-load"></div>
+    <section class="panel">
+      <div class="row task-filters">
+        <label class="field">
+          <span>Engineer</span>
+          <select id="task-engineer"></select>
+        </label>
+        <label class="field">
+          <span>Project</span>
+          <select id="task-project"></select>
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select id="task-status-filter"></select>
+        </label>
+        <label class="field grow">
+          <span>Search</span>
+          <input type="text" id="task-search" placeholder="Filter by task, definition or deliverable…" spellcheck="false">
+        </label>
+        <label class="check" title="Finished tasks are out of the way until you ask for them">
+          <input type="checkbox" id="task-show-done">
+          <span>Show done</span>
+        </label>
+      </div>
+      <div id="task-body"></div>
+    </section>
+  </section>
+
+  <!-- ----------------------------------------------------------- team -->
+  <section class="view" id="view-team">
+    <div class="view-head">
+      <div>
+        <h2>Team</h2>
+        <p class="muted">Who this unit's engineers are. Everything follows from here — the timesheet sheets, the split on each deliverable, capacity and the scorecard.</p>
+      </div>
+      <button class="btn btn-primary" id="btn-add-engineer" type="button">Add engineer</button>
+    </div>
+    <div id="team-body"></div>
+  </section>
+
+  <!-- ------------------------------------------------------ reference -->
+  <section class="view" id="view-reference">
+    <div class="view-head">
+      <div>
+        <h2>Reference tables</h2>
+        <p class="muted">The project types and the rules of credit every deliverable is measured against.</p>
+      </div>
+      <div id="reference-lock"></div>
+    </div>
+    <div id="reference-body"></div>
+  </section>
+
+  <!-- ----------------------------------------------------- resourcing -->
+  <section class="view" id="view-resourcing">
+    <div class="view-head">
+      <div>
+        <h2>Resourcing</h2>
+        <p class="muted">Who is in which team, and where the work is not where the people are.</p>
+      </div>
+      <div class="row-actions">
+        <label class="field inline">
+          <span>Year</span>
+          <select id="resourcing-year"></select>
+        </label>
+        <button class="btn" id="btn-add-team" type="button">Add team</button>
+      </div>
+    </div>
+    <div class="subtabs" id="resourcing-subtabs"></div>
+    <div id="resourcing-body"></div>
+    <div id="map-body" hidden></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- admin -->
+  <section class="view" id="view-admin">
+    <div class="view-head">
+      <div>
+        <h2>Accounts</h2>
+        <p class="muted">Everyone who can sign in. Only an administrator sees this tab.</p>
+      </div>
+      <div class="row-actions">
+        <button class="btn" id="btn-show-passwords" type="button">Show passwords</button>
+        <button class="btn btn-primary" id="btn-new-account" type="button">Add an account</button>
+      </div>
+    </div>
+    <div id="admin-body"></div>
+  </section>
+
+</main>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3 id="modal-title">Edit</h3>
+      <button class="btn btn-ghost" id="modal-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <form id="modal-form" class="modal-body"></form>
+    <div class="modal-foot">
+      <div id="modal-errors" class="errors"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="modal-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="modal-submit" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts"></div>
+<script src="charts.js"></script>
+<script src="map.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

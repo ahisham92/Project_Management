@@ -119,7 +119,7 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert [u["name"] for u in site.get("/workload/api/units").json["units"]] \
         == ["Marine Structures"]
     # Beside the database, not inside the repository.
-    assert list((tmp_path / "workload" / "users").glob("*/*.xlsx"))
+    assert list((tmp_path / "workload" / "users").glob("*/*.db"))
 
 
 def test_a_unit_is_its_owners_alone(site, mounted):

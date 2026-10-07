@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101B2D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Selecao+">
 <title>Selecao+</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/selecao-apple-touch-180.png">
+<link rel="manifest" href="manifest.json" crossorigin="use-credentials">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -31,24 +38,21 @@
     <div class="chooser-actions">
       <div class="add-unit-body">
         <p class="muted">
-          A unit is a name and the workbook behind it. Start a new one from the
-          blank template — the full model with no data in it — or bring a
-          Workload workbook you already have. Either way the file is yours
-          alone, and you can take a copy back out at any time.
+          A unit starts from your team's timesheet exports — nothing else. Choose
+          everyone's export at once: the people, the projects, their phases and
+          who worked on what are all read out of them. Leave the name empty to
+          use the unit the exports belong to.
         </p>
         <div class="row">
-          <label class="field grow">
-            <span>Unit name</span>
+          <label class="field">
+            <span>Unit name (optional)</span>
             <input type="text" id="unit-name" placeholder="Marine Structures" spellcheck="false">
           </label>
-          <button class="btn btn-primary" id="btn-new-unit" type="button">Start blank</button>
-        </div>
-        <div class="row">
           <label class="field grow">
-            <span>Or upload a Workload workbook (.xlsx)</span>
-            <input type="file" id="unit-file" accept=".xlsx,.xlsm">
+            <span>Timesheet exports (.xlsx or .csv, one or many)</span>
+            <input type="file" id="unit-timesheets" accept=".xlsx,.xlsm,.csv,.tsv,.txt" multiple>
           </label>
-          <button class="btn" id="btn-upload-unit" type="button">Upload</button>
+          <button class="btn btn-primary" id="btn-new-unit" type="button">Create from timesheets</button>
         </div>
         <div id="chooser-error"></div>
       </div>
@@ -70,8 +74,6 @@
   <div class="topbar-actions">
     <a class="btn btn-sm btn-ghost site-home" href="/" hidden></a>
     <span id="save-state" class="pill pill-ok">saved</span>
-    <button id="btn-save" class="btn btn-ghost btn-sm" type="button">Save</button>
-    <button id="btn-reload" class="btn btn-ghost btn-sm" type="button">Reload</button>
     <button id="btn-change" class="btn btn-sm" type="button">Switch unit</button>
     <button id="btn-account" class="btn btn-sm" type="button">Account</button>
   </div>
@@ -79,6 +81,8 @@
 
 <nav class="tabs" id="tabs" role="tablist" hidden>
   <button class="tab is-active" data-view="overview" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Overview</span></button>
+  <button class="tab" data-view="planner" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h7"/></svg><span>Planner</span></button>
+  <button class="tab" data-view="checkins" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/><path d="m15.5 14.5 2 2 3.5-4"/></svg><span>Check-ins</span></button>
   <button class="tab" data-view="timesheets" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Timesheets</span></button>
   <button class="tab" data-view="projects" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Projects</span></button>
   <button class="tab" data-view="reports" role="tab"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Reports</span></button>
@@ -103,9 +107,11 @@
         <select id="overview-year"></select>
       </label>
     </div>
+    <section class="panel ci-summary" id="overview-checkins" hidden></section>
     <section class="panel formation-panel" id="formation" hidden></section>
     <div id="overview-cards" class="cards cards-4"></div>
     <div id="hero-strip"></div>
+    <section class="panel" id="overview-needs" hidden></section>
     <section class="panel" id="overview-trend" hidden></section>
     <section class="panel">
       <h3>Workload by engineer</h3>
@@ -130,32 +136,59 @@
 
   <!-- ----------------------------------------------------- timesheets -->
   <section class="view" id="view-timesheets">
-    <div class="view-head"><h2>Monthly timesheets</h2></div>
+    <div class="view-head">
+      <div>
+        <h2>Timesheets</h2>
+        <p class="muted">Everyone's exports, month by month. They are the only thing the app needs: every other tab is worked out from them.</p>
+      </div>
+    </div>
     <div id="ts-cards" class="cards cards-3"></div>
     <section class="panel" id="ts-mix" hidden></section>
-    <section class="panel">
-      <h3>Import an export</h3>
+    <section class="panel" id="ts-nightly">
+      <h3>Every night, on its own</h3>
       <p class="muted">
-        Columns are matched to the sheet by heading name, so the order of the export
-        does not matter and its own header rows are skipped.
+        Each PC on the team asks BISpark for its own export once a day, as soon
+        as it is on the Dar network, signed in with its Windows login, and
+        leaves it in the team's shared folder. Every 6 hours, if anything in the
+        folder is new, your PC sends it here. Nothing is installed:
+        the kits use only what Windows already has.
       </p>
       <div class="row">
-        <label class="field">
-          <span>Engineer</span>
-          <select id="ts-engineer"></select>
-        </label>
         <label class="field grow">
-          <span>Export file (.xlsx or .csv)</span>
-          <input type="file" id="ts-file" accept=".xlsx,.xlsm,.csv,.tsv,.txt">
+          <span>1. The export request, copied from BISpark (F12 → Network → Export → right-click → Copy as PowerShell)</span>
+          <textarea id="nightly-capture" rows="3" placeholder="Paste it here"></textarea>
         </label>
-        <button class="btn btn-primary" id="btn-ts-check" type="button">Check file</button>
       </div>
-      <label class="check">
-        <input type="checkbox" id="ts-registered" checked>
-        <span>Only rows for projects in the register
-          <span class="hint">— leaves out work the workbook has no project for, which is what keeps the sheet inside its row limit</span>
-        </span>
-      </label>
+      <div class="row">
+        <label class="field grow">
+          <span>2. The team's shared folder</span>
+          <input id="nightly-folder" type="text" placeholder="\\server\share\Selecao">
+        </label>
+        <button class="btn" id="btn-nightly-save" type="button">Save</button>
+      </div>
+      <div id="ts-nightly-state"></div>
+      <div class="row">
+        <button class="btn btn-primary" id="btn-nightly-kit" type="button">3. Kit for my PC</button>
+        <button class="btn" id="btn-nightly-team" type="button">4. Kit for the team's PCs</button>
+        <button class="btn" id="btn-nightly-stop" type="button" hidden>Stop nightly imports</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h3>Import exports</h3>
+      <p class="muted">
+        Choose everyone's export together, or just the ones that changed. Each
+        row goes to whoever booked it, so there is nobody to pick. Somebody new
+        joins the team, and a job number with no project becomes one — named by
+        its number, with its phases as deliverables — for you to confirm on
+        Projects.
+      </p>
+      <div class="row">
+        <label class="field grow">
+          <span>Export files (.xlsx or .csv)</span>
+          <input type="file" id="ts-file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" multiple>
+        </label>
+        <button class="btn btn-primary" id="btn-ts-check" type="button">Check files</button>
+      </div>
       <div id="ts-result"></div>
     </section>
   </section>
@@ -164,8 +197,14 @@
   <section class="view" id="view-projects">
     <div id="projects-list">
       <div class="view-head">
-        <h2>Projects</h2>
-        <button class="btn btn-primary" id="btn-new-project" type="button">Add project</button>
+        <div>
+          <h2>Projects</h2>
+          <p class="muted">Every job number the timesheets turn up, its budget, how far along it is and what it has earned.</p>
+        </div>
+        <div class="view-actions">
+          <button class="btn" id="btn-drawing-list" type="button">Drawing list</button>
+          <button class="btn btn-primary" id="btn-new-project" type="button">Add project</button>
+        </div>
       </div>
       <div id="projects-summary" class="summary-grid"></div>
       <div class="row">
@@ -190,7 +229,7 @@
     <div class="report-head no-print">
       <div>
         <h2>Reports</h2>
-        <p class="muted">The workbook's report sheets, computed here. Every figure is worked out once and shared between the views.</p>
+        <p class="muted">Every figure is worked out once from the unit's own data and shared between the views.</p>
       </div>
       <div class="row" style="margin:0">
         <label class="field">
@@ -265,7 +304,7 @@
     <div class="view-head">
       <div>
         <h2>Team</h2>
-        <p class="muted">Who this unit's engineers are. Everything follows from here — the timesheet sheets, the split on each deliverable, capacity and the scorecard.</p>
+        <p class="muted">Who this unit's engineers are. Everything follows from here — the split on each deliverable, capacity and the scorecard.</p>
       </div>
       <button class="btn btn-primary" id="btn-add-engineer" type="button">Add engineer</button>
     </div>
@@ -285,6 +324,42 @@
   </section>
 
   <!-- ----------------------------------------------------- resourcing -->
+  <!-- -------------------------------------------------------- planner -->
+  <section class="view" id="view-planner">
+    <div class="view-head">
+      <div>
+        <h2>Planner</h2>
+        <p class="muted">Everybody's day, filled in from the timesheets, the submissions plan and what comes in. The only thing to type is a request.</p>
+      </div>
+      <div class="row-actions">
+        <label class="field inline" hidden>
+          <span>Team</span>
+          <select id="planner-team"></select>
+        </label>
+      </div>
+    </div>
+    <div class="subtabs" id="planner-subtabs"></div>
+    <div id="planner-body"></div>
+  </section>
+
+  <!-- ------------------------------------------------------- check-ins -->
+  <section class="view" id="view-checkins">
+    <div class="view-head">
+      <div>
+        <h2>Check-ins</h2>
+        <p class="muted">Who has free hours, who has been overloaded and needs a lighter week, who is fresh and can take more, and what to ask each person. Nothing to fill in: it all comes from the timesheets, the tasks and the calendar.</p>
+      </div>
+      <div class="row-actions">
+        <label class="field inline" hidden>
+          <span>Team</span>
+          <select id="checkins-team"></select>
+        </label>
+        <button class="btn" id="checkins-refresh" type="button">Refresh</button>
+      </div>
+    </div>
+    <div id="checkins-body"><div class="empty">Working it out…</div></div>
+  </section>
+
   <section class="view" id="view-resourcing">
     <div class="view-head">
       <div>
@@ -342,6 +417,9 @@
 <script src="charts.js"></script>
 <script src="map.js"></script>
 <script src="app.js"></script>
+<script src="planner.js"></script>
+<script src="checkins.js"></script>
 <script src="tables.js"></script>
+<script src="pocket.js"></script>
 </body>
 </html>

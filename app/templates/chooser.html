@@ -18,7 +18,7 @@
   <div class="flashes"><div class="flash error">Your account has not been given Triton. Ask the administrator.</div></div>
 {% endif %}
 {% if request.args.get('not') == 'workload' %}
-  <div class="flashes"><div class="flash error">Your account has not been given Workload. Ask the administrator.</div></div>
+  <div class="flashes"><div class="flash error">Your account has not been given Selecao+. Ask the administrator.</div></div>
 {% endif %}
 {% if not my_programs %}
   <div class="card"><div class="card-body">
@@ -94,14 +94,14 @@
 
   {% if 'workload' in my_programs %}
   <a class="door{% if not workload['ready'] %} door-shut{% endif %}" href="{{ workload['href'] }}">
-    <span class="door-mark door-mark-workload" aria-hidden="true">WL</span>
-    <span class="door-name">Workload{% if not workload['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-mark door-mark-workload" aria-hidden="true"><svg viewBox="0 0 64 64" width="42" height="42" focusable="false"><rect width="64" height="64" rx="14" fill="#101B2D"/><circle cx="12.5" cy="50" r="3.8" fill="#fff"/><circle cx="25.5" cy="50" r="3.8" fill="#fff"/><circle cx="38.5" cy="50" r="3.8" fill="#fff"/><circle cx="51.5" cy="50" r="3.8" fill="#fff"/><circle cx="19" cy="38.5" r="3.8" fill="#fff"/><circle cx="32" cy="38.5" r="3.8" fill="#fff"/><circle cx="45" cy="38.5" r="3.8" fill="#fff"/><circle cx="25.5" cy="27" r="3.8" fill="#fff"/><circle cx="38.5" cy="27" r="3.8" fill="#fff"/><polygon points="0,-7 1.65,-2.27 6.66,-2.16 2.66,0.87 4.11,5.66 0,2.8 -4.11,5.66 -2.66,0.87 -6.66,-2.16 -1.65,-2.27" transform="translate(32 14.5) scale(1.05)" fill="#FF5A1F"/></svg></span>
+    <span class="door-name">Selecao<span class="door-plus">+</span><span class="door-tagline">Workload</span>{% if not workload['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
     <span class="door-what">
       The unit's workload and profit plan: timesheets in, each project's budget against what it
       has earned, who is carrying what, and the tasks ahead. A unit is its manager's alone —
       a colleague sees their own figures only once they are given access from its Team tab.
     </span>
-    <span class="door-go">Open Workload →</span>
+    <span class="door-go">Open Selecao+ →</span>
   </a>
   {% endif %}
 </div>

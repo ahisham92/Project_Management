@@ -17,7 +17,7 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Comment Response Sheet** | Answering a client's comments on a submission: every comment, who it is for, what was done about it, whether it is closed. | `/crs` |
 | **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
 | **MarineTwin** | The digital twin of a structure after handover: its Revit model in 3D, its sensors, and its condition judged against the design Triton did for it. | `/marinetwin` |
-| **Workload** | The unit's workload and profit plan: timesheets in, each project's budget against what it has earned, who is carrying what. | `/workload` |
+| **Selecao+** | The unit's workload and profit plan (the app that was called Workload): timesheets in, each project's budget against what it has earned, who is carrying what. | `/workload` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -1794,7 +1794,11 @@ then **Web** tab → **Reload**. Nothing changes in the WSGI file.
 - **If it will not start** — a requirement missing, most likely — the rest of the site keeps
   serving, the Triton door is marked *not installed*, and `/triton/` says what went wrong.
 
-### Workload
+### Selecao+ (Workload)
+
+Selecao+ is the sixth door on the front page, and the name the Workload application goes by
+now; its logo is in `workload_app/static/brand/`. Its address, its folder and its files keep the
+old name, so "Workload" below means the same application.
 
 Workload is the sixth door on the front page. It is the front end of the Workload & Profit Plan
 workbook — timesheets in, projects and their deliverables, tasks, the team and the reports — and
@@ -1805,7 +1809,7 @@ it used to be a website of its own with a sign-in of its own. It is now mounted 
   never shown, and nobody needs a second password. An account is tied to the person (the
   account's id), not to the email or username they type, so correcting an address in **Admin**
   loses nobody their units.
-- **Who sees it.** Tick **Workload** for an account in **Admin**, as for any other program. An
+- **Who sees it.** Tick **Selecao+ (workload)** for an account in **Admin**, as for any other program. An
   account without it does not see the door and is refused by address too.
 - **A unit is its owner's alone.** Somebody who opens Workload for the first time has nothing
   in it and sees nobody else's units — not on a list, and not by address. To let a colleague

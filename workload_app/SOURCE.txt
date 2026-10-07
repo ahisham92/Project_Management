@@ -1,2 +1,2 @@
-Copied from https://github.com/ahisham92/Workload (workload_app) at commit c9779ee.
+Copied from https://github.com/ahisham92/Workload (workload_app) at commit e5a3da2.
 Do not edit here: change Workload in its own repository and copy it again.

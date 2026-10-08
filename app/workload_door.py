@@ -57,11 +57,10 @@ KEY = "workload"
 _state: dict[str, Any] = {}
 
 
-# The only Workload calls let in without an AHM sign-in: each carries a key in
-# its body that Workload checks, and neither can read anything back.
+# The only Workload call let in without an AHM sign-in: it carries a key in its
+# body that Workload checks, and it cannot read anything back.
 KEYED = frozenset({
     ("POST", "/api/nightly/timesheets"),
-    ("POST", "/api/inbox/email"),
 })
 
 

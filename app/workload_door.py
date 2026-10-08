@@ -57,6 +57,14 @@ KEY = "workload"
 _state: dict[str, Any] = {}
 
 
+# The only Workload calls let in without an AHM sign-in: each carries a key in
+# its body that Workload checks, and neither can read anything back.
+KEYED = frozenset({
+    ("POST", "/api/nightly/timesheets"),
+    ("POST", "/api/inbox/email"),
+})
+
+
 def data_folder() -> Path:
     """Where Workload keeps its accounts and every unit's workbook."""
     return Path(os.environ.get("WORKLOAD_DATA_DIR") or data_dir() / "workload")
@@ -128,6 +136,12 @@ def load(control: Flask) -> Callable | None:
             # /workload without the slash: its pages ask for their files relative to it.
             start_response("301 Moved Permanently", [("Location", mount + "/")])
             return [b""]
+        if (environ.get("REQUEST_METHOD", "GET"), path) in KEYED:
+            # Sent by a machine, not a browser: a PC's nightly export, or an
+            # Outlook flow's email. No AHM session comes with it; the key in its
+            # body says whose unit it is, and Workload checks that key itself.
+            environ.pop(module.SITE_KEY, None)
+            return workload(environ, start_response)
         user = account_in(control, environ)
         if user is None:
             if path.startswith("/api/"):

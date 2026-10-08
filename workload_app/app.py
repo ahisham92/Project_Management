@@ -37,12 +37,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import (accounts as accounts_module, budgets, busy_calendar,
-               export as export_module,
+               export as export_module, management,
                member as member_view, nightly, notify, storage, webpush,
                weekly as weekly_module)
 from .accounts import (AccountError, Accounts, ROLE_MANAGER,
                        ROLE_MEMBER)
 from .library import NotAWorkbook
+from .people import DEFAULT_GRADE, GRADE_KEYS
 from .service import (ApiError, WorkloadService, _decode, _flag,
                       _int, _stage, _today as service_today, _year)
 from .timesheets import ImportError_
@@ -431,6 +432,9 @@ class WorkloadApp:
             # They sign in with something else now. Same person, same units.
             self.accounts.set_site_login(user["id"], login)
             user["site_login"] = login
+        email = _site_email(site)
+        if email and not user["is_admin"]:
+            user = self._link_by_email(user, email)
         if user["role"] == ROLE_MEMBER and not self.accounts.memberships(user["id"]):
             # Every unit they were shown has been taken away again. Rather
             # than leave them at a page with nothing on it for good, they are
@@ -439,6 +443,37 @@ class WorkloadApp:
             self._services.pop(user["id"], None)
             user = self.accounts.user(user["id"])
         return user
+
+    def _link_by_email(self, user: Dict[str, Any], email: str) -> Dict[str, Any]:
+        """Link somebody to the team row a manager wrote their email on.
+
+        Only a row nobody else has been given is taken, and never in a unit
+        the person runs themselves. Somebody who runs units of their own stays
+        a manager: an account cannot be both.
+        """
+        try:
+            rows = self.accounts.rows_for_email(email, user["id"])
+        except AccountError:
+            return user
+        if not rows or self.accounts.units(user["id"]):
+            return user
+        linked = False
+        for row in rows:
+            taken = any(m["engineer"] == row["engineer"] and m["user_id"] != user["id"]
+                        for m in self.accounts.unit_members(row["unit_id"]))
+            if taken:
+                continue                   # somebody else is that person already
+            if user["role"] != ROLE_MEMBER:
+                self._services.pop(user["id"], None)
+                self.accounts.set_role(user["id"], ROLE_MEMBER)
+                user = self.accounts.user(user["id"])
+            self.accounts.grant(user_id=user["id"], unit_id=row["unit_id"],
+                                engineer=row["engineer"],
+                                granted_by=row["set_by"] or row["owner_id"])
+            self.accounts.mark_email_linked(row["unit_id"], row["engineer"],
+                                            user["id"])
+            linked = True
+        return self.accounts.user(user["id"]) if linked else user
 
     def _with_cookies(self, response: Response, ctx: Context) -> Response:
         if ctx.set_cookie:
@@ -493,6 +528,7 @@ class WorkloadApp:
                 "label": ctx.site.get("label") or "Home",
                 "logout": ctx.site.get("logout") or "",
                 "login": (ctx.user or {}).get("site_login"),
+                "admin": _site_admin(ctx.site),
             }
         return answer
 
@@ -804,25 +840,43 @@ class WorkloadApp:
         current = (ctx.service.unit or {}).get("id") if ctx.service else None
         pairs, missing = [], []
         hours = 8.5
-        for unit in self.accounts.units(user_id):
+        everyone = ctx.site is not None and _site_admin(ctx.site)
+        units = self.accounts.all_units() if everyone else self.accounts.units(user_id)
+        for unit in units:
+            theirs = unit["user_id"] != user_id
+            name = f"{unit['name']} · {unit['owner_name']}" if theirs else unit["name"]
             if unit["id"] == current and ctx.service._wb is not None:
                 view = ctx.service.checkins()
             else:
                 service = WorkloadService(autosave=self.autosave)
                 try:
-                    self._open(service, user_id, unit["id"])
+                    if theirs:
+                        # Another manager's unit, looked at and never changed.
+                        self._open_to_read(service, unit)
+                    else:
+                        self._open(service, user_id, unit["id"])
                     view = service.checkins()
                 except ApiError:
-                    missing.append(unit["name"])
+                    missing.append(name)
                     continue
                 finally:
                     service.close()
             hours = view.get("hours_per_day") or hours
-            pairs.append((across.unit_summary(unit["name"], unit["id"], view), view))
+            pairs.append((across.unit_summary(name, unit["id"], view), view))
         result = across.combine(pairs, hours_per_day=hours)
         result["missing"] = missing
         result["current"] = current
+        result["everyone"] = everyone
         return result
+
+    def _open_to_read(self, service: WorkloadService, unit: Dict[str, Any]) -> None:
+        path = storage.unit_path(self.data_dir, unit["user_id"], unit["filename"])
+        if not path.is_file():
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           f"The data for {unit['name']} is missing.")
+        path = self._unit_file(unit["user_id"], unit["id"], unit["filename"])
+        service.open(path, unit={"id": unit["id"], "name": unit["name"]},
+                     read_only=True)
 
     def close_unit(self, ctx: Context, query, body) -> Dict[str, Any]:
         self.accounts.set_open_unit(ctx.user["id"], None)
@@ -915,17 +969,52 @@ class WorkloadApp:
         """
         granted, row, service = self._member_unit(
             ctx, (query.get("unit") or [None])[0])
+        person = self._person_shown(row, service, query)
 
         kind = (query.get("period") or ["year"])[0]
         data = member_view.build(
-            service.workbook, row["engineer"], kind=kind, year=_year(query),
+            service.workbook, person, kind=kind, year=_year(query),
             quarter=(query.get("quarter") or [None])[0],
             store=service._store)                      # noqa: SLF001 - same app
         data["unit"] = {"id": row["unit_id"], "name": row["unit_name"],
                         "manager": row.get("owner_name") or ""}
         data["units"] = [{"id": g["unit_id"], "name": g["unit_name"],
                           "engineer": g["engineer"]} for g in granted]
+        data["viewer"] = row["engineer"]
+        data["people"] = [row["engineer"]] + self._led_by(service, row["engineer"])
         return data
+
+    def _led_by(self, service: WorkloadService, engineer: str) -> List[str]:
+        """Who a member may look at besides themselves: the people they lead
+        (a team they lead, or the whole unit when their grade is Manager),
+        and of those only the ones graded below them. An engineer leads
+        nobody, so sees nobody else."""
+        store = service._store                          # noqa: SLF001 - same app
+        people = store.people()
+        grades = {p["name"]: p.get("grade") or DEFAULT_GRADE for p in people}
+
+        def rank(name: str) -> int:
+            grade = grades.get(name, DEFAULT_GRADE)
+            return GRADE_KEYS.index(grade) if grade in GRADE_KEYS else len(GRADE_KEYS)
+
+        known = set(service.workbook.engineer_names())
+        led = management.leaders(people, store.teams()).get(engineer, [])
+        return sorted(p["name"] for p in led
+                      if p["name"] in known and rank(p["name"]) > rank(engineer))
+
+    def _person_shown(self, row: Dict[str, Any], service: WorkloadService,
+                      query) -> str:
+        """Whose figures to show: the member's own, or, when they asked for
+        somebody, one of the people below them. Anybody else is Not Found,
+        the same answer as a name that is not there at all."""
+        wanted = " ".join(str((query.get("person") or [""])[0] or "").split())
+        if not wanted or wanted == row["engineer"]:
+            return row["engineer"]
+        if wanted in self._led_by(service, row["engineer"]):
+            return wanted
+        raise ApiError(HTTPStatus.NOT_FOUND,
+                       "You can see your own figures and those of the people "
+                       "you lead, and nobody else's.")
 
     def _member_unit(self, ctx: Context, wanted: Optional[str]):
         """The unit a member was given access to, open for reading, and the
@@ -963,11 +1052,11 @@ class WorkloadApp:
 
     def my_day(self, ctx: Context, query, body) -> Dict[str, Any]:
         row, service = self._mine(ctx, query, body)
-        return service.my_day(row["engineer"], query)
+        return service.my_day(self._person_shown(row, service, query), query)
 
     def my_timesheet(self, ctx: Context, query, body) -> Dict[str, Any]:
         row, service = self._mine(ctx, query, body)
-        return service.my_timesheet(row["engineer"], query)
+        return service.my_timesheet(self._person_shown(row, service, query), query)
 
     def mark_my_task(self, ctx: Context, query, body, task_id) -> Dict[str, Any]:
         row, service = self._mine(ctx, query, body)
@@ -995,6 +1084,14 @@ class WorkloadApp:
     def remove_my_time_off(self, ctx: Context, query, body, mark_id) -> Dict[str, Any]:
         row, service = self._mine(ctx, query, body)
         return service.remove_my_time_off(row["engineer"], mark_id)
+
+    def my_week(self, ctx: Context, query, body) -> Dict[str, Any]:
+        row, service = self._mine(ctx, query, body)
+        return service.my_week(row["engineer"], query)
+
+    def my_slip_reason(self, ctx: Context, query, body) -> Dict[str, Any]:
+        row, service = self._mine(ctx, query, body)
+        return service.set_slip_reason(body or {}, engineer=row["engineer"])
 
     #: Set to False by tests: the phones are told on a thread of its own.
     tell_in_background = True
@@ -1146,6 +1243,8 @@ class WorkloadApp:
             "unit": {"id": unit["id"], "name": unit["name"]},
             "members": self.accounts.unit_members(unit["id"]),
             "engineers": ctx.service.workbook.engineer_names(),
+            "emails": {name: row["email"] for name, row
+                       in self.accounts.member_emails(unit["id"]).items()},
         }
         if ctx.site is not None:
             mine = ctx.user.get("site_key")
@@ -1262,19 +1361,68 @@ class WorkloadApp:
         if self.accounts.membership(target, unit["id"]) is None:
             raise ApiError(HTTPStatus.NOT_FOUND,
                            "That account has no access to this unit.")
+        engineer = self.accounts.membership(target, unit["id"])["engineer"]
         self.accounts.revoke(user_id=target, unit_id=unit["id"])
         self._services.pop(target, None)
+        # Their email would only link them straight back in at their next
+        # sign-in, so it goes too.
+        linked = self.accounts.member_emails(unit["id"]).get(engineer)
+        if linked and linked["linked_user"] == target:
+            self.accounts.forget_member_email(unit["id"], engineer)
         return {"revoked": target}
+
+    def add_engineer(self, ctx: Context, query, body) -> Dict[str, Any]:
+        email = accounts_module.clean_email(body.get("email")) \
+            if "email" in body else None
+        unit = ctx.service.unit
+        if unit and email:
+            self._email_free(unit, email, None)
+        result = ctx.service.add_engineer(body)
+        if unit and email:
+            result["email"] = self.accounts.set_member_email(
+                unit["id"], result["engineer"], email,
+                set_by=ctx.user["id"])["email"]
+        return result
+
+    def _email_free(self, unit: Dict[str, Any], email: str,
+                    engineer: Optional[str]) -> None:
+        """Refuse, before anything is saved, an email somebody else has."""
+        taken = next((who for who, row
+                      in self.accounts.member_emails(unit["id"]).items()
+                      if row["email"] == email and who != engineer), None)
+        if taken:
+            raise ApiError(HTTPStatus.UNPROCESSABLE_ENTITY,
+                           f"{taken} already has that email in this unit. "
+                           f"Each person needs their own.")
+
+    def _save_email(self, ctx: Context, unit: Dict[str, Any], engineer: str,
+                    email: str) -> str:
+        saved = self.accounts.set_member_email(unit["id"], engineer, email,
+                                               set_by=ctx.user["id"])
+        gone = saved["unlinked"]
+        if gone is not None:
+            held = self.accounts.membership(gone, unit["id"])
+            if held and held["engineer"] == engineer:
+                # A corrected email never leaves the wrong person looking in.
+                self.accounts.revoke(user_id=gone, unit_id=unit["id"])
+                self._services.pop(gone, None)
+        return saved["email"]
 
     def update_engineer(self, ctx: Context, query, body, name) -> Dict[str, Any]:
         """Rename or re-rate an engineer, and keep any access in step."""
-        result = ctx.service.update_engineer(name, body)
+        email = accounts_module.clean_email(body.get("email")) \
+            if "email" in body else None
         unit = ctx.service.unit
+        if unit and email:
+            self._email_free(unit, email, name)
+        result = ctx.service.update_engineer(name, body)
         renamed = result.get("engineer") or name
         if unit and renamed != name:
             # Otherwise a rename would quietly cut that person off from their
             # own page, which looks exactly like a bug to them.
             self.accounts.rename_engineer_in_memberships(unit["id"], name, renamed)
+        if unit and email is not None:
+            result["email"] = self._save_email(ctx, unit, renamed, email)
         return result
 
     def remove_engineer(self, ctx: Context, query, body, name) -> Dict[str, Any]:
@@ -1288,6 +1436,7 @@ class WorkloadApp:
                                          unit_id=unit["id"])
                     self._services.pop(row["user_id"], None)
                     result.setdefault("access_revoked", []).append(row["username"])
+            self.accounts.forget_member_email(unit["id"], name)
         return result
 
     def _open_unit_or_refuse(self, ctx: Context) -> Dict[str, Any]:
@@ -1508,6 +1657,8 @@ class WorkloadApp:
             ("POST", "/api/me/marks/{}/undo", self.undo_my_mark, "user"),
             ("POST", "/api/me/off", self.add_my_time_off, "user"),
             ("POST", "/api/me/off/{}/remove", self.remove_my_time_off, "user"),
+            ("GET", "/api/me/week", self.my_week, "user"),
+            ("POST", "/api/me/week/reason", self.my_slip_reason, "user"),
             ("GET", "/api/me/meetings", self.my_meetings, "user"),
             ("POST", "/api/me/meetings", self.add_my_meeting, "user"),
             ("POST", "/api/me/meetings/{}/remove", self.remove_my_meeting, "user"),
@@ -1647,6 +1798,20 @@ class WorkloadApp:
             ("POST", "/api/calendars/refresh", self.refresh_calendars, "manager"),
             ("POST", "/api/requests",
              lambda ctx, q, b: ctx.service.add_request(b), "manager"),
+            ("POST", "/api/requests/preview",
+             lambda ctx, q, b: ctx.service.request_preview(b), "manager"),
+            ("GET", "/api/plan-review",
+             lambda ctx, q, b: ctx.service.plan_review(q), "manager"),
+            ("POST", "/api/plan-review/lock",
+             lambda ctx, q, b: ctx.service.lock_week(b), "manager"),
+            ("POST", "/api/plan-review/reason",
+             lambda ctx, q, b: ctx.service.set_slip_reason(b), "manager"),
+            ("GET", "/api/what-ifs", lambda ctx, q, b: ctx.service.what_ifs(), "manager"),
+            ("POST", "/api/what-ifs",
+             lambda ctx, q, b: ctx.service.save_what_if(b), "manager"),
+            ("DELETE", "/api/what-ifs/{}",
+             lambda ctx, q, b, what_if_id: ctx.service.remove_what_if(_int(what_if_id)),
+             "manager"),
             ("POST", "/api/requests/{}/done",
              lambda ctx, q, b, task_id: ctx.service.finish_request(_int(task_id)),
              "manager"),
@@ -1676,7 +1841,7 @@ class WorkloadApp:
              lambda ctx, q, b: ctx.service.team_me(ctx.user["id"]), "manager"),
             ("PUT", "/api/team/me",
              lambda ctx, q, b: ctx.service.set_team_me(ctx.user["id"], b), "manager"),
-            ("POST", "/api/team", lambda ctx, q, b: ctx.service.add_engineer(b), "manager"),
+            ("POST", "/api/team", self.add_engineer, "manager"),
             ("PUT", "/api/team/{}", self.update_engineer, "manager"),
             ("DELETE", "/api/team/{}", self.remove_engineer, "manager"),
             ("GET", "/api/reports",
@@ -1726,6 +1891,28 @@ class WorkloadApp:
             ("POST", "/api/save", lambda ctx, q, b: ctx.service.save(), "manager"),
             ("POST", "/api/reload", lambda ctx, q, b: ctx.service.reload(), "manager"),
         ]
+
+
+def _site_admin(site: Dict[str, Any]) -> bool:
+    """Whether the mounting site says this is its administrator, who sees
+    every manager's units side by side. Only the site can say so."""
+    return site.get("admin") is True
+
+
+def _site_email(site: Dict[str, Any]) -> str:
+    """The email the mounting site vouches for, or ''.
+
+    The site says so under "email"; one that predates that key signs people
+    in with their email as their login, and that is used instead.
+    """
+    for value in (site.get("email"), site.get("login")):
+        try:
+            email = accounts_module.clean_email(value)
+        except AccountError:
+            continue
+        if email:
+            return email
+    return ""
 
 
 def _cookie(name: str, value: str, *, secure: bool,

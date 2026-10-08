@@ -243,3 +243,52 @@ def test_a_nightly_budgets_export_reaches_workload_without_a_session(site):
                        json={"key": "nope", "kind": "budgets", "files": []})
     assert answer.status_code == 401
     assert "import key is not recognised" in answer.json["error"]
+
+
+def _who_workload_is_told(app, tmp_path, monkeypatch, as_colleague=False) -> dict:
+    """Sign in and return the site identity the door hands Workload."""
+    import workload_app.wsgi as inner
+
+    seen: dict = {}
+
+    def spy(environ, start_response):
+        seen.update(environ.get(inner.SITE_KEY) or {})
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [b"{}"]
+
+    monkeypatch.setenv("WORKLOAD_DATA_DIR", str(tmp_path / "workload"))
+    monkeypatch.setattr(inner, "_app", None)
+    monkeypatch.setattr(inner, "application", spy)
+    mounted = DispatcherMiddleware(app, workload_door.mounts(app))
+    browser = Client(mounted)
+    sign_in(browser)
+    if as_colleague:
+        browser = colleague(browser, mounted)
+    assert browser.get("/workload/api/units").status_code == 200
+    return seen
+
+
+def test_with_signup_off_workload_is_told_the_email(app, tmp_path, monkeypatch):
+    """Accounts made by the administrator: the email is theirs to link a team row by."""
+    monkeypatch.setenv("ALLOW_SIGNUP", "false")
+    told = _who_workload_is_told(app, tmp_path, monkeypatch)
+    assert told["email"] == "admin@example.com"
+
+
+def test_with_signup_on_workload_is_told_no_email(app, tmp_path, monkeypatch):
+    """Anybody could make an account under somebody else's address: pass none."""
+    monkeypatch.setenv("ALLOW_SIGNUP", "true")
+    told = _who_workload_is_told(app, tmp_path, monkeypatch)
+    assert told["id"]
+    assert "email" not in told
+
+
+def test_an_ahm_admin_is_told_admin(app, tmp_path, monkeypatch):
+    told = _who_workload_is_told(app, tmp_path, monkeypatch)
+    assert told["admin"] is True
+
+
+def test_anybody_else_is_told_not_admin(app, tmp_path, monkeypatch):
+    """A plain AHM account is not an admin in Workload, whatever its browser sends."""
+    told = _who_workload_is_told(app, tmp_path, monkeypatch, as_colleague=True)
+    assert told["admin"] is False

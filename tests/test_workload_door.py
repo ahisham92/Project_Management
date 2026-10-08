@@ -221,34 +221,14 @@ def test_without_the_package_the_door_says_so(app, signed_in, monkeypatch):
     assert "Workload needs openpyxl" in text(signed_in.get("/workload/"))
 
 
-def test_an_outlook_email_comes_in_with_its_key_and_nothing_else(site, mounted):
-    """An Outlook flow has no AHM session: the key in its body is all it brings."""
-    sign_in(site)
-    assert site.post("/workload/api/units", json={"name": "Marine Structures"}).status_code == 200
-    unit = site.get("/workload/api/units").json["units"][0]
-    assert site.post(f"/workload/api/units/{unit['id']}/open", json={}).status_code == 200
-    made = site.post("/workload/api/inbox-key", json={})
-    assert made.status_code == 200, text(made)
-    key = made.json["key_value"]
-
+def test_an_email_cannot_come_in_without_signing_in(site, mounted):
+    """The Emails panel is gone, so its old address is shut like any other."""
     outlook = Client(mounted)
-    email = {"id": "<m1@example.com>", "from": "client@example.com", "subject": "RFI 12 - pile cap",
-             "preview": "Please confirm the pile cap reinforcement by Friday.",
-             "received": "2026-10-08T08:00:00Z"}
-    taken = outlook.post("/workload/api/inbox/email", json={"key": key, **email})
-    assert taken.status_code == 200, text(taken)
-    assert taken.json["ok"] is True
-    # It landed in the senior's own inbox.
-    assert site.get("/workload/api/inbox").status_code == 200
-
-    # A wrong key is Workload's to refuse, not the door's.
-    wrong = outlook.post("/workload/api/inbox/email", json={"key": "nope", **email})
-    assert wrong.status_code == 401
-    assert "not recognised" in wrong.json["error"]
-    # Nothing else gets past without signing in: not reading the inbox, not
-    # another method on the same address.
-    assert outlook.get("/workload/api/inbox").status_code == 401
-    assert outlook.get("/workload/api/inbox/email").json["error"] == "Sign in to use Selecao+."
+    email = {"key": "anything", "id": "<m1@example.com>", "from": "client@example.com",
+             "subject": "RFI 12 - pile cap", "received": "2026-10-08T08:00:00Z"}
+    taken = outlook.post("/workload/api/inbox/email", json=email)
+    assert taken.status_code == 401
+    assert taken.json["error"] == "Sign in to use Selecao+."
 
 
 def test_a_nightly_export_reaches_workload_without_a_session(site):

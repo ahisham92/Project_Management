@@ -11,12 +11,13 @@ The list is kept in the unit's own database (see ``unit.py``).
 from __future__ import annotations
 
 import datetime as _dt
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from . import config as cfg, progress
 from .xlsx_io import from_serial
-from .model import ValidationError
+from .model import ValidationError, iso
 
 
 class TaskError(ValidationError):
@@ -82,8 +83,8 @@ class Task:
             "assignees": list(self.assignees),
             "required_hours": self.required_hours,
             "actual_hours": self.actual_hours,
-            "start": _iso(self.start),
-            "due": _iso(self.due),
+            "start": iso(self.start),
+            "due": iso(self.due),
             "status": self.status,
             "kind": self.kind,
             "series": self.series,
@@ -104,10 +105,6 @@ class Task:
         }
 
 
-def _iso(value: Optional[_dt.date]) -> Optional[str]:
-    return value.isoformat() if value else None
-
-
 def _parse_date(value: Any) -> Optional[_dt.date]:
     if value in (None, ""):
         return None
@@ -116,7 +113,14 @@ def _parse_date(value: Any) -> Optional[_dt.date]:
     if isinstance(value, _dt.date):
         return value
     if isinstance(value, (int, float)):
-        return from_serial(float(value))
+        # The same reading as ``model.as_date``: a serial of nought or less is
+        # no date at all, and one past any calendar is a mistake to say so.
+        try:
+            if not math.isfinite(value):
+                raise ValueError(value)
+            return from_serial(float(value)) if value > 0 else None
+        except (OverflowError, ValueError):
+            raise TaskError([f"{value!r} is not a date the app understands (YYYY-MM-DD)."])
     try:
         return _dt.date.fromisoformat(str(value)[:10])
     except ValueError:
@@ -129,6 +133,8 @@ def _parse_hours(value: Any, label: str) -> Optional[float]:
     try:
         hours = float(value)
     except (TypeError, ValueError):
+        raise TaskError([f"{label} has to be a number of hours."])
+    if not math.isfinite(hours):
         raise TaskError([f"{label} has to be a number of hours."])
     if hours < 0:
         raise TaskError([f"{label} cannot be negative."])
@@ -177,7 +183,10 @@ def save_settings(source: Any, data: Dict[str, Any]) -> Dict[str, Any]:
         errors.append("The day has to end after it starts.")
 
     if "work_days" in data and data["work_days"] is not None:
-        days = sorted({int(d) for d in data["work_days"] if 0 <= int(d) <= 6})
+        try:
+            days = sorted({int(d) for d in data["work_days"] if 0 <= int(d) <= 6})
+        except (TypeError, ValueError):
+            raise TaskError(["The working days have to be days of the week."])
         if not days:
             errors.append("A week needs at least one working day.")
         else:
@@ -364,6 +373,8 @@ def _parse_fraction(value: Any) -> Optional[float]:
     try:
         number = float(value)
     except (TypeError, ValueError):
+        raise TaskError(["Progress has to be a number."])
+    if not math.isfinite(number):
         raise TaskError(["Progress has to be a number."])
     if number < 0:
         raise TaskError(["Progress cannot be negative."])
@@ -593,7 +604,7 @@ def generate_meetings(wb: Any, *, engineers: Sequence[str],
 
     if added:
         write_all(wb, existing)
-    return {"added": len(added), "series": series, "from": _iso(first),
+    return {"added": len(added), "series": series, "from": iso(first),
             "weekday": weekday, "hours": hours}
 
 
@@ -679,8 +690,8 @@ def load(tasks: Sequence[Task], engineers: Sequence[str],
 
     ranked = sorted(per.values(), key=lambda e: -(e["load"] or 0))
     return {
-        "from": _iso(today),
-        "to": _iso(end),
+        "from": iso(today),
+        "to": iso(end),
         "weeks": weeks,
         "working_days": len(days),
         "hours_per_day": round(a_day, 2),

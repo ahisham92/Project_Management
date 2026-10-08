@@ -275,12 +275,13 @@ def test_with_signup_off_workload_is_told_the_email(app, tmp_path, monkeypatch):
     assert told["email"] == "admin@example.com"
 
 
-def test_with_signup_on_workload_is_told_no_email(app, tmp_path, monkeypatch):
+def test_with_signup_on_workload_is_told_an_empty_email(app, tmp_path, monkeypatch):
     """Anybody could make an account under somebody else's address: pass none."""
     monkeypatch.setenv("ALLOW_SIGNUP", "true")
     told = _who_workload_is_told(app, tmp_path, monkeypatch)
     assert told["id"]
-    assert "email" not in told
+    # Present and empty, so Workload does not fall back to the login.
+    assert told["email"] == ""
 
 
 def test_an_ahm_admin_is_told_admin(app, tmp_path, monkeypatch):

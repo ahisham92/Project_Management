@@ -189,7 +189,10 @@ def load(control: Flask) -> Callable | None:
             "admin": user["role"] == "admin",
         }
         email = _email(user)
-        if email:
+        if email or signup_open():
+            # With signup open the key is always there and always empty:
+            # Workload falls back to the login when it is missing, and a
+            # self-made login must not link anybody to a team row.
             environ[module.SITE_KEY]["email"] = email
         return workload(environ, start_response)
 

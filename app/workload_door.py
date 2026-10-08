@@ -105,6 +105,23 @@ def people(control: Flask) -> list[dict[str, str]]:
             for row in rows if may_open(row, KEY)]
 
 
+def signup_open() -> bool:
+    """Whether anybody may make their own AHM account (ALLOW_SIGNUP=true)."""
+    return os.environ.get("ALLOW_SIGNUP", "false").lower() == "true"
+
+
+def _email(user: Any) -> str:
+    """The email Workload may link a team row by, or "".
+
+    Only while AHM's accounts are made by the administrator: with signup open
+    anybody could make an account under somebody else's address and walk into
+    their team row, so then no email is passed at all.
+    """
+    if signup_open():
+        return ""
+    return user["email"] or ""
+
+
 def _login(user: Any) -> str:
     """What the account types to sign in: its username, or its email."""
     return user["username"] or user["email"] or ""
@@ -136,9 +153,9 @@ def load(control: Flask) -> Callable | None:
             start_response("301 Moved Permanently", [("Location", mount + "/")])
             return [b""]
         if (environ.get("REQUEST_METHOD", "GET"), path) in KEYED:
-            # Sent by a machine, not a browser: a PC's nightly export, or an
-            # Outlook flow's email. No AHM session comes with it; the key in its
-            # body says whose unit it is, and Workload checks that key itself.
+            # Sent by a machine, not a browser: a PC's nightly export. No AHM
+            # session comes with it; the key in its body says whose unit it is,
+            # and Workload checks that key itself.
             environ.pop(module.SITE_KEY, None)
             return workload(environ, start_response)
         user = account_in(control, environ)
@@ -168,7 +185,12 @@ def load(control: Flask) -> Callable | None:
             "home": "/",
             "label": "AHM",
             "logout": "/logout",
+            # AHM's own record says so, and nothing else: a plain True or False.
+            "admin": user["role"] == "admin",
         }
+        email = _email(user)
+        if email:
+            environ[module.SITE_KEY]["email"] = email
         return workload(environ, start_response)
 
     return guarded

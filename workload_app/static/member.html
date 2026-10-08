@@ -13,6 +13,8 @@
 <link rel="apple-touch-icon" href="brand/selecao-apple-touch-180.png">
 <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="planreview.css">
+<link rel="stylesheet" href="guide.css">
 </head>
 <body>
 <div id="voyage" class="voyage-veil" data-opening="Opening your page"></div>
@@ -31,6 +33,10 @@
     <label class="field inline">
       <span>Unit</span>
       <select id="member-unit-select"></select>
+    </label>
+    <label class="field inline" hidden>
+      <span>Person</span>
+      <select id="member-person"></select>
     </label>
     <label class="field inline">
       <span>Year</span>
@@ -51,9 +57,15 @@
   </div>
 
   <div id="member-message"></div>
+  <details class="panel hg-holder" id="member-guide-panel">
+    <summary><b>How to use this page</b></summary>
+    <div id="member-guide"></div>
+  </details>
   <section class="panel md-panel" id="myday" hidden></section>
+  <section class="panel md-panel" id="myweek" hidden></section>
   <section class="panel md-panel" id="mytimesheet" hidden></section>
   <section class="panel md-panel" id="myoff" hidden></section>
+  <section class="panel md-panel" id="mymeetings" hidden></section>
   <section class="panel md-panel" id="mycalendar" hidden></section>
   <div id="member-cards" class="cards"></div>
 
@@ -111,8 +123,10 @@
 <script src="member.js"></script>
 <script src="busycal.js"></script>
 <script src="myday.js"></script>
+<script src="planreview.js"></script>
 <script src="push.js"></script>
 <script src="tables.js"></script>
+<script src="guide.js"></script>
 <script src="pocket.js"></script>
 </body>
 </html>

@@ -22,6 +22,7 @@ the file you download is still a workbook that opens and calculates.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import sqlite3
 from collections import defaultdict
 from contextlib import contextmanager
@@ -276,6 +277,37 @@ CREATE TABLE IF NOT EXISTS spend_people (
     PRIMARY KEY (full_name, unit)
 );
 
+-- Each week's plan as it was agreed: per person, the hours on each job, the
+-- tasks they were to finish, and the rest (meetings, team support).  Kept
+-- when the week is locked, so the week can be checked against what the
+-- timesheets and the task list say happened.  A slip carries its reason.
+CREATE TABLE IF NOT EXISTS week_plans (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    week        TEXT NOT NULL,              -- first working day, ISO
+    person      TEXT NOT NULL,
+    kind        TEXT NOT NULL,              -- job | task | other
+    job_number  TEXT NOT NULL DEFAULT '',
+    task_id     INTEGER,
+    title       TEXT NOT NULL DEFAULT '',
+    hours       REAL NOT NULL DEFAULT 0,
+    due         TEXT,
+    reason      TEXT NOT NULL DEFAULT '',   -- why it slipped, if it did
+    reason_note TEXT NOT NULL DEFAULT '',
+    reason_by   TEXT NOT NULL DEFAULT '',   -- manager, or the person's own name
+    locked_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS week_plans_week ON week_plans(week, person);
+
+-- Planner what-ifs kept to come back to and compare: the moves tried, and
+-- for how many days ahead.
+CREATE TABLE IF NOT EXISTS what_ifs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    days       INTEGER NOT NULL,
+    moves      TEXT NOT NULL,               -- JSON, as /api/planner takes them
+    created_at TEXT NOT NULL
+);
+
 -- Each person's Outlook calendar, published "Can view when I'm busy": the
 -- link, sealed (see secretbox), and whether it was last read cleanly.  Added
 -- by the person themselves (self) or by their manager.
@@ -287,6 +319,23 @@ CREATE TABLE IF NOT EXISTS calendar_links (
     read_at    TEXT,                -- when the busy times below last changed
     problem    TEXT NOT NULL DEFAULT '',
     digest     TEXT NOT NULL DEFAULT ''
+);
+
+-- Meetings typed in by hand: with a client, another trade, or internal; the
+-- day, from and to (local), who goes (a JSON list of names), and a repeat
+-- (weekly | fortnightly) up to a date.
+CREATE TABLE IF NOT EXISTS meetings (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      TEXT NOT NULL DEFAULT '',
+    kind       TEXT NOT NULL DEFAULT 'client',
+    day        TEXT NOT NULL,
+    start      TEXT NOT NULL,
+    end        TEXT NOT NULL,
+    people     TEXT NOT NULL DEFAULT '[]',
+    repeat     TEXT NOT NULL DEFAULT '',
+    until      TEXT,
+    added_by   TEXT NOT NULL DEFAULT '',   -- '' for the manager, else the person
+    created_at TEXT NOT NULL
 );
 
 -- When each of them is busy in the coming weeks, from that calendar: a start
@@ -614,6 +663,14 @@ class TimesheetStore:
                        "WHERE person = ?", (new, old))
             db.execute("UPDATE calendar_busy SET person = ? WHERE person = ?",
                        (new, old))
+            for row in db.execute("SELECT id, people, added_by FROM meetings").fetchall():
+                names = json.loads(row["people"] or "[]")
+                if old in names or row["added_by"] == old:
+                    names = list(dict.fromkeys(new if n == old else n for n in names))
+                    db.execute("UPDATE meetings SET people = ?, added_by = ? WHERE id = ?",
+                               (json.dumps(names),
+                                new if row["added_by"] == old else row["added_by"],
+                                row["id"]))
             # "This is me" (service.me_key) follows the person it names.
             db.execute("UPDATE settings SET value = ? "
                        "WHERE key LIKE 'team\\_me:%' ESCAPE '\\' AND value = ?",
@@ -709,6 +766,32 @@ class TimesheetStore:
         with self._connect() as db:
             db.execute("DELETE FROM slots WHERE task_id = ?", (int(task_id),))
 
+    # -- meetings typed in --------------------------------------------------
+    def meetings(self) -> List[Dict[str, Any]]:
+        with self._connect() as db:
+            rows = [dict(r) for r in db.execute("SELECT * FROM meetings ORDER BY day, start")]
+        for row in rows:
+            try:
+                row["people"] = [str(p) for p in json.loads(row["people"] or "[]")]
+            except ValueError:
+                row["people"] = []
+        return rows
+
+    def add_meeting(self, *, title: str, kind: str, day: str, start: str, end: str,
+                    people: Sequence[str], repeat: str = "",
+                    until: Optional[str] = None, added_by: str = "") -> int:
+        with self._connect() as db:
+            return db.execute(
+                "INSERT INTO meetings (title, kind, day, start, end, people, repeat, "
+                "until, added_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, kind, day, start, end, json.dumps(list(people)), repeat,
+                 until, added_by, now())).lastrowid
+
+    def remove_meeting(self, meeting_id: int) -> int:
+        with self._connect() as db:
+            return db.execute("DELETE FROM meetings WHERE id = ?",
+                              (int(meeting_id),)).rowcount
+
     # -- Outlook calendars, busy times only ---------------------------------
     def calendar_links(self) -> Dict[str, Dict[str, Any]]:
         with self._connect() as db:
@@ -788,6 +871,74 @@ class TimesheetStore:
         with self._connect() as db:
             return db.execute("DELETE FROM absences WHERE id = ?",
                               (int(absence_id),)).rowcount
+
+    # -- each week's plan, as agreed ---------------------------------------
+    def week_plan(self, week: str, *, person: Optional[str] = None
+                  ) -> List[Dict[str, Any]]:
+        sql, args = "SELECT * FROM week_plans WHERE week = ?", [week]
+        if person is not None:
+            sql += " AND person = ?"
+            args.append(person)
+        with self._connect() as db:
+            return [dict(row) for row in db.execute(sql + " ORDER BY person, id", args)]
+
+    def week_plan_weeks(self) -> List[str]:
+        with self._connect() as db:
+            return [row[0] for row in db.execute(
+                "SELECT DISTINCT week FROM week_plans ORDER BY week")]
+
+    def lock_week(self, week: str, entries: Sequence[Dict[str, Any]]) -> int:
+        """The week's plan, replacing any kept before; reasons already given
+        for the same line stay with it."""
+        def key(e):
+            return (e["person"], e["kind"], e.get("job_number") or "",
+                    e.get("task_id"))
+        with self._connect() as db:
+            reasons = {key(dict(row)): (row["reason"], row["reason_note"], row["reason_by"])
+                       for row in db.execute(
+                           "SELECT * FROM week_plans WHERE week = ? AND reason != ''",
+                           (week,))}
+            db.execute("DELETE FROM week_plans WHERE week = ?", (week,))
+            stamp = now()
+            for entry in entries:
+                reason, note, by = reasons.get(key(entry), ("", "", ""))
+                db.execute(
+                    "INSERT INTO week_plans (week, person, kind, job_number, task_id, "
+                    "title, hours, due, reason, reason_note, reason_by, locked_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (week, entry["person"], entry["kind"], entry.get("job_number") or "",
+                     entry.get("task_id"), entry.get("title") or "",
+                     float(entry.get("hours") or 0.0), entry.get("due"),
+                     reason, note, by, stamp))
+            return len(entries)
+
+    def week_plan_line(self, line_id: int) -> Optional[Dict[str, Any]]:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM week_plans WHERE id = ?",
+                             (int(line_id),)).fetchone()
+            return dict(row) if row else None
+
+    def set_slip_reason(self, line_id: int, reason: str, note: str, by: str) -> int:
+        with self._connect() as db:
+            return db.execute(
+                "UPDATE week_plans SET reason = ?, reason_note = ?, reason_by = ? "
+                "WHERE id = ?", (reason, note, by if reason else "", int(line_id))).rowcount
+
+    # -- saved what-ifs ----------------------------------------------------
+    def what_ifs(self) -> List[Dict[str, Any]]:
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM what_ifs ORDER BY id")]
+
+    def add_what_if(self, name: str, days: int, moves: str) -> int:
+        with self._connect() as db:
+            return db.execute(
+                "INSERT INTO what_ifs (name, days, moves, created_at) VALUES (?, ?, ?, ?)",
+                (name, int(days), moves, now())).lastrowid
+
+    def remove_what_if(self, what_if_id: int) -> int:
+        with self._connect() as db:
+            return db.execute("DELETE FROM what_ifs WHERE id = ?",
+                              (int(what_if_id),)).rowcount
 
     # -- what team members said from My day -----------------------------------
     def marks(self, *, person: Optional[str] = None, open_only: bool = False,

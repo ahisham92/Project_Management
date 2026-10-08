@@ -235,3 +235,11 @@ def test_a_nightly_export_reaches_workload_without_a_session(site):
     answer = site.post("/workload/api/nightly/timesheets", json={"key": "nope"})
     assert answer.status_code == 401
     assert "import key is not recognised" in answer.json["error"]
+
+
+def test_a_nightly_budgets_export_reaches_workload_without_a_session(site):
+    """The kit sends budgets to the same nightly address with a kind."""
+    answer = site.post("/workload/api/nightly/timesheets",
+                       json={"key": "nope", "kind": "budgets", "files": []})
+    assert answer.status_code == 401
+    assert "import key is not recognised" in answer.json["error"]

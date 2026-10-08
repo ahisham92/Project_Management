@@ -296,3 +296,29 @@ def test_anybody_else_is_told_not_admin(app, tmp_path, monkeypatch):
     """A plain AHM account is not an admin in Workload, whatever its browser sends."""
     told = _who_workload_is_told(app, tmp_path, monkeypatch, as_colleague=True)
     assert told["admin"] is False
+
+
+def test_closing_the_response_reaches_workload(app, tmp_path, monkeypatch):
+    """Workload tells phones from its response's close(); the door and the
+    mount must hand that response through, not wrap it and drop close()."""
+    import workload_app.wsgi as inner
+    from werkzeug.test import EnvironBuilder
+
+    monkeypatch.setenv("WORKLOAD_DATA_DIR", str(tmp_path / "workload"))
+    monkeypatch.setattr(inner, "_app", None)
+    mounted = DispatcherMiddleware(app, workload_door.mounts(app))
+    browser = Client(mounted)
+    sign_in(browser)
+    told = []
+    monkeypatch.setattr(inner.get_app(), "tell_pending",
+                        lambda older_than=0.0: told.append(older_than))
+
+    environ = EnvironBuilder(path="/workload/api/units", method="GET").get_environ()
+    cookie = browser.get_cookie("session")
+    assert cookie is not None
+    environ["HTTP_COOKIE"] = f"session={cookie.value}"
+    body = mounted(environ, lambda status, headers, exc_info=None: None)
+    assert b"".join(body)
+    told.clear()
+    body.close()
+    assert told == [0.0]

@@ -227,15 +227,18 @@ class WorkloadApp:
             if service is None:
                 service = WorkloadService(autosave=self.autosave)
             self._services[user_id] = service
-            evicted = []
+            # The oldest is only forgotten, not closed: a request on another
+            # thread may still be using it, and closing it would pull its unit
+            # out from under that request. Nothing else is held open.
             while len(self._services) > OPEN_WORKBOOK_LIMIT:
-                evicted.append(self._services.popitem(last=False)[1])
-        for old in evicted:
-            try:
-                old.close()
-            except Exception:                  # pragma: no cover - best effort
-                traceback.print_exc()
+                self._services.popitem(last=False)
         return service
+
+    def _forget_service(self, user_id: int) -> None:
+        """Forget an account's service without closing it, so the next request
+        starts a fresh one (after a change of role or access)."""
+        with self._services_lock:
+            self._services.pop(user_id, None)
 
     def _drop_service(self, user_id: int) -> None:
         with self._services_lock:
@@ -254,6 +257,11 @@ class WorkloadApp:
         wanted = self.accounts.open_unit_of(user_id)
         current = (ctx.service.unit or {}).get("id") if ctx.service.unit else None
         if wanted == current:
+            if wanted is not None:
+                # Renamed in another worker: keep the name in step here too.
+                row = self.accounts.unit(user_id, wanted)
+                if row and row["name"] != ctx.service.unit.get("name"):
+                    ctx.service.unit = {**ctx.service.unit, "name": row["name"]}
             return
         if wanted is None:
             ctx.service.close()
@@ -266,12 +274,14 @@ class WorkloadApp:
             ctx.service.close()
 
     def close_all(self) -> None:
-        for service in list(self._services.values()):
+        with self._services_lock:
+            services = list(self._services.values())
+            self._services.clear()
+        for service in services:
             try:
                 service.close()
             except Exception:                  # pragma: no cover - best effort
                 traceback.print_exc()
-        self._services.clear()
 
     # -- dispatch --------------------------------------------------------
     def handle(self, request: Request) -> Response:
@@ -353,8 +363,6 @@ class WorkloadApp:
         if name == "login.html" and ctx.user is not None:
             return Response(HTTPStatus.SEE_OTHER, b"",
                             "text/plain; charset=utf-8", [("Location", home)])
-        if name == "index.html" and ctx.user and ctx.user["role"] == ROLE_MEMBER:
-            name = "member.html"
         target = (STATIC_DIR / name).resolve()
         if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
             return Response(HTTPStatus.NOT_FOUND, b"Not found",
@@ -433,14 +441,16 @@ class WorkloadApp:
             self.accounts.set_site_login(user["id"], login)
             user["site_login"] = login
         email = _site_email(site)
-        if email and not user["is_admin"]:
+        # Never an administrator, here or on the site: linking would make them
+        # a member, and a member reaches none of what they run.
+        if email and not user["is_admin"] and not _site_admin(site):
             user = self._link_by_email(user, email)
         if user["role"] == ROLE_MEMBER and not self.accounts.memberships(user["id"]):
             # Every unit they were shown has been taken away again. Rather
             # than leave them at a page with nothing on it for good, they are
             # an ordinary account once more and may start a unit of their own.
             self.accounts.set_role(user["id"], ROLE_MANAGER)
-            self._services.pop(user["id"], None)
+            self._forget_service(user["id"])
             user = self.accounts.user(user["id"])
         return user
 
@@ -464,7 +474,7 @@ class WorkloadApp:
             if taken:
                 continue                   # somebody else is that person already
             if user["role"] != ROLE_MEMBER:
-                self._services.pop(user["id"], None)
+                self._forget_service(user["id"])
                 self.accounts.set_role(user["id"], ROLE_MEMBER)
                 user = self.accounts.user(user["id"])
             self.accounts.grant(user_id=user["id"], unit_id=row["unit_id"],
@@ -602,10 +612,7 @@ class WorkloadApp:
                               in self.accounts.passwords().items()}}
 
     def create_user(self, ctx: Context, query, body) -> Dict[str, Any]:
-        password = str(body.get("password") or "").strip()
-        generated = not password
-        if generated:
-            password = accounts_module.generated_password()
+        password, _generated = _password_in(body)
         user = self.accounts.create_user(
             body.get("username", ""), password,
             display_name=body.get("display_name", ""),
@@ -617,12 +624,9 @@ class WorkloadApp:
 
     def reset_password(self, ctx: Context, query, body, user_id) -> Dict[str, Any]:
         target = self._account_id(user_id)
-        password = str(body.get("password") or "").strip()
-        generated = not password
-        if generated:
-            password = accounts_module.generated_password()
+        password, generated = _password_in(body)
         self.accounts.set_password(target, password)
-        self._services.pop(target, None)
+        self._forget_service(target)
         return {"user_id": target, "password": password if generated else None}
 
     def set_admin(self, ctx: Context, query, body, user_id) -> Dict[str, Any]:
@@ -870,11 +874,9 @@ class WorkloadApp:
         return result
 
     def _open_to_read(self, service: WorkloadService, unit: Dict[str, Any]) -> None:
-        path = storage.unit_path(self.data_dir, unit["user_id"], unit["filename"])
-        if not path.is_file():
-            raise ApiError(HTTPStatus.NOT_FOUND,
-                           f"The data for {unit['name']} is missing.")
-        path = self._unit_file(unit["user_id"], unit["id"], unit["filename"])
+        path = self._unit_file_or_missing(
+            unit["user_id"], unit["id"], unit["filename"],
+            f"The data for {unit['name']} is missing.")
         service.open(path, unit={"id": unit["id"], "name": unit["name"]},
                      read_only=True)
 
@@ -893,11 +895,8 @@ class WorkloadApp:
               unit_id: str) -> Dict[str, Any]:
         """Open one of this account's units in ``service``."""
         unit = self._own_unit(user_id, unit_id)
-        path = storage.unit_path(self.data_dir, user_id, unit["filename"])
-        if not path.is_file():
-            raise ApiError(HTTPStatus.NOT_FOUND,
-                           f"The data for {unit['name']} is missing.")
-        path = self._unit_file(user_id, unit_id, unit["filename"])
+        path = self._unit_file_or_missing(user_id, unit_id, unit["filename"],
+                                          f"The data for {unit['name']} is missing.")
         unit = self.accounts.unit(user_id, unit_id)
         try:
             storage.backup_if_due(self.data_dir, user_id, path)
@@ -917,6 +916,14 @@ class WorkloadApp:
         if result["filename"] != filename:
             self.accounts_update_filename(owner_id, unit_id, result["filename"])
         return result["path"]
+
+    def _unit_file_or_missing(self, owner_id: int, unit_id: str, filename: str,
+                              missing: str) -> Path:
+        """:meth:`_unit_file`, or Not Found saying ``missing`` when the unit's
+        data is not on disk at all."""
+        if not storage.unit_path(self.data_dir, owner_id, filename).is_file():
+            raise ApiError(HTTPStatus.NOT_FOUND, missing)
+        return self._unit_file(owner_id, unit_id, filename)
 
     def rename_unit(self, ctx: Context, query, body, unit_id) -> Dict[str, Any]:
         # Look first, so a unit that is not this account's is refused the same
@@ -943,10 +950,8 @@ class WorkloadApp:
         """Everything the unit holds, as a spreadsheet to keep or send on."""
         user_id = ctx.user["id"]
         unit = self._own_unit(user_id, unit_id)
-        path = storage.unit_path(self.data_dir, user_id, unit["filename"])
-        if not path.is_file():
-            raise ApiError(HTTPStatus.NOT_FOUND, "That unit's data is missing.")
-        path = self._unit_file(user_id, unit_id, unit["filename"])
+        path = self._unit_file_or_missing(user_id, unit_id, unit["filename"],
+                                          "That unit's data is missing.")
         if _is_open(ctx, unit_id):
             data = export_module.unit_workbook(ctx.service.workbook, unit["name"])
         else:
@@ -1026,11 +1031,9 @@ class WorkloadApp:
                 "No unit has been shared with you yet. Your manager can do "
                 "that from their Team tab.")
         row = next((g for g in granted if g["unit_id"] == wanted), granted[0])
-        path = storage.unit_path(self.data_dir, row["owner_id"], row["filename"])
-        if not path.is_file():
-            raise ApiError(HTTPStatus.NOT_FOUND,
-                           "That unit is not there any more.")
-        path = self._unit_file(row["owner_id"], row["unit_id"], row["filename"])
+        path = self._unit_file_or_missing(row["owner_id"], row["unit_id"],
+                                          row["filename"],
+                                          "That unit is not there any more.")
 
         service = ctx.service
         if service.path != path or not service.read_only:
@@ -1341,7 +1344,7 @@ class WorkloadApp:
             # They opened Workload before anybody had given them anything, so
             # they were made an empty account of their own. Nothing is lost by
             # making that account the team member it was meant to be.
-            self._services.pop(existing["id"], None)
+            self._forget_service(existing["id"])
             self.accounts.set_role(existing["id"], ROLE_MEMBER)
             user = self.accounts.user(existing["id"])
         else:
@@ -1358,12 +1361,13 @@ class WorkloadApp:
         except ValueError:
             raise ApiError(HTTPStatus.NOT_FOUND,
                            "That account has no access to this unit.")
-        if self.accounts.membership(target, unit["id"]) is None:
+        held = self.accounts.membership(target, unit["id"])
+        if held is None:
             raise ApiError(HTTPStatus.NOT_FOUND,
                            "That account has no access to this unit.")
-        engineer = self.accounts.membership(target, unit["id"])["engineer"]
+        engineer = held["engineer"]
         self.accounts.revoke(user_id=target, unit_id=unit["id"])
-        self._services.pop(target, None)
+        self._forget_service(target)
         # Their email would only link them straight back in at their next
         # sign-in, so it goes too.
         linked = self.accounts.member_emails(unit["id"]).get(engineer)
@@ -1405,7 +1409,7 @@ class WorkloadApp:
             if held and held["engineer"] == engineer:
                 # A corrected email never leaves the wrong person looking in.
                 self.accounts.revoke(user_id=gone, unit_id=unit["id"])
-                self._services.pop(gone, None)
+                self._forget_service(gone)
         return saved["email"]
 
     def update_engineer(self, ctx: Context, query, body, name) -> Dict[str, Any]:
@@ -1434,7 +1438,7 @@ class WorkloadApp:
                 if row["engineer"] == name:
                     self.accounts.revoke(user_id=row["user_id"],
                                          unit_id=unit["id"])
-                    self._services.pop(row["user_id"], None)
+                    self._forget_service(row["user_id"])
                     result.setdefault("access_revoked", []).append(row["username"])
             self.accounts.forget_member_email(unit["id"], name)
         return result
@@ -1609,7 +1613,7 @@ class WorkloadApp:
 
     def push_unsubscribe(self, ctx: Context, query, body, device_id) -> Dict[str, Any]:
         return {"removed": self.accounts.remove_push_device(
-            ctx.user["id"], self._account_id(device_id))}
+            ctx.user["id"], _int(device_id))}
 
     def push_test(self, ctx: Context, query, body) -> Dict[str, Any]:
         if not self.accounts.push_devices(ctx.user["id"]):
@@ -1893,6 +1897,14 @@ class WorkloadApp:
         ]
 
 
+def _password_in(body: Dict[str, Any]) -> Tuple[str, bool]:
+    """The password typed, or a generated one, and whether it was generated."""
+    password = str(body.get("password") or "").strip()
+    if password:
+        return password, False
+    return accounts_module.generated_password(), True
+
+
 def _site_admin(site: Dict[str, Any]) -> bool:
     """Whether the mounting site says this is its administrator, who sees
     every manager's units side by side. Only the site can say so."""
@@ -1903,9 +1915,12 @@ def _site_email(site: Dict[str, Any]) -> str:
     """The email the mounting site vouches for, or ''.
 
     The site says so under "email"; one that predates that key signs people
-    in with their email as their login, and that is used instead.
+    in with their email as their login, and that is used instead. A site that
+    sends the key but leaves it empty is saying it vouches for no email (it
+    lets anybody sign up), so the login is not trusted in its place.
     """
-    for value in (site.get("email"), site.get("login")):
+    vouched = (site.get("email"),) if "email" in site else (site.get("login"),)
+    for value in vouched:
         try:
             email = accounts_module.clean_email(value)
         except AccountError:
@@ -1957,15 +1972,16 @@ def parse_cookies(header: Optional[str]) -> Dict[str, str]:
 def parse_body(raw: bytes, content_type: str) -> Dict[str, Any]:
     """A request's JSON body, for the local server and WSGI alike.
 
-    Anything with a body must say it is JSON. A browser only sends that
-    cross-site after asking first, so a form on another site cannot post to
-    the API -- not even to sign somebody in to an account of its choosing.
+    Every POST, PUT and DELETE must say it is JSON, with a body or without.
+    A browser only sends that cross-site after asking first, so a form on
+    another site cannot post to the API -- not even to sign somebody in to an
+    account of its choosing, nor fire a change that needs no body at all.
     """
-    if not raw.strip():
-        return {}
     if not (content_type or "").lower().startswith("application/json"):
         raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                        "Send the request as application/json.")
+    if not raw.strip():
+        return {}
     try:
         body = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):

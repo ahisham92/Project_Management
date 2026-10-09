@@ -113,7 +113,10 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert site.get("/workload/look.js").status_code == 200
     assert site.get("/workload/look.css").status_code == 200
     # Schedules and submissions: their scripts and sheet are served from under the mount too.
-    for name in ("dates.js", "sheet.js", "subs.js", "sheet.css"):
+    # The short answer at the top of every tab: focus.js after look.js, focus.css after look.css.
+    assert body.index('src="look.js') < body.index('src="focus.js') < body.index('src="pocket.js')
+    assert body.index('href="look.css') < body.index('href="focus.css')
+    for name in ("dates.js", "sheet.js", "subs.js", "sheet.css", "focus.js", "focus.css"):
         assert site.get(f"/workload/{name}").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200

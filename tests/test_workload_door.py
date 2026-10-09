@@ -104,8 +104,9 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert 'src="app.js' in body and "login-form" not in body
     assert site.get("/workload/app.js").status_code == 200
     # common.js loads first and is served from under the mount as well.
-    assert body.index('src="common.js') < body.index('src="app.js')
+    assert body.index('src="common.js') < body.index('src="meaning.js') < body.index('src="app.js')
     assert site.get("/workload/common.js").status_code == 200
+    assert site.get("/workload/meaning.js").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200
     assert site.get("/workload/brand/selecao-mark.svg").status_code == 200
@@ -322,3 +323,13 @@ def test_closing_the_response_reaches_workload(app, tmp_path, monkeypatch):
     told.clear()
     body.close()
     assert told == [0.0]
+
+
+def test_bringing_in_a_first_upload_needs_a_sign_in(site):
+    """The first-start routes are ordinary signed-in calls, never keyed."""
+    for method, path in (("GET", "/workload/api/bring-in"),
+                         ("POST", "/workload/api/bring-in/check"),
+                         ("POST", "/workload/api/bring-in/apply")):
+        answer = site.open(path, method=method, json={} if method == "POST" else None)
+        assert answer.status_code == 401, (method, path)
+        assert answer.json["error"] == "Sign in to use Selecao+."

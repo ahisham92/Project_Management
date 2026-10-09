@@ -107,6 +107,11 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert body.index('src="common.js') < body.index('src="meaning.js') < body.index('src="app.js')
     assert site.get("/workload/common.js").status_code == 200
     assert site.get("/workload/meaning.js").status_code == 200
+    # Each tab's own look: look.js right after paths.js, look.css after the other sheets.
+    assert body.index('src="paths.js') < body.index('src="look.js') < body.index('src="pocket.js')
+    assert body.index('href="paths.css') < body.index('href="look.css')
+    assert site.get("/workload/look.js").status_code == 200
+    assert site.get("/workload/look.css").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200
     assert site.get("/workload/brand/selecao-mark.svg").status_code == 200

@@ -344,3 +344,26 @@ def test_bringing_in_a_first_upload_needs_a_sign_in(site):
         answer = site.open(path, method=method, json={} if method == "POST" else None)
         assert answer.status_code == 401, (method, path)
         assert answer.json["error"] == "Sign in to use Selecao+."
+
+
+def test_only_the_ahm_admin_changes_official_holidays(site, mounted):
+    """Official holidays are one list for the whole site. Anybody signed in
+    reads it; only the account AHM calls its admin may change it."""
+    sign_in(site)
+    theirs = colleague(site, mounted)
+    read = theirs.get("/workload/api/official-holidays?country=EG&year=2026")
+    assert read.status_code == 200, text(read)
+
+    for path, body in (
+            ("/workload/api/official-holidays",
+             {"country": "EG", "date": "2026-12-24", "name": "Made-up day"}),
+            ("/workload/api/official-holidays/EG/2026-12-24/undo", {})):
+        refused = theirs.post(path, json=body)
+        assert refused.status_code == 403, (path, text(refused))
+        assert "administrator" in refused.json["error"]
+
+    added = site.post("/workload/api/official-holidays",
+                      json={"country": "EG", "date": "2026-12-24", "name": "Made-up day"})
+    assert added.status_code == 200, text(added)
+    undone = site.post("/workload/api/official-holidays/EG/2026-12-24/undo", json={})
+    assert undone.status_code == 200, text(undone)

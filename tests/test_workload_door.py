@@ -340,8 +340,10 @@ def test_bringing_in_a_first_upload_needs_a_sign_in(site):
     """The first-start routes are ordinary signed-in calls, never keyed."""
     for method, path in (("GET", "/workload/api/bring-in"),
                          ("POST", "/workload/api/bring-in/check"),
-                         ("POST", "/workload/api/bring-in/apply")):
-        answer = site.open(path, method=method, json={} if method == "POST" else None)
+                         ("POST", "/workload/api/bring-in/apply"),
+                         ("PUT", "/workload/api/bring-in/who"),
+                         ("POST", "/workload/api/bring-in/who/keep")):
+        answer = site.open(path, method=method, json=None if method == "GET" else {})
         assert answer.status_code == 401, (method, path)
         assert answer.json["error"] == "Sign in to use Selecao+."
 

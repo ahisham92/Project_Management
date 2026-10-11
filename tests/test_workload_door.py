@@ -345,7 +345,9 @@ def test_bringing_in_a_first_upload_needs_a_sign_in(site):
                          ("POST", "/workload/api/bring-in/who/keep"),
                          ("PUT", "/workload/api/budgets/jobs/J-100/people"),
                          ("PUT", "/workload/api/budgets/jobs/J-100/register"),
-                         ("POST", "/workload/api/day/work")):
+                         ("GET", "/workload/api/submissions/1"),
+                         ("PUT", "/workload/api/submissions/1/prep"),
+                         ("POST", "/workload/api/planner/hours")):
         answer = site.open(path, method=method, json=None if method == "GET" else {})
         assert answer.status_code == 401, (method, path)
         assert answer.json["error"] == "Sign in to use Selecao+."

@@ -104,16 +104,75 @@ function budgetsTodo(data) {
       'Mark them');
     }
     if (item.jobs && item.jobs.length) {
-      return el('button', { class: 'btn btn-sm', type: 'button',
-        onclick: () => openJob(item.jobs[0]) }, item.jobs.length === 1 ? 'Open it' : 'Open the first');
+      const showing = bud.todoOpen === item.kind;
+      return el('button', { class: `btn btn-sm${showing ? ' btn-primary' : ''}`, type: 'button',
+        'aria-expanded': showing ? 'true' : 'false',
+        onclick: () => { bud.todoOpen = showing ? null : item.kind; renderBudgets(); } },
+      showing ? 'Hide them' : item.jobs.length === 1 ? 'Show it' : `Show the ${item.jobs.length}`);
     }
     return null;
   };
+  const open = data.todo.find((item) => item.kind === bud.todoOpen && item.jobs);
   return el('section', { class: 'panel' },
     el('div', { class: 'panel-head' }, el('div', {},
       el('h3', {}, 'What to do'),
-      el('p', { class: 'muted' }, 'Most pressing first.'))),
-    todoList(data.todo, action));
+      el('p', { class: 'muted' }, 'Most pressing first. Tap Show to see the jobs and what is wrong with each.'))),
+    todoList(data.todo, action),
+    open ? todoJobs(data, open) : null);
+}
+
+/** The jobs behind one line of What to do, each with what is wrong with it. */
+function todoJobs(data, item) {
+  const jobs = item.jobs.map((n) => data.jobs.find((j) => j.job_number === n)).filter(Boolean);
+  const settle = async (job, use) => {
+    try {
+      bud.data = await api(`/api/budgets/jobs/${encodeURIComponent(job.job_number)}/register`,
+        { method: 'PUT', quiet: true, body: { use } });
+      toast(use === 'bispark'
+        ? `${job.job_number}: the Projects tab now uses BISpark's ${fmt.mm(job.team_budget_mm)} MM.`
+        : `${job.job_number}: your ${fmt.mm(job.project_budget_mm)} MM stays. It is not asked about again unless it changes.`, 'ok');
+      renderBudgets();
+      registerChanged();
+    } catch (error) { toastError(error); }
+  };
+  const issue = (j) => {
+    if (item.kind === 'typed') {
+      const gap = (j.project_budget_mm || 0) - (j.team_budget_mm || 0);
+      return [
+        el('span', {}, 'Typed on Projects: ', el('b', {}, `${fmt.mm(j.project_budget_mm)} MM`)),
+        el('span', {}, 'From BISpark: ', el('b', {}, `${fmt.mm(j.team_budget_mm)} MM`),
+          el('span', { class: 'muted' }, ` (your ${fmt.pct0(j.share)} of ${fmt.mm(j.budget_mm)} MM)`)),
+        el('span', { class: gap > 0 ? 'v-warn' : 'v-bad' },
+          `Typed is ${fmt.mm(Math.abs(gap))} MM ${gap > 0 ? 'more' : 'less'}`)];
+    }
+    if (item.kind === 'guessed') {
+      return [el('span', {}, 'BISpark budget: ', el('b', {}, `${fmt.mm(j.budget_mm)} MM`)),
+        el('span', { class: 'muted' }, 'No staff expenditure yet, so all of it is counted as your team\'s.')];
+    }
+    if (item.kind === 'needs') {
+      return [el('span', {}, 'Budget: ', el('b', {}, `${fmt.mm(j.budget_mm)} MM`)),
+        el('span', {}, 'BISpark expects: ', el('b', {}, `${fmt.mm(j.eac_mm)} MM`)),
+        el('span', {}, 'Spent: ', el('b', {}, `${fmt.mm(j.spent_mm)} MM`))];
+    }
+    return [el('span', {}, 'Your budget: ', el('b', {}, `${fmt.mm(j.team_budget_mm)} MM`)),
+      el('span', {}, 'Spent: ', el('b', {}, `${fmt.mm(j.team_spent_mm)} MM`)),
+      el('span', { class: (j.team_left_mm || 0) < 0 ? 'v-bad' : '' }, 'Left: ',
+        el('b', {}, `${fmt.mm(j.team_left_mm)} MM`)),
+      j.runs_out ? el('span', {}, 'Runs out: ', el('b', {}, buDay(j.runs_out))) : null];
+  };
+  return el('ul', { class: 'bu-todo-jobs' }, ...jobs.map((j) => el('li', {},
+    el('div', { class: 'bu-todo-job' },
+      el('b', {}, j.job_number), el('span', { class: 'muted' }, ` ${j.title || ''}`)),
+    el('div', { class: 'bu-todo-why' }, ...issue(j)),
+    el('div', { class: 'bu-todo-act' },
+      item.kind === 'typed' ? el('button', { class: 'btn btn-sm btn-primary', type: 'button',
+        onclick: () => settle(j, 'bispark') }, 'Use BISpark\'s') : null,
+      item.kind === 'typed' ? el('button', { class: 'btn btn-sm', type: 'button',
+        onclick: () => settle(j, 'mine') }, 'Keep mine') : null,
+      item.kind === 'guessed' ? el('button', { class: 'btn btn-sm', type: 'button',
+        onclick: () => editShare(j) }, 'Set your share') : null,
+      el('button', { class: 'btn btn-sm btn-ghost', type: 'button',
+        onclick: () => openJob(j.job_number) }, 'Open the job')))));
 }
 
 function budgetsStats(data, live) {
@@ -284,14 +343,25 @@ function whoOnJob(job) {
   const total = groups.reduce((s, g) => s + (g.mm || 0), 0);
   const inside = groups.reduce((s, g) => s + (g.inside_mm || 0), 0);
   const outside = Math.max(0, total - inside);
+  // A tap shows at once; the figures catch up when the server answers, with
+  // nothing over the page, so several people can be set one after another.
   const save = async (people, value, said) => {
+    for (const p of people) { p.inside = value; p.part = false; p.by = 'job'; }
+    for (const g of groups) g.inside_mm = g.people.reduce((s, p) => s + (p.inside ? p.mm || 0 : 0), 0);
+    renderBudgets();
+    bud.pending = (bud.pending || 0) + 1;
     try {
-      bud.data = await api(`/api/budgets/jobs/${encodeURIComponent(job.job_number)}/people`, {
-        method: 'PUT', body: { people: people.map((p) => ({ full_name: p.name, unit: p.unit })), inside: value } });
-      toast(said, 'ok');
-      renderBudgets();
+      const fresh = await api(`/api/budgets/jobs/${encodeURIComponent(job.job_number)}/people`, {
+        method: 'PUT', quiet: true,
+        body: { people: people.map((p) => ({ full_name: p.name, unit: p.unit })), inside: value } });
+      bud.pending -= 1;
+      if (!bud.pending) { bud.data = fresh; renderBudgets(); }
       registerChanged();
-    } catch (error) { toastError(error); }
+    } catch (error) {
+      bud.pending -= 1;
+      toastError(error);
+      loadBudgets(true);
+    }
   };
   const choice = (p) => el('span', { class: 'bu-io', role: 'group', 'aria-label': `${p.name} on this job` },
     ...[[true, 'Inside'], [false, 'Outside']].map(([value, text]) => el('button', {
@@ -308,7 +378,10 @@ function whoOnJob(job) {
         : `So your share of the budget is ${fmt.pct0(job.share)}`
           + (job.team_budget_mm == null ? ' (the job has no budget yet).' : `, and your budget ${fmt.mm(job.team_budget_mm)} MM.`))),
     el('p', { class: 'muted' }, 'Tap a unit to see its people.'),
-    ...groups.map((g) => el('details', { class: 'bu-unit', open: g.inside_mm > 0 || groups.length === 1 ? true : null },
+    ...groups.map((g) => el('details', {
+      class: 'bu-unit',
+      open: (unitOpen(job, g) ?? (g.inside_mm > 0 || groups.length === 1)) ? true : null,
+      ontoggle: (e) => { bud.units = bud.units || {}; bud.units[`${job.job_number}|${g.unit}`] = e.target.open; } },
       el('summary', {},
         el('b', {}, g.unit_label || 'Unit not known'),
         el('span', { class: 'muted' }, ` · ${fmt.mm(g.mm)} MM, ${fmt.pct0(total ? g.mm / total : 0)} of the job`),
@@ -344,8 +417,18 @@ function editShare(job) {
 /** A share, a person or a new file moves the team's budget on the Projects
     tab (where it follows BISpark) and the days the staff expenditure fills
     in: the rest of the app is read again so it does not show the old ones. */
+/** Whether the person opened or closed this unit's list, so a save keeps it. */
+function unitOpen(job, g) {
+  return (bud.units || {})[`${job.job_number}|${g.unit}`];
+}
+
+/** The rest of the app catches up in the background, once the taps stop. */
 function registerChanged() {
-  if (typeof refreshAll === 'function') refreshAll().catch(() => {});
+  if (typeof refreshAll !== 'function') return;
+  clearTimeout(bud.refreshTimer);
+  bud.refreshTimer = setTimeout(() => {
+    voyage.quietly(() => refreshAll()).catch(() => {});
+  }, 2500);
 }
 
 /* ------------------------------------------------------- people on the jobs */

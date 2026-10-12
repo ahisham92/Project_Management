@@ -116,7 +116,11 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     # The short answer at the top of every tab: focus.js after look.js, focus.css after look.css.
     assert body.index('src="look.js') < body.index('src="focus.js') < body.index('src="pocket.js')
     assert body.index('href="look.css') < body.index('href="focus.css')
-    for name in ("dates.js", "sheet.js", "subs.js", "sheet.css", "focus.js", "focus.css", "office3d.js"):
+    # The summary video: video.js after subs.js and before pocket.js, video.css after sheet.css.
+    assert body.index('src="subs.js') < body.index('src="video.js') < body.index('src="pocket.js')
+    assert body.index('href="sheet.css') < body.index('href="video.css')
+    for name in ("dates.js", "sheet.js", "subs.js", "sheet.css", "focus.js", "focus.css", "office3d.js",
+                 "video.js", "video.css"):
         assert site.get(f"/workload/{name}").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200
@@ -348,7 +352,8 @@ def test_bringing_in_a_first_upload_needs_a_sign_in(site):
                          ("GET", "/workload/api/submissions/1"),
                          ("PUT", "/workload/api/submissions/1/prep"),
                          ("POST", "/workload/api/planner/hours"),
-                         ("GET", "/workload/api/plan-book")):
+                         ("GET", "/workload/api/plan-book"),
+                         ("GET", "/workload/api/video")):
         answer = site.open(path, method=method, json=None if method == "GET" else {})
         assert answer.status_code == 401, (method, path)
         assert answer.json["error"] == "Sign in to use Selecao+."

@@ -20,7 +20,7 @@ import uuid
 import zipfile
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from . import budgets as budgets_module
 from . import bringin
@@ -1158,6 +1158,10 @@ class WorkloadService:
 
     def _planning(self, wb) -> Dict[str, Any]:
         """What the planner and the forecast both start from."""
+        if not wb._setting("prep_by_allocation_2"):
+            # Once: run-ups still ahead take their allocated hours.
+            wb.generate_submission_tasks(today=_today(), hours_left=self._hours_left(wb))
+            wb.mark_setting("prep_by_allocation_2")
         index = self._index(wb)
         project_rows = metrics.project_rows(wb, index)
         drawn = self._drawings(wb, index, project_rows)
@@ -1311,6 +1315,20 @@ class WorkloadService:
                     "outlook": self._outlook(self.workbook, body or {})}
 
     @staticmethod
+    def _prep_hours(inputs: Dict[str, Any]) -> List[Tuple[str, str, _dt.date, float]]:
+        """Every person's submission preparation still ahead, day by day."""
+        today = _today()
+        out = []
+        for task in inputs["tasks"]:
+            if daily.is_prep_step(task) and not task.done and task.due \
+                    and task.due >= today:
+                # Nobody chosen yet: still work, for the team to find somebody.
+                for name in task.assignees or [""]:
+                    out.append((name, task.project_number, task.due,
+                                task.hours_for(name) if name else task.required_hours or 0.0))
+        return out
+
+    @staticmethod
     def _submitting(wb) -> Dict[str, _dt.date]:
         """Each job's last submission planned and not yet sent."""
         issues = wb.issues()
@@ -1349,7 +1367,8 @@ class WorkloadService:
                 planned=self.store.planned_work(),
                 team_names={t["id"]: t["name"] for t in self.store.teams()},
                 management=inputs["management"].taken_a_day(),
-                submitting=self._submitting(wb))
+                submitting=self._submitting(wb),
+                prep=self._prep_hours(inputs))
             data["drawings"] = {k: drawn[k] for k in
                                 ("known", "total", "done", "left", "progress",
                                  "hours_per_drawing", "drafting_hours_per_drawing",
@@ -2472,6 +2491,7 @@ class WorkloadService:
                     "name": d.name, "type_code": d.type_code,
                     "step_name": steps.get((d.type_code, d.step_no), ""),
                     "status_date": iso(d.status_date),
+                    "people": [n for n, share in d.shares.items() if share],
                     "list": {k: entry[k] for k in ("total", "issued", "code_a",
                                                    "code_b", "code_c")} if entry else None,
                     **state,
@@ -2493,18 +2513,55 @@ class WorkloadService:
             except (KeyError, TypeError, ValueError):
                 raise ApiError(HTTPStatus.BAD_REQUEST, "Choose the deliverable by its row.")
             issue = self.workbook.start_issue(row, body, today=_today())
+            self._plan_run_up(self.workbook, row)
             return {"issue": issue, "save": self._commit()}
+
+    def _hours_left(self, wb) -> Dict[int, float]:
+        """Each deliverable's allocated hours -- its weight's part of the
+        project's budget -- less the hours booked to it, where there is a
+        budget."""
+        hours_per_mm = wb.hours_per_man_month() or 0.0
+        budgets = {p.number: p.budget_mm for p in wb.projects()}
+        # Only the team's own share of a job's budget is the team's to do.
+        try:
+            shares = {j["job_number"]: j["share"] for j in budgets_module._jobs(self)
+                      if j.get("share") is not None}
+        except Exception:                     # no budgets brought in yet
+            shares = {}
+        weights = wb.weight_by_project()
+        out: Dict[int, float] = {}
+        for item in metrics.deliverable_rows(wb, self._index(wb)):
+            budget = budgets.get(item["project_number"])
+            total = weights.get(item["project_number"]) or 0.0
+            if not budget or not total or not item.get("phase_weight"):
+                continue
+            allocated = (budget * shares.get(item["project_number"], 1.0)
+                         * hours_per_mm * item["phase_weight"] / total)
+            out[item["row"]] = max(0.0, allocated - (item.get("actual_hours") or 0.0))
+        return out
+
+    def _plan_run_up(self, wb, row: Any) -> None:
+        """A submission planned ahead and not yet sent has its preparation
+        on the days before it, whoever its split names -- planning the date
+        is planning the work."""
+        if row is None:
+            return
+        issues = wb.issues().get(int(row), [])
+        last = issues[-1] if issues else {}
+        planned = last.get("planned")
+        if planned and not last.get("submitted") \
+                and _dt.date.fromisoformat(planned) >= _today():
+            wb.generate_submission_tasks(only_row=int(row), today=_today(),
+                                         hours_left=self._hours_left(wb))
 
     def update_submission(self, issue_id: Any, body: Dict[str, Any]) -> Dict[str, Any]:
         with self._lock:
             wb = self.workbook
             row = wb._issue(_issue_id(issue_id)).get("deliverable_row")
             issue = wb.update_issue(_issue_id(issue_id), body or {})
-            series = f"submission:{row}"
-            if "planned" in (body or {}) and row is not None and any(
-                    t.series == series for t in wb.task_records()):
+            if "planned" in (body or {}):
                 # Its run-up moves with the planned day.
-                wb.generate_submission_tasks(only_row=int(row), today=_today())
+                self._plan_run_up(wb, row)
             return {"issue": issue, "save": self._commit()}
 
     def change_job_hours(self, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -2548,7 +2605,7 @@ class WorkloadService:
                 "engineers": wb.engineer_names(),
                 "prep": {
                     "people": list(ahead[0].assignees) if ahead else [],
-                    "hours": ahead[0].required_hours if ahead else None,
+                    "hours": (round(ahead[0].required_hours / max(1, len(ahead[0].assignees)), 2) if ahead and ahead[0].required_hours else None),
                     "days": [{"date": iso(t.due), "done": t.done,
                               "people": list(t.assignees), "hours": t.required_hours}
                              for t in days],
@@ -2573,7 +2630,14 @@ class WorkloadService:
         if not change:
             raise ValidationError(["Nothing to change."])
         with self._lock:
-            result = self.workbook.set_run_up(row, today=_today(), **change)
+            wb = self.workbook
+            if "people" in change:
+                # Choosing who prepares a submission with no preparation
+                # days yet puts them on the days before it.
+                wb.set_split(row, change["people"])
+                if not any(t.series == f"submission:{row}" for t in wb.task_records()):
+                    self._plan_run_up(wb, row)
+            result = wb.set_run_up(row, today=_today(), **change)
             return {**result, "save": self._commit()}
 
     def remove_submission(self, issue_id: Any) -> Dict[str, Any]:
@@ -2616,7 +2680,8 @@ class WorkloadService:
             if body.get("prepare", True):
                 for row, _date in chosen:
                     prepared += wb.generate_submission_tasks(
-                        only_row=row, today=_today())["added"]
+                        only_row=row, today=_today(),
+                        hours_left=self._hours_left(wb))["added"]
             return {"confirmed": len(chosen), "tasks_added": prepared,
                     "save": self._commit()}
 
@@ -2738,7 +2803,7 @@ class WorkloadService:
             wb = self.workbook
             return self._saved(wb.generate_submission_tasks(
                 only_row=only_row, include_past=bool(body.get("include_past")),
-                config=self._work_calendar(wb)))
+                config=self._work_calendar(wb), hours_left=self._hours_left(wb)))
 
     def generate_weekly_meetings(self, body: Dict[str, Any]) -> Dict[str, Any]:
         with self._lock:

@@ -14,7 +14,7 @@
   <div class="inline-form">
     {% if by == 'group' %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id']) }}">Tell it as a story</a>
     {% else %}<a class="btn btn-ghost" href="{{ url_for('specs.details', set_id=spec['id'], by='group') }}">Show by group</a>{% endif %}
-    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}">▶ The story</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}"><svg class="themis-ico" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> The story</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.review_inputs', set_id=spec['id']) }}">See the inputs</a>
     <a class="btn btn-ghost" href="{{ url_for('specs.spec_set', set_id=spec['id']) }}#step-sections">← Back to the sections</a>
   </div>

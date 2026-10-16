@@ -1049,7 +1049,7 @@ tr.just-moved > td { animation: settle 0.7s ease-out; }
 .spec-i0 { padding-left: 8px; } .spec-i1 { padding-left: 40px; } .spec-i2 { padding-left: 72px; }
 .spec-i3 { padding-left: 104px; } .spec-i4 { padding-left: 136px; }
 .spec-out { opacity: 0.45; }
-.spec-out .spec-text::after { content: " — not for this project"; font-family: system-ui, sans-serif; font-size: 0.75rem; }
+.spec-out .spec-text::after { content: " (not for this project)"; font-family: system-ui, sans-serif; font-size: 0.75rem; }
 .spec-note { font-family: system-ui, sans-serif; font-size: 0.8rem; color: var(--series-7); font-style: italic; }
 .spec-added { background: var(--tint-good); }
 .spec-changed { background: var(--tint-warning); }

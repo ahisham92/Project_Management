@@ -17,7 +17,7 @@
     </p>
   </div>
   <div class="inline-form">
-    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}" title="The questions level by level along a path through the site, answered in the 3D">▶ The story</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}" title="The questions level by level along a path through the site, answered in the 3D"><svg class="themis-ico" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> The story</a>
     <a class="btn btn-primary" href="{{ url_for('specs.issues', set_id=spec['id']) }}" title="Issue a new revision and keep it on the register of issued revisions">Issue a revision…</a>
   </div>
 </div>
@@ -182,7 +182,7 @@
 
 {% if missing %}
   <div class="flashes"><div class="flash error">
-    The text uses {{ missing | map('tojson') | join(', ') }} with no value for this project yet —
+    The text uses {{ missing | map('tojson') | join(', ') }} with no value for this project yet, so
     it goes out as typed until one is given below{% if is_admin %} or in <a href="{{ url_for('specs.options') }}">options and variables</a>{% endif %}.
   </div></div>
 {% endif %}
@@ -423,7 +423,7 @@
   </div>
   <div class="card-body spec-story-call">
     <p><strong>The brief is level 1 of the story.</strong> Decide it on the 3D path, where the site is drawn from your choices, and go on from there level by level. This list is the same brief to save from here.</p>
-    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}#level-1">▶ Decide it on the story path</a>
+    <a class="btn btn-primary" href="{{ url_for('specs.story', set_id=spec['id']) }}#level-1"><svg class="themis-ico" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> Decide it on the story path</a>
   </div>
   <div class="card-body spec-questions">
     {% for group, questions in groups %}
@@ -619,7 +619,7 @@
         <h2>Read in the project's own Word files</h2>
         <p class="small muted" style="margin-top:2px">
           An earlier issue, or a section amended outside. Each is lined up against the master of
-          the same number, so whatever it says differently shows as this project's amendment — the
+          the same number, so whatever it says differently shows as this project's amendment. It is the
           quickest way to bring an old project into line.
         </p>
       </div>

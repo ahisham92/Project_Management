@@ -36,7 +36,7 @@
   // The story: one level at a time, told in a few lines beside the picture,
   // its stations' questions answered there, and on along the path.
   var story = root.getAttribute("data-mode") === "story";
-  var playWords = playBtn ? playBtn.textContent : "";
+  var playWords = playBtn ? playBtn.innerHTML : "";
   var NS = "http://www.w3.org/2000/svg";
   var S = 22;                       // pixels per metre of the drawing
   var C30 = Math.cos(Math.PI / 6), S30 = 0.5;
@@ -811,7 +811,7 @@
         return '<li class="spec-path-stop is-' + state + (i === level ? " is-here" : "") + '"><button type="button" data-level="' + i + '"' +
           (i === level ? ' aria-current="step"' : "") + ' title="' + esc("Level " + c.level + ": " + c.name + (c.locked ? " (locked)" : left ? " (" + left + " to answer)" : " (answered)")) + '">' +
           (i === level ? '<span class="spec-path-here">You are here</span>' : "") +
-          '<span class="spec-path-n">' + (state === "done" ? "✓" : state === "locked" ? "🔒︎" : c.level) + "</span>" +
+          '<span class="spec-path-n">' + (state === "done" ? "✓" : state === "locked" ? '<svg class="themis-ico" viewBox="0 0 24 24" role="img" aria-label="locked"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : c.level) + "</span>" +
           '<span class="spec-path-name">' + esc(c.name) + "</span>" + (state === "now" && left ? '<span class="spec-path-left">' + left + " to answer</span>" : "") + "</button></li>";
       }).join("");
       var on = levelsEl.querySelector(".is-here");
@@ -822,7 +822,7 @@
       var state = c.locked ? "locked" : i === data.open_stage ? "now" : "done";
       var left = c.needed + c.suggested;
       return '<li class="spec-level is-' + state + '"><button type="button" data-level="' + i + '" title="' + esc(c.lead || "") + '">' +
-        '<span class="spec-level-n">' + (state === "done" ? "✓" : state === "locked" ? "🔒︎" : c.level) + "</span>" +
+        '<span class="spec-level-n">' + (state === "done" ? "✓" : state === "locked" ? '<svg class="themis-ico" viewBox="0 0 24 24" role="img" aria-label="locked"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : c.level) + "</span>" +
         '<span class="spec-level-name">' + esc(c.name) + "</span>" + (state === "now" && left ? '<span class="spec-level-left">' + left + "</span>" : "") + "</button></li>";
     }).join("");
   }
@@ -1064,11 +1064,11 @@
   function stop() {
     if (!timer) return;
     clearInterval(timer); timer = null;
-    playBtn.textContent = playWords;
+    playBtn.innerHTML = playWords;
   }
   function play() {
     if (timer) { stop(); return; }
-    playBtn.textContent = "❚❚ Pause";
+    playBtn.innerHTML = '<svg class="themis-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg> Pause';
     timer = setInterval(function () {
       if (current === order[order.length - 1]) { stop(); close(); return; }
       if (!move(1)) stop();
@@ -1133,7 +1133,7 @@
     if (next) {
       right = next.locked
         ? '<span class="small muted spec-story-wait">' + (c.slug === "deciding" ? "Confirm the brief" : "Answer the " + left + " left here") + " to open level " + next.level + ", " + esc(next.name) + ".</span>" +
-          '<button type="button" class="btn btn-primary" disabled>Next level 🔒︎</button>'
+          '<button type="button" class="btn btn-primary" disabled>Next level <svg class="themis-ico" viewBox="0 0 24 24" role="img" aria-label="locked"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>'
         : '<button type="button" class="btn btn-primary" data-go-level="' + (level + 1) + '">Next level: ' + esc(next.name) + " →</button>";
     } else if (c.slug === "deciding" && !c.done) {
       right = '<span class="small muted spec-story-wait">Finish the brief: the levels it calls for open after it.</span>';

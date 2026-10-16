@@ -61,7 +61,7 @@
 .se-nbs .se-eos { display: none; }
 
 .se-p { position: relative; margin: 0 0 0.55em; padding-left: calc(var(--in, 0) * 0.5in * var(--z) + var(--hang, 0.5in) * var(--z)); border-radius: 2px; }
-.se-p.se-here { background: rgba(42, 120, 214, 0.06); box-shadow: -6px 0 0 rgba(42, 120, 214, 0.35); }
+.se-p.se-here { background: color-mix(in srgb, var(--series-1) 6%, transparent); box-shadow: -6px 0 0 color-mix(in srgb, var(--series-1) 35%, transparent); }
 .se-num { position: absolute; left: calc(var(--in, 0) * 0.5in * var(--z)); top: 0; user-select: none; white-space: nowrap; }
 .se-text { outline: none; min-height: 1.35em; white-space: pre-wrap; word-wrap: break-word; caret-color: #111; }
 .se-text:empty::before { content: attr(data-empty); color: #aaa; }
@@ -78,7 +78,7 @@
 .se-TBL { --hang: 0; padding-left: calc(var(--in, 1) * 0.5in * var(--z) + 0.5in * var(--z)); }
 .se-TBL table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
 .se-TBL td { border: 1px solid #777; padding: 3px 6px; vertical-align: top; outline: none; min-width: 40px; }
-.se-TBL td:focus { background: rgba(42, 120, 214, 0.06); }
+.se-TBL td:focus { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
 
 /* The NBS way (03A): headings and clauses, bullets underneath. */
 .se-nbs .se-PRT { --hang: 0; text-transform: none; font-size: 1.05em; }

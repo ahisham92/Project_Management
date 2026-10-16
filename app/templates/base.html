@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   {% if request.blueprint == 'specs' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='themis.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
   {% endif %}
   {% if request.blueprint == 'marine' %}
@@ -32,7 +33,7 @@
     } catch (e) {}
   </script>
 </head>
-<body{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
+<body{% if request.blueprint == 'specs' %} class="themis-app"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
       data-pulse-url="{{ url_for('projects.pulse', project_id=pulse_project_id) }}"{% endif %}>
 {% block chrome %}
   <header class="topbar">

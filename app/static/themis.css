@@ -1,0 +1,232 @@
+/* THEMIS, one look on every page.
+ *
+ * Loaded after app.css on THEMIS pages only (body.themis-app), so the other
+ * apps on the site keep theirs. It sets THEMIS's own palette, type scale and
+ * interaction states once, here, rather than page by page:
+ *
+ *   - one primary colour (the THEMIS blue) and one accent (the gold of the
+ *     mark); neutrals carry everything else, and the three spec kinds keep
+ *     their own data colours;
+ *   - off-black ink on a warm white page, and a dark theme designed for itself;
+ *   - every control answers hover, press and keyboard focus the same way, and
+ *     motion stops for anyone who asks the system for less of it;
+ *   - notes and status boxes are separated by a full hairline and a tint, not
+ *     a coloured bar down one side;
+ *   - no box is taller than what it holds, and on a phone the menu is one row.
+ */
+
+body.themis-app {
+  --series-1: #274b82;            /* THEMIS blue: links, primary actions, focus */
+  --themis-on-primary: #ffffff;
+  --themis-primary-hover: #1f3d6c;
+  --ink: #161b26;                 /* off-black, a touch of the navy in it */
+  --ink-2: #4a4f5c;
+  --muted: #747986;               /* 4.5:1 on the page, so small print stays legible */
+  --plane: #f7f6f2;
+  --surface: #fcfbf8;
+  --raised: #ffffff;
+  --border: rgba(22, 27, 38, 0.11);
+  --themis-tint: rgba(39, 75, 130, 0.07);
+  --themis-gold-tint: rgba(166, 124, 58, 0.10);
+  --themis-ring: 0 0 0 3px rgba(39, 75, 130, 0.28);
+  --themis-shadow: 0 1px 2px rgba(22, 27, 38, 0.05);
+  --themis-radius: 10px;
+  --themis-fast: 120ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.themis-app {
+    --series-1: #8eb1ea;
+    --themis-on-primary: #0f1522;
+    --themis-primary-hover: #a8c3f0;
+    --ink: #eef0f4;
+    --ink-2: #c2c6cf;
+    --muted: #979ca8;
+    --plane: #0f1218;
+    --surface: #161a22;
+    --raised: #1d222c;
+    --border: rgba(238, 240, 244, 0.11);
+    --themis-tint: rgba(142, 177, 234, 0.10);
+    --themis-gold-tint: rgba(192, 149, 80, 0.13);
+    --themis-ring: 0 0 0 3px rgba(142, 177, 234, 0.35);
+    --themis-shadow: none;
+  }
+}
+:root[data-theme="dark"] body.themis-app {
+  --series-1: #8eb1ea;
+  --themis-on-primary: #0f1522;
+  --themis-primary-hover: #a8c3f0;
+  --ink: #eef0f4;
+  --ink-2: #c2c6cf;
+  --muted: #979ca8;
+  --plane: #0f1218;
+  --surface: #161a22;
+  --raised: #1d222c;
+  --border: rgba(238, 240, 244, 0.11);
+  --themis-tint: rgba(142, 177, 234, 0.10);
+  --themis-gold-tint: rgba(192, 149, 80, 0.13);
+  --themis-ring: 0 0 0 3px rgba(142, 177, 234, 0.35);
+  --themis-shadow: none;
+}
+
+/* --- type ------------------------------------------------------------------ */
+
+/* Figures line up in tables and counts; prose keeps the font's own figures. */
+.themis-app table, .themis-app .themis-stat-n, .themis-app .tile-value, .themis-app .tabular { font-variant-numeric: tabular-nums; }
+.themis-app main h1:not(.themis-hero h1) { font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
+.themis-app main h2 { line-height: 1.3; }
+.themis-app .card-head h2, .themis-app .card-head h3 { font-size: 0.95rem; }
+/* A lead paragraph under a heading reads at a comfortable measure, not the
+   whole width of a wide screen. */
+.themis-app .page-head p, .themis-app main h1 + p, .themis-app .card-head p { max-width: 82ch; }
+.themis-app .themis-hero + p, .themis-app .themis-lead { max-width: 70ch; }
+
+/* --- interaction states ---------------------------------------------------- */
+
+.themis-app a, .themis-app .btn, .themis-app button, .themis-app summary,
+.themis-app input, .themis-app select, .themis-app textarea {
+  transition: background-color var(--themis-fast) ease-out, border-color var(--themis-fast) ease-out,
+              color var(--themis-fast) ease-out, box-shadow var(--themis-fast) ease-out;
+}
+.themis-app :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.themis-app input:focus, .themis-app select:focus, .themis-app textarea:focus {
+  outline: none; border-color: var(--series-1); box-shadow: var(--themis-ring);
+}
+.themis-app .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; border-radius: 8px; line-height: 1.2;
+}
+.themis-app .btn-sm { min-height: 28px; padding: 4px 10px; }
+.themis-app .btn svg { flex: none; }
+.themis-app .btn-primary { background: var(--series-1); color: var(--themis-on-primary); box-shadow: var(--themis-shadow); }
+.themis-app .btn-primary:hover { background: var(--themis-primary-hover); filter: none; }
+.themis-app .btn-ghost { background: var(--raised); color: var(--ink); }
+.themis-app .btn-ghost:hover { border-color: color-mix(in srgb, var(--series-1) 45%, var(--border)); background: var(--themis-tint); }
+.themis-app .btn:active:not(:disabled) { transform: translateY(1px); }
+.themis-app .btn:disabled, .themis-app .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.themis-app .chips a.active { background: var(--series-1); color: var(--themis-on-primary); }
+.themis-app a:not(.btn):hover { text-decoration-thickness: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .themis-app *, .themis-app *::before, .themis-app *::after {
+    transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .themis-app .btn:active:not(:disabled) { transform: none; }
+}
+
+/* --- surfaces -------------------------------------------------------------- */
+
+.themis-app .card, .themis-app .themis-stat, .themis-app .spec-toolbox section {
+  border-radius: var(--themis-radius); box-shadow: var(--themis-shadow);
+}
+.themis-app .card-head { padding: 14px 18px; }
+.themis-app .card-body { padding: 18px; }
+.themis-app thead th { color: var(--ink-2); font-weight: 600; letter-spacing: 0.01em; }
+.themis-app tbody tr:hover td { background: color-mix(in srgb, var(--series-1) 3%, transparent); }
+
+/* The header: THEMIS's menu, with the page you are on underlined in gold. */
+.themis-app .themis-nav > a { color: var(--ink-2); font-weight: 500; }
+.themis-app .themis-nav > a:hover { background: var(--themis-tint); color: var(--ink); }
+.themis-app .themis-nav > a[aria-current="page"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--themis-gold); }
+.themis-app .themis-back { background: var(--raised); }
+.themis-app .themis-back:hover { border-color: var(--series-1); color: var(--series-1); background: var(--themis-tint); }
+
+/* On a phone the menu is one row that scrolls sideways, so the page itself is
+   on the first screen rather than three rows of links. */
+@media (max-width: 720px) {
+  .themis-app .themis-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 0; }
+  .themis-app .themis-nav::-webkit-scrollbar { display: none; }
+  .themis-app .themis-nav > a { white-space: nowrap; flex: none; }
+  .themis-app .themis-nav-end { position: sticky; right: 0; width: auto; margin-left: 8px; flex: none;
+    padding-left: 18px; background: linear-gradient(90deg, transparent, var(--surface) 16px); }
+  .themis-app .themis-nav-end .btn-ghost { display: none; }
+  .themis-app .topbar-inner { padding: 8px 0; }
+  .themis-app .themis-hero .themis-mark { width: 44px; }
+  .themis-app main h1:not(.themis-hero h1) { font-size: 1.3rem; }
+}
+
+/* --- the dashboard --------------------------------------------------------- */
+
+.themis-app .themis-stat { padding: 14px 18px; }
+.themis-app .themis-stat-n { font-size: 2rem; letter-spacing: -0.02em; }
+.themis-app .themis-dash-grid { align-items: start; }
+/* No places yet: the empty map is as tall as what it says, not 380px of nothing. */
+.themis-app .themis-map:not(.themis-map-on) { min-height: 0; }
+.themis-app .themis-map-fallback .empty, .themis-app .empty { padding-top: 28px; padding-bottom: 28px; }
+.themis-app .themis-search { border-radius: 8px; min-height: 34px; }
+
+/* The project page: each group of tools as tall as its own tools. */
+.themis-app .spec-toolbox { align-items: start; }
+.themis-app .spec-tool:hover, .themis-app .spec-tool[open] { background: var(--themis-tint); border-color: transparent; }
+.themis-app .spec-toolbox h2 { color: var(--ink-2); letter-spacing: 0.08em; }
+
+/* --- notes and status boxes: a full hairline and a tint, never a side bar --- */
+
+.themis-app .spec-engineer-note {
+  border: 1px solid color-mix(in srgb, var(--themis-gold) 38%, transparent);
+  border-left-width: 1px; background: var(--themis-gold-tint); border-radius: var(--themis-radius);
+  padding: 12px 16px; color: var(--ink);
+}
+.themis-app .guide-strip { border-left-width: 1px; }
+.themis-app .spec-check-item { border-left-width: 1px; border-radius: 8px; }
+.themis-app .spec-check-item.spec-sev-error { border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); background: color-mix(in srgb, var(--critical) 4%, var(--raised)); }
+.themis-app .spec-check-item.spec-sev-warning { border-color: color-mix(in srgb, var(--warning) 60%, var(--border)); background: color-mix(in srgb, var(--warning) 6%, var(--raised)); }
+.themis-app .spec-check-item.spec-is-settled { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.themis-app .spec-cmt { border-left-width: 1px; border-color: color-mix(in srgb, var(--series-1) 30%, var(--border)); }
+.themis-app .spec-cmt-closed { border-color: var(--border); }
+.themis-app .spec-ready-held { border-left-width: 1px; border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
+.themis-app .spec-ready-ok { border-left-width: 1px; border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.themis-app .spec-pkg-banner { border-left-width: 1px; border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
+.themis-app .spec-pkg-item, .themis-app .spec-amend {
+  border-left: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+}
+.themis-app .spec-pkg-item { border-color: color-mix(in srgb, var(--critical) 35%, var(--border)); }
+.themis-app .spec-pkg-item.spec-amend-done { border-color: var(--border); }
+.themis-app .idc-change { border: 1px solid color-mix(in srgb, #b7791f 40%, var(--border)); border-radius: 8px; }
+.themis-app .idc-change.idc-accepted { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.themis-app .idc-change.idc-rejected { border-color: var(--border); }
+.themis-app .ask-answer-line { border: 1px solid color-mix(in srgb, #b7791f 40%, var(--border)); }
+.themis-app .spec-story-call { border-left: 0; background: var(--themis-tint); }
+.themis-app .spec-story-tale { border-left: 0; padding-left: 0; color: var(--ink-2); }
+.themis-app .spec-card-def { border-left: 0; padding-left: 0; }
+.themis-app .spec-done-text { border: 1px solid color-mix(in srgb, var(--good) 40%, var(--border)); border-radius: 6px; }
+
+/* Answered, suggested, still to answer: the state's colour round the whole
+   item and a light tint inside, with the words saying which. */
+.themis-app .spec-in-totals > div { border: 1px solid color-mix(in srgb, var(--in-answered) 45%, var(--border)); }
+.themis-app .spec-in-totals .spec-in-suggested-n { border-color: color-mix(in srgb, var(--in-suggested) 45%, var(--border)); }
+.themis-app .spec-in-totals .spec-in-needed-n { border-color: color-mix(in srgb, var(--in-needed) 45%, var(--border)); }
+.themis-app .spec-scene-stagebar { border-left: 0; background: color-mix(in srgb, var(--in-needed) 9%, transparent); }
+.themis-app .spec-scene-stagebar.is-done { background: color-mix(in srgb, var(--in-answered) 10%, transparent); }
+.themis-app .spec-scene-lock { border-left-width: 1px; }
+.themis-app .spec-scene-q { border: 1px solid color-mix(in srgb, var(--in-answered) 45%, var(--border)); }
+.themis-app .spec-scene-q.spec-in-suggested { border-color: color-mix(in srgb, var(--in-suggested) 45%, var(--border)); }
+.themis-app .spec-scene-q.spec-in-needed { border-color: color-mix(in srgb, var(--in-needed) 50%, var(--border)); background: color-mix(in srgb, var(--in-needed) 4%, transparent); }
+.themis-app .spec-scene-flag { border: 1px solid color-mix(in srgb, var(--in-needed) 45%, var(--border)); }
+.themis-app .spec-scene-flag.spec-sev-info { border-color: color-mix(in srgb, var(--in-suggested) 45%, var(--border)); }
+.themis-app .spec-glance li { border-left: 0; border-radius: 6px; background: color-mix(in srgb, var(--in-answered) 8%, transparent); }
+.themis-app .spec-glance li.spec-in-needed { background: color-mix(in srgb, var(--in-needed) 9%, transparent); }
+.themis-app .spec-glance li.spec-in-suggested { background: color-mix(in srgb, var(--in-suggested) 9%, transparent); }
+
+/* --- the story's question card --------------------------------------------- */
+
+.themis-app .spec-decide-q.is-card .spec-decide-choice { border-radius: 10px; min-height: 44px; }
+.themis-app .spec-decide-q.is-card .spec-decide-choice:hover { background: var(--themis-tint); }
+.themis-app .spec-decide-q.is-card .spec-decide-choice:has(input:focus-visible) { box-shadow: var(--themis-ring); }
+
+/* Icons drawn inline (lucide), sized to the text beside them. */
+.themis-ico { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+@media print {
+  body.themis-app { --plane: #fff; --surface: #fff; --raised: #fff; }
+}
+
+/* Words on the primary colour take its partner colour, so they stay legible
+   in the dark theme too, where the primary is light. */
+.themis-app .brand-mark, .themis-app .spec-step-now .spec-step-n, .themis-app .spec-story-n,
+.themis-app .spec-cmt-n, .themis-app .spec-n, .themis-app .spec-path-here, .themis-app .cal-day.chosen,
+.themis-app .spec-q-info:hover, .themis-app .spec-q-info:focus-visible { color: var(--themis-on-primary); }
+
+/* Ticks and radios in the same blue as everything else that is chosen. */
+body.themis-app { accent-color: var(--series-1); }

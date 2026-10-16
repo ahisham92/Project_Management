@@ -119,8 +119,11 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     # The summary video: video.js after subs.js and before pocket.js, video.css after sheet.css.
     assert body.index('src="subs.js') < body.index('src="video.js') < body.index('src="pocket.js')
     assert body.index('href="sheet.css') < body.index('href="video.css')
+    # The look pass: polish.css loads last, pick.js after pocket.js.
+    assert body.index('href="video.css') < body.index('href="polish.css')
+    assert body.index('src="pocket.js') < body.index('src="pick.js')
     for name in ("dates.js", "sheet.js", "subs.js", "sheet.css", "focus.js", "focus.css", "office3d.js",
-                 "video.js", "video.css"):
+                 "video.js", "video.css", "pick.js", "polish.css"):
         assert site.get(f"/workload/{name}").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200

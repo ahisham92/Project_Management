@@ -26,13 +26,26 @@
   <section id="list" hidden>
     <h1 class="list-title">Connections</h1>
     <ul id="tools" class="tools" aria-label="Your connected tools"></ul>
-    <p class="muted small list-foot">To add another tool, choose <b>Connect your phone</b> in its settings and scan the code with this phone.</p>
+    <button class="primary add" data-add>Add a connection</button>
   </section>
 
   <section id="empty" class="center" hidden>
     <img class="mark-big" src="{{ request.script_root }}/static/icon.svg" alt="">
     <h1>No tools yet</h1>
-    <p class="muted">In a tool's settings, choose <b>Connect your phone</b> and scan the code with this phone's camera.</p>
+    <p class="muted">In the tool on your PC, choose <b>Connect your phone</b>. Then tap below and point this phone at the code.</p>
+    <button class="primary add" data-add>Add a connection</button>
+  </section>
+
+  <section id="scan" class="center" hidden>
+    <h1>Add a connection</h1>
+    <p class="muted">On your PC, open the tool's <b>Connect your phone</b> (in Sketch ProMax: <b>Phone</b> under the chat). Point this camera at the code.</p>
+    <div class="cam"><video id="cam" playsinline muted aria-label="Camera"></video></div>
+    <p class="error" id="scan-error"></p>
+    <form id="paste" class="row">
+      <input id="paste-link" autocomplete="off" placeholder="Or paste the link from the PC" aria-label="The link from the PC">
+      <button>Use</button>
+    </form>
+    <p><button id="scan-cancel">Cancel</button></p>
   </section>
 
   <section id="confirm" class="center" hidden>
@@ -84,6 +97,7 @@
   window.IRIS = { root: "{{ request.script_root }}", vapid: "{{ vapid }}" };
 </script>
 <script src="{{ request.script_root }}/static/iris-crypto.js"></script>
+<script src="{{ request.script_root }}/static/jsQR.js"></script>
 <script src="{{ request.script_root }}/static/app.js"></script>
 </body>
 </html>

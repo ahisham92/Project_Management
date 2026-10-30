@@ -7,7 +7,8 @@ look for a module-level ``application``.
 Project control answers at the root. Three applications of their own are mounted
 beside it when they are installed: the older comment sheet in front of
 ``/crs/classic``, Triton, the quay element designer, in front of ``/triton``,
-and Workload, the unit's workload and profit plan, in front of ``/workload`` —
+Workload, the unit's workload and profit plan, in front of ``/workload``, and
+Iris, AI tools on your phone, in front of ``/iris`` —
 all behind project control's sign-in. They are joined at the WSGI layer
 rather than inside Flask, so none has to know how the others work and one web
 app on the host serves them all.
@@ -25,6 +26,7 @@ from app.crs import MOUNT, load as load_crs
 from app.programs import guard
 from app.triton_door import mounts as triton_mounts
 from app.workload_door import mounts as workload_mounts
+from app.iris_door import mounts as iris_mounts
 
 control = create_app()
 
@@ -36,6 +38,7 @@ crs = load_crs()
 mounted = {MOUNT: guard(control, crs, "crs")} if crs else {}
 mounted.update(triton_mounts(control))
 mounted.update(workload_mounts(control))
+mounted.update(iris_mounts(control))
 application = DispatcherMiddleware(control, mounted) if mounted else control
 
 # gunicorn and uWSGI look for "app" by convention; PythonAnywhere wants

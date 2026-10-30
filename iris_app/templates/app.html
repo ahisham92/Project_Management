@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101B2D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Iris">
+<title>Iris</title>
+<link rel="manifest" href="{{ request.script_root }}/manifest.webmanifest">
+<link rel="icon" href="{{ request.script_root }}/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ request.script_root }}/static/apple-touch-icon.png">
+<link rel="stylesheet" href="{{ request.script_root }}/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <img class="mark" src="{{ request.script_root }}/static/icon.svg" alt="">
+  <span class="brand">Iris</span>
+  <span class="who muted">{{ who.name }}</span>
+  <button id="bell" class="icon-btn" hidden title="Turn on notifications">Turn on notifications</button>
+</header>
+
+<div id="hint" class="hint" hidden></div>
+
+<main id="main">
+  <section id="list" hidden>
+    <h1 class="list-title">Connections</h1>
+    <ul id="tools" class="tools" aria-label="Your connected tools"></ul>
+    <p class="muted small list-foot">To add another tool, choose <b>Connect your phone</b> in its settings and scan the code with this phone.</p>
+  </section>
+
+  <section id="empty" class="center" hidden>
+    <img class="mark-big" src="{{ request.script_root }}/static/icon.svg" alt="">
+    <h1>No tools yet</h1>
+    <p class="muted">In a tool's settings, choose <b>Connect your phone</b> and scan the code with this phone's camera.</p>
+  </section>
+
+  <section id="confirm" class="center" hidden>
+    <h1>Connect <span id="confirm-name"></span>?</h1>
+    <p class="muted" id="confirm-machine"></p>
+    <p>It will send you updates and questions here.</p>
+    <div class="row">
+      <button id="confirm-yes" class="primary">Connect</button>
+      <button id="confirm-no">Cancel</button>
+    </div>
+    <p class="error" id="confirm-error"></p>
+  </section>
+
+  <section id="tool" hidden>
+    <div class="tool-top-bar">
+    <div class="tool-head">
+      <button id="back" class="back" aria-label="Back to your connections">‹</button>
+      <div class="tool-title">
+        <div class="tool-name" id="tool-name"></div>
+        <div class="muted small" id="tool-machine"></div>
+        <div class="muted small" id="tool-seen"></div>
+      </div>
+      <details class="menu">
+        <summary aria-label="Tool settings">⋯</summary>
+        <div class="menu-body">
+          <label>Notify me about
+            <select id="notify">
+              <option value="questions">Questions only</option>
+              <option value="all">Questions and updates</option>
+              <option value="none">Nothing</option>
+            </select>
+          </label>
+          <button id="disconnect" class="danger">Disconnect this tool</button>
+        </div>
+      </details>
+    </div>
+    <div id="commands" class="row commands"></div>
+    </div>
+    <ol id="feed" class="feed"></ol>
+    <p id="status" class="status small muted" role="status" hidden></p>
+    <form id="composer" class="composer">
+      <textarea id="say" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Write a message" aria-label="Write a message"></textarea>
+      <button class="primary">Send</button>
+    </form>
+  </section>
+</main>
+
+<script>
+  window.IRIS = { root: "{{ request.script_root }}", vapid: "{{ vapid }}" };
+</script>
+<script src="{{ request.script_root }}/static/iris-crypto.js"></script>
+<script src="{{ request.script_root }}/static/app.js"></script>
+</body>
+</html>

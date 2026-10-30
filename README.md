@@ -18,6 +18,7 @@ The site opens on a choice rather than dropping everybody into one application:
 | **Specs Writer** | The master specification, section by section, and each project's amended copy of it, issued in the house Word format. | `/specs` |
 | **MarineTwin** | The digital twin of a structure after handover: its Revit model in 3D, its sensors, and its condition judged against the design Triton did for it. | `/marinetwin` |
 | **Selecao+** | The unit's workload and profit plan (the app that was called Workload): timesheets in, each project's budget against what it has earned, who is carrying what. | `/workload` |
+| **Iris** | AI tools on your phone: a tool working on its own (the Sketch ProMax autopilot first) sends its questions and progress here, and you answer with one tap from your phone. | `/iris` |
 
 They are **two jobs in one application and one database**. One sign-in covers both, one web app
 on the host serves the pair, and — because it is one database — a comment is against a document
@@ -1837,6 +1838,37 @@ it used to be a website of its own with a sign-in of its own. It is now mounted 
 
 Once this is live the old Workload web app on the host can be deleted — after its units have
 been brought across, and without deleting its data folder.
+
+### Iris (AI tools on your phone)
+
+Iris is the seventh door on the front page. A tool that works on its own for hours (the Sketch
+ProMax autopilot is the first) sends its progress and its questions here, and the person it works
+for answers from their phone: one tap on an answer button, or a typed reply, and Stop or Resume
+for the run. It is mounted in front of `/iris` by `wsgi.py`, the way Workload is, behind the same
+sign-in as everything else.
+
+- **Installing it** on a site that is already running is the usual update: in a **Bash** console
+  `cd ~/Project_Management && git pull && .venv/bin/pip install --no-cache-dir -r requirements.txt`
+  (it adds `pywebpush`), then **Web** tab → **Reload**. Nothing changes in the WSGI file.
+- **Who sees it.** Tick **Iris** for an account in **Admin**. Each account connects its own tools
+  and sees nobody else's.
+- **On the phone.** Open `/iris/` on the phone, sign in, and choose *Add to Home Screen* (on
+  iPhone, from the Share button: notifications only work from the home-screen app). Then tap
+  *Turn on notifications*.
+- **Connecting a tool.** In the tool's settings, *Connect your phone* shows a QR code. Scan it with
+  the phone's camera and confirm. The tool appears as a tab in Iris.
+- **Nothing readable is kept here.** The tool makes a key and passes it to the phone inside the QR
+  code, after the `#`, so it never reaches this site. Every message is encrypted on the PC and
+  decrypted on the phone; the database holds scrambled text. A notification says only which tool
+  is asking. Messages are deleted after 30 days (`IRIS_KEEP_DAYS`).
+- **Phone notifications** need outbound internet from the server, which PythonAnywhere's paid
+  plans have. Without it Iris still works; the phone just does not buzz.
+- **Its files** — the database and the key notifications are signed with — go in `iris` inside
+  the data directory unless `IRIS_DATA_DIR` says otherwise, so a pull never touches them.
+- **Connecting another tool** of your own: see `iris_app/README.md` and `iris_app/API.md`. A
+  tool needs only HTTPS calls out; Python and C# versions are in `iris_app/clients`.
+- **If it will not start**, the rest of the site keeps serving, the door is marked *not
+  installed*, and `/iris/` says what went wrong.
 
 ### The older, browser-kept sheet
 

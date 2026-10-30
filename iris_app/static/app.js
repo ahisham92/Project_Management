@@ -10,6 +10,10 @@
   let tools = [];
   let current = null;         // the open tool
   let lastId = 0;             // the newest message shown for it
+  let readUpto = 0;           // the newest of your messages the tool has fetched
+  let mine = [];              // your messages shown: { id, tick }
+  let lastSide = "";          // who wrote the newest message shown
+  let fastUntil = 0;          // poll every 3 s until then (you just wrote)
   let keys = null;            // its imported key, or null when this phone lacks it
   const questions = new Map(); // question id -> its list item
 
@@ -159,6 +163,10 @@
   async function openTool(id) {
     current = tools.find((t) => t.id === id);
     lastId = 0;
+    readUpto = 0;
+    mine = [];
+    lastSide = "";
+    $("status").hidden = true;
     questions.clear();
     show("tool");
     window.scrollTo(0, 0);
@@ -184,7 +192,8 @@
       return;
     }
     const data = await api("/api/me/tools/" + id + "/messages");
-    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Nothing here yet. Write below to send " + current.name + " a message; it reads it the next time it checks in."));
+    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Nothing here yet. Write below to send " + current.name + " a message."));
+    readUpto = data.read_upto || 0;
     await render(data.messages);
     window.scrollTo(0, document.body.scrollHeight);
   }
@@ -198,6 +207,7 @@
   async function poll() {
     if (!current || !keys || document.hidden) return;
     const data = await api("/api/me/tools/" + current.id + "/messages?after=" + lastId);
+    if ((data.read_upto || 0) !== readUpto) { readUpto = data.read_upto || 0; ticks(); }
     if (data.messages.length) {
       const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 40;
       await render(data.messages);
@@ -216,15 +226,41 @@
       if (m.kind === "answer" || m.kind === "closed") settle(m, value);
       if (m.kind === "closed") continue;
       $("feed").appendChild(item(m, value));
+      lastSide = m.side;
     }
+    ticks();
+  }
+
+  // Under your messages: Sent, then Read once the tool fetched them; and under the
+  // conversation, what happens next when the newest message is yours.
+  function ticks() {
+    for (const m of mine) {
+      const read = m.id <= readUpto;
+      m.tick.textContent = read ? "Read ✓✓" : "Sent ✓";
+      m.tick.classList.toggle("read", read);
+    }
+    const status = $("status");
+    const last = mine.length ? mine[mine.length - 1] : null;
+    // Nothing back after 20 minutes: the line would only mislead (the tool may have taken it in without a reply).
+    if (!current || lastSide !== "phone" || !last || last.id < lastId || Date.now() / 1000 - last.created > 20 * 60) { status.hidden = true; return; }
+    status.hidden = false;
+    status.classList.toggle("working", last.id <= readUpto);
+    status.textContent = last.id <= readUpto
+      ? current.name + " is working on it"
+      : current.name + " gets it the next time it checks in, within a minute while it is open on your PC.";
   }
 
   function item(m, v) {
     const li = el("li", "msg " + m.side + " " + m.kind);
     const head = el("div", "msg-head small muted");
-    head.textContent = ({ update: "Update", question: "Question", answer: "You answered", command: "You pressed", message: "You" })[m.kind] + " · " + when(m.created);
+    head.textContent = ({ update: current.name, question: "Question", answer: "You answered", command: "You pressed", message: "You" })[m.kind] + " · " + when(m.created);
     li.appendChild(head);
     li.appendChild(el("div", "msg-text", m.kind === "command" ? v.command : v.text || ""));
+    if (m.side === "phone") {
+      const tick = el("div", "tick small");
+      li.appendChild(tick);
+      mine.push({ id: m.id, tick, created: m.created });
+    }
     if (m.kind === "question") {
       questions.set(m.id, li);
       if (v.assumed) li.appendChild(el("div", "small muted", "If you don't answer" + (v.deadline ? " by " + new Date(v.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "") + ": " + v.assumed));
@@ -265,6 +301,7 @@
     for (const b of box.querySelectorAll("button, input")) b.disabled = true;
     try {
       await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "answer", reply_to: id, body: await C.seal(keys, { text }) } });
+      fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
       loadTools();
     } catch (e) {
@@ -284,13 +321,39 @@
     $("feed").appendChild(li);
   }
 
+  // Writing: the box grows with the text, Enter sends on a keyboard (Shift+Enter for a new line), and the
+  // conversation is read every 3 s for a while after, so the answer shows up as soon as it comes.
+  const say = $("say");
+  const grow = () => { say.style.height = "auto"; say.style.height = Math.min(say.scrollHeight, 140) + "px"; };
+  say.addEventListener("input", grow);
+  say.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); $("composer").requestSubmit(); }
+  });
+
+  let sending = false;
   $("composer").onsubmit = async (e) => {
     e.preventDefault();
-    const text = $("say").value.trim();
-    if (!text) return;
-    $("say").value = "";
-    await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", body: await C.seal(keys, { text }) } });
-    await poll();
+    const text = say.value.trim();
+    if (!text || sending) return;
+    sending = true;
+    const button = $("composer").querySelector("button");
+    button.disabled = true;
+    say.value = "";
+    grow();
+    try {
+      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", body: await C.seal(keys, { text }) } });
+      fastUntil = Date.now() + 10 * 60 * 1000;
+      await poll();
+      window.scrollTo(0, document.body.scrollHeight);
+    } catch (err) {
+      say.value = text;
+      grow();
+      alertLine("Not sent: " + err.message + " Press Send to try again.");
+    } finally {
+      sending = false;
+      button.disabled = false;
+      say.focus();
+    }
   };
 
   $("notify").onchange = () => api("/api/me/tools/" + current.id + "/notify", { json: { notify: $("notify").value } });
@@ -342,7 +405,9 @@
     if ("serviceWorker" in navigator) navigator.serviceWorker.register(ROOT + "/sw.js", { scope: ROOT + "/" }).catch(() => {});
     if (!(await pending())) await loadTools();
     offerNotifications();
-    setInterval(() => poll().catch(() => {}), 8000);
+    (function tick() {
+      poll().catch(() => {}).finally(() => setTimeout(tick, Date.now() < fastUntil ? 3000 : 8000));
+    })();
     setInterval(() => { if (!document.hidden && $("confirm").hidden) loadTools().catch(() => {}); }, 15000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll().catch(() => {}); loadTools().catch(() => {}); } });
   })();

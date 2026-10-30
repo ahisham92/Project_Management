@@ -9,13 +9,13 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 10px 14px; min-height: 44px; cursor: pointer; }
 button:disabled { opacity: .5; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 button.danger { color: var(--danger); border-color: var(--danger); }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-input, select { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+input, select, textarea { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .error { color: var(--danger); }
@@ -73,3 +73,12 @@ input, select { border: 1px solid var(--line); background: var(--card); color: v
 
 .composer { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
 .composer[hidden] { display: none; }
+
+textarea#say { resize: none; line-height: 1.4; max-height: 140px; }
+.composer { align-items: flex-end; }
+.tick { justify-self: end; color: var(--muted); }
+.tick.read { color: var(--accent); font-weight: 600; }
+.status { margin: 12px 4px 0; }
+.status.working::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+@media (prefers-reduced-motion: reduce) { .status.working::after { animation: none; content: "…"; } }

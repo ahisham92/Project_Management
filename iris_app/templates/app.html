@@ -72,8 +72,9 @@
     <div id="commands" class="row commands"></div>
     </div>
     <ol id="feed" class="feed"></ol>
+    <p id="status" class="status small muted" role="status" hidden></p>
     <form id="composer" class="composer">
-      <input id="say" autocomplete="off" placeholder="Write a message">
+      <textarea id="say" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Write a message" aria-label="Write a message"></textarea>
       <button class="primary">Send</button>
     </form>
   </section>

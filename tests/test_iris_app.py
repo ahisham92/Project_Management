@@ -99,6 +99,29 @@ def test_updates_notify_only_when_asked(world):
     assert pushes[-1][1]["body"] == "Sketch ProMax sent an update"
 
 
+def test_a_message_from_the_phone_is_read_and_answered(world):
+    app, clock, pushes = world
+    tool, auth, accepted = pair(app)
+    me = phone(app)
+    sent = me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "message", "body": "v1.hello"}).get_json()
+    assert me.get(f"/api/me/tools/{accepted['id']}/messages").get_json()["read_upto"] == 0
+    tool.get("/api/tool/inbox?after=0", headers=auth)
+    assert me.get(f"/api/me/tools/{accepted['id']}/messages?after={sent['id']}").get_json()["read_upto"] == sent["id"]
+    # The tool's update soon after is its reply: notified even when only questions notify.
+    tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.reply"})
+    assert pushes[-1][1]["body"] == "Sketch ProMax replied"
+    # Much later, an update is just an update again.
+    count = len(pushes)
+    clock.now += 31 * 60
+    tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.later"})
+    assert len(pushes) == count
+    # With notifications off, a reply makes none either.
+    me.post(f"/api/me/tools/{accepted['id']}/notify", json={"notify": "none"})
+    me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "message", "body": "v1.again"})
+    tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.r2"})
+    assert len(pushes) == count
+
+
 def test_tool_closes_a_question_it_assumed(world):
     app, _, _ = world
     tool, auth, accepted = pair(app)

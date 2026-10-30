@@ -126,8 +126,10 @@ def create_app(store: Store | None = None) -> Flask:
         data = body()
         kind = data.get("kind", "")
         sent = app.store.post(row["id"], "tool", kind, data.get("body", ""), data.get("reply_to"))
-        if kind == "question" and row["notify"] in ("all", "questions") or kind == "update" and row["notify"] == "all":
-            words = "has a question" if kind == "question" else "sent an update"
+        # An update soon after the user wrote to the tool is its reply: notified unless notifications are off.
+        replied = kind == "update" and row["notify"] != "none" and app.store.wrote_lately(row["id"])
+        if kind == "question" and row["notify"] in ("all", "questions") or kind == "update" and row["notify"] == "all" or replied:
+            words = "has a question" if kind == "question" else "replied" if replied else "sent an update"
             app.notify(row["account"], {"title": row["name"], "body": f"{row['name']} {words}",
                                         "tool": row["id"], "message": sent["id"]})
         return jsonify(sent)
@@ -135,7 +137,7 @@ def create_app(store: Store | None = None) -> Flask:
     @app.get("/api/tool/inbox")
     def tool_inbox():
         row = tool()
-        return jsonify(messages=app.store.messages(row["id"], request.args.get("after", 0, type=int), side="phone"))
+        return jsonify(messages=app.store.tool_inbox(row["id"], request.args.get("after", 0, type=int)))
 
     @app.delete("/api/tool/me")
     def tool_leave():
@@ -162,9 +164,8 @@ def create_app(store: Store | None = None) -> Flask:
     def my_messages(tool_id: int):
         app.store.tool_for(account()["id"], tool_id)
         after = request.args.get("after", type=int)
-        if after is None:
-            return jsonify(messages=app.store.recent(tool_id))
-        return jsonify(messages=app.store.messages(tool_id, after))
+        found = app.store.recent(tool_id) if after is None else app.store.messages(tool_id, after)
+        return jsonify(messages=found, read_upto=app.store.read_upto(tool_id))
 
     @app.post("/api/me/tools/<int:tool_id>/messages")
     def my_send(tool_id: int):

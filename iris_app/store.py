@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS tools (
     token_hash  TEXT NOT NULL UNIQUE,
     created     REAL NOT NULL,
     seen        REAL NOT NULL,
+    read_upto   INTEGER NOT NULL DEFAULT 0, -- the newest phone message the tool has fetched
     revoked     REAL
 );
 CREATE INDEX IF NOT EXISTS tools_account ON tools(account);
@@ -115,6 +116,8 @@ class Store:
         self.clock = clock
         with self._db() as db:
             db.executescript(SCHEMA)
+            if "read_upto" not in {r["name"] for r in db.execute("PRAGMA table_info(tools)")}:
+                db.execute("ALTER TABLE tools ADD COLUMN read_upto INTEGER NOT NULL DEFAULT 0")
 
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=15)
@@ -227,7 +230,7 @@ class Store:
         return {
             "id": row["id"], "name": row["name"], "machine": row["machine"],
             "commands": json.loads(row["commands"] or "[]"), "notify": row["notify"],
-            "created": row["created"], "seen": row["seen"],
+            "created": row["created"], "seen": row["seen"], "read_upto": row["read_upto"],
             "waiting": row["waiting"] if "waiting" in keys else 0,
             "last": (row["last"] or 0) if "last" in keys else 0,
         }
@@ -289,6 +292,26 @@ class Store:
         with self._db() as db:
             rows = db.execute(sql, args).fetchall()
         return [{k: r[k] for k in ("id", "side", "kind", "reply_to", "body", "state", "created")} for r in rows]
+
+    def tool_inbox(self, tool_id: int, after: int = 0) -> list[dict[str, Any]]:
+        """What the phone sent after ``after``; fetched counts as read (the phone shows a tick)."""
+        found = self.messages(tool_id, after, side="phone")
+        if found:
+            with self._db() as db:
+                db.execute("UPDATE tools SET read_upto = MAX(read_upto, ?) WHERE id = ?", (found[-1]["id"], tool_id))
+        return found
+
+    def wrote_lately(self, tool_id: int, minutes: int = 30) -> bool:
+        """The phone wrote to this tool lately: its update is a reply to the user, worth a notification."""
+        with self._db() as db:
+            row = db.execute("SELECT 1 FROM messages WHERE tool_id = ? AND side = 'phone' AND kind = 'message' AND created > ? LIMIT 1",
+                             (tool_id, self.clock() - minutes * 60)).fetchone()
+        return row is not None
+
+    def read_upto(self, tool_id: int) -> int:
+        with self._db() as db:
+            row = db.execute("SELECT read_upto FROM tools WHERE id = ?", (tool_id,)).fetchone()
+        return row["read_upto"] if row else 0
 
     def recent(self, tool_id: int, limit: int = 100) -> list[dict[str, Any]]:
         """The last ``limit`` messages, oldest first: what the phone opens a tool on."""

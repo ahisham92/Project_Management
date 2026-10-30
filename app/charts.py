@@ -97,9 +97,13 @@ def _chart(body: str, legend: str = "", view_w: int = 800, view_h: int = 300,
     blown up to fill the card — a handful of boxes stretched across a wide
     screen reads as a handful of enormous boxes.
     """
-    style = f' style="max-width:{view_w}px"' if natural else ""
+    # --chart-w/--chart-h carry the drawing's own size, so a stylesheet can
+    # stop a chart (and the type in it) growing without limit on a wide screen.
+    style = f"--chart-w:{view_w};--chart-h:{view_h}"
+    if natural:
+        style += f";max-width:{view_w}px"
     return Markup(
-        f'<div class="chart"{style}>{legend}'
+        f'<div class="chart" style="{style}">{legend}'
         f'<svg viewBox="0 0 {view_w} {view_h}" role="img" preserveAspectRatio="xMidYMid meet">{body}</svg>'
         f'<div class="chart-tip" hidden></div></div>'
     )

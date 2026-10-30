@@ -1,0 +1,157 @@
+/* Project Management, one look on every page.
+ *
+ * Loaded after app.css on the Project Management door only (body.pm-app: the
+ * portfolio, a project's tabs, its minutes and Carmen), so the other apps on
+ * the site keep theirs. Like themis.css it sets the door's details once, here,
+ * rather than page by page:
+ *
+ *   - off-black ink, and figures that line up in every table, tile and chart;
+ *   - headline figures labelled in plain sentence case, laid out with no empty
+ *     cells left over, two to a row on a phone;
+ *   - a chart grows with the card only so far, so its labels stay the size of
+ *     the text around it instead of doubling on a wide screen;
+ *   - every control answers hover, press and keyboard focus the same way, and
+ *     motion stops for anyone who asks the system for less of it;
+ *   - the "how to use" strip is boxed by a full hairline and a tint, not a
+ *     coloured bar down one side;
+ *   - the header says which app this is and which project, and links back to
+ *     the portfolio.
+ */
+
+body.pm-app {
+  --ink: #15171b;
+  --pm-tint: color-mix(in srgb, var(--series-1) 7%, transparent);
+  --pm-ring: 0 0 0 3px color-mix(in srgb, var(--series-1) 28%, transparent);
+  --pm-shadow: 0 1px 2px rgba(21, 23, 27, 0.05);
+  --pm-fast: 120ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.pm-app { --ink: #eef0f3; --pm-shadow: none; }
+}
+:root[data-theme="dark"] body.pm-app { --ink: #eef0f3; --pm-shadow: none; }
+
+/* --- header ---------------------------------------------------------------- */
+
+.pm-crumbs {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  font-size: 0.875rem; font-weight: 600;
+}
+.pm-crumbs a { color: var(--ink); text-decoration: none; white-space: nowrap; border-radius: 6px; padding: 2px 4px; }
+.pm-crumbs a:hover { background: var(--pm-tint); }
+.pm-crumbs .pm-short { display: none; }
+@media (max-width: 720px) { .pm-crumbs .pm-short { display: inline; } }
+.pm-crumb-sep { color: var(--axis); font-weight: 400; }
+.pm-crumbs .pm-crumb-project {
+  font-weight: 500; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; max-width: 42ch;
+}
+.pm-app .topbar-inner { flex-wrap: nowrap; }
+.pm-app .tabs a { border-radius: 6px 6px 0 0; }
+.pm-app .tabs a:hover { background: var(--pm-tint); }
+.pm-app .tabs a.active { font-weight: 600; }
+
+/* --- type and figures ------------------------------------------------------ */
+
+.pm-app table, .pm-app .tile-value, .pm-app .tile-foot, .pm-app .chart text,
+.pm-app .badge, .pm-app input[type="number"] { font-variant-numeric: tabular-nums; }
+.pm-app main h1 { font-size: 1.375rem; line-height: 1.25; letter-spacing: -0.01em; text-wrap: balance; }
+.pm-app .page-head p { max-width: 90ch; }
+.pm-app .card-head p { max-width: 100ch; }
+
+/* --- headline figures ------------------------------------------------------ */
+
+.pm-app .tile { box-shadow: var(--pm-shadow); padding: 14px 16px; }
+/* A label in sentence case reads as a label; spaced capitals read as filler. */
+.pm-app .tile-label {
+  text-transform: none; letter-spacing: 0; font-size: 0.8125rem; font-weight: 500; color: var(--ink-2);
+}
+.pm-app .tile-value { font-size: 1.75rem; line-height: 1.15; letter-spacing: -0.02em; margin-top: 4px; }
+.pm-app .tile-foot { margin-top: 6px; line-height: 1.4; }
+
+/* Five tiles in a row of four left three empty cells under the fifth. */
+@media (min-width: 1001px) {
+  .pm-app .grid-4:has(> .tile:nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+/* On a phone, two figures to a row: four tiles are one screen, not two. */
+@media (max-width: 720px) {
+  .pm-app .grid-4:has(> .tile), .pm-app .grid-3:has(> .tile) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  /* An odd one out takes the whole row rather than leaving a hole beside it. */
+  .pm-app .grid-4 > .tile:last-child:nth-child(odd), .pm-app .grid-3 > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .pm-app .tile { padding: 12px; }
+  .pm-app .tile-value { font-size: 1.375rem; }
+  .pm-app .tile-foot { font-size: 0.7rem; }
+}
+
+/* --- charts ---------------------------------------------------------------- */
+
+/* A chart is drawn 800 units wide and scales with its card. Past a quarter
+   bigger than drawn, its labels would outgrow the page's own text, so it stops
+   there and sits in the middle of the card. The box keeps the drawing's
+   proportions, so hover and dragging still land where the pointer is. */
+.pm-app .chart { max-width: calc(var(--chart-w, 800) * 1.25px); margin-inline: auto; }
+.pm-app .card-body > .chart, .pm-app .card-body.flush > .chart { padding-inline: 4px; }
+
+/* --- surfaces -------------------------------------------------------------- */
+
+.pm-app .card { box-shadow: var(--pm-shadow); }
+.pm-app thead th { color: var(--ink-2); }
+.pm-app tbody tr:hover > td { background: color-mix(in srgb, var(--series-1) 3%, transparent); }
+
+/* The "how to use" strip: a full hairline and a tint, never a side bar. */
+.pm-app .guide-strip {
+  border-left-width: 1px;
+  border-color: color-mix(in srgb, var(--series-1) 22%, var(--border));
+  background: color-mix(in srgb, var(--series-1) 4%, var(--surface));
+}
+.pm-app .savings > li { border-left: 0; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--good) 35%, var(--border)); border-radius: 8px; }
+.pm-app .savings > li + li { margin-top: 6px; }
+
+/* --- interaction states ---------------------------------------------------- */
+
+.pm-app a, .pm-app .btn, .pm-app button, .pm-app summary,
+.pm-app input, .pm-app select, .pm-app textarea, .pm-app .chips a {
+  transition: background-color var(--pm-fast) ease-out, border-color var(--pm-fast) ease-out,
+              color var(--pm-fast) ease-out, box-shadow var(--pm-fast) ease-out;
+}
+.pm-app :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.pm-app input:focus, .pm-app select:focus, .pm-app textarea:focus {
+  outline: none; border-color: var(--series-1); box-shadow: var(--pm-ring);
+}
+.pm-app .btn-primary { box-shadow: var(--pm-shadow); }
+.pm-app .btn-ghost:hover { border-color: color-mix(in srgb, var(--series-1) 40%, var(--border)); background: var(--pm-tint); color: var(--ink); }
+.pm-app .btn:active:not(:disabled) { transform: translateY(1px); }
+.pm-app .btn:disabled, .pm-app .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.pm-app .chips a:hover:not(.active) { background: var(--pm-tint); color: var(--ink); }
+body.pm-app { accent-color: var(--series-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-app *, .pm-app *::before, .pm-app *::after {
+    transition-duration: 0.01ms !important; animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important; scroll-behavior: auto !important;
+  }
+  .pm-app .btn:active:not(:disabled) { transform: none; }
+}
+
+/* --- phone ----------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  /* The project's name goes; the app's name and the way back stay. */
+  .pm-crumbs .pm-crumb-sep, .pm-crumbs .pm-crumb-project { display: none; }
+  .pm-crumbs { font-size: 0.8125rem; }
+  .pm-crumbs .pm-long { display: none; }
+  .pm-app .topbar-inner { flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+  .pm-app .topbar .btn { white-space: nowrap; }
+  /* The tabs scroll sideways: a fade on the right edge says there are more. */
+  .pm-app .tabs {
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+  }
+  .pm-app .tabs::-webkit-scrollbar { display: none; }
+  .pm-app main h1 { font-size: 1.2rem; }
+}
+
+@media print {
+  .pm-app .tile, .pm-app .card, .pm-app .btn-primary { box-shadow: none; }
+  .pm-app .chart { max-width: none; }
+}

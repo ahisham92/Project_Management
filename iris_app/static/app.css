@@ -32,20 +32,34 @@ input, select { border: 1px solid var(--line); background: var(--card); color: v
 .bar .icon-btn { background: transparent; color: #fff; border-color: #3a4660; font-size: 13px; min-height: 36px; padding: 6px 10px; }
 
 .hint { margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--soft); }
-.tabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px 0; }
-.tab { white-space: nowrap; border-radius: 999px; min-height: 38px; padding: 6px 14px; }
-.tab.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#list { max-width: 720px; margin: 0 auto; padding: 8px 16px 32px; }
+.list-title { font-size: 26px; margin: 12px 0 10px; }
+.tools { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.tools li + li { border-top: 1px solid var(--line); }
+.tool-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 12px 14px; min-height: 68px; }
+.tool-row:active { background: var(--soft); }
+.tool-mark { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--navy); color: #fff; font-weight: 700; font-size: 15px; }
+.tool-mid { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.tool-top { display: flex; justify-content: space-between; gap: 8px; }
+.tool-row-name { font-weight: 600; }
+.tool-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-preview.waiting { color: var(--accent); font-weight: 600; }
+.list-foot { margin: 14px 4px; }
+.back { flex: none; font-size: 28px; line-height: 1; padding: 4px 12px 8px; min-height: 44px; border: 0; background: transparent; }
+.tool-title { flex: 1; min-width: 0; }
+.tool-top-bar { position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 1; margin: 0 -16px 10px; padding: 8px 16px 2px; background: var(--bg); border-bottom: 1px solid var(--line); }
 .badge { display: inline-block; margin-left: 6px; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; line-height: 20px; }
 
-#tool { max-width: 720px; margin: 0 auto; padding: 12px 16px 96px; }
-.tool-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+#tool { max-width: 720px; margin: 0 auto; padding: 0 16px 96px; }
+.tool-head { display: flex; align-items: flex-start; gap: 6px; }
 .tool-name { font-weight: 700; font-size: 20px; }
 .menu { position: relative; }
 .menu summary { list-style: none; cursor: pointer; font-size: 22px; padding: 4px 12px; border-radius: 10px; border: 1px solid var(--line); }
 .menu summary::-webkit-details-marker { display: none; }
 .menu-body { position: absolute; right: 0; top: 48px; z-index: 3; width: 260px; display: grid; gap: 12px; padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .15); }
 .menu-body label { display: grid; gap: 6px; font-size: 14px; }
-.commands { margin: 12px 0; flex-wrap: wrap; }
+.commands { margin: 8px 0; flex-wrap: wrap; }
+.commands:empty, .commands[hidden] { display: none; }
 
 .feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .msg { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 6px; max-width: 92%; }

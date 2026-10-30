@@ -22,9 +22,13 @@
 
 <div id="hint" class="hint" hidden></div>
 
-<nav id="tabs" class="tabs" aria-label="Your tools"></nav>
-
 <main id="main">
+  <section id="list" hidden>
+    <h1 class="list-title">Connections</h1>
+    <ul id="tools" class="tools" aria-label="Your connected tools"></ul>
+    <p class="muted small list-foot">To add another tool, choose <b>Connect your phone</b> in its settings and scan the code with this phone.</p>
+  </section>
+
   <section id="empty" class="center" hidden>
     <img class="mark-big" src="{{ request.script_root }}/static/icon.svg" alt="">
     <h1>No tools yet</h1>
@@ -43,10 +47,13 @@
   </section>
 
   <section id="tool" hidden>
+    <div class="tool-top-bar">
     <div class="tool-head">
-      <div>
+      <button id="back" class="back" aria-label="Back to your connections">‹</button>
+      <div class="tool-title">
         <div class="tool-name" id="tool-name"></div>
         <div class="muted small" id="tool-machine"></div>
+        <div class="muted small" id="tool-seen"></div>
       </div>
       <details class="menu">
         <summary aria-label="Tool settings">⋯</summary>
@@ -63,9 +70,10 @@
       </details>
     </div>
     <div id="commands" class="row commands"></div>
+    </div>
     <ol id="feed" class="feed"></ol>
     <form id="composer" class="composer">
-      <input id="say" autocomplete="off" placeholder="Message the tool">
+      <input id="say" autocomplete="off" placeholder="Write a message">
       <button class="primary">Send</button>
     </form>
   </section>

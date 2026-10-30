@@ -48,7 +48,7 @@
   }
 
   function show(section) {
-    for (const id of ["empty", "confirm", "tool"]) $(id).hidden = id !== section;
+    for (const id of ["empty", "confirm", "list", "tool"]) $(id).hidden = id !== section;
   }
 
   // ---- connecting a new tool ----------------------------------------------
@@ -80,26 +80,80 @@
         offerNotifications();
       } catch (e) { $("confirm-error").textContent = e.message; }
     };
-    $("confirm-no").onclick = () => { localStorage.removeItem("iris.pending"); loadTools(); };
+    $("confirm-no").onclick = () => { localStorage.removeItem("iris.pending"); home(); };
     return true;
   }
 
   // ---- tools ----------------------------------------------------------------
 
+  // The home screen: every connected tool, the one that spoke last first, with
+  // what it said last and how many of its questions wait for an answer.
   async function loadTools(open) {
     tools = (await api("/api/me/tools")).tools;
-    const tabs = $("tabs");
-    tabs.textContent = "";
-    for (const t of tools) {
-      const tab = el("button", "tab" + (current && t.id === current.id ? " on" : ""), t.name);
-      if (t.waiting) tab.appendChild(el("span", "badge", String(t.waiting)));
-      tab.dataset.id = t.id;
-      tab.onclick = () => openTool(t.id);
-      tabs.appendChild(tab);
-    }
     if (!tools.length) { current = null; show("empty"); return; }
-    const want = open || (current && current.id) || Number(new URLSearchParams(location.search).get("tool")) || tools[0].id;
-    if (!current || current.id !== want) await openTool(tools.some((t) => t.id === want) ? want : tools[0].id);
+    const want = open || Number(new URLSearchParams(location.search).get("tool"));
+    if (want && tools.some((t) => t.id === want)) {
+      history.replaceState({ tool: want }, "", ROOT + "/?tool=" + want);
+      if (!current || current.id !== want) await openTool(want, true);
+      return;
+    }
+    if (current) { current = tools.find((t) => t.id === current.id) || null; if (current) { seenLine(); return; } }
+    await renderList();
+    show("list");
+  }
+
+  async function renderList() {
+    const list = $("tools");
+    const rows = [];
+    for (const t of tools) {
+      const li = el("li");
+      const b = el("button", "tool-row");
+      b.onclick = () => go(t.id);
+      const mark = el("span", "tool-mark", (t.name.match(/[A-Z0-9]/g) || [t.name[0]]).slice(0, 2).join("").toUpperCase());
+      const mid = el("span", "tool-mid");
+      const top = el("span", "tool-top");
+      top.appendChild(el("span", "tool-row-name", t.name));
+      if (t.latest) top.appendChild(el("span", "small muted", when(t.latest.created)));
+      mid.appendChild(top);
+      const line = el("span", "tool-preview small" + (t.waiting ? " waiting" : " muted"), await preview(t));
+      mid.appendChild(line);
+      b.appendChild(mark);
+      b.appendChild(mid);
+      if (t.waiting) b.appendChild(el("span", "badge", String(t.waiting)));
+      b.setAttribute("aria-label", t.name + (t.waiting ? ", " + t.waiting + " waiting for your answer" : ""));
+      li.appendChild(b);
+      rows.push(li);
+    }
+    list.replaceChildren(...rows);
+  }
+
+  // What the list shows under a tool's name: its latest message, decrypted here.
+  async function preview(t) {
+    if (t.waiting) return t.waiting === 1 ? "Waiting for your answer" : t.waiting + " questions waiting for your answer";
+    const m = t.latest;
+    if (!m) return (t.machine ? "On " + t.machine + ". " : "") + "Nothing yet. Write to it any time.";
+    const keyText = keyFor(t.id);
+    if (!keyText) return "Connect it again to read its messages here.";
+    let v;
+    try { v = await C.open(await C.importKey(keyText), m.body); } catch (e) { return ""; }
+    const text = m.kind === "command" ? "You pressed " + v.command : (v.text || "");
+    return (m.side === "phone" && m.kind !== "command" ? "You: " : "") + text.replace(/\s+/g, " ");
+  }
+
+  function go(id) {
+    history.pushState({ tool: id }, "", ROOT + "/?tool=" + id);
+    openTool(id);
+  }
+
+  function home() {
+    current = null;
+    history.replaceState({}, "", ROOT + "/");
+    loadTools().catch(() => {});
+  }
+
+  function seenLine() {
+    const ago = Math.max(0, Date.now() / 1000 - current.seen);
+    $("tool-seen").textContent = "Last heard from " + (ago < 120 ? "just now" : ago < 3600 ? Math.round(ago / 60) + " min ago" : when(current.seen));
   }
 
   async function openTool(id) {
@@ -107,9 +161,10 @@
     lastId = 0;
     questions.clear();
     show("tool");
-    for (const tab of $("tabs").children) tab.classList.toggle("on", Number(tab.dataset.id) === id);
+    window.scrollTo(0, 0);
     $("tool-name").textContent = current.name;
-    $("tool-machine").textContent = current.machine;
+    $("tool-machine").textContent = current.machine ? "On " + current.machine : "";
+    seenLine();
     $("notify").value = current.notify;
     $("feed").textContent = "";
     const keyText = keyFor(id);
@@ -129,9 +184,16 @@
       return;
     }
     const data = await api("/api/me/tools/" + id + "/messages");
+    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Nothing here yet. Write below to send " + current.name + " a message; it reads it the next time it checks in."));
     await render(data.messages);
     window.scrollTo(0, document.body.scrollHeight);
   }
+
+  $("back").onclick = () => { if (history.state && history.state.tool && history.length > 1) history.back(); else home(); };
+  window.addEventListener("popstate", () => {
+    const id = history.state && history.state.tool;
+    if (id && tools.some((t) => t.id === id)) openTool(id); else { current = null; loadTools().catch(() => {}); }
+  });
 
   async function poll() {
     if (!current || !keys || document.hidden) return;
@@ -146,6 +208,7 @@
   // ---- the feed -------------------------------------------------------------
 
   async function render(messages) {
+    if (messages.length) for (const n of $("feed").querySelectorAll(".note:not(.error)")) if (keys) n.remove();
     for (const m of messages) {
       lastId = Math.max(lastId, m.id);
       let value;
@@ -236,8 +299,7 @@
     if (!confirm("Disconnect " + current.name + "? It will stop sending you messages until it is connected again.")) return;
     await api("/api/me/tools/" + current.id, { method: "DELETE" });
     localStorage.removeItem("iris.key." + current.id);
-    current = null;
-    loadTools();
+    home();
   };
 
   // ---- notifications ----------------------------------------------------------
@@ -281,7 +343,7 @@
     if (!(await pending())) await loadTools();
     offerNotifications();
     setInterval(() => poll().catch(() => {}), 8000);
-    setInterval(() => { if (!document.hidden && $("confirm").hidden) loadTools().catch(() => {}); }, 30000);
+    setInterval(() => { if (!document.hidden && $("confirm").hidden) loadTools().catch(() => {}); }, 15000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll().catch(() => {}); loadTools().catch(() => {}); } });
   })();
 })();

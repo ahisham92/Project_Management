@@ -207,7 +207,13 @@ class Store:
                 " (SELECT MAX(id) FROM messages m WHERE m.tool_id = t.id) AS last"
                 " FROM tools t WHERE account = ? AND revoked IS NULL ORDER BY created",
                 (str(account),)).fetchall()
-        return [self._tool_view(r) for r in rows]
+            views = [self._tool_view(r) for r in rows]
+            for view in views:
+                last = db.execute("SELECT kind, side, body, created FROM messages WHERE id = ?", (view["last"],)).fetchone()
+                view["latest"] = dict(last) if last else None
+        # The home list puts the tool that spoke most recently first.
+        views.sort(key=lambda v: -(v["latest"]["created"] if v["latest"] else v["created"]))
+        return views
 
     def tool_for(self, account: str, tool_id: int) -> dict[str, Any]:
         for tool in self.tools(account):

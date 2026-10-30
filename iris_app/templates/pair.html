@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect to Iris</title>
+<link rel="stylesheet" href="{{ request.script_root }}/static/app.css">
+</head>
+<body>
+<main class="center">
+  <img class="mark-big" src="{{ request.script_root }}/static/icon.svg" alt="">
+  <h1>Connecting…</h1>
+  <p class="muted" id="note">One moment.</p>
+</main>
+<script>
+// Opened from the QR code a tool shows. The key after "#" never reaches the
+// server; keep it on this phone before a sign-in page can lose it, then go on
+// to the app, which asks to confirm.
+(function () {
+  var code = new URLSearchParams(location.search).get("c") || "";
+  var key = new URLSearchParams(location.hash.slice(1)).get("k") || "";
+  if (!code || !key) {
+    document.querySelector("h1").textContent = "This link is not complete";
+    document.getElementById("note").textContent = "Scan the code on the PC again.";
+    return;
+  }
+  try {
+    localStorage.setItem("iris.pending", JSON.stringify({ code: code, key: key, at: Date.now() }));
+  } catch (e) {
+    document.querySelector("h1").textContent = "This browser will not keep the key";
+    document.getElementById("note").textContent = "Turn off private browsing and scan again.";
+    return;
+  }
+  history.replaceState(null, "", location.pathname);
+  location.replace("{{ request.script_root }}/");
+})();
+</script>
+</body>
+</html>

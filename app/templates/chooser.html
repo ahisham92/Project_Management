@@ -9,13 +9,16 @@
     <p class="small muted" style="margin-top:2px">
       One sign-in for all of them: the programme, the client's comments on what it hands over,
       the design of the quay itself, the specification it is built to, how it stands up once it is in
-      service, and the workload of the team doing all of it.
+      service, the workload of the team doing all of it, and the AI tools working for you.
     </p>
   </div>
 </div>
 
 {% if request.args.get('not') == 'triton' %}
   <div class="flashes"><div class="flash error">Your account has not been given Triton. Ask the administrator.</div></div>
+{% endif %}
+{% if request.args.get('not') == 'iris' %}
+  <div class="flashes"><div class="flash error">Your account has not been given Iris. Ask the administrator.</div></div>
 {% endif %}
 {% if request.args.get('not') == 'workload' %}
   <div class="flashes"><div class="flash error">Your account has not been given Selecao+. Ask the administrator.</div></div>
@@ -102,6 +105,19 @@
       a colleague sees their own figures only once they are given access from its Team tab.
     </span>
     <span class="door-go">Open Selecao+ →</span>
+  </a>
+  {% endif %}
+
+  {% if 'iris' in my_programs %}
+  <a class="door{% if not iris['ready'] %} door-shut{% endif %}" href="{{ iris['href'] }}">
+    <span class="door-mark door-mark-iris" aria-hidden="true"><svg viewBox="0 0 64 64" width="42" height="42" focusable="false"><rect width="64" height="64" rx="14" fill="#101B2D"/><path d="M11 45 A21 21 0 0 1 53 45" fill="none" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round"/><path d="M18 45 A14 14 0 0 1 46 45" fill="none" stroke="#3B82F6" stroke-width="4.5" stroke-linecap="round"/><path d="M25 45 A7 7 0 0 1 39 45" fill="none" stroke="#14B8A6" stroke-width="4.5" stroke-linecap="round"/><rect x="9" y="50" width="46" height="3.5" rx="1.75" fill="#fff"/></svg></span>
+    <span class="door-name">Iris<span class="door-tagline">AI tools on your phone</span>{% if not iris['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      Your AI tools' questions and progress on your phone: answer with one tap, stop or resume a
+      run, from anywhere. Connect a tool by scanning the code in its settings. Messages are
+      encrypted on the PC and the phone, so this site cannot read them.
+    </span>
+    <span class="door-go">Open Iris →</span>
   </a>
   {% endif %}
 </div>

@@ -32,3 +32,8 @@ python-docx>=1.1
 python-multipart>=0.0.9
 python-calamine>=0.4
 pyxlsb>=1.0.10
+
+# Iris, AI tools on your phone, mounted at /iris (the iris_app folder). Flask is
+# above; pywebpush sends the phone notifications (pure Python wheels, nothing to
+# compile). Without it Iris still works; phones just do not buzz.
+pywebpush>=2.0,<3.0

@@ -82,3 +82,9 @@ textarea#say { resize: none; line-height: 1.4; max-height: 140px; }
 .status.working::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
 @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
 @media (prefers-reduced-motion: reduce) { .status.working::after { animation: none; content: "…"; } }
+
+.add { margin-top: 16px; width: 100%; }
+#list .add { margin-top: 14px; }
+.cam { margin: 16px auto; width: 100%; max-width: 360px; aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: #000; }
+.cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#paste { margin-top: 8px; }

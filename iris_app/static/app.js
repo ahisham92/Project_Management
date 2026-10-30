@@ -52,10 +52,75 @@
   }
 
   function show(section) {
-    for (const id of ["empty", "confirm", "list", "tool"]) $(id).hidden = id !== section;
+    for (const id of ["empty", "scan", "confirm", "list", "tool"]) $(id).hidden = id !== section;
   }
 
   // ---- connecting a new tool ----------------------------------------------
+
+  // Scanning inside the app: on an iPhone the Home Screen app keeps its own
+  // storage, so a code scanned with the Camera app (it opens Safari or Chrome)
+  // leaves the key there, not here. Scanning here keeps it where it is used.
+  let stream = null;
+  let scanning = 0;
+
+  function take(text) {
+    let url;
+    try { url = new URL(text.trim(), location.href); } catch (e) { return false; }
+    const code = url.searchParams.get("c") || "";
+    const key = new URLSearchParams(url.hash.slice(1)).get("k") || "";
+    if (!code || !key) return false;
+    stopScan();
+    localStorage.setItem("iris.pending", JSON.stringify({ code: code, key: key, at: Date.now() }));
+    pending();
+    return true;
+  }
+
+  async function startScan() {
+    show("scan");
+    $("scan-error").textContent = "";
+    $("paste-link").value = "";
+    if (!navigator.mediaDevices || !window.jsQR) { $("scan-error").textContent = "This browser can't use the camera here. Paste the link instead."; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    } catch (e) {
+      $("scan-error").textContent = "Allow the camera for Iris to scan, or paste the link instead.";
+      return;
+    }
+    const video = $("cam");
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const run = ++scanning;
+    (function frame() {
+      if (run !== scanning || !stream) return;
+      if (video.readyState >= 2 && video.videoWidth) {
+        const w = Math.min(640, video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const found = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+        if (found && found.data) {
+          if (take(found.data)) return;
+          $("scan-error").textContent = "That code isn't a connection code. Show the code from Connect your phone.";
+        }
+      }
+      setTimeout(frame, 200);
+    })();
+  }
+
+  function stopScan() {
+    scanning++;
+    if (stream) for (const t of stream.getTracks()) t.stop();
+    stream = null;
+    $("cam").srcObject = null;
+  }
+
+  for (const b of document.querySelectorAll("[data-add]")) b.onclick = startScan;
+  $("scan-cancel").onclick = () => { stopScan(); home(); };
+  $("paste").onsubmit = (e) => {
+    e.preventDefault();
+    if (!take($("paste-link").value)) $("scan-error").textContent = "That isn't a connection link. Copy it again from Connect your phone on the PC.";
+  };
 
   async function pending() {
     let p = null;
@@ -137,7 +202,7 @@
     const m = t.latest;
     if (!m) return (t.machine ? "On " + t.machine + ". " : "") + "Nothing yet. Write to it any time.";
     const keyText = keyFor(t.id);
-    if (!keyText) return "Connect it again to read its messages here.";
+    if (!keyText) return "Connected in another browser: tap Add a connection to connect it here.";
     let v;
     try { v = await C.open(await C.importKey(keyText), m.body); } catch (e) { return ""; }
     const text = m.kind === "command" ? "You pressed " + v.command : (v.text || "");
@@ -187,7 +252,7 @@
     commands.hidden = !keys || !current.commands.length;
     $("composer").hidden = !keys;
     if (!keys) {
-      const li = el("li", "note", "This phone does not have the key for this tool, so its messages cannot be read here. Connect it again from the tool's settings.");
+      const li = el("li", "note", "This app doesn't have the key for this tool (it was connected in another browser). On the PC, open Connect your phone again; then here, go back and tap Add a connection to scan the new code.");
       $("feed").appendChild(li);
       return;
     }

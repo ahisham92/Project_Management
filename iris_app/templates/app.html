@@ -17,10 +17,11 @@
   <img class="mark" src="{{ request.script_root }}/static/icon.svg" alt="">
   <span class="brand">Iris</span>
   <span class="who muted">{{ who.name }}</span>
-  <button id="bell" class="icon-btn" hidden title="Turn on notifications">Turn on notifications</button>
+  <button class="bell" data-bell type="button" aria-pressed="false" aria-label="Notifications">🔕</button>
 </header>
 
 <div id="hint" class="hint" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
 
 <main id="main">
   <section id="list" hidden>
@@ -60,35 +61,35 @@
   </section>
 
   <section id="tool" hidden>
-    <div class="tool-top-bar">
-    <div class="tool-head">
-      <button id="back" class="back" aria-label="Back to your connections">‹</button>
+    <header class="chat-bar">
+      <button id="back" class="back" type="button" aria-label="Back to your connections">‹</button>
+      <span class="avatar" id="tool-avatar" aria-hidden="true"></span>
       <div class="tool-title">
         <div class="tool-name" id="tool-name"></div>
-        <div class="muted small" id="tool-machine"></div>
-        <div class="muted small" id="tool-seen"></div>
+        <div class="small sub" id="tool-seen"></div>
       </div>
+      <button class="bell" data-bell type="button" aria-pressed="false" aria-label="Notifications">🔕</button>
       <details class="menu">
-        <summary aria-label="Tool settings">⋯</summary>
+        <summary aria-label="Settings for this connection">⋯</summary>
         <div class="menu-body">
+          <div class="small muted" id="tool-machine"></div>
           <label>Notify me about
             <select id="notify">
+              <option value="all">Everything</option>
               <option value="questions">Questions only</option>
-              <option value="all">Questions and updates</option>
               <option value="none">Nothing</option>
             </select>
           </label>
-          <button id="disconnect" class="danger">Disconnect this tool</button>
+          <button id="test-push" type="button">Send a test notification</button>
+          <button id="disconnect" class="danger" type="button">Disconnect this tool</button>
         </div>
       </details>
-    </div>
-    <div id="commands" class="row commands"></div>
-    </div>
-    <ol id="feed" class="feed"></ol>
-    <p id="status" class="status small muted" role="status" hidden></p>
+    </header>
+    <ol id="feed" class="feed" aria-live="polite"></ol>
+    <div id="chips" class="chips" role="group" aria-label="Quick messages"></div>
     <form id="composer" class="composer">
-      <textarea id="say" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Write a message" aria-label="Write a message"></textarea>
-      <button class="primary">Send</button>
+      <textarea id="say" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Message" aria-label="Write a message"></textarea>
+      <button class="send" aria-label="Send" type="submit"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
     </form>
   </section>
 </main>

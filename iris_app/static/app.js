@@ -53,6 +53,7 @@
 
   function show(section) {
     for (const id of ["empty", "scan", "confirm", "list", "tool"]) $(id).hidden = id !== section;
+    if (section !== "tool") document.body.classList.remove("in-chat");
   }
 
   // ---- connecting a new tool ----------------------------------------------
@@ -178,10 +179,11 @@
       const li = el("li");
       const b = el("button", "tool-row");
       b.onclick = () => go(t.id);
-      const mark = el("span", "tool-mark", (t.name.match(/[A-Z0-9]/g) || [t.name[0]]).slice(0, 2).join("").toUpperCase());
+      const shown = t.agent || t.name;
+      const mark = el("span", "tool-mark", t.agent ? t.agent[0].toUpperCase() : (t.name.match(/[A-Z0-9]/g) || [t.name[0]]).slice(0, 2).join("").toUpperCase());
       const mid = el("span", "tool-mid");
       const top = el("span", "tool-top");
-      top.appendChild(el("span", "tool-row-name", t.name));
+      top.appendChild(el("span", "tool-row-name", t.agent ? t.agent + " · " + t.name : shown));
       if (t.latest) top.appendChild(el("span", "small muted", when(t.latest.created)));
       mid.appendChild(top);
       const line = el("span", "tool-preview small" + (t.waiting ? " waiting" : " muted"), await preview(t));
@@ -189,7 +191,7 @@
       b.appendChild(mark);
       b.appendChild(mid);
       if (t.waiting) b.appendChild(el("span", "badge", String(t.waiting)));
-      b.setAttribute("aria-label", t.name + (t.waiting ? ", " + t.waiting + " waiting for your answer" : ""));
+      b.setAttribute("aria-label", shown + (t.waiting ? ", " + t.waiting + " waiting for your answer" : ""));
       li.appendChild(b);
       rows.push(li);
     }
@@ -220,9 +222,12 @@
     loadTools().catch(() => {});
   }
 
+  function who(t) { return (t && (t.agent || t.name)) || ""; }
+
   function seenLine() {
     const ago = Math.max(0, Date.now() / 1000 - current.seen);
-    $("tool-seen").textContent = "Last heard from " + (ago < 120 ? "just now" : ago < 3600 ? Math.round(ago / 60) + " min ago" : when(current.seen));
+    const seen = ago < 120 ? "online" : "last seen " + (ago < 3600 ? Math.round(ago / 60) + " min ago" : when(current.seen));
+    $("tool-seen").textContent = (current.agent ? current.name + " · " : "") + seen;
   }
 
   async function openTool(id) {
@@ -231,36 +236,30 @@
     readUpto = 0;
     mine = [];
     lastSide = "";
-    $("status").hidden = true;
+    lastDay = "";
     questions.clear();
     show("tool");
-    window.scrollTo(0, 0);
-    $("tool-name").textContent = current.name;
-    $("tool-machine").textContent = current.machine ? "On " + current.machine : "";
+    document.body.classList.add("in-chat");
+    fitViewport();
+    $("tool-name").textContent = who(current);
+    $("tool-avatar").textContent = (who(current)[0] || "?").toUpperCase();
+    $("tool-machine").textContent = current.name + (current.machine ? " on " + current.machine : "");
     seenLine();
     $("notify").value = current.notify;
     $("feed").textContent = "";
     const keyText = keyFor(id);
     keys = keyText ? await C.importKey(keyText) : null;
-    const commands = $("commands");
-    commands.textContent = "";
-    for (const name of current.commands) {
-      const b = el("button", /stop/i.test(name) ? "danger" : "", name);
-      b.onclick = () => command(name);
-      commands.appendChild(b);
-    }
-    commands.hidden = !keys || !current.commands.length;
+    chips();
     $("composer").hidden = !keys;
     if (!keys) {
-      const li = el("li", "note", "This app doesn't have the key for this tool (it was connected in another browser). On the PC, open Connect your phone again; then here, go back and tap Add a connection to scan the new code.");
-      $("feed").appendChild(li);
+      $("feed").appendChild(el("li", "note", "This app doesn't have the key for this tool (it was connected in another browser). On the PC, open Connect your phone again; then here, go back and tap Add a connection to scan the new code."));
       return;
     }
     const data = await api("/api/me/tools/" + id + "/messages");
-    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Nothing here yet. Write below to send " + current.name + " a message."));
+    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Say hi to " + who(current) + ". Write below, or tap a quick message."));
     readUpto = data.read_upto || 0;
     await render(data.messages);
-    window.scrollTo(0, document.body.scrollHeight);
+    toBottom();
   }
 
   $("back").onclick = () => { if (history.state && history.state.tool && history.length > 1) history.back(); else home(); };
@@ -269,63 +268,106 @@
     if (id && tools.some((t) => t.id === id)) openTool(id); else { current = null; loadTools().catch(() => {}); }
   });
 
+  // The open chat fills the visible screen, above the keyboard: on an iPhone the
+  // keyboard shrinks the visual viewport only, so the chat follows its height.
+  function fitViewport() {
+    const vv = window.visualViewport;
+    document.documentElement.style.setProperty("--app-h", (vv ? vv.height : window.innerHeight) + "px");
+    if (vv) window.scrollTo(0, 0);
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => { const end = nearBottom(); fitViewport(); if (end) toBottom(); });
+    window.visualViewport.addEventListener("scroll", () => { if (document.body.classList.contains("in-chat")) window.scrollTo(0, 0); });
+  }
+  window.addEventListener("resize", fitViewport);
+
+  const feedBox = () => $("feed");
+  function nearBottom() { const f = feedBox(); return f.scrollHeight - f.scrollTop - f.clientHeight < 60; }
+  function toBottom() { const f = feedBox(); f.scrollTop = f.scrollHeight; }
+
   async function poll() {
     if (!current || !keys || document.hidden) return;
     const data = await api("/api/me/tools/" + current.id + "/messages?after=" + lastId);
     if ((data.read_upto || 0) !== readUpto) { readUpto = data.read_upto || 0; ticks(); }
     if (data.messages.length) {
-      const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 40;
+      const end = nearBottom();
       await render(data.messages);
-      if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+      if (end) toBottom();
     }
   }
 
   // ---- the feed -------------------------------------------------------------
 
+  let lastDay = "";
+
+  function dayLabel(seconds) {
+    const d = new Date(seconds * 1000), today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  }
+
+  function clock(seconds) {
+    return new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
   async function render(messages) {
-    if (messages.length) for (const n of $("feed").querySelectorAll(".note:not(.error)")) if (keys) n.remove();
+    const feed = $("feed");
+    if (messages.length) for (const n of feed.querySelectorAll(".note:not(.error)")) if (keys) n.remove();
+    $("typing") && $("typing").remove();
     for (const m of messages) {
       lastId = Math.max(lastId, m.id);
       let value;
       try { value = await C.open(keys, m.body); } catch (e) { value = { text: "(could not be read: " + e.message + ")" }; }
       if (m.kind === "answer" || m.kind === "closed") settle(m, value);
       if (m.kind === "closed") continue;
-      $("feed").appendChild(item(m, value));
+      const day = dayLabel(m.created);
+      if (day !== lastDay) { feed.appendChild(el("li", "day", day)); lastDay = day; }
+      feed.appendChild(item(m, value));
       lastSide = m.side;
     }
     ticks();
   }
 
-  // Under your messages: Sent, then Read once the tool fetched them; and under the
-  // conversation, what happens next when the newest message is yours.
+  // Your messages carry WhatsApp's ticks: one grey tick once Iris has it, two
+  // blue ticks once the tool took it in. When the newest message is yours and
+  // was read, a "typing" bubble shows the tool is working on the answer.
   function ticks() {
     for (const m of mine) {
       const read = m.id <= readUpto;
-      m.tick.textContent = read ? "Read ✓✓" : "Sent ✓";
+      m.tick.textContent = read ? "✓✓" : "✓";
       m.tick.classList.toggle("read", read);
+      m.tick.setAttribute("aria-label", read ? "Read" : "Sent");
     }
-    const status = $("status");
     const last = mine.length ? mine[mine.length - 1] : null;
-    // Nothing back after 20 minutes: the line would only mislead (the tool may have taken it in without a reply).
-    if (!current || lastSide !== "phone" || !last || last.id < lastId || Date.now() / 1000 - last.created > 20 * 60) { status.hidden = true; return; }
-    status.hidden = false;
-    status.classList.toggle("working", last.id <= readUpto);
-    status.textContent = last.id <= readUpto
-      ? current.name + " is working on it"
-      : current.name + " gets it the next time it checks in, within a minute while it is open on your PC.";
+    const old = $("typing");
+    const working = current && lastSide === "phone" && last && last.id >= lastId && last.id <= readUpto && Date.now() / 1000 - last.created < 20 * 60;
+    if (!working) { if (old) old.remove(); return; }
+    if (old) return;
+    const li = el("li", "msg tool typing");
+    li.id = "typing";
+    li.setAttribute("aria-label", who(current) + " is working on it");
+    li.appendChild(el("span", "dots", ""));
+    li.appendChild(el("span", "small muted", who(current) + " is on it"));
+    const end = nearBottom();
+    $("feed").appendChild(li);
+    if (end) toBottom();
   }
 
   function item(m, v) {
     const li = el("li", "msg " + m.side + " " + m.kind);
-    const head = el("div", "msg-head small muted");
-    head.textContent = ({ update: current.name, question: "Question", answer: "You answered", command: "You pressed", message: "You" })[m.kind] + " · " + when(m.created);
-    li.appendChild(head);
-    li.appendChild(el("div", "msg-text", m.kind === "command" ? v.command : v.text || ""));
+    if (m.kind === "question") li.appendChild(el("div", "label small", "Question"));
+    if (m.kind === "answer") li.appendChild(el("div", "label small", "Your answer"));
+    const text = m.kind === "command" ? (/stop/i.test(v.command) ? "⏹ " : "▶ ") + v.command : v.text || "";
+    li.appendChild(el("div", "msg-text", text));
+    const meta = el("span", "meta small", clock(m.created));
     if (m.side === "phone") {
-      const tick = el("div", "tick small");
-      li.appendChild(tick);
+      const tick = el("span", "tick", "✓");
+      meta.appendChild(tick);
       mine.push({ id: m.id, tick, created: m.created });
     }
+    li.appendChild(meta);
     if (m.kind === "question") {
       questions.set(m.id, li);
       if (v.assumed) li.appendChild(el("div", "small muted", "If you don't answer" + (v.deadline ? " by " + new Date(v.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "") + ": " + v.assumed));
@@ -340,6 +382,7 @@
     const options = el("div", "row wrap");
     for (const opt of v.options || []) {
       const b = el("button", "option", opt);
+      b.type = "button";
       b.onclick = () => answer(m.id, opt, box);
       options.appendChild(b);
     }
@@ -368,60 +411,95 @@
       await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "answer", reply_to: id, body: await C.seal(keys, { text }) } });
       fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
+      toBottom();
       loadTools();
     } catch (e) {
       for (const b of box.querySelectorAll("button, input")) b.disabled = false;
-      alertLine(e.message);
+      toast(e.message);
     }
+  }
+
+  // Quick messages above the box: one tap asks what is going on; the tool's own
+  // buttons (Sketch ProMax: Resume, Stop) sit at the end.
+  const QUICK = ["What is everyone doing?", "Send me an update", "Anything you need from me?"];
+
+  function chips() {
+    const row = $("chips");
+    row.textContent = "";
+    if (!keys) { row.hidden = true; return; }
+    for (const text of QUICK) {
+      const b = el("button", "chip", text);
+      b.type = "button";
+      b.onclick = () => send(text);
+      row.appendChild(b);
+    }
+    for (const name of current.commands) {
+      const b = el("button", "chip" + (/stop/i.test(name) ? " danger" : " command"), (/stop/i.test(name) ? "⏹ " : "▶ ") + name);
+      b.type = "button";
+      b.onclick = () => command(name);
+      row.appendChild(b);
+    }
+    row.hidden = false;
   }
 
   async function command(name) {
     if (/stop/i.test(name) && !confirm(name + " " + current.name + "?")) return;
-    await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "command", body: await C.seal(keys, { command: name }) } });
-    await poll();
+    try {
+      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "command", body: await C.seal(keys, { command: name }) } });
+      fastUntil = Date.now() + 10 * 60 * 1000;
+      await poll();
+      toBottom();
+    } catch (e) { toast("Not sent: " + e.message); }
   }
 
-  function alertLine(text) {
-    const li = el("li", "note error", text);
-    $("feed").appendChild(li);
+  let toastTimer = 0;
+  function toast(text) {
+    const t = $("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
   }
 
   // Writing: the box grows with the text, Enter sends on a keyboard (Shift+Enter for a new line), and the
   // conversation is read every 3 s for a while after, so the answer shows up as soon as it comes.
   const say = $("say");
-  const grow = () => { say.style.height = "auto"; say.style.height = Math.min(say.scrollHeight, 140) + "px"; };
+  const grow = () => { say.style.height = "auto"; say.style.height = Math.min(say.scrollHeight, 120) + "px"; };
   say.addEventListener("input", grow);
+  say.addEventListener("focus", () => setTimeout(() => { fitViewport(); toBottom(); }, 300));
   say.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); $("composer").requestSubmit(); }
   });
 
   let sending = false;
-  $("composer").onsubmit = async (e) => {
-    e.preventDefault();
-    const text = say.value.trim();
-    if (!text || sending) return;
+  async function send(text) {
+    if (!text || sending || !keys) return false;
     sending = true;
-    const button = $("composer").querySelector("button");
-    button.disabled = true;
-    say.value = "";
-    grow();
     try {
       await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", body: await C.seal(keys, { text }) } });
       fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
-      window.scrollTo(0, document.body.scrollHeight);
+      toBottom();
+      return true;
     } catch (err) {
-      say.value = text;
-      grow();
-      alertLine("Not sent: " + err.message + " Press Send to try again.");
+      toast("Not sent: " + err.message + " Try again.");
+      return false;
     } finally {
       sending = false;
-      button.disabled = false;
-      say.focus();
     }
+  }
+
+  $("composer").onsubmit = async (e) => {
+    e.preventDefault();
+    const text = say.value.trim();
+    if (!text) return;
+    say.value = "";
+    grow();
+    say.focus(); // the keyboard stays up, as in WhatsApp
+    if (!(await send(text))) { say.value = text; grow(); }
   };
 
-  $("notify").onchange = () => api("/api/me/tools/" + current.id + "/notify", { json: { notify: $("notify").value } });
+  $("notify").onchange = () => api("/api/me/tools/" + current.id + "/notify", { json: { notify: $("notify").value } }).then(() => { current.notify = $("notify").value; });
 
   $("disconnect").onclick = async () => {
     if (!confirm("Disconnect " + current.name + "? It will stop sending you messages until it is connected again.")) return;
@@ -431,21 +509,39 @@
   };
 
   // ---- notifications ----------------------------------------------------------
+  // The bell (top right, on every screen) turns this phone's notifications on and
+  // off. On: permission, a push subscription the site keeps, and a test buzz. Off:
+  // the subscription is dropped here and on the site. "Notify me about" in each
+  // chat's menu chooses what buzzes for that tool.
 
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
 
-  function offerNotifications() {
-    const hint = $("hint");
-    if (!("serviceWorker" in navigator) || !window.IRIS.vapid) return;
-    if (ios && !standalone) {
-      hint.textContent = "To get notifications on iPhone: tap Share, then Add to Home Screen, and open Iris from there.";
-      hint.hidden = false;
-      return;
+  function pushBlocked() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window))
+      return ios && !standalone ? "On iPhone, notifications work only in the Home Screen app: tap Share, then Add to Home Screen, and open Iris from there."
+        : "This browser can't show notifications.";
+    if (!window.IRIS.vapid) return "The site can't send notifications yet: on PythonAnywhere run pip install -r requirements.txt, then Reload.";
+    if (Notification.permission === "denied") return ios ? "Notifications are blocked for Iris: iPhone Settings › Notifications › Iris › Allow." : "Notifications are blocked for this site in the browser's settings.";
+    return "";
+  }
+
+  async function pushOn() {
+    if (pushBlocked() || Notification.permission !== "granted") return false;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration(ROOT + "/");
+      return !!(reg && await reg.pushManager.getSubscription()) && localStorage.getItem("iris.push") !== "off";
+    } catch (e) { return false; }
+  }
+
+  async function showBell() {
+    const on = await pushOn();
+    for (const b of document.querySelectorAll("[data-bell]")) {
+      b.textContent = on ? "🔔" : "🔕";
+      b.setAttribute("aria-pressed", String(on));
+      b.title = on ? "Notifications on: tap to turn off" : "Notifications off: tap to turn on";
+      b.classList.toggle("on", on);
     }
-    if (!("PushManager" in window) || Notification.permission === "denied") return;
-    $("bell").hidden = Notification.permission === "granted";
-    if (Notification.permission === "granted") subscribe();
   }
 
   async function subscribe() {
@@ -456,13 +552,45 @@
     await api("/api/me/phones", { json: sub.toJSON() });
   }
 
-  $("bell").onclick = async () => {
-    if ((await Notification.requestPermission()) === "granted") {
-      $("bell").hidden = true;
-      await subscribe();
-      await api("/api/me/phones/test", { json: {} });
+  async function testPush() {
+    const got = await api("/api/me/phones/test", { json: {} });
+    if (got.sent) toast("Notifications are on. A test is on its way.");
+    else toast("Notifications are on here, but the test didn't go: " + (got.error || "the site couldn't reach your phone's push service."));
+  }
+
+  async function toggleBell() {
+    const blocked = pushBlocked();
+    if (blocked) { toast(blocked); return; }
+    try {
+      if (await pushOn()) {
+        const reg = await navigator.serviceWorker.getRegistration(ROOT + "/");
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (sub) { await api("/api/me/phones", { method: "DELETE", json: { endpoint: sub.endpoint } }); await sub.unsubscribe(); }
+        localStorage.setItem("iris.push", "off");
+        toast("Notifications off. Messages still come in here.");
+      } else {
+        if ((await Notification.requestPermission()) !== "granted") { toast(pushBlocked() || "Notifications weren't allowed."); await showBell(); return; }
+        localStorage.removeItem("iris.push");
+        await subscribe();
+        await testPush();
+      }
+    } catch (e) { toast("Couldn't change notifications: " + e.message); }
+    await showBell();
+  }
+
+  for (const b of document.querySelectorAll("[data-bell]")) b.onclick = toggleBell;
+  $("test-push").onclick = () => { if (pushBlocked()) toast(pushBlocked()); else testPush().catch((e) => toast(e.message)); };
+
+  async function offerNotifications() {
+    const hint = $("hint");
+    if (ios && !standalone && "serviceWorker" in navigator) {
+      hint.textContent = "To get notifications on iPhone: tap Share, then Add to Home Screen, and open Iris from there.";
+      hint.hidden = false;
     }
-  };
+    // Already allowed and not turned off here: the site gets this phone's subscription again (it may have changed).
+    if (!pushBlocked() && Notification.permission === "granted" && localStorage.getItem("iris.push") !== "off") subscribe().catch(() => {});
+    await showBell();
+  }
 
   // ---- start ------------------------------------------------------------------
 

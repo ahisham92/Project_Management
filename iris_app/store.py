@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS tools (
     name        TEXT NOT NULL,
     machine     TEXT NOT NULL DEFAULT '',
     commands    TEXT NOT NULL DEFAULT '[]',
-    notify      TEXT NOT NULL DEFAULT 'questions',
+    notify      TEXT NOT NULL DEFAULT 'all',
+    agent       TEXT NOT NULL DEFAULT '',   -- who speaks for the tool on the phone (Sketch ProMax: the user's coordinator)
     token_hash  TEXT NOT NULL UNIQUE,
     created     REAL NOT NULL,
     seen        REAL NOT NULL,
@@ -116,8 +117,16 @@ class Store:
         self.clock = clock
         with self._db() as db:
             db.executescript(SCHEMA)
-            if "read_upto" not in {r["name"] for r in db.execute("PRAGMA table_info(tools)")}:
+            columns = {r["name"] for r in db.execute("PRAGMA table_info(tools)")}
+            if "read_upto" not in columns:
                 db.execute("ALTER TABLE tools ADD COLUMN read_upto INTEGER NOT NULL DEFAULT 0")
+            if "agent" not in columns:
+                db.execute("ALTER TABLE tools ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+            if db.execute("PRAGMA user_version").fetchone()[0] < 1:
+                # Tools connected before 31 Oct 2026 notified about questions only, so updates and replies
+                # never buzzed the phone: every tool notifies about everything now (each can be turned down).
+                db.execute("UPDATE tools SET notify = 'all' WHERE notify = 'questions'")
+                db.execute("PRAGMA user_version = 1")
 
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=15)
@@ -177,8 +186,8 @@ class Store:
         now = self.clock()
         with self._db() as db:
             cur = db.execute(
-                "INSERT INTO tools (account, name, machine, commands, token_hash, created, seen)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tools (account, name, machine, commands, notify, token_hash, created, seen)"
+                " VALUES (?, ?, ?, ?, 'all', ?, ?, ?)",
                 (str(account), row["name"], row["machine"], row["commands"], hashed(token), now, now))
             db.execute("UPDATE pairings SET tool_id = ?, token = ? WHERE id = ?",
                        (cur.lastrowid, token, row["id"]))
@@ -229,6 +238,7 @@ class Store:
         keys = row.keys()
         return {
             "id": row["id"], "name": row["name"], "machine": row["machine"],
+            "agent": row["agent"] if "agent" in keys else "",
             "commands": json.loads(row["commands"] or "[]"), "notify": row["notify"],
             "created": row["created"], "seen": row["seen"], "read_upto": row["read_upto"],
             "waiting": row["waiting"] if "waiting" in keys else 0,
@@ -241,6 +251,11 @@ class Store:
         self.tool_for(account, tool_id)
         with self._db() as db:
             db.execute("UPDATE tools SET notify = ? WHERE id = ?", (notify, tool_id))
+
+    def set_agent(self, tool_id: int, agent: str) -> None:
+        """The name the tool speaks under on the phone ("" for its own name)."""
+        with self._db() as db:
+            db.execute("UPDATE tools SET agent = ? WHERE id = ?", ((agent or "").strip()[:40], tool_id))
 
     def disconnect(self, tool_id: int, account: str | None = None) -> None:
         """Cut a tool off, from the phone (``account`` given) or from the tool itself."""
@@ -330,9 +345,12 @@ class Store:
             db.execute("INSERT INTO phones (account, endpoint, p256dh, auth, created) VALUES (?, ?, ?, ?, ?)",
                        (str(account), endpoint, p256dh, auth, self.clock()))
 
-    def remove_phone(self, endpoint: str) -> None:
+    def remove_phone(self, endpoint: str, account: str | None = None) -> None:
         with self._db() as db:
-            db.execute("DELETE FROM phones WHERE endpoint = ?", (endpoint,))
+            if account is None:
+                db.execute("DELETE FROM phones WHERE endpoint = ?", (endpoint,))
+            else:
+                db.execute("DELETE FROM phones WHERE endpoint = ? AND account = ?", (endpoint, str(account)))
 
     def phones(self, account: str) -> list[dict[str, str]]:
         with self._db() as db:

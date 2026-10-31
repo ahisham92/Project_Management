@@ -45,7 +45,7 @@ def create_app(store: Store | None = None) -> Flask:
     app.config["JSON_SORT_KEYS"] = False
     app.store = store or Store()
     notify = push.notify
-    app.notify = lambda account, payload: notify(app.store, account, payload)
+    app.notify = lambda account, payload: notify(app.store, account, payload, contact=push.contact(request.host_url))
 
     @app.errorhandler(StoreError)
     def _store_error(exc: StoreError):
@@ -118,7 +118,13 @@ def create_app(store: Store | None = None) -> Flask:
     @app.get("/api/tool/me")
     def tool_me():
         row = tool()
-        return jsonify(id=row["id"], name=row["name"], machine=row["machine"])
+        return jsonify(id=row["id"], name=row["name"], machine=row["machine"], agent=row["agent"])
+
+    @app.post("/api/tool/me")
+    def tool_set_me():
+        row = tool()
+        app.store.set_agent(row["id"], str(body().get("agent", "")))
+        return jsonify(ok=True)
 
     @app.post("/api/tool/messages")
     def tool_send():
@@ -130,7 +136,8 @@ def create_app(store: Store | None = None) -> Flask:
         replied = kind == "update" and row["notify"] != "none" and app.store.wrote_lately(row["id"])
         if kind == "question" and row["notify"] in ("all", "questions") or kind == "update" and row["notify"] == "all" or replied:
             words = "has a question" if kind == "question" else "replied" if replied else "sent an update"
-            app.notify(row["account"], {"title": row["name"], "body": f"{row['name']} {words}",
+            who = row["agent"] or row["name"]
+            app.notify(row["account"], {"title": who, "body": f"{who} {words}",
                                         "tool": row["id"], "message": sent["id"]})
         return jsonify(sent)
 
@@ -191,10 +198,16 @@ def create_app(store: Store | None = None) -> Flask:
         app.store.add_phone(account()["id"], data.get("endpoint", ""), keys.get("p256dh", ""), keys.get("auth", ""))
         return jsonify(ok=True)
 
+    @app.delete("/api/me/phones")
+    def my_phone_off():
+        app.store.remove_phone(str(body().get("endpoint", "")), account()["id"])
+        return jsonify(ok=True)
+
     @app.post("/api/me/phones/test")
     def my_phone_test():
+        push.last_error = ""
         sent = app.notify(account()["id"], {"title": "Iris", "body": "Notifications are working."})
-        return jsonify(sent=sent)
+        return jsonify(sent=sent, error=push.last_error, can_push=bool(push.public_key()))
 
     @app.after_request
     def _no_store(reply: Response):

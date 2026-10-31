@@ -21,8 +21,25 @@ from .store import Store, data_folder
 
 log = logging.getLogger("iris.push")
 
-#: Who the push services may contact about this sender. Any mailto or https URL.
-CONTACT = "mailto:iris@localhost"
+#: Why the last push failed ("" when it went), for the phone's notification test.
+last_error = ""
+
+
+def contact(site_url: str = "") -> str:
+    """Who the push services may contact about this sender (VAPID "sub").
+
+    Apple's push service refuses a token whose contact is a localhost address
+    (403 BadJwtToken), which is why no iPhone got a notification at first: the
+    site's own https address is used, or IRIS_PUSH_CONTACT when it is set.
+    """
+    import os
+
+    chosen = os.environ.get("IRIS_PUSH_CONTACT", "").strip()
+    if chosen:
+        return chosen
+    if site_url.startswith("https://") and "localhost" not in site_url:
+        return site_url.rstrip("/")
+    return "mailto:iris@example.com"
 
 
 def _key_file() -> Path:
@@ -56,11 +73,13 @@ def public_key() -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def notify(store: Store, account: str, payload: dict[str, Any]) -> int:
+def notify(store: Store, account: str, payload: dict[str, Any], contact: str = "") -> int:
     """Tell every phone on the account. Returns how many took it; never raises."""
+    global last_error
     try:
         from pywebpush import WebPushException, webpush
     except ImportError:
+        last_error = "The site can't send notifications: pywebpush isn't installed (pip install -r requirements.txt)."
         return 0
     try:
         vapid = _vapid()
@@ -75,7 +94,7 @@ def notify(store: Store, account: str, payload: dict[str, Any]) -> int:
                                    "keys": {"p256dh": phone["p256dh"], "auth": phone["auth"]}},
                 data=json.dumps(payload),
                 vapid_private_key=vapid,
-                vapid_claims={"sub": CONTACT},
+                vapid_claims={"sub": contact or globals()["contact"]()},
                 ttl=6 * 3600,
                 timeout=5,
             )
@@ -85,7 +104,9 @@ def notify(store: Store, account: str, payload: dict[str, Any]) -> int:
             if status in (404, 410):
                 store.remove_phone(phone["endpoint"])   # the phone unsubscribed or was reset
             else:
+                last_error = f"The phone's push service said {status or 'no'}: {getattr(exc.response, 'text', '') or exc}"[:300]
                 log.warning("Iris push failed: %s", exc)
         except Exception as exc:                        # noqa: BLE001 - no network, say and carry on
+            last_error = f"Couldn't reach the push service: {exc}"[:300]
             log.warning("Iris push failed: %s", exc)
     return sent

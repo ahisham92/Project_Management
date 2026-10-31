@@ -102,12 +102,12 @@ def test_updates_notify_unless_turned_down(world):
 def test_the_tool_speaks_under_its_coordinators_name(world):
     app, _, pushes = world
     tool, auth, accepted = pair(app)
-    assert tool.post("/api/tool/me", headers=auth, json={"agent": "Pitso"}).get_json() == {"ok": True}
-    assert tool.get("/api/tool/me", headers=auth).get_json()["agent"] == "Pitso"
+    assert tool.post("/api/tool/me", headers=auth, json={"agent": "Sam"}).get_json() == {"ok": True}
+    assert tool.get("/api/tool/me", headers=auth).get_json()["agent"] == "Sam"
     listed = phone(app).get("/api/me/tools").get_json()["tools"][0]
-    assert listed["agent"] == "Pitso" and listed["name"] == "Sketch ProMax"
+    assert listed["agent"] == "Sam" and listed["name"] == "Sketch ProMax"
     tool.post("/api/tool/messages", headers=auth, json={"kind": "question", "body": "v1.q"})
-    assert pushes[-1][1]["title"] == "Pitso" and pushes[-1][1]["body"] == "Pitso has a question"
+    assert pushes[-1][1]["title"] == "Sam" and pushes[-1][1]["body"] == "Sam has a question"
 
 
 def test_older_tools_notify_about_everything_after_the_upgrade(tmp_path):

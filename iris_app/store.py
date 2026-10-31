@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tools (
     machine     TEXT NOT NULL DEFAULT '',
     commands    TEXT NOT NULL DEFAULT '[]',
     notify      TEXT NOT NULL DEFAULT 'all',
-    agent       TEXT NOT NULL DEFAULT '',   -- who speaks for the tool on the phone (Sketch ProMax: Pitso)
+    agent       TEXT NOT NULL DEFAULT '',   -- who speaks for the tool on the phone (Sketch ProMax: the user's coordinator)
     token_hash  TEXT NOT NULL UNIQUE,
     created     REAL NOT NULL,
     seen        REAL NOT NULL,

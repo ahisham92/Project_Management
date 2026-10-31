@@ -89,20 +89,66 @@ def test_pair_ask_answer_round_trip(world):
     assert me.get("/api/me/tools").get_json()["tools"][0]["waiting"] == 0
 
 
-def test_updates_notify_only_when_asked(world):
+def test_updates_notify_unless_turned_down(world):
     app, _, pushes = world
     tool, auth, accepted = pair(app)
     tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.u"})
-    assert pushes == []
-    phone(app).post(f"/api/me/tools/{accepted['id']}/notify", json={"notify": "all"})
-    tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.u"})
     assert pushes[-1][1]["body"] == "Sketch ProMax sent an update"
+    phone(app).post(f"/api/me/tools/{accepted['id']}/notify", json={"notify": "questions"})
+    tool.post("/api/tool/messages", headers=auth, json={"kind": "update", "body": "v1.u"})
+    assert len(pushes) == 1
+
+
+def test_the_tool_speaks_under_its_coordinators_name(world):
+    app, _, pushes = world
+    tool, auth, accepted = pair(app)
+    assert tool.post("/api/tool/me", headers=auth, json={"agent": "Pitso"}).get_json() == {"ok": True}
+    assert tool.get("/api/tool/me", headers=auth).get_json()["agent"] == "Pitso"
+    listed = phone(app).get("/api/me/tools").get_json()["tools"][0]
+    assert listed["agent"] == "Pitso" and listed["name"] == "Sketch ProMax"
+    tool.post("/api/tool/messages", headers=auth, json={"kind": "question", "body": "v1.q"})
+    assert pushes[-1][1]["title"] == "Pitso" and pushes[-1][1]["body"] == "Pitso has a question"
+
+
+def test_older_tools_notify_about_everything_after_the_upgrade(tmp_path):
+    import sqlite3
+
+    Store(tmp_path / "iris.db")
+    with sqlite3.connect(tmp_path / "iris.db") as db:
+        db.execute("INSERT INTO tools (account, name, notify, token_hash, created, seen) VALUES ('7', 'Old', 'questions', 'h', 1, 1)")
+        db.execute("PRAGMA user_version = 0")
+    store = Store(tmp_path / "iris.db")
+    assert store.tools("7")[0]["notify"] == "all"
+    store.set_notify("7", store.tools("7")[0]["id"], "questions")
+    assert Store(tmp_path / "iris.db").tools("7")[0]["notify"] == "questions"  # the user's own choice stays
+
+
+def test_a_phone_turns_its_notifications_off(world):
+    app, _, _ = world
+    me = phone(app)
+    me.post("/api/me/phones", json={"endpoint": "https://push.example/1", "keys": {"p256dh": "k", "auth": "a"}})
+    assert len(app.store.phones("7")) == 1
+    phone(app, account="8").delete("/api/me/phones", json={"endpoint": "https://push.example/1"})
+    assert len(app.store.phones("7")) == 1  # another account can't turn it off
+    me.delete("/api/me/phones", json={"endpoint": "https://push.example/1"})
+    assert app.store.phones("7") == []
+
+
+def test_push_contact_is_never_localhost(monkeypatch):
+    from iris_app import push
+
+    monkeypatch.delenv("IRIS_PUSH_CONTACT", raising=False)
+    assert push.contact("https://me.pythonanywhere.com/iris/") == "https://me.pythonanywhere.com/iris"
+    assert "localhost" not in push.contact("http://localhost:5000/")
+    monkeypatch.setenv("IRIS_PUSH_CONTACT", "mailto:me@example.org")
+    assert push.contact("https://x.org/") == "mailto:me@example.org"
 
 
 def test_a_message_from_the_phone_is_read_and_answered(world):
     app, clock, pushes = world
     tool, auth, accepted = pair(app)
     me = phone(app)
+    me.post(f"/api/me/tools/{accepted['id']}/notify", json={"notify": "questions"})
     sent = me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "message", "body": "v1.hello"}).get_json()
     assert me.get(f"/api/me/tools/{accepted['id']}/messages").get_json()["read_upto"] == 0
     tool.get("/api/tool/inbox?after=0", headers=auth)

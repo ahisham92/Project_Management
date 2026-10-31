@@ -1,5 +1,6 @@
 <!doctype html>
 {% import "partials/themis.html" as themis %}
+{% set pm_door = request.blueprint in ('portfolio', 'projects', 'meetings', 'assistant') %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -10,6 +11,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themis.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
+  {% endif %}
+  {% if pm_door %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='pm.css') }}">
   {% endif %}
   {% if request.blueprint == 'marine' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
@@ -33,7 +37,7 @@
     } catch (e) {}
   </script>
 </head>
-<body{% if request.blueprint == 'specs' %} class="themis-app"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
+<body{% if request.blueprint == 'specs' %} class="themis-app"{% elif pm_door %} class="pm-app"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
       data-pulse-url="{{ url_for('projects.pulse', project_id=pulse_project_id) }}"{% endif %}>
 {% block chrome %}
   <header class="topbar">
@@ -42,6 +46,18 @@
         <a class="brand" href="{{ url_for('home.chooser') }}" title="Home: every app" aria-label="AHM, home">
           <span class="brand-mark brand-mark-word">AHM</span>
         </a>
+        {% if pm_door %}
+          {# Which app this is, and the way back to every project in it: the
+             mark goes home to the chooser, this goes to the portfolio. #}
+          <nav class="pm-crumbs" aria-label="Where you are">
+            <a href="{{ url_for('portfolio.index') }}"{% if request.endpoint == 'portfolio.index' %} aria-current="page"{% endif %}><span class="pm-long">Project Management</span><span class="pm-short">Projects</span></a>
+            {% if project is defined and project %}
+              <span class="pm-crumb-sep" aria-hidden="true">/</span>
+              <a href="{{ url_for('projects.dashboard', project_id=project['id']) }}" class="pm-crumb-project"
+                 title="{{ project['name'] }}">{{ project['name'] }}</a>
+            {% endif %}
+          </nav>
+        {% endif %}
         {% if current_user and current_user['role'] == 'admin' %}
           <a href="{{ url_for('admin.index') }}" class="small"
              style="text-decoration:none;color:var(--muted)">Admin</a>

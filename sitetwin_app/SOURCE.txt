@@ -1,0 +1,2 @@
+Copied from https://github.com/ahisham92/sitetwin (sitetwin_app) at commit f84262b (branch claude/render-pipeline, PR #1).
+Do not edit here: change SiteTwin in its own repository and copy it again.

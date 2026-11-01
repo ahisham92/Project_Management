@@ -1,8 +1,9 @@
 """Which programs on this site an account may open.
 
-The site holds eight programs — Project Management, the Comment Response Sheet,
+The site holds nine programs — Project Management, the Comment Response Sheet,
 Triton, the Specs Writer, MarineTwin, Selecao+ (the workload app), Iris
-(AI tools on your phone) and TritoMoor (static mooring analysis). The administrator ticks which of them each account sees. A program
+(AI tools on your phone), TritoMoor (static mooring analysis) and SiteTwin
+(construction sequence). The administrator ticks which of them each account sees. A program
 an account is not given is left off its front page and refused by address too,
 so knowing the URL does not get anybody in.
 
@@ -24,6 +25,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("workload", "Selecao+ (workload)"),
     ("iris", "Iris (AI tools on your phone)"),
     ("tritomoor", "TritoMoor (mooring analysis)"),
+    ("sitetwin", "SiteTwin (construction sequence)"),
 ]
 KEYS = [key for key, _ in PROGRAMS]
 NAMES = dict(PROGRAMS)

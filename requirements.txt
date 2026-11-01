@@ -37,3 +37,6 @@ pyxlsb>=1.0.10
 # above; pywebpush sends the phone notifications (pure Python wheels, nothing to
 # compile). Without it Iris still works; phones just do not buzz.
 pywebpush>=2.0,<3.0
+
+# SiteTwin, the construction sequence, mounted at /sitetwin (the sitetwin_app
+# folder). It needs only Flask, above; the GPU rendering runs elsewhere.

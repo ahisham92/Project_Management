@@ -128,3 +128,75 @@ def test_a_project_belongs_to_its_account_alone(app, signed_in):
 def test_the_api_wants_a_sign_in_and_json(app, signed_in):
     assert app.test_client().get("/tritomoor/api/projects").status_code == 401
     assert signed_in.post("/tritomoor/api/projects", data={"data": "x"}).status_code == 415
+
+
+# --- sharing ------------------------------------------------------------------------
+
+def colleague(app, signed_in, username, programs=("tritomoor",)):
+    make(signed_in, username=username, programs=programs)
+    other = app.test_client()
+    other.post("/login", data={"email": username, "password": "longenough1"})
+    return other, other.get("/tritomoor/").status_code
+
+
+def account_id(client):
+    page = text(client.get("/tritomoor/"))
+    return int(page.split("me:")[1].split("}")[0])
+
+
+def test_sharing_to_edit_lets_a_colleague_work_on_it(app, signed_in):
+    made = post(signed_in, "/tritomoor/api/projects", {"data": PROJECT}).get_json()
+    osama, _ = colleague(app, signed_in, "osama")
+    osama_id = account_id(osama)
+    people = signed_in.get("/tritomoor/api/people").get_json()["people"]
+    assert osama_id in [p["id"] for p in people]
+    shared = post(signed_in, f"/tritomoor/api/projects/{made['id']}/shares", {"user_id": osama_id, "access": "edit"})
+    assert shared.status_code == 200 and shared.get_json()["shares"][0]["access"] == "edit"
+    theirs = osama.get("/tritomoor/api/projects").get_json()["projects"]
+    assert theirs[0]["id"] == made["id"] and theirs[0]["access"] == "edit" and theirs[0]["owner"]
+    saved = osama.put(f"/tritomoor/api/projects/{made['id']}", json={"data": dict(PROJECT, lines=[1]), "base_version": 1})
+    assert saved.status_code == 200
+    assert signed_in.get(f"/tritomoor/api/projects/{made['id']}").get_json()["data"]["lines"] == [1]
+    # but only the owner shares it on or deletes it
+    assert post(osama, f"/tritomoor/api/projects/{made['id']}/shares", {"user_id": osama_id, "access": "edit"}).status_code == 403
+    assert osama.delete(f"/tritomoor/api/projects/{made['id']}").status_code == 403
+
+
+def test_view_only_opens_and_copies_but_does_not_save(app, signed_in):
+    made = post(signed_in, "/tritomoor/api/projects", {"data": PROJECT}).get_json()
+    kirolos, _ = colleague(app, signed_in, "kirolos")
+    kid = account_id(kirolos)
+    post(signed_in, f"/tritomoor/api/projects/{made['id']}/shares", {"user_id": kid, "access": "view"})
+    url = f"/tritomoor/api/projects/{made['id']}"
+    assert kirolos.get(url).get_json()["access"] == "view"
+    assert kirolos.put(url, json={"data": PROJECT, "base_version": 1}).status_code == 403
+    assert kirolos.get(url + "/versions").status_code == 403
+    copy = post(kirolos, url + "/duplicate", {}).get_json()
+    assert copy["access"] == "owner"
+    assert {p["id"] for p in kirolos.get("/tritomoor/api/projects").get_json()["projects"]} == {made["id"], copy["id"]}
+
+
+def test_a_colleague_can_take_it_off_their_list_and_the_owner_can_stop_sharing(app, signed_in):
+    made = post(signed_in, "/tritomoor/api/projects", {"data": PROJECT}).get_json()
+    sara, _ = colleague(app, signed_in, "sara")
+    sid = account_id(sara)
+    url = f"/tritomoor/api/projects/{made['id']}"
+    post(signed_in, url + "/shares", {"user_id": sid, "access": "edit"})
+    assert sara.delete(f"{url}/shares/{sid}").status_code == 200
+    assert sara.get("/tritomoor/api/projects").get_json()["projects"] == []
+    post(signed_in, url + "/shares", {"user_id": sid, "access": "edit"})
+    assert signed_in.delete(f"{url}/shares/{sid}").get_json()["shares"] == []
+    assert sara.get(url).status_code == 404
+
+
+def test_it_cannot_be_shared_with_an_account_without_tritomoor(app, signed_in):
+    made = post(signed_in, "/tritomoor/api/projects", {"data": PROJECT}).get_json()
+    make(signed_in, username="nadia", programs=("pm",))
+    nadia = app.test_client()
+    nadia.post("/login", data={"email": "nadia", "password": "longenough1"})
+    from app.db import connect
+    with app.app_context():
+        nid = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'nadia'").fetchone()[0]
+    assert nid not in [p["id"] for p in signed_in.get("/tritomoor/api/people").get_json()["people"]]
+    refused = post(signed_in, f"/tritomoor/api/projects/{made['id']}/shares", {"user_id": nid, "access": "edit"})
+    assert refused.status_code == 400 and "TritoMoor" in refused.get_json()["detail"]

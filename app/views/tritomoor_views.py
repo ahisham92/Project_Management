@@ -43,7 +43,7 @@ BACK = (
 
 # Told to the page so it keeps its projects here; offline the page has no such
 # note and saves to files as it always did.
-SITE = '<script>window.__TM_SITE={api:"/tritomoor/api"};</script>'
+SITE = '<script>window.__TM_SITE={api:"/tritomoor/api",me:__TM_ME__};</script>'
 
 
 def ready() -> bool:
@@ -74,7 +74,7 @@ def index():
     if not ready():
         return Response("TritoMoor is not installed on this site: app/tritomoor/tritomoor.html is missing.",
                         status=503, mimetype="text/plain")
-    body = _page(PAGE.stat().st_mtime)
+    body = _page(PAGE.stat().st_mtime).replace("__TM_ME__", str(int(g.user["id"])), 1)
     return Response(body, mimetype="text/html",
                     headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
 
@@ -156,3 +156,30 @@ def api_restore(project_id: int, version_id: int):
         _body()
         return store.restore(db, uid, project_id, version_id)
     return _answer(work)
+
+
+@bp.get("/api/people")
+def api_people():
+    return _answer(lambda db, uid: {"people": store.people(db, uid)})
+
+
+@bp.get("/api/projects/<int:project_id>/shares")
+def api_shares(project_id: int):
+    return _answer(lambda db, uid: {"shares": store.shares(db, uid, project_id)})
+
+
+@bp.post("/api/projects/<int:project_id>/shares")
+def api_share(project_id: int):
+    def work(db, uid):
+        body = _body()
+        try:
+            with_user = int(body.get("user_id"))
+        except (TypeError, ValueError):
+            raise store.Problem("Choose who to share it with.")
+        return {"shares": store.share(db, uid, project_id, with_user, str(body.get("access") or "edit"))}
+    return _answer(work)
+
+
+@bp.delete("/api/projects/<int:project_id>/shares/<int:user_id>")
+def api_unshare(project_id: int, user_id: int):
+    return _answer(lambda db, uid: {"shares": store.unshare(db, uid, project_id, user_id)})

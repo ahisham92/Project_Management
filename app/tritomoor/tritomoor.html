@@ -123,7 +123,11 @@ dialog#projDlg::backdrop{background:rgba(22,40,61,.45)}
 #projDlg .plist .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 #projDlg .plist .acts button{padding:3px 9px;font-size:12px}
 #projDlg .plist tr.vers td{background:var(--panel);font-size:12px}
-#projDlg .tag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--ok);color:#fff;margin-left:6px}
+#projDlg .tag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--ok);color:#fff;margin-left:6px;white-space:nowrap}
+#projDlg .tag.view{background:var(--ink-2)}
+#projDlg .tag.share{background:#1F6FB2}
+#projDlg .shr{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+#projDlg .shr select{padding:3px 6px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:#fff}
 .proj{flex-wrap:wrap}
 .cloud{font-size:12px;color:#A9BCCB;white-space:nowrap;flex-basis:100%}
 .cloud.warn{color:#F2C265}
@@ -251,7 +255,7 @@ tr.best td{background:#EAF4F0}
 <dialog id="projDlg" aria-labelledby="projTitle">
   <div class="dlg">
     <h2 id="projTitle">Your projects on the site</h2>
-    <p class="note">Projects here are kept under your account and open from any computer you sign in on. The open project saves itself as you work; earlier versions are kept, so any of them can be brought back.</p>
+    <p class="note">Projects here are kept under your account and open from any computer you sign in on. The open project saves itself as you work; earlier versions are kept, so any of them can be brought back. Share a project with colleagues on the site to let them view it or work on it with you.</p>
     <div class="rowbtns" style="flex-wrap:wrap">
       <button id="pjSave" class="primary">Save this project to the site</button>
       <button id="pjNew">New project</button>
@@ -259,7 +263,7 @@ tr.best td{background:#EAF4F0}
       <button id="pjDownload">Download this project (.trito)</button>
     </div>
     <p id="pjStatus" class="note"></p>
-    <div class="plist"><table><thead><tr><th>Project</th><th>Vessel</th><th>Berth</th><th>Last saved</th><th></th></tr></thead><tbody id="pjRows"></tbody></table></div>
+    <div class="plist"><table><thead><tr><th>Project</th><th>Vessel</th><th>Berth</th><th>Owner</th><th>Last saved</th><th></th></tr></thead><tbody id="pjRows"></tbody></table></div>
     <div class="rowbtns"><button id="pjClose">Close</button></div>
   </div>
 </dialog>
@@ -8735,7 +8739,7 @@ function exportCSV() {
 const Cloud = (() => {
   const SITE = window.__TM_SITE || null;
   const KEY = 'tritomoor-site-project';
-  let st = { id: null, version: null, name: '', dirty: false };
+  let st = { id: null, version: null, name: '', dirty: false, access: 'owner', owner: '' };
   let timer = null, saving = false, again = false, edits = 0, lastSaved = null, trouble = '';
   const api = (path, opts = {}) => fetch(SITE.api + path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, opts))
     .then(async r => { let j = null; try { j = await r.json(); } catch (e) {} if (!r.ok) { const er = new Error((j && j.detail) || ('The site answered ' + r.status + '.')); er.status = r.status; er.body = j; throw er; } return j; });
@@ -8749,23 +8753,25 @@ const Cloud = (() => {
     const c = $('cloudState'); if (!c) return;
     c.hidden = false; c.className = 'cloud'; c.innerHTML = '';
     if (!st.id) { c.classList.add('warn'); c.append('Not on the site yet ', el('button', { onclick: saveNew }, 'Save')); return; }
+    if (st.access === 'view') { c.classList.add('warn'); c.append('View only, shared by ' + (st.owner || 'a colleague') + ' — changes here are not saved ', el('button', { onclick: saveCopy }, 'Save a copy')); return; }
     if (trouble) { c.classList.add('warn'); c.textContent = trouble; return; }
-    c.textContent = saving || st.dirty ? 'Saving…' : lastSaved ? 'Saved to the site ' + when(lastSaved) : 'On the site';
+    c.textContent = (st.owner ? 'Shared by ' + st.owner + ' · ' : '') + (saving || st.dirty ? 'Saving…' : lastSaved ? 'Saved to the site ' + when(lastSaved) : 'On the site');
   }
   function apply(data) {
     P = migrate(data); resetResults(); syncCoefficients();
     renderInputs(); renderResults(); setupSlider(); markTabs(); persist(true); drawPlan();
   }
-  function link(r) { st = { id: r.id, version: r.version, name: r.name, dirty: false }; lastSaved = r.updated_at; trouble = ''; keep(); status(); }
-  function detach() { clearTimeout(timer); st = { id: null, version: null, name: '', dirty: false }; trouble = ''; keep(); status(); }
+  function link(r) { st = { id: r.id, version: r.version, name: r.name, dirty: false, access: r.access || 'owner', owner: r.owner || '' }; lastSaved = r.updated_at; trouble = ''; keep(); status(); }
+  function detach() { clearTimeout(timer); st = { id: null, version: null, name: '', dirty: false, access: 'owner', owner: '' }; trouble = ''; keep(); status(); }
+  function saveCopy() { const nm = (P.name || st.name || 'Project') + ' (copy)'; detach(); P.name = nm; $('projName').value = nm; saveNew(); }
 
   function touched() {
-    if (!st.id) { status(); return; }
+    if (!st.id || st.access === 'view') { status(); return; }
     st.dirty = true; edits++; keep(); status();
     clearTimeout(timer); timer = setTimeout(flush, 1800);
   }
   async function flush(force) {
-    if (!st.id || (!st.dirty && !force)) return;
+    if (!st.id || st.access === 'view' || (!st.dirty && !force)) return;
     if (saving) { again = true; return; }
     saving = true; again = false; status();
     const sent = edits, id = st.id;
@@ -8777,7 +8783,8 @@ const Cloud = (() => {
       keep();
     } catch (e) {
       if (e.status === 409) { saving = false; return conflict(e.body && e.body.current); }
-      if (e.status === 404) { saving = false; detach(); showMsg('This project is no longer on the site (it was deleted). Use Save to put it back.'); return; }
+      if (e.status === 404) { saving = false; detach(); showMsg('This project is no longer on the site, or no longer shared with you. Use Save to keep what is on this page as a project of your own.'); return; }
+      if (e.status === 403) { saving = false; st.access = 'view'; st.dirty = false; keep(); status(); showMsg(e.message); return; }
       trouble = e.status === 401 ? 'Signed out — sign in again to save' : 'Not saved yet — will retry';
       clearTimeout(timer); timer = setTimeout(flush, 15000);
     } finally { saving = false; status(); }
@@ -8785,7 +8792,7 @@ const Cloud = (() => {
   }
   async function conflict(cur) {
     const t = cur ? when(cur.updated_at) : 'recently';
-    if (confirm('"' + (cur ? cur.name : st.name) + '" was saved from another computer (' + t + ') after you opened it here.\n\n' +
+    if (confirm('"' + (cur ? cur.name : st.name) + '" was saved from another computer, or by a colleague it is shared with (' + t + '), after you opened it here.\n\n' +
       'OK — open that newer copy here (the changes made on this page since are dropped).\nCancel — keep this page and save it over that copy (the other copy is kept as an earlier version).')) {
       await open(st.id, true);
     } else { st.dirty = true; await flush(true); }
@@ -8794,7 +8801,7 @@ const Cloud = (() => {
     try {
       const r = await api('/projects/' + id);
       apply(r.data); link(r);
-      if (!quietly) showMsg('Opened ' + r.name + ' from the site.', 'info'); else showMsg('Opened the newer copy of ' + r.name + ' from the site.', 'info');
+      if (!quietly) showMsg(r.access === 'view' ? 'Opened ' + r.name + ', shared by ' + r.owner + ' to view only. Save a copy to change it.' : 'Opened ' + r.name + (r.owner ? ', shared by ' + r.owner : '') + ' from the site.', 'info'); else showMsg('Opened the newer copy of ' + r.name + ' from the site.', 'info');
       return true;
     } catch (e) { showMsg('Could not open that project. ' + e.message); return false; }
   }
@@ -8812,37 +8819,46 @@ const Cloud = (() => {
 
   /* the projects window */
   const dlgMsg = (t, bad) => { const p = $('pjStatus'); p.textContent = t || ''; p.style.color = bad ? 'var(--bad)' : ''; };
-  async function list() {
+  async function list(keepShare) {
     const tb = $('pjRows'); tb.innerHTML = '';
     $('pjSave').textContent = st.id ? 'Save a copy as a new project' : 'Save this project to the site';
     let rows;
     try { rows = (await api('/projects')).projects; } catch (e) { dlgMsg('Could not read your projects. ' + e.message, true); return; }
-    dlgMsg(rows.length ? rows.length + ' project' + (rows.length === 1 ? '' : 's') + ' on the site.' : 'No projects on the site yet. Save this one, start a new one or upload your .trito files.');
+    const nMine = rows.filter(r => (r.access || 'owner') === 'owner').length, nShared = rows.length - nMine;
+    dlgMsg(rows.length ? nMine + ' project' + (nMine === 1 ? '' : 's') + ' of yours' + (nShared ? ', ' + nShared + ' shared with you' : '') + '.' : 'No projects on the site yet. Save this one, start a new one or upload your .trito files.');
     rows.forEach(r => {
-      const cur = r.id === st.id;
+      const cur = r.id === st.id, mine = (r.access || 'owner') === 'owner';
       const tr = el('tr', { class: cur ? 'cur' : '' }, [
-        el('td', {}, [el('b', { text: r.name || 'Untitled project' }), cur ? el('span', { class: 'tag', text: 'open' }) : null]),
-        el('td', { text: r.vessel }), el('td', { text: berthName(r.berth) }), el('td', { text: when(r.updated_at) }),
+        el('td', {}, [el('b', { text: r.name || 'Untitled project' }), cur ? el('span', { class: 'tag', text: 'open' }) : null,
+          mine && r.shared_with ? el('span', { class: 'tag share', text: 'shared with ' + r.shared_with }) : null]),
+        el('td', { text: r.vessel }), el('td', { text: berthName(r.berth) }),
+        el('td', {}, mine ? 'You' : [r.owner, el('span', { class: 'tag' + (r.access === 'view' ? ' view' : ''), text: r.access === 'view' ? 'view only' : 'can edit' })]),
+        el('td', { text: when(r.updated_at) }),
         el('td', {}, el('div', { class: 'acts' }, [
           el('button', { class: cur ? '' : 'primary', disabled: cur, onclick: async () => {
             if (st.id && st.dirty) await flush();
             if (!st.id && !confirm('The project open on this page is not on the site. Open "' + r.name + '" in its place?\n\nSave it to the site or download it first if you want to keep it.')) return;
             if (await open(r.id)) $('projDlg').close();
           } }, cur ? 'Open now' : 'Open'),
-          el('button', { onclick: async () => { try { await api('/projects/' + r.id + '/duplicate', { method: 'POST', body: '{}' }); list(); } catch (e) { dlgMsg(e.message, true); } } }, 'Copy'),
-          el('button', { onclick: () => versions(r, tr) }, 'Earlier versions'),
-          el('button', { onclick: async () => {
-            if (!confirm('Delete "' + r.name + '" from the site, with its earlier versions? This cannot be undone.')) return;
+          el('button', { title: 'A copy of your own', onclick: async () => { try { await api('/projects/' + r.id + '/duplicate', { method: 'POST', body: '{}' }); list(); } catch (e) { dlgMsg(e.message, true); } } }, 'Copy'),
+          mine ? el('button', { onclick: () => sharePanel(r, tr) }, 'Share') : null,
+          r.access !== 'view' ? el('button', { onclick: () => versions(r, tr) }, 'Earlier versions') : null,
+          mine ? el('button', { onclick: async () => {
+            if (!confirm('Delete "' + r.name + '" from the site, with its earlier versions?' + (r.shared_with ? ' The colleagues it is shared with lose it too.' : '') + ' This cannot be undone.')) return;
             try { await api('/projects/' + r.id, { method: 'DELETE' }); if (cur) detach(); list(); } catch (e) { dlgMsg(e.message, true); }
-          } }, 'Delete')
+          } }, 'Delete') : el('button', { title: 'Take it off your list; the owner keeps it', onclick: async () => {
+            if (!confirm('Take "' + r.name + '" off your list? ' + r.owner + ' keeps it, and can share it with you again.')) return;
+            try { await api('/projects/' + r.id + '/shares/' + me, { method: 'DELETE' }); if (cur) detach(); list(); } catch (e) { dlgMsg(e.message, true); }
+          } }, 'Remove from my list')
         ]))
       ]);
       tb.append(tr);
+      if (keepShare === r.id) sharePanel(r, tr);
     });
   }
   async function versions(r, tr) {
     const nx = tr.nextElementSibling; if (nx && nx.classList.contains('vers')) { nx.remove(); return; }
-    const td = el('td', { colspan: 5, text: 'Reading earlier versions…' }), row = el('tr', { class: 'vers' }, td);
+    const td = el('td', { colspan: 6, text: 'Reading earlier versions…' }), row = el('tr', { class: 'vers' }, td);
     tr.after(row);
     try {
       const v = (await api('/projects/' + r.id + '/versions')).versions;
@@ -8862,6 +8878,36 @@ const Cloud = (() => {
       ])));
     } catch (e) { td.textContent = e.message; }
   }
+  let me = 0, peopleCache = null;
+  async function sharePanel(r, tr) {
+    const nx = tr.nextElementSibling; if (nx && nx.classList.contains('vers')) { nx.remove(); return; }
+    const td = el('td', { colspan: 6, text: 'Reading who it is shared with…' }), row = el('tr', { class: 'vers' }, td);
+    tr.after(row);
+    const accessSel = v => el('select', { 'aria-label': 'Access' }, [['edit', 'can edit'], ['view', 'view only']].map(([k, l]) => el('option', { value: k, selected: k === v }, l)));
+    const draw = (shares, people) => {
+      td.innerHTML = '';
+      td.append(el('div', { text: shares.length ? 'Shared with:' : 'Not shared with anybody yet.' }));
+      shares.forEach(sh => {
+        const sel = accessSel(sh.access);
+        sel.addEventListener('change', async () => { try { draw((await api('/projects/' + r.id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: sh.user_id, access: sel.value }) })).shares, people); } catch (e) { dlgMsg(e.message, true); } });
+        td.append(el('div', { class: 'shr' }, [el('b', { text: sh.name }), el('span', { class: 'note', text: sh.email }), sel,
+          el('button', { onclick: async () => { try { await api('/projects/' + r.id + '/shares/' + sh.user_id, { method: 'DELETE' }); list(r.id); } catch (e) { dlgMsg(e.message, true); } } }, 'Stop sharing')]));
+      });
+      const others = people.filter(p => !shares.some(sh => sh.user_id === p.id));
+      if (!others.length) { td.append(el('div', { class: 'note', text: people.length ? 'Everyone who can open TritoMoor has it.' : 'Nobody else on the site can open TritoMoor yet. The administrator gives it to an account on the Admin page.' })); return; }
+      const who = el('select', { 'aria-label': 'Share with' }, [el('option', { value: '' }, 'Share with…'), ...others.map(p => el('option', { value: p.id }, p.name + (p.email ? ' — ' + p.email : '')))]);
+      const acc = accessSel('edit');
+      td.append(el('div', { class: 'shr' }, [who, acc, el('button', { class: 'primary', onclick: async () => {
+        if (!who.value) { who.focus(); return; }
+        try { await api('/projects/' + r.id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: +who.value, access: acc.value }) }); list(r.id); } catch (e) { dlgMsg(e.message, true); }
+      } }, 'Share')]));
+      td.append(el('div', { class: 'note', text: 'Can edit: they work on this project with you and it saves for both of you. View only: they can open it and save a copy of their own. Only people the administrator has given TritoMoor are listed.' }));
+    };
+    try {
+      if (!peopleCache) peopleCache = (await api('/people')).people;
+      draw((await api('/projects/' + r.id + '/shares')).shares, peopleCache);
+    } catch (e) { td.textContent = e.message; }
+  }
   async function upload(files) {
     let ok = 0; const bad = [];
     for (const f of files) {
@@ -8879,6 +8925,7 @@ const Cloud = (() => {
 
   function init() {
     if (!SITE) return false;
+    me = SITE.me || 0;
     try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.id) st = s; } catch (e) {}
     cloudTouched = touched;
     // the header: Projects in place of opening a file; Save goes to the site
@@ -8887,7 +8934,7 @@ const Cloud = (() => {
     openLbl.replaceWith(pb);
     const sv = $('btnSave'), sv2 = sv.cloneNode(true); sv.replaceWith(sv2);
     sv2.textContent = 'Save'; sv2.title = 'Save to the site now (it also saves itself as you work)';
-    sv2.addEventListener('click', () => st.id ? flush(true) : saveNew());
+    sv2.addEventListener('click', () => !st.id ? saveNew() : st.access === 'view' ? saveCopy() : flush(true));
     $('pjSave').addEventListener('click', () => { if (st.id) { detach(); } saveNew(); });
     $('pjNew').addEventListener('click', async () => {
       if (!st.id && !confirm('The project open on this page is not on the site. Start a new project in its place?')) return;
@@ -8909,7 +8956,9 @@ const Cloud = (() => {
     // the project last open on this computer: is the site's copy newer?
     if (st.id) {
       api('/projects/' + st.id).then(r => {
-        if (r.version === st.version) { lastSaved = r.updated_at; status(); if (st.dirty) flush(); return; }
+        const was = st.access; st.access = r.access || 'owner'; st.owner = r.owner || ''; keep();
+        if (st.access === 'view' && was !== 'view') { st.dirty = false; showMsg(r.name + ' is now shared with you to view only. Save a copy to change it.', 'info'); }
+        if (r.version === st.version || st.access === 'view') { if (r.version !== st.version) { apply(r.data); link(r); } lastSaved = r.updated_at; status(); if (st.dirty) flush(); return; }
         if (!st.dirty) { apply(r.data); link(r); showMsg('Opened the latest ' + r.name + ' from the site.', 'info'); }
         else conflict(r);
       }).catch(e => { if (e.status === 404) { detach(); } else { trouble = 'Cannot reach the site — will retry'; status(); timer = setTimeout(flush, 15000); } });

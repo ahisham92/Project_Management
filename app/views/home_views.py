@@ -22,6 +22,7 @@ from ..crs import describe as describe_crs
 from ..triton_door import describe as describe_triton
 from ..workload_door import describe as describe_workload
 from ..iris_door import describe as describe_iris
+from .tritomoor_views import describe as describe_tritomoor
 
 bp = Blueprint("home", __name__)
 
@@ -48,7 +49,8 @@ def favicon():
 def chooser():
     """Which of the two you are here for."""
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
-                           workload=describe_workload(), iris=describe_iris())
+                           workload=describe_workload(), iris=describe_iris(),
+                           tritomoor=describe_tritomoor())
 
 
 @bp.get("/triton/")

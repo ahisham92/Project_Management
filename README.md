@@ -1870,6 +1870,21 @@ sign-in as everything else.
 - **If it will not start**, the rest of the site keeps serving, the door is marked *not
   installed*, and `/iris/` says what went wrong.
 
+### TritoMoor (static mooring analysis)
+
+TritoMoor is the eighth door on the front page. It is the static mooring analysis program: a
+vessel at its berth, its lines, fenders and bollards, wind, current and waves, and the line
+tensions and fender loads that hold it. It is one self-contained HTML file, `tritomoor/index.html`,
+that does all its work in the browser, so the site only hands the file over, at `/tritomoor/`,
+behind the same sign-in as everything else.
+
+- **Installing it** on a site that is already running is the usual update: `git pull` in a
+  **Bash** console, then **Reload** on the **Web** tab. Nothing to `pip install`.
+- **Who sees it.** Administrators see it straight away, and so do accounts that never had their
+  programs chosen. An account whose programs the administrator has ticked does not get it until
+  TritoMoor is ticked too, in **Admin → Users**.
+- **A newer TritoMoor** is a new `tritomoor/index.html`, committed and pulled like anything else.
+
 ### The older, browser-kept sheet
 
 The comment response sheets live in this application and this database now, at `/crs`. Nothing

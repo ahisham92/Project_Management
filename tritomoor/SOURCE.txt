@@ -1,0 +1,5 @@
+TritoMoor, the static mooring analysis program, as one self-contained HTML file.
+
+index.html is served as it is, behind the site's sign-in, at /tritomoor/.
+It runs entirely in the browser: nothing it calculates is sent to the server.
+A newer TritoMoor arrives by replacing index.html and a git pull.

@@ -120,6 +120,19 @@
     <span class="door-go">Open Iris →</span>
   </a>
   {% endif %}
+
+  {% if 'tritomoor' in my_programs %}
+  <a class="door{% if not tritomoor['ready'] %} door-shut{% endif %}" href="{{ tritomoor['href'] }}">
+    <span class="door-mark door-mark-tritomoor" aria-hidden="true">TM</span>
+    <span class="door-name">TritoMoor<span class="door-tagline">Static mooring analysis</span>{% if not tritomoor['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      Static mooring analysis of a vessel at its berth: lines, fenders and bollards, wind, current
+      and waves, and the line tensions and fender loads that hold it there. It runs in your browser,
+      so nothing you enter leaves your PC.
+    </span>
+    <span class="door-go">Open TritoMoor →</span>
+  </a>
+  {% endif %}
 </div>
 
 {% if classic and classic['ready'] and 'crs' in my_programs %}

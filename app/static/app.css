@@ -645,6 +645,7 @@ input[type="checkbox"] { width: auto; }
 .door-mark-triton { background: #0f4c81; }
 .door-mark-specs { background: #7a4fb5; font-size: 0.78rem; }
 .door-mark-marine { background: #0b7a8a; font-size: 0.82rem; }
+.door-mark-tritomoor { background: #16283d; font-size: 0.82rem; }
 /* Selecao+ brings a mark of its own, tile and all. */
 .door-mark-workload { background: none; }
 .door-mark-workload svg { display: block; }

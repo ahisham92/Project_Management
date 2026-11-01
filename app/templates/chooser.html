@@ -9,7 +9,8 @@
     <p class="small muted" style="margin-top:2px">
       One sign-in for all of them: the programme, the client's comments on what it hands over,
       the design of the quay itself, the specification it is built to, how it stands up once it is in
-      service, the workload of the team doing all of it, and the AI tools working for you.
+      service, the workload of the team doing all of it, the AI tools working for you, and the
+      mooring analysis of the ships that tie up to it.
     </p>
   </div>
 </div>
@@ -118,6 +119,19 @@
       encrypted on the PC and the phone, so this site cannot read them.
     </span>
     <span class="door-go">Open Iris →</span>
+  </a>
+  {% endif %}
+  {% if 'tritomoor' in my_programs %}
+  <a class="door{% if not tritomoor['ready'] %} door-shut{% endif %}" href="{{ tritomoor['href'] }}">
+    <span class="door-mark door-mark-tritomoor" aria-hidden="true"><svg viewBox="0 0 64 64" width="42" height="42" focusable="false"><rect width="64" height="64" rx="14" fill="#101B2D"/><path d="M9 21 L25 31 M55 21 L39 31" stroke="#2FA4A0" stroke-width="3.5" stroke-linecap="round" fill="none"/><rect x="21" y="27" width="22" height="6" rx="3" fill="#fff"/><rect x="26" y="32" width="12" height="14" fill="#fff"/><rect x="18" y="45" width="28" height="4" rx="2" fill="#fff"/><path d="M8 55 q6 -4 12 0 t12 0 t12 0 t12 0" stroke="#3B82F6" stroke-width="3" stroke-linecap="round" fill="none"/></svg></span>
+    <span class="door-name">TritoMoor<span class="door-tagline">Mooring analysis</span>{% if not tritomoor['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      Static mooring analysis for a ship alongside, Mediterranean-moored or ship-to-ship: line,
+      bollard and fender loads under wind, current and waves, single line failure, the fender
+      design and the report in Word. It runs in your browser; a project is saved as a file on
+      your own machine.
+    </span>
+    <span class="door-go">Open TritoMoor →</span>
   </a>
   {% endif %}
 </div>

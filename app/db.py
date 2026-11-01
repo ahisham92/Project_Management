@@ -170,6 +170,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_crs(conn)
         _ensure_specs(conn)
         _ensure_marine(conn)
+        _ensure_tritomoor(conn)
         for table, column, definition in (
             # A workflow line that hands nothing over. Its hours are not lost:
             # they flow to whatever it feeds, so the deliverable that does go
@@ -206,6 +207,13 @@ def init_db(path: Path | str | None = None) -> None:
 def _ensure_marine(conn: sqlite3.Connection) -> None:
     """MarineTwin's assets, elements, sensors and readings (see ``marine``)."""
     from .marine import ensure_schema
+
+    ensure_schema(conn)
+
+
+def _ensure_tritomoor(conn: sqlite3.Connection) -> None:
+    """TritoMoor projects kept on the site (see ``views.tritomoor_views``)."""
+    from .tritomoor_store import ensure_schema
 
     ensure_schema(conn)
 

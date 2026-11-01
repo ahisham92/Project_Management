@@ -115,6 +115,19 @@ button[aria-pressed=true]{font-weight:600}
 #o3d:active{cursor:grabbing}
 dialog#reportDlg{border:1px solid var(--rule);border-radius:4px;padding:0;max-width:760px;width:calc(100% - 32px);color:var(--ink)}
 dialog#reportDlg::backdrop{background:rgba(22,40,61,.45)}
+dialog#projDlg{border:1px solid var(--rule);border-radius:4px;padding:0;max-width:900px;width:calc(100% - 32px);color:var(--ink)}
+dialog#projDlg::backdrop{background:rgba(22,40,61,.45)}
+#projDlg .plist{max-height:52vh;overflow:auto;border:1px solid var(--rule);border-radius:3px;margin-top:10px}
+#projDlg .plist td{white-space:normal;vertical-align:middle}
+#projDlg .plist tr.cur td{background:#EEF5F2}
+#projDlg .plist .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+#projDlg .plist .acts button{padding:3px 9px;font-size:12px}
+#projDlg .plist tr.vers td{background:var(--panel);font-size:12px}
+#projDlg .tag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--ok);color:#fff;margin-left:6px}
+.proj{flex-wrap:wrap}
+.cloud{font-size:12px;color:#A9BCCB;white-space:nowrap;flex-basis:100%}
+.cloud.warn{color:#F2C265}
+.cloud button{padding:2px 8px;font-size:12px}
 .dlg{padding:18px 22px}
 .dlg h2{margin-top:0}
 .dlg h3{font-size:14px;margin:16px 0 6px}
@@ -180,7 +193,7 @@ tr.best td{background:#EAF4F0}
     <h1>TritoMoor</h1>
     <p>Static mooring analysis: alongside, Mediterranean and ship-to-ship. Runs offline.</p>
   </div>
-  <div class="proj"><input id="projName" aria-label="Project name"></div>
+  <div class="proj"><input id="projName" aria-label="Project name"><span id="cloudState" class="cloud" hidden></span></div>
   <div class="actions">
     <select id="exampleSel" class="btn" aria-label="Load a worked example"><option value="">Load example…</option><option value="alongside">Tanker alongside</option><option value="med">Ro-pax Mediterranean mooring</option><option value="sts">Ship-to-ship lightering</option><option value="lng">LNG carrier at a jetty</option><option value="pontoon">Ferry at a floating pontoon</option></select>
     <label class="btn" title="Open a saved project file">Open project<input type="file" id="fileOpen" accept=".trito,.json" hidden></label>
@@ -235,6 +248,21 @@ tr.best td{background:#EAF4F0}
     </div>
   </aside>
 </main>
+<dialog id="projDlg" aria-labelledby="projTitle">
+  <div class="dlg">
+    <h2 id="projTitle">Your projects on the site</h2>
+    <p class="note">Projects here are kept under your account and open from any computer you sign in on. The open project saves itself as you work; earlier versions are kept, so any of them can be brought back.</p>
+    <div class="rowbtns" style="flex-wrap:wrap">
+      <button id="pjSave" class="primary">Save this project to the site</button>
+      <button id="pjNew">New project</button>
+      <label class="btn" title="Put .trito files from your computer on the site">Upload .trito files<input type="file" id="pjUpload" accept=".trito,.json" multiple hidden></label>
+      <button id="pjDownload">Download this project (.trito)</button>
+    </div>
+    <p id="pjStatus" class="note"></p>
+    <div class="plist"><table><thead><tr><th>Project</th><th>Vessel</th><th>Berth</th><th>Last saved</th><th></th></tr></thead><tbody id="pjRows"></tbody></table></div>
+    <div class="rowbtns"><button id="pjClose">Close</button></div>
+  </div>
+</dialog>
 <dialog id="reportDlg" aria-labelledby="repTitle">
   <div class="dlg">
     <h2 id="repTitle">Export report</h2>
@@ -2923,7 +2951,60 @@ const Moor3D = (() => {
     const qTop = S.quayTop, qDepth = -Math.max(12, S.maxDraft + 4), apron = -Math.max(45, 0.25 * scale);
     const seabed = qDepth - 0.5;
     const cx = S.centre[0], cy = S.centre[1];
-    if (S.quay) {
+    const ST = S.structure || { kind: 'wall' }, piled = S.quay && ST.kind !== 'wall';
+    const bedZ = S.seabed > 0 ? -S.seabed : qDepth;
+    if (piled) {
+      const conc = hex('#B3AEA4'), top = hex('#BDB8AE'), pileCol = hex('#4D5257'), capCol = hex('#A29D92'), rock = hex('#7E786C');
+      const zs = qTop - ST.t, beamD = Math.min(1.2, ST.t * 0.8);
+      const deck = (x0, x1, y0, y1, ztop, thk) => m.box([(x0 + x1) / 2, (y0 + y1) / 2, 0], [1, 0, 0], [0, 1, 0], x1 - x0, y1 - y0, ztop - thk, ztop, conc, top);
+      const pile = (x, y, r, z1) => m.cyl(x, y, r, bedZ, z1, pileCol, 10);
+      // main deck, cope along the face, pile-cap beams and the piles under them
+      deck(ST.X0, ST.X1, -ST.W, 0, qTop, ST.t);
+      m.box([(ST.X0 + ST.X1) / 2, -0.35, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 0.7, qTop, qTop + 0.12, hex('#D8B23A'));
+      for (let i = 0; i < ST.rows; i++) {
+        const y = -0.9 - (ST.W - 1.8) * i / (ST.rows - 1);
+        m.box([(ST.X0 + ST.X1) / 2, y, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, Math.max(1.2, ST.pileD * 1.6), zs - beamD, zs, capCol);
+        for (let x = ST.X0 + ST.pitch / 2; x < ST.X1; x += ST.pitch) pile(x, y, ST.pileD / 2, zs - beamD);
+      }
+      if (ST.kind === 'deck') {
+        // rock revetment under the deck, land behind it
+        const L0 = ST.X0 - 3 * scale, L1 = ST.X1 + 3 * scale, yb = -ST.W;
+        m.quad([L0, -1.5, bedZ], [L1, -1.5, bedZ], [L1, yb, zs - beamD - 0.4], [L0, yb, zs - beamD - 0.4], rock);
+        m.quad([L0, yb, zs - beamD - 0.4], [L1, yb, zs - beamD - 0.4], [L1, yb, qTop], [L0, yb, qTop], hex('#8C8576'));
+        m.quad([ST.X0, yb - 40, qTop], [ST.X0, yb, qTop], [ST.X1, yb, qTop], [ST.X1, yb - 40, qTop], hex('#77777A'));
+        m.quad([L0, yb - 3 * scale, qTop - 0.02], [L1, yb - 3 * scale, qTop - 0.02], [L1, yb, qTop - 0.02], [L0, yb, qTop - 0.02], hex('#8F8C84'));
+        for (let xs2 = ST.X0 + 0.05 * scale; xs2 < ST.X1 - 0.3 * scale; xs2 += 0.45 * scale) {
+          const L = 0.35 * scale, Dp = 0.14 * scale, Hs = Math.max(8, 0.05 * scale);
+          m.box([xs2 + L / 2, yb - 40 - Dp / 2 - 8, 0], [1, 0, 0], [0, 1, 0], L, Dp, qTop, qTop + Hs, hex('#C9CDD0'), hex('#8E9AA3'));
+        }
+      } else {
+        // approach trestle to the shore, and the shore with its beach
+        const tr = ST.trestle, yT0 = -ST.W, yT1 = -ST.W - tr.L, tw = tr.w;
+        deck(tr.X - tw / 2, tr.X + tw / 2, yT1, yT0, qTop, 1.0);
+        m.box([tr.X, (yT0 + yT1) / 2, 0], [1, 0, 0], [0, 1, 0], 0.2, tr.L, qTop, qTop + 1.0, hex('#C7C2B8'));
+        for (let y = yT0 - 6; y > yT1 + 2; y -= 12) {
+          m.box([tr.X, y, 0], [1, 0, 0], [0, 1, 0], tw, 1.2, qTop - 2.0, qTop - 1.0, capCol);
+          pile(tr.X - tw / 2 + 0.9, y, 0.45, qTop - 2.0); pile(tr.X + tw / 2 - 0.9, y, 0.45, qTop - 2.0);
+        }
+        const toe = yT1 + 2.2 * (qTop - bedZ), S0 = cx - 4 * scale, S1 = cx + 4 * scale;
+        m.quad([S0, toe, bedZ], [S1, toe, bedZ], [S1, yT1, qTop], [S0, yT1, qTop], hex('#B9AE8E'));
+        m.quad([S0, yT1 - 3 * scale, qTop], [S0, yT1, qTop], [S1, yT1, qTop], [S1, yT1 - 3 * scale, qTop], hex('#8F8C84'));
+        m.quad([tr.X - 6, yT1 - 30, qTop + 0.01], [tr.X - 6, yT1, qTop + 0.01], [tr.X + 6, yT1, qTop + 0.01], [tr.X + 6, yT1 - 30, qTop + 0.01], hex('#77777A'));
+        // dolphins, each on four piles, and the catwalks back to the deck
+        ST.dolphins.forEach(q => {
+          const ztop = q.kind === 'mooring' ? (S.bollards.find(b => Math.abs(b.X - q.X) < 0.01 && Math.abs(b.Y - q.Y) < 0.01) || { z: qTop }).z : qTop;
+          m.box([q.X, q.Y, 0], [1, 0, 0], [0, 1, 0], q.sx, q.sy, ztop - 2.2, ztop, conc, top);
+          [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => pile(q.X + a * (q.sx / 2 - 0.9), q.Y + b * (q.sy / 2 - 0.9), 0.5, ztop - 2.2));
+          q.z = ztop;
+        });
+        ST.catwalks.forEach(([a, b]) => {
+          const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 0.5) return;
+          const ux = dx / L, uy = dy / L, z = qTop + 0.6;
+          m.box([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0], [ux, uy, 0], [-uy, ux, 0], L, 1.2, z - 0.25, z, hex('#6F7780'));
+          m.box([(a[0] + b[0]) / 2 - uy * 0.6, (a[1] + b[1]) / 2 + ux * 0.6, 0], [ux, uy, 0], [-uy, ux, 0], L, 0.06, z, z + 1.0, hex('#D8B23A'));
+        });
+      }
+    } else if (S.quay) {
       const qx0 = S.quayX[0], qx1 = S.quayX[1];
       const concrete = hex('#A9A49A'), apronCol = hex('#77777A'), cope = hex('#D8B23A');
       m.quad([qx0, 0, qDepth], [qx1, 0, qDepth], [qx1, 0, qTop], [qx0, 0, qTop], concrete);
@@ -3108,12 +3189,13 @@ const Moor3D = (() => {
     /* water */
     const wm = new Mesh();
     const R = 6 * scale;
-    if (S.seabed > 0) {                                   // seabed at the water depth, seen through a transparent sea
-      const zb = -S.seabed;
-      m.quad([cx - R, S.quay ? -0.05 : cy - R, zb], [cx - R, cy + R, zb], [cx + R, cy + R, zb], [cx + R, S.quay ? -0.05 : cy - R, zb], hex('#B9AE8E'));
-      if (S.quay) m.quad([cx - R, -0.05, zb], [cx + R, -0.05, zb], [cx + R, -0.05, 0], [cx - R, -0.05, 0], hex('#8C8576'));
+    const wall = S.quay && !piled, yNear = wall ? -0.05 : cy - R;
+    if (S.seabed > 0 || piled) {                          // seabed at the water depth, seen through a transparent sea
+      const zb = piled ? bedZ : -S.seabed;
+      m.quad([cx - R, yNear, zb], [cx - R, cy + R, zb], [cx + R, cy + R, zb], [cx + R, yNear, zb], hex('#B9AE8E'));
+      if (wall) m.quad([cx - R, -0.05, zb], [cx + R, -0.05, zb], [cx + R, -0.05, 0], [cx - R, -0.05, 0], hex('#8C8576'));
     }
-    wm.quad([cx - R, S.quay ? -0.05 : cy - R, 0], [cx + R, S.quay ? -0.05 : cy - R, 0], [cx + R, cy + R, 0], [cx - R, cy + R, 0], [0, 0, 0]);
+    wm.quad([cx - R, yNear, 0], [cx + R, yNear, 0], [cx + R, cy + R, 0], [cx - R, cy + R, 0], [0, 0, 0]);
     return { m, wm, scale };
   }
 
@@ -3946,6 +4028,8 @@ function migrate(p) {
     });
   }
   if (p.berth.depth == null) p.berth.depth = '';
+  if (!p.berth.structure) p.berth.structure = 'wall';
+  p.berth.deck = Object.assign({ width: '', thickness: '', length: '', pileD: '', pitch: '', rows: '', trestleLength: '', trestleWidth: '', trestleX: '' }, p.berth.deck || {});
   // drag basis: projects carrying their own coefficient tables keep them; the rest use the library
   [[1, p.vessel], [2, p.vessel2]].forEach(([ship, vv]) => {
     if (!vv || vv.drag) return;
@@ -3973,9 +4057,11 @@ function loadStored() {
   return null;
 }
 let saveTimer = null;
-function persist() {
+var cloudTouched = null;     // set by Cloud when the page is served from the site
+function persist(quiet) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(P)); } catch (e) {} }, 300);
+  if (!quiet && cloudTouched) cloudTouched();
 }
 
 /* ---------- messages ---------- */
@@ -5766,6 +5852,30 @@ function renderBerthTab() {
     { key: 'depth', label: 'Water depth at the berth (below CD, blank = not used)', unit: 'm', help: 'With this and the water level, the program works out the water-depth to draft ratio and interpolates the current coefficients for it.' },
     { key: 'channelWidth', label: 'Channel width for current (blank = 500 m)', unit: 'm', help: 'Used only with the Generic (Barge and Pontoon) current basis, as in OptiMoor (its berth input "Width of Channel (for Current)", 500 m by default). The hull blocks part of this channel, so the flow speeds up past it and the current force rises; above a critical speed the case fails for insufficient clearance. OCIMF and other measured current data already include the shallow-water effect and are not changed.' }
   ]));
+  if (!offshore) {
+    const stc = br.structure || 'wall', jetty = stc === 'jetty';
+    tb.append(el('h2', { text: 'Berth structure' }));
+    tb.append(el('p', { class: 'note', text: 'What the berth is built as. It changes the plan and 3D drawings only: the analysis treats the berthing face (Y = 0) the same way for all three, with the fenders on it and the hull clearance measured to it.' }));
+    tb.append(fieldGrid(br, [
+      { key: 'structure', label: 'Structure', rerender: true, options: [['wall', 'Quay wall (solid, land behind)'], ['deck', 'Open deck on piles, backed by land'], ['jetty', 'Jetty in the sea: deck on piles with an approach trestle']] }
+    ]));
+    if (stc !== 'wall') {
+      tb.append(fieldGrid(br.deck, [
+        { key: 'width', label: `Deck width from the berthing face (blank = ${jetty ? 20 : 30} m)`, unit: 'm' },
+        { key: 'length', label: jetty ? 'Deck length (blank = the fenders plus 8 m each end)' : 'Deck length (blank = the whole berth drawn)', unit: 'm' },
+        { key: 'thickness', label: 'Deck thickness (blank = 1.5 m); the top is the highest bollard level', unit: 'm' },
+        { key: 'pileD', label: 'Pile diameter (blank = 1.0 m)', unit: 'm' },
+        { key: 'pitch', label: 'Pile spacing along the berth (blank = 7 m)', unit: 'm' },
+        { key: 'rows', label: 'Rows of piles across the deck (blank = one every 7 m)' },
+        ...(jetty ? [
+          { key: 'trestleLength', label: 'Approach trestle length to the shore (blank = 120 m)', unit: 'm' },
+          { key: 'trestleWidth', label: 'Approach trestle width (blank = 8 m)', unit: 'm' },
+          { key: 'trestleX', label: 'Approach trestle position X (blank = the middle of the deck)', unit: 'm' }
+        ] : [])
+      ]));
+      if (jetty) tb.append(el('p', { class: 'note', text: 'Bollards beyond the ends of the deck, or behind it, are drawn on mooring dolphins, and fenders beyond its ends on breasting dolphins, each joined back to the deck by a catwalk.' }));
+    }
+  }
   if (sts) {
     tb.append(fieldGrid(P.sts, [
       { key: 'mode', label: 'Arrangement', rerender: true, options: [['quay', 'Mothership alongside a quay'], ['offshore', 'Both vessels offshore (at anchor)']] },
@@ -7009,7 +7119,8 @@ function drawPlan() {
   const xs = [...sc.bollards.map(b => b.X), ...sc.fenders.filter(f => f.kind === 'quay').map(f => f.X), ...(sc.piles || []).map(q => q.X), ...hulls0.flat().map(q => q[0])];
   // the passing ship's lane is kept in view (its breadth, not its full path)
   const lane = (() => { const q = passerAt(sc, 0); if (!q) return []; const c0 = Math.cos(q.pose[2]), s0 = Math.sin(q.pose[2]); return q.hull.map(([a, b]) => q.pose[1] + a * s0 + b * c0); })();
-  const ys = [...sc.bollards.map(b => b.Y), ...(sc.quay ? [0] : []), ...(sc.piles || []).map(q => q.Y), ...hulls0.flat().map(q => q[1]), ...lane];
+  const ST = berthStructure(sc, [Math.min(...xs) - 1e4, Math.max(...xs) + 1e4]);
+  const ys = [...sc.bollards.map(b => b.Y), ...(sc.quay ? [0] : []), ...(ST.kind !== 'wall' ? [-ST.W] : []), ...(sc.piles || []).map(q => q.Y), ...hulls0.flat().map(q => q[1]), ...lane];
   const minX = Math.min(...xs) - 18, maxX = Math.max(...xs) + 18;
   const minY = Math.min(...ys, sc.quay ? -8 : Math.min(...ys)) - 34, maxY = Math.max(...ys) + 55;
   let cssH = Math.round((maxY - minY) * cssW / (maxX - minX));
@@ -7030,7 +7141,39 @@ function drawPlan() {
   for (let gx = Math.ceil(wx0 / gstep) * gstep; gx <= wx1; gx += gstep) { ctx.beginPath(); ctx.moveTo(W(gx), 0); ctx.lineTo(W(gx), cssH); ctx.stroke(); }
   for (let gy = Math.ceil(wy0 / gstep) * gstep; gy <= wy1; gy += gstep) { ctx.beginPath(); ctx.moveTo(0, Hh(gy)); ctx.lineTo(cssW, Hh(gy)); ctx.stroke(); }
 
-  if (sc.quay) {
+  const land = yTop => {          // hatched land from Y = yTop landward
+    const qy = Math.max(0, Math.min(cssH, Hh(yTop)));
+    ctx.fillStyle = '#CFC8BC'; ctx.fillRect(0, qy, cssW, cssH - qy);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, qy, cssW, cssH - qy); ctx.clip();
+    ctx.strokeStyle = 'rgba(142,133,117,.35)';
+    for (let k = -cssH; k < cssW + cssH; k += 12) { ctx.beginPath(); ctx.moveTo(k, cssH); ctx.lineTo(k + cssH, 0); ctx.stroke(); }
+    ctx.restore();
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, Hh(yTop)); ctx.lineTo(cssW, Hh(yTop)); ctx.stroke();
+  };
+  const slab = (x0, x1, y0, y1) => {   // a concrete deck in plan, Y from y0 (face) back to y1
+    const L = W(x0), R = W(x1), T = Hh(y0), B = Hh(y1);
+    ctx.fillStyle = '#DAD6CC'; ctx.fillRect(L, T, R - L, B - T);
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 1.5; ctx.strokeRect(L, T, R - L, B - T);
+  };
+  const piles = (x0, x1, ys2, pitch, d) => {
+    const r = Math.max(1.2, d / 2 * sp); if (pitch * sp < 4) return;
+    ctx.fillStyle = 'rgba(77,82,87,.55)';
+    ys2.forEach(y => { for (let x = x0 + pitch / 2; x < x1; x += pitch) { ctx.beginPath(); ctx.arc(W(x), Hh(y), r, 0, 2 * Math.PI); ctx.fill(); } });
+  };
+  if (ST.kind !== 'wall') {
+    const rowY = Array.from({ length: ST.rows }, (_, i) => -0.9 - (ST.W - 1.8) * i / (ST.rows - 1));
+    if (ST.kind === 'deck') { land(-ST.W); slab(Math.min(ST.X0, geom.toWorld(0, 0)[0]), Math.max(ST.X1, geom.toWorld(cssW, 0)[0]), 0, -ST.W); }
+    else {
+      const tr = ST.trestle; land(-ST.W - tr.L);
+      ctx.strokeStyle = '#6F7780'; ctx.lineWidth = Math.max(1.5, 1.2 * sp);
+      ST.catwalks.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(W(a[0]), Hh(a[1])); ctx.lineTo(W(b[0]), Hh(b[1])); ctx.stroke(); });
+      slab(tr.X - tr.w / 2, tr.X + tr.w / 2, -ST.W, -ST.W - tr.L);
+      slab(ST.X0, ST.X1, 0, -ST.W);
+      ST.dolphins.forEach(q => slab(q.X - q.sx / 2, q.X + q.sx / 2, q.Y + q.sy / 2, q.Y - q.sy / 2));
+    }
+    piles(ST.kind === 'deck' ? geom.toWorld(0, 0)[0] - ST.pitch : ST.X0, ST.kind === 'deck' ? geom.toWorld(cssW, 0)[0] : ST.X1, rowY, ST.pitch, ST.pileD);
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W(ST.kind === 'deck' ? -1e6 : ST.X0), Hh(0)); ctx.lineTo(W(ST.kind === 'deck' ? 1e6 : ST.X1), Hh(0)); ctx.stroke();
+  } else if (sc.quay) {
     const qy = Math.max(0, Math.min(cssH, Hh(0)));
     ctx.fillStyle = '#CFC8BC'; ctx.fillRect(0, qy, cssW, cssH - qy);
     ctx.save(); ctx.beginPath(); ctx.rect(0, qy, cssW, cssH - qy); ctx.clip();
@@ -7822,6 +7965,51 @@ function passerAt(sc, pos) {
   const a = dir * pos * Lc, b = side * eta, c = Math.cos(x0[2]), s = Math.sin(x0[2]);
   return { V: V2, pos, pose: [x0[0] + a * c - b * s, x0[1] + a * s + b * c, x0[2] + (dir < 0 ? Math.PI : 0)], hull: MoorEngine.hullPolygon(V2.LOA, V2.B, V2.Lpb) };
 }
+/* The berth as built, for drawing only: a quay wall, an open deck on piles backed by land, or a jetty in the sea
+   (deck head on piles, approach trestle to the shore, dolphins for bollards and fenders beyond the deck). */
+let seaTouched = false;
+function berthStructure(sc, span) {
+  const kind = (P.berth && P.berth.structure) || 'wall';
+  if (!sc.quay || kind === 'wall') return { kind: 'wall' };
+  const d = P.berth.deck || {}, jetty = kind === 'jetty';
+  const num = (v, def, ok = x => x > 0) => (v === '' || v == null || !Number.isFinite(Number(v)) || !ok(Number(v))) ? def : Number(v);
+  const W = num(d.width, jetty ? 20 : 30), t = num(d.thickness, 1.5), pileD = num(d.pileD, 1.0), pitch = num(d.pitch, 7);
+  const rows = Math.max(2, Math.round(num(d.rows, Math.round(W / 7) + 1)));
+  const onPont = new Set((P.bollards || []).filter(b => b.on === 'pontoon').map(b => String(b.id)));
+  const bol = sc.bollards.filter(b => !onPont.has(String(b.id)));
+  const fen = sc.fenders.filter(f => f.kind === 'quay');
+  const LOA = Math.max(...sc.ships.map(s2 => s2.V.LOA || 0), 50);
+  const cx = sc.ships.reduce((a, s2) => a + s2.x0[0], 0) / sc.ships.length;
+  let X0, X1;
+  const len = num(d.length, null);
+  if (!jetty) { [X0, X1] = span; if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; } }
+  else {
+    const xs = fen.length >= 2 ? fen.map(f => f.X) : bol.length ? bol.map(b => b.X) : [cx - 0.3 * LOA, cx + 0.3 * LOA];
+    X0 = Math.min(...xs) - 8; X1 = Math.max(...xs) + 8;
+    if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; }
+  }
+  const out = { kind, W, t, pileD, pitch, rows, X0, X1, dolphins: [], catwalks: [] };
+  if (!jetty) return out;
+  out.trestle = { X: num(d.trestleX, (X0 + X1) / 2, () => true), w: num(d.trestleWidth, 8), L: num(d.trestleLength, 120) };
+  // dolphins: bollards off the deck carry mooring dolphins, fenders beyond its ends breasting dolphins
+  const offDeck = (x, y) => x < X0 - 0.5 || x > X1 + 0.5 || y < -W - 0.5 || y > 0.5;
+  fen.filter(f => offDeck(f.X, -1)).forEach(f => out.dolphins.push({ kind: 'breasting', X: f.X, Y: -3, sx: 7, sy: 6, id: f.id }));
+  bol.filter(b => offDeck(b.X, b.Y)).forEach(b => {
+    const near = out.dolphins.find(q => Math.abs(q.X - b.X) < q.sx / 2 && Math.abs(q.Y - b.Y) < q.sy / 2);
+    if (!near) out.dolphins.push({ kind: 'mooring', X: b.X, Y: b.Y, sx: 6, sy: 6, id: b.id });
+  });
+  // catwalks: each dolphin to the next one nearer the deck, the nearest to the deck itself
+  const clampY = y => Math.max(-W + 1, Math.min(-1, y));
+  const deckPt = q => [Math.max(X0, Math.min(X1, q.X)), q.X >= X0 && q.X <= X1 ? -W : clampY(q.Y)];
+  const dist = q => { const [x, y] = deckPt(q); return Math.hypot(q.X - x, q.Y - y); };
+  const sorted = out.dolphins.slice().sort((a, b) => dist(a) - dist(b)), placed = [];
+  sorted.forEach(q => {
+    let to = deckPt(q), best = dist(q);
+    placed.forEach(o => { const dd = Math.hypot(q.X - o.X, q.Y - o.Y); if (dd < best && Math.sign(o.X - (X0 + X1) / 2) === Math.sign(q.X - (X0 + X1) / 2)) { best = dd; to = [o.X, o.Y]; } });
+    out.catwalks.push([[q.X, q.Y], to]); placed.push(q);
+  });
+  return out;
+}
 function scene3D(sc) {
   const proj = preview ? Object.assign({}, P, { lines: preview.lines }) : P;
   const WL = Number(proj.environment.waterLevel) || 0;
@@ -7843,7 +8031,9 @@ function scene3D(sc) {
   const quayX = [Math.min(...sc.bollards.map(b => b.X), cx - scale), Math.max(...sc.bollards.map(b => b.X), cx + scale)];
   return {
     V: sc.ships[0].V, berthType: sc.type, showLabels, scale, centre: [cx, cy], quay: sc.quay,
-    showCargo: $('showCargo') ? $('showCargo').checked : true, waterAlpha: $('seaT') ? 1 - 0.9 * Number($('seaT').value) / 100 : 1,
+    structure: berthStructure(sc, [quayX[0] - 0.3 * scale, quayX[1] + 0.3 * scale]),
+    showCargo: $('showCargo') ? $('showCargo').checked : true,
+    waterAlpha: $('seaT') ? 1 - 0.9 * Math.max(Number($('seaT').value), seaTouched || !sc.quay || (P.berth.structure || 'wall') === 'wall' ? 0 : 55) / 100 : 1,
     seabed: (Number(proj.berth.depth) > 0 ? Number(proj.berth.depth) : 0) + (Number(proj.environment.waterLevel) || 0),
     maxDraft: Math.max(...sc.ships.map(s2 => s2.V.T)),
     quayX: [quayX[0] - 0.3 * scale, quayX[1] + 0.3 * scale],
@@ -8537,6 +8727,198 @@ function exportCSV() {
 }
 
 /* ---------- wiring ---------- */
+
+/* ---------- projects kept on the site ----------
+   Served from the team site, TritoMoor keeps its projects under the signed-in account: the open project saves
+   itself a couple of seconds after each change, and opens again from any computer. Offline there is no site,
+   and projects are saved to and opened from .trito files as before. */
+const Cloud = (() => {
+  const SITE = window.__TM_SITE || null;
+  const KEY = 'tritomoor-site-project';
+  let st = { id: null, version: null, name: '', dirty: false };
+  let timer = null, saving = false, again = false, edits = 0, lastSaved = null, trouble = '';
+  const api = (path, opts = {}) => fetch(SITE.api + path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, opts))
+    .then(async r => { let j = null; try { j = await r.json(); } catch (e) {} if (!r.ok) { const er = new Error((j && j.detail) || ('The site answered ' + r.status + '.')); er.status = r.status; er.body = j; throw er; } return j; });
+  const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const when = t => { if (!t) return ''; const d = new Date(String(t).replace(' ', 'T') + 'Z'); if (isNaN(d)) return t;
+    const today = new Date().toDateString() === d.toDateString();
+    return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  const berthName = b => ({ alongside: 'Alongside', med: 'Mediterranean', sts: 'Ship-to-ship', pontoon: 'Pontoon' })[b] || b || '';
+
+  function status() {
+    const c = $('cloudState'); if (!c) return;
+    c.hidden = false; c.className = 'cloud'; c.innerHTML = '';
+    if (!st.id) { c.classList.add('warn'); c.append('Not on the site yet ', el('button', { onclick: saveNew }, 'Save')); return; }
+    if (trouble) { c.classList.add('warn'); c.textContent = trouble; return; }
+    c.textContent = saving || st.dirty ? 'Saving…' : lastSaved ? 'Saved to the site ' + when(lastSaved) : 'On the site';
+  }
+  function apply(data) {
+    P = migrate(data); resetResults(); syncCoefficients();
+    renderInputs(); renderResults(); setupSlider(); markTabs(); persist(true); drawPlan();
+  }
+  function link(r) { st = { id: r.id, version: r.version, name: r.name, dirty: false }; lastSaved = r.updated_at; trouble = ''; keep(); status(); }
+  function detach() { clearTimeout(timer); st = { id: null, version: null, name: '', dirty: false }; trouble = ''; keep(); status(); }
+
+  function touched() {
+    if (!st.id) { status(); return; }
+    st.dirty = true; edits++; keep(); status();
+    clearTimeout(timer); timer = setTimeout(flush, 1800);
+  }
+  async function flush(force) {
+    if (!st.id || (!st.dirty && !force)) return;
+    if (saving) { again = true; return; }
+    saving = true; again = false; status();
+    const sent = edits, id = st.id;
+    try {
+      const r = await api('/projects/' + id, { method: 'PUT', body: JSON.stringify({ data: P, name: P.name || '', base_version: st.version, force: !!force }) });
+      if (st.id !== id) return;
+      st.version = r.version; st.name = r.name; lastSaved = r.updated_at; trouble = '';
+      if (edits === sent) st.dirty = false;
+      keep();
+    } catch (e) {
+      if (e.status === 409) { saving = false; return conflict(e.body && e.body.current); }
+      if (e.status === 404) { saving = false; detach(); showMsg('This project is no longer on the site (it was deleted). Use Save to put it back.'); return; }
+      trouble = e.status === 401 ? 'Signed out — sign in again to save' : 'Not saved yet — will retry';
+      clearTimeout(timer); timer = setTimeout(flush, 15000);
+    } finally { saving = false; status(); }
+    if (again || st.dirty) { clearTimeout(timer); timer = setTimeout(flush, 600); }
+  }
+  async function conflict(cur) {
+    const t = cur ? when(cur.updated_at) : 'recently';
+    if (confirm('"' + (cur ? cur.name : st.name) + '" was saved from another computer (' + t + ') after you opened it here.\n\n' +
+      'OK — open that newer copy here (the changes made on this page since are dropped).\nCancel — keep this page and save it over that copy (the other copy is kept as an earlier version).')) {
+      await open(st.id, true);
+    } else { st.dirty = true; await flush(true); }
+  }
+  async function open(id, quietly) {
+    try {
+      const r = await api('/projects/' + id);
+      apply(r.data); link(r);
+      if (!quietly) showMsg('Opened ' + r.name + ' from the site.', 'info'); else showMsg('Opened the newer copy of ' + r.name + ' from the site.', 'info');
+      return true;
+    } catch (e) { showMsg('Could not open that project. ' + e.message); return false; }
+  }
+  async function saveNew() {
+    const name = prompt('Name for this project on the site:', P.name || st.name || 'Untitled project');
+    if (name == null) return;
+    try {
+      P.name = name.trim() || P.name; $('projName').value = P.name || '';
+      const r = await api('/projects', { method: 'POST', body: JSON.stringify({ data: P, name: P.name }) });
+      link(r); persist(true);
+      showMsg('Saved ' + r.name + ' to the site. It saves itself from now on.', 'info');
+      if ($('projDlg').open) list();
+    } catch (e) { showMsg('Could not save to the site. ' + e.message); }
+  }
+
+  /* the projects window */
+  const dlgMsg = (t, bad) => { const p = $('pjStatus'); p.textContent = t || ''; p.style.color = bad ? 'var(--bad)' : ''; };
+  async function list() {
+    const tb = $('pjRows'); tb.innerHTML = '';
+    $('pjSave').textContent = st.id ? 'Save a copy as a new project' : 'Save this project to the site';
+    let rows;
+    try { rows = (await api('/projects')).projects; } catch (e) { dlgMsg('Could not read your projects. ' + e.message, true); return; }
+    dlgMsg(rows.length ? rows.length + ' project' + (rows.length === 1 ? '' : 's') + ' on the site.' : 'No projects on the site yet. Save this one, start a new one or upload your .trito files.');
+    rows.forEach(r => {
+      const cur = r.id === st.id;
+      const tr = el('tr', { class: cur ? 'cur' : '' }, [
+        el('td', {}, [el('b', { text: r.name || 'Untitled project' }), cur ? el('span', { class: 'tag', text: 'open' }) : null]),
+        el('td', { text: r.vessel }), el('td', { text: berthName(r.berth) }), el('td', { text: when(r.updated_at) }),
+        el('td', {}, el('div', { class: 'acts' }, [
+          el('button', { class: cur ? '' : 'primary', disabled: cur, onclick: async () => {
+            if (st.id && st.dirty) await flush();
+            if (!st.id && !confirm('The project open on this page is not on the site. Open "' + r.name + '" in its place?\n\nSave it to the site or download it first if you want to keep it.')) return;
+            if (await open(r.id)) $('projDlg').close();
+          } }, cur ? 'Open now' : 'Open'),
+          el('button', { onclick: async () => { try { await api('/projects/' + r.id + '/duplicate', { method: 'POST', body: '{}' }); list(); } catch (e) { dlgMsg(e.message, true); } } }, 'Copy'),
+          el('button', { onclick: () => versions(r, tr) }, 'Earlier versions'),
+          el('button', { onclick: async () => {
+            if (!confirm('Delete "' + r.name + '" from the site, with its earlier versions? This cannot be undone.')) return;
+            try { await api('/projects/' + r.id, { method: 'DELETE' }); if (cur) detach(); list(); } catch (e) { dlgMsg(e.message, true); }
+          } }, 'Delete')
+        ]))
+      ]);
+      tb.append(tr);
+    });
+  }
+  async function versions(r, tr) {
+    const nx = tr.nextElementSibling; if (nx && nx.classList.contains('vers')) { nx.remove(); return; }
+    const td = el('td', { colspan: 5, text: 'Reading earlier versions…' }), row = el('tr', { class: 'vers' }, td);
+    tr.after(row);
+    try {
+      const v = (await api('/projects/' + r.id + '/versions')).versions;
+      td.innerHTML = '';
+      if (!v.length) { td.textContent = 'No earlier versions yet. One is kept every quarter of an hour of work, and before a version is brought back.'; return; }
+      td.append(el('div', { text: 'Bringing one back makes it the newest; the version it replaces is kept too.' }));
+      v.forEach(q => td.append(el('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:4px' }, [
+        el('span', { text: when(q.saved_at) + ' — ' + (q.name || '') }),
+        el('button', { onclick: async () => {
+          if (!confirm('Bring back the version of "' + r.name + '" saved ' + when(q.saved_at) + '?')) return;
+          try {
+            const back = await api('/projects/' + r.id + '/versions/' + q.id + '/restore', { method: 'POST', body: '{}' });
+            if (r.id === st.id) { apply(back.data); link(back); showMsg('Brought back the version saved ' + when(q.saved_at) + '.', 'info'); }
+            list();
+          } catch (e) { dlgMsg(e.message, true); }
+        } }, 'Bring back')
+      ])));
+    } catch (e) { td.textContent = e.message; }
+  }
+  async function upload(files) {
+    let ok = 0; const bad = [];
+    for (const f of files) {
+      try {
+        const p = JSON.parse(await f.text());
+        if (!p || !p.vessel || !p.environment) throw new Error('not a mooring project');
+        await api('/projects', { method: 'POST', body: JSON.stringify({ data: p, name: p.name || f.name.replace(/\.(trito|json)$/i, '') }) });
+        ok++;
+      } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
+    }
+    await list();
+    dlgMsg((ok ? 'Uploaded ' + ok + ' project' + (ok === 1 ? '' : 's') + '. ' : '') + (bad.length ? 'Could not upload ' + bad.join(', ') + '.' : ''), bad.length > 0);
+  }
+  function openDialog() { const d = $('projDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); list(); }
+
+  function init() {
+    if (!SITE) return false;
+    try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.id) st = s; } catch (e) {}
+    cloudTouched = touched;
+    // the header: Projects in place of opening a file; Save goes to the site
+    const openLbl = $('fileOpen').closest('label');
+    const pb = el('button', { id: 'btnProjects', title: 'Your projects on the site: open, copy, bring back an earlier version, upload or download', onclick: openDialog }, 'Projects');
+    openLbl.replaceWith(pb);
+    const sv = $('btnSave'), sv2 = sv.cloneNode(true); sv.replaceWith(sv2);
+    sv2.textContent = 'Save'; sv2.title = 'Save to the site now (it also saves itself as you work)';
+    sv2.addEventListener('click', () => st.id ? flush(true) : saveNew());
+    $('pjSave').addEventListener('click', () => { if (st.id) { detach(); } saveNew(); });
+    $('pjNew').addEventListener('click', async () => {
+      if (!st.id && !confirm('The project open on this page is not on the site. Start a new project in its place?')) return;
+      if (st.id && st.dirty) await flush();
+      const name = prompt('Name for the new project:', 'New mooring project'); if (name == null) return;
+      const p = exampleProject(); p.name = name.trim() || 'New mooring project';
+      try { const r = await api('/projects', { method: 'POST', body: JSON.stringify({ data: p, name: p.name }) }); apply(r.name ? Object.assign(p, { name: r.name }) : p); link(r); $('projDlg').close();
+        showMsg('Started ' + r.name + ' from the worked example — change the vessel, berth and lines to suit.', 'info'); } catch (e) { dlgMsg(e.message, true); }
+    });
+    $('pjUpload').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); });
+    $('pjDownload').addEventListener('click', () => download(safeName() + '.trito', JSON.stringify(P, null, 2), 'application/json'));
+    $('pjClose').addEventListener('click', () => $('projDlg').close());
+    window.addEventListener('beforeunload', e => {
+      if (st.id && st.dirty) {
+        try { fetch(SITE.api + '/projects/' + st.id, { method: 'PUT', keepalive: true, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: P, name: P.name || '', base_version: st.version }) }); } catch (er) {}
+      }
+    });
+    status();
+    // the project last open on this computer: is the site's copy newer?
+    if (st.id) {
+      api('/projects/' + st.id).then(r => {
+        if (r.version === st.version) { lastSaved = r.updated_at; status(); if (st.dirty) flush(); return; }
+        if (!st.dirty) { apply(r.data); link(r); showMsg('Opened the latest ' + r.name + ' from the site.', 'info'); }
+        else conflict(r);
+      }).catch(e => { if (e.status === 404) { detach(); } else { trouble = 'Cannot reach the site — will retry'; status(); timer = setTimeout(flush, 15000); } });
+    }
+    return true;
+  }
+  return { init, detach, flush, openDialog, get linked() { return !!st.id; }, get on() { return !!SITE; } };
+})();
+
 function init() {
   buildTabs();
   buildToolbar();
@@ -8560,6 +8942,7 @@ function init() {
     const which = e.target.value; e.target.value = '';
     if (!which) return;
     if (!confirm('Replace the current project with this worked example? Save your project first if you want to keep it.')) return;
+    Cloud.detach();
     P = migrate(which === 'med' ? exampleMedProject() : which === 'sts' ? exampleStsProject() : which === 'lng' ? exampleLngProject() : which === 'pontoon' ? examplePontoonProject() : exampleProject()); resetResults(); showMsg('');
     syncCoefficients(); renderInputs(); renderResults(); setupSlider(); markTabs(); persist(); drawPlan();
   });
@@ -8570,6 +8953,7 @@ function init() {
       try {
         const p = JSON.parse(rd.result);
         if (!p || !p.vessel || !p.environment) throw new Error('This file is not a mooring project.');
+        Cloud.detach();
         P = migrate(p); resetResults(); syncCoefficients();
         showMsg('Opened ' + f.name + '.', 'info');
         renderInputs(); renderResults(); setupSlider(); markTabs(); persist(); drawPlan();
@@ -8584,7 +8968,7 @@ function init() {
   document.addEventListener('wheel', e => { const t = e.target; if (t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t) t.blur(); }, { passive: true });
   $('showLabels').addEventListener('change', drawPlan);
   $('showCargo').addEventListener('change', drawPlan);
-  $('seaT').addEventListener('input', () => { if (viewMode === '3d') drawPlan(); });
+  $('seaT').addEventListener('input', () => { seaTouched = true; if (viewMode === '3d') drawPlan(); });
   $('viewCond').addEventListener('change', () => {
     const vc = viewCondSel();
     // show the analysed run for that condition if there is one
@@ -8595,6 +8979,7 @@ function init() {
   // re-render line geometry table when switching to it
   $('tb-lines').addEventListener('click', () => { const old = $('geomBox'); if (old) old.replaceWith(lineGeometryTable()); });
   drawPlan();
+  Cloud.init();
 }
 function resetResults() { RES = null; RESALL = null; runSel = 0; sel = 0; stale = false; OPT = null; preview = null; selFL = null; view = { z: 1, cx: null, cy: null }; }
 window.__mooringPlanGeom = () => geom;

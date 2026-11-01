@@ -3,7 +3,8 @@
 Several things live behind this address — the project control platform, the
 comment response sheets, THEMIS, MarineTwin, and two applications of their own
 mounted in front of this one: Triton, the quay element designer, at ``/triton``,
-Workload, the unit's workload and profit plan, at ``/workload``, and Iris, AI tools on your phone, at ``/iris``. They are one application and one database now, but
+Workload, the unit's workload and profit plan, at ``/workload``, Iris, AI tools on your phone, at ``/iris``, and TritoMoor, static mooring
+analysis, at ``/tritomoor``. They are one application and one database now, but
 they are two different jobs on two different days, so the site opens on a
 choice rather than dropping everybody into whichever one happened to be written
 first.
@@ -22,6 +23,7 @@ from ..crs import describe as describe_crs
 from ..triton_door import describe as describe_triton
 from ..workload_door import describe as describe_workload
 from ..iris_door import describe as describe_iris
+from .tritomoor_views import describe as describe_tritomoor
 
 bp = Blueprint("home", __name__)
 
@@ -48,7 +50,8 @@ def favicon():
 def chooser():
     """Which of the two you are here for."""
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
-                           workload=describe_workload(), iris=describe_iris())
+                           workload=describe_workload(), iris=describe_iris(),
+                           tritomoor=describe_tritomoor())
 
 
 @bp.get("/triton/")

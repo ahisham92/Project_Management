@@ -3,8 +3,8 @@
 Several things live behind this address — the project control platform, the
 comment response sheets, THEMIS, MarineTwin, and two applications of their own
 mounted in front of this one: Triton, the quay element designer, at ``/triton``,
-Workload, the unit's workload and profit plan, at ``/workload``, Iris, AI tools on your phone, at ``/iris``, and TritoMoor, static mooring
-analysis, at ``/tritomoor``. They are one application and one database now, but
+Workload, the unit's workload and profit plan, at ``/workload``, Iris, AI tools on your phone, at ``/iris``, TritoMoor, static mooring
+analysis, at ``/tritomoor``, and SiteTwin, the construction sequence, at ``/sitetwin``. They are one application and one database now, but
 they are two different jobs on two different days, so the site opens on a
 choice rather than dropping everybody into whichever one happened to be written
 first.
@@ -23,6 +23,7 @@ from ..crs import describe as describe_crs
 from ..triton_door import describe as describe_triton
 from ..workload_door import describe as describe_workload
 from ..iris_door import describe as describe_iris
+from ..sitetwin_door import describe as describe_sitetwin
 from .tritomoor_views import describe as describe_tritomoor
 
 bp = Blueprint("home", __name__)
@@ -51,7 +52,7 @@ def chooser():
     """Which of the two you are here for."""
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
                            workload=describe_workload(), iris=describe_iris(),
-                           tritomoor=describe_tritomoor())
+                           tritomoor=describe_tritomoor(), sitetwin=describe_sitetwin())
 
 
 @bp.get("/triton/")
@@ -73,3 +74,10 @@ def workload_missing():
 def iris_missing():
     """Only reached when Iris is not mounted in front of this address: say why."""
     return render_template("iris_missing.html", iris=describe_iris())
+
+
+@bp.get("/sitetwin/")
+@login_required
+def sitetwin_missing():
+    """Only reached when SiteTwin is not mounted in front of this address: say why."""
+    return render_template("sitetwin_missing.html", sitetwin=describe_sitetwin())

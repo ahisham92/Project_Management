@@ -24,7 +24,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 
 from . import push
-from .store import Store, StoreError
+from .store import Store, StoreError, clean_topic
 
 #: Where a site that mounts Iris says who is asking: {"id", "name", "login", "logout", "home"}.
 SITE_KEY = "iris.site"
@@ -131,14 +131,18 @@ def create_app(store: Store | None = None) -> Flask:
         row = tool()
         data = body()
         kind = data.get("kind", "")
-        sent = app.store.post(row["id"], "tool", kind, data.get("body", ""), data.get("reply_to"))
-        # An update soon after the user wrote to the tool is its reply: notified unless notifications are off.
-        replied = kind == "update" and row["notify"] != "none" and app.store.wrote_lately(row["id"])
+        topic = clean_topic(data.get("topic", ""))
+        sent = app.store.post(row["id"], "tool", kind, data.get("body", ""), data.get("reply_to"), topic)
+        # An update soon after the user wrote to that chat is its reply: notified unless notifications are off.
+        replied = kind == "update" and row["notify"] != "none" and app.store.wrote_lately(row["id"], topic=topic)
         if kind == "question" and row["notify"] in ("all", "questions") or kind == "update" and row["notify"] == "all" or replied:
             words = "has a question" if kind == "question" else "replied" if replied else "sent an update"
             who = row["agent"] or row["name"]
-            app.notify(row["account"], {"title": who, "body": f"{who} {words}",
-                                        "tool": row["id"], "message": sent["id"]})
+            title = f"{who} ({topic})" if topic else who
+            note = {"title": title, "body": f"{who} {words}", "tool": row["id"], "message": sent["id"]}
+            if topic:
+                note["topic"] = topic
+            app.notify(row["account"], note)
         return jsonify(sent)
 
     @app.get("/api/tool/inbox")
@@ -171,7 +175,8 @@ def create_app(store: Store | None = None) -> Flask:
     def my_messages(tool_id: int):
         app.store.tool_for(account()["id"], tool_id)
         after = request.args.get("after", type=int)
-        found = app.store.recent(tool_id) if after is None else app.store.messages(tool_id, after)
+        topic = request.args.get("topic")  # one chat's messages; all of the tool's without it
+        found = app.store.recent(tool_id, topic=topic) if after is None else app.store.messages(tool_id, after, topic=topic)
         return jsonify(messages=found, read_upto=app.store.read_upto(tool_id))
 
     @app.post("/api/me/tools/<int:tool_id>/messages")
@@ -179,7 +184,7 @@ def create_app(store: Store | None = None) -> Flask:
         app.store.tool_for(account()["id"], tool_id)
         data = body()
         return jsonify(app.store.post(tool_id, "phone", data.get("kind", ""), data.get("body", ""),
-                                      data.get("reply_to")))
+                                      data.get("reply_to"), data.get("topic", "")))
 
     @app.post("/api/me/tools/<int:tool_id>/notify")
     def my_notify(tool_id: int):

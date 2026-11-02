@@ -155,17 +155,20 @@ class Iris:
 
     # ---- talking -------------------------------------------------------------
 
-    def send(self, kind: str, value: Any, reply_to: int | None = None) -> int:
+    def send(self, kind: str, value: Any, reply_to: int | None = None, topic: str = "") -> int:
+        """``topic`` puts the message in one of the tool's chats on the phone (a project, say); "" is its main chat."""
         body = {"kind": kind, "body": seal(self.key, value)}
         if reply_to is not None:
             body["reply_to"] = reply_to
+        if topic:
+            body["topic"] = topic
         return self._call("POST", "/api/tool/messages", body)["id"]
 
-    def update(self, text: str) -> int:
-        return self.send("update", {"text": text})
+    def update(self, text: str, topic: str = "") -> int:
+        return self.send("update", {"text": text}, topic=topic)
 
     def ask(self, text: str, options: list[str] | None = None, assumed: str | None = None,
-            deadline: str | None = None) -> int:
+            deadline: str | None = None, topic: str = "") -> int:
         """Ask a question. Returns its id; the answer comes back through ``inbox``."""
         value: dict[str, Any] = {"text": text}
         if options:
@@ -174,7 +177,7 @@ class Iris:
             value["assumed"] = assumed
         if deadline:
             value["deadline"] = deadline
-        return self.send("question", value)
+        return self.send("question", value, topic=topic)
 
     def settle(self, question_id: int, text: str) -> int:
         """Close a question on this side (for example, went with the assumption)."""

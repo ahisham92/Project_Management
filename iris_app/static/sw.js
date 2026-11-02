@@ -11,9 +11,9 @@ self.addEventListener("push", (event) => {
     body: data.body || "You have a new message.",
     icon: scope + "static/icon-192.png",
     badge: scope + "static/badge-72.png",
-    tag: data.tool ? "iris-tool-" + data.tool : "iris",
+    tag: data.tool ? "iris-tool-" + data.tool + (data.topic ? "-" + data.topic : "") : "iris",
     renotify: true,
-    data: { url: scope + (data.tool ? "?tool=" + data.tool : "") },
+    data: { url: scope + (data.tool ? "?tool=" + data.tool + (data.topic ? "&topic=" + encodeURIComponent(data.topic) : "") : "") },
   }));
 });
 

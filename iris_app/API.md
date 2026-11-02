@@ -26,8 +26,8 @@ token and offer to connect again.
 | `POST /api/tool/pair` | `{"name": "Sketch ProMax", "machine": "PC-01", "commands": ["Pause","Resume","Stop"]}` → `{"pair_id", "code", "secret", "expires_in"}` |
 | `GET /api/tool/pair/<pair_id>` with header `X-Pair-Secret: <secret>` | `{"status": "waiting"}`, `{"status": "expired"}`, or once only `{"status": "connected", "tool_id", "token"}` |
 | `GET /api/tool/me` | `{"id", "name", "machine"}`: a cheap "am I still connected?" |
-| `POST /api/tool/messages` | `{"kind": "update" \| "question" \| "closed", "body": sealed, "reply_to"?: id}` → `{"id", "created"}` |
-| `GET /api/tool/inbox?after=<id>` | `{"messages": [{"id", "side": "phone", "kind", "reply_to", "body", "created"}]}`: what the phone sent after `id` |
+| `POST /api/tool/messages` | `{"kind": "update" \| "question" \| "closed", "body": sealed, "reply_to"?: id, "topic"?: name}` → `{"id", "created"}`. `topic` puts it in one of the tool's chats on the phone (Sketch ProMax: one per project, shown as "Sam (Harbour)"); left out, the tool's main chat. An answer or `closed` stays in its question's chat. |
+| `GET /api/tool/inbox?after=<id>` | `{"messages": [{"id", "side": "phone", "kind", "reply_to", "body", "created", "topic"}]}`: what the phone sent after `id` |
 | `DELETE /api/tool/me` | Disconnect from the tool's side. |
 
 Show the person this link as a QR code (and as text to copy):

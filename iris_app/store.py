@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to    INTEGER,
     body        TEXT NOT NULL,              -- encrypted, never read here
     state       TEXT NOT NULL DEFAULT '',   -- a question: open, answered, closed
-    created     REAL NOT NULL
+    created     REAL NOT NULL,
+    topic       TEXT NOT NULL DEFAULT ''    -- which of the tool's chats (Sketch ProMax: the project), '' for its main one
 );
 CREATE INDEX IF NOT EXISTS messages_tool ON messages(tool_id, id);
 
@@ -84,6 +85,13 @@ PAIR_SECONDS = 10 * 60
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 #: A message body may be this long once encrypted (pictures go elsewhere).
 MAX_BODY = 64 * 1024
+#: A chat's name (a topic) may be this long.
+MAX_TOPIC = 40
+
+
+def clean_topic(topic: Any) -> str:
+    """A tool's chat name as kept: one line, trimmed, at most MAX_TOPIC characters ('' for the tool's main chat)."""
+    return " ".join(str(topic or "").split())[:MAX_TOPIC]
 
 
 class StoreError(Exception):
@@ -122,6 +130,8 @@ class Store:
                 db.execute("ALTER TABLE tools ADD COLUMN read_upto INTEGER NOT NULL DEFAULT 0")
             if "agent" not in columns:
                 db.execute("ALTER TABLE tools ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+            if "topic" not in {r["name"] for r in db.execute("PRAGMA table_info(messages)")}:
+                db.execute("ALTER TABLE messages ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
             if db.execute("PRAGMA user_version").fetchone()[0] < 1:
                 # Tools connected before 31 Oct 2026 notified about questions only, so updates and replies
                 # never buzzed the phone: every tool notifies about everything now (each can be turned down).
@@ -221,8 +231,16 @@ class Store:
                 (str(account),)).fetchall()
             views = [self._tool_view(r) for r in rows]
             for view in views:
-                last = db.execute("SELECT kind, side, body, created FROM messages WHERE id = ?", (view["last"],)).fetchone()
+                last = db.execute("SELECT kind, side, body, created, topic FROM messages WHERE id = ?", (view["last"],)).fetchone()
                 view["latest"] = dict(last) if last else None
+                # One chat per topic (Sketch ProMax: one per project), the one that spoke last first.
+                chats = []
+                for c in db.execute(
+                        "SELECT topic, MAX(id) AS last, SUM(kind = 'question' AND state = 'open') AS waiting"
+                        " FROM messages WHERE tool_id = ? GROUP BY topic ORDER BY last DESC", (view["id"],)):
+                    latest = db.execute("SELECT kind, side, body, created FROM messages WHERE id = ?", (c["last"],)).fetchone()
+                    chats.append({"topic": c["topic"], "waiting": c["waiting"] or 0, "latest": dict(latest)})
+                view["chats"] = chats
         # The home list puts the tool that spoke most recently first.
         views.sort(key=lambda v: -(v["latest"]["created"] if v["latest"] else v["created"]))
         return views
@@ -267,7 +285,7 @@ class Store:
 
     # ---- messages --------------------------------------------------------
 
-    def post(self, tool_id: int, side: str, kind: str, body: str, reply_to: int | None = None) -> dict[str, Any]:
+    def post(self, tool_id: int, side: str, kind: str, body: str, reply_to: int | None = None, topic: Any = "") -> dict[str, Any]:
         allowed = TOOL_KINDS if side == "tool" else PHONE_KINDS
         if kind not in allowed:
             raise StoreError(400, f"A {side} cannot send '{kind}'.")
@@ -285,28 +303,34 @@ class Store:
                     raise StoreError(404, "No such question.")
                 if question["state"] != "open":
                     raise StoreError(409, "That question has already been settled.")
+                topic = question["topic"]  # an answer stays in its question's chat
                 db.execute("UPDATE messages SET state = ? WHERE id = ?",
                            ("answered" if kind == "answer" else "closed", reply_to))
             elif kind in ("answer", "closed"):
                 raise StoreError(400, "Say which question this settles.")
             cur = db.execute(
-                "INSERT INTO messages (tool_id, side, kind, reply_to, body, state, created)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (tool_id, side, kind, reply_to, body, "open" if kind == "question" else "", now))
+                "INSERT INTO messages (tool_id, side, kind, reply_to, body, state, created, topic)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (tool_id, side, kind, reply_to, body, "open" if kind == "question" else "", now, clean_topic(topic)))
             db.execute("DELETE FROM messages WHERE created < ?", (now - keep_days() * 86400,))
         return {"id": cur.lastrowid, "created": now}
 
-    def messages(self, tool_id: int, after: int = 0, side: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    def messages(self, tool_id: int, after: int = 0, side: str | None = None, limit: int = 200,
+                 topic: str | None = None) -> list[dict[str, Any]]:
+        """Messages after ``after``, oldest first; only one chat's when ``topic`` is given."""
         sql = "SELECT * FROM messages WHERE tool_id = ? AND id > ?"
         args: list[Any] = [tool_id, int(after or 0)]
         if side:
             sql += " AND side = ?"
             args.append(side)
+        if topic is not None:
+            sql += " AND topic = ?"
+            args.append(clean_topic(topic))
         sql += " ORDER BY id LIMIT ?"
         args.append(max(1, min(int(limit), 500)))
         with self._db() as db:
             rows = db.execute(sql, args).fetchall()
-        return [{k: r[k] for k in ("id", "side", "kind", "reply_to", "body", "state", "created")} for r in rows]
+        return [{k: r[k] for k in ("id", "side", "kind", "reply_to", "body", "state", "created", "topic")} for r in rows]
 
     def tool_inbox(self, tool_id: int, after: int = 0) -> list[dict[str, Any]]:
         """What the phone sent after ``after``; fetched counts as read (the phone shows a tick)."""
@@ -316,11 +340,11 @@ class Store:
                 db.execute("UPDATE tools SET read_upto = MAX(read_upto, ?) WHERE id = ?", (found[-1]["id"], tool_id))
         return found
 
-    def wrote_lately(self, tool_id: int, minutes: int = 30) -> bool:
-        """The phone wrote to this tool lately: its update is a reply to the user, worth a notification."""
+    def wrote_lately(self, tool_id: int, minutes: int = 30, topic: Any = "") -> bool:
+        """The phone wrote to this chat of the tool lately: its update is a reply to the user, worth a notification."""
         with self._db() as db:
-            row = db.execute("SELECT 1 FROM messages WHERE tool_id = ? AND side = 'phone' AND kind = 'message' AND created > ? LIMIT 1",
-                             (tool_id, self.clock() - minutes * 60)).fetchone()
+            row = db.execute("SELECT 1 FROM messages WHERE tool_id = ? AND side = 'phone' AND kind = 'message' AND created > ?"
+                             " AND topic = ? LIMIT 1", (tool_id, self.clock() - minutes * 60, clean_topic(topic))).fetchone()
         return row is not None
 
     def read_upto(self, tool_id: int) -> int:
@@ -328,12 +352,15 @@ class Store:
             row = db.execute("SELECT read_upto FROM tools WHERE id = ?", (tool_id,)).fetchone()
         return row["read_upto"] if row else 0
 
-    def recent(self, tool_id: int, limit: int = 100) -> list[dict[str, Any]]:
-        """The last ``limit`` messages, oldest first: what the phone opens a tool on."""
+    def recent(self, tool_id: int, limit: int = 100, topic: str | None = None) -> list[dict[str, Any]]:
+        """The last ``limit`` messages (of one chat when ``topic`` is given), oldest first: what the phone opens a chat on."""
+        sql, args = "SELECT id FROM messages WHERE tool_id = ?", [tool_id]
+        if topic is not None:
+            sql += " AND topic = ?"
+            args.append(clean_topic(topic))
         with self._db() as db:
-            last = db.execute("SELECT id FROM messages WHERE tool_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?",
-                              (tool_id, max(0, limit - 1))).fetchone()
-        return self.messages(tool_id, after=(last["id"] - 1) if last else 0, limit=limit)
+            last = db.execute(sql + " ORDER BY id DESC LIMIT 1 OFFSET ?", (*args, max(0, limit - 1))).fetchone()
+        return self.messages(tool_id, after=(last["id"] - 1) if last else 0, limit=limit, topic=topic)
 
     # ---- phones (push) ---------------------------------------------------
 

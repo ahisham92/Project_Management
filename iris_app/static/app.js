@@ -9,6 +9,7 @@
 
   let tools = [];
   let current = null;         // the open tool
+  let topic = "";             // the open chat of that tool (Sketch ProMax: its project; "" for its main chat)
   let lastId = 0;             // the newest message shown for it
   let readUpto = 0;           // the newest of your messages the tool has fetched
   let mine = [];              // your messages shown: { id, tick }
@@ -161,10 +162,12 @@
   async function loadTools(open) {
     tools = (await api("/api/me/tools")).tools;
     if (!tools.length) { current = null; show("empty"); return; }
-    const want = open || Number(new URLSearchParams(location.search).get("tool"));
+    const params = new URLSearchParams(location.search);
+    const want = open || Number(params.get("tool"));
+    const wantTopic = open ? "" : params.get("topic") || "";
     if (want && tools.some((t) => t.id === want)) {
-      history.replaceState({ tool: want }, "", ROOT + "/?tool=" + want);
-      if (!current || current.id !== want) await openTool(want, true);
+      history.replaceState({ tool: want, topic: wantTopic }, "", url(want, wantTopic));
+      if (!current || current.id !== want || topic !== wantTopic) await openTool(want, wantTopic);
       return;
     }
     if (current) { current = tools.find((t) => t.id === current.id) || null; if (current) { seenLine(); return; } }
@@ -172,26 +175,39 @@
     show("list");
   }
 
+  // One row per chat: a tool that talks about several projects (Sketch ProMax) has a chat for each,
+  // named like "Sam (Harbour)"; the chat that spoke last comes first.
+  function chatsOf(t) {
+    return t.chats && t.chats.length ? t.chats : [{ topic: "", waiting: t.waiting, latest: t.latest }];
+  }
+
+  function chatName(t, chatTopic) {
+    return who(t) + (chatTopic ? " (" + chatTopic + ")" : "");
+  }
+
   async function renderList() {
     const list = $("tools");
+    const all = [];
+    for (const t of tools) for (const c of chatsOf(t)) all.push({ t, c });
+    all.sort((a, b) => (b.c.latest ? b.c.latest.created : b.t.created) - (a.c.latest ? a.c.latest.created : a.t.created));
     const rows = [];
-    for (const t of tools) {
+    for (const { t, c } of all) {
       const li = el("li");
       const b = el("button", "tool-row");
-      b.onclick = () => go(t.id);
-      const shown = t.agent || t.name;
-      const mark = el("span", "tool-mark", t.agent ? t.agent[0].toUpperCase() : (t.name.match(/[A-Z0-9]/g) || [t.name[0]]).slice(0, 2).join("").toUpperCase());
+      b.onclick = () => go(t.id, c.topic);
+      const shown = chatName(t, c.topic);
+      const mark = el("span", "tool-mark", c.topic ? c.topic[0].toUpperCase() : t.agent ? t.agent[0].toUpperCase() : (t.name.match(/[A-Z0-9]/g) || [t.name[0]]).slice(0, 2).join("").toUpperCase());
       const mid = el("span", "tool-mid");
       const top = el("span", "tool-top");
-      top.appendChild(el("span", "tool-row-name", t.agent ? t.agent + " · " + t.name : shown));
-      if (t.latest) top.appendChild(el("span", "small muted", when(t.latest.created)));
+      top.appendChild(el("span", "tool-row-name", t.agent && !c.topic ? t.agent + " · " + t.name : shown));
+      if (c.latest) top.appendChild(el("span", "small muted", when(c.latest.created)));
       mid.appendChild(top);
-      const line = el("span", "tool-preview small" + (t.waiting ? " waiting" : " muted"), await preview(t));
+      const line = el("span", "tool-preview small" + (c.waiting ? " waiting" : " muted"), await preview(t, c));
       mid.appendChild(line);
       b.appendChild(mark);
       b.appendChild(mid);
-      if (t.waiting) b.appendChild(el("span", "badge", String(t.waiting)));
-      b.setAttribute("aria-label", shown + (t.waiting ? ", " + t.waiting + " waiting for your answer" : ""));
+      if (c.waiting) b.appendChild(el("span", "badge", String(c.waiting)));
+      b.setAttribute("aria-label", shown + (c.waiting ? ", " + c.waiting + " waiting for your answer" : ""));
       li.appendChild(b);
       rows.push(li);
     }
@@ -199,9 +215,9 @@
   }
 
   // What the list shows under a tool's name: its latest message, decrypted here.
-  async function preview(t) {
-    if (t.waiting) return t.waiting === 1 ? "Waiting for your answer" : t.waiting + " questions waiting for your answer";
-    const m = t.latest;
+  async function preview(t, c) {
+    if (c.waiting) return c.waiting === 1 ? "Waiting for your answer" : c.waiting + " questions waiting for your answer";
+    const m = c.latest;
     if (!m) return (t.machine ? "On " + t.machine + ". " : "") + "Nothing yet. Write to it any time.";
     const keyText = keyFor(t.id);
     if (!keyText) return "Connected in another browser: tap Add a connection to connect it here.";
@@ -211,10 +227,17 @@
     return (m.side === "phone" && m.kind !== "command" ? "You: " : "") + text.replace(/\s+/g, " ");
   }
 
-  function go(id) {
-    history.pushState({ tool: id }, "", ROOT + "/?tool=" + id);
-    openTool(id);
+  function url(id, chatTopic) {
+    return ROOT + "/?tool=" + id + (chatTopic ? "&topic=" + encodeURIComponent(chatTopic) : "");
   }
+
+  function go(id, chatTopic) {
+    history.pushState({ tool: id, topic: chatTopic || "" }, "", url(id, chatTopic));
+    openTool(id, chatTopic || "");
+  }
+
+  // The open chat's messages on the site: only its topic's.
+  const inChat = () => "topic=" + encodeURIComponent(topic);
 
   function home() {
     current = null;
@@ -230,8 +253,9 @@
     $("tool-seen").textContent = (current.agent ? current.name + " · " : "") + seen;
   }
 
-  async function openTool(id) {
+  async function openTool(id, chatTopic) {
     current = tools.find((t) => t.id === id);
+    topic = chatTopic || "";
     lastId = 0;
     readUpto = 0;
     mine = [];
@@ -241,8 +265,8 @@
     show("tool");
     document.body.classList.add("in-chat");
     fitViewport();
-    $("tool-name").textContent = who(current);
-    $("tool-avatar").textContent = (who(current)[0] || "?").toUpperCase();
+    $("tool-name").textContent = chatName(current, topic);
+    $("tool-avatar").textContent = ((topic || who(current))[0] || "?").toUpperCase();
     $("tool-machine").textContent = current.name + (current.machine ? " on " + current.machine : "");
     seenLine();
     $("notify").value = current.notify;
@@ -255,8 +279,8 @@
       $("feed").appendChild(el("li", "note", "This app doesn't have the key for this tool (it was connected in another browser). On the PC, open Connect your phone again; then here, go back and tap Add a connection to scan the new code."));
       return;
     }
-    const data = await api("/api/me/tools/" + id + "/messages");
-    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Say hi to " + who(current) + ". Write below, or tap a quick message."));
+    const data = await api("/api/me/tools/" + id + "/messages?" + inChat());
+    if (!data.messages.length) $("feed").appendChild(el("li", "note", "Say hi to " + who(current) + (topic ? " about " + topic : "") + ". Write below, or tap a quick message."));
     readUpto = data.read_upto || 0;
     await render(data.messages);
     toBottom();
@@ -265,7 +289,7 @@
   $("back").onclick = () => { if (history.state && history.state.tool && history.length > 1) history.back(); else home(); };
   window.addEventListener("popstate", () => {
     const id = history.state && history.state.tool;
-    if (id && tools.some((t) => t.id === id)) openTool(id); else { current = null; loadTools().catch(() => {}); }
+    if (id && tools.some((t) => t.id === id)) openTool(id, history.state.topic || ""); else { current = null; loadTools().catch(() => {}); }
   });
 
   // The open chat fills the visible screen, above the keyboard: on an iPhone the
@@ -287,7 +311,7 @@
 
   async function poll() {
     if (!current || !keys || document.hidden) return;
-    const data = await api("/api/me/tools/" + current.id + "/messages?after=" + lastId);
+    const data = await api("/api/me/tools/" + current.id + "/messages?after=" + lastId + "&" + inChat());
     if ((data.read_upto || 0) !== readUpto) { readUpto = data.read_upto || 0; ticks(); }
     if (data.messages.length) {
       const end = nearBottom();
@@ -408,7 +432,7 @@
   async function answer(id, text, box) {
     for (const b of box.querySelectorAll("button, input")) b.disabled = true;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "answer", reply_to: id, body: await C.seal(keys, { text }) } });
+      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "answer", reply_to: id, topic, body: await C.seal(keys, { text }) } });
       fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
       toBottom();
@@ -443,9 +467,9 @@
   }
 
   async function command(name) {
-    if (/stop/i.test(name) && !confirm(name + " " + current.name + "?")) return;
+    if (/stop/i.test(name) && !confirm(name + " " + (topic ? topic + "'s Autopilot" : current.name) + "?")) return;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "command", body: await C.seal(keys, { command: name }) } });
+      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "command", topic, body: await C.seal(keys, { command: name }) } });
       fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
       toBottom();
@@ -476,7 +500,7 @@
     if (!text || sending || !keys) return false;
     sending = true;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", body: await C.seal(keys, { text }) } });
+      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", topic, body: await C.seal(keys, { text }) } });
       fastUntil = Date.now() + 10 * 60 * 1000;
       await poll();
       toBottom();

@@ -326,3 +326,45 @@ def test_push_key_is_made_once(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_DATA_DIR", str(tmp_path))
     first = push.public_key()
     assert len(iris_client._unb64u(first)) == 65 and push.public_key() == first
+
+
+def test_one_chat_per_project(world):
+    """A tool's messages carry a topic (Sketch ProMax: the project): the phone shows one chat per topic,
+    answers and replies stay in their chat, and the notification names it."""
+    app, clock, pushes = world
+    tool, auth, accepted = pair(app)
+    me = phone(app)
+    tool.post("/api/tool/me", json={"agent": "Sam"}, headers=auth)
+    tool.post("/api/tool/messages", json={"kind": "update", "body": "b1", "topic": "Harbour"}, headers=auth)
+    clock.now += 1
+    q = tool.post("/api/tool/messages", json={"kind": "question", "body": "b2", "topic": "  Tower   East "}, headers=auth).get_json()
+    assert pushes[-1][1]["title"] == "Sam (Tower East)" and pushes[-1][1]["topic"] == "Tower East"
+    chats = me.get("/api/me/tools").get_json()["tools"][0]["chats"]
+    assert [(c["topic"], c["waiting"]) for c in chats] == [("Tower East", 1), ("Harbour", 0)]
+    only = me.get(f"/api/me/tools/{accepted['id']}/messages?topic=Harbour").get_json()["messages"]
+    assert [m["body"] for m in only] == ["b1"] and only[0]["topic"] == "Harbour"
+    me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "answer", "reply_to": q["id"], "body": "a"})
+    me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "message", "body": "hi", "topic": "Harbour"})
+    inbox = tool.get("/api/tool/inbox", headers=auth).get_json()["messages"]
+    assert [(m["kind"], m["topic"]) for m in inbox] == [("answer", "Tower East"), ("message", "Harbour")]
+    # The reply in Harbour buzzes even with updates turned down: it answers what the user wrote there.
+    me.post(f"/api/me/tools/{accepted['id']}/notify", json={"notify": "questions"})
+    count = len(pushes)
+    tool.post("/api/tool/messages", json={"kind": "update", "body": "b3", "topic": "Tower East"}, headers=auth)
+    assert len(pushes) == count
+    tool.post("/api/tool/messages", json={"kind": "update", "body": "b4", "topic": "Harbour"}, headers=auth)
+    assert pushes[-1][1]["body"] == "Sam replied"
+    # A message with no topic is the tool's main chat, as before.
+    all_messages = me.get(f"/api/me/tools/{accepted['id']}/messages").get_json()["messages"]
+    assert len(all_messages) == 6
+
+
+def test_topic_column_added_to_an_old_database(tmp_path):
+    import sqlite3
+    db = sqlite3.connect(tmp_path / "iris.db")
+    db.executescript("CREATE TABLE messages (id INTEGER PRIMARY KEY, tool_id INTEGER NOT NULL, side TEXT NOT NULL, kind TEXT NOT NULL,"
+                     " reply_to INTEGER, body TEXT NOT NULL, state TEXT NOT NULL DEFAULT '', created REAL NOT NULL);")
+    db.close()
+    Store(tmp_path / "iris.db")
+    db = sqlite3.connect(tmp_path / "iris.db")
+    assert "topic" in {r[1] for r in db.execute("PRAGMA table_info(messages)")}

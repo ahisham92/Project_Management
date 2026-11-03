@@ -26,6 +26,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("iris", "Iris (AI tools on your phone)"),
     ("tritomoor", "TritoMoor (mooring analysis)"),
     ("sitetwin", "SiteTwin (construction sequence)"),
+    ("talus", "Talus (slope stability)"),
 ]
 KEYS = [key for key, _ in PROGRAMS]
 NAMES = dict(PROGRAMS)

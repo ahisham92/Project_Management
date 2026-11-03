@@ -652,8 +652,8 @@ input[type="checkbox"] { width: auto; }
 .door-mark-iris svg { display: block; }
 .door-mark-tritomoor { background: none; }
 .door-mark-tritomoor svg { display: block; }
-.door-mark-sitetwin { background: none; }
-.door-mark-sitetwin svg { display: block; }
+.door-mark-sitetwin, .door-mark-talus { background: none; }
+.door-mark-sitetwin svg, .door-mark-talus svg { display: block; }
 .door-plus { color: #FF5A1F; }
 .door-name { font-size: 1.15rem; font-weight: 650; }
 .door-what { color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; }
@@ -663,7 +663,7 @@ input[type="checkbox"] { width: auto; }
 .door-shut .door-mark-workload { filter: grayscale(1); opacity: 0.6; }
 .door-shut .door-mark-iris { filter: grayscale(1); opacity: 0.6; }
 .door-shut .door-mark-tritomoor { filter: grayscale(1); opacity: 0.6; }
-.door-shut .door-mark-sitetwin { filter: grayscale(1); opacity: 0.6; }
+.door-shut .door-mark-sitetwin, .door-shut .door-mark-talus { filter: grayscale(1); opacity: 0.6; }
 .door-tag {
   margin-left: 6px; padding: 1px 7px; border-radius: 999px;
   background: var(--surface-2, rgba(127, 127, 127, 0.12));

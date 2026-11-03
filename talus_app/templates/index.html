@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a78d6">
+  <title>Talus · Slope stability</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='talus.css') }}?v={{ version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><path d='M5 25 L14 25 L22 12 L27 12' stroke='white' stroke-width='3' fill='none' stroke-linejoin='round'/><path d='M12 25 Q17 20 21 12' stroke='%23ffb4b4' stroke-width='2' fill='none' stroke-dasharray='2 2'/></svg>">
+  <script type="importmap">{"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}"}}</script>
+  <script>
+    document.documentElement.classList.replace('no-js', 'js');
+    try { var t = localStorage.getItem('pm-theme'); if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    window.__TALUS = {
+      api: "{{ url_for('home') }}api",
+      base: "{{ url_for('home') }}",
+      static: "{{ url_for('static', filename='') }}",
+      version: "{{ version }}",
+      openId: {{ open_id | tojson }},
+      me: {{ (who or {}) | tojson }}
+    };
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="topbar-inner">
+        <a class="brand" href="{{ (site_root or '') ~ '/' }}" title="All applications" aria-label="AHM, all applications">
+          <span class="brand-mark brand-mark-word">AHM</span>
+        </a>
+        <a class="app-name" href="{{ url_for('home') }}">Talus<small>slope stability</small></a>
+        <input class="project-name" id="projectName" aria-label="Project name" value="" maxlength="120">
+        <span class="save-state" id="saveState"></span>
+        <div class="spacer"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnProjects">Projects</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnReport">Report</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
+        {% if who %}<div class="whoami small"><div>{{ who['name'] }}</div></div>{% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="work">
+        <aside class="inputs" id="inputs" aria-label="Inputs"></aside>
+        <section class="stage" aria-label="Results">
+          <div class="view" id="view">
+            <div class="view-msg" id="viewMsg">Loading…</div>
+            <div class="overlay ov-tl" id="ovVerdict"></div>
+            <div class="overlay ov-tr">
+              <div class="glass row" style="gap:0">
+                <button class="vbtn" data-view="3d" aria-pressed="true" title="3D view">3D</button>
+                <button class="vbtn" data-view="section" aria-pressed="false" title="Cross-section with slices and trial surfaces">Section</button>
+              </div>
+              <div class="glass row" style="gap:0">
+                <button class="vbtn" id="btnMotion" aria-pressed="true" title="Show how the slope would fail">
+                  <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3l9 5-9 5z"/></svg>Failure</button>
+                <button class="vbtn" id="btnTrials" aria-pressed="false" title="Show the trial surfaces coloured by their factor of safety">Trials</button>
+              </div>
+            </div>
+            <div class="overlay ov-bl"><div class="glass legend" id="legend"></div></div>
+            <div class="overlay ov-br"><div class="glass busy hidden" id="busy"><span class="spin"></span><span id="busyText">Calculating…</span></div></div>
+          </div>
+          <div class="cases" id="cases" role="group" aria-label="Load cases"></div>
+          <div>
+            <div class="dtabs" role="tablist" id="dtabs"></div>
+            <div class="dpanel" id="dpanel"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="drawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="Projects">
+    <div class="drawer-panel">
+      <div class="drawer-head"><b>Projects</b><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+      <div class="drawer-body">
+        <div class="row">
+          <button class="btn btn-primary btn-sm" data-new="cut">New cut slope</button>
+          <button class="btn btn-ghost btn-sm" data-new="embankment">New embankment</button>
+          <button class="btn btn-ghost btn-sm" data-new="revetment">New revetment</button>
+        </div>
+        <div id="projList" style="display:grid;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="fpill" id="fpill" aria-label="Back to the slope"></button>
+  <div class="report" id="report"></div>
+  <div class="toast hidden" role="status" aria-live="polite"></div>
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}?v={{ version }}"></script>
+</body>
+</html>

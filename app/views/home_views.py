@@ -24,6 +24,7 @@ from ..triton_door import describe as describe_triton
 from ..workload_door import describe as describe_workload
 from ..iris_door import describe as describe_iris
 from ..sitetwin_door import describe as describe_sitetwin
+from ..talus_door import describe as describe_talus
 from .tritomoor_views import describe as describe_tritomoor
 
 bp = Blueprint("home", __name__)
@@ -52,7 +53,8 @@ def chooser():
     """Which of the two you are here for."""
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
                            workload=describe_workload(), iris=describe_iris(),
-                           tritomoor=describe_tritomoor(), sitetwin=describe_sitetwin())
+                           tritomoor=describe_tritomoor(), sitetwin=describe_sitetwin(),
+                           talus=describe_talus())
 
 
 @bp.get("/triton/")
@@ -81,3 +83,10 @@ def iris_missing():
 def sitetwin_missing():
     """Only reached when SiteTwin is not mounted in front of this address: say why."""
     return render_template("sitetwin_missing.html", sitetwin=describe_sitetwin())
+
+
+@bp.get("/talus/")
+@login_required
+def talus_missing():
+    """Only reached when Talus is not mounted in front of this address: say why."""
+    return render_template("talus_missing.html", talus=describe_talus())

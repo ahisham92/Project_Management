@@ -27,7 +27,7 @@ export const BASES = {
 export const DEFAULTS = {
   cut: {
     type: "cut", name: "Cut slope",
-    geom: { H: 6, cot: 2.5, base: 6 },
+    geom: { H: 6, cot: 2.5, base: 6, berms: { on: false, rows: [] } },
     soil: { preset: "firmClay" },
     lower: { on: false, depth: 5, preset: "stiffClay" },
     water: { on: true, back: 3, front: 0 },
@@ -39,7 +39,7 @@ export const DEFAULTS = {
   },
   embankment: {
     type: "embankment", name: "Embankment",
-    geom: { H: 5, cot: 3, crest: 8, base: 6 },
+    geom: { H: 5, cot: 3, crest: 8, base: 6, berms: { on: false, rows: [] } },
     fill: { preset: "fill" },
     soil: { preset: "firmClay" },
     water: { on: true, level: 4, low: 0 },
@@ -80,6 +80,46 @@ export function complete(p) {
   return out;
 }
 
+// ---------------------------------------------------------------- benched faces
+
+/**
+ * The face as benches, listed from the top down as a person enters them:
+ * [{ h: height, cot: slope 1:n, berm: width of the berm at its foot }]. The bottom
+ * bench's berm is not used. Without berms it is one bench of height H at 1:cot.
+ */
+export function benchesOf(p) {
+  const b = p.geom?.berms;
+  if (b?.on && Array.isArray(b.rows) && b.rows.length) {
+    return b.rows.map((r) => ({ h: Math.max(0.1, num(r.h, 1)), cot: Math.max(0.01, num(r.cot, 1.5)), berm: Math.max(0, num(r.berm, 0)) }));
+  }
+  return [{ h: num(p.geom?.H, 8), cot: Math.max(0.01, num(p.geom?.cot, 1.5)), berm: 0 }];
+}
+
+/** Height, horizontal run, and the face as offsets from the toe (0, 0) up to the crest. */
+export function faceOf(p) {
+  const top = benchesOf(p);
+  const up = top.slice().reverse();
+  const pts = [[0, 0]];
+  let x = 0, y = 0;
+  up.forEach((r, i) => {
+    x += r.h * r.cot; y += r.h;
+    pts.push([x, y]);
+    const above = up[i + 1];
+    if (above && top[top.length - 2 - i].berm > 0) { x += top[top.length - 2 - i].berm; pts.push([x, y]); }
+  });
+  return { H: y, run: x, pts, benches: top, overallCot: x / y };
+}
+
+/** Horizontal distance from the toe to the face at height y. */
+function faceX(face, y) {
+  const P = face.pts;
+  for (let i = 1; i < P.length; i++) {
+    const [x0, y0] = P[i - 1], [x1, y1] = P[i];
+    if (y1 > y0 && y <= y1 + 1e-9) return x0 + (x1 - x0) * (y - y0) / (y1 - y0);
+  }
+  return face.run;
+}
+
 /** Seismic coefficients: EN 1998-5 4.1.3.3 (kh = 0.5 ag S ST, kv = 0.5 kh), with ST from Annex A. */
 export function seismicCoefficients(p, H, slopeDeg) {
   const s = p.seismic || {};
@@ -104,11 +144,12 @@ function factorsOf(p) {
 // ---------------------------------------------------------------- cut slope
 
 function cutCases(p) {
-  const H = num(p.geom.H, 8), cot = Math.max(0.01, num(p.geom.cot, 1.5));
+  const face = faceOf(p);
+  const H = face.H, cot = face.overallCot;
   const D = Math.max(1, num(p.geom.base, H));
   const front = Math.max(2 * H, 10), back = Math.max(3 * H, 15);
-  const xt = front, xc = front + H * cot, xr = xc + back;
-  const ground = [[0, 0], [xt, 0], [xc, H], [xr, H]];
+  const xt = front, xc = front + face.run, xr = xc + back;
+  const ground = [[0, 0], ...face.pts.map(([x, y]) => [xt + x, y]), [xr, H]];
   const soil = soilFrom(p.soil);
   const lowerSoil = p.lower?.on ? soilFrom(p.lower) : null;
   const yLower = H - num(p.lower?.depth, 5);
@@ -117,11 +158,12 @@ function cutCases(p) {
     if (lowerSoil) L.push({ top: flat(yLower, 0, xr), mat: asMaterial(lowerSoil, undrained) });
     return L;
   };
-  // groundwater: at the toe (depth below toe level) rising to a depth below the crest at the back
+  // groundwater: at a depth below toe level in front, rising under the face to a
+  // depth below the crest at the crest edge, and level behind it (never above ground)
   let piezo = null;
   if (p.water?.on) {
-    const yf = -num(p.water.front, 0), yb = H - num(p.water.back, H / 2);
-    const line = [[0, yf], [xt, yf], [xr, Math.max(yf, yb)]];
+    const yf = -num(p.water.front, 0), yb = Math.max(yf, H - num(p.water.back, H / 2));
+    const line = [[0, yf], [xt, yf], [xc, yb], [xr, yb]];
     piezo = lower(line, ground, 0, xr);
   }
   const q = num(p.load?.q, 0);
@@ -132,7 +174,7 @@ function cutCases(p) {
     const rows = Math.max(1, Math.min(20, Math.round(num(p.nails.rows, 4))));
     for (let i = 0; i < rows; i++) {
       const y = H * (i + 0.5) / rows;
-      reinforcement.push({ x: xt + y * cot, y, angle: num(p.nails.angle, 15), length: num(p.nails.length, 8),
+      reinforcement.push({ x: xt + faceX(face, y), y, angle: num(p.nails.angle, 15), length: num(p.nails.length, 8),
         T: num(p.nails.T, 60), qb: num(p.nails.qb, 40), kind: "nail", dir: 1 });
     }
   }
@@ -150,17 +192,20 @@ function cutCases(p) {
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
     model: { ...base, layers: layers(true), piezo, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
     note: "Earthquake as a steady push kh·W towards the face and ±kv·W vertically; clays undrained; 30% of the surcharge (ψ2)." });
-  return { cases, geometry: { ground, H, xt, xc, xr, bottom: -D, layers: layers(false), piezo, lowerY: lowerSoil ? yLower : null, reinforcement, faceDir: -1 }, extras: {} };
+  return { cases, geometry: { ground, H, xt, xc, xr, bottom: -D, layers: layers(false), piezo, lowerY: lowerSoil ? yLower : null, reinforcement, faceDir: -1, benches: face.benches }, extras: {} };
 }
 
 // ---------------------------------------------------------------- embankment
 
 function embankmentCases(p) {
-  const H = num(p.geom.H, 6), cot = Math.max(0.2, num(p.geom.cot, 2)), B = Math.max(1, num(p.geom.crest, 8));
+  const face = faceOf(p);
+  const H = face.H, cot = face.overallCot, B = Math.max(1, num(p.geom.crest, 8));
   const D = Math.max(1, num(p.geom.base, H));
   const front = Math.max(2.5 * H, 12);
-  const x1 = front, x2 = x1 + H * cot, x3 = x2 + B, x4 = x3 + H * cot, xr = x4 + front;
-  const ground = [[0, 0], [x1, 0], [x2, H], [x3, H], [x4, 0], [xr, 0]];
+  const x1 = front, x2 = x1 + face.run, x3 = x2 + B, x4 = x3 + face.run, xr = x4 + front;
+  // the same benched face on both sides
+  const left = face.pts.map(([x, y]) => [x1 + x, y]), right = face.pts.slice().reverse().map(([x, y]) => [x4 - x, y]);
+  const ground = [[0, 0], ...left, ...right, [xr, 0]];
   const fill = soilFrom(p.fill), found = soilFrom(p.soil);
   const layers = (undrainedFound, undrainedFill = false) => [
     { top: null, mat: asMaterial(fill, undrainedFill) },
@@ -169,12 +214,11 @@ function embankmentCases(p) {
   const hw = p.water?.on ? Math.min(H - 0.1, Math.max(0, num(p.water.level, 0))) : 0;
   const lowW = p.water?.on ? Math.min(hw, Math.max(0, num(p.water.low, 0))) : 0;
   // steady seepage: from the water face at hw straight to the land-side toe
-  const xw = x1 + hw * cot;
+  const xw = x1 + faceX(face, hw);
   const seep = hw > 0
     ? upper(lower([[0, hw], [xw, hw], [x4, 0], [xr, 0]], ground, 0, xr), [[0, hw], [xw, hw], [xw + 1e-6, -1e3], [xr, -1e3]], 0, xr)
     : flat(0, 0, xr);
   // after a rapid drawdown the water inside stays put; outside it falls to lowW
-  const xwl = x1 + lowW * cot;
   const drawn = hw > 0
     ? upper(lower([[0, hw], [xw, hw], [x4, 0], [xr, 0]], ground, 0, xr), flat(lowW, 0, xr), 0, xr)
     : null;
@@ -197,7 +241,7 @@ function embankmentCases(p) {
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
     model: { ...base, face: land, layers: layers(true, fill.clay), piezo: seep, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
     note: "Earthquake as kh·W towards the land-side face and ±kv·W; clays undrained; 30% of the surcharge (ψ2)." });
-  return { cases, geometry: { ground, H, xr, bottom: -D, layers: layers(false), piezo: seep, x1, x2, x3, x4, faceDir: 1 }, extras: {} };
+  return { cases, geometry: { ground, H, xr, bottom: -D, layers: layers(false), piezo: seep, x1, x2, x3, x4, faceDir: 1, benches: face.benches }, extras: {} };
 }
 
 // ---------------------------------------------------------------- revetment

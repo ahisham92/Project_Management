@@ -123,11 +123,38 @@ function advancedItems(crack = true) {
   return it;
 }
 
+const bermsOn = (p) => !!p.geom.berms?.on;
+const bermRows = (p) => p.geom.berms?.rows || [];
+const bermTotal = (p) => bermRows(p).reduce((a, r) => a + (+r.h || 0), 0);
+const shapeSum = (p) => bermsOn(p)
+  ? `${bermRows(p).length} benches · ${+bermTotal(p).toFixed(2)} m`
+  : `${p.geom.H} m · 1:${p.geom.cot}`;
+/** Turning berms on splits the present slope into two benches with a 4 m berm. */
+function startBerms(p) {
+  if (!p.geom.berms) p.geom.berms = { on: false, rows: [] };
+  if (p.geom.berms.on && !bermRows(p).length) {
+    const h = Math.round((+p.geom.H || 6) / 2 * 100) / 100, c = +p.geom.cot || 2;
+    p.geom.berms.rows = [{ h, cot: c, berm: 4 }, { h, cot: c, berm: 0 }];
+  }
+  if (!p.geom.berms.on && bermRows(p).length) {
+    // back to one slope: keep the height and the overall steepness
+    const H = bermTotal(p), run = bermRows(p).reduce((a, r, i, R) => a + r.h * r.cot + (i < R.length - 1 ? +r.berm || 0 : 0), 0);
+    p.geom.H = +H.toFixed(2); p.geom.cot = +(run / H).toFixed(2);
+  }
+}
+function shapeItems(heightLabel, cotLabel, cotOpt) {
+  return [
+    { k: "geom.H", l: heightLabel, u: "m", min: 1, max: 40, step: 0.25, slider: true, show: (p) => !bermsOn(p) },
+    { k: "geom.cot", l: cotLabel, sub: (p) => slopeSub(p, "geom.cot"), u: "H/V", step: 0.05, slider: true, ...cotOpt, show: (p) => !bermsOn(p) },
+    { kind: "toggle", k: "geom.berms.on", l: "Benches with berms", onChange: startBerms },
+    { kind: "benches", show: bermsOn },
+  ];
+}
+
 const SPEC = {
   cut: [
-    { g: "Shape", icon: "shape", open: true, sum: (p) => `${p.geom.H} m · 1:${p.geom.cot}`, items: [
-      { k: "geom.H", l: "Height of the cut", u: "m", min: 1, max: 40, step: 0.5, slider: true },
-      { k: "geom.cot", l: "Slope 1 : n", sub: (p) => slopeSub(p, "geom.cot"), u: "H/V", min: 0.25, max: 5, step: 0.05, slider: true, picks: [0.5, 1, 1.5, 2, 2.5, 3] },
+    { g: "Shape", icon: "shape", open: true, sum: shapeSum, items: [
+      ...shapeItems("Height of the cut", "Slope 1 : n", { min: 0.25, max: 5, picks: [0.5, 1, 1.5, 2, 2.5, 3] }),
       { k: "geom.base", l: "Firm stratum below the toe", sub: "how deep a slip can go", u: "m", min: 1, max: 60, step: 0.5 },
     ] },
     { g: "Ground", icon: "ground", open: true, sum: (p) => soilFrom(p.soil).name, items: [
@@ -138,7 +165,7 @@ const SPEC = {
     ] },
     { g: "Groundwater", icon: "water", sum: (p) => (p.water.on ? `${p.water.back} m below crest` : "dry"), items: [
       { kind: "toggle", k: "water.on", l: "Groundwater" },
-      { k: "water.back", l: "Depth below the crest, behind", u: "m", min: 0, max: 40, step: 0.25, slider: true, show: (p) => p.water.on },
+      { k: "water.back", l: "Depth below the crest edge", sub: "level behind it, falling under the face to the toe", u: "m", min: 0, max: 40, step: 0.25, slider: true, show: (p) => p.water.on },
       { k: "water.front", l: "Depth below the toe level", u: "m", min: 0, max: 20, step: 0.25, show: (p) => p.water.on },
     ] },
     { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa${p.nails?.on ? " · nails" : ""}`, items: loadItems(true) },
@@ -147,9 +174,8 @@ const SPEC = {
     { g: "Advanced", icon: "gear", items: advancedItems() },
   ],
   embankment: [
-    { g: "Shape", icon: "shape", open: true, sum: (p) => `${p.geom.H} m · 1:${p.geom.cot}`, items: [
-      { k: "geom.H", l: "Height", u: "m", min: 1, max: 30, step: 0.25, slider: true },
-      { k: "geom.cot", l: "Side slopes 1 : n", sub: (p) => slopeSub(p, "geom.cot"), u: "H/V", min: 1, max: 6, step: 0.05, slider: true, picks: [1.5, 2, 2.5, 3, 4] },
+    { g: "Shape", icon: "shape", open: true, sum: shapeSum, items: [
+      ...shapeItems("Height", "Side slopes 1 : n", { min: 1, max: 6, picks: [1.5, 2, 2.5, 3, 4] }),
       { k: "geom.crest", l: "Crest width", u: "m", min: 1, max: 60, step: 0.5 },
       { k: "geom.base", l: "Firm stratum below ground", u: "m", min: 1, max: 60, step: 0.5 },
     ] },
@@ -243,6 +269,7 @@ function item(it, p) {
   if (kind === "html") return it.html(p);
   if (kind === "soil") return soilWidget(it, p);
   if (kind === "targets") return targetsWidget(p);
+  if (kind === "benches") return benchesWidget(p);
   return "";
 }
 
@@ -257,6 +284,17 @@ function soilWidget(it, p) {
     <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span><span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>${s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
     <button type="button" class="linkish" data-soiledit="${it.k}">${editing ? "Done" : "Use site values"}</button></div>
     ${editing ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
+}
+
+function benchesWidget(p) {
+  const rows = bermRows(p), n = rows.length;
+  const fld = (i, k, l, u, step) => `<div class="f"><span class="lab">${l}</span><span class="num"><input type="number" inputmode="decimal" step="${step}" min="0" data-k="geom.berms.rows.${i}.${k}" value="${rows[i][k] ?? ""}"><span class="unit">${u}</span></span></div>`;
+  const body = rows.map((r, i) => `<div class="bench">
+      <div class="bench-head"><b>${n === 1 ? "Slope" : i === 0 ? "Top bench" : i === n - 1 ? "Bottom bench" : `Bench ${i + 1}`}</b>${n > 1 ? `<button type="button" class="linkish" data-bench-del="${i}">Remove</button>` : ""}</div>
+      ${fld(i, "h", "Height", "m", 0.05)}${fld(i, "cot", "Slope 1 : n", "H/V", 0.05)}
+      ${i < n - 1 ? fld(i, "berm", "Berm at its foot", "m", 0.5) : ""}</div>`).join("");
+  return `<div class="f wide"><span class="lab">From the crest down<small data-bench-total>${+bermTotal(p).toFixed(2)} m high in all</small></span>${body}
+    <button type="button" class="btn btn-ghost btn-sm" data-bench-add>Add a bench</button></div>`;
 }
 
 function targetsWidget(p) {
@@ -278,6 +316,7 @@ function onInput(ev) {
     else if (el.tagName === "SELECT") v = el.value;
     else v = el.value === "" ? null : +el.value;
     set(p, el.dataset.k, v);
+    for (const G of SPEC[p.type]) for (const it of G.items) if (it.k === el.dataset.k && it.onChange) it.onChange(p);
     if (el.type === "range") { const n = el.parentElement.querySelector(`input[type=number][data-k="${el.dataset.k}"]`); if (n) n.value = el.value; }
     if (el.type === "number") { const r = el.parentElement.parentElement.querySelector(`input[type=range][data-k="${el.dataset.k}"]`); if (r && el.value !== "") r.value = el.value; }
     const structural = el.type === "checkbox" || el.tagName === "SELECT";
@@ -300,6 +339,17 @@ function onClick(ev) {
     const v = b.dataset.v;
     set(p, b.dataset.seg, v);
     for (const G of SPEC[p.type]) for (const it of G.items) if (it.k === b.dataset.seg && it.onChange) it.onChange(p);
+    changed(true); return;
+  }
+  if (b.dataset.benchAdd !== undefined) {
+    const rows = bermRows(p), last = rows[rows.length - 1] || { h: 3, cot: 2 };
+    if (rows.length) rows[rows.length - 1].berm = rows[rows.length - 1].berm || 4;
+    rows.push({ h: last.h, cot: last.cot, berm: 0 });
+    p.geom.berms.rows = rows; changed(true); return;
+  }
+  if (b.dataset.benchDel !== undefined) {
+    p.geom.berms.rows.splice(+b.dataset.benchDel, 1);
+    if (!p.geom.berms.rows.length) { p.geom.berms.on = false; }
     changed(true); return;
   }
   if (b.dataset.soiledit) { const s = get(p, b.dataset.soiledit) || {}; s._edit = !s._edit; set(p, b.dataset.soiledit, s); renderInputs(); }
@@ -340,6 +390,8 @@ function changed(structural) {
   scheduleSave();
 }
 function refreshSums() {
+  const bt = $("[data-bench-total]", inputsEl());
+  if (bt) bt.textContent = `${+bermTotal(state.project).toFixed(2)} m high in all`;
   for (const d of $$("details.group", inputsEl())) {
     const G = SPEC[state.project.type].find((x) => x.g === d.dataset.g);
     if (G?.sum) d.querySelector(".sum").textContent = G.sum(state.project);
@@ -626,11 +678,11 @@ function optimisePanel() {
   const o = state.optimise;
   const p = state.project;
   let body = `<p class="explain">Finds the steepest slope (smallest n in 1:n) that meets every target in every load case, keeping everything else as it is. Each try is a full search of all cases.</p>
-    <div class="row mt-sm"><button class="btn btn-primary" data-optimise ${o?.running ? "disabled" : ""}>${o?.running ? "Optimising…" : "Find the steepest safe slope"}</button><span class="note">Now: 1:${p.geom.cot} (${f1(deg(+p.geom.cot))}°)</span></div>`;
+    <div class="row mt-sm"><button class="btn btn-primary" data-optimise ${o?.running ? "disabled" : ""}>${o?.running ? "Optimising…" : "Find the steepest safe slope"}</button><span class="note">Now: ${bermsOn(p) ? bermRows(p).map((r) => `1:${r.cot}`).join(" / ") + " (benches; the search sets every bench to the same slope and keeps the berms)" : `1:${p.geom.cot} (${f1(deg(+p.geom.cot))}°)`}</span></div>`;
   if (o?.steps?.length) body += `<div class="table-scroll mt-sm"><table class="tight"><thead><tr><th>Try</th><th>Slope</th><th>Worst case</th><th class="num">F / target</th></tr></thead><tbody>${o.steps.map((s, i) => `<tr><td>${i + 1}</td><td>1:${f2(s.cot)}</td><td>${esc(s.worst?.name || "–")}</td><td class="num"><span class="pill ${s.worst?.pass ? "good" : "bad"}">${f3(s.worst?.ratio)}</span></td></tr>`).join("")}</tbody></table></div>`;
   if (o?.done) {
     const d = o.done;
-    body += d.cot ? `<div class="ok mt-sm"><b>Steepest safe slope: 1:${d.cot} (${f1(d.angle)}°).</b> Worst case ${esc(d.worst.name)} at F = ${f3(d.worst.F)}. <button class="btn btn-primary btn-sm" data-apply="${d.cot}">Use 1:${d.cot}</button></div>`
+    body += d.cot ? `<div class="ok mt-sm"><b>Steepest safe slope: 1:${d.cot} (${f1(d.angle)}°).</b> Worst case ${esc(d.worst.name)} at F = ${f3(d.worst.F)}. <button class="btn btn-primary btn-sm" data-apply="${d.cot}">Use 1:${d.cot}${bermsOn(p) ? " on every bench" : ""}</button></div>`
       : `<div class="warn mt-sm">${esc(d.message)}</div>`;
   }
   return body;
@@ -688,7 +740,7 @@ document.addEventListener("click", (ev) => {
     state.optimise = { running: true, steps: [] };
     run("optimise"); setBusy(true, "Optimising…"); renderPanel(); return;
   }
-  if (b.dataset.apply) { state.project.geom.cot = +b.dataset.apply; state.optimise = null; changed(true); toast(`Slope set to 1:${b.dataset.apply}`); return; }
+  if (b.dataset.apply) { state.project.geom.cot = +b.dataset.apply; if (bermsOn(state.project)) for (const r of bermRows(state.project)) r.cot = +b.dataset.apply; state.optimise = null; changed(true); toast(`Slope set to 1:${b.dataset.apply}`); return; }
   if (b.dataset.verify !== undefined) { startVerify(); return; }
   if (b.dataset.csv !== undefined) { downloadCSV(); return; }
   if (b.id === "btnProjects") { openDrawer(); return; }
@@ -813,7 +865,9 @@ async function printReport() {
   const inputs = SPEC[p.type].map((G) => {
     const rows = G.items.filter((it) => (!it.show || it.show(p)) && it.k && (it.kind || "num") !== "soil").map((it) => `<tr><td>${esc(it.l)}</td><td>${esc(reportValue(it, get(p, it.k)))}</td></tr>`).join("");
     const soils = G.items.filter((it) => it.kind === "soil" && (!it.show || it.show(p))).map((it) => { const s = soilFrom(get(p, it.k)); return `<tr><td>${esc(it.l)}</td><td>${esc(s.name)}: γ ${s.gamma}/${s.gsat} kN/m³, c' ${s.c} kPa, φ' ${s.phi}°${s.clay && s.su ? `, su ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa` : ""}</td></tr>`; }).join("");
-    return rows || soils ? `<tr><th colspan="2" style="text-align:left">${esc(G.g)}</th></tr>${soils}${rows}` : "";
+    const benches = G.items.some((it) => it.kind === "benches") && bermsOn(p)
+      ? `<tr><td>Benches, from the crest down</td><td>${bermRows(p).map((r, i, R) => `${r.h} m at 1:${r.cot}${i < R.length - 1 ? `, berm ${r.berm} m` : ""}`).join("; ")}</td></tr>` : "";
+    return rows || soils || benches ? `<tr><th colspan="2" style="text-align:left">${esc(G.g)}</th></tr>${soils}${rows}${benches}` : "";
   }).join("");
   const cases = r.cases.map((c) => c.error ? "" : `<div style="page-break-inside:avoid"><h2>${esc(c.name)}: F = ${f3(c.F)} (needs ${f2(c.target)}) ${c.pass ? "✓" : "✕"}</h2><p>${esc(c.note)}</p>${sectionSVG(r, c, { width: 900, height: 420, reinforcement: r.geometry.reinforcement, faceDir: r.geometry.faceDir })}
     <table><tr>${Object.keys(c.results).map((m) => `<th>${esc(METHOD_NAMES[m])}</th>`).join("")}</tr><tr>${Object.values(c.results).map((F) => `<td>${f3(F)}</td>`).join("")}</tr></table>

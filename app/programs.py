@@ -27,6 +27,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("tritomoor", "TritoMoor (mooring analysis)"),
     ("sitetwin", "SiteTwin (construction sequence)"),
     ("talus", "Talus (slope stability)"),
+    ("pontoon", "Pontoon (floating pontoons and piles)"),
 ]
 KEYS = [key for key, _ in PROGRAMS]
 NAMES = dict(PROGRAMS)

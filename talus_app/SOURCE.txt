@@ -1,2 +1,2 @@
-Copied from https://github.com/ahisham92/talus (talus_app) at commit 3a45e19 (main, PR #1).
+Copied from https://github.com/ahisham92/talus (talus_app) at commit c21c5b1 (main, PR #2).
 Do not edit here: change Talus in its own repository and copy it again.

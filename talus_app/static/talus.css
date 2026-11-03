@@ -356,6 +356,8 @@ main { padding: 12px 0 64px; }
 .soil-sum { font-size: 0.75rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .soil-sum b { color: var(--ink-2); font-weight: 500; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; font-size: 0.75rem; color: var(--series-1); cursor: pointer; }
+.bench { display: grid; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--raised); margin-top: 6px; }
+.bench-head { display: flex; justify-content: space-between; align-items: center; font-size: .8125rem; }
 .subgrid { display: grid; gap: 8px; padding: 8px; border-radius: 8px; background: var(--raised); }
 .note { font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
 

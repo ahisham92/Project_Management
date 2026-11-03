@@ -184,6 +184,8 @@ export function steepestSafe(project, opt = {}) {
   const check = (cot) => {
     const q = JSON.parse(JSON.stringify(p));
     q.geom.cot = cot;
+    // a benched face: every bench at the same slope, heights and berms kept
+    if (q.geom.berms?.on) for (const r of q.geom.berms.rows || []) r.cot = cot;
     const a = analyse(q, { fast: true });
     opt.onStep?.(cot, a.worst);
     return a;

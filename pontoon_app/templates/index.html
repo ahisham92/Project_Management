@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a78d6">
+  <title>Pontoon · Floating pontoons and piles</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='pontoon.css') }}?v={{ version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><path d='M3 19 Q8 16 13 19 T23 19 T29 19' stroke='%23bfe0ff' stroke-width='2' fill='none'/><rect x='6' y='13' width='20' height='5' rx='1' fill='white'/><rect x='9' y='6' width='2.4' height='20' fill='%23ffd28a'/><rect x='21' y='6' width='2.4' height='20' fill='%23ffd28a'/></svg>">
+  <script type="importmap">{"imports": {"three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}"}}</script>
+  <script>
+    document.documentElement.classList.replace('no-js', 'js');
+    try { var t = localStorage.getItem('pm-theme'); if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    window.__PONTOON = {
+      api: "{{ url_for('home') }}api",
+      base: "{{ url_for('home') }}",
+      static: "{{ url_for('static', filename='') }}",
+      version: "{{ version }}",
+      openId: {{ open_id | tojson }},
+      me: {{ (who or {}) | tojson }}
+    };
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="topbar-inner">
+        <a class="brand" href="{{ (site_root or '') ~ '/' }}" title="All applications" aria-label="AHM, all applications">
+          <span class="brand-mark brand-mark-word">AHM</span>
+        </a>
+        <a class="app-name" href="{{ url_for('home') }}">Pontoon<small>floating pontoons &amp; piles</small></a>
+        <input class="project-name" id="projectName" aria-label="Project name" value="" maxlength="120">
+        <span class="save-state" id="saveState"></span>
+        <div class="spacer"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnProjects">Projects</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnIFC" title="IFC4 model for Revit: Insert → Link IFC">Revit (IFC)</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnReport">Report</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
+        {% if who %}<div class="whoami small"><div>{{ who['name'] }}</div></div>{% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="work">
+        <aside class="inputs" id="inputs" aria-label="Inputs"></aside>
+        <section class="stage" aria-label="Results">
+          <div class="view" id="view">
+            <div class="view-msg" id="viewMsg">Loading…</div>
+            <div class="overlay ov-tl" id="ovVerdict"></div>
+            <div class="overlay ov-tr">
+              <div class="glass row" style="gap:0" role="group" aria-label="View">
+                <button class="vbtn" data-view="layout" aria-pressed="true" title="The marina arm in 3D">3D</button>
+                <button class="vbtn" data-view="modes" aria-pressed="false" title="Mode shapes, animated">Modes</button>
+                <button class="vbtn" data-view="section" aria-pressed="false" title="Cross-section heeled under the stability load">Section</button>
+                <button class="vbtn" data-view="pile" aria-pressed="false" title="Pile: bending moment and deflection">Pile</button>
+              </div>
+              <div class="glass row hidden" style="gap:0" id="levelBtns" role="group" aria-label="Water level">
+                <button class="vbtn" data-level="LAT" aria-pressed="false">LAT</button>
+                <button class="vbtn" data-level="HAT" aria-pressed="true">HAT</button>
+                <button class="vbtn" data-level="MAX" aria-pressed="false">Storm</button>
+              </div>
+            </div>
+            <div class="overlay ov-bl"><div class="glass legend" id="legend"></div></div>
+            <div class="overlay ov-br"><div class="glass busy hidden" id="busy"><span class="spin"></span><span id="busyText">Calculating…</span></div></div>
+          </div>
+          <div class="cases" id="summary" role="group" aria-label="Summary"></div>
+          <div>
+            <div class="dtabs" role="tablist" id="dtabs"></div>
+            <div class="dpanel" id="dpanel"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="drawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="Projects">
+    <div class="drawer-panel">
+      <div class="drawer-head"><b>Projects</b><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+      <div class="drawer-body">
+        <div class="row">
+          <button class="btn btn-primary btn-sm" data-new="concrete">New concrete</button>
+          <button class="btn btn-ghost btn-sm" data-new="framed">New framed</button>
+          <button class="btn btn-ghost btn-sm" data-new="modular">New modular</button>
+          <button class="btn btn-ghost btn-sm" data-new="attenuator">New attenuator</button>
+        </div>
+        <div id="projList" style="display:grid;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="fpill" id="fpill" aria-label="Back to the model"></button>
+  <div class="report" id="report"></div>
+  <div class="toast hidden" role="status" aria-live="polite"></div>
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}?v={{ version }}"></script>
+</body>
+</html>

@@ -37,7 +37,7 @@ export const DEG = Math.PI / 180;
  * model = {
  *   ground: polyline, bottom: y of the hard base,
  *   layers: [{ top: polyline|null, mat }], first layer's top is the ground,
- *   mat = { name, gamma, gsat, c, phi, kind: "drained"|"undrained", su, suGrad }
+ *   mat = { name, gamma, gsat, c, phi, kind: "drained"|"undrained", su, suGrad, suMax }
  *   piezo: polyline|null (pore water head; above the ground it is ponded water),
  *   ru: number (pore pressure ratio, used instead of piezo when > 0),
  *   gw: unit weight of water,
@@ -85,7 +85,9 @@ export function prepare(model) {
 /** Strength of a material at a point, with partial factors applied. */
 function strength(P, mat, depthInLayer) {
   if (mat.kind === "undrained") {
-    const su = (mat.su + (mat.suGrad || 0) * Math.max(0, depthInLayer)) / P.f.su;
+    let su = mat.su + (mat.suGrad || 0) * Math.max(0, depthInLayer);
+    if (mat.suMax > 0) su = Math.min(su, mat.suMax);
+    su /= P.f.su;
     return { c: su, tanphi: 0 };
   }
   return { c: (mat.c || 0) / P.f.c, tanphi: Math.tan((mat.phi || 0) * DEG) / P.f.tanphi };

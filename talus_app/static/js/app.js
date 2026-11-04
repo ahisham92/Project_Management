@@ -1,11 +1,12 @@
 // Talus — the page: inputs on the left, the live answer on the right.
 // Every change recalculates in a worker and redraws; projects save themselves.
-import { DEFAULTS, complete, BASES, GROUND_S, armourDesign } from "../engine/project.js";
+import { DEFAULTS, complete, BASES, GROUND_S, armourDesign, parsePoints } from "../engine/project.js";
 import { PRESETS, PRESET_KEYS, soilFrom } from "../engine/materials.js";
 import { METHOD_NAMES } from "../engine/lem.js";
 import { rockArmour, accropode, damageLevels, COEFFS } from "../engine/armour.js";
 import { sectionSVG, esc } from "./section.js";
 import { fosColour } from "./shapes.js";
+import { docx } from "./docx.js";
 
 const T = window.__TALUS || { api: "api", base: "./", static: "static/", openId: null };
 const $ = (s, el = document) => el.querySelector(s);
@@ -77,6 +78,7 @@ const icon = (k) => `<svg class="icon" viewBox="0 0 20 20" aria-hidden="true">${
 const KINDS = [
   ["cut", "Cut slope", '<path d="M2 24h18l14-16h18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M2 24h18l14-16h18v18H2z" fill="currentColor" opacity=".15"/>'],
   ["embankment", "Embankment", '<path d="M2 24h12l10-14h8l10 14h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M14 24l10-14h8l10 14z" fill="currentColor" opacity=".18"/>'],
+  ["section", "Any section", '<path d="M2 22h10l6-8h6l6-6h20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M2 26h50M2 18h14" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 2" opacity=".6"/>'],
   ["revetment", "Revetment", '<path d="M2 20h14l16-13h20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M2 15c3-2 6-2 9 0s6 2 9 0" fill="none" stroke="#2a78d6" stroke-width="2"/><circle cx="21" cy="15" r="2" fill="currentColor"/><circle cx="25" cy="12" r="2" fill="currentColor"/><circle cx="29" cy="9" r="2" fill="currentColor"/>'],
 ];
 
@@ -118,6 +120,7 @@ function advancedItems(crack = true) {
   const it = [
     { k: "advanced.slices", l: "Slices", sub: "plus every geometric break", u: "", min: 10, max: 200, step: 5 },
     { kind: "toggle", k: "advanced.noncircular", l: "Also search non-circular surfaces" },
+    { kind: "toggle", k: "advanced.block", l: "Also search blocks along weak layers", sub: "wedges sliding just inside each lower layer or on the hard base" },
   ];
   if (crack) it.push({ k: "advanced.crack", l: "Tension crack depth", u: "m", min: 0, max: 10, step: 0.1 });
   return it;
@@ -191,6 +194,27 @@ const SPEC = {
     { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems(false) },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS"), items: designItems() },
+    { g: "Advanced", icon: "gear", items: advancedItems() },
+  ],
+  section: [
+    { g: "Section", icon: "shape", open: true, sum: (p) => `${parsePoints(p.ground).length} ground points`, items: [
+      { kind: "points", k: "ground", l: "Ground surface", sub: "x, y per line, left to right. Paste from Excel or CAD." },
+      { k: "base", l: "Hard base level", sub: "no slip goes below it", u: "m", step: 0.5 },
+    ] },
+    { g: "Layers", icon: "ground", open: true, sum: (p) => `${(p.layers || []).length} layers`, items: [{ kind: "layers" }] },
+    { g: "Water", icon: "water", sum: (p) => ({ none: "none", line: "water line", ru: `ru ${p.water.ru}` }[p.water.mode] || ""), items: [
+      { kind: "seg", k: "water.mode", l: "Pore water", options: [["none", "None"], ["line", "Water line"], ["ru", "ru"]] },
+      { kind: "points", k: "water.line", l: "Piezometric line", sub: "x, y per line. Above the ground it is ponded water.", show: (p) => p.water.mode === "line" },
+      { kind: "html", show: (p) => p.water.mode === "line", html: () => `<button type="button" class="linkish" data-copy-ground>Put the water at the ground surface</button>` },
+      { k: "water.ru", l: "Pore pressure ratio ru", u: "", min: 0, max: 1, step: 0.05, show: (p) => p.water.mode === "ru" },
+    ] },
+    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: [
+      { k: "load.q", l: "Surcharge", u: "kPa", min: 0, max: 200, step: 1, slider: true, picks: [0, 5, 10, 20, 50] },
+      { k: "load.x1", l: "From x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
+      { k: "load.x2", l: "To x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
+    ] },
+    { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
+    { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS") + " · " + (METHOD_NAMES[p.design.method] || "").split(" ")[0], items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems() },
   ],
   revetment: [
@@ -270,6 +294,12 @@ function item(it, p) {
   if (kind === "soil") return soilWidget(it, p);
   if (kind === "targets") return targetsWidget(p);
   if (kind === "benches") return benchesWidget(p);
+  if (kind === "points") {
+    const v = get(p, it.k) ?? "";
+    const n = parsePoints(v).length;
+    return `<div class="f wide">${lab}<textarea class="pts" data-k="${it.k}" rows="${Math.min(10, Math.max(3, String(v).split("\n").length + 1))}" spellcheck="false" aria-label="${esc(it.l)}">${esc(v)}</textarea><span class="note" data-ptcount="${it.k}">${n} points</span></div>`;
+  }
+  if (kind === "layers") return layersWidget(p);
   return "";
 }
 
@@ -283,7 +313,20 @@ function soilWidget(it, p) {
   return `<div class="f wide"><span class="lab">${esc(it.l)}</span><select data-soil="${it.k}">${soilOptions(s.preset)}</select>
     <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span><span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>${s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
     <button type="button" class="linkish" data-soiledit="${it.k}">${editing ? "Done" : "Use site values"}</button></div>
-    ${editing ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
+    ${editing ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay || it.alwaysSu)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay || it.alwaysSu)}${fld("suMax", "su cap", "kPa", it.alwaysSu)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
+}
+
+function layersWidget(p) {
+  const L = p.layers || [];
+  const cards = L.map((layer, i) => {
+    const soil = soilWidget({ k: `layers.${i}.soil`, l: "Material", alwaysSu: true }, p);
+    const top = i === 0 ? `<div class="note">Its top is the ground surface.</div>`
+      : `<div class="f wide"><span class="lab">Top of this layer<small>x, y per line; it carries on flat to both ends</small></span><textarea class="pts" data-k="layers.${i}.top" rows="3" spellcheck="false">${esc(layer.top || "")}</textarea></div>`;
+    return `<div class="bench"><div class="bench-head"><input class="lname" type="text" data-k="layers.${i}.soil.name" value="${esc(layer.soil?.name || "")}" placeholder="Layer ${i + 1}" aria-label="Layer name" maxlength="40">
+      ${L.length > 1 ? `<button type="button" class="linkish" data-layer-del="${i}">Remove</button>` : ""}</div>${soil}${top}</div>`;
+  }).join("");
+  return `<div class="f wide"><span class="lab">From the top down<small>each layer lies below its top line and above the next one</small></span>${cards}
+    <button type="button" class="btn btn-ghost btn-sm" data-layer-add>Add a layer</button></div>`;
 }
 
 function benchesWidget(p) {
@@ -313,16 +356,18 @@ function onInput(ev) {
   if (el.dataset.k) {
     let v;
     if (el.type === "checkbox") v = el.checked;
-    else if (el.tagName === "SELECT") v = el.value;
+    else if (el.tagName === "SELECT" || el.tagName === "TEXTAREA" || el.type === "text") v = el.value;
     else v = el.value === "" ? null : +el.value;
     set(p, el.dataset.k, v);
     for (const G of SPEC[p.type]) for (const it of G.items) if (it.k === el.dataset.k && it.onChange) it.onChange(p);
     if (el.type === "range") { const n = el.parentElement.querySelector(`input[type=number][data-k="${el.dataset.k}"]`); if (n) n.value = el.value; }
     if (el.type === "number") { const r = el.parentElement.parentElement.querySelector(`input[type=range][data-k="${el.dataset.k}"]`); if (r && el.value !== "") r.value = el.value; }
+    if (el.tagName === "TEXTAREA") { const c = $(`[data-ptcount="${el.dataset.k}"]`, inputsEl()); if (c) c.textContent = `${parsePoints(el.value).length} points`; }
     const structural = el.type === "checkbox" || el.tagName === "SELECT";
     changed(structural);
   } else if (el.dataset.soil) {
-    set(p, el.dataset.soil, { preset: el.value, _edit: get(p, el.dataset.soil)?._edit });
+    const old = get(p, el.dataset.soil) || {};
+    set(p, el.dataset.soil, { preset: el.value, _edit: old._edit, ...(old.name ? { name: old.name } : {}) });
     changed(true);
   } else if (el.dataset.target) {
     p.design.targets = { ...(p.design.targets || {}), [el.dataset.target]: +el.value };
@@ -341,6 +386,17 @@ function onClick(ev) {
     for (const G of SPEC[p.type]) for (const it of G.items) if (it.k === b.dataset.seg && it.onChange) it.onChange(p);
     changed(true); return;
   }
+  if (b.dataset.layerAdd !== undefined) {
+    const L = p.layers || (p.layers = []);
+    const pts = parsePoints(p.ground);
+    const x0 = pts[0]?.[0] ?? 0, x1 = pts[pts.length - 1]?.[0] ?? 50;
+    const prev = L.length > 1 ? parsePoints(L[L.length - 1].top) : null;
+    const y = prev?.length ? prev[0][1] - 3 : Math.min(...pts.map((q) => q[1])) - 3;
+    L.push({ soil: { preset: "stiffClay", name: `Layer ${L.length + 1}` }, top: `${x0}, ${y}\n${x1}, ${y}` });
+    changed(true); return;
+  }
+  if (b.dataset.layerDel !== undefined) { p.layers.splice(+b.dataset.layerDel, 1); changed(true); return; }
+  if (b.dataset.copyGround !== undefined) { p.water.line = p.ground; changed(true); return; }
   if (b.dataset.benchAdd !== undefined) {
     const rows = bermRows(p), last = rows[rows.length - 1] || { h: 3, cot: 2 };
     if (rows.length) rows[rows.length - 1].berm = rows[rows.length - 1].berm || 4;
@@ -563,7 +619,7 @@ const TABS = [
   ["optimise", "Optimise"], ["verify", "Verification"], ["about", "How it works"],
 ];
 function renderTabs() {
-  const tabs = TABS.filter(([k]) => k !== "armour" || state.project.type === "revetment");
+  const tabs = TABS.filter(([k]) => (k !== "armour" || state.project.type === "revetment") && (k !== "optimise" || state.project.type !== "section"));
   if (!tabs.find(([k]) => k === state.tab)) state.tab = "methods";
   $("#dtabs").innerHTML = tabs.map(([k, n]) => `<button role="tab" data-tab="${k}" aria-selected="${k === state.tab}">${n}</button>`).join("");
 }
@@ -588,7 +644,7 @@ function methodsPanel(c) {
   return `<div class="kpis">
       <div class="kpi"><div class="k">Factor of safety</div><div class="v" style="color:${fosColour(c.F, c.target)}">${f3(c.F)}</div><div class="s">needs ${f2(c.target)} · ${c.pass ? "passes" : "fails"} by ${f1(Math.abs(c.ratio - 1) * 100)}%</div></div>
       <div class="kpi"><div class="k">Sliding mass</div><div class="v">${fmt(c.weight, 0)} kN/m</div><div class="s">${fmt(c.weight / 9.81, 0)} t per metre run · depth ${f2(s.depth)} m</div></div>
-      <div class="kpi"><div class="k">Surface</div><div class="v">${s.circle ? "Circle" : "Non-circular"}</div><div class="s">${s.circle ? `centre (${f2(s.circle.xc)}, ${f2(s.circle.yc)}), R ${f2(s.circle.R)} m` : `${s.slip.length} nodes`}</div></div>
+      <div class="kpi"><div class="k">Surface</div><div class="v">${s.circle ? "Circle" : s.kind === "block" ? "Block" : "Non-circular"}</div><div class="s">${s.circle ? `centre (${f2(s.circle.xc)}, ${f2(s.circle.yc)}), R ${f2(s.circle.R)} m` : `${s.slip.length} nodes`}</div></div>
       ${c.lambda ? `<div class="kpi"><div class="k">Interslice λ</div><div class="v">${f3(c.lambda)}</div><div class="s">${esc(METHOD_NAMES[c.method])}</div></div>` : ""}
     </div>
     <p class="explain mt-sm">${esc(c.note)}${c.fellBack ? " The rigorous method did not converge on this surface, so Bishop is shown." : ""}${c.fromCircle ? ` A non-circular surface was found ${f1((1 - c.F / c.fromCircle) * 100)}% lower than the best circle.` : ""}</p>
@@ -725,6 +781,7 @@ function renderAll() {
 // ------------------------------------------------------------------ events on the answer
 
 document.addEventListener("click", (ev) => {
+  if (!ev.target.closest(".menu-wrap")) $("#reportMenu").classList.add("hidden");
   const b = ev.target.closest("button");
   if (!b) return;
   if (b.dataset.case) { state.selected = b.dataset.case; renderCases(false); renderPanel(); renderView(); return; }
@@ -744,7 +801,8 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.verify !== undefined) { startVerify(); return; }
   if (b.dataset.csv !== undefined) { downloadCSV(); return; }
   if (b.id === "btnProjects") { openDrawer(); return; }
-  if (b.id === "btnReport") { printReport(); return; }
+  if (b.id === "btnReport") { $("#reportMenu").classList.toggle("hidden"); return; }
+  if (b.dataset.report) { $("#reportMenu").classList.add("hidden"); b.dataset.report === "word" ? wordReport() : printReport(); return; }
   if (b.dataset.close !== undefined) { $("#drawer").classList.add("hidden"); return; }
   if (b.dataset.new) { newProject(b.dataset.new); return; }
 });
@@ -856,32 +914,137 @@ function reportValue(it, v) {
   return `${v} ${it.u || ""}`.trim();
 }
 
-async function printReport() {
-  const r = state.result;
-  if (!r) return;
-  const p = state.project;
-  let img = "";
-  if (view3d && state.view === "3d") { try { img = `<img src="${view3d.snapshot()}" style="width:100%;max-height:9cm;object-fit:contain">`; } catch (e) { /* no snapshot */ } }
-  const inputs = SPEC[p.type].map((G) => {
-    const rows = G.items.filter((it) => (!it.show || it.show(p)) && it.k && (it.kind || "num") !== "soil").map((it) => `<tr><td>${esc(it.l)}</td><td>${esc(reportValue(it, get(p, it.k)))}</td></tr>`).join("");
-    const soils = G.items.filter((it) => it.kind === "soil" && (!it.show || it.show(p))).map((it) => { const s = soilFrom(get(p, it.k)); return `<tr><td>${esc(it.l)}</td><td>${esc(s.name)}: γ ${s.gamma}/${s.gsat} kN/m³, c' ${s.c} kPa, φ' ${s.phi}°${s.clay && s.su ? `, su ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa` : ""}</td></tr>`; }).join("");
-    const benches = G.items.some((it) => it.kind === "benches") && bermsOn(p)
-      ? `<tr><td>Benches, from the crest down</td><td>${bermRows(p).map((r, i, R) => `${r.h} m at 1:${r.cot}${i < R.length - 1 ? `, berm ${r.berm} m` : ""}`).join("; ")}</td></tr>` : "";
-    return rows || soils || benches ? `<tr><th colspan="2" style="text-align:left">${esc(G.g)}</th></tr>${soils}${rows}${benches}` : "";
-  }).join("");
-  const cases = r.cases.map((c) => c.error ? "" : `<div style="page-break-inside:avoid"><h2>${esc(c.name)}: F = ${f3(c.F)} (needs ${f2(c.target)}) ${c.pass ? "✓" : "✕"}</h2><p>${esc(c.note)}</p>${sectionSVG(r, c, { width: 900, height: 420, reinforcement: r.geometry.reinforcement, faceDir: r.geometry.faceDir })}
-    <table><tr>${Object.keys(c.results).map((m) => `<th>${esc(METHOD_NAMES[m])}</th>`).join("")}</tr><tr>${Object.values(c.results).map((F) => `<td>${f3(F)}</td>`).join("")}</tr></table>
-    <p>${c.surface.circle ? `Critical circle: centre (${f2(c.surface.circle.xc)}, ${f2(c.surface.circle.yc)}) m, radius ${f2(c.surface.circle.R)} m.` : "Non-circular critical surface."} Sliding mass ${fmt(c.weight, 0)} kN/m.</p></div>`).join("");
+const soilText = (s) => `${s.name}: γ ${s.gamma}/${s.gsat} kN/m³, c' ${s.c} kPa, φ' ${s.phi}°${s.clay && s.su ? `, su ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""}${s.suMax ? ` (max ${s.suMax})` : ""} kPa` : ""}`;
+const ptsText = (v) => parsePoints(v || "").map(([x, y]) => `(${+x.toFixed(2)}, ${+y.toFixed(2)})`).join(" ");
+
+/** The inputs as rows of a table, grouped as on screen. */
+function reportInputs(p) {
+  const out = [];
+  for (const G of SPEC[p.type]) {
+    const rows = [];
+    for (const it of G.items) {
+      if (it.show && !it.show(p)) continue;
+      if (it.kind === "soil") rows.push([it.l, soilText(soilFrom(get(p, it.k)))]);
+      else if (it.kind === "points") rows.push([it.l, ptsText(get(p, it.k))]);
+      else if (it.kind === "layers") (p.layers || []).forEach((L, i) => rows.push([`Layer ${i + 1}${i ? `, top ${ptsText(L.top)}` : ", top is the ground"}`, soilText(soilFrom(L.soil))]));
+      else if (it.kind === "benches") { if (bermsOn(p)) rows.push(["Benches, from the crest down", bermRows(p).map((r, i, R) => `${r.h} m at 1:${r.cot}${i < R.length - 1 ? `, berm ${r.berm} m` : ""}`).join("; ")]); }
+      else if (it.k && it.kind !== "html") rows.push([it.l, reportValue(it, get(p, it.k))]);
+    }
+    if (rows.length) out.push({ group: G.g }, ...rows);
+  }
+  return out;
+}
+
+const surfaceText = (c) => c.surface.circle
+  ? `Critical circle: centre (${f2(c.surface.circle.xc)}, ${f2(c.surface.circle.yc)}) m, radius ${f2(c.surface.circle.R)} m.`
+  : `${c.surface.kind === "block" ? "Critical block along a weak layer" : "Non-circular critical surface"}: ${c.surface.slip.map(([x, y]) => `(${f2(x)}, ${f2(y)})`).join(" ")}.`;
+
+/** The report as blocks, shared by the printed (PDF) and the Word versions. */
+function reportBlocks(snapshot) {
+  const r = state.result, p = state.project;
+  const B = [];
+  const geo = { reinforcement: r.geometry.reinforcement, faceDir: r.geometry.faceDir };
+  B.push({ t: "title", text: `${p.name} · slope stability` });
+  B.push({ t: "note", text: `Talus ${T.version || ""} · ${new Date().toLocaleString()} · ${BASES[p.design.basis].name} · governing method ${METHOD_NAMES[p.design.method]} · ${KINDS.find((k) => k[0] === p.type)?.[1] || p.type}` });
+  B.push({ t: "h1", text: "Result" });
+  B.push({ t: "p", text: r.pass ? "**All load cases meet their targets.**" : `**Not enough: ${r.worst.name} F = ${f3(r.worst.F)} against ${f2(r.worst.target)}.**` });
+  B.push({ t: "table", head: ["Load case", "F", "Target", "F / target", ""], widths: [0.44, 0.14, 0.14, 0.14, 0.14],
+    rows: r.cases.map((c) => [c.name, c.error ? "–" : f3(c.F), f2(c.target), c.error ? "–" : f2(c.F / c.target), c.error ? "error" : c.pass ? "OK" : "Not OK"]) });
+  if (snapshot) B.push({ t: "img", src: snapshot, w: 1600, h: 900, widthCm: 15 }, { t: "caption", text: "3D view of the governing case (the section extruded per metre run)." });
+  B.push({ t: "h1", text: "Inputs" });
+  B.push({ t: "table", widths: [0.38, 0.62], rows: reportInputs(p) });
   const a = r.extras?.armour;
-  const armour = a ? `<h2>Armour</h2><p>${a.unit.kind === "rock" ? `Rock ${a.unit.grading?.name || "(above EN 13383 gradings)"}: M50 ≥ ${fmt(a.unit.M50 / 1000, 2)} t, Dn50 ${f2(a.unit.Dn50)} m (Hudson ${f2(a.unit.hudson.Dn50)} m, ${esc(a.unit.vdm.formula)} ${f2(a.unit.vdm.Dn50)} m). Two layers, ${f2(a.unit.thickness)} m. Underlayer ${a.unit.underlayer.grading?.name || "–"}, ${f2(a.unit.underlayer.thickness)} m.` : `${armourName(a.unit.kind)} ${f2(a.unit.size)} m³ (${f1(a.unit.mass)} t), height ${f2(a.unit.height)} m, single layer ${f2(a.unit.thickness)} m, ${f1(a.unit.units100)} units per 100 m², KD ${a.unit.KD}.`} Toe rock ${a.toe.grading?.name || "–"} (M50 ≥ ${fmt(a.toe.M50 / 1000, 2)} t). Run-up Ru2% ${f2(a.runup.Ru2)} m; overtopping ${f2(a.overtopping.q)} l/s/m.</p>` : "";
+  if (a) {
+    B.push({ t: "h1", text: "Armour" });
+    B.push({ t: "p", text: a.unit.kind === "rock"
+      ? `Rock ${a.unit.grading?.name || "(above EN 13383 gradings)"}: M50 ≥ ${fmt(a.unit.M50 / 1000, 2)} t, Dn50 ${f2(a.unit.Dn50)} m (Hudson ${f2(a.unit.hudson.Dn50)} m, ${a.unit.vdm.formula} ${f2(a.unit.vdm.Dn50)} m). Two layers, ${f2(a.unit.thickness)} m. Underlayer ${a.unit.underlayer.grading?.name || "–"}, ${f2(a.unit.underlayer.thickness)} m.`
+      : `${armourName(a.unit.kind)} ${f2(a.unit.size)} m³ (${f1(a.unit.mass)} t), height ${f2(a.unit.height)} m, single layer ${f2(a.unit.thickness)} m, ${f1(a.unit.units100)} units per 100 m², KD ${a.unit.KD}.` });
+    B.push({ t: "p", text: `Toe rock ${a.toe.grading?.name || "–"} (M50 ≥ ${fmt(a.toe.M50 / 1000, 2)} t). Run-up Ru2% ${f2(a.runup.Ru2)} m; overtopping ${f2(a.overtopping.q)} l/s/m.` });
+  }
   const sz = state.seismic;
-  const seismic = sz ? `<h2>Earthquake</h2><p>Yield acceleration ky = ${f3(sz.ky)} g; peak surface acceleration ${f3(sz.amax)} g; Newmark displacement ${sz.newmark ? f1(sz.newmark.D) + " cm" : "–"} (Jibson 2007).</p>` : "";
-  $("#report").innerHTML = `<div class="wrap"><h1>${esc(p.name)} · slope stability</h1><p>Talus ${esc(T.version || "")} · ${new Date().toLocaleString()} · ${esc(BASES[p.design.basis].name)} · governing method ${esc(METHOD_NAMES[p.design.method])}</p>
-    <h2>Result</h2><p><b>${r.pass ? "All load cases meet their targets." : `Not enough: ${esc(r.worst.name)} F = ${f3(r.worst.F)} against ${f2(r.worst.target)}.`}</b></p>
-    <table><tr><th>Load case</th><th>F</th><th>Target</th><th></th></tr>${r.cases.map((c) => `<tr><td>${esc(c.name)}</td><td>${f3(c.F)}</td><td>${f2(c.target)}</td><td>${c.pass ? "✓" : "✕"}</td></tr>`).join("")}</table>
-    ${img}<h2>Inputs</h2><table>${inputs}</table>${armour}${seismic}<div class="page"></div>${cases}
-    <h2>Method</h2>${aboutPanel()}</div>`;
+  if (sz) {
+    B.push({ t: "h1", text: "Earthquake" });
+    B.push({ t: "p", text: `Yield acceleration ky = ${f3(sz.ky)} g; peak surface acceleration ${f3(sz.amax)} g; Newmark displacement ${sz.newmark ? f1(sz.newmark.D) + " cm" : "–"} (Jibson 2007).` });
+  }
+  r.cases.forEach((c, i) => {
+    if (c.error) return;
+    B.push({ t: "break" });
+    B.push({ t: "h1", text: `${i + 1}. ${c.name}: F = ${f3(c.F)} (needs ${f2(c.target)}) ${c.pass ? "OK" : "Not OK"}` });
+    if (c.note) B.push({ t: "p", text: c.note });
+    B.push({ t: "img", svg: sectionSVG(r, c, { width: 1000, height: 460, ...geo }), w: 1000, h: 460 });
+    B.push({ t: "caption", text: `Section with the critical surface, ${METHOD_NAMES[c.method]}.` });
+    B.push({ t: "table", head: Object.keys(c.results).map((m) => METHOD_NAMES[m]), rows: [Object.values(c.results).map((F) => f3(F))] });
+    B.push({ t: "p", text: `${surfaceText(c)} Sliding mass ${fmt(c.weight, 0)} kN/m.` });
+    if (c.slices && c.name === r.worst.name) {
+      B.push({ t: "h2", text: `Slices on the governing surface (${c.slices.length}, ${METHOD_NAMES[c.method]})` });
+      B.push({ t: "table", small: true, head: ["#", "x left", "x right", "α °", "W kN", "c kPa", "φ °", "u kPa", "N' kN", "S kN", "E kN", "X kN"],
+        rows: c.slices.map((s, k) => [k + 1, f2(s.x0), f2(s.x1), f1(s.alpha), f1(s.W), f1(s.c), f1(s.phi), f1(s.u), f1(s.Neff), f1(s.S), f1(s.Er), f1(s.Xr)]) });
+      B.push({ t: "note", text: "E and X are the interslice normal and shear forces on the downslope side of each slice (Fredlund and Krahn sign). All forces per metre run." });
+    }
+  });
+  B.push({ t: "break" }, { t: "h1", text: "Method" });
+  for (const m of aboutPanel().matchAll(/<p>([\s\S]*?)<\/p>/g)) B.push({ t: "p", text: m[1].replace(/<b>(.*?)<\/b>/g, "**$1**").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") });
+  return B;
+}
+
+const md = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+
+function blocksHTML(B) {
+  return B.map((b) => {
+    if (b.t === "title") return `<h1>${esc(b.text)}</h1>`;
+    if (b.t === "h1") return `<h2>${esc(b.text)}</h2>`;
+    if (b.t === "h2") return `<h3>${esc(b.text)}</h3>`;
+    if (b.t === "note") return `<p class="rnote">${md(b.text)}</p>`;
+    if (b.t === "caption") return `<p class="rcap">${md(b.text)}</p>`;
+    if (b.t === "break") return `<div class="page"></div>`;
+    if (b.t === "img") return b.svg || `<img src="${b.src}" alt="" style="width:100%;max-height:9cm;object-fit:contain">`;
+    if (b.t === "table") return `<table class="${b.small ? "rsmall" : ""}">${b.head ? `<tr>${b.head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>` : ""}${b.rows.map((r) => r.group ? `<tr><th colspan="9" style="text-align:left">${esc(r.group)}</th></tr>` : `<tr>${r.map((v) => `<td>${md(v)}</td>`).join("")}</tr>`).join("")}</table>`;
+    return `<p>${md(b.text)}</p>`;
+  }).join("\n");
+}
+
+function snapshot3d() {
+  if (!view3d || state.view !== "3d") return "";
+  try { return view3d.snapshot(); } catch (e) { return ""; }
+}
+
+function printReport() {
+  if (!state.result) return;
+  $("#report").innerHTML = `<div class="wrap">${blocksHTML(reportBlocks(snapshot3d()))}</div>`;
   setTimeout(() => window.print(), 50);
+}
+
+/** An SVG or a data URL drawn to a PNG, at twice its size for print. */
+function toPNG(b) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const done = () => {
+      const k = b.svg ? 2 : 1, w = (b.svg ? b.w : img.naturalWidth) * k, h = (b.svg ? b.h : img.naturalHeight) * k;
+      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+      cv.toBlob(async (blob) => resolve(blob ? { png: new Uint8Array(await blob.arrayBuffer()), w, h } : null), "image/png");
+    };
+    img.onload = done; img.onerror = () => resolve(null);
+    if (b.svg) {
+      // the drawing uses the page's colour tokens; a picture on its own needs them spelt out
+      const svg = b.svg.replace(/var\(--grid\)/g, "#e1e0d9").replace(/var\(--muted\)/g, "#898781").replace(/var\(--surface\)/g, "#ffffff")
+        .replace("<svg ", `<svg width="${b.w}" height="${b.h}" font-family="Calibri, Arial, sans-serif" `);
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    } else img.src = b.src;
+  });
+}
+
+async function wordReport() {
+  if (!state.result) return;
+  toast("Building the Word report…");
+  const B = reportBlocks(snapshot3d());
+  for (const b of B) if (b.t === "img") Object.assign(b, (await toPNG(b)) || { png: null });
+  const blob = docx(B, { title: `${state.project.name} · slope stability`, footer: `${state.project.name} · Talus ${T.version || ""}` });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(state.project.name || "talus").replace(/[^\w\- ]+/g, "").trim() || "talus"}.docx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
 // ------------------------------------------------------------------ start
@@ -913,5 +1076,6 @@ async function start() {
 start();
 
 document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") $("#reportMenu").classList.add("hidden");
   if (ev.key === "Escape" && !$("#drawer").classList.contains("hidden")) $("#drawer").classList.add("hidden");
 });

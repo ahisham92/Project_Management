@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS versions (
 CREATE INDEX IF NOT EXISTS idx_versions_project ON versions(project_id);
 """
 
-KINDS = ("cut", "embankment", "revetment")
+KINDS = ("cut", "embankment", "revetment", "section")
 
 
 class StoreError(Exception):

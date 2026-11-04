@@ -33,7 +33,13 @@
         <span class="save-state" id="saveState"></span>
         <div class="spacer"></div>
         <button type="button" class="btn btn-ghost btn-sm" id="btnProjects">Projects</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="btnReport">Report</button>
+        <div class="menu-wrap">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnReport" aria-haspopup="menu">Report</button>
+          <div class="menu hidden" id="reportMenu" role="menu">
+            <button type="button" role="menuitem" data-report="word">Word (.docx)<small>editable, with drawings and the slice table</small></button>
+            <button type="button" role="menuitem" data-report="pdf">PDF or print<small>choose "Save as PDF" in the print dialog</small></button>
+          </div>
+        </div>
         <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
         {% if who %}<div class="whoami small"><div>{{ who['name'] }}</div></div>{% endif %}
       </div>

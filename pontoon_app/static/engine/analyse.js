@@ -10,6 +10,7 @@ import { initial, equilibrium, above, uprightDraft, immersed, waterplane, waveNu
 import { beamWinkler, modes } from "./fe.js";
 import { steelCHS, concreteSection, barsSquare, barsCircle, timberRound } from "./members.js";
 import { broms, requiredEmbedment, pileResponse } from "./geotech.js";
+import { connections, pileGuides, gangwayDesign, seismicBasis, designCoefficient, as4997, mooringDesign } from "./extras.js";
 
 const r2 = (v) => Math.round(v * 100) / 100, r3 = (v) => Math.round(v * 1000) / 1000;
 const fx = (v, d = 2) => (Number.isFinite(v) ? (+v.toFixed(d)).toString() : "–");
@@ -60,7 +61,7 @@ function floating(el, p, gw, acc) {
       `Draft ${fx(Tf.T, 4)} m; top of flotation ${fx(sec.top, 3)} m; reserve = ${fx(reserve, 4)} m ≥ 0.050 m`,
     ],
   }));
-  // Cl 4.12 stability load over half the width, at the deck
+  // Cl 4.13 stability load over half the width, at the deck
   const qs = acc.stability, ws = qs * (B / 2);
   const W = w + ws, yg = (ws * (B / 4)) / W, zgS = (w * zg + ws * sec.deck) / W;
   const eq = equilibrium(sec.rects, W, yg, zgS, gwE);
@@ -81,16 +82,16 @@ function floating(el, p, gw, acc) {
     `Top of flotation on the loaded side is ${fx(lowTop, 4)} m above the water; the far chine is ${fx(-highChine, 4)} m under it`,
   ];
   if (eq.capsized || iniS.GM <= 0) {
-    checks.push(check(el.name, "Stable under stability load", 0, 1, { sense: "min", src: "AS 3962 Cl 4.12, Appendix A", working: [...stabWork, "GM ≤ 0 or no equilibrium: unstable."] }));
+    checks.push(check(el.name, "Stable under stability load", 0, 1, { sense: "min", src: "AS 3962 Cl 4.13, Appendix A", working: [...stabWork, "GM ≤ 0 or no equilibrium: unstable."] }));
   } else {
-    checks.push(check(el.name, "Freeboard to flotation, stability load", lowTop, C.FREEBOARD.stabilityMin, { unit: "m", sense: "min", src: "AS 3962 Cl 4.12.2, Table 4.1", working: stabWork }));
-    if (p.design.chine !== false) checks.push(check(el.name, "Opposite chine stays submerged", -highChine, 0, { unit: "m", sense: "min", src: "AS 3962 Cl 4.12.1, 4.12.2", working: [`Depth of the far chine below water ${fx(-highChine, 4)} m > 0`] }));
+    checks.push(check(el.name, "Freeboard to flotation, stability load", lowTop, C.FREEBOARD.stabilityMin, { unit: "m", sense: "min", src: "AS 3962 Cl 4.13.2.1, Table 4.1", working: stabWork }));
+    if (p.design.chine !== false) checks.push(check(el.name, "Opposite chine stays submerged", -highChine, 0, { unit: "m", sense: "min", src: "AS 3962 Cl 4.13.1, 4.13.2.1", working: [`Depth of the far chine below water ${fx(-highChine, 4)} m > 0`] }));
     out.chine = -highChine;
     if (+p.design.tiltLimit > 0) checks.push(check(el.name, "Tilt under stability load (project limit)", tilt, +p.design.tiltLimit, { unit: "°", src: "Project criterion" }));
   }
   out.GM = ini.GM;
   if (!(ini.GM > 0)) {
-    checks.push(check(el.name, "Upright stability (GM > 0)", ini.GM, 0, { unit: "m", sense: "min", src: "AS 3962 Cl 4.12.1, Appendix A", working: [`GM = KB + BM − KG = ${fx(ini.KB, 4)} + ${fx(ini.BM, 4)} − ${fx(zg, 4)} = ${fx(ini.GM, 4)} m`] }));
+    checks.push(check(el.name, "Upright stability (GM > 0)", ini.GM, 0, { unit: "m", sense: "min", src: "AS 3962 Cl 4.13.1, Appendix A", working: [`GM = KB + BM − KG = ${fx(ini.KB, 4)} + ${fx(ini.BM, 4)} − ${fx(zg, 4)} = ${fx(ini.GM, 4)} m`] }));
     out.advice = [];
     return out;
   }
@@ -102,7 +103,7 @@ function floating(el, p, gw, acc) {
   const drop = wTip + (B / 2) * Math.tan(roll);
   const corner = ftopDL - drop;
   checks.push(check(el.name, "Freeboard to flotation, 4.5 kN at a corner", corner, C.FREEBOARD.stabilityMin, {
-    unit: "m", sense: "min", src: "AS 3962 Cl 4.7.2(c), 4.12.2",
+    unit: "m", sense: "min", src: "AS 3962 Cl 4.7.2(c), 4.13.2.1",
     working: [
       `Beam on the water: k = γw·b·c = ${fx(kW, 2)} kN/m², EI = ${fx(sec.EI, 0)} kN·m², L = ${fx(L, 2)} m; end deflection under 4.5 kN = ${fx(wTip * 1000, 1)} mm`,
       `Roll: tan φ = P·(B/2) / (W·GM) = 4.5 × ${fx(B / 2, 3)} / (${fx(w * L, 1)} × ${fx(ini.GM, 3)}) → edge drop ${fx((B / 2) * Math.tan(roll) * 1000, 1)} mm`,
@@ -111,7 +112,7 @@ function floating(el, p, gw, acc) {
   }));
   out.advice = [];
   if (fbDL > C.FREEBOARD.responseCheck.freeboard && ini.T < C.FREEBOARD.responseCheck.draft)
-    out.advice.push({ src: "AS 3962 Cl 4.7.1", text: `${el.name}: freeboard ${mm(fbDL)} with a draft of ${mm(ini.T)}. Check how quickly it responds to cyclic vertical load (people walking, wash).` });
+    out.advice.push({ src: "AS 3962 Cl 4.13.2.3", text: `${el.name}: freeboard ${mm(fbDL)} with a draft of ${mm(ini.T)}. Check how quickly it responds to cyclic vertical load (people walking, wash).` });
   if (fbDL > C.FREEBOARD.waterAccess)
     out.advice.push({ src: "AS 3962 Cl 5.1.2", text: `${el.name}: freeboard over 500 mm, so provide a way to climb out of the water without help (ladders).` });
   out.GM = ini.GM; out.kW = kW; out.cornerLoad = { wTip, roll, corner };
@@ -181,8 +182,8 @@ function structure(el, p, gw, site, depthHAT) {
 
 // ------------------------------------------------------------------ environmental loads
 
-function windSpeed(p) {
-  const R = p.site.basis === "as3962" ? 50 : returnPeriod(p);
+function windSpeed(p, Rsls) {
+  const R = Rsls || (p.site.basis === "as3962" ? 50 : returnPeriod(p));
   const VR = C.regionalSpeed(p.site.region, R);
   const Mz = C.interp(C.MZCAT_TC2, 3);
   const V = VR * (+p.site.Md || 1) * Mz * (+p.site.Ms || 1) * (+p.site.Mt || 1) * (+p.site.duration || 1);
@@ -270,7 +271,7 @@ function pileSection(pp, life) {
   };
 }
 
-function pileDesign(p, lay, floats, loads, levels, gw, berth) {
+function pileDesign(p, lay, floats, loads, levels, gw, berth, ctx = {}) {
   const pp = p.piles, life = +p.site.life || 25;
   const ps = pileSection(pp, life);
   const n = Math.max(2, Math.ceil(lay.walkLen / Math.max(2, +pp.spacing)) + 1);
@@ -296,6 +297,13 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
     const e = lv + floats.walkway.freeboardDL + +pp.guideAbove - ground;
     cases.push({ combo: bc, level: lv, e, depth: lv - ground, berthing: true });
   }
+  // earthquake (AS 1170.4): the arm sways on its piles; G + Eu (AS/NZS 1170.0 Cl 4.2.2(f)), at HAT
+  if (ctx.eq) {
+    const lv = levels.HAT, e = lv + floats.walkway.freeboardDL + +pp.guideAbove - ground;
+    const pileMass = ps.mass + rho / 1000 * Math.PI * D * D / 4 * 2; // t/m: pile + entrained + added water
+    const qEq = C.spectralShape(ctx.eq.site, 0.3) * ctx.eq.kpZ * ctx.eq.Sp / ctx.eq.mu * pileMass * G; // plateau value: conservative
+    cases.push({ combo: { key: "eq", name: "Earthquake G + Eu (HAT)", level: "HAT", src: "AS/NZS 1170.0 Cl 4.2.2(f); AS 1170.4 Cl 6.2, 7.2" }, level: lv, e, depth: lv - ground, seismic: true, qPile: qEq });
+  }
   // embedment: given, or the shortest that carries every case (Broms, φg), at least 3 m
   const My = ps.phiM; // design moment capacity in the Broms mechanism (soil factored by φg)
   let Lreq = 0, embedNotes = [];
@@ -308,8 +316,15 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
     const Ff = Math.sqrt(2 * berth.E * keq); // kN
     return { kp, engaged, keq, F: Ff, Hpile: (c.combo.berthing * Ff) / engaged };
   };
-  const headLoad = (c, Lemb) => (c.berthing ? runBerthing(c, Lemb).Hpile : c.Hhead + c.qPile * c.depth);
-  const leverOf = (c) => (c.berthing ? c.e : (c.Hhead * c.e + c.qPile * c.depth * (c.depth / 2)) / (c.Hhead + c.qPile * c.depth));
+  const runSeismic = (c, Lemb) => {
+    const unit = pileResponse({ e: c.e, L: Lemb, EI: ps.EI, soil, H: 1, D });
+    const T = 2 * Math.PI * Math.sqrt(ctx.eq.mass / (n * unit.stiffness));
+    const Cd = designCoefficient(ctx.eq, T);
+    return { T, Cd, Hpile: (Cd * ctx.eq.mass * G) / n, kp: unit.stiffness };
+  };
+  const headOnly = (c, Lemb) => (c.berthing ? runBerthing(c, Lemb).Hpile : c.seismic ? runSeismic(c, Lemb).Hpile : c.Hhead);
+  const headLoad = (c, Lemb) => headOnly(c, Lemb) + (c.berthing ? 0 : c.qPile * c.depth);
+  const leverOf = (c, Lemb) => { const h = headOnly(c, Lemb); return c.berthing ? c.e : (h * c.e + c.qPile * c.depth * (c.depth / 2)) / (h + c.qPile * c.depth); };
   if (+pp.embed > 0) Lreq = +pp.embed;
   else {
     let Lg = 6;
@@ -317,7 +332,7 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
       let need = 3;
       for (const c of cases) {
         const H = headLoad(c, Lg);
-        const r = requiredEmbedment(soil, { e: leverOf(c), D, My, phiG, Hstar: H });
+        const r = requiredEmbedment(soil, { e: leverOf(c, Lg), D, My, phiG, Hstar: H });
         if (r.L === null) { embedNotes.push(r.reason); need = Math.max(need, 30); } else need = Math.max(need, r.L);
       }
       need = Math.ceil(need * 2) / 2;
@@ -328,15 +343,17 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
   }
   const checks = [];
   const results = cases.map((c) => {
-    const H = headLoad(c, Lreq), e = leverOf(c);
+    const H = headLoad(c, Lreq), e = leverOf(c, Lreq);
     const bInfo = c.berthing ? runBerthing(c, Lreq) : null;
+    const eInfo = c.seismic ? runSeismic(c, Lreq) : null;
+    if (eInfo) c.Hhead = eInfo.Hpile;
     // one solve: the load at the guide plus the pile's own drag over the water column
     const resp = c.berthing
       ? pileResponse({ e: c.e, L: Lreq, EI: ps.EI, soil, H, D })
       : pileResponse({ e: c.e, L: Lreq, EI: ps.EI, soil, H: c.Hhead, D, q: c.qPile, qFrom: c.e - c.depth, qTo: c.e });
     const Mmax = resp.Mmax;
     const g = broms(soil, { e, L: Lreq, D, My }, phiG);
-    return { ...c, H, lever: e, resp, Mmax, Vmax: H, bInfo, brom: g, geoRatio: H / g.Hu };
+    return { ...c, H, lever: e, resp, Mmax, Vmax: H, bInfo, eInfo, brom: g, geoRatio: H / g.Hu };
   });
   const gov = results.reduce((a, r) => (r.Mmax > a.Mmax ? r : a), results[0]);
   const govGeo = results.reduce((a, r) => (r.geoRatio > a.geoRatio ? r : a), results[0]);
@@ -346,7 +363,9 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
     working: [
       `${ps.desc}; ${n} piles along ${fx(lay.walkLen, 1)} m at ${fx(+pp.spacing, 1)} m centres`,
       `Governing: ${gov.combo.name}. Level ${fx(gov.level, 2)} m CD, scoured bed ${fx(ground, 2)} m, load at the guide e = ${fx(gov.e, 2)} m above the bed`,
-      gov.berthing
+      gov.seismic
+        ? `Earthquake: arm mass ${fx(ctx.eq.mass, 1)} t on ${n} piles, sway T = ${fx(gov.eInfo.T, 2)} s; Cd = Ch(T)·kpZ·Sp/μ = ${fx(gov.eInfo.Cd, 4)} (site ${ctx.eq.site}, kpZ ${fx(ctx.eq.kpZ, 3)}) → ${fx(gov.eInfo.Hpile, 2)} kN per pile + pile inertia ${fx(gov.qPile, 3)} kN/m`
+        : gov.berthing
         ? `Berthing: E = ${fx(berth.E, 2)} kJ, pile stiffness ${fx(gov.bInfo.kp, 1)} kN/m × ${gov.bInfo.engaged} piles in series with the fender ${fx(+p.fender.k, 0)} kN/m → k = ${fx(gov.bInfo.keq, 1)} kN/m; F = √(2Ek) = ${fx(gov.bInfo.F, 2)} kN; per pile × 1.25 = ${fx(gov.H, 2)} kN`
         : `H* per pile = ${fx(gov.Hhead, 2)} kN at the guide + pile drag ${fx(gov.qPile, 3)} kN/m over ${fx(gov.depth, 2)} m`,
       `Elastic pile on a Winkler subgrade (${soil.type === "clay" ? `k = 67 su = ${fx(67 * soil.su, 0)} kN/m²` : `nh for φ' ${soil.phi}°`}), embedded ${fx(Lreq, 2)} m: M* = ${fx(gov.Mmax, 2)} kN·m at ${fx(gov.resp.zMax, 2)} m below the bed`,
@@ -364,15 +383,35 @@ function pileDesign(p, lay, floats, loads, levels, gw, berth) {
       ...embedNotes,
     ],
   }));
+  // serviceability (AS 4997 Cl 4.3): head deflection at the guide under the SLS environment
+  let sls = null;
+  if (ctx.sls && ctx.sls.length) {
+    sls = ctx.sls.map((L) => {
+      const e = L.level + floats.walkway.freeboardDL + +pp.guideAbove - ground, depth = L.level - ground;
+      const H = Math.max(L.dirs.X.total, L.dirs.Y.total) / n;
+      const q = (0.5 * rho * L.Vc ** 2 / 1000) * C.CD_CURRENT.pileRough * D;
+      const resp = pileResponse({ e, L: Lreq, EI: ps.EI, soil, H, D, q, qFrom: e - depth, qTo: e });
+      return { combo: L.combo, level: L.level, H, delta: Math.abs(resp.delta), e };
+    });
+    const g = sls.reduce((a, r) => (r.delta > a.delta ? r : a), sls[0]);
+    const lim = +p.design.pileDeflection || C.SLS.pileDeflection;
+    checks.push(check("Piles", "Pile deflection at the guide, serviceability", g.delta, lim, {
+      unit: "m", src: C.SLS.src,
+      working: [`SLS wind at 1/${C.SLS.windR} (V = ${fx(ctx.slsWind.V, 1)} m/s) with unfactored current and waves, ${g.combo.name}`, `H = ${fx(g.H, 2)} kN per pile at e = ${fx(g.e, 2)} m → δ = ${fx(g.delta * 1000, 1)} mm ≤ ${fx(lim * 1000, 0)} mm (project criterion: roller travel and gangway seating)`],
+    }));
+  }
   if (ps.kind === "concrete") checks.push(check("Piles", "Cover for exposure C2 (tidal/splash)", +pp.concrete.cover, +pp.concrete.fc >= 50 ? 65 : 999, { unit: "mm", sense: "min", src: "AS 3600 Table 4.3, 4.10.3.2", note: +pp.concrete.fc < 50 ? "C2 needs f'c ≥ 50 MPa." : "" }));
-  // pile height: the pontoon must not float off at the maximum level (Cl 4.13)
+  // pile height (AS 3962:2020 Cl 4.14): 1 in 100 ARI level with sea level rise and wave action; the
+  // pontoon must not float off the top. Wave action: the crest of the design wave, H1/2 (linear wave).
   const tmrTop = +p.site.HAT + 2.5;
-  const pileTop = Math.max(levels.MAX + floats.walkway.freeboardDL + 1.0, tmrTop);
-  checks.push(check("Piles", "Pile top above the maximum water level", pileTop - (levels.MAX + floats.walkway.freeboardDL), 0.5, {
-    unit: "m", sense: "min", src: "AS 3962 Cl 4.13; TMR Table 5.2 (HAT + 2.5 m)",
-    working: [`Maximum level = HAT + sea level rise + surge = ${fx(levels.MAX, 2)} m CD; deck there at ${fx(levels.MAX + floats.walkway.freeboardDL, 2)} m`, `Pile top set at ${fx(pileTop, 2)} m CD (max level + freeboard + 1.0 m, and not below HAT + 2.5 m = ${fx(tmrTop, 2)} m)`],
+  const crest = 0.5 * C.WAVE_DESIGN.H1overHs * +p.site.Hs;
+  const deckMax = levels.MAX + floats.walkway.freeboardDL + crest;
+  const pileTop = Math.max(deckMax + 1.0, tmrTop);
+  checks.push(check("Piles", "Pile top above the 1 in 100 level with waves", pileTop - deckMax, 0.5, {
+    unit: "m", sense: "min", src: "AS 3962 Cl 4.14; TMR Table 5.2 (HAT + 2.5 m)",
+    working: [`Maximum level = HAT + sea level rise + storm surge (1 in 100 ARI) = ${fx(levels.MAX, 2)} m CD`, `Wave crest H1/2 = 1.67 × ${fx(+p.site.Hs, 2)} / 2 = ${fx(crest, 2)} m; deck at ${fx(deckMax, 2)} m CD on the crest`, `Pile top set at ${fx(pileTop, 2)} m CD (that + 1.0 m, and not below HAT + 2.5 m = ${fx(tmrTop, 2)} m); guide stays ≥ 0.5 m below the top`],
   }));
-  return { ps, n, phiG, Lreq, results, gov, govGeo, govDef, checks, pileTop, toe: ground - Lreq, ground, embedNotes };
+  return { type: "piles", ps, n, phiG, Lreq, results, gov, govGeo, govDef, checks, pileTop, toe: ground - Lreq, ground, embedNotes, sls };
 }
 
 /** Standard sizes tried, lightest first, when the pile is left to Pontoon to choose. */
@@ -383,9 +422,9 @@ export const PILE_CATALOGUE = {
   timber: [300, 350, 400, 450, 500, 550, 600].map((D) => ({ D })),
 };
 
-function sizePiles(p, lay, floats, loads, levels, gw, berth) {
+function sizePiles(p, lay, floats, loads, levels, gw, berth, ctx) {
   const pp = p.piles;
-  if (!pp.auto) return pileDesign(p, lay, floats, loads, levels, gw, berth);
+  if (!pp.auto) return pileDesign(p, lay, floats, loads, levels, gw, berth, ctx);
   const list = PILE_CATALOGUE[pp.type] || PILE_CATALOGUE.steel;
   let last = null;
   for (const size of list) {
@@ -393,7 +432,7 @@ function sizePiles(p, lay, floats, loads, levels, gw, berth) {
     if (pp.type === "concrete") q.piles.concrete = { ...pp.concrete, ...size };
     else if (pp.type === "timber") q.piles.timber = { ...pp.timber, ...size };
     else Object.assign(q.piles, size);
-    const r = pileDesign(q, lay, floats, loads, levels, gw, berth);
+    const r = pileDesign(q, lay, floats, loads, levels, gw, berth, ctx);
     last = { ...r, size, auto: true, tried: list.indexOf(size) + 1 };
     if (r.checks.every((c) => c.pass) && r.Lreq <= 30) return last;
   }
@@ -401,6 +440,13 @@ function sizePiles(p, lay, floats, loads, levels, gw, berth) {
 }
 
 // ------------------------------------------------------------------ dynamics
+
+/** Mass of one arm moving sideways (t): pontoons, boats, and the sway added mass ρπT²/2 per metre of walkway. */
+function armMass(lay, floats, gw) {
+  const rho = gw / G, T = floats.walkway.ini.T;
+  return (floats.walkway.sec.w * lay.walkLen + floats.finger.sec.w * lay.fingerL * (lay.perSide + 1) * lay.sides) / G
+    + lay.v.disp * lay.perArm + rho * Math.PI * T * T / 2 * lay.walkLen;
+}
 
 function dynamics(p, lay, floats, piles, gw) {
   const walk = floats.walkway, sec = walk.sec, rho = gw / G; // t/m³
@@ -413,9 +459,15 @@ function dynamics(p, lay, floats, piles, gw) {
   const md = modes({ L, EI: sec.EI, k: kW, m: m + ma, n: 30 }, 6);
   const names = ["Heave", "Pitch", "1st bending", "2nd bending", "3rd bending", "4th bending"];
   const fm = md.map((q, i) => ({ ...q, name: names[i] || `Mode ${i + 1}` }));
-  // sway of the arm on its piles
+  // sway of the arm on its piles (or chains)
+  const Marm = armMass(lay, floats, gw);
+  if (piles.type === "chains") {
+    const sway = 2 * Math.PI * Math.sqrt(Marm / piles.stiffness);
+    const Tp = +p.site.Tp;
+    const near = [{ n: "heave", T: heave }, { n: "roll", T: roll }, { n: "sway on the chains", T: sway }, ...fm.slice(2, 4).map((q) => ({ n: q.name, T: q.T }))].filter((q) => Math.abs(q.T - Tp) / Tp < 0.2);
+    return { heave, roll, ma, m, flex: fm, sway, pile: null, Marm, near, kW };
+  }
   const unit = pileResponse({ e: piles.gov.e, L: piles.Lreq, EI: piles.ps.EI, soil: p.piles.soil, H: 1, D: piles.ps.D });
-  const Marm = (sec.w * lay.walkLen + floats.finger.sec.w * lay.fingerL * lay.perSide * lay.sides) / G + lay.v.disp * lay.berths;
   const sway = 2 * Math.PI * Math.sqrt(Marm / (piles.n * unit.stiffness));
   // the pile itself (cantilever on the subgrade, steel + entrained water)
   const pm = modes({
@@ -469,11 +521,24 @@ export function analyse(input) {
   const combos = C.COMBOS.filter((c) => !c.berthing && (!c.when || +p.site.surge > 0));
   const loads = combos.map((combo) => ({ combo, ...armLoads(p, lay, floats, combo, levels, gw, wind) }));
   // berthing energy, AS 3962 Cl 4.9 with PIANC (2002) added mass Cm = 1 + 2D/B, mid-point (Ce = 1)
-  const Vb = v.L > 25 ? C.BERTHING.vLarge : C.BERTHING.v;
+  const Vb = C.berthingSpeed(v.L);
   const Cm = 1 + (2 * v.hullDraft) / v.beam;
   const berth = { V: Vb, Cm, E: 0.5 * v.disp * Vb * Vb * Cm, disp: v.disp };
-  const piles = sizePiles(p, lay, floats, loads, levels, gw, berth);
+  // serviceability environment (AS 4997 Cl 4.3): SLS wind, unfactored current and waves
+  const slsWind = windSpeed(p, C.SLS.windR);
+  const slsCombos = [
+    { key: "slsHAT", name: "SLS: wind (1/25) + current + wave (HAT)", wind: 1, current: 1, wave: 1, level: "HAT", src: C.SLS.src },
+    { key: "slsLAT", name: "SLS: wind (1/25) + current + wave (LAT)", wind: 1, current: 1, wave: 1, level: "LAT", src: C.SLS.src },
+  ];
+  const sls = slsCombos.map((combo) => ({ combo, ...armLoads(p, lay, floats, combo, levels, gw, slsWind) }));
+  const eqB = p.seismic.on ? { ...seismicBasis(p), mass: armMass(lay, floats, gw) } : null;
+  const chains = p.mooring.type === "chains";
+  const piles = chains ? mooringDesign(p, lay, floats, loads, levels, gw) : sizePiles(p, lay, floats, loads, levels, gw, berth, { sls, slsWind, eq: eqB });
+  const nOf = (len) => Math.max(2, Math.ceil(len / Math.max(2, +(chains ? p.mooring.spacing : p.piles.spacing))) + 1);
+  piles.total = piles.n * lay.arms + (lay.spine ? nOf(lay.spine.len) : 0) + (lay.head ? nOf(lay.head.len) : 0);
   const dyn = dynamics(p, lay, floats, piles, gw);
+  const conn = connections(p, lay, floats, loads, berth, piles.n);
+  const guides = chains ? null : pileGuides(p, piles, floats);
   // waves behind: transmission (Macagno), compared with AS 3962 Table 4.2 for the 1 in 50 y event
   const att = macagnoKt(+p.site.Tp, depthHAT, lay.walkW, floats.walkway.ini.T);
   const climate = C.WAVE_CLIMATE.factors[p.site.climate || "good"];
@@ -482,17 +547,43 @@ export function analyse(input) {
     ...floats.walkway.checks, ...floats.finger.checks,
     ...Object.values(struct).flatMap((s) => s.checks),
     ...piles.checks,
+    ...conn.checks, ...(guides ? guides.checks : []),
   ];
-  // gangway at LAT (Cl 3.6.2)
+  // gangway slope (AS 3962:2020 Cl 3.6.2, Table 3.5): general berths 1:4 at CD; accessible berths 1:8 at
+  // worst (CD) and 1:14 for at least 80 % of the time, which is checked at mean sea level as a proxy
   const landing = +p.layout.gangwayLanding;
   const deckLAT = levels.LAT + floats.walkway.freeboardDL;
   const rise = Math.abs(landing - deckLAT);
-  const glen = +p.layout.gangwayLength || Math.ceil(Math.hypot(rise * lay.slope, rise) * 2) / 2;
+  const mslDeck = (+p.site.HAT + +p.site.LAT) / 2 + +p.site.slr / 2 + floats.walkway.freeboardDL;
+  const riseNeed = (r, n) => Math.ceil(Math.hypot(r * n, r) * 2) / 2;
+  const glen = +p.layout.gangwayLength || Math.max(riseNeed(rise, lay.slope), lay.accessible ? riseNeed(Math.abs(landing - mslDeck), C.GANGWAY_SLOPE.accessible80) : 0);
   const gslope = glen > rise ? rise / Math.sqrt(glen * glen - rise * rise) : Infinity;
   checks.push(check("Gangway", "Slope at LAT (CD)", gslope, 1 / lay.slope, {
-    unit: "V/H", src: "AS 3962 Cl 3.6.2",
-    working: [`Landing ${fx(landing, 2)} m CD, pontoon deck at LAT ${fx(deckLAT, 2)} m CD: rise ${fx(rise, 2)} m`, `Gangway ${fx(glen, 1)} m long → slope 1 : ${fx(1 / gslope, 2)} (limit 1 : ${lay.slope})`, `Clear width ${fx(lay.gangwayW, 1)} m for ${lay.berths} berths (Table 3.3)`],
+    unit: "V/H", src: C.GANGWAY_SLOPE.src,
+    working: [`Landing ${fx(landing, 2)} m CD, pontoon deck at LAT ${fx(deckLAT, 2)} m CD: rise ${fx(rise, 2)} m`, `Gangway ${fx(glen, 1)} m long → slope 1 : ${fx(1 / gslope, 2)} (limit 1 : ${lay.slope})`, `Clear width ${fx(lay.gangwayW, 1)} m for ${lay.berths} ${lay.accessible ? "accessible" : "general"} berths (Table 3.4)`],
   }));
+  if (lay.accessible) {
+    const msl = (+p.site.HAT + +p.site.LAT) / 2 + +p.site.slr / 2;
+    const riseM = Math.abs(landing - (msl + floats.walkway.freeboardDL));
+    const sM = glen > riseM ? riseM / Math.sqrt(glen * glen - riseM * riseM) : Infinity;
+    checks.push(check("Gangway", "Slope for 80 % of the time (accessible)", sM, 1 / C.GANGWAY_SLOPE.accessible80, {
+      unit: "V/H", src: C.GANGWAY_SLOPE.src,
+      working: [`Mean sea level ≈ (HAT + LAT)/2 + SLR/2 = ${fx(msl, 2)} m CD as a proxy for the 80 % level; confirm with the site's tide exceedance curve`, `Rise ${fx(riseM, 2)} m over ${fx(glen, 1)} m → 1 : ${fx(1 / sM, 2)} (limit 1 : ${C.GANGWAY_SLOPE.accessible80})`],
+    }));
+    checks.push(check("Gangway", "Gangway length (accessible)", glen, C.GANGWAY_SLOPE.accessibleLength, { unit: "m", src: C.GANGWAY_SLOPE.src }));
+    checks.push(check("Layout", "Accessible berths within 200 m of the land", lay.totalWalk, C.WALKWAY.accessible.maxLength, { unit: "m", src: C.WALKWAY.src, note: "Total walkway length as the path of travel (conservative)." }));
+  }
+  const gwy = gangwayDesign(p, lay, floats, { length: glen, rise, slope: gslope }, gw);
+  checks.push(...gwy.checks);
+  if (lay.shape === "comb") checks.push(check("Layout", "Fairway between arms", lay.fairway, lay.fairwayNeed, {
+    unit: "m", sense: "min", src: C.FAIRWAY.src,
+    working: [`Arms ${fx(lay.armSpacing, 1)} m apart, walkway ${fx(lay.walkW, 2)} m, boats reach ${fx(0.6 + v.L, 1)} m from it on ${lay.sides === 2 ? "both sides" : "one side"} → clear fairway ${fx(lay.fairway, 2)} m ≥ 1.5 L = ${fx(lay.fairwayNeed, 2)} m`],
+  }));
+  const a4997 = as4997(p, lay, floats);
+  checks.push(...a4997.checks);
+  const minLife = check("Design basis", "Design life at least 25 years", +p.site.life, C.MIN_LIFE.years, { unit: "years", sense: "min", src: C.MIN_LIFE.src });
+  if (minLife.pass) minLife.ratio = null;
+  checks.push(minLife);
   if (p.type === "attenuator") {
     const lim = 0.6 * climate;
     checks.push(check("Waves", "Transmitted wave height (head seas, 1 in 50 y)", behind, lim, {
@@ -500,14 +591,21 @@ export function analyse(input) {
       working: [`k = ${fx(att.k, 4)} 1/m (λ = ${fx(att.L, 2)} m) in ${fx(depthHAT, 2)} m depth; B = ${fx(lay.walkW, 2)} m, draft ${fx(floats.walkway.ini.T, 3)} m`, `Kt = 1/√(1 + [kB sinh kh / (2 cosh k(h−T))]²) = ${fx(att.Kt, 3)} → Hs behind = ${fx(behind, 3)} m`],
     }));
   }
-  const advice = [...(floats.walkway.advice || []), ...(floats.finger.advice || [])];
+  const advice = [...(floats.walkway.advice || []), ...(floats.finger.advice || []), ...a4997.advice];
+  if (lay.sides === 2 && +p.site.Hs > C.WAVE_CLIMATE.intermediatePiles) advice.push({ src: "AS 3962 Cl 4.8.2.1", text: `Head sea Hs ${fx(+p.site.Hs, 2)} m is over 0.4 m with double-sided berths: consider intermediate mooring piles between the boats.` });
+  const hMaxLim = C.WAVE_CLIMATE.maxOverModerate * 0.6 * C.WAVE_CLIMATE.factors.moderate;
+  if (C.WAVE_DESIGN.H1overHs * +p.site.Hs > hMaxLim) advice.push({ src: "AS 3962 Table 4.2 Note", text: `Design wave H1 = ${fx(C.WAVE_DESIGN.H1overHs * +p.site.Hs, 2)} m is above 1.5 × the moderate head-sea criterion (${fx(hMaxLim, 2)} m). The berths are outside the Table 4.2 climate; consider an attenuator or breakwater.` });
+  if (!v.given && v.dispMin > v.dispHull) advice.push({ src: "AS 3962 Table 4.6", text: `Berthing displacement set by the Table 4.6 minimum (${fx(v.dispMin, 1)} t for ${fx(v.L, 1)} m), above the hull estimate of ${fx(v.dispHull, 1)} t.` });
+  if (eqB && !chains) advice.push({ src: "AS 1170.4", text: `Earthquake: kpZ = ${fx(eqB.kpZ, 3)} (1/${eqB.P} years, Z = ${eqB.Z}, site class ${eqB.site}). The floating pontoon itself is isolated by the water; the piles carry the arm's sway inertia.` });
+  if (lay.spine || lay.head) advice.push({ src: "Layout", text: `${lay.spine ? "The spine walkway" : "The T-head"} uses the arm's section and pile design. Each arm is taken as restrained by its own piles, with the joints to the ${lay.spine ? "spine" : "head"} able to rotate in plan.` });
   if (dyn.near.length) advice.push({ src: "Dynamics", text: `The wave period ${fx(+p.site.Tp, 1)} s is within 20 % of the ${dyn.near.map((q) => `${q.n} period ${fx(q.T, 2)} s`).join(", ")}. Expect lively motion in that sea.` });
   if (!v.given) advice.push({ src: "Berthing", text: `Vessel displacement estimated at ${fx(v.disp, 1)} t from its length; enter the design vessel's own figure.` });
   if (piles.autoFailed) advice.push({ src: "Piles", text: `No standard ${p.piles.type} pile in the list carries these loads at ${p.piles.spacing} m centres. Close the spacing or choose another pile type.` });
-  if (piles.embedNotes.length) advice.push({ src: "Piles", text: piles.embedNotes[0] });
+  if (piles.embedNotes && piles.embedNotes.length) advice.push({ src: "Piles", text: piles.embedNotes[0] });
   const worst = checks.filter((c) => c.ratio !== null).reduce((a, c) => (!a || c.ratio > a.ratio ? c : a), null);
   return {
     project: p, kindName: KIND_NAMES[p.type], layout: lay, vessel: v, gw, levels, floats, struct, wind, loads, berth, piles, dyn,
+    sls, slsWind, seismic: eqB, connections: conn, guides, gangwayDesign: gwy, as4997: a4997, mooring: chains ? piles : null,
     advice, attenuation: { ...att, behind, climate }, gangway: { length: glen, rise, slope: gslope }, checks,
     pass: checks.every((c) => c.pass), worst, ms: Date.now() - t0,
   };

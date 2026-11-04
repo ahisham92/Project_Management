@@ -8,6 +8,7 @@ import { sectionSVG, esc } from "./section.js";
 import { fosColour } from "./shapes.js";
 import { docx } from "./docx.js";
 import { COV, COV_LABEL } from "../engine/prob.js";
+import { readDXF, dxfLayers, guessRole, upperOutline, sectionFromDXF } from "../engine/dxf.js";
 
 const T = window.__TALUS || { api: "api", base: "./", static: "static/", openId: null };
 const $ = (s, el = document) => el.querySelector(s);
@@ -22,7 +23,7 @@ const state = {
   project: null, id: null, version: null,
   result: null, partial: [], seismic: null, selected: null,
   view: "3d", trials: false, motion: true, tab: "methods",
-  verify: null, optimise: null, prob: null, offline: false, dirty: false,
+  verify: null, optimise: null, prob: null, fem: null, offline: false, dirty: false,
 };
 
 // ------------------------------------------------------------------ helpers
@@ -189,6 +190,7 @@ const SPEC = {
       { kind: "toggle", k: "water.on", l: "Groundwater" },
       { k: "water.back", l: "Depth below the crest edge", sub: "level behind it, falling under the face to the toe", u: "m", min: 0, max: 40, step: 0.25, slider: true, show: (p) => p.water.on },
       { k: "water.front", l: "Depth below the toe level", u: "m", min: 0, max: 20, step: 0.25, show: (p) => p.water.on },
+      { kind: "toggle", k: "water.flow", l: "Flow net (finite elements)", sub: "pore pressures from steady seepage through each soil's permeability k, between these two levels", show: (p) => p.water.on },
     ] },
     { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
     { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...NAIL_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "horizontal distance into the slope" })] },
@@ -210,6 +212,8 @@ const SPEC = {
       { kind: "toggle", k: "water.on", l: "Water held against it (river, canal, pond)" },
       { k: "water.level", l: "Water level above ground", u: "m", min: 0, max: 30, step: 0.25, slider: true, show: (p) => p.water.on },
       { k: "water.low", l: "Level after a rapid drawdown", u: "m", min: 0, max: 30, step: 0.25, show: (p) => p.water.on },
+      { kind: "toggle", k: "water.flow", l: "Flow net (finite elements)", sub: "seepage through the fill and foundation by their permeabilities k, instead of a straight line to the toe", show: (p) => p.water.on },
+      { kind: "toggle", k: "water.staged", l: "Staged drawdown (three-stage method)", sub: "Duncan, Wright and Wong (1990), USACE EM 1110-2-1902: undrained strengths from the consolidation before drawdown in soils that do not drain freely", show: (p) => p.water.on },
     ] },
     { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
     { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "into the slope being checked (land side, or water side for drawdown)" })] },
@@ -219,12 +223,16 @@ const SPEC = {
   ],
   section: [
     { g: "Section", icon: "shape", open: true, sum: (p) => `${parsePoints(p.ground).length} ground points`, items: [
+      { kind: "dxf" },
       { kind: "points", k: "ground", l: "Ground surface", sub: "x, y per line, left to right. Paste from Excel or CAD." },
       { k: "base", l: "Hard base level", sub: "no slip goes below it", u: "m", step: 0.5 },
     ] },
     { g: "Layers", icon: "ground", open: true, sum: (p) => `${(p.layers || []).length} layers`, items: [{ kind: "layers" }] },
-    { g: "Water", icon: "water", sum: (p) => ({ none: "none", line: "water line", ru: `ru ${p.water.ru}` }[p.water.mode] || ""), items: [
-      { kind: "seg", k: "water.mode", l: "Pore water", options: [["none", "None"], ["line", "Water line"], ["ru", "ru"]] },
+    { g: "Water", icon: "water", sum: (p) => ({ none: "none", line: "water line", ru: `ru ${p.water.ru}`, flow: "flow net" }[p.water.mode] || ""), items: [
+      { kind: "seg", k: "water.mode", l: "Pore water", options: [["none", "None"], ["line", "Water line"], ["flow", "Flow net"], ["ru", "ru"]] },
+      { k: "water.left", l: "Water level at the left end", sub: "blank: no flow across the left end", u: "m", min: -500, max: 3000, step: 0.25, blank: true, ph: "none", show: (p) => p.water.mode === "flow" },
+      { k: "water.right", l: "Water level at the right end", sub: "blank: no flow across the right end", u: "m", min: -500, max: 3000, step: 0.25, blank: true, ph: "none", show: (p) => p.water.mode === "flow" },
+      { kind: "html", show: (p) => p.water.mode === "flow", html: () => `<div class="note">Steady seepage by finite elements through each layer's permeability k. The water stands on the ground wherever the ground near an end is below its level; elsewhere the ground is a seepage face.</div>` },
       { kind: "points", k: "water.line", l: "Piezometric line", sub: "x, y per line. Above the ground it is ponded water.", show: (p) => p.water.mode === "line" },
       { kind: "html", show: (p) => p.water.mode === "line", html: () => `<button type="button" class="linkish" data-copy-ground>Put the water at the ground surface</button>` },
       { k: "water.ru", l: "Pore pressure ratio ru", u: "", min: 0, max: 1, step: 0.05, show: (p) => p.water.mode === "ru" },
@@ -302,7 +310,7 @@ function item(it, p) {
   if (kind === "num") {
     const v = get(p, it.k);
     const val = v === null || v === undefined ? "" : v;
-    return `<div class="f">${lab}<span class="num"><input type="number" inputmode="decimal" data-k="${it.k}" value="${val}" step="${it.step ?? "any"}" ${it.min !== undefined ? `min="${it.min}"` : ""} ${it.max !== undefined ? `max="${it.max}"` : ""} ${it.blank ? 'placeholder="auto"' : ""}><span class="unit">${esc(it.u || "")}</span></span>${it.slider ? `<input type="range" data-k="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${val}" aria-label="${esc(it.l)}">` : ""}${it.picks ? `<div class="picks" style="grid-column:1/-1">${it.picks.map((v2) => `<button type="button" data-pick="${it.k}" data-v="${v2}">${v2}</button>`).join("")}</div>` : ""}</div>`;
+    return `<div class="f">${lab}<span class="num"><input type="number" inputmode="decimal" data-k="${it.k}" value="${val}" step="${it.step ?? "any"}" ${it.min !== undefined ? `min="${it.min}"` : ""} ${it.max !== undefined ? `max="${it.max}"` : ""} ${it.blank ? `placeholder="${it.ph || "auto"}"` : ""}><span class="unit">${esc(it.u || "")}</span></span>${it.slider ? `<input type="range" data-k="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${val}" aria-label="${esc(it.l)}">` : ""}${it.picks ? `<div class="picks" style="grid-column:1/-1">${it.picks.map((v2) => `<button type="button" data-pick="${it.k}" data-v="${v2}">${v2}</button>`).join("")}</div>` : ""}</div>`;
   }
   if (kind === "toggle") return `<label class="toggle"><span>${esc(it.l)}</span><input type="checkbox" data-k="${it.k}" ${get(p, it.k) ? "checked" : ""}></label>`;
   if (kind === "select") {
@@ -323,7 +331,71 @@ function item(it, p) {
     return `<div class="f wide">${lab}<textarea class="pts" data-k="${it.k}" rows="${Math.min(10, Math.max(3, String(v).split("\n").length + 1))}" spellcheck="false" aria-label="${esc(it.l)}">${esc(v)}</textarea><span class="note" data-ptcount="${it.k}">${n} points</span></div>`;
   }
   if (kind === "layers") return layersWidget(p);
+  if (kind === "dxf") return dxfWidget();
   return "";
+}
+
+// ------------------------------------------------------------------ DXF import
+
+let dxf = null;   // { file, segs, layers: [{ name, role, preset, ... }], scale, top, error }
+const DXF_ROLES = [["ground", "Ground surface"], ["layer", "Top of a soil"], ["water", "Water line"], ["ignore", "Ignore"]];
+function dxfWidget() {
+  if (!dxf) return `<div class="f wide dxf"><label class="btn btn-ghost btn-sm filebtn">Import a DXF drawing<input type="file" accept=".dxf,application/dxf,image/vnd.dxf" data-dxf hidden></label>
+    <span class="note">From AutoCAD, Civil 3D, Slide or SLOPE/W (ASCII DXF). Each CAD layer becomes the ground, the top of a soil or the water line.</span></div>`;
+  const sc = dxf.scale;
+  const rows = dxf.layers.map((L, i) => `<div class="dxfrow"><div><b>${esc(L.name)}</b><span class="note"> ${L.segments} lines · x ${fx1(L.x0 * sc)} to ${fx1(L.x1 * sc)}, y ${fx1(L.y0 * sc)} to ${fx1(L.y1 * sc)}</span></div>
+    <select data-dxfrole="${i}" aria-label="What ${esc(L.name)} is">${DXF_ROLES.map(([v, n]) => `<option value="${v}" ${L.role === v ? "selected" : ""}>${n}</option>`).join("")}</select>
+    ${L.role === "layer" ? `<select data-dxfsoil="${i}" aria-label="Soil below ${esc(L.name)}">${soilOptions(L.preset)}</select>` : ""}</div>`).join("");
+  return `<div class="f wide dxf glass"><div class="row between"><b>${esc(dxf.file)}</b><button type="button" class="linkish" data-dxfcancel>Cancel</button></div>
+    <div class="seg" role="group" aria-label="Drawing units">${[[1, "metres"], [0.001, "millimetres"]].map(([v, n]) => `<button type="button" data-dxfscale="${v}" aria-pressed="${sc === v}">${n}</button>`).join("")}</div>
+    ${dxfPreview()}
+    <div class="dxfrow"><div>Soil under the ground</div><select data-dxftop aria-label="Soil under the ground">${soilOptions(dxf.top)}</select></div>
+    ${rows}
+    ${dxf.error ? `<div class="pill warn">${esc(dxf.error)}</div>` : ""}
+    <button type="button" class="btn btn-sm" data-dxfapply>Use this section</button>
+    <span class="note">Soil tops are ordered from the top down. Each layer is read as the upper edge of its lines, so a closed soil region gives its top. A flat line at the very bottom becomes the hard base.</span></div>`;
+}
+const fx1 = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
+function dxfPreview() {
+  const sc = dxf.scale, W = 320, H = 150;
+  const all = dxf.layers.filter((L) => L.role !== "ignore");
+  if (!all.length) return "";
+  const x0 = Math.min(...all.map((L) => L.x0)) * sc, x1 = Math.max(...all.map((L) => L.x1)) * sc;
+  const y0 = Math.min(...all.map((L) => L.y0)) * sc, y1 = Math.max(...all.map((L) => L.y1)) * sc;
+  const s = Math.min((W - 12) / ((x1 - x0) || 1), (H - 12) / ((y1 - y0) || 1));
+  const X = (x) => 6 + (x - x0) * s, Y = (y) => H - 6 - (y - y0) * s;
+  const col = { ground: "#5b4a2e", layer: "#a07c4a", water: "#2a78d6" };
+  const paths = all.map((L) => {
+    const pts = upperOutline(dxf.segs[L.name], sc);
+    return pts.length > 1 ? `<path d="${pts.map((p, k) => `${k ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("")}" fill="none" stroke="${col[L.role]}" stroke-width="${L.role === "ground" ? 2 : 1.2}" ${L.role === "water" ? 'stroke-dasharray="5 3"' : ""}/>` : "";
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" class="dxfprev" role="img" aria-label="Preview of the imported section">${paths}</svg>`;
+}
+async function dxfLoad(file) {
+  try {
+    const text = await file.text();
+    const segs = readDXF(text);
+    const layers = dxfLayers(segs).map((L) => ({ ...L, role: guessRole(L.name), preset: "stiffClay" }));
+    if (!layers.length) { toast("No lines found in that drawing (is it an ASCII DXF?)", true); return; }
+    // nothing named like the ground: take the layer that spans the widest
+    if (!layers.some((L) => L.role === "ground")) layers[0].role = "ground";
+    const span = Math.max(...layers.map((L) => L.x1 - L.x0));
+    dxf = { file: file.name, segs, layers, scale: span > 5000 ? 0.001 : 1, top: "sand" };
+  } catch (e) { toast("Could not read that drawing: " + e.message, true); return; }
+  renderInputs();
+}
+function dxfApply() {
+  const r = sectionFromDXF(dxf.segs, dxf.layers, { scale: dxf.scale, top: dxf.top });
+  if (r.error) { dxf.error = r.error; renderInputs(); return; }
+  const p = state.project;
+  p.ground = r.ground; p.base = r.base; p.layers = r.layers;
+  if (r.water) { p.water.mode = p.water.mode === "flow" ? "flow" : "line"; p.water.line = r.water.line; }
+  const [a, b] = r.extent;
+  if (p.load) { p.load.x1 = Math.max(a, Math.min(b, +p.load.x1 || a)); p.load.x2 = Math.max(a, Math.min(b, +p.load.x2 || a)); }
+  if (p.piles) p.piles.x = (a + b) / 2;
+  toast(`Section imported from ${dxf.file}`);
+  dxf = null;
+  changed(true);
 }
 
 function soilWidget(it, p) {
@@ -331,13 +403,17 @@ function soilWidget(it, p) {
   const s = soilFrom(spec);
   const editing = spec._edit;
   const val = (k) => (spec[k] !== undefined && spec[k] !== null && spec[k] !== "" ? spec[k] : "");
-  const ph = (k) => PRESETS[s.preset]?.[k] ?? "";
+  const ph = (k) => PRESETS[s.preset]?.[k] ?? { cR: s.c, phiR: Math.min(14, s.phi), kRatio: 1 }[k] ?? "";
+  const flowOn = !!(p.water?.flow || p.water?.mode === "flow");
+  const stagedOn = !!(p.water?.on && p.water?.staged && p.type === "embankment");
+  const kFields = () => (flowOn || stagedOn ? fld("k", "Permeability k", "m/s") : "") + (flowOn ? fld("kRatio", "Anisotropy kh / kv", "") : "")
+    + (stagedOn && !s.hb ? `${fld("cR", "R envelope cR (CU, total)", "kPa")}${fld("phiR", "R envelope φR", "°")}<div class="f"><span class="lab">Drains freely in drawdown</span><select data-k="${it.k}.drains"><option value="" ${spec.drains !== "yes" && spec.drains !== "no" ? "selected" : ""}>auto (k ≥ 1e-5 m/s)</option><option value="yes" ${spec.drains === "yes" ? "selected" : ""}>yes</option><option value="no" ${spec.drains === "no" ? "selected" : ""}>no</option></select></div>` : "");
   const fld = (k, l, u, show = true) => (show ? `<div class="f"><span class="lab">${l}</span><span class="num"><input type="number" inputmode="decimal" data-k="${it.k}.${k}" value="${val(k)}" placeholder="${ph(k)}" step="any"><span class="unit">${u}</span></span></div>` : "");
   return `<div class="f wide"><span class="lab">${esc(it.l)}</span><select data-soil="${it.k}">${soilOptions(s.preset)}</select>
-    <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span>${s.hb ? `<span><b>GSI</b> ${s.GSI}</span><span><b>mi</b> ${s.mi}</span><span><b>σci</b> ${s.sci} MPa</span>${s.D ? `<span><b>D</b> ${s.D}</span>` : ""}` : `<span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>`}${!s.hb && s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
+    <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span>${s.hb ? `<span><b>GSI</b> ${s.GSI}</span><span><b>mi</b> ${s.mi}</span><span><b>σci</b> ${s.sci} MPa</span>${s.D ? `<span><b>D</b> ${s.D}</span>` : ""}` : `<span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>`}${flowOn ? `<span><b>k</b> ${s.k.toExponential(0)} m/s</span>` : ""}${!s.hb && s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
     <button type="button" class="linkish" data-soiledit="${it.k}">${editing ? "Done" : "Use site values"}</button></div>
-    ${editing && s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("GSI", "Geological Strength Index GSI", "")}${fld("mi", "Intact rock constant mi", "")}${fld("sci", "Intact compressive strength σci", "MPa")}${fld("D", "Disturbance D", "0–1")}<div class="note">Generalised Hoek-Brown (2002). Each slice takes the tangent strength at the normal stress on its base, iterated to convergence. Use D 0.7 to 1 for blasted faces.</div></div>` : ""}
-    ${editing && !s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay || it.alwaysSu)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay || it.alwaysSu)}${fld("suMax", "su cap", "kPa", it.alwaysSu)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
+    ${editing && s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("GSI", "Geological Strength Index GSI", "")}${fld("mi", "Intact rock constant mi", "")}${fld("sci", "Intact compressive strength σci", "MPa")}${fld("D", "Disturbance D", "0–1")}${kFields()}<div class="note">Generalised Hoek-Brown (2002). Each slice takes the tangent strength at the normal stress on its base, iterated to convergence. Use D 0.7 to 1 for blasted faces.</div></div>` : ""}
+    ${editing && !s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay || it.alwaysSu)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay || it.alwaysSu)}${fld("suMax", "su cap", "kPa", it.alwaysSu)}${kFields()}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
 }
 
 function layersWidget(p) {
@@ -377,6 +453,10 @@ const inputsEl = () => $("#inputs");
 function onInput(ev) {
   const el = ev.target;
   const p = state.project;
+  if (el.dataset.dxf !== undefined) { if (ev.type === "change" && el.files?.[0]) dxfLoad(el.files[0]); return; }
+  if (el.dataset.dxfrole !== undefined) { dxf.layers[+el.dataset.dxfrole].role = el.value; dxf.error = null; renderInputs(); return; }
+  if (el.dataset.dxfsoil !== undefined) { dxf.layers[+el.dataset.dxfsoil].preset = el.value; return; }
+  if (el.dataset.dxftop !== undefined) { dxf.top = el.value; return; }
   if (el.dataset.k) {
     let v;
     if (el.type === "checkbox") v = el.checked;
@@ -420,6 +500,9 @@ function onClick(ev) {
     changed(true); return;
   }
   if (b.dataset.layerDel !== undefined) { p.layers.splice(+b.dataset.layerDel, 1); changed(true); return; }
+  if (b.dataset.dxfcancel !== undefined) { dxf = null; renderInputs(); return; }
+  if (b.dataset.dxfscale) { dxf.scale = +b.dataset.dxfscale; renderInputs(); return; }
+  if (b.dataset.dxfapply !== undefined) { dxfApply(); return; }
   if (b.dataset.copyGround !== undefined) { p.water.line = p.ground; changed(true); return; }
   if (b.dataset.benchAdd !== undefined) {
     const rows = bermRows(p), last = rows[rows.length - 1] || { h: 3, cot: 2 };
@@ -488,6 +571,7 @@ function refreshSums() {
 function analyse() {
   state.partial = [];
   if (state.prob && !state.prob.running) state.prob = null;
+  if (state.fem && !state.fem.running) state.fem = null;
   state.seismic = null;
   state.analyseId = run("analyse");
   setBusy(true, "Calculating…");
@@ -533,6 +617,15 @@ function onWorker(ev) {
     state.prob = { result: m.result, running: false };
     if (m.result.error) toast(m.result.error, true);
     if (state.tab === "prob") renderPanel();
+  } else if (m.kind === "femStep") {
+    state.fem = { ...(state.fem || {}), running: true, runs: m.run, srf: m.srf };
+    setBusy(true, `Strength reduction ${f2(m.srf)}…`);
+    if (state.tab === "fem") renderPanel();
+  } else if (m.kind === "femDone") {
+    jobRunning = false; setBusy(false);
+    state.fem = { result: m.result, running: false };
+    if (m.result.error) toast(m.result.error, true);
+    if (state.tab === "fem") renderPanel();
   } else if (m.kind === "check") {
     state.verify.rows[m.i] = m;
     renderPanel();
@@ -650,7 +743,7 @@ function renderCases(partial) {
 
 const TABS = [
   ["methods", "Methods"], ["slices", "Slices"], ["armour", "Armour"], ["seismic", "Earthquake"],
-  ["optimise", "Optimise"], ["prob", "Probability"], ["verify", "Verification"], ["about", "How it works"],
+  ["optimise", "Optimise"], ["prob", "Probability"], ["fem", "Finite elements"], ["verify", "Verification"], ["about", "How it works"],
 ];
 function renderTabs() {
   const tabs = TABS.filter(([k]) => (k !== "armour" || state.project.type === "revetment") && (k !== "optimise" || state.project.type !== "section"));
@@ -668,6 +761,7 @@ function renderPanel() {
   else if (t === "seismic") P.innerHTML = seismicPanel();
   else if (t === "optimise") P.innerHTML = optimisePanel();
   else if (t === "prob") P.innerHTML = probPanel();
+  else if (t === "fem") P.innerHTML = femPanel();
   else if (t === "verify") P.innerHTML = verifyPanel();
   else if (t === "about") P.innerHTML = aboutPanel();
 }
@@ -682,7 +776,7 @@ function methodsPanel(c) {
       <div class="kpi"><div class="k">Surface</div><div class="v">${s.circle ? "Circle" : s.kind === "block" ? "Block" : "Non-circular"}</div><div class="s">${s.circle ? `centre (${f2(s.circle.xc)}, ${f2(s.circle.yc)}), R ${f2(s.circle.R)} m` : `${s.slip.length} nodes`}</div></div>
       ${c.lambda ? `<div class="kpi"><div class="k">Interslice λ</div><div class="v">${f3(c.lambda)}</div><div class="s">${esc(METHOD_NAMES[c.method])}</div></div>` : ""}
     </div>
-    <p class="explain mt-sm">${esc(c.note)}${c.fellBack ? " The rigorous method did not converge on this surface, so Bishop is shown." : ""}${c.fromCircle ? ` A non-circular surface was found ${f1((1 - c.F / c.fromCircle) * 100)}% lower than the best circle.` : ""}</p>
+    <p class="explain mt-sm">${esc(c.note)}${c.fellBack ? " The rigorous method did not converge on this surface, so Bishop is shown." : ""}${c.fromCircle ? ` A non-circular surface was found ${f1((1 - c.F / c.fromCircle) * 100)}% lower than the best circle.` : ""}${c.staged ? ` Stages on the critical circle: before drawdown F = ${f3(c.staged.F1)}; undrained after drawdown F = ${f3(c.staged.F2)}; with the drained strength where lower (${c.staged.drainedSlices} of ${c.staged.slices} slices) F = ${f3(c.staged.F3)}. The conventional no-drainage analysis gives ${f3(c.staged.conventional)}. R envelope by default φR 14°, cR = c' unless entered: use CU test values.` : ""}</p>
     <div class="table-scroll mt-sm"><table class="tight"><thead><tr><th>Method (same surface)</th><th class="num">F</th><th class="num">F / target</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="note mt-sm">Every method is solved on the governing surface. Spencer and Morgenstern-Price satisfy force and moment equilibrium; Bishop moment only; Janbu force only (corrected by f0); Ordinary ignores interslice forces and is shown for comparison.</p>`;
 }
@@ -824,6 +918,50 @@ function probPanel() {
   return out;
 }
 
+// ------------------------------------------------------------------ finite elements
+
+function femPanel() {
+  const c = currentCase(), st = state.fem;
+  if (!c) return "";
+  const r = st?.result && !st.result.error && st.result.case.key === c.key ? st.result : null;
+  let out = `<p class="explain">A second, independent answer for <b>${esc(c.name)}</b>: the slope as a continuum of finite elements, with the soil strengths divided by a factor until it can no longer stand (Griffiths and Lane 1999). No slip surface is assumed; the mechanism forms by itself.</p>
+    <div class="row mt-sm"><button class="btn btn-primary" data-fem ${st?.running ? "disabled" : ""}>${st?.running ? `Solving… trial ${st.runs || 0}${st.srf ? `, SRF ${f2(st.srf)}` : ""}` : r ? "Run again" : "Run the strength reduction"}</button><span class="note">Takes a few seconds: each trial factor runs up to 500 viscoplastic iterations.</span></div>`;
+  if (r) {
+    const d = c.F ? (r.F / c.F - 1) * 100 : NaN;
+    const agree = Math.abs(d) <= 5 ? ["good", "agrees"] : Math.abs(d) <= 10 ? ["warn", "close"] : ["bad", "differs"];
+    out += `<div class="kpis mt">
+      <div class="kpi"><div class="k">Finite element F</div><div class="v" style="color:${fosColour(r.F, c.target)}">${f2(r.F)}</div><div class="s">stable at ${f3(r.F)}, fails at ${f3(r.failedAt)} · needs ${f2(c.target)}</div></div>
+      <div class="kpi"><div class="k">Limit equilibrium F</div><div class="v">${f2(c.F)}</div><div class="s">${esc(METHOD_NAMES[c.method] || "")}</div></div>
+      <div class="kpi"><div class="k">Difference</div><div class="v">${d >= 0 ? "+" : ""}${f1(d)}%</div><div class="s"><span class="pill ${agree[0]}">${agree[1]}</span> within 5% is the usual agreement</div></div>
+      <div class="kpi"><div class="k">Model</div><div class="v">${r.elements} quads</div><div class="s">${r.dof.toLocaleString()} unknowns · ${r.runs} trials</div></div>
+    </div>
+    <div class="row mt-sm"><div class="seg" role="group" aria-label="Show">${[["fail", "At failure"], ["stable", "Last stable"]].map(([k, n]) => `<button type="button" data-fem-show="${k}" aria-pressed="${(state.femShow || "fail") === k}">${n}</button>`).join("")}</div><span class="note">${(state.femShow || "fail") === "fail" ? "Colour: the plastic shear strain added between the last stable factor and failure, which is the mechanism; the mesh moves as it does." : "Colour: plastic shear strain at the last stable factor; mesh displaced."} Exaggerated.</span></div>
+    ${femSVG(state.femShow === "stable" ? r.stable : r.mesh, c)}
+    ${r.reinforced ? `<div class="pill warn mt-sm">Nails, anchors, geogrids and piles are not in the finite element model: compare with the case without them.</div>` : ""}`;
+  }
+  return out;
+}
+
+function femSVG(m, c) {
+  if (!m) return "";
+  const W = 760, H = 300, pad = 12;
+  const x0 = Math.min(...m.X), x1 = Math.max(...m.X), y0 = Math.min(...m.Y), y1 = Math.max(...m.Y);
+  const s = Math.min((W - 2 * pad) / (x1 - x0), (H - 2 * pad) / (y1 - y0));
+  const ox = pad + ((W - 2 * pad) - s * (x1 - x0)) / 2, oy = pad + ((H - 2 * pad) - s * (y1 - y0)) / 2;
+  const dmax = Math.max(1e-12, ...m.dx.map((v, k) => Math.hypot(v, m.dy[k])));
+  const mag = 0.05 * (x1 - x0) / dmax;
+  const X = (k) => ox + (m.X[k] + mag * m.dx[k] - x0) * s, Y = (k) => H - oy - (m.Y[k] + mag * m.dy[k] - y0) * s;
+  const smax = Math.max(1e-12, ...m.shear);
+  const order = [0, 4, 1, 5, 2, 6, 3, 7];
+  const polys = m.els.map((e, i) => {
+    const t = Math.min(1, m.shear[i] / smax);
+    const col = t < 0.08 ? "var(--raised)" : `rgba(235, 104, 52, ${Math.min(1, 0.1 + t).toFixed(2)})`;
+    return `<path d="${order.map((a, k) => `${k ? "L" : "M"}${X(e[a]).toFixed(1)},${Y(e[a]).toFixed(1)}`).join("")}Z" fill="${col}" stroke="var(--grid)" stroke-width="0.5"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart mt-sm" role="img" aria-label="Finite element mesh with the plastic shear strain">${polys}</svg>
+    <p class="note">${m.converged ? `Settled after ${m.iters} iterations.` : `Did not settle within ${m.iters} iterations: the failure mechanism is the orange band.`} Displacements are exaggerated; they come from E = 100 MPa and ν = 0.3, which do not change the factor of safety.</p>`;
+}
+
 function seismicPanel() {
   const c = state.result?.cases.find((k) => k.key === "seismic");
   if (!state.project.seismic.on) return `<p class="explain">Earthquake checks are off. Turn them on under Earthquake.</p>`;
@@ -875,6 +1013,9 @@ function aboutPanel() {
   <p><b>What Talus does.</b> For each load case it searches thousands of circular slip surfaces (entry, exit and radius), refines the lowest with a simplex search, then solves the critical one exactly by every method. Optionally it frees the circle into a non-circular surface. The analysis is two-dimensional, per metre run; the 3D view extrudes the section so it can be seen.</p>
   <p><b>Slices.</b> The mass above the surface is cut into vertical slices that break at every layer boundary, water line, load edge and crossing, so weights, centroids and pore pressures are exact for the geometry. Weight uses γ above the water line and γsat below; pore pressure is γw times the head above the base; water standing on the ground is a pressure on the surface.</p>
   <p><b>Methods.</b> One general limit equilibrium formulation (Fredlund and Krahn 1977) gives Bishop simplified, Janbu simplified (with Janbu's f0 correction), Spencer (constant interslice inclination) and Morgenstern-Price (half-sine). Ordinary is shown for comparison. The slices are solved one after another exactly for each F and λ, and λ is found where force and moment equilibrium give the same F.</p>
+  <p><b>Flow net.</b> With the flow net on, pore pressures come from steady seepage solved by finite elements (linear triangles on a mesh that follows the ground) through each soil's permeability k and anisotropy kh/kv. The phreatic surface is found as SEEP/W and Slide do: above it the permeability falls to a small residual, ground above the outside water is a seepage face, and the iterations repeat until the heads settle. It reproduces Darcy flow exactly and the Dupuit–Charny discharge of a rectangular dam to within 2% (Verification). After a rapid drawdown the heads stay at the steady flow net, held at most at the ground surface.</p>
+  <p><b>Staged drawdown.</b> Optionally, the embankment drawdown case uses the three-stage method of Duncan, Wright and Wong (1990), adopted in USACE EM 1110-2-1902 Appendix G. Stage 1 solves the slope at full water with steady seepage and takes the effective normal and shear stress on each slice base as its consolidation stresses. Stage 2 gives each slice in a soil that does not drain freely (k below 1e-5 m/s unless set) an undrained strength interpolated by the consolidation stress ratio Kc between the R envelope (Kc = 1) and the effective envelope (Kc = Kf), the lower if they cross. Stage 3 uses the drained strength where it is lower at the stage 2 effective stresses. All three are solved on the same surface, and the critical circle is searched with the staged F itself.</p>
+  <p><b>Finite elements.</b> The Finite elements tab gives an independent factor of safety by strength reduction (Griffiths and Lane 1999; Smith, Griffiths and Margetts): plane strain, eight-node quadrilaterals with reduced integration on a mesh that follows the ground and the base, elastic-viscoplastic Mohr-Coulomb with zero dilation, gravity switched on at once, water on the ground as a pressure, pore pressures subtracted for drained soils. c', tan φ' and su are divided by a trial factor until the iterations no longer settle; that factor, found by bisection, is F. It reproduces Griffiths and Lane's undrained example (1.45) and Bishop and Morgenstern's c'-φ' chart value (1.38) within the tolerances in Verification.</p>
   <p><b>Load cases.</b> Cut slopes: long term (drained), short term (undrained clays), seismic. Embankments: end of construction, steady seepage, rapid drawdown, seismic. Revetments: high and low water, drawdown under the wave trough, seismic. Targets follow USACE EM 1110-2-1902 or, with Eurocode 7, the M2 partial factors with an over-design factor of 1.0.</p>
   <p><b>Earthquake.</b> Pseudo-static kh = 0.5·ag·S·ST, kv = ±0.5·kh (EN 1998-5), both kv directions checked; yield acceleration by bisection; permanent displacement by Jibson (2007).</p>
   <p><b>Armour.</b> Rock by Hudson and by Van der Meer (1988), or its shallow-water form (Van Gent et al. 2003) when h &lt; 3Hs, with the larger governing; EN 13383 gradings; toe by Van der Meer (1998); run-up and overtopping by EurOtop (2018). Accropode™ and Accropode™ II by Hudson with CLI's design KD (15 / 11.5 and 16 / 12.3), valid on 4:3 to 3:2 slopes; Accropode is a trademark of CLI, and units must be designed and placed to CLI's guidance.</p>
@@ -910,6 +1051,12 @@ document.addEventListener("click", (ev) => {
     state.prob = { running: true, done: 0 };
     run("prob", { caseKey: currentCase()?.key }); setBusy(true, "Sampling…"); renderPanel(); return;
   }
+  if (b.dataset.fem !== undefined) {
+    const c = currentCase();
+    state.fem = { running: true, runs: 0 };
+    run("fem", { caseKey: c?.key, guess: c?.F }); setBusy(true, "Strength reduction…"); renderPanel(); return;
+  }
+  if (b.dataset.femShow) { state.femShow = b.dataset.femShow; renderPanel(); return; }
   if (b.dataset.optimise !== undefined) {
     state.optimise = { running: true, steps: [] };
     run("optimise"); setBusy(true, "Optimising…"); renderPanel(); return;
@@ -1115,6 +1262,14 @@ function reportBlocks(snapshot) {
     const tor = tornadoSVG(pr);
     if (tor) { const h = +tor.match(/viewBox="0 0 560 (\d+(?:\.\d+)?)"/)?.[1] || 200; B.push({ t: "img", svg: tor.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), w: 560, h, widthCm: 15 }, { t: "caption", text: "Sensitivity: each variable alone at its mean ± one standard deviation." }); }
   }
+  const fe = state.fem?.result;
+  if (fe && !fe.error) {
+    const cc = r.cases.find((k) => k.key === fe.case.key);
+    B.push({ t: "h1", text: `Finite element strength reduction: ${fe.case.name}` });
+    B.push({ t: "p", text: `${fe.elements} eight-node quadrilaterals (${fe.dof} unknowns), elastic-viscoplastic Mohr-Coulomb with ψ = 0, gravity switched on, strengths reduced until the solution no longer converges in 500 iterations (Griffiths and Lane 1999). F = ${f3(fe.F)} (fails at ${f3(fe.failedAt)}), against ${f3(cc?.F)} by limit equilibrium.` });
+    const svg = femSVG(fe.mesh, cc).match(/<svg[\s\S]*?<\/svg>/)?.[0];
+    if (svg) B.push({ t: "img", svg: svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), w: 760, h: 300, widthCm: 16 }, { t: "caption", text: "Plastic shear strain at failure on the displaced mesh (exaggerated)." });
+  }
   B.push({ t: "break" }, { t: "h1", text: "Method" });
   for (const m of aboutPanel().matchAll(/<p>([\s\S]*?)<\/p>/g)) B.push({ t: "p", text: m[1].replace(/<b>(.*?)<\/b>/g, "**$1**").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") });
   return B;
@@ -1160,7 +1315,7 @@ function toPNG(b) {
     img.onload = done; img.onerror = () => resolve(null);
     if (b.svg) {
       // the drawing uses the page's colour tokens; a picture on its own needs them spelt out
-      const LIGHT = { grid: "#e1e0d9", muted: "#898781", surface: "#ffffff", ink: "#0b0b0b", "ink-2": "#52514e", critical: "#d03b3b", "series-1": "#2a78d6" };
+      const LIGHT = { grid: "#e1e0d9", raised: "#f4f3ef", muted: "#898781", surface: "#ffffff", ink: "#0b0b0b", "ink-2": "#52514e", critical: "#d03b3b", "series-1": "#2a78d6" };
       const svg = b.svg.replace(/var\(--([a-z0-9-]+)\)/g, (m, k) => LIGHT[k] || "#52514e")
         .replace("<svg ", `<svg width="${b.w}" height="${b.h}" font-family="Calibri, Arial, sans-serif" `);
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);

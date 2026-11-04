@@ -498,3 +498,12 @@ svg.chart { width: 100%; max-width: 640px; height: auto; display: block; }
   .report .page { page-break-after: always; }
   body { background: #fff; }
 }
+
+/* DXF import */
+.dxf { display: grid; gap: 8px; }
+.dxf.glass { padding: 10px; border-radius: 10px; border: 1px solid var(--border, rgba(0,0,0,.12)); }
+.filebtn { justify-self: start; cursor: pointer; }
+.dxfrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; padding: 4px 0; border-top: 1px dashed var(--grid, rgba(0,0,0,.1)); }
+.dxfrow > div { min-width: 0; overflow-wrap: anywhere; font-size: 0.8rem; }
+.dxfrow select:nth-of-type(2) { grid-column: 1 / -1; }
+.dxfprev { width: 100%; height: auto; background: var(--surface, #fff); border-radius: 8px; }

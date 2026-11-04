@@ -3,6 +3,7 @@
 import { prepare, sliceForces, valueOf, METHODS, METHOD_NAMES, DEG, buildSlices, brent, refineHB } from "./lem.js";
 import { criticalCircle, optimiseNonCircular, blockSearch, quickF, circleSlip } from "./search.js";
 import { buildCases, complete } from "./project.js";
+import { stagedSearch } from "./drawdown.js";
 
 const ux = (P, x) => (P.flip ? -x : x);
 const upoly = (P, poly) => (P.flip ? poly.map(([x, y]) => [-x, y]).reverse() : poly.map((p) => [...p]));
@@ -62,6 +63,14 @@ export function analyseCase(c, opt = {}) {
     if (other.r && (!r || other.r.F < r.F)) { P = other.P; r = other.r; kvUsed = -c.model.seismic.kv; }
   }
   if (!r) return { key: c.key, name: c.name, target: c.target, note: c.note, error: "No admissible slip surface was found inside the model." };
+  // rapid drawdown in three stages (Duncan, Wright and Wong 1990): on circles, from the
+  // conventional search's candidates
+  if (c.staged) {
+    const P1 = prepare(c.staged.before);
+    const base = r.kind === "circle" && r.trials?.length ? r : criticalCircle(P, { ...opt, method });
+    const st = stagedSearch(P1, P, base, { ...opt, method, minDepth: c.minDepth ?? opt.minDepth });
+    if (st) r = { ...st, staged: { ...st.staged, conventional: r.F } };
+  }
   // Hoek-Brown rock: strengths follow the normal stresses on the critical surface
   const hb = refineHB(P, r.cut, r.circle, method);
   if (hb) r = { ...r, results: hb.results, F: hb.F, hb: { rounds: hb.rounds, gap: hb.gap } };
@@ -84,7 +93,7 @@ export function analyseCase(c, opt = {}) {
     surface: toUser(P, r), slices: slicesToUser(P, slices), trials,
     weight: W, piezo: c.model.piezo, strips: c.model.strips || [],
     seismic: c.seismic ? { ...c.seismic, kvUsed } : null,
-    fromCircle: r.fromCircle, hb: r.hb || null,
+    fromCircle: r.fromCircle, hb: r.hb || null, staged: r.staged || null,
     _P: P, _r: r,
   };
 }

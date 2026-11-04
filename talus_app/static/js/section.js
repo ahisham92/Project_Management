@@ -1,6 +1,6 @@
 // Talus — the cross-section as SVG: layers, water, slices, the critical surface,
 // trial surfaces and loads. Drawn to scale (1 m across = 1 m up).
-import { layerPolys, pondPoly, massPoly, extent, colourOf, rampColour, fosColour } from "./shapes.js";
+import { layerPolys, pondPoly, massPoly, extent, colourOf, rampColour, fosColour, equipotentials } from "./shapes.js";
 import { yAt } from "../engine/geometry.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -36,6 +36,13 @@ export function sectionSVG(result, c, opt = {}) {
   const piezo = c?.piezo || g.piezo;
   const pond = pondPoly(g, piezo);
   if (pond) out.push(`<path d="${path(pond)}" fill="rgba(42,120,214,.28)" stroke="none"/>`);
+  // the flow net: equipotentials through the saturated soil
+  if (g.flow) {
+    const eq = equipotentials(g.flow, 12);
+    if (eq.length) out.push(`<path d="${eq.map(([a, b]) => `M${X(a[0]).toFixed(1)},${Y(a[1]).toFixed(1)}L${X(b[0]).toFixed(1)},${Y(b[1]).toFixed(1)}`).join("")}" fill="none" stroke="#2a78d6" stroke-width="0.7" opacity="0.55"/>`);
+    const q = g.flow.q * 86400;
+    out.push(`<text x="${W - pad}" y="${H - 8}" text-anchor="end" font-size="11" fill="#2a78d6">Flow net: seepage ${q >= 0.1 ? q.toFixed(2) + " m³/day" : (q * 1000).toFixed(q * 1000 >= 1 ? 1 : 3) + " L/day"} per m</text>`);
+  }
   if (piezo) out.push(`<path d="${path(piezo, false)}" fill="none" stroke="#2a78d6" stroke-width="1.6" stroke-dasharray="6 4"/>`);
   if (piezo) {
     const xs = piezo.find(([x, y]) => y > yAt(g.ground, x) + 0.05) || piezo[0];

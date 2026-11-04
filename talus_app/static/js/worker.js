@@ -2,6 +2,7 @@
 import { analyse, seismicExtras, steepestSafe } from "../engine/analyse.js";
 import { CHECKS, runCheck } from "../engine/verify.js";
 import { probabilistic } from "../engine/prob.js";
+import { femCase } from "../engine/fem.js";
 
 self.onmessage = (ev) => {
   const { id, kind, project } = ev.data;
@@ -20,6 +21,10 @@ self.onmessage = (ev) => {
       const pr = project.prob || {};
       const r = probabilistic(project, { caseKey: ev.data.caseKey, n: pr.n || 2000, cov: pr.cov || {}, seed: 1, onProgress: (d, n) => self.postMessage({ id, kind: "probStep", done: d, n }) });
       self.postMessage({ id, kind: "probDone", result: r });
+    } else if (kind === "fem") {
+      let k = 0;
+      const r = femCase(project, { caseKey: ev.data.caseKey, guess: ev.data.guess, onRun: (srf, ok) => self.postMessage({ id, kind: "femStep", run: ++k, srf, ok }) });
+      self.postMessage({ id, kind: "femDone", result: r });
     } else if (kind === "verify") {
       CHECKS.forEach((c, i) => {
         const t0 = performance.now();

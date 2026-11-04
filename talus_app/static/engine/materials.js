@@ -2,31 +2,42 @@
 // minimal input, not design values: every one is shown and can be overwritten
 // with site data. gamma = bulk unit weight above water, gsat = saturated, kN/m3.
 // Undrained strength su (kPa) at the top of the layer, increasing by suGrad per m.
+// Permeability k (m/s), typical of the soil (Terzaghi, Peck and Mesri 1996), for the
+// flow net; kRatio = kh / kv (layered soils are more permeable along the layers).
 
 export const PRESETS = {
-  softClay:   { name: "Soft clay",            gamma: 16.5, gsat: 17,   c: 2,  phi: 22, su: 20,  suGrad: 1.5, clay: true },
-  firmClay:   { name: "Firm clay",            gamma: 18,   gsat: 18.5, c: 5,  phi: 24, su: 50,  suGrad: 1,   clay: true },
-  stiffClay:  { name: "Stiff clay",           gamma: 19.5, gsat: 20,   c: 10, phi: 26, su: 100, suGrad: 0,   clay: true },
-  silt:       { name: "Silt",                 gamma: 18,   gsat: 19,   c: 2,  phi: 28, su: 0,   suGrad: 0,   clay: false },
-  looseSand:  { name: "Loose sand",           gamma: 17,   gsat: 19,   c: 0,  phi: 30, su: 0,   suGrad: 0,   clay: false },
-  sand:       { name: "Medium dense sand",    gamma: 18,   gsat: 20,   c: 0,  phi: 34, su: 0,   suGrad: 0,   clay: false },
-  denseSand:  { name: "Dense sand / gravel",  gamma: 19,   gsat: 21,   c: 0,  phi: 38, su: 0,   suGrad: 0,   clay: false },
-  fill:       { name: "Compacted fill",       gamma: 19,   gsat: 20.5, c: 2,  phi: 32, su: 0,   suGrad: 0,   clay: false },
-  claySilt:   { name: "Compacted clay fill",  gamma: 19,   gsat: 19.5, c: 8,  phi: 25, su: 75,  suGrad: 0,   clay: true },
-  rockfill:   { name: "Rock fill / quarry run", gamma: 19, gsat: 21,   c: 0,  phi: 40, su: 0,   suGrad: 0,   clay: false },
-  weakRock:   { name: "Weathered rock",       gamma: 22,   gsat: 23,   c: 30, phi: 35, su: 0,   suGrad: 0,   clay: false },
+  softClay:   { name: "Soft clay",            gamma: 16.5, gsat: 17,   c: 2,  phi: 22, su: 20,  suGrad: 1.5, clay: true, k: 1e-9 },
+  firmClay:   { name: "Firm clay",            gamma: 18,   gsat: 18.5, c: 5,  phi: 24, su: 50,  suGrad: 1,   clay: true, k: 1e-9 },
+  stiffClay:  { name: "Stiff clay",           gamma: 19.5, gsat: 20,   c: 10, phi: 26, su: 100, suGrad: 0,   clay: true, k: 1e-10 },
+  silt:       { name: "Silt",                 gamma: 18,   gsat: 19,   c: 2,  phi: 28, su: 0,   suGrad: 0,   clay: false, k: 1e-7 },
+  looseSand:  { name: "Loose sand",           gamma: 17,   gsat: 19,   c: 0,  phi: 30, su: 0,   suGrad: 0,   clay: false, k: 1e-4 },
+  sand:       { name: "Medium dense sand",    gamma: 18,   gsat: 20,   c: 0,  phi: 34, su: 0,   suGrad: 0,   clay: false, k: 5e-5 },
+  denseSand:  { name: "Dense sand / gravel",  gamma: 19,   gsat: 21,   c: 0,  phi: 38, su: 0,   suGrad: 0,   clay: false, k: 1e-4 },
+  fill:       { name: "Compacted fill",       gamma: 19,   gsat: 20.5, c: 2,  phi: 32, su: 0,   suGrad: 0,   clay: false, k: 1e-6 },
+  claySilt:   { name: "Compacted clay fill",  gamma: 19,   gsat: 19.5, c: 8,  phi: 25, su: 75,  suGrad: 0,   clay: true, k: 1e-8 },
+  rockfill:   { name: "Rock fill / quarry run", gamma: 19, gsat: 21,   c: 0,  phi: 40, su: 0,   suGrad: 0,   clay: false, k: 1e-2 },
+  weakRock:   { name: "Weathered rock",       gamma: 22,   gsat: 23,   c: 30, phi: 35, su: 0,   suGrad: 0,   clay: false, k: 1e-6 },
   // rock masses by the generalised Hoek-Brown criterion (Hoek, Carranza-Torres and Corkum 2002)
-  rockHB:     { name: "Rock mass (Hoek-Brown)", gamma: 25, gsat: 25.5, c: 0, phi: 0, su: 0, suGrad: 0, clay: false, hb: true, GSI: 45, mi: 10, sci: 25, D: 0 },
-  weakRockHB: { name: "Weak rock, mudstone (Hoek-Brown)", gamma: 23, gsat: 23.5, c: 0, phi: 0, su: 0, suGrad: 0, clay: false, hb: true, GSI: 30, mi: 7, sci: 8, D: 0 },
-  armourRock: { name: "Armour rock layer",    gamma: 16.4, gsat: 20,   c: 0,  phi: 45, su: 0,   suGrad: 0,   clay: false },
-  underlayer: { name: "Underlayer rock",      gamma: 17,   gsat: 20.5, c: 0,  phi: 42, su: 0,   suGrad: 0,   clay: false },
-  concreteUnits: { name: "Concrete unit layer", gamma: 12.5, gsat: 17.5, c: 0, phi: 45, su: 0,  suGrad: 0,   clay: false },
+  rockHB:     { name: "Rock mass (Hoek-Brown)", gamma: 25, gsat: 25.5, c: 0, phi: 0, su: 0, suGrad: 0, clay: false, hb: true, GSI: 45, mi: 10, sci: 25, D: 0, k: 1e-7 },
+  weakRockHB: { name: "Weak rock, mudstone (Hoek-Brown)", gamma: 23, gsat: 23.5, c: 0, phi: 0, su: 0, suGrad: 0, clay: false, hb: true, GSI: 30, mi: 7, sci: 8, D: 0, k: 1e-8 },
+  armourRock: { name: "Armour rock layer",    gamma: 16.4, gsat: 20,   c: 0,  phi: 45, su: 0,   suGrad: 0,   clay: false, k: 1 },
+  underlayer: { name: "Underlayer rock",      gamma: 17,   gsat: 20.5, c: 0,  phi: 42, su: 0,   suGrad: 0,   clay: false, k: 1e-1 },
+  concreteUnits: { name: "Concrete unit layer", gamma: 12.5, gsat: 17.5, c: 0, phi: 45, su: 0,  suGrad: 0,   clay: false, k: 1 },
 };
 
 export const PRESET_KEYS = ["softClay", "firmClay", "stiffClay", "silt", "looseSand", "sand", "denseSand", "fill", "claySilt", "rockfill", "weakRock", "rockHB", "weakRockHB"];
 
 /** A soil as the engine sees it in a given state: drained (effective) or undrained (total). */
 export function asMaterial(soil, undrained) {
+  const m = material(soil, undrained);
+  m.k = soil.k ?? 1e-6; m.kRatio = soil.kRatio || 1;
+  // for the staged drawdown: the R envelope and whether the soil drains freely
+  if (soil.cR !== undefined) m.cR = soil.cR;
+  if (soil.phiR !== undefined) m.phiR = soil.phiR;
+  if (soil.drains !== undefined) m.drains = soil.drains;
+  return m;
+}
+function material(soil, undrained) {
   if (soil.hb) return { name: soil.name, gamma: soil.gamma, gsat: soil.gsat, kind: "hb", ...hoekBrown(soil), c: 0, phi: 0 };
   if (undrained && soil.clay && soil.su > 0) {
     return { name: soil.name, gamma: soil.gamma, gsat: soil.gsat, kind: "undrained", su: soil.su, suGrad: soil.suGrad || 0, suMax: soil.suMax || 0, phi: 0, c: 0 };
@@ -37,14 +48,16 @@ export function asMaterial(soil, undrained) {
 /** A soil from a project entry: a preset plus whatever the user typed over it. */
 export function soilFrom(spec) {
   const base = PRESETS[spec?.preset] || PRESETS.sand;
-  const out = { ...base, preset: spec?.preset || "sand" };
-  for (const k of ["gamma", "gsat", "c", "phi", "su", "suGrad", "suMax", "GSI", "mi", "sci", "D"]) {
+  const out = { kRatio: 1, ...base, preset: spec?.preset || "sand" };
+  for (const k of ["gamma", "gsat", "c", "phi", "su", "suGrad", "suMax", "GSI", "mi", "sci", "D", "k", "kRatio", "cR", "phiR"]) {
     const v = spec?.[k];
     if (v !== undefined && v !== null && v !== "" && Number.isFinite(+v)) out[k] = +v;
   }
   // an undrained strength typed in means the layer is checked undrained in the short term
   if (spec?.su !== undefined && spec.su !== null && spec.su !== "" && +spec.su > 0) out.clay = true;
   if (spec?.clay !== undefined) out.clay = !!spec.clay;
+  if (spec?.drains === true || spec?.drains === "yes") out.drains = true;
+  else if (spec?.drains === false || spec?.drains === "no") out.drains = false;
   if (spec?.name) out.name = String(spec.name).slice(0, 40);
   return out;
 }

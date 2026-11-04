@@ -293,6 +293,11 @@ def typical_calls(asset_id: int, terminal: str, the_berths: list[dict[str, Any]]
     """A typical week of calls: enough ships to keep the berths about two-thirds busy (big ships hold two)."""
     rng = _rng(asset_id, start.date().isoformat(), "calls")
     fleet = FLEET.get(terminal, FLEET["container"])
+    # A typical week at this quay brings ships it can take: keep the classes that fit a berth (or two
+    # side by side), so a short quay is not sent a week of ships that are all too long for it.
+    spots = _spots(the_berths)
+    fit = [f for f in fleet if any(not _fits({"loa": f[4], "draught": f[6], "type": f[1]}, b) for b in spots)]
+    fleet = fit or fleet
     hours = days * 24
     capacity = sum(max(1, b["cranes"]) * RATE.get(b["crane_kind"], 18) for b in the_berths) or 50
     mean_moves = sum(f[8] for f in fleet) / len(fleet)

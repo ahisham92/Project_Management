@@ -7,6 +7,7 @@ import { rockArmour, accropode, damageLevels, COEFFS } from "../engine/armour.js
 import { sectionSVG, esc } from "./section.js";
 import { fosColour } from "./shapes.js";
 import { docx } from "./docx.js";
+import { COV, COV_LABEL } from "../engine/prob.js";
 
 const T = window.__TALUS || { api: "api", base: "./", static: "static/", openId: null };
 const $ = (s, el = document) => el.querySelector(s);
@@ -21,7 +22,7 @@ const state = {
   project: null, id: null, version: null,
   result: null, partial: [], seismic: null, selected: null,
   view: "3d", trials: false, motion: true, tab: "methods",
-  verify: null, optimise: null, offline: false, dirty: false,
+  verify: null, optimise: null, prob: null, offline: false, dirty: false,
 };
 
 // ------------------------------------------------------------------ helpers
@@ -71,6 +72,7 @@ const ICONS = {
   load: '<path d="M4 3v10M10 3v10M16 3v10" stroke="currentColor" stroke-width="1.6"/><path d="M2 12l2 3 2-3M8 12l2 3 2-3M14 12l2 3 2-3" fill="currentColor"/>',
   quake: '<path d="M1 10h3l2-6 3 12 3-9 2 5 2-2h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   design: '<path d="M4 16l4-4 3 3 6-8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13 7h4v4" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+  reinf: '<path d="M3 4l14 6M3 9l14 6M5 2v16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   gear: '<circle cx="10" cy="10" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 1v3M10 16v3M1 10h3M16 10h3M3.6 3.6l2.1 2.1M14.3 14.3l2.1 2.1M3.6 16.4l2.1-2.1M14.3 5.7l2.1-2.1" stroke="currentColor" stroke-width="1.6"/>',
 };
 const icon = (k) => `<svg class="icon" viewBox="0 0 20 20" aria-hidden="true">${ICONS[k] || ""}</svg>`;
@@ -93,22 +95,39 @@ function earthquakeItems() {
     { kind: "html", show: (p) => p.seismic.on, html: () => `<div class="note">kh = 0.5·ag·S·ST and kv = ±0.5·kh (EN 1998-5 4.1.3.3). Both directions of kv are checked. Talus also finds the yield acceleration and the Newmark displacement.</div>` },
   ];
 }
-function loadItems(withNails) {
+function loadItems() {
   const items = [
     { k: "load.q", l: "Surcharge on the crest", sub: "traffic, storage, cranes", u: "kPa", min: 0, max: 100, step: 1, slider: true, picks: [0, 5, 10, 20, 50] },
     { k: "load.setback", l: "Set back from the crest edge", u: "m", min: 0, max: 30, step: 0.5, show: (p) => +p.load.q > 0 },
     { k: "load.width", l: "Loaded width", u: "m", min: 0.5, max: 60, step: 0.5, show: (p) => +p.load.q > 0 },
   ];
-  if (withNails) items.push(
+  return items;
+}
+const NAIL_ITEMS = [
     { kind: "toggle", k: "nails.on", l: "Soil nails / anchors" },
     { k: "nails.rows", l: "Rows", u: "", min: 1, max: 12, step: 1, show: (p) => p.nails.on },
     { k: "nails.length", l: "Length", u: "m", min: 1, max: 30, step: 0.5, show: (p) => p.nails.on },
     { k: "nails.angle", l: "Inclination below horizontal", u: "°", min: 0, max: 45, step: 1, show: (p) => p.nails.on },
     { k: "nails.T", l: "Tensile capacity per row", sub: "per metre run of slope", u: "kN/m", min: 0, max: 1000, step: 5, show: (p) => p.nails.on },
     { k: "nails.qb", l: "Pull-out resistance", sub: "per metre of nail beyond the slip, per metre run", u: "kN/m²", min: 0, max: 500, step: 5, show: (p) => p.nails.on },
-  );
-  return items;
-}
+];
+const GRID_ITEMS = [
+    { kind: "toggle", k: "grids.on", l: "Geogrid layers in the fill", sub: "face to face; basal reinforcement on soft ground" },
+    { k: "grids.n", l: "Layers", u: "", min: 1, max: 40, step: 1, show: (p) => p.grids.on },
+    { k: "grids.bottom", l: "Lowest layer above ground", u: "m", min: 0, max: 10, step: 0.05, show: (p) => p.grids.on },
+    { k: "grids.spacing", l: "Vertical spacing", u: "m", min: 0.1, max: 3, step: 0.05, show: (p) => p.grids.on && +p.grids.n > 1 },
+    { k: "grids.T", l: "Design tensile strength", sub: "long-term, after reduction factors", u: "kN/m", min: 0, max: 2000, step: 5, show: (p) => p.grids.on },
+    { k: "grids.Ci", l: "Interaction coefficient Ci", sub: "pull-out: 2 Ci (c + σv tan φ) per metre of grid", u: "", min: 0, max: 1.2, step: 0.05, show: (p) => p.grids.on },
+];
+const pileItems = (where) => [
+    { kind: "toggle", k: "piles.on", l: "Row of piles or sheet piles", sub: "a shear force where the slip cuts them" },
+    { k: "piles.x", l: where.l, sub: where.sub, u: "m", step: 0.5, show: (p) => p.piles.on },
+    { k: "piles.length", l: "Length below ground", u: "m", min: 0.5, max: 60, step: 0.5, show: (p) => p.piles.on },
+    { k: "piles.Vp", l: "Shear capacity of one pile", sub: "design lateral resistance (or per metre of wall with spacing 1)", u: "kN", min: 0, max: 10000, step: 10, show: (p) => p.piles.on },
+    { k: "piles.spacing", l: "Spacing along the slope", u: "m", min: 0.1, max: 20, step: 0.1, show: (p) => p.piles.on },
+];
+const reinfSum = (p) => [p.nails?.on && "nails", p.grids?.on && `${p.grids.n} geogrid${+p.grids.n > 1 ? "s" : ""}`, p.piles?.on && "piles"].filter(Boolean).join(" · ") || "none";
+
 function designItems() {
   return [
     { kind: "seg", k: "design.basis", l: "Design basis", options: [["fos", "Factor of safety"], ["ec7", "Eurocode 7"]], onChange: (p) => { p.design.targets = null; } },
@@ -171,7 +190,8 @@ const SPEC = {
       { k: "water.back", l: "Depth below the crest edge", sub: "level behind it, falling under the face to the toe", u: "m", min: 0, max: 40, step: 0.25, slider: true, show: (p) => p.water.on },
       { k: "water.front", l: "Depth below the toe level", u: "m", min: 0, max: 20, step: 0.25, show: (p) => p.water.on },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa${p.nails?.on ? " · nails" : ""}`, items: loadItems(true) },
+    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
+    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...NAIL_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "horizontal distance into the slope" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS") + " · " + (METHOD_NAMES[p.design.method] || "").split(" ")[0], items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems() },
@@ -191,7 +211,8 @@ const SPEC = {
       { k: "water.level", l: "Water level above ground", u: "m", min: 0, max: 30, step: 0.25, slider: true, show: (p) => p.water.on },
       { k: "water.low", l: "Level after a rapid drawdown", u: "m", min: 0, max: 30, step: 0.25, show: (p) => p.water.on },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems(false) },
+    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
+    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "into the slope being checked (land side, or water side for drawdown)" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS"), items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems() },
@@ -213,6 +234,7 @@ const SPEC = {
       { k: "load.x1", l: "From x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
       { k: "load.x2", l: "To x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
     ] },
+    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: pileItems({ l: "Pile row at x", sub: "in the section's own coordinates" }) },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS") + " · " + (METHOD_NAMES[p.design.method] || "").split(" ")[0], items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems() },
@@ -247,7 +269,8 @@ const SPEC = {
       { kind: "soil", k: "core", l: "Core / backfill" },
       { kind: "soil", k: "soil", l: "Seabed soil" },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems(false) },
+    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
+    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "into the slope being checked (land side, or water side for drawdown)" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS"), items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems(false) },
@@ -311,9 +334,10 @@ function soilWidget(it, p) {
   const ph = (k) => PRESETS[s.preset]?.[k] ?? "";
   const fld = (k, l, u, show = true) => (show ? `<div class="f"><span class="lab">${l}</span><span class="num"><input type="number" inputmode="decimal" data-k="${it.k}.${k}" value="${val(k)}" placeholder="${ph(k)}" step="any"><span class="unit">${u}</span></span></div>` : "");
   return `<div class="f wide"><span class="lab">${esc(it.l)}</span><select data-soil="${it.k}">${soilOptions(s.preset)}</select>
-    <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span><span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>${s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
+    <div class="soil-sum"><span><b>γ</b> ${s.gamma}/${s.gsat} kN/m³</span>${s.hb ? `<span><b>GSI</b> ${s.GSI}</span><span><b>mi</b> ${s.mi}</span><span><b>σci</b> ${s.sci} MPa</span>${s.D ? `<span><b>D</b> ${s.D}</span>` : ""}` : `<span><b>c'</b> ${s.c} kPa</span><span><b>φ'</b> ${s.phi}°</span>`}${!s.hb && s.clay && s.su > 0 ? `<span><b>su</b> ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""} kPa</span>` : ""}
     <button type="button" class="linkish" data-soiledit="${it.k}">${editing ? "Done" : "Use site values"}</button></div>
-    ${editing ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay || it.alwaysSu)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay || it.alwaysSu)}${fld("suMax", "su cap", "kPa", it.alwaysSu)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
+    ${editing && s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("GSI", "Geological Strength Index GSI", "")}${fld("mi", "Intact rock constant mi", "")}${fld("sci", "Intact compressive strength σci", "MPa")}${fld("D", "Disturbance D", "0–1")}<div class="note">Generalised Hoek-Brown (2002). Each slice takes the tangent strength at the normal stress on its base, iterated to convergence. Use D 0.7 to 1 for blasted faces.</div></div>` : ""}
+    ${editing && !s.hb ? `<div class="subgrid">${fld("gamma", "Unit weight above water γ", "kN/m³")}${fld("gsat", "Saturated unit weight γsat", "kN/m³")}${fld("c", "Effective cohesion c'", "kPa")}${fld("phi", "Effective friction angle φ'", "°")}${fld("su", "Undrained strength su (clays)", "kPa", s.clay || it.alwaysSu)}${fld("suGrad", "su increase with depth", "kPa/m", s.clay || it.alwaysSu)}${fld("suMax", "su cap", "kPa", it.alwaysSu)}<div class="note">Blank fields keep the typical value shown. Typical values are a starting point; use site data for design.</div></div>` : ""}</div>`;
 }
 
 function layersWidget(p) {
@@ -463,6 +487,7 @@ function refreshSums() {
 
 function analyse() {
   state.partial = [];
+  if (state.prob && !state.prob.running) state.prob = null;
   state.seismic = null;
   state.analyseId = run("analyse");
   setBusy(true, "Calculating…");
@@ -499,6 +524,15 @@ function onWorker(ev) {
     jobRunning = false; setBusy(false);
     state.optimise = { ...(state.optimise || {}), done: m.result, running: false };
     state.tab = "optimise"; renderTabs(); renderPanel();
+  } else if (m.kind === "probStep") {
+    state.prob = { ...(state.prob || {}), running: true, done: m.done, n: m.n };
+    setBusy(true, `Sample ${m.done} of ${m.n}…`);
+    if (state.tab === "prob") renderPanel();
+  } else if (m.kind === "probDone") {
+    jobRunning = false; setBusy(false);
+    state.prob = { result: m.result, running: false };
+    if (m.result.error) toast(m.result.error, true);
+    if (state.tab === "prob") renderPanel();
   } else if (m.kind === "check") {
     state.verify.rows[m.i] = m;
     renderPanel();
@@ -616,7 +650,7 @@ function renderCases(partial) {
 
 const TABS = [
   ["methods", "Methods"], ["slices", "Slices"], ["armour", "Armour"], ["seismic", "Earthquake"],
-  ["optimise", "Optimise"], ["verify", "Verification"], ["about", "How it works"],
+  ["optimise", "Optimise"], ["prob", "Probability"], ["verify", "Verification"], ["about", "How it works"],
 ];
 function renderTabs() {
   const tabs = TABS.filter(([k]) => (k !== "armour" || state.project.type === "revetment") && (k !== "optimise" || state.project.type !== "section"));
@@ -633,6 +667,7 @@ function renderPanel() {
   else if (t === "armour") P.innerHTML = armourPanel();
   else if (t === "seismic") P.innerHTML = seismicPanel();
   else if (t === "optimise") P.innerHTML = optimisePanel();
+  else if (t === "prob") P.innerHTML = probPanel();
   else if (t === "verify") P.innerHTML = verifyPanel();
   else if (t === "about") P.innerHTML = aboutPanel();
 }
@@ -714,6 +749,81 @@ function slopeComparison() {
   });
 }
 
+// ------------------------------------------------------------------ probability
+
+/** USACE ETL 1110-2-547 (1997): expected performance by reliability index. */
+const PERFORMANCE = [[5, "High", "good"], [4, "Good", "good"], [3, "Above average", "good"], [2.5, "Below average", "warn"], [2, "Poor", "bad"], [1.5, "Unsatisfactory", "bad"], [-Infinity, "Hazardous", "bad"]];
+const performanceOf = (b) => PERFORMANCE.find(([t]) => b >= t);
+
+/** Which variables the project has, for the COV inputs. */
+function probProps(p) {
+  const out = new Set(["gamma"]);
+  const soils = [];
+  for (const G of SPEC[p.type]) for (const it of G.items) if (it.kind === "soil" && (!it.show || it.show(p))) soils.push(soilFrom(get(p, it.k)));
+  if (p.type === "section") for (const L of p.layers || []) soils.push(soilFrom(L.soil));
+  for (const s of soils) {
+    if (s.hb) { out.add("GSI"); out.add("sci"); continue; }
+    out.add("tanphi"); if (s.c > 0) out.add("c"); if (s.clay && s.su > 0) out.add("su");
+  }
+  return ["tanphi", "c", "su", "GSI", "sci", "gamma"].filter((k) => out.has(k));
+}
+
+function histSVG(r) {
+  const W = 560, H = 190, pad = { l: 34, r: 10, t: 12, b: 28 };
+  const x0 = Math.min(r.min, 0.95), x1 = Math.max(r.max, r.deterministic * 1.02);
+  const X = (x) => pad.l + (x - x0) / (x1 - x0) * (W - pad.l - pad.r);
+  const top = Math.max(...r.hist.map((h) => h.n));
+  const Y = (n) => H - pad.b - n / top * (H - pad.t - pad.b);
+  const bars = r.hist.map((h) => `<rect x="${X(h.x0) + 0.5}" y="${Y(h.n)}" width="${Math.max(0.5, X(h.x1) - X(h.x0) - 1)}" height="${H - pad.b - Y(h.n)}" fill="${h.x1 <= 1 ? "var(--critical)" : "var(--series-1, #2a78d6)"}" opacity="${h.x1 <= 1 ? 0.85 : 0.75}"/>`).join("");
+  const step = (x1 - x0) > 1.5 ? 0.5 : (x1 - x0) > 0.6 ? 0.2 : 0.1;
+  let ticks = "";
+  for (let x = Math.ceil(x0 / step) * step; x <= x1 + 1e-9; x += step) ticks += `<text x="${X(x)}" y="${H - 10}" font-size="10" text-anchor="middle" fill="var(--muted)">${+x.toFixed(2)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Distribution of the factor of safety">
+    <line x1="${pad.l}" y1="${H - pad.b}" x2="${W - pad.r}" y2="${H - pad.b}" stroke="var(--grid)"/>${bars}${ticks}
+    <line x1="${X(1)}" y1="${pad.t - 4}" x2="${X(1)}" y2="${H - pad.b}" stroke="var(--critical)" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${X(1) + 4}" y="${pad.t + 6}" font-size="10" fill="var(--critical)">F = 1</text>
+    <line x1="${X(r.deterministic)}" y1="${pad.t - 4}" x2="${X(r.deterministic)}" y2="${H - pad.b}" stroke="var(--ink)" stroke-width="1.2"/><text x="${X(r.deterministic) + 5}" y="${pad.t + 6}" font-size="10" fill="var(--ink-2)">design ${f2(r.deterministic)}</text>
+    <text x="${W - pad.r}" y="${pad.t + 6}" font-size="10" text-anchor="end" fill="var(--muted)">factor of safety →</text></svg>`;
+}
+
+function tornadoSVG(r) {
+  const S = r.sens.filter((s) => Number.isFinite(s.low) && Number.isFinite(s.high));
+  if (!S.length) return "";
+  const W = 560, row = 24, pad = { l: 170, r: 40, t: 8 }, H = pad.t + row * S.length + 22;
+  const lo = Math.min(...S.map((s) => s.low)), hi = Math.max(...S.map((s) => s.high));
+  const X = (x) => pad.l + (x - lo) / ((hi - lo) || 1) * (W - pad.l - pad.r);
+  const bars = S.map((s, i) => { const y = pad.t + i * row; return `<text x="${pad.l - 8}" y="${y + 15}" font-size="11" text-anchor="end" fill="var(--ink-2)">${esc(s.name)}</text>
+    <rect x="${X(s.low)}" y="${y + 4}" width="${Math.max(1, X(s.high) - X(s.low))}" height="${row - 8}" rx="3" fill="var(--series-1, #2a78d6)" opacity="0.8"/>
+    <text x="${X(s.high) + 4}" y="${y + 15}" font-size="10" fill="var(--muted)">${f2(s.low)}–${f2(s.high)}</text>`; }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Sensitivity of F to each variable">
+    <line x1="${X(r.atMeans)}" y1="${pad.t}" x2="${X(r.atMeans)}" y2="${H - 18}" stroke="var(--ink)" stroke-width="1"/>${bars}
+    <text x="${X(r.atMeans)}" y="${H - 4}" font-size="10" text-anchor="middle" fill="var(--muted)">F at the means ${f2(r.atMeans)}</text></svg>`;
+}
+
+function probPanel() {
+  const p = state.project, c = currentCase(), st = state.prob;
+  if (!c) return "";
+  const cov = { ...COV, ...(p.prob?.cov || {}) };
+  const props = probProps(p);
+  const fields = props.map((k) => `<div class="f"><span class="lab">COV of ${COV_LABEL[k]}</span><span class="num"><input type="number" inputmode="decimal" min="0" max="100" step="1" data-pk="cov.${k}" value="${+(cov[k] * 100).toFixed(1)}"><span class="unit">%</span></span></div>`).join("");
+  const n = p.prob?.n || 2000;
+  const r = st?.result && !st.result.error && st.result.case.key === c.key ? st.result : null;
+  let out = `<p class="explain">Soil and rock properties are never known exactly. Here each one is uncertain, lognormal around the value entered, and ${n.toLocaleString()} combinations are solved on the critical surface of <b>${esc(c.name)}</b>. The share that fail gives the probability of failure, and β says how many standard deviations the mean F sits above 1.</p>
+    <div class="probgrid mt-sm">${fields}<div class="f"><span class="lab">Samples</span><select data-pk="n">${[500, 1000, 2000, 5000, 10000].map((v) => `<option value="${v}" ${v === n ? "selected" : ""}>${v.toLocaleString()}</option>`).join("")}</select></div></div>
+    <div class="row mt-sm"><button class="btn btn-primary" data-prob ${st?.running ? "disabled" : ""}>${st?.running ? `Sampling… ${st.done || 0} of ${st.n || n}` : r ? "Run again" : "Run the Monte Carlo"}</button><span class="note">Latin hypercube, fixed seed: the same inputs always give the same answer. Typical COVs from Phoon and Kulhawy (1999) and Duncan (2000).</span></div>`;
+  if (r) {
+    const perf = performanceOf(r.betaLN);
+    out += `<div class="kpis mt">
+      <div class="kpi"><div class="k">Probability of failure</div><div class="v">${r.pf < 0.0005 ? `< ${(1 / r.n * 100).toFixed(2)}%` : (r.pf * 100).toFixed(r.pf < 0.01 ? 2 : 1) + "%"}</div><div class="s">${r.fails} of ${r.n.toLocaleString()} samples below F = 1 · lognormal fit ${(r.pfLN * 100).toFixed(r.pfLN < 0.01 ? 3 : 1)}%</div></div>
+      <div class="kpi"><div class="k">Reliability index</div><div class="v">β ${f2(r.betaLN)}</div><div class="s"><span class="pill ${perf[2]}">${perf[1]}</span> USACE (1997) · normal β ${f2(r.betaN)}</div></div>
+      <div class="kpi"><div class="k">Mean F</div><div class="v">${f3(r.mean)}</div><div class="s">SD ${f3(r.sd)} · COV ${f1(r.cov * 100)}% · design ${f3(r.deterministic)}</div></div>
+      <div class="kpi"><div class="k">5% – 95%</div><div class="v">${f2(r.p05)} – ${f2(r.p95)}</div><div class="s">median ${f3(r.p50)} · ${esc(r.methodName)}</div></div>
+    </div>
+    <h3 class="mt">Distribution of F</h3>${histSVG(r)}
+    <h3 class="mt">What matters most</h3><p class="note">Each variable alone moved one standard deviation either way, the others at their means.</p>${tornadoSVG(r)}`;
+  }
+  return out;
+}
+
 function seismicPanel() {
   const c = state.result?.cases.find((k) => k.key === "seismic");
   if (!state.project.seismic.on) return `<p class="explain">Earthquake checks are off. Turn them on under Earthquake.</p>`;
@@ -768,6 +878,9 @@ function aboutPanel() {
   <p><b>Load cases.</b> Cut slopes: long term (drained), short term (undrained clays), seismic. Embankments: end of construction, steady seepage, rapid drawdown, seismic. Revetments: high and low water, drawdown under the wave trough, seismic. Targets follow USACE EM 1110-2-1902 or, with Eurocode 7, the M2 partial factors with an over-design factor of 1.0.</p>
   <p><b>Earthquake.</b> Pseudo-static kh = 0.5·ag·S·ST, kv = ±0.5·kh (EN 1998-5), both kv directions checked; yield acceleration by bisection; permanent displacement by Jibson (2007).</p>
   <p><b>Armour.</b> Rock by Hudson and by Van der Meer (1988), or its shallow-water form (Van Gent et al. 2003) when h &lt; 3Hs, with the larger governing; EN 13383 gradings; toe by Van der Meer (1998); run-up and overtopping by EurOtop (2018). Accropode™ and Accropode™ II by Hudson with CLI's design KD (15 / 11.5 and 16 / 12.3), valid on 4:3 to 3:2 slopes; Accropode is a trademark of CLI, and units must be designed and placed to CLI's guidance.</p>
+  <p><b>Rock.</b> Rock masses follow the generalised Hoek-Brown criterion (Hoek, Carranza-Torres and Corkum 2002) from GSI, mi, σci and D. Each slice takes the tangent to the envelope at the effective normal stress on its base (Balmer 1952); the solution is repeated with the new normal stresses until every slice carries the envelope strength. The equivalent c', φ' of Hoek et al. (2002) is in the verification set for comparison.</p>
+  <p><b>Reinforcement.</b> Nails and anchors pull along their axis, limited by their strength and their bond beyond the slip. Geogrids pull horizontally where the slip cuts them, limited by their design strength and by pull-out of the shorter end, 2 Ci (c + σv tan φ) per metre. A row of piles or a sheet-pile wall adds its shear capacity per metre run (pile capacity / spacing) where the slip cuts it, against the movement. Every force enters the slices at its own point, in all methods.</p>
+  <p><b>Probability.</b> Each soil or rock property is lognormal around the value entered with its coefficient of variation; one variable per material and property. Latin hypercube samples from a fixed seed are solved on the critical surface of the load case by the governing method. The probability of failure is the share with F &lt; 1; β is given for a lognormal F, with the USACE (1997) performance levels. Properties are taken as independent, which is on the safe side for c' and φ'.</p>
   <p><b>Limits.</b> Typical soil values are starting points: use site data. Seepage lines are simplified (straight lines), not a flow net. Talus is a design aid; the engineer of record remains responsible.</p></div>`;
 }
 
@@ -793,6 +906,10 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.view) { state.view = b.dataset.view; renderView(); return; }
   if (b.id === "btnTrials") { state.trials = !state.trials; renderView(); return; }
   if (b.id === "btnMotion") { state.motion = !state.motion; view3d?.setMotion(state.motion); renderView(); return; }
+  if (b.dataset.prob !== undefined) {
+    state.prob = { running: true, done: 0 };
+    run("prob", { caseKey: currentCase()?.key }); setBusy(true, "Sampling…"); renderPanel(); return;
+  }
   if (b.dataset.optimise !== undefined) {
     state.optimise = { running: true, steps: [] };
     run("optimise"); setBusy(true, "Optimising…"); renderPanel(); return;
@@ -914,7 +1031,7 @@ function reportValue(it, v) {
   return `${v} ${it.u || ""}`.trim();
 }
 
-const soilText = (s) => `${s.name}: γ ${s.gamma}/${s.gsat} kN/m³, c' ${s.c} kPa, φ' ${s.phi}°${s.clay && s.su ? `, su ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""}${s.suMax ? ` (max ${s.suMax})` : ""} kPa` : ""}`;
+const soilText = (s) => s.hb ? `${s.name}: γ ${s.gamma}/${s.gsat} kN/m³, Hoek-Brown GSI ${s.GSI}, mi ${s.mi}, σci ${s.sci} MPa, D ${s.D || 0}` : `${s.name}: γ ${s.gamma}/${s.gsat} kN/m³, c' ${s.c} kPa, φ' ${s.phi}°${s.clay && s.su ? `, su ${s.su}${s.suGrad ? ` + ${s.suGrad}/m` : ""}${s.suMax ? ` (max ${s.suMax})` : ""} kPa` : ""}`;
 const ptsText = (v) => parsePoints(v || "").map(([x, y]) => `(${+x.toFixed(2)}, ${+y.toFixed(2)})`).join(" ");
 
 /** The inputs as rows of a table, grouped as on screen. */
@@ -982,6 +1099,22 @@ function reportBlocks(snapshot) {
       B.push({ t: "note", text: "E and X are the interslice normal and shear forces on the downslope side of each slice (Fredlund and Krahn sign). All forces per metre run." });
     }
   });
+  const pr = state.prob?.result;
+  if (pr && !pr.error) {
+    const perf = performanceOf(pr.betaLN);
+    B.push({ t: "break" }, { t: "h1", text: `Probability: ${pr.case.name}` });
+    B.push({ t: "p", text: `${pr.n.toLocaleString()} Latin hypercube samples (seed ${pr.seed}) of lognormal properties, solved on the critical surface by ${pr.methodName}.` });
+    B.push({ t: "table", widths: [0.5, 0.5], rows: [
+      ["Probability of failure P(F < 1)", `${(pr.pf * 100).toFixed(2)}% (${pr.fails} of ${pr.n}); lognormal fit ${(pr.pfLN * 100).toFixed(3)}%`],
+      ["Reliability index β (lognormal)", `${f2(pr.betaLN)}, ${perf[1].toLowerCase()} (USACE 1997); normal β ${f2(pr.betaN)}`],
+      ["Mean and SD of F", `${f3(pr.mean)} and ${f3(pr.sd)} (COV ${f1(pr.cov * 100)}%); design F ${f3(pr.deterministic)}`],
+      ["5%, 50%, 95% of F", `${f3(pr.p05)}, ${f3(pr.p50)}, ${f3(pr.p95)}`],
+      ...pr.vars.map((v) => [v.name, `mean ${+v.mean.toPrecision(4)}, COV ${f1(v.cov * 100)}%`]),
+    ] });
+    B.push({ t: "img", svg: histSVG(pr).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), w: 560, h: 190, widthCm: 15 }, { t: "caption", text: "Distribution of F; red: samples below 1." });
+    const tor = tornadoSVG(pr);
+    if (tor) { const h = +tor.match(/viewBox="0 0 560 (\d+(?:\.\d+)?)"/)?.[1] || 200; B.push({ t: "img", svg: tor.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), w: 560, h, widthCm: 15 }, { t: "caption", text: "Sensitivity: each variable alone at its mean ± one standard deviation." }); }
+  }
   B.push({ t: "break" }, { t: "h1", text: "Method" });
   for (const m of aboutPanel().matchAll(/<p>([\s\S]*?)<\/p>/g)) B.push({ t: "p", text: m[1].replace(/<b>(.*?)<\/b>/g, "**$1**").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") });
   return B;
@@ -1027,7 +1160,8 @@ function toPNG(b) {
     img.onload = done; img.onerror = () => resolve(null);
     if (b.svg) {
       // the drawing uses the page's colour tokens; a picture on its own needs them spelt out
-      const svg = b.svg.replace(/var\(--grid\)/g, "#e1e0d9").replace(/var\(--muted\)/g, "#898781").replace(/var\(--surface\)/g, "#ffffff")
+      const LIGHT = { grid: "#e1e0d9", muted: "#898781", surface: "#ffffff", ink: "#0b0b0b", "ink-2": "#52514e", critical: "#d03b3b", "series-1": "#2a78d6" };
+      const svg = b.svg.replace(/var\(--([a-z0-9-]+)\)/g, (m, k) => LIGHT[k] || "#52514e")
         .replace("<svg ", `<svg width="${b.w}" height="${b.h}" font-family="Calibri, Arial, sans-serif" `);
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
     } else img.src = b.src;
@@ -1050,6 +1184,16 @@ async function wordReport() {
 // ------------------------------------------------------------------ start
 
 inputsEl().addEventListener("input", onInput);
+// the probability inputs live in the answer panel; they change the next run, not the answer
+$("#dpanel").addEventListener("change", (ev) => {
+  const k = ev.target.dataset?.pk;
+  if (!k) return;
+  const p = state.project;
+  p.prob = p.prob || {};
+  if (k === "n") p.prob.n = +ev.target.value;
+  else { p.prob.cov = p.prob.cov || {}; const v = +ev.target.value; if (Number.isFinite(v) && v >= 0) p.prob.cov[k.slice(4)] = v / 100; }
+  scheduleSave();
+});
 inputsEl().addEventListener("change", (ev) => { if (ev.target.tagName === "SELECT" || ev.target.type === "checkbox") return; onInput(ev); });
 inputsEl().addEventListener("click", onClick);
 window.addEventListener("resize", () => { if (state.view === "section") renderView(); });

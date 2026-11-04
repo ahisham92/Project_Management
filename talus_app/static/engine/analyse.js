@@ -1,6 +1,6 @@
 // Talus — runs every load case of a project and reports in the user's frame.
 
-import { prepare, sliceForces, valueOf, METHODS, METHOD_NAMES, DEG, buildSlices, brent } from "./lem.js";
+import { prepare, sliceForces, valueOf, METHODS, METHOD_NAMES, DEG, buildSlices, brent, refineHB } from "./lem.js";
 import { criticalCircle, optimiseNonCircular, blockSearch, quickF, circleSlip } from "./search.js";
 import { buildCases, complete } from "./project.js";
 
@@ -62,6 +62,9 @@ export function analyseCase(c, opt = {}) {
     if (other.r && (!r || other.r.F < r.F)) { P = other.P; r = other.r; kvUsed = -c.model.seismic.kv; }
   }
   if (!r) return { key: c.key, name: c.name, target: c.target, note: c.note, error: "No admissible slip surface was found inside the model." };
+  // Hoek-Brown rock: strengths follow the normal stresses on the critical surface
+  const hb = refineHB(P, r.cut, r.circle, method);
+  if (hb) r = { ...r, results: hb.results, F: hb.F, hb: { rounds: hb.rounds, gap: hb.gap } };
   let F = r.F, used = method;
   if (!Number.isFinite(F)) {
     // a rigorous method that did not converge: fall back to Bishop and say so
@@ -81,7 +84,7 @@ export function analyseCase(c, opt = {}) {
     surface: toUser(P, r), slices: slicesToUser(P, slices), trials,
     weight: W, piezo: c.model.piezo, strips: c.model.strips || [],
     seismic: c.seismic ? { ...c.seismic, kvUsed } : null,
-    fromCircle: r.fromCircle,
+    fromCircle: r.fromCircle, hb: r.hb || null,
     _P: P, _r: r,
   };
 }

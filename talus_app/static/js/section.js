@@ -87,6 +87,8 @@ export function sectionSVG(result, c, opt = {}) {
   }
   // reinforcement
   for (const r of opt.reinforcement || []) {
+    if (r.kind === "grid") { out.push(`<line x1="${X(r.x0)}" y1="${Y(r.y)}" x2="${X(r.x1)}" y2="${Y(r.y)}" stroke="#1f8a5a" stroke-width="2" stroke-dasharray="7 3"/>`); continue; }
+    if (r.kind === "pile") { out.push(`<line x1="${X(r.x)}" y1="${Y(r.y)}" x2="${X(r.x)}" y2="${Y(Math.max(g.bottom, r.y - r.length))}" stroke="#4b4b48" stroke-width="4" stroke-linecap="round"/>`); continue; }
     const a = r.angle * Math.PI / 180, dir = r.dir;
     out.push(`<line x1="${X(r.x)}" y1="${Y(r.y)}" x2="${X(r.x + dir * r.length * Math.cos(a))}" y2="${Y(r.y - r.length * Math.sin(a))}" stroke="#4a3aa7" stroke-width="2"/>`);
   }

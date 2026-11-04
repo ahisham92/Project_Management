@@ -1,6 +1,7 @@
 // Talus — calculations off the page's thread, so typing and the 3D view stay smooth.
 import { analyse, seismicExtras, steepestSafe } from "../engine/analyse.js";
 import { CHECKS, runCheck } from "../engine/verify.js";
+import { probabilistic } from "../engine/prob.js";
 
 self.onmessage = (ev) => {
   const { id, kind, project } = ev.data;
@@ -15,6 +16,10 @@ self.onmessage = (ev) => {
     } else if (kind === "optimise") {
       const r = steepestSafe(project, { onStep: (cot, worst) => self.postMessage({ id, kind: "step", cot, worst }) });
       self.postMessage({ id, kind: "optimised", result: r });
+    } else if (kind === "prob") {
+      const pr = project.prob || {};
+      const r = probabilistic(project, { caseKey: ev.data.caseKey, n: pr.n || 2000, cov: pr.cov || {}, seed: 1, onProgress: (d, n) => self.postMessage({ id, kind: "probStep", done: d, n }) });
+      self.postMessage({ id, kind: "probDone", result: r });
     } else if (kind === "verify") {
       CHECKS.forEach((c, i) => {
         const t0 = performance.now();

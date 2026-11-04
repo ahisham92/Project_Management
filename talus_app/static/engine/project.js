@@ -33,6 +33,7 @@ export const DEFAULTS = {
     water: { on: true, back: 3, front: 0 },
     load: { q: 10, setback: 1, width: 10 },
     nails: { on: false, rows: 4, length: 8, angle: 15, T: 60, qb: 40 },
+    piles: { on: false, x: 3, length: 12, Vp: 300, spacing: 2 },
     seismic: { on: true, ag: 0.15, ground: "B" },
     design: { basis: "fos", method: "mp", targets: null },
     advanced: { slices: 40, noncircular: false, crack: 0 },
@@ -44,6 +45,8 @@ export const DEFAULTS = {
     soil: { preset: "firmClay" },
     water: { on: true, level: 4, low: 0 },
     load: { q: 10, setback: 0.5, width: 7 },
+    grids: { on: false, n: 1, bottom: 0.25, spacing: 0.5, T: 200, Ci: 0.8 },
+    piles: { on: false, x: 3, length: 12, Vp: 300, spacing: 2 },
     seismic: { on: true, ag: 0.15, ground: "C" },
     design: { basis: "fos", method: "mp", targets: null },
     advanced: { slices: 40, noncircular: false, crack: 0 },
@@ -60,6 +63,7 @@ export const DEFAULTS = {
     ],
     water: { mode: "line", line: "0, 9\n15, 9\n45.4, 0\n80, 0", ru: 0 },
     load: { q: 10, x1: 1, x2: 14 },
+    piles: { on: false, x: 38, length: 15, Vp: 300, spacing: 2 },
     seismic: { on: true, ag: 0.15, ground: "B" },
     design: { basis: "fos", method: "mp", targets: null },
     advanced: { slices: 40, noncircular: false, block: true, crack: 0 },
@@ -157,6 +161,13 @@ function factorsOf(p) {
   return { ...(BASES[p.design?.basis] || BASES.fos).factors };
 }
 
+/** A row of piles (or a sheet-pile wall) at x: its shear capacity per metre run. */
+function pileRow(p, x, ground) {
+  if (!p.piles?.on) return [];
+  const V = Math.max(0, num(p.piles.Vp, 0)) / Math.max(0.1, num(p.piles.spacing, 1));
+  return V > 0 ? [{ kind: "pile", x, y: yAt(ground, x), length: Math.max(0.5, num(p.piles.length, 10)), V }] : [];
+}
+
 // ---------------------------------------------------------------- cut slope
 
 function cutCases(p) {
@@ -194,6 +205,7 @@ function cutCases(p) {
         T: num(p.nails.T, 60), qb: num(p.nails.qb, 40), kind: "nail", dir: 1 });
     }
   }
+  reinforcement.push(...pileRow(p, xt + num(p.piles?.x, 0), ground));
   const base = { ground, bottom: -D, face: { toe: [xt, 0], crest: [xc, H] }, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 }, reinforcement };
   const T = targetsOf(p);
   const clayey = soil.clay || lowerSoil?.clay;
@@ -241,23 +253,35 @@ function embankmentCases(p) {
   const q = num(p.load?.q, 0);
   const strip = (psi = 1) => q > 0 ? [{ x1: x2 + num(p.load.setback, 0.5), x2: Math.min(x3, x2 + num(p.load.setback, 0.5) + num(p.load.width, B)), q: q * psi, variable: true }] : [];
   const land = { toe: [x4, 0], crest: [x3, H] }, waterFace = { toe: [x1, 0], crest: [x2, H] };
+  // geogrids across the fill, face to face, from near the base up
+  const reinforcement = [];
+  if (p.grids?.on) {
+    const n = Math.max(1, Math.min(40, Math.round(num(p.grids.n, 1))));
+    for (let i = 0; i < n; i++) {
+      const y = num(p.grids.bottom, 0.25) + i * Math.max(0.1, num(p.grids.spacing, 0.5));
+      if (y >= H - 0.05) break;
+      reinforcement.push({ kind: "grid", y, x0: x1 + faceX(face, y), x1: x4 - faceX(face, y), x: x1 + faceX(face, y),
+        T: Math.max(0, num(p.grids.T, 200)), Ci: Math.max(0, num(p.grids.Ci, 0.8)) });
+    }
+  }
+  const landPiles = pileRow(p, x4 - num(p.piles?.x, 0), ground), waterPiles = pileRow(p, x1 + num(p.piles?.x, 0), ground);
   const base = { ground, bottom: -D, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 } };
   const T = targetsOf(p);
   const cases = [];
   if (found.clay || fill.clay) cases.push({ key: "eoc", name: "End of construction", target: T.short,
-    model: { ...base, face: land, layers: layers(true, fill.clay), piezo: flat(0, 0, xr), strips: strip() },
+    model: { ...base, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: flat(0, 0, xr), strips: strip() },
     note: "Just built: clays at undrained strength su, groundwater at original ground." });
   cases.push({ key: "long", name: hw > 0 ? "Long term, steady seepage" : "Long term (drained)", target: T.static,
-    model: { ...base, face: land, layers: layers(false), piezo: seep, strips: strip() },
+    model: { ...base, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(false), piezo: seep, strips: strip() },
     note: hw > 0 ? "Water held on the left at full level; seepage line straight to the right toe; land-side slope." : "Effective strength c', φ'." });
   if (hw > 0) cases.push({ key: "drawdown", name: "Rapid drawdown", target: T.transient,
-    model: { ...base, face: waterFace, layers: layers(false), piezo: drawn, strips: strip() },
+    model: { ...base, face: waterFace, reinforcement: [...reinforcement, ...waterPiles], layers: layers(false), piezo: drawn, strips: strip() },
     note: `Water outside drops from ${hw.toFixed(1)} m to ${lowW.toFixed(1)} m faster than the fill drains (pore pressures stay at the steady-state line); water-side slope.` });
   const eq = seismicCoefficients(p, H, Math.atan(1 / cot) * 180 / Math.PI);
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
-    model: { ...base, face: land, layers: layers(true, fill.clay), piezo: seep, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    model: { ...base, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: seep, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
     note: "Earthquake as kh·W towards the land-side face and ±kv·W; clays undrained; 30% of the surcharge (ψ2)." });
-  return { cases, geometry: { ground, H, xr, bottom: -D, layers: layers(false), piezo: seep, x1, x2, x3, x4, faceDir: 1, benches: face.benches }, extras: {} };
+  return { cases, geometry: { ground, H, xr, bottom: -D, layers: layers(false), piezo: seep, x1, x2, x3, x4, faceDir: 1, benches: face.benches, reinforcement: [...reinforcement, ...landPiles] }, extras: {} };
 }
 
 // ---------------------------------------------------------------- revetment
@@ -400,7 +424,8 @@ function sectionCases(p) {
   const q = num(p.load?.q, 0);
   const a = num(p.load?.x1, x0), b = num(p.load?.x2, x0);
   const strip = (psi = 1) => (q > 0 && Math.abs(b - a) > 0 ? [{ x1: Math.min(a, b), x2: Math.max(a, b), q: q * psi, variable: true }] : []);
-  const base = { ground, bottom, face, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 }, ru };
+  const reinforcement = pileRow(p, num(p.piles?.x, (face.crest[0] + face.toe[0]) / 2), ground);
+  const base = { ground, bottom, face, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 }, ru, reinforcement };
   const T = targetsOf(p);
   const clayey = specs.some((L) => L.soil.clay && L.soil.su > 0);
   const water = piezo ? "the water line" : ru ? `ru = ${ru}` : "no water";
@@ -413,7 +438,7 @@ function sectionCases(p) {
     model: { ...base, layers: layers(true), piezo, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
     note: "kh·W towards the face and ±kv·W; layers with su undrained; 30% of the surcharge (ψ2)." });
   const faceDir = face.crest[0] < face.toe[0] ? 1 : -1;
-  return { cases, geometry: { ground, H, xr: x1, bottom, layers: layers(false), piezo, faceDir, reinforcement: [] }, extras: {} };
+  return { cases, geometry: { ground, H, xr: x1, bottom, layers: layers(false), piezo, faceDir, reinforcement }, extras: {} };
 }
 
 /** Every load case of a project: [{ key, name, target, model, note, seismic? }] plus the geometry to draw. */

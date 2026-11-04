@@ -77,3 +77,39 @@ export function pileSVG(r, { width = 900, height = 520 } = {}) {
   out += `</svg>`;
   return out;
 }
+
+/** Chain mooring in elevation: the governing catenary from the fairlead under the pontoon to the
+ * touch-down point and along the bed to the anchor block, with the at-rest shape (a quarter of the pull) dashed. */
+export function chainSVG(r, { width = 900, height = 420 } = {}) {
+  const M = r.piles, g = M.gov, bed = +r.project.site.seabed;
+  const T = r.floats.walkway.ini.T, deck = r.floats.walkway.sec.deck, B = r.layout.walkW;
+  const zf = g.level - T, R = M.radius, side = M.block.side;
+  const xmin = -B - 2, xmax = R + side + 2, zmin = bed - 1.6, zmax = g.level + deck + 1.5;
+  const sx = (width - 100) / (xmax - xmin), sz = (height - 150) / (zmax - zmin);
+  const X = (x) => 50 + (x - xmin) * sx, Y = (z) => 60 + (zmax - z) * sz;
+  let out = `<svg class="section" viewBox="0 0 ${width} ${height}" role="img" aria-label="Chain mooring diagram">`;
+  out += `<rect x="${X(xmin)}" y="${Y(g.level)}" width="${X(xmax) - X(xmin)}" height="${Y(bed) - Y(g.level)}" fill="rgba(42,120,214,.16)"/>`;
+  out += `<rect x="${X(xmin)}" y="${Y(bed)}" width="${X(xmax) - X(xmin)}" height="${Y(zmin) - Y(bed)}" fill="rgba(205,185,143,.35)"/>`;
+  const lvl = (z, t, col = "var(--ink-2)") => `<line x1="${X(xmin)}" x2="${X(xmax)}" y1="${Y(z)}" y2="${Y(z)}" stroke="${col}" stroke-dasharray="5 4"/><text x="${X(0) + 8}" y="${Y(z) - 4}" class="lbl sm">${esc(t)} ${f(z, 2)}</text>`;
+  out += lvl(g.level, `Water (${g.combo.level})`, "#2a78d6") + lvl(bed, "Seabed");
+  // pontoon
+  out += `<rect x="${X(-B)}" y="${Y(zf + deck)}" width="${X(0) - X(-B)}" height="${Y(zf) - Y(zf + deck)}" fill="var(--axis)" stroke="var(--ink)"/>`;
+  // a catenary from the fairlead (x = 0, z = zf) touching down at horizontal distance xs
+  const curve = (H) => {
+    const a = H / M.w, h = zf - bed, sl = Math.sqrt(h * h + (2 * h * H) / M.w), xs = a * Math.asinh(sl / a);
+    const pts = [];
+    for (let i = 0; i <= 40; i++) { const u = (i / 40) * xs; pts.push([xs - u, Math.min(zf, bed + a * (Math.cosh(u / a) - 1))]); }
+    pts.reverse(); pts.push([R, bed]);
+    return pts.map(([x, z]) => `${X(x).toFixed(1)},${Y(z).toFixed(1)}`).join(" ");
+  };
+  out += `<polyline points="${curve(Math.max(0.5, g.H / 4))}" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+  out += `<polyline points="${curve(g.H)}" fill="none" stroke="#eb6834" stroke-width="2.4"/>`;
+  // anchor block
+  out += `<rect x="${X(R)}" y="${Y(bed + side)}" width="${X(R + side) - X(R)}" height="${Y(bed) - Y(bed + side)}" fill="var(--grid)" stroke="var(--ink)"/>`;
+  out += `<text x="${X(R + side / 2)}" y="${Y(bed + side) - 6}" text-anchor="middle" class="lbl sm">Block ${f(side, 1)} m</text>`;
+  out += `<path d="M${X(-B / 2)} ${Y(zf + deck) - 26} l40 0" stroke="#e34948" stroke-width="3"/><path d="M${X(-B / 2) + 40} ${Y(zf + deck) - 31} l8 5 l-8 5" fill="#e34948"/><text x="${X(-B / 2)}" y="${Y(zf + deck) - 34}" class="lbl sm">H ${f(g.H, 1)} kN per chain</text>`;
+  out += `<text x="60" y="${Y(bed) + 18}" class="lbl">Studless chain ${f(M.d, 0)} mm (${f(M.dEnd, 1)} mm at end of life) · T ${f(g.T, 1)} kN · MBL ${f(M.mbl, 0)} kN · length ${f(M.chainLen, 1)} m</text>`;
+  out += `<text x="60" y="${Y(bed) + 34}" class="lbl sm">Solid: governing pull (${esc(g.combo.name)}) · dashed: at rest, a quarter of the pull · vertical scale exaggerated</text>`;
+  out += `</svg>`;
+  return out;
+}

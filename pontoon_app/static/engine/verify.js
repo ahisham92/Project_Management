@@ -5,7 +5,8 @@ import { beamWinkler, modes } from "./fe.js";
 import { initial, equilibrium, wallSidedGZ, macagnoKt, waveNumber, froudeKrylovX, G } from "./hydro.js";
 import { steelCHS, chsProps, concreteSection } from "./members.js";
 import { bromsCohesionless, bromsCohesive, pileResponse } from "./geotech.js";
-import { regionalSpeed, phiGb } from "./codes.js";
+import { regionalSpeed, phiGb, spectralShape, kpOf, minDisplacement, berthingSpeed, gangwayWidth, walkwayWidth } from "./codes.js";
+import { catenary, boltCapacity, shs } from "./extras.js";
 
 const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(b), 1e-12);
 
@@ -152,6 +153,36 @@ export const CHECKS = [
   {
     name: "AS 2159 φgb table lookup", ref: "Table 4.3.2(C): ARR 2.5 low 0.56, high 0.64",
     run() { return [[phiGb(2.5, false), 0.56, "low"], [phiGb(2.5, true), 0.64, "high"], [phiGb(5, false), 0.40, "ARR 5"]]; }, tol: 0,
+  },
+  {
+    name: "Mooring chain catenary", ref: "h = 5 m, H = 10 kN, w = 0.5 kN/m: s = √(h² + 2hH/w) = 15 m, T = H + wh = 12.5 kN, x = (H/w) asinh(sw/H) = 20 ln 2",
+    run() { const c = catenary(5, 10, 0.5); return [[c.s, 15, "s (m)"], [c.T, 12.5, "T (kN)"], [c.x, 20 * Math.LN2, "x (m)"], [c.V, 7.5, "V = ws (kN)"]]; }, tol: 1e-9,
+  },
+  {
+    name: "AS 4100 Cl 9.3.2 rod capacity", ref: "M20 property class 8.8: φNtf = 0.8 × 245 × 830 = 162.7 kN; φVf = 0.8 × 0.62 × 830 × 225 = 92.6 kN",
+    run() { const b = boltCapacity(20, "8.8"); return [[b.phiNtf, 162.68, "φNtf (kN)"], [b.phiVf, 92.628, "φVf (kN)"]]; }, tol: 1e-6,
+  },
+  {
+    name: "SHS section properties", ref: "100 × 5 SHS (square tube, sharp corners): A = 100² − 90² = 1900 mm²",
+    run() { const s = shs(100, 5); return [[s.A, 1900, "A (mm²)"]]; }, tol: 0.05,
+  },
+  {
+    name: "AS 1170.4 spectral shape and kp", ref: "Table 6.4: continuous at 0.1 s and 1.5 s (to 0.1 %: the Table rounds Ce to 1.874/T²); De at 1.0 s = 1.98; Table 3.1 kp(1/500) = 1.0, kp(1/2500) = 1.8",
+    run() {
+      const rows = [];
+      for (const site of ["Ae", "Be", "Ce", "De", "Ee"]) {
+        rows.push([spectralShape(site, 0.1 - 1e-9), spectralShape(site, 0.1 + 1e-9), `${site} at 0.1 s`]);
+        rows.push([spectralShape(site, 1.5 - 1e-9), spectralShape(site, 1.5 + 1e-9), `${site} at 1.5 s`]);
+      }
+      return [...rows, [spectralShape("De", 1.0), 1.98, "De 1.0 s"], [kpOf(500), 1.0, "kp 500"], [kpOf(2500), 1.8, "kp 2500"]];
+    }, tol: 1e-3,
+  },
+  {
+    name: "AS 3962:2020 tables", ref: "Table 4.6 (12 m: 12 t), Cl 4.9 (0.3 / 0.2 / 0.15 m/s), Table 3.4 (accessible 61 to 120 berths: 1.8 m), Table 3.3 (over 200 m: 2.4 m)",
+    run() {
+      return [[minDisplacement(12), 12, "Δ 12 m"], [minDisplacement(22.5), 62, "Δ 22.5 m"], [berthingSpeed(20), 0.3, "V 20 m"], [berthingSpeed(30), 0.2, "V 30 m"], [berthingSpeed(40), 0.15, "V 40 m"],
+        [gangwayWidth(8), 1.0, "gangway 8 berths"], [gangwayWidth(100, true), 1.8, "gangway 100 accessible"], [walkwayWidth(250), 2.4, "walkway 250 m"], [walkwayWidth(100, false, 1.8), 1.8, "walkway ≥ gangway"]];
+    }, tol: 1e-9,
   },
 ];
 

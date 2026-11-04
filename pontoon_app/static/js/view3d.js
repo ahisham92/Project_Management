@@ -116,9 +116,9 @@ export class View3D {
     this.clear();
     const M = this.mats();
     const geo = layoutGeometry(r, levelKey), p = r.project, type = p.type;
-    const { x0, x1, y } = geo.extent;
-    this.water(x0 - 10, x1 + 10, -y - 10, y + 10, geo.level, { H: +p.site.Hs, T: +p.site.Tp, L: r.struct.walkway.lam || 10 }, M);
-    this.world.add(box(x0 - 10, x1 + 10, -y - 10, y + 10, geo.seabed - 0.3, geo.seabed, M.bed));
+    const { x0, x1, y0, y1 } = geo.extent;
+    this.water(x0 - 10, x1 + 10, y0 - 10, y1 + 10, geo.level, { H: +p.site.Hs, T: +p.site.Tp, L: r.struct.walkway.lam || 10 }, M);
+    this.world.add(box(x0 - 10, x1 + 10, y0 - 10, y1 + 10, geo.seabed - 0.3, geo.seabed, M.bed));
     for (const it of geo.items) {
       if (it.kind === "walkway" || it.kind === "finger") this.pontoon(it, r, M, it.kind === "finger" ? r.floats.finger.sec : r.floats.walkway.sec);
       else if (it.kind === "pile") {
@@ -129,6 +129,15 @@ export class View3D {
         const band = new THREE.Mesh(new THREE.CylinderGeometry(it.D / 2 + 0.01, it.D / 2 + 0.01, 0.3, 24), M.band);
         band.rotation.x = Math.PI / 2; band.position.set(it.x, it.y, it.top - 0.45);
         this.world.add(above, below, band);
+      } else if (it.kind === "guide") {
+        this.world.add(box(it.x0, it.x1, it.y0, it.y1, it.z0, it.z1, M.steel));
+      } else if (it.kind === "chain") {
+        const curve = new THREE.CatmullRomCurve3(it.pts.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+        const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 48, Math.max(0.03, it.d / 1000), 6, false), M.steel);
+        this.world.add(tube);
+      } else if (it.kind === "anchor") {
+        const a = it.side / 2;
+        this.world.add(box(it.x - a, it.x + a, it.y - a, it.y + a, it.z, it.z + it.side, M.pconcrete));
       } else if (it.kind === "boat") {
         const h = hull(it.L, it.B, it.motor ? 1.4 : 1.1, M.boat);
         h.rotation.z = it.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -149,20 +158,21 @@ export class View3D {
         const g = new THREE.Group();
         g.add(box(0, len, -it.w / 2 - 0.05, it.w / 2 + 0.05, -0.08, 0.04, M.gangway));
         for (const s of [-1, 1]) g.add(box(0, len, s * (it.w / 2 + 0.05) - 0.025, s * (it.w / 2 + 0.05) + 0.025, 0, 1.0, M.gangway));
-        g.position.set(it.x0, 0, it.z0); g.rotation.y = -ang;
+        g.position.set(it.x0, it.y || 0, it.z0); g.rotation.y = -ang;
         this.world.add(g);
-        this.world.add(box(it.x0 - 4, it.x0, -3, 3, it.z0 - 2, it.z0, M.pconcrete));
+        this.world.add(box(it.x0 - 4, it.x0, (it.y || 0) - 3, (it.y || 0) + 3, it.z0 - 2, it.z0, M.pconcrete));
       }
     }
-    this.fit(geo.extent, `layout:${r.layout.walkLen}:${r.layout.fingerL}`, geo.level);
+    this.fit(geo.extent, `layout:${r.layout.shape}:${r.layout.arms}:${r.layout.walkLen}:${r.layout.fingerL}`, geo.level);
     this.sunAt(geo.extent);
   }
 
   pontoon(it, r, M, sec) {
-    const type = it.kind === "finger" && r.project.type === "attenuator" ? "concrete" : r.project.type;
+    const type = it.landingKind === "concrete" || (it.kind === "finger" && r.project.type === "attenuator") ? "concrete" : r.project.type;
+    const alongY = it.kind === "finger" || it.along === "y";
     const P = sec.parts;
     if (type === "framed") {
-      const L = it.x1 - it.x0, W = it.y1 - it.y0, across = it.kind === "finger" ? "x" : "y";
+      const L = it.x1 - it.x0, W = it.y1 - it.y0, across = alongY ? "x" : "y";
       // floats under a frame and deck
       const fl = P.nf, fw = P.fw, gap = P.gap, cov = sec.cover;
       const n = Math.max(1, Math.round(((across === "y" ? L : W) * cov) / 2.4));
@@ -189,8 +199,13 @@ export class View3D {
       this.world.add(box(it.x0, it.x1, it.y0, it.y1, it.z0, it.z1, M.concrete));
       // timber walers along the edges
       const t = 0.15;
-      this.world.add(box(it.x0, it.x1, it.y0 - t, it.y0, it.z1 - 0.35, it.z1 - 0.05, M.timber));
-      this.world.add(box(it.x0, it.x1, it.y1, it.y1 + t, it.z1 - 0.35, it.z1 - 0.05, M.timber));
+      if (it.along === "y") {
+        this.world.add(box(it.x0 - t, it.x0, it.y0, it.y1, it.z1 - 0.35, it.z1 - 0.05, M.timber));
+        this.world.add(box(it.x1, it.x1 + t, it.y0, it.y1, it.z1 - 0.35, it.z1 - 0.05, M.timber));
+      } else {
+        this.world.add(box(it.x0, it.x1, it.y0 - t, it.y0, it.z1 - 0.35, it.z1 - 0.05, M.timber));
+        this.world.add(box(it.x0, it.x1, it.y1, it.y1 + t, it.z1 - 0.35, it.z1 - 0.05, M.timber));
+      }
     }
   }
 
@@ -234,9 +249,9 @@ export class View3D {
   }
 
   sunAt(ext) {
-    const cx = (ext.x0 + ext.x1) / 2, R = Math.max(ext.x1 - ext.x0, ext.y * 2);
-    this.sun.position.set(cx - R * 0.3, -R * 0.6, R * 0.9);
-    this.sun.target.position.set(cx, 0, 0);
+    const cx = (ext.x0 + ext.x1) / 2, cy = ext.y0 !== undefined ? (ext.y0 + ext.y1) / 2 : 0, R = Math.max(ext.x1 - ext.x0, ext.y * 2);
+    this.sun.position.set(cx - R * 0.3, cy - R * 0.6, R * 0.9);
+    this.sun.target.position.set(cx, cy, 0);
     const sh = this.sun.shadow.camera;
     sh.left = -R; sh.right = R; sh.top = R; sh.bottom = -R; sh.near = 0.1; sh.far = R * 4;
     sh.updateProjectionMatrix();
@@ -245,9 +260,9 @@ export class View3D {
   fit(ext, key, z) {
     if (this.fitKey === key) return;
     this.fitKey = key;
-    const cx = (ext.x0 + ext.x1) / 2, R = Math.max(ext.x1 - ext.x0, ext.y * 2);
-    this.controls.target.set(cx, 0, z);
-    this.camera.position.set(cx - R * 0.35, -R * 0.85, z + R * 0.5);
+    const cx = (ext.x0 + ext.x1) / 2, cy = ext.y0 !== undefined ? (ext.y0 + ext.y1) / 2 : 0, R = Math.max(ext.x1 - ext.x0, ext.y * 2);
+    this.controls.target.set(cx, cy, z);
+    this.camera.position.set(cx - R * 0.35, cy - R * 0.85, z + R * 0.5);
     this.camera.near = R / 500; this.camera.far = R * 30;
     this.camera.updateProjectionMatrix();
   }

@@ -7,7 +7,7 @@
 // these flags.
 
 export const REF = {
-  AS3962: "AS 3962-2001 Guidelines for design of marinas (values to be confirmed against AS 3962:2020)",
+  AS3962: "AS 3962:2020 Marina design",
   AS1170_0: "AS/NZS 1170.0:2002 Structural design actions — General principles",
   AS1170_2: "AS/NZS 1170.2:2021 Structural design actions — Wind actions",
   AS4997: "AS 4997-2005 Guidelines for the design of maritime structures",
@@ -17,6 +17,9 @@ export const REF = {
   AS1720: "AS 1720.1:2010 Timber structures — Design methods",
   TMR: "Qld TMR Design Criteria for Floating Walkways and Pontoons (Oct 2015)",
   EN1993_5: "EN 1993-5:2007 Piling (corrosion loss tables)",
+  AS1170_4: "AS 1170.4:2007 (R2018) Structural design actions — Earthquake actions in Australia",
+  AS1664: "AS/NZS 1664.1:1997 Aluminium structures — Limit state design",
+  DNV: "DNV-OS-E302 Offshore mooring chain (chain strength and mass formulas)",
 };
 
 // ---------------------------------------------------------------- AS 3962 loads
@@ -37,11 +40,11 @@ export const GANGWAY_LIVE = {
 /** Freeboard criteria. */
 export const FREEBOARD = {
   reserve: 0.050,          // Cl 4.7.1(b): 50 mm reserve buoyancy under the flotation load
-  stabilityMin: 0.050,     // Cl 4.12.2: 50 mm to top of flotation, opposite chine submerged
-  responseCheck: { freeboard: 0.500, draft: 0.150 }, // Cl 4.7.1: check response if F > 500 and T < 150 mm
+  stabilityMin: 0.050,     // Cl 4.13.2.1: 50 mm to top of flotation, opposite chine submerged
+  responseCheck: { freeboard: 0.500, draft: 0.150 }, // Cl 4.13.2.3 rapid response (the 2001 edition's 500 mm / 150 mm trigger, kept as a prompt)
   waterAccess: 0.500,      // Cl 5.1.2: access from the water needed when freeboard > 500 mm
   tmr: { min: 0.375, max: 0.500, src: "TMR Table 4.2.1 / 4.2.2" },
-  src: "AS 3962 Cl 4.7.1, 4.12.2, 5.1.2",
+  src: "AS 3962 Cl 4.7.1, 4.13.2, 5.1.2",
 };
 
 /** Cl 4.2 strength load combinations (environmental factors). */
@@ -65,7 +68,12 @@ export const WAVE_MIN = { force: 2.0, src: "AS 3962 Cl 4.8.2.3 (minimum 2 kN/m h
 export const WAVE_DESIGN = { H1overHs: 1.67, src: "AS 3962 Cl 4.8.2.2 (H1, mean of highest 1 %; Rayleigh H1/Hs = 1.67)" };
 /** Cl 4.8.3.3 wind: qz = 0.0006 V² kPa (½·1.2·V² Pa), F = CD A qz. Vessel group: 20 % on leeward boats. */
 export const WIND = { rho: 1.2, leeward: 0.2, src: "AS 3962 Cl 4.8.3; AS/NZS 1170.2 Cl 2.4.1 (ρair = 1.2 kg/m³)" };
-export const BERTHING = { v: 0.3, vLarge: 0.2, src: "AS 3962 Cl 4.9 (≥ 0.3 m/s; 0.2 m/s for vessels over 25 m)" };
+export const BERTHING = { v: 0.3, vLarge: 0.2, vXL: 0.15, src: "AS 3962 Cl 4.9 (≥ 0.3 m/s; 0.2 m/s for 25 m to 34 m, 0.15 m/s over 34 m)" };
+export const berthingSpeed = (L) => (L > 34 ? BERTHING.vXL : L >= 25 ? BERTHING.vLarge : BERTHING.v);
+/** Table 4.6 minimum design vessel displacement (t) by length; 95 % of vessels do not exceed it. */
+export const DISPLACEMENT = [[10, 7], [12, 12], [15, 20], [18, 33], [20, 44], [25, 80], [30, 180], [35, 270], [40, 360], [45, 470], [50, 600]];
+/** Table 4.6 minimum, interpolated; below 10 m (not tabulated) scaled with L³ from the 10 m value. */
+export const minDisplacement = (L) => (L < 10 ? 7 * (L / 10) ** 3 : interp(DISPLACEMENT, L));
 export const WATER = { sea: 1026, fresh: 1000, src: "AS 3962 Cl 4.8.4.3" };
 
 /** Table 4.2 good wave climate (Hs, m), 1 in 50 y and 1 y events. */
@@ -78,7 +86,9 @@ export const WAVE_CLIMATE = {
     { dir: "Beam seas, T > 2 s", y50: 0.25, y1: 0.15 },
   ],
   factors: { excellent: 0.75, good: 1.0, moderate: 1.25 },
-  src: "AS 3962 Table 4.2",
+  maxOverModerate: 1.5, // Table 4.2 Note: maximum wave height ≤ 1.5 × the moderate Hs criterion
+  intermediatePiles: 0.4, // Cl 4.8.2.1: head sea 1 in 50 y over 0.4 m with double berths → consider intermediate mooring piles
+  src: "AS 3962 Table 4.2, Cl 4.8.2.1",
 };
 
 /** Table 4.4 vessel windage (m²): [length, motor head, motor beam, yacht head, yacht beam]. */
@@ -87,23 +97,80 @@ export const WINDAGE = [
   [20, 24, 76, 12, 44], [25, 30, 95, 15, 60], [30, 45, 120, 35, 92], [35, 54, 167, 36, 122],
   [40, 78, 213, 40, 182], [45, 85, 264, 50, 210], [50, 90, 285, 60, 249],
 ];
-/** Table 3.1 typical draughts (m): [length, power, yacht]. */
+/** Table 3.1 draughts (m): [length, power average, power 95 %, yacht average, yacht 95 %]. */
 export const DRAUGHT = [
-  [8, 0.9, 1.5], [10, 1.0, 1.8], [12, 1.0, 2.0], [15, 1.2, 2.5], [20, 1.5, 2.9], [25, 1.8, 3.0],
-  [30, 1.9, 3.4], [35, 2.1, 3.8], [40, 2.3, 4.2], [45, 2.6, 4.2], [50, 2.9, 4.2],
+  [8, 0.7, 0.9, 1.3, 1.5], [10, 0.9, 1.1, 1.6, 1.8], [12, 1.0, 1.3, 1.8, 2.4], [15, 1.2, 1.5, 2.2, 2.8],
+  [20, 1.4, 1.8, 2.6, 3.5], [25, 1.6, 2.0, 2.8, 3.9], [30, 1.9, 2.4, 3.4, 4.3], [35, 2.2, 2.8, 3.8, 5.0],
+  [40, 2.3, 3.0, 4.2, 5.8], [45, 2.4, 3.1, 4.2, 5.8], [50, 2.6, 3.3, 4.2, 5.8],
 ];
 /** Table 3.2 beam (m) of mono-hull boats by length. */
 export const BEAM = [
-  [6, 2.8], [7, 3.1], [8, 3.4], [9, 3.7], [10, 4.0], [11, 4.3], [12, 4.4], [13, 4.6], [14, 4.8], [15, 5.0],
-  [16, 5.2], [17, 5.3], [18, 5.4], [19, 5.5], [20, 5.7], [21, 5.8], [22, 5.9], [23, 6.0], [24, 6.3], [25, 6.5],
-  [27.5, 7.0], [30, 7.5], [35, 8.7], [40, 10.0], [45, 10.0], [50, 10.0],
+  [6, 3.0], [7, 3.2], [8, 3.4], [9, 3.7], [10, 3.9], [11, 4.1], [12, 4.3], [13, 4.5], [14, 4.7], [15, 4.9],
+  [16, 5.2], [17, 5.3], [18, 5.5], [19, 5.7], [20, 5.9], [21, 6.2], [22, 6.3], [23, 6.5], [24, 6.7], [25, 7.0],
+  [27.5, 7.5], [30, 7.6], [35, 8.2], [40, 8.8], [45, 9.4], [50, 10.0],
 ];
-/** Table 3.3 clear gangway width by number of berths. */
-export const GANGWAY_WIDTH = [[2, 0.7], [10, 0.9], [60, 1.2], [120, 1.5], [Infinity, 1.8]];
-/** Cl 3.6.2 gangway slopes (1 in n) at CD. */
-export const GANGWAY_SLOPE = { marina: 3.5, private: 3.0, disabled: 8.0, src: "AS 3962 Cl 3.6.2" };
-/** Cl 3.5 walkway and finger dimensions. */
-export const WALKWAY = { min: 1.5, over100: 1.8, over200: 2.4, fingerLength: 0.8, fingerWidth: 0.9, fingerTip: 0.6, src: "AS 3962 Cl 3.5" };
+/** Table 3.4 clear gangway width (m) by number of berths: [berths up to, general, accessible]. */
+export const GANGWAY_WIDTH = [[10, 1.0, 1.2], [60, 1.2, 1.2], [120, 1.5, 1.8], [Infinity, 1.8, 1.8]];
+/** Table 3.5 gangway slopes (1 in n). General berths: 1:4 at CD. Accessible: 1:14 for ≥ 80 % of the time and 1:8 at worst, gangway ≤ 25 m. */
+export const GANGWAY_SLOPE = { general: 4.0, accessible80: 14.0, accessibleMax: 8.0, accessibleLength: 25, src: "AS 3962 Cl 3.6.2, Table 3.5" };
+/** Cl 3.5.2 Table 3.3 minimum clear walkway widths (m), Cl 3.5.4 fingers. Accessible berths within 200 m of the land. */
+export const WALKWAY = {
+  general: { primary: 1.5, primaryOver200: 2.4, secondary: 1.5, secondaryOver200: 1.8 },
+  accessible: { primary: 1.8, secondary: 1.5, maxLength: 200 },
+  fingerLength: 0.8, fingerWidth: 0.9, fingerTip: 0.6, src: "AS 3962 Cl 3.5.2 Table 3.3, Cl 3.5.4",
+};
+/** Cl 4.14 pile heights: 1 in 100 ARI level with wave action and sea level rise. Cl 4.16: 25 year minimum design life. */
+export const PILE_HEIGHT = { ari: 100, src: "AS 3962 Cl 4.14" };
+export const MIN_LIFE = { years: 25, src: "AS 3962 Cl 4.16 (marina structures, gangways and piling)" };
+
+// ---------------------------------------------------------------- AS 4997
+
+/** AS 4997 Table 5.1 design working life by category of maritime structure (years). */
+export const DESIGN_LIFE = {
+  temporary: { life: 5, name: "Temporary works" },
+  small: { life: 25, name: "Small craft facilities (marinas, pontoons, boat ramps)" },
+  normal: { life: 50, name: "Normal commercial structures" },
+  special: { life: 100, name: "Special structures (residential, defence, major infrastructure)" },
+  src: "AS 4997 Cl 5.2, Table 5.1",
+  check: true,
+};
+/** Serviceability: wind for SLS at 1/25 annual probability, unfactored environmental loads. */
+export const SLS = {
+  windR: 25, factors: { wind: 1.0, current: 1.0, wave: 1.0 },
+  pileDeflection: 0.15, // m at the guide: project criterion (roller travel / gangway seating), editable
+  src: "AS/NZS 1170.0 Cl 4.3, Appendix C (SLS, 1/25); AS 4997 Cl 4.3 (serviceability limit states)",
+  check: true,
+};
+/** AS 4997 Section 6 durability: what concrete pontoon shells rely on instead of AS 3600 cover. */
+export const DURABILITY = {
+  concreteShell: { minFc: 40, src: "AS 4997 Section 6; AS 3600 Table 4.3 exposure C2 (tidal/splash)" },
+};
+
+// ---------------------------------------------------------------- AS 1170.4 earthquake
+
+/** AS 1170.4 Table 3.1 probability factor kp by annual probability of exceedance (1/P years). */
+export const KP = [[20, 0.20], [25, 0.25], [50, 0.35], [100, 0.5], [200, 0.7], [250, 0.75], [500, 1.0], [800, 1.25], [1000, 1.3], [1500, 1.5], [2000, 1.7], [2500, 1.8]];
+/** AS/NZS 1170.0 Table F2 annual probability (1/P years) for earthquake, by design life and importance. */
+export const RETURN_PERIOD_EQ = {
+  5: { 1: 25, 2: 50, 3: 100, 4: 250 }, 25: { 1: 50, 2: 250, 3: 500, 4: 1000 },
+  50: { 1: 100, 2: 500, 3: 1000, 4: 2500 }, 100: { 1: 250, 2: 1000, 3: 2500, 4: 2500 },
+  src: "AS/NZS 1170.0 Table F2 (earthquake)",
+};
+/** AS 1170.4 Table 6.4 spectral shape factor Ch(T): [T=0, slope to 0.1 s, plateau, a/T to 1.5 s, b/T² beyond]. */
+export const SPECTRUM = {
+  Ae: [0.8, 15.5, 2.35, 0.704, 1.056], Be: [1.0, 19.4, 2.94, 0.88, 1.32], Ce: [1.3, 23.8, 3.68, 1.25, 1.874],
+  De: [1.1, 25.8, 3.68, 1.98, 2.97], Ee: [1.1, 25.8, 3.68, 3.08, 4.62],
+  src: "AS 1170.4 Cl 6.4, Table 6.4 (spectral shape factor)", check: true,
+};
+export function spectralShape(site, T) {
+  const [c0, sl, top, a, b] = SPECTRUM[site] || SPECTRUM.De;
+  if (T <= 0) return c0;
+  if (T <= 0.1) return c0 + sl * T;
+  if (T <= 1.5) return Math.min(top, a / T);
+  return b / (T * T);
+}
+export const kpOf = (P) => interp(KP, P);
+export const EQ = { kpZmin: 0.08, Sp: 1.0, mu: 1.0, src: "AS 1170.4 Cl 3.1 (kpZ ≥ 0.08), Cl 6.2, Table 6.5(A) (elastic: μ = 1, Sp = 1)" };
 
 // -------------------------------------------------- AS/NZS 1170.0 and 1170.2
 
@@ -159,6 +226,33 @@ export const CORROSION = {
   check: true,
 };
 
+/** AS 4100 Cl 9.3.2 bolts and threaded rods: [name, fuf MPa]; stress area As and core area Ac (mm², AS 1275). */
+export const BOLT = {
+  grades: { "A4-70": { name: "Stainless A4-70 (ISO 3506)", fuf: 700 }, "8.8": { name: "Property class 8.8, galvanised", fuf: 830 }, "4.6": { name: "Property class 4.6, galvanised", fuf: 400 } },
+  sizes: [[16, 157, 144], [20, 245, 225], [24, 353, 324], [30, 561, 519], [36, 817, 759]],
+  phi: 0.8, src: "AS 4100 Cl 9.3.2.1 (shear, kr = 1, threads in the plane), 9.3.2.2 (tension), 9.3.2.3 (combined)",
+};
+/** Square hollow sections, cold-formed C350L0 (AS/NZS 1163), for guide frames and gangway chords: [b, t]. */
+export const SHS = [[75, 4], [89, 5], [100, 5], [100, 6], [125, 6], [150, 6], [150, 9], [200, 9], [250, 9]];
+/** Aluminium 6061-T6 extrusions (AS/NZS 1664.1 Table 3.3(A)): characteristic tensile yield; φ for yield. */
+export const ALUMINIUM = { fty: 240, ftu: 260, E: 70000, phiY: 0.95, phiC: 0.85, src: "AS/NZS 1664.1 Table 3.3(A), Cl 3.4", check: true };
+/** Gangway serviceability and comfort, project criteria (no AS value). */
+export const GANGWAY_SLS = { deflection: 300, frequency: 3.0, deadKPa: 0.6, src: "Project criteria: live deflection ≤ span/300, first vertical frequency ≥ 3 Hz (pedestrian comfort)", check: true };
+
+// ---------------------------------------------------------------- moorings
+
+/** Studless chain, grade R3 (DNV-OS-E302): MBL = 0.0223 d² (44 − 0.08 d) kN, mass 0.0199 d² kg/m (d mm). */
+export const CHAIN = {
+  sizes: [16, 19, 22, 26, 28, 32, 36, 40, 44, 48, 52],
+  mbl: (d) => 0.0223 * d * d * (44 - 0.08 * d), mass: (d) => 0.0199 * d * d,
+  corrosion: 0.3, // mm of diameter per year, splash/bottom (DNV-OS-E301 Table 8.1 order of magnitude)
+  fos: 3.0,       // MBL / maximum tension, intact, static analysis of a small-craft mooring
+  src: "DNV-OS-E302 Ch 2 Sec 2 (R3 studless); FOS 3 on MBL for a static catenary", check: true,
+};
+export const ANCHOR = { mu: { sand: 0.5, clay: 0.3 }, fos: 1.5, gammaC: 24.0, src: "Dead-weight block on the seabed: sliding with friction μ, FOS 1.5", check: true };
+/** AS 3962 Cl 3.1.2 fairway between berth ends: at least 1.5 × the design vessel length (1.75 L preferred). */
+export const FAIRWAY = { factor: 1.5, preferred: 1.75, src: "AS 3962 Cl 3.1.2 (fairway ≥ 1.5 L, 1.75 L preferred)" };
+
 // ------------------------------------------------------------- AS 3600 concrete
 
 export const CONCRETE = {
@@ -213,5 +307,7 @@ export function interp(table, x, col = 1) {
   }
   return table[table.length - 1][col];
 }
-export const gangwayWidth = (berths) => GANGWAY_WIDTH.find(([n]) => berths <= n)[1];
-export const walkwayWidth = (length) => (length > 200 ? WALKWAY.over200 : length > 100 ? WALKWAY.over100 : WALKWAY.min);
+export const gangwayWidth = (berths, accessible = false) => GANGWAY_WIDTH.find(([n]) => berths <= n)[accessible ? 2 : 1];
+/** Primary walkway clear width (Table 3.3), never less than the gangway's clear width (Cl 3.5.2). */
+export const walkwayWidth = (length, accessible = false, gangway = 0) =>
+  Math.max(gangway, accessible ? WALKWAY.accessible.primary : length > 200 ? WALKWAY.general.primaryOver200 : WALKWAY.general.primary);

@@ -75,3 +75,33 @@ export function rampColour(F, Fmin) {
   const c = stops[i].map((v, j) => Math.round(v + (stops[i + 1][j] - v) * f));
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
+
+/**
+ * Equipotential lines of a flow net: n heads evenly between the lowest and highest,
+ * traced through the saturated triangles of the mesh. Returns [[[x, y], [x, y]], ...].
+ */
+export function equipotentials(flow, n = 12) {
+  if (!flow) return [];
+  const { xs, ny, X, Y, h } = flow;
+  const node = (i, j) => i * (ny + 1) + j;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < h.length; k++) if (h[k] >= Y[k] - 1e-6) { lo = Math.min(lo, h[k]); hi = Math.max(hi, h[k]); }
+  if (!(hi - lo > 1e-3)) return [];
+  const levels = Array.from({ length: n }, (_, i) => lo + (hi - lo) * (i + 0.5) / n);
+  const segs = [];
+  const tri = (a, b, c) => {
+    if (h[a] < Y[a] - 1e-6 || h[b] < Y[b] - 1e-6 || h[c] < Y[c] - 1e-6) return;
+    for (const v of levels) {
+      const pts = [];
+      for (const [p, q] of [[a, b], [b, c], [c, a]]) {
+        if ((h[p] - v) * (h[q] - v) < 0) { const t = (v - h[p]) / (h[q] - h[p]); pts.push([X[p] + t * (X[q] - X[p]), Y[p] + t * (Y[q] - Y[p])]); }
+      }
+      if (pts.length === 2) segs.push(pts);
+    }
+  };
+  for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < ny; j++) {
+    const a = node(i, j), b = node(i + 1, j), c = node(i + 1, j + 1), d = node(i, j + 1);
+    tri(a, b, c); tri(a, c, d);
+  }
+  return segs;
+}

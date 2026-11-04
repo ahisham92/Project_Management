@@ -24,6 +24,7 @@
 //   Morgenstern-Price  = both, f(x) = half-sine
 //   Ordinary (Fellenius) = moment equilibrium, N from resolving normal to the base.
 
+import { flowField } from "./seep.js";
 import { hbTangent } from "./materials.js";
 import {
   yAt, vertices, uniqueSorted, crossings, lower, upper, flat, mirror, TINY, circleFrom3,
@@ -41,6 +42,9 @@ export const DEG = Math.PI / 180;
  *   mat = { name, gamma, gsat, c, phi, kind: "drained"|"undrained", su, suGrad, suMax }
  *   piezo: polyline|null (pore water head; above the ground it is ponded water),
  *   ru: number (pore pressure ratio, used instead of piezo when > 0),
+ *   flow: flow net data (seep.js) | null: pore pressure from the finite element heads,
+ *         with piezo then the phreatic line (for gamma / gsat and ponded water),
+ *   flowCap: true to hold the flow net's head at most at the ground above (drawdown),
  *   gw: unit weight of water,
  *   face: { toe:[x,y], crest:[x,y] },
  *   strips: [{ x1, x2, q, variable }], lines: [{ x, fx, fy, variable }],
@@ -78,13 +82,21 @@ export function prepare(model) {
     crack: model.crack || { depth: 0, water: 0 },
     f,
   };
+  if (model.flow && !(model.ru > 0)) {
+    const F = flowField(model.flow, P.gw);
+    // after a drawdown the water standing on the ground is gone: the head is held
+    // at most at the ground surface above the point (the phreatic surface on the face)
+    P.pw = model.flowCap
+      ? (x, y) => P.gw * Math.max(0, Math.min(F.head(fx(x), y), yAt(P.ground, x)) - y)
+      : (x, y) => F.u(fx(x), y);
+  }
   // the lines a slice must break at
   P.lines_ = [P.ground, ...P.layers.slice(1).map((L) => L.top), ...(P.piezo ? [P.piezo] : [])];
   return P;
 }
 
 /** Strength of a material at a point, with partial factors applied. */
-function strength(P, mat, depthInLayer) {
+export function strength(P, mat, depthInLayer) {
   if (mat.kind === "hb") return { c: 0, tanphi: 0 }; // set per slice from its normal stress
   if (mat.kind === "undrained") {
     let su = mat.su + (mat.suGrad || 0) * Math.max(0, depthInLayer);
@@ -241,6 +253,7 @@ export function buildSlices(P, slip, opts = {}) {
     const st = strength(P, mat, at.depth);
     let u = 0;
     if (P.ru > 0) u = P.ru * cm.w;
+    else if (P.pw) u = P.pw(xm, ybm);
     else if (P.piezo) u = gw * Math.max(0, yAt(P.piezo, xm) - ybm);
     let { c: sc, tanphi: stp } = st;
     if (mat.kind === "hb") {

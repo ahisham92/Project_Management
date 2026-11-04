@@ -12,6 +12,9 @@ import { rockArmour, accropode, toe, vanDerMeerNs, waveParams } from "./armour.j
 import { newmark } from "./analyse.js";
 import { hoekBrown, hbTangent, hbEquivalent } from "./materials.js";
 import { probabilistic, normCdf } from "./prob.js";
+import { seepage } from "./seep.js";
+import { stagedStrength } from "./drawdown.js";
+import { strengthReduction } from "./fem.js";
 
 const D = Math.PI / 180;
 
@@ -270,6 +273,72 @@ export const CHECKS = [
     run() {
       const t = toe({ Hs: 2, h: 10, ht: 7, rhoR: 2650, rhoW: 1025, Nod: 0.5 });
       return { expected: (2 + 6.2 * 0.7 ** 2.7) * 0.5 ** 0.15, rows: [["Talus Ns", t.Ns]], tol: 1e-12 };
+    },
+  },
+  {
+    id: "seep-confined", group: "Seepage",
+    title: "Confined flow through a block: linear head, Darcy discharge",
+    source: "20 m long, 5 m thick, k = 1e-5 m/s, heads 10 m and 6 m: q = k A Δh / L = 1.0e-5 m³/s per m, h(7 m) = 8.6 m",
+    run() {
+      const r = seepage({ ground: [[0, 5], [20, 5]], bottom: 0, layers: [{ top: [[0, 5], [20, 5]], k: 1e-5 }], left: 10, right: 6 }, { nx: 20, ny: 5, confined: true });
+      return { expected: 1e-5, rows: [["Talus q (m³/s per m)", r.q]], tol: 1e-9, also: [{ label: "Talus h at x = 7 m", value: r.head(7, 2.3), expected: 8.6, tol: 1e-9 }] };
+    },
+  },
+  {
+    id: "seep-dam", group: "Seepage",
+    title: "Unconfined flow through a rectangular dam (Dupuit–Charny)",
+    source: "Charny (1951): q = k (h1² − h2²) / 2L is exact for the discharge; L = 20 m, h1 = 8 m, h2 = 2 m, k = 1e-5 m/s gives 1.5e-5 m³/s per m",
+    run() {
+      const k = 1e-5, L = 20, h1 = 8, h2 = 2;
+      const dam = (nx, ny, H) => seepage({ ground: [[0, H], [L, H]], bottom: 0, layers: [{ top: [[0, H], [L, H]], k }], left: h1, right: h2 }, { nx, ny }).q;
+      const r2 = seepage({ ground: [[0, 12], [30, 12]], bottom: 0, layers: [{ top: [[0, 12], [30, 12]], k }], left: 10, right: 3 }, { nx: 60, ny: 30 }).q;
+      return { expected: k * (h1 * h1 - h2 * h2) / (2 * L), rows: [["Talus q, 40 × 30 mesh", dam(40, 30, 12)]], tol: 0.02,
+        also: [{ label: "L = 30 m, h1 = 10 m, h2 = 3 m", value: r2, expected: k * (100 - 9) / 60, tol: 0.02 }] };
+    },
+  },
+  {
+    id: "drawdown-envelopes", group: "Drawdown",
+    title: "Three-stage drawdown strengths at Kc = 1, Kc = Kf and between (Duncan, Wright and Wong 1990)",
+    source: "Kc = 1: the Mohr circle with σ3 = σ'fc tangent to the R envelope, found here numerically; Kc = Kf: c' + σ'fc tan φ'; between: linear in Kc. c' 10, φ' 30°, cR 20, φR 15°, σ'fc 100 kPa",
+    run() {
+      const env = { c: 10, phi: 30, cR: 20, phiR: 15 }, s = 100;
+      // Kc = 1 by bisection on the circle's radius: tangent when its distance to the R line equals r
+      const tr = Math.tan(15 * D);
+      let lo = 0, hi = 1e4;
+      for (let k = 0; k < 200; k++) { const r = (lo + hi) / 2, p = s + r; const dist = (20 + p * tr) * Math.cos(15 * D); if (dist > r) lo = r; else hi = r; }
+      const r = (lo + hi) / 2, t1 = r * Math.cos(15 * D);
+      const iso = stagedStrength(s, 0, env);
+      const tKf = 10 + s * Math.tan(30 * D);
+      const onEnv = stagedStrength(s, tKf * 0.999999999, env);
+      // halfway in Kc
+      const Kf = iso.Kf, Kmid = (1 + Kf) / 2;
+      const sp = Math.sin(30 * D), cp = Math.cos(30 * D);
+      // the shear on the failure plane that gives Kc = Kmid at σ'fc = s
+      const t = s * (Kmid - 1) / ((1 + sp) / cp + Kmid * (1 - sp) / cp);
+      const mid = stagedStrength(s, t, env);
+      return { expected: t1, rows: [["Talus τff at Kc = 1 (kPa)", iso.tau]], tol: 1e-9,
+        also: [{ label: "Talus τff at Kc = Kf (kPa)", value: onEnv.tau, expected: tKf, tol: 1e-6 },
+          { label: "Talus τff halfway in Kc (kPa)", value: mid.tau, expected: (t1 + tKf) / 2, tol: 1e-9 }] };
+    },
+  },
+  {
+    id: "fem-undrained", group: "Finite elements",
+    title: "Strength reduction: undrained 2:1 slope on a foundation, Griffiths and Lane (1999) example 3",
+    source: "H 10 m, su/γH = 0.25, foundation 10 m deep (D = 2); Griffiths and Lane find F = 1.45 by finite elements (Taylor's chart 1.47)",
+    run() {
+      const model = { ground: [[-30, 0], [0, 0], [20, 10], [45, 10]], bottom: -10, layers: [{ mat: { name: "clay", gamma: 20, gsat: 20, su: 50, kind: "undrained" } }], face: { toe: [0, 0], crest: [20, 10] } };
+      const r = strengthReduction(model, { nx: 20, ny: 8, guess: 1.45, precision: 0.01 });
+      return { expected: 1.45, rows: [["Talus F (finite elements, 20 × 8 quads)", r.F]], tol: 0.02 };
+    },
+  },
+  {
+    id: "fem-drained", group: "Finite elements",
+    title: "Strength reduction: c'-φ' 2:1 slope, Griffiths and Lane (1999) example 1",
+    source: "H 10 m, c'/γH = 0.05, φ' 20°, no foundation (D = 1); Bishop and Morgenstern's charts give 1.38, Griffiths and Lane's finite elements about 1.4",
+    run() {
+      const model = { ground: [[0, 0], [20, 10], [35, 10]], bottom: 0, layers: [{ mat: { name: "soil", gamma: 20, gsat: 20, c: 10, phi: 20, kind: "drained" } }], face: { toe: [0, 0], crest: [20, 10] } };
+      const r = strengthReduction(model, { nx: 20, ny: 8, guess: 1.4, precision: 0.01 });
+      return { expected: 1.38, rows: [["Talus F (finite elements, 20 × 8 quads)", r.F]], tol: 0.05 };
     },
   },
   {

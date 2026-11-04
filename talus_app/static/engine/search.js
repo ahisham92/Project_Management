@@ -278,3 +278,108 @@ export function givenSurface(P, surface, opt = {}) {
   const results = factors(P, cut, circle);
   return { kind: circle ? "circle" : "polyline", circle, cut, results, method: opt.method || "mp", F: valueOf(results, opt.method || "mp"), trials: [] };
 }
+
+/**
+ * Block (wedge) search: surfaces that go down from the crest side at an active
+ * angle, run along just inside a weaker layer (or just above the hard base), and
+ * come up to the toe side at a passive angle. Each layer below the top one is
+ * tried, with entry, exit, depth inside the layer and both angles refined by a
+ * simplex. Returns the most critical block, solved exactly by every method.
+ */
+export function blockSearch(P, opt = {}) {
+  const method = opt.method || "mp";
+  const lim = limits(P, opt);
+  const n = opt.slices || 40;
+  const lines = [];
+  P.layers.forEach((L, k) => { if (k > 0 && L.top) lines.push({ line: L.top, d0: 0.15, flat: false, k }); });
+  lines.push({ line: [[P.xmin, P.bottom], [P.xmax, P.bottom]], d0: -0.05, flat: true });
+  const make = (line, [xe, xx, d, aa, ap]) => {
+    if (!(xx - xe > 0.5) || !(aa > 30 * DEG && aa < 85 * DEG && ap > 8 * DEG && ap < 50 * DEG)) return null;
+    const ye = yAt(P.ground, xe), yx = yAt(P.ground, xx);
+    const yb = (x) => Math.max(P.bottom, yAt(line, x) - d);
+    const root = (f, a, b) => {
+      let fa = f(a), fb = f(b);
+      if (!(fa > 0) || !(fb < 0)) return NaN;
+      for (let i = 0; i < 50; i++) { const m = (a + b) / 2, fm = f(m); if (fm > 0) { a = m; fa = fm; } else { b = m; fb = fm; } }
+      return (a + b) / 2;
+    };
+    const xa = root((x) => ye - (x - xe) * Math.tan(aa) - yb(x), xe, xx);
+    if (!Number.isFinite(xa)) return null;
+    const xb = -root((nx) => yx - (xx + nx) * Math.tan(ap) - yb(-nx), -xx, -xa);
+    if (!Number.isFinite(xb) || !(xb > xa + Math.max(0.5, 0.1 * (xx - xe)))) return null;
+    const slip = [[xe, ye], [xa, yb(xa)]];
+    for (const [x] of line) if (x > xa + 1e-6 && x < xb - 1e-6) slip.push([x, yb(x)]);
+    slip.push([xb, yb(xb)], [xx, yx]);
+    for (let i = 1; i < slip.length - 1; i++) if (slip[i][1] > yAt(P.ground, slip[i][0]) - 0.05) return null;
+    let depth = 0;
+    for (const [sx, sy] of slip) depth = Math.max(depth, yAt(P.ground, sx) - sy);
+    if (depth < lim.minDepth) return null;
+    return { slip, depth };
+  };
+  const fOf = (L, x, exact, m) => {
+    const b = make(L.line, x);
+    if (!b) return Infinity;
+    const cut = buildSlices(P, b.slip, { n: exact ? n : 20, exact: true });
+    if (!cut || cut.slices.length < 3) return Infinity;
+    const F = quickF(P, cut, null, m);
+    if (!(Number.isFinite(F) && F > 0)) return Infinity;
+    // a rigorous F far below the simple force-equilibrium one is a spurious root
+    // (m_alpha near zero on a steep exit), not a mechanism
+    const Fj = quickF(P, cut, null, "janbuCorrected");
+    if (Number.isFinite(Fj) && (F < 0.7 * Fj || F > 1.5 * Fj)) return Infinity;
+    return F;
+  };
+  const thick = (k) => {
+    // thickness of the weak layer under line k: distance to the next layer top (or the base)
+    const next = P.layers[k + 1]?.top;
+    let t = Infinity;
+    for (let i = 0; i <= 10; i++) {
+      const x = P.xmin + (P.xmax - P.xmin) * i / 10;
+      t = Math.min(t, yAt(P.layers[k].top, x) - (next ? yAt(next, x) : P.bottom));
+    }
+    return t;
+  };
+  lines.forEach((L) => { L.dmax = L.flat ? L.d0 : Math.max(0.05, (L.k != null ? thick(L.k) : 1) - 0.05); });
+  const SM = "spencer";
+  let best = null;
+  const [ne, nx] = opt.grid || [7, 7];
+  const AA = [45, 58, 72].map((a) => a * DEG), AP = [15, 27, 40].map((a) => a * DEG);
+  for (const L of lines) {
+    const ds = L.flat ? [L.d0] : [Math.min(0.15, L.dmax), L.dmax].filter((v, i, a) => a.indexOf(v) === i);
+    const seeds = [];
+    for (let i = 0; i < ne; i++) {
+      const xe = lim.entry[0] + (lim.entry[1] - lim.entry[0]) * i / (ne - 1);
+      for (let j = 0; j < nx; j++) {
+        const xx = lim.exit[0] + (lim.exit[1] - lim.exit[0]) * j / (nx - 1);
+        for (const d of ds) for (const aa of AA) for (const ap of AP) {
+          const x = [xe, xx, d, aa, ap];
+          const F = fOf(L, x, false, SM);
+          if (Number.isFinite(F)) seeds.push({ x, F });
+        }
+      }
+    }
+    if (!seeds.length) continue;
+    seeds.sort((a, b) => a.F - b.F);
+    const de = (lim.entry[1] - lim.entry[0]) / ne, dx = (lim.exit[1] - lim.exit[0]) / nx;
+    const fix = (x) => (L.flat ? [x[0], x[1], L.d0, x[3], x[4]] : x);
+    const obj = (x) => (!L.flat && (x[2] < 0 || x[2] > L.dmax) ? Infinity : fOf(L, fix(x), false, SM));
+    const picked = [];
+    for (const s of seeds) {
+      if (picked.length >= 2) break;
+      if (picked.some((p) => Math.abs(p.x[0] - s.x[0]) < de * 1.5 && Math.abs(p.x[1] - s.x[1]) < dx * 1.5)) continue;
+      picked.push(s);
+    }
+    for (const s of picked) {
+      const r = nelderMead(obj, s.x, [de, dx, Math.max(0.05, L.dmax / 4), 6 * DEG, 6 * DEG], opt.refine ?? 90);
+      // rank the polished blocks by the governing method, cut exactly
+      const F = Number.isFinite(r.f) ? fOf(L, fix(r.x), true, method) : Infinity;
+      if (Number.isFinite(F) && (!best || F < best.f)) best = { f: F, line: L, x: fix(r.x) };
+    }
+  }
+  if (!best || !Number.isFinite(best.f)) return null;
+  const b = make(best.line.line, best.x);
+  const cut = buildSlices(P, b.slip, { n, exact: true });
+  if (!cut) return null;
+  const results = factors(P, cut, null);
+  return { kind: "block", circle: null, cut, results, method, F: valueOf(results, method), depth: b.depth, xe: best.x[0], xx: best.x[1], trials: [] };
+}

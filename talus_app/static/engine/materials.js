@@ -25,7 +25,7 @@ export const PRESET_KEYS = ["softClay", "firmClay", "stiffClay", "silt", "looseS
 /** A soil as the engine sees it in a given state: drained (effective) or undrained (total). */
 export function asMaterial(soil, undrained) {
   if (undrained && soil.clay && soil.su > 0) {
-    return { name: soil.name, gamma: soil.gamma, gsat: soil.gsat, kind: "undrained", su: soil.su, suGrad: soil.suGrad || 0, phi: 0, c: 0 };
+    return { name: soil.name, gamma: soil.gamma, gsat: soil.gsat, kind: "undrained", su: soil.su, suGrad: soil.suGrad || 0, suMax: soil.suMax || 0, phi: 0, c: 0 };
   }
   return { name: soil.name, gamma: soil.gamma, gsat: soil.gsat, kind: "drained", c: soil.c, phi: soil.phi };
 }
@@ -34,10 +34,13 @@ export function asMaterial(soil, undrained) {
 export function soilFrom(spec) {
   const base = PRESETS[spec?.preset] || PRESETS.sand;
   const out = { ...base, preset: spec?.preset || "sand" };
-  for (const k of ["gamma", "gsat", "c", "phi", "su", "suGrad"]) {
+  for (const k of ["gamma", "gsat", "c", "phi", "su", "suGrad", "suMax"]) {
     const v = spec?.[k];
     if (v !== undefined && v !== null && v !== "" && Number.isFinite(+v)) out[k] = +v;
   }
+  // an undrained strength typed in means the layer is checked undrained in the short term
+  if (spec?.su !== undefined && spec.su !== null && spec.su !== "" && +spec.su > 0) out.clay = true;
   if (spec?.clay !== undefined) out.clay = !!spec.clay;
+  if (spec?.name) out.name = String(spec.name).slice(0, 40);
   return out;
 }

@@ -1,7 +1,7 @@
 // Talus — runs every load case of a project and reports in the user's frame.
 
 import { prepare, sliceForces, valueOf, METHODS, METHOD_NAMES, DEG, buildSlices, brent } from "./lem.js";
-import { criticalCircle, optimiseNonCircular, quickF, circleSlip } from "./search.js";
+import { criticalCircle, optimiseNonCircular, blockSearch, quickF, circleSlip } from "./search.js";
 import { buildCases, complete } from "./project.js";
 
 const ux = (P, x) => (P.flip ? -x : x);
@@ -40,6 +40,10 @@ function critical(P, opt) {
   if (best && opt.noncircular) {
     const nc = optimiseNonCircular(P, best, { method: opt.method, slices: opt.slices });
     if (nc && nc.F < best.F) best = { ...nc, trials: best.trials, fromCircle: best.F };
+  }
+  if (opt.block) {
+    const bl = blockSearch(P, { method: opt.method, slices: opt.slices, minDepth: opt.minDepth });
+    if (bl && (!best || bl.F < best.F)) best = { ...bl, trials: best?.trials || [], fromCircle: best?.F };
   }
   return best;
 }
@@ -132,7 +136,7 @@ export function analyse(project, opt = {}) {
   const p = built.project;
   const method = p.design?.method || "mp";
   const base = {
-    method, slices: num(p.advanced?.slices, 40), noncircular: !!p.advanced?.noncircular,
+    method, slices: num(p.advanced?.slices, 40), noncircular: !!p.advanced?.noncircular, block: !!p.advanced?.block,
     grid: opt.fast ? [10, 10, 7] : [14, 14, 9], refine: opt.fast ? 40 : 60,
   };
   const cases = [];
@@ -179,6 +183,7 @@ function num(v, d) { return Number.isFinite(+v) && v !== "" && v !== null ? +v :
  */
 export function steepestSafe(project, opt = {}) {
   const p = complete(project);
+  if (p.type === "section") return { cot: null, message: "A drawn section has no single slope to vary: change the points and watch F." };
   const lo0 = p.type === "revetment" ? 1.3 : p.type === "embankment" ? 1 : 0.25;
   const hi0 = 6;
   const check = (cot) => {

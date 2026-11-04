@@ -48,6 +48,22 @@ export const DEFAULTS = {
     design: { basis: "fos", method: "mp", targets: null },
     advanced: { slices: 40, noncircular: false, crack: 0 },
   },
+  section: {
+    type: "section", name: "Any section",
+    // points are typed or pasted as "x, y" lines, left to right
+    ground: "0, 11.7\n15, 11.7\n30, 5.7\n34, 5.7\n45.4, 0\n80, 0",
+    base: -15,
+    layers: [
+      { soil: { preset: "sand", name: "Upper" }, top: "" },
+      { soil: { preset: "firmClay", name: "Lower" }, top: "0, 6\n80, 6" },
+      { soil: { preset: "denseSand", name: "Base" }, top: "0, -7\n80, -7" },
+    ],
+    water: { mode: "line", line: "0, 9\n15, 9\n45.4, 0\n80, 0", ru: 0 },
+    load: { q: 10, x1: 1, x2: 14 },
+    seismic: { on: true, ag: 0.15, ground: "B" },
+    design: { basis: "fos", method: "mp", targets: null },
+    advanced: { slices: 40, noncircular: false, block: true, crack: 0 },
+  },
   revetment: {
     type: "revetment", name: "Rock revetment",
     geom: { crest: 4, toe: -3, cot: 2, berm: 10, base: 6 },
@@ -332,11 +348,80 @@ function revetmentCases(p) {
   };
 }
 
+// ---------------------------------------------------------------- any section
+
+/** Points typed or pasted as "x, y" lines (commas, tabs or spaces), sorted by x. */
+export function parsePoints(text) {
+  if (Array.isArray(text)) return text.filter((p) => Number.isFinite(+p[0]) && Number.isFinite(+p[1])).map((p) => [+p[0], +p[1]]).sort((a, b) => a[0] - b[0]);
+  const pts = [];
+  for (const line of String(text || "").split(/[\r\n;]+/)) {
+    const nums = line.trim().split(/[\s,]+/).filter(Boolean).map(Number);
+    if (nums.length >= 2 && Number.isFinite(nums[0]) && Number.isFinite(nums[1])) pts.push([nums[0], nums[1]]);
+  }
+  return pts.sort((a, b) => a[0] - b[0]);
+}
+
+/** Crest and toe of the face: the highest and lowest ground with the slope between them. */
+function faceOfGround(ground) {
+  let hi = 0, lo = 0;
+  ground.forEach((p, i) => { if (p[1] > ground[hi][1] + 1e-9) hi = i; if (p[1] < ground[lo][1] - 1e-9) lo = i; });
+  if (ground[hi][0] < ground[lo][0]) {
+    // falls to the right: crest is the last high point before the fall, toe the first low point after it
+    let c = hi; while (c + 1 < lo && ground[c + 1][1] >= ground[hi][1] - 1e-6) c++;
+    let t = lo; while (t - 1 > c && ground[t - 1][1] <= ground[lo][1] + 1e-6) t--;
+    return { crest: ground[c], toe: ground[t] };
+  }
+  let c = hi; while (c - 1 > lo && ground[c - 1][1] >= ground[hi][1] - 1e-6) c--;
+  let t = lo; while (t + 1 < c && ground[t + 1][1] <= ground[lo][1] + 1e-6) t++;
+  return { crest: ground[c], toe: ground[t] };
+}
+
+function sectionCases(p) {
+  let ground = parsePoints(p.ground);
+  if (ground.length < 2) ground = parsePoints(DEFAULTS.section.ground);
+  const x0 = ground[0][0], x1 = ground[ground.length - 1][0];
+  const yMin = Math.min(...ground.map((q) => q[1]));
+  const bottom = Math.min(num(p.base, yMin - 10), yMin - 0.5);
+  const span = (line) => {
+    const pts = parsePoints(line);
+    if (!pts.length) return null;
+    return [[x0, pts[0][1]], ...pts.filter((q) => q[0] > x0 && q[0] < x1), [x1, pts[pts.length - 1][1]]];
+  };
+  const specs = (p.layers?.length ? p.layers : DEFAULTS.section.layers).map((L, i) => ({ soil: soilFrom(L.soil), top: i === 0 ? null : span(L.top) }))
+    .filter((L, i) => i === 0 || L.top);
+  const layers = (undrained) => specs.map((L) => ({ top: L.top, mat: asMaterial(L.soil, undrained) }));
+  const mode = p.water?.mode || "none";
+  const line = mode === "line" ? span(p.water.line) : null;
+  const piezo = line ? line : null;
+  const ru = mode === "ru" ? Math.max(0, Math.min(1, num(p.water.ru, 0))) : 0;
+  const face = faceOfGround(ground);
+  const H = Math.max(0.1, face.crest[1] - face.toe[1]);
+  const slopeDeg = Math.atan(H / Math.max(0.01, Math.abs(face.toe[0] - face.crest[0]))) * 180 / Math.PI;
+  const q = num(p.load?.q, 0);
+  const a = num(p.load?.x1, x0), b = num(p.load?.x2, x0);
+  const strip = (psi = 1) => (q > 0 && Math.abs(b - a) > 0 ? [{ x1: Math.min(a, b), x2: Math.max(a, b), q: q * psi, variable: true }] : []);
+  const base = { ground, bottom, face, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 }, ru };
+  const T = targetsOf(p);
+  const clayey = specs.some((L) => L.soil.clay && L.soil.su > 0);
+  const water = piezo ? "the water line" : ru ? `ru = ${ru}` : "no water";
+  const cases = [{ key: "long", name: "Long term (drained)", target: T.static, model: { ...base, layers: layers(false), piezo, strips: strip() },
+    note: `Effective strength c', φ' with ${water}.` }];
+  if (clayey) cases.push({ key: "short", name: "Short term (undrained)", target: T.short, model: { ...base, layers: layers(true), piezo, strips: strip() },
+    note: "Layers with an undrained strength at su (with its increase with depth and cap); the others drained." });
+  const eq = seismicCoefficients(p, H, slopeDeg);
+  if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
+    model: { ...base, layers: layers(true), piezo, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    note: "kh·W towards the face and ±kv·W; layers with su undrained; 30% of the surcharge (ψ2)." });
+  const faceDir = face.crest[0] < face.toe[0] ? 1 : -1;
+  return { cases, geometry: { ground, H, xr: x1, bottom, layers: layers(false), piezo, faceDir, reinforcement: [] }, extras: {} };
+}
+
 /** Every load case of a project: [{ key, name, target, model, note, seismic? }] plus the geometry to draw. */
 export function buildCases(project) {
   const p = complete(project);
   if (p.type === "embankment") return { project: p, ...embankmentCases(p) };
   if (p.type === "revetment") return { project: p, ...revetmentCases(p) };
+  if (p.type === "section") return { project: p, ...sectionCases(p) };
   return { project: p, ...cutCases(p) };
 }
 

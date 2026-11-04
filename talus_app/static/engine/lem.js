@@ -24,6 +24,7 @@
 //   Morgenstern-Price  = both, f(x) = half-sine
 //   Ordinary (Fellenius) = moment equilibrium, N from resolving normal to the base.
 
+import { hbTangent } from "./materials.js";
 import {
   yAt, vertices, uniqueSorted, crossings, lower, upper, flat, mirror, TINY, circleFrom3,
 } from "./geometry.js";
@@ -71,7 +72,7 @@ export function prepare(model) {
     lines: (model.lines || []).map((l) => ({
       x: fx(l.x), fx: (flip ? -l.fx : l.fx) * (l.variable ? f.variable : 1), fy: l.fy * (l.variable ? f.variable : 1),
     })),
-    reinforcement: (model.reinforcement || []).map((r) => ({ ...r, x: fx(r.x) })),
+    reinforcement: (model.reinforcement || []).map((r) => ({ ...r, x: fx(r.x), ...(r.x0 !== undefined ? { x0: Math.min(fx(r.x0), fx(r.x1)), x1: Math.max(fx(r.x0), fx(r.x1)) } : {}) })),
     kh: model.seismic?.kh || 0,
     kv: model.seismic?.kv || 0,
     crack: model.crack || { depth: 0, water: 0 },
@@ -84,6 +85,7 @@ export function prepare(model) {
 
 /** Strength of a material at a point, with partial factors applied. */
 function strength(P, mat, depthInLayer) {
+  if (mat.kind === "hb") return { c: 0, tanphi: 0 }; // set per slice from its normal stress
   if (mat.kind === "undrained") {
     let su = mat.su + (mat.suGrad || 0) * Math.max(0, depthInLayer);
     if (mat.suMax > 0) su = Math.min(su, mat.suMax);
@@ -184,6 +186,33 @@ export function buildSlices(P, slip, opts = {}) {
   // reinforcement crossing points
   const reinf = [];
   for (const r of P.reinforcement) {
+    if (r.kind === "pile") {
+      // a row of piles: a shear force across the slip where it cuts them, against the movement
+      const ys = r.x > slip[0][0] && r.x < slip[slip.length - 1][0] ? yAt(slip, r.x) : NaN;
+      if (ys < r.y && ys > r.y - r.length && r.V > 0) reinf.push({ x: r.x, y: ys, Fx: -r.V, Fy: 0, T: r.V });
+      continue;
+    }
+    if (r.kind === "grid") {
+      // a horizontal geogrid: its tensile strength, or the pull-out of the shorter end
+      const hit = levelHit(slip, r.y, r.x0, r.x1);
+      if (!hit) continue;
+      const pull = (a, b) => {
+        let P_ = 0;
+        const n = 12, d = (b - a) / n;
+        for (let k = 0; k < n; k++) {
+          const xm = a + (k + 0.5) * d, cover = Math.max(0, yAt(P.ground, xm) - r.y);
+          const m = P.layers[layerAt(P, xm, r.y + 1e-6).layer].mat;
+          const g = m.gamma || 18;
+          // both faces of the grid: 2 Ci (c + sigma_v tan phi), or 2 Ci su for an undrained fill
+          const shear = m.kind === "undrained" ? m.su : (m.c || 0) + g * cover * Math.tan((m.phi || 0) * DEG);
+          P_ += 2 * (r.Ci ?? 0.8) * shear * d;
+        }
+        return P_;
+      };
+      const T = Math.min(r.T, pull(r.x0, hit.x), r.wrapped ? Infinity : pull(hit.x, r.x1));
+      if (T > 0) reinf.push({ x: hit.x, y: r.y, Fx: -T, Fy: 0, T });
+      continue;
+    }
     const hit = elementHit(r, slip);
     if (!hit) continue;
     const beyond = r.length - hit.t;
@@ -213,6 +242,12 @@ export function buildSlices(P, slip, opts = {}) {
     let u = 0;
     if (P.ru > 0) u = P.ru * cm.w;
     else if (P.piezo) u = gw * Math.max(0, yAt(P.piezo, xm) - ybm);
+    let { c: sc, tanphi: stp } = st;
+    if (mat.kind === "hb") {
+      // first estimate of the normal stress on the base: the column's weight, less water
+      const t = hbTangent(mat, Math.max(0, (W / b) * Math.cos(alpha) ** 2 - u));
+      sc = t.c / P.f.c; stp = t.tanphi / P.f.tanphi;
+    }
     const ext = [];
     // water standing on the ground surface (exact for a linear pressure)
     if (P.piezo && P.ru <= 0) {
@@ -242,10 +277,21 @@ export function buildSlices(P, slip, opts = {}) {
     }
     slices.push({
       x0, x1, b, xm, yb0, yb1, ybm, g0, g1, alpha, l, W, xg, yg,
-      layer: at.layer, mat: mat.name, c: st.c, tanphi: st.tanphi, u, U: u * l, ext,
+      layer: at.layer, mat: mat.name, c: sc, tanphi: stp, u, U: u * l, ext, hb: mat.kind === "hb" ? mat : null,
     });
   }
   return { slices, xL, xR, crack, slip };
+}
+
+/** Where the slip polyline crosses the level y between xa and xb. */
+function levelHit(slip, y, xa, xb) {
+  for (let i = 1; i < slip.length; i++) {
+    const [x1, y1] = slip[i - 1], [x2, y2] = slip[i];
+    if ((y1 - y) * (y2 - y) > 0 || y1 === y2) continue;
+    const x = x1 + (x2 - x1) * (y - y1) / (y2 - y1);
+    if (x > xa && x < xb) return { x };
+  }
+  return null;
 }
 
 /** Where a reinforcement element (head, angle below horizontal, length) crosses the slip polyline. */
@@ -544,6 +590,36 @@ export function factors(P, cut, circle, methods = METHODS) {
     else if (m === "mp") out.mp = rigorous(constants(P, cut, ref, SHAPES.halfsine));
   }
   return out;
+}
+
+/**
+ * Rock masses by Hoek-Brown: the strength of each slice is the tangent to the envelope at
+ * the effective normal stress on its base, which depends on the solution. Solve, take the
+ * normal stresses of the governing method, update the tangents, and repeat until F settles.
+ * Returns the cut with converged strengths, the results and the number of rounds.
+ */
+export function refineHB(P, cut, circle, method = "mp", tol = 1e-4, rounds = 40) {
+  if (!cut.slices.some((s) => s.hb)) return null;
+  let res = factors(P, cut, circle, [method]), F = valueOf(res, method), k = 0, gap = Infinity, w = 1, dPrev = 0;
+  for (; k < rounds && Number.isFinite(F); k++) {
+    const lam = method === "mp" || method === "spencer" ? res[method]?.lambda ?? 0 : 0;
+    const sf = sliceForces(P, cut, circle, method, F, lam);
+    gap = 0;
+    cut.slices.forEach((s, i) => {
+      if (!s.hb) return;
+      const sn = Math.max(0, sf[i].Neff / s.l);
+      const t = hbTangent(s.hb, sn), c = t.c / P.f.c, tp = t.tanphi / P.f.tanphi;
+      gap = Math.max(gap, Math.abs(s.c + sn * s.tanphi - (c + sn * tp)) / Math.max(1, c + sn * tp));
+      s.c += w * (c - s.c); s.tanphi += w * (tp - s.tanphi);
+    });
+    if (gap < tol) break;
+    res = factors(P, cut, circle, [method]);
+    const F2 = valueOf(res, method), d = F2 - F;
+    if (d * dPrev < 0) w = Math.max(0.25, w * 0.6); // the stresses and strengths chase each other: damp
+    dPrev = d; F = F2;
+  }
+  res = factors(P, cut, circle);
+  return { results: res, F: valueOf(res, method), rounds: k + 1, gap };
 }
 
 /** F of one method as a number. */

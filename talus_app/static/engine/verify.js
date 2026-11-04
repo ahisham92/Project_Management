@@ -10,6 +10,8 @@ import { criticalCircle, circleSlip } from "./search.js";
 import { arcY, mirror } from "./geometry.js";
 import { rockArmour, accropode, toe, vanDerMeerNs, waveParams } from "./armour.js";
 import { newmark } from "./analyse.js";
+import { hoekBrown, hbTangent, hbEquivalent } from "./materials.js";
+import { probabilistic, normCdf } from "./prob.js";
 
 const D = Math.PI / 180;
 
@@ -87,6 +89,61 @@ export const CHECKS = [
       const N = W * nrm[1] - (Tv[0] * nrm[0] + Tv[1] * nrm[1]);
       const exact = (5 * LL + N * Math.tan(30 * D)) / drive;
       return { expected: exact, rows: [["Janbu simplified", r.janbu]], tol: 1e-9 };
+    },
+  },
+  ...[
+    { id: "wedge-pile", title: "Planar wedge with a row of piles",
+      source: "Block equilibrium with a 60 kN/m horizontal shear (piles of 120 kN at 2 m) where the plane cuts the piles",
+      reinf: [{ kind: "pile", x: 10, y: 10, length: 20, V: 60 }], T: 60 },
+    { id: "wedge-grid-pullout", title: "Planar wedge with a geogrid, pull-out governs",
+      source: "T = 2 Ci (c Lf + γ tan φ ∫ cover dx) over the 5 m of grid inside the wedge (Ci 0.5): 169.3 kN/m, below the 500 kN/m strength",
+      reinf: [{ kind: "grid", y: 5, x0: 5, x1: 30, x: 5, T: 500, Ci: 0.5 }], T: 0.5 * 2 * (5 * 5 + 20 * Math.tan(30 * D) * 12.5) },
+  ].map((k) => ({
+    id: k.id, group: "Closed form", title: k.title, source: k.source,
+    run() {
+      const P = prepare(wedgeModel({ reinforcement: k.reinf }));
+      const r = factors(P, buildSlices(P, WEDGE, { n: 30 }), null, ["janbu"]);
+      // a horizontal force T into the slope (+x in the user frame) on a block moving down the plane
+      const t = [-Math.cos(TH), -Math.sin(TH)], nrm = [-Math.sin(TH), Math.cos(TH)];
+      const drive = WW * (-t[1]) + k.T * t[0];
+      const N = WW * nrm[1] - k.T * nrm[0];
+      return { expected: (5 * LL + N * Math.tan(30 * D)) / drive, rows: [["Janbu simplified", r.janbu]], tol: 1e-9 };
+    },
+  })),
+  {
+    id: "hb-tangent", group: "Hoek-Brown",
+    title: "Hoek-Brown shear strength: the tangent (Balmer) is the slope of the envelope",
+    source: "GSI 45, mi 10, σci 25 MPa: τ(σn) from σ1(σ3); dτ/dσn by central differences at σn = 200 kPa equals the tangent tan φ",
+    run() {
+      const hb = hoekBrown({ GSI: 45, mi: 10, sci: 25, D: 0 });
+      const t = hbTangent(hb, 200), h = 0.01;
+      const slope = (hbTangent(hb, 200 + h).tau - hbTangent(hb, 200 - h).tau) / (2 * h);
+      return { expected: slope, rows: [["tan φ tangent", t.tanphi]], tol: 1e-8 };
+    },
+  },
+  {
+    id: "hb-equivalent", group: "Hoek-Brown",
+    title: "Hoek-Brown equivalent c', φ' (Hoek et al. 2002) is the least-squares line",
+    source: "GSI 30, mi 7, σci 8 MPa, D 0.7, H 10 m: closed-form φ' against a 20 001-point least-squares fit of σ1(σ3) from σt to σ3max",
+    run() {
+      const hb = hoekBrown({ GSI: 30, mi: 7, sci: 8, D: 0.7 });
+      const e = hbEquivalent(hb, 25, 10);
+      const { mb, s, a, sigci } = hb, t0 = -s * sigci / mb, N = 20000;
+      let sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (let i = 0; i <= N; i++) { const x = t0 + (e.s3max - t0) * i / N, y = x + sigci * Math.pow(mb * x / sigci + s, a); sx += x; sy += y; sxx += x * x; sxy += x * y; }
+      const n = N + 1, k = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+      return { expected: Math.asin((k - 1) / (k + 1)) / D, rows: [["φ' (Hoek 2002)", e.phi]], tol: 1e-3 };
+    },
+  },
+  {
+    id: "prob-lognormal", group: "Probabilistic",
+    title: "Monte Carlo on a dry sand slope: F is lognormal with the COV of tan φ",
+    source: "c = 0, no water, 6 m at 1:2: F ∝ tan φ, so with tan φ lognormal (COV 15%) β = ln(F/√(1+V²)) / √ln(1+V²) and Pf = Φ(−β); 4000 Latin hypercube samples",
+    run() {
+      const V = 0.15;
+      const r = probabilistic({ type: "cut", soil: { preset: "looseSand" }, geom: { H: 6, cot: 2 }, water: { on: false }, load: { q: 0 }, seismic: { on: false } }, { n: 4000, cov: { tanphi: V, gamma: 0 } });
+      const beta = Math.log(r.deterministic / Math.sqrt(1 + V * V)) / Math.sqrt(Math.log(1 + V * V));
+      return { expected: normCdf(-beta), rows: [["Pf, Monte Carlo", r.pf], ["Pf from the sampled β", r.pfLN]], tol: 0.03 };
     },
   },
   {

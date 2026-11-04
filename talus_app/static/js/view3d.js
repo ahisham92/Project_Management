@@ -246,6 +246,22 @@ export class View3D {
     }
     // reinforcement
     for (const r of opt.reinforcement || []) {
+      if (r.kind === "grid") {
+        // a geogrid sheet across the fill
+        const sheet = new THREE.Mesh(new THREE.PlaneGeometry(r.x1 - r.x0, D * 0.98), new THREE.MeshStandardMaterial({ color: 0x1f8a5a, transparent: true, opacity: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+        sheet.rotation.x = -Math.PI / 2; sheet.position.set((r.x0 + r.x1) / 2, r.y, 0);
+        this.world.add(sheet);
+        continue;
+      }
+      if (r.kind === "pile") {
+        const pm = new THREE.MeshStandardMaterial({ color: 0x5d5c58, metalness: 0.3, roughness: 0.6 });
+        // the heads stand a little proud of the ground so the row can be seen
+        const head = Math.max(0.3, 0.012 * span), L = Math.max(0.1, Math.min(r.length, r.y - g.bottom)) + head;
+        const geo = new THREE.CylinderGeometry(Math.max(0.15, 0.008 * span), Math.max(0.15, 0.008 * span), L, 12);
+        const step = Math.max(1.5, D / 12);
+        for (let z = -D / 2 + step / 2; z < D / 2; z += step) { const m = new THREE.Mesh(geo, pm); m.position.set(r.x, r.y + head - L / 2, z); this.world.add(m); }
+        continue;
+      }
       const a = r.angle * Math.PI / 180;
       const pts = [new THREE.Vector3(r.x, r.y, 0), new THREE.Vector3(r.x + r.dir * r.length * Math.cos(a), r.y - r.length * Math.sin(a), 0)];
       const geo = new THREE.TubeGeometry(new THREE.LineCurve3(pts[0], pts[1]), 2, Math.max(0.05, 0.004 * span), 6);

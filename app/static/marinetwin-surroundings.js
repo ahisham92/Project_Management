@@ -235,6 +235,7 @@ function lineUp(coast, at, leg) {
   const u = [(bx - ax) / len, (bz - az) / len];
   const n = [-u[1], u[0]];
   const mid = [(ax + bx) / 2, (az + bz) / 2];
+  const reach = leg.reach || 300;   // how far off the coast may be (further for a pier's root)
   let w = 0;
   let turn = 0;
   for (const c of coast) {
@@ -244,7 +245,7 @@ function lineUp(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
       const along = m[0] * u[0] + m[1] * u[1];
       const across = m[0] * n[0] + m[1] * n[1];
-      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      if (Math.abs(along) > len / 2 || Math.abs(across) > reach) continue;
       const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
       if (l < 1) continue;
       // The angle between the segment and the leg, either way along it, in (-90°, 90°].
@@ -269,7 +270,7 @@ function lineUp(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
       const along = m[0] * u[0] + m[1] * u[1];
       const across = m[0] * n[0] + m[1] * n[1];
-      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      if (Math.abs(along) > len / 2 || Math.abs(across) > reach) continue;
       const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
       off += across * l;
       ow += l;
@@ -300,7 +301,7 @@ function landBehind(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
       const sm = at(m);
       const d = [sm[0] - mid[0], sm[1] - mid[1]];
-      if (Math.abs(d[0] * u[0] + d[1] * u[1]) > len / 2 + 200 || Math.abs(d[0] * -u[1] + d[1] * u[0]) > 400) continue;
+      if (Math.abs(d[0] * u[0] + d[1] * u[1]) > len / 2 + 200 || Math.abs(d[0] * -u[1] + d[1] * u[0]) > (leg.reach || 300) + 100) continue;
       const left = at([m[0] - (q[1] - p[1]) / l * 20, m[1] + (q[0] - p[0]) / l * 20]);
       vote += Math.sign((left[0] - sm[0]) * leg.land[0] + (left[1] - sm[1]) * leg.land[1]) * l;
     }

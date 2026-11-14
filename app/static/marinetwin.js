@@ -713,7 +713,8 @@ function deckDepth(model, leg) {
 // the shore, with the land behind its whole length).
 function pierRoot(model, frame) {
   const { pts, top } = model;
-  const [z0, z1] = [frame.front - 5, frame.front + frame.deckDepth + 40];
+  // Behind the berthing face only: fenders, dolphins or a front wall running on past an end are not a root.
+  const [z0, z1] = [frame.front + 5, frame.front + frame.deckDepth + 60];
   let lo = 0;
   let hi = 0;
   for (let i = 0; i < pts.length; i += 3) {
@@ -3173,7 +3174,7 @@ async function main() {
         keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
         // The map's coast is lined up on the quay's face, or on the land's edge behind an open deck.
         // (for a pier, the shore line across its root, with the land on away from the pier)
-        mainLeg: site.root ? { a: [site.shoreX, frame.front - 150], b: [site.shoreX, frame.front + 150], land: [site.root, 0], len: 300 } : site.quay ? (() => {
+        mainLeg: site.root ? { a: [site.shoreX, frame.front - 150], b: [site.shoreX, frame.front + 150], land: [site.root, 0], len: 300, reach: 600 } : site.quay ? (() => {
           const l = site.quay.legs.reduce((m, x) => (x.len > m.len ? x : m));
           const k = site.open ? site.back : 0;
           return { ...l, a: [l.a[0] + l.land[0] * k, l.a[1] + l.land[1] * k], b: [l.b[0] + l.land[0] * k, l.b[1] + l.land[1] * k] };

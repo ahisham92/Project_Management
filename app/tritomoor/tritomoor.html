@@ -55,6 +55,7 @@ button:disabled{opacity:.55;cursor:progress}
 h2{font-size:16px;margin:18px 0 8px;font-weight:600}
 h2:first-child{margin-top:4px}
 p.note{color:var(--ink-2);margin:4px 0 10px;max-width:72ch;font-size:13px}
+p.note.warnnote{color:#7A5208;border-left:3px solid var(--warn);padding-left:8px}
 .swm{margin-left:2px;color:#8A5D00;font-weight:600;cursor:help}
 p.note.swnote{background:#FBF6E8;border-left:3px solid #C98A12;padding:6px 10px;max-width:none}
 .fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 14px}
@@ -6688,6 +6689,8 @@ function renderResults() {
     }).join('');
     box.append(tableBox(`<thead><tr><th>Fender</th><th class="n">X (m)</th><th>Type</th><th class="n">Max deflection (mm)</th><th class="n">Rated (mm)</th><th class="n">Max reaction (kN)</th><th class="n">Flat-side contact</th><th class="n">Hull pressure kPa (t/m²)</th><th class="n">Case</th><th>Status</th></tr></thead><tbody>${frows}</tbody>`));
     if (M.hullPressure > 0) box.append(el('p', { class: 'note', text: `Hull pressure limit ${fmt(M.hullPressure, 0)} kPa (${fmt(M.hullPressure / 9.80665, 1)} t/m²). Pressure is the reaction divided by the part of the fender face bearing on the flat side of the hull below the deck edge.` }));
+    { const blind = A.fenders.filter(a => a.f.kind === 'quay' && !a.f.panel).map(a => a.f.id);
+      if (M.fenderContact !== 'outline' && blind.length) box.append(el('p', { class: 'note warnnote', text: `Flat-side contact was not checked for ${blind.length === A.fenders.length ? 'any fender' : 'fender' + (blind.length > 1 ? 's ' : ' ') + blind.join(', ')}: ${blind.length > 1 ? 'their types have' : 'its type has'} no fender level, panel width and face area on the Line & fender types tab, so ${blind.length > 1 ? 'they are' : 'it is'} taken to bear on the hull at every draft. On a light ship OptiMoor may find some of these fenders clear of the flat side, which puts more load on the rest. Enter the level and panel, and the vessel's flat-side contour, to check it as OptiMoor does.` })); }
     if (M.fenderContact !== 'outline' && A.fenders.some(a => a.f.contact === 0)) box.append(el('p', { class: 'note', text: 'A fender marked "misses the flat side" does not meet the flat side of the hull at this draft, so it carries no load, as in OptiMoor. On a light ship this is usually a low fender, or one near the ends where the flat side is shallow.' }));
     if (A.fenders.some(a => a.swell)) box.append(el('p', { class: 'note', text: `${SWELL_MARK} is the swell peak: the fender is pushed a further Hs/2 beyond its static deflection, any gap taken up first.` }));
   }

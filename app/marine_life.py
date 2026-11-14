@@ -64,8 +64,8 @@ DAYS_IN_MONTH = 365.25 / 12
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # What the berth earns, per terminal: moves a day at full working, and what one move is worth (USD).
-MOVES_PER_DAY = {"container": 1800, "general_cargo": 700, "roro": 1500, "bulk": 900, "multipurpose": 900}
-VALUE_PER_MOVE = {"container": 110, "general_cargo": 60, "roro": 35, "bulk": 40, "multipurpose": 60}
+MOVES_PER_DAY = {"container": 1800, "general_cargo": 700, "roro": 1500, "bulk": 900, "bulk_hoppers": 600, "multipurpose": 900}
+VALUE_PER_MOVE = {"container": 110, "general_cargo": 60, "roro": 35, "bulk": 40, "bulk_hoppers": 40, "multipurpose": 60}
 # Typical repair prices (USD, indicative). A wall or deck price is for one bay.
 PRICES = {
     "fender": 90_000,

@@ -96,6 +96,12 @@ FLEET_BY_TERMINAL = {
         ("WL", 3, "Wheel loader", "CAT 980", "Stockyard", 10, "B", 450_000, 250),
     ] + SERVICES,
 }
+FLEET_BY_TERMINAL["bulk_hoppers"] = [
+    ("HOP", 2, "Mobile hopper", "Eco-hopper 40 m³ with dust filters", "Quay", 20, "A", 900_000, 500),
+    ("TK", 16, "Tipper truck", "30 t tipper", "Fleet", 10, "B", 160_000, 250),
+    ("WL", 2, "Wheel loader", "CAT 980", "Stockpile", 10, "B", 450_000, 250),
+    ("WB", 2, "Weighbridge", "60 t pit-less", "Gate", 15, "B", 90_000, 2190),
+] + SERVICES
 FLEET_BY_TERMINAL["multipurpose"] = FLEET_BY_TERMINAL["general_cargo"][:1] + FLEET[:1] + FLEET_BY_TERMINAL["general_cargo"][1:]
 CRANES = {"STS", "RTG", "MHC", "SU", "SR"}       # what carries a hoist gearbox worth monitoring
 DOCUMENTS = {

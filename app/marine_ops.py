@@ -124,13 +124,20 @@ FLEETS = {
              ("Star Kirkenes", "Bulk carrier", 200, 32.3, 12.8, 80000, 11),
              ("Ocean Grain", "Bulk carrier", 180, 30.0, 11.5, 60000, 10)],
 }
+# Geared bulk carriers: their own deck cranes grab the cargo into mobile hoppers on the quay.
+FLEETS["bulk_hoppers"] = [("Sider Pioneer", "Bulk carrier (geared)", 180, 30.0, 10.5, 45000, 22),
+                          ("Clipper Iris", "Bulk carrier (geared)", 169, 27.0, 9.8, 36000, 22),
+                          ("Nord Taurus", "Bulk carrier (geared)", 190, 32.3, 11.5, 58000, 23),
+                          ("Med Cement", "Bulk carrier (geared)", 150, 24.0, 9.0, 26000, 20)]
 FLEETS["multipurpose"] = FLEETS["container"][:3] + FLEETS["general_cargo"][:2] + FLEETS["roro"][:1]
 # What works the ships at each kind of terminal, by name prefix and what it is called.
 EQUIPMENT = {
     "container": ("STS", "quay cranes"), "general_cargo": ("MHC", "mobile harbour cranes"),
-    "roro": ("RAMP", "ramp gangs"), "bulk": ("SU", "ship unloaders"), "multipurpose": ("MHC", "mobile harbour cranes"),
+    "roro": ("RAMP", "ramp gangs"), "bulk": ("SU", "ship unloaders"),
+    "bulk_hoppers": ("HOP", "mobile hoppers"), "multipurpose": ("MHC", "mobile harbour cranes"),
 }
-UNITS = {"container": "containers", "general_cargo": "lifts", "roro": "vehicles", "bulk": "tonnes ×10", "multipurpose": "lifts"}
+UNITS = {"container": "containers", "general_cargo": "lifts", "roro": "vehicles", "bulk": "tonnes ×10", "bulk_hoppers": "tonnes ×10",
+         "multipurpose": "lifts"}
 
 
 def _rng(asset_id: int, day: str, what: str) -> random.Random:
@@ -216,7 +223,8 @@ def cranes(asset_id: int, now: datetime, gust: float, terminal: str = "container
         elif gust >= LIMITS["crane_stop_gust"]:
             state, why = "stopped", "wind stop: gusts over the operating limit"
         elif broken:
-            state, why = "down", rng.choice(["spreader twistlock fault", "hoist brake alarm", "gantry drive fault"])
+            state, why = "down", rng.choice(["dust filter blocked", "discharge gate jammed", "ship's crane out of order"]
+                                            if prefix == "HOP" else ["spreader twistlock fault", "hoist brake alarm", "gantry drive fault"])
         else:
             state, why = "working", ""
         out.append({"name": f"{prefix}{i + 1}" if prefix != "RAMP" else f"Ramp gang {i + 1}", "state": state, "why": why, "service_in_h": round(hours),

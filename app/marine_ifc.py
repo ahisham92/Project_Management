@@ -300,6 +300,7 @@ PRODUCT_SKIP = {"IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IF
                 "IFCANNOTATION", "IFCGRID", "IFCVIRTUALELEMENT"}
 TERMINALS = {"container": "container", "general_cargo": "general_cargo", "general cargo": "general_cargo",
              "generalcargo": "general_cargo", "roro": "roro", "ro-ro": "roro", "bulk": "bulk", "dry bulk": "bulk",
+             "bulk_hoppers": "bulk_hoppers", "hoppers": "bulk_hoppers", "mobile hoppers": "bulk_hoppers",
              "multipurpose": "multipurpose", "multi-purpose": "multipurpose"}
 
 

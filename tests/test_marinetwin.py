@@ -675,6 +675,17 @@ def test_without_a_site_latitude_the_map_conversion_is_used():
     assert (site["latitude"], site["longitude"]) == (pytest.approx(6.43856, abs=1e-4), pytest.approx(3.38118, abs=1e-4))
 
 
+def test_a_revit_site_turned_in_its_placement_is_turned_back_to_true_north():
+    # Revit puts the project north turn in the IfcSite placement when there is no map conversion.
+    text = FIXTURE.read_text()
+    text = "\n".join(line for line in text.splitlines() if "IFCMAPCONVERSION" not in line)
+    text = text.replace("IFCSITE('1yh2EbLFT94xqJRvEUbF3J',$,'Apapa',$,$,$,", "IFCSITE('1yh2EbLFT94xqJRvEUbF3J',$,'Apapa',$,$,#9903,")
+    text = text.replace("ENDSEC;\nEND-ISO", "#9900=IFCCARTESIANPOINT((0.,0.,0.));\n#9901=IFCDIRECTION((0.,1.,0.));\n"
+                        "#9902=IFCAXIS2PLACEMENT3D(#9900,$,#9901);\n#9903=IFCLOCALPLACEMENT($,#9902);\nENDSEC;\nEND-ISO", 1)
+    assert "#9903=" in text
+    assert marine_ifc.read(text)["site"]["rotation"] == pytest.approx(-90.0, abs=0.01)
+
+
 def test_utm_comes_back_as_latitude_and_longitude():
     lat, lon = marine_ifc.utm_to_latlon(542150, 711700, 31)
     assert (lat, lon) == (pytest.approx(6.43856, abs=1e-5), pytest.approx(3.38118, abs=1e-5))

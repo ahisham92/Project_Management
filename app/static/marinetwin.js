@@ -707,6 +707,27 @@ function deckDepth(model, leg) {
   return Math.max(8, depth + 1);
 }
 
+// A pier runs out to sea from the shore at one end, its root: the end where the model has the
+// rock of the causeway or the shore slope it starts from (shapes below the deck, beyond its end).
+// +1: the root is at the end of larger x, -1: at the smaller, 0: no root modelled (a wharf along
+// the shore, with the land behind its whole length).
+function pierRoot(model, frame) {
+  const { pts, top } = model;
+  const [z0, z1] = [frame.front - 5, frame.front + frame.deckDepth + 40];
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < pts.length; i += 3) {
+    const [x, y, z] = [pts[i], pts[i + 1], pts[i + 2]];
+    if (y > top - 1 || y < -20 || z < z0 || z > z1) continue;
+    if (x < frame.minX - 3 && x > frame.minX - 60) lo++;
+    else if (x > frame.maxX + 3 && x < frame.maxX + 60) hi++;
+  }
+  if (Math.max(lo, hi) < 150) return 0;
+  if (lo > 3 * hi) return -1;
+  if (hi > 3 * lo) return 1;
+  return 0;
+}
+
 // Structures standing on piles in open water: the sea runs under the deck, over a rock slope.
 const OPEN_KINDS = new Set(['deck_on_piles', 'jetty']);
 
@@ -810,6 +831,29 @@ function shore(quay, top, yardDepth, set = 2, pave = REAL.asphalt) {
   yard.material.side = THREE.DoubleSide;
   yard.receiveShadow = true;
   g.add(yard);
+  return g;
+}
+
+// The shore at a pier's root: land from a line across the pier's end, on away from it, and the
+// sea everywhere else. The ships keep off the pier itself and the land (seaChecker).
+function pierShore(quay, frame, root, shoreX, top) {
+  const g = new THREE.Group();
+  const { front } = frame;
+  const far = shoreX + root * 6000;
+  const land = [[shoreX, front - 6000], [far, front - 6000], [far, front + 6000], [shoreX, front + 6000]];
+  const shape = new THREE.Shape(land.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const below = 8;
+  const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: top - 0.3 + below, bevelEnabled: false }), REAL.land);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = -below;
+  mesh.receiveShadow = true;
+  mesh.userData.ground = true;            // cut where the map has water, where the site is located
+  g.add(mesh);
+  const tipX = root > 0 ? frame.minX : frame.maxX;
+  const back = front + frame.deckDepth;
+  quay.landOutline = [[shoreX, front - 6000], [far, front - 6000], [far, front + 6000], [shoreX, front + 6000],
+    [shoreX, back], [tipX - root * 2, back], [tipX - root * 2, front], [shoreX, front]];
+  quay.pier = { root, shoreX, tipX };
   return g;
 }
 
@@ -1478,7 +1522,13 @@ function terminal(scene, frame, twin, rng, quay) {
   const open = !!frame.open;
   const back = open ? (frame.deckDepth || 20) + 1 : 0;
   const F = front + back;
-  if (quay) {
+  // A pier: the shore is at its root end only, and the sea all round the rest of it.
+  const root = open && frame.root ? frame.root : 0;
+  const rootX = root > 0 ? maxX : minX;
+  const tipX = root > 0 ? minX : maxX;
+  const shoreX = rootX + root * 25;            // past the causeway's rock at the root
+  if (quay && root) g.add(pierShore(quay, frame, root, shoreX, top));
+  else if (quay) {
     g.add(shore(quay, top, yardDepth, open ? back : 2, /bulk/.test(kind) ? REAL.paving : REAL.asphalt));
     if (open) g.add(revetment(quay, top, back));
   } else {
@@ -1525,12 +1575,14 @@ function terminal(scene, frame, twin, rng, quay) {
   // in front of the stacks, between them and behind them.
   for (let i = 0; i < 4; i++) {
     const mast = mastLight(30);
-    mast.position.set(yardFrom + (i % 2 + 0.5) * yardLength / 2, top, kind === 'bulk_hoppers' ? F - 3 + Math.floor(i / 2) * 63 : F + 45 + Math.floor(i / 2) * 60);
+    if (root) mast.position.set(minX + ((i + 0.5) * (maxX - minX)) / 4, top, F - 3);       // along the pier's back edge
+    else mast.position.set(yardFrom + (i % 2 + 0.5) * yardLength / 2, top, kind === 'bulk_hoppers' ? F - 3 + Math.floor(i / 2) * 63 : F + 45 + Math.floor(i / 2) * 60);
     g.add(mast);
     lights.push(mast);
   }
   const rows = [];
-  for (let x = yardFrom + 35; x < yardFrom + yardLength; x += 70) for (const z of kind === 'bulk_hoppers' ? [-3, 60] : [45, 105, 165]) rows.push([x, F + z]);
+  if (root) for (let x = minX + 20; x < maxX - 10; x += 40) rows.push([x, F - 3]);
+  else for (let x = yardFrom + 35; x < yardFrom + yardLength; x += 70) for (const z of kind === 'bulk_hoppers' ? [-3, 60] : [45, 105, 165]) rows.push([x, F + z]);
   const yardMasts = mastRow(rows.filter(([x, z]) => !lights.some((l) => Math.hypot(l.position.x - x, l.position.z - z) < 30)));
   yardMasts.position.y = top;
   g.add(yardMasts);
@@ -1698,15 +1750,31 @@ function terminal(scene, frame, twin, rng, quay) {
       });
       g.add(h);
       hoppers.push(h);
-      // Its trucks: in from the land, through under the hopper along the deck, and back.
+      // Its trucks: under the hopper to be filled, then off with the load. Off a pier they drive
+      // along it to the shore and away inland to the factories, and come back empty along the
+      // other side of the deck; off a wharf, onto the land behind it and back.
       const lane = front + 6;
-      const curve = loop([[hx - 60, F + 30], [hx - 26, lane + 1], [hx, lane], [hx + 26, lane + 1], [hx + 60, F + 30], [hx + 30, F + 62], [hx - 30, F + 62]], top + 0.1);
-      for (let k = 0; k < 3; k++) {
+      const pts = root
+        ? [[hx - root * 25, lane], [hx, lane], [shoreX + root * 20, lane], [shoreX + root * 260, lane + 12], [shoreX + root * 620, lane + 30],
+          [shoreX + root * 620, lane + 46], [shoreX + root * 260, lane + 28], [shoreX + root * 20, F - 7], [hx - root * 25, F - 7]]
+        : [[hx - 60, F + 30], [hx - 26, lane + 1], [hx, lane], [hx + 26, lane + 1], [hx + 60, F + 30], [hx + 30, F + 62], [hx - 30, F + 62]];
+      const curve = loop(pts, top + 0.1);
+      const many = root ? 6 : 3;
+      for (let k = 0; k < many; k++) {
         const v = vehicle('tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
         g.add(v);
-        movers.push({ object: v, curve, offset: k / 3 + rng() * 0.05, speed: 5 / curve.getLength(), apron: true, main: true });
+        movers.push({ object: v, curve, offset: k / many + rng() * 0.03, speed: (root ? 9 : 5) / curve.getLength(), apron: true, main: true,
+          status: root ? 'Carrying the cargo from the hopper to the factory' : undefined });
       }
     }
+    if (root) {
+      // Ashore at the root: the road the trucks take inland, and the weighbridge they cross.
+      g.add(box(640, 0.2, 64, REAL.asphalt, shoreX + root * 330, top - 0.15, front + 24));
+      g.add(box(18, 0.4, 4, REAL.steel, shoreX + root * 60, top + 0.2, front + 8));
+      g.add(box(4, 3, 3, REAL.white, shoreX + root * 60, top + 1.5, front + 2));
+    }
+  }
+  if (kind === 'bulk_hoppers' && !root) {
     // Ashore behind the deck: the cement silos, the covered store and its stockpiles, and the
     // weighbridge on the way out.
     for (let i = 0; i < 4; i++) {
@@ -1951,7 +2019,7 @@ function terminal(scene, frame, twin, rng, quay) {
       }
     }
   }
-  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress, yards, yardCranes, hoppers, open, back };
+  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress, yards, yardCranes, hoppers, open, back, root, shoreX };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -2105,6 +2173,7 @@ async function main() {
       turnedShapes.pts[i] = x; turnedShapes.pts[i + 2] = z;
     }
     frame.deckDepth = deckDepth(turnedShapes, mainLeg);
+    frame.root = pierRoot(turnedShapes, frame);
   } else if (frame.open) frame.deckDepth = 20;
 
   // Sky, sun and sea.
@@ -3065,7 +3134,12 @@ async function main() {
     const D = site.yardDepth + 15;
     const keepLand = [];
     const keepSea = [];                    // the water in front of the quay, where the ships berth
-    if (site.quay) {
+    if (site.root) {
+      // A pier: the land is kept from the shore line across its root on, and the sea all round it.
+      const [sx, r, f] = [site.shoreX, site.root, frame.front];
+      keepLand.push([[sx, f - 160], [sx + r * 700, f - 160], [sx + r * 700, f + 200], [sx, f + 200]]);
+      keepSea.push([[sx - r * 3, f - 400], [frame.minX + frame.maxX - sx - r * 120, f - 400], [frame.minX + frame.maxX - sx - r * 120, f + frame.deckDepth + 300], [sx - r * 3, f + frame.deckDepth + 300]]);
+    } else if (site.quay) {
       const legs = site.quay.legs;
       const P = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
       // (an open piled deck has water under it: the land is kept from behind the deck)
@@ -3098,7 +3172,8 @@ async function main() {
         THREE, scene, twin, toScene, toEn, top: frame.top, grounds, vehicle, view, keepLand, keepSea,
         keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
         // The map's coast is lined up on the quay's face, or on the land's edge behind an open deck.
-        mainLeg: site.quay ? (() => {
+        // (for a pier, the shore line across its root, with the land on away from the pier)
+        mainLeg: site.root ? { a: [site.shoreX, frame.front - 150], b: [site.shoreX, frame.front + 150], land: [site.root, 0], len: 300 } : site.quay ? (() => {
           const l = site.quay.legs.reduce((m, x) => (x.len > m.len ? x : m));
           const k = site.open ? site.back : 0;
           return { ...l, a: [l.a[0] + l.land[0] * k, l.a[1] + l.land[1] * k], b: [l.b[0] + l.land[0] * k, l.b[1] + l.land[1] * k] };

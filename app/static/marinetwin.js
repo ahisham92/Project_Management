@@ -1527,7 +1527,7 @@ function terminal(scene, frame, twin, rng, quay) {
   const root = open && frame.root ? frame.root : 0;
   const rootX = root > 0 ? maxX : minX;
   const tipX = root > 0 ? minX : maxX;
-  const shoreX = rootX + root * 25;            // past the causeway's rock at the root
+  const shoreX = rootX + root * 2;             // the land meets the deck at its root
   if (quay && root) g.add(pierShore(quay, frame, root, shoreX, top));
   else if (quay) {
     g.add(shore(quay, top, yardDepth, open ? back : 2, /bulk/.test(kind) ? REAL.paving : REAL.asphalt));

@@ -1454,3 +1454,20 @@ def test_the_rules_compare_and_a_long_ship_holds_two_berths():
     small = next(c for c in plan["placed"] if c["ship"] == "Small")
     assert len(big["berths"]) == 2 and small["berths"] == [3] and "the berth asked for" in small["why"]
     assert marine_berths.flag_svg("DK").startswith("<svg") and marine_berths.flag_name("LR") == "Liberia"
+
+
+def test_bulk_hoppers_terminal_has_no_shore_cranes():
+    """A dry bulk berth worked by the ship's own cranes into mobile hoppers: hoppers, geared ships,
+    and berths that say ship's gear, not shore cranes."""
+    from datetime import datetime, timezone
+    from app import marine, marine_berths, marine_facility, marine_ops, marine_sim
+    assert "bulk_hoppers" in dict(marine.TERMINAL_TYPES)
+    assert "deck_on_piles" in dict(marine.ASSET_KINDS)
+    kit = marine_ops.cranes(1, datetime(2026, 11, 14, tzinfo=timezone.utc), 5.0, "bulk_hoppers", 2)
+    assert [k["name"] for k in kit] == ["HOP1", "HOP2"]
+    ships = marine_ops.lineup(1, datetime(2026, 11, 14, tzinfo=timezone.utc), "bulk_hoppers")
+    assert ships and all("geared" in s["type"] for s in ships)
+    berths = marine_berths.estimate_berths(180, "bulk_hoppers")
+    assert berths[0]["crane_kind"] == "none" and berths[0]["use"] == "bulk"
+    assert marine_facility.FLEET_BY_TERMINAL["bulk_hoppers"][0][0] == "HOP"
+    assert marine_sim.TERMINAL["bulk_hoppers"]["labels"]["sts"] == "Mobile hoppers"

@@ -98,6 +98,16 @@ details p,details li{max-width:74ch;font-size:13px}
 .planhead input[type=range]{width:200px}
 .planhead input[type=number]{width:56px;padding:3px 4px;border:1px solid var(--rule);border-radius:3px}
 #planCanvas{display:block;width:100%;height:auto;background:var(--sea);touch-action:none;cursor:grab}
+.moorwrap{padding:10px 12px;display:flex;flex-direction:column;gap:12px}
+.mcard{border:1px solid var(--rule);border-radius:3px;background:#fff;overflow:hidden}
+.mcard.cur{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.mcard canvas{display:block}
+.mcard .legend{padding:8px 10px}
+.mhead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:7px 10px;border-bottom:1px solid var(--rule);font-size:13px}
+.mhead span{color:var(--ink-2);font-size:12px}
+.fleet tr.cur td{background:#EEF5F2}
+.fleet td.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.fleet td.acts button{padding:3px 9px;font-size:12px}
 .planhead.sub{padding:6px 12px;min-height:38px}
 .tools{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;margin-left:auto}
 .tools button{border:0;border-right:1px solid var(--rule);border-radius:0;background:#fff;padding:5px 10px}
@@ -226,7 +236,7 @@ tr.best td{background:#EAF4F0}
   <aside class="right">
     <div class="plan">
       <div class="planhead">
-        <div class="tools views" id="viewTabs" role="group" aria-label="View"><button data-v="plan" aria-pressed="true">Plan</button><button data-v="3d" aria-pressed="false">3D view</button></div>
+        <div class="tools views" id="viewTabs" role="group" aria-label="View"><button data-v="plan" aria-pressed="true">Plan</button><button data-v="3d" aria-pressed="false">3D view</button><button data-v="moor" aria-pressed="false" title="Every vessel of the project moored at the berth">Moorings</button></div>
         <h2 id="planTitle">Plan view</h2>
         <div class="tools" id="tools" role="group" aria-label="Plan tools"></div>
       </div>
@@ -242,11 +252,13 @@ tr.best td{background:#EAF4F0}
         <div class="ctl"><label><input type="checkbox" id="showLabels" checked> Labels</label></div>
         <div class="ctl"><label for="viewCond">Condition</label><select id="viewCond" title="Loading condition shown. As analysed shows the results; laden or ballast shows that condition, with its results if it has been analysed."><option value="auto">As analysed</option><option value="laden">Laden</option><option value="ballast">Ballast</option></select></div>
         <div class="ctl"><label title="Show the deck cargo (container stacks). It does not change the analysis, which uses the windage areas."><input type="checkbox" id="showCargo" checked> Deck cargo</label></div>
+        <div class="ctl" id="deckCtl" hidden><label title="Draw the piled deck as its frame only, so the piles and the water under it can be seen"><input type="checkbox" id="deckSee" checked> See-through deck</label></div>
         <div class="ctl" id="seaCtl" hidden><label for="seaT">Sea transparency</label><input type="range" id="seaT" min="0" max="100" step="5" value="20" aria-label="Sea transparency"></div>
       </div>
       <div class="hint" id="planHint"></div>
       <div class="wrap3d" id="wrap3d" hidden><canvas id="c3d"></canvas><canvas id="o3d" aria-label="3D perspective view of the vessel, berth and mooring lines"></canvas></div>
       <canvas id="planCanvas" width="800" height="520" aria-label="Plan view of berth, vessel and mooring lines"></canvas>
+      <div id="moorWrap" class="moorwrap" hidden></div>
       <div class="legend" id="legend"></div>
       <div class="readout" id="readout"></div>
     </div>
@@ -749,6 +761,14 @@ const MoorEngine = (() => {
         LOA: Vi.LOA, LBP: Vi.LBP, B: Vi.B, T: Vi.T, AL: Vi.AL, AT: Vi.AT, Ls: Vi.LBP / 2
       };
     });
+    // target point on each vessel (OptiMoor reports the movement of this point): metres forward of midships on the
+    // centreline. Left blank it is the manifold when the manifold check is on, otherwise midships.
+    ships.forEach((sh, i) => {
+      const vin = i === 0 ? (p.vessel || {}) : (sh.kind === 'pontoon' ? {} : (p.vessel2 || {}));
+      const lngOn = i === 0 && p.lng && p.lng.enabled;
+      sh.targetA = given(vin.targetX) ? Number(vin.targetX) : (lngOn ? (Number(p.lng.manifoldX) || 0) : 0);
+      if (!Number.isFinite(sh.targetA) || Math.abs(sh.targetA) > sh.LOA / 2) throw new Error((i ? 'Second vessel' : 'Vessel') + ': the target point must lie on the ship, within half the LOA of midships.');
+    });
     const x0 = ships.reduce((acc, sh) => acc.concat(sh.x0), []);
     const hullG0 = ships.map(sh => sh.hull.map(([a, b]) => toGlobal(sh.x0, a, b)));
 
@@ -942,6 +962,11 @@ const MoorEngine = (() => {
       V, cond: V.cond, state, tending: tend, fixedLengths: !!tend, ships, nShips, fixed, quay: sp.quay, berthType: sp.type,
       pretensionMode: (['settled', 'sequential', 'pullin', 'blend', 'balanced', 'passes'].includes(e.pretensionMode) ? e.pretensionMode : 'initial'),
       tendPasses: Math.max(1, Math.min(10, Math.round(Number(e.tendPasses) || 2))),
+      // movement: of the target point (OptiMoor) or of midships; from the target position, where the vessel lies
+      // once its lines are tended (OptiMoor: Ctrl+I puts the ship there, so the pretension alone shows no movement),
+      // or from the berthing position before tending, with the fenders just touching (earlier TritoMoor). Fender contact: on the flat side only (OptiMoor), or anywhere on the outline.
+      moveAt: e.moveAt === 'midships' ? 'midships' : 'target', moveFrom: e.moveFrom === 'placed' ? 'placed' : 'tended',
+      fenderContact: e.fenderContact === 'outline' ? 'outline' : 'flat',
       LOA: V.LOA, LBP: V.LBP, B: V.B, T: V.T, Lpb: V.Lpb, AL: V.AL, AT: V.AT,
       WL, Vw, Vc: Vc * currentProfile(e, waterDepth, V.T), VcGiven: Vc, currentProfileFactor: currentProfile(e, waterDepth, V.T), rhoA, rhoW, C: ships[0].C, coefInfo: ships[0].coefInfo, hT: ships[0].hT, chartDepth, waterDepth, channelWidth: Number(br.channelWidth) > 0 ? Number(br.channelWidth) : 500, pose: ships[0].pose, x0, hull: ships[0].hull, Ls: V.LBP / 2,
       lines, anchors, fenders, bollards, piles, lng, allow: Number(p.__allowOverride) > 0 ? Number(p.__allowOverride) : (Number(e.allowable) || 50),
@@ -1187,10 +1212,14 @@ const MoorEngine = (() => {
           ymin = Math.min(ymin, p1[1] + t * (p2[1] - p1[1]));
         }
       }
-      const d = Number.isFinite(ymin) ? Fd.hf - ymin : 0;
+      // OptiMoor: a fender whose face does not meet the flat side of the hull at this draft (above the deck edge,
+      // below the keel, or below the flat side where the bilge turns in) is not in contact and carries nothing.
+      // A light ship rides high, so in ballast low fenders and those near the ends can miss the flat side.
+      const missed = M.fenderContact !== 'outline' && Fd.contact === 0;
+      const d = Number.isFinite(ymin) && !missed ? Fd.hf - ymin : 0;
       let R = 0;
       if (d > 0) { R = fenderR(Fd.ft, d); apply(0, Fd.X, ymin, 0, R); }
-      fenders[i] = { d: Math.max(d, 0), dRaw: Number.isFinite(ymin) ? d : null, R, over: d * 1000 > Fd.ft.rated, inReach: Number.isFinite(ymin) };
+      fenders[i] = { d: Math.max(d, 0), dRaw: Number.isFinite(ymin) && !missed ? d : null, R, over: d * 1000 > Fd.ft.rated, inReach: Number.isFinite(ymin), missed };
     }
     if (env && f) {
       const per = env.ships || [env];
@@ -1477,11 +1506,19 @@ const MoorEngine = (() => {
     const x = res.x, Hs = swellHs(M, cs);
     const st = Hs > 0 ? swellPeaks(M, res.st, Hs) : res.st;
     const ships = M.ships.map((sh, i) => {
-      const dXg = x[3 * i] - sh.pose.X0, dYg = x[3 * i + 1] - sh.pose.Y0;
       const c0 = Math.cos(sh.pose.psi0), s0 = Math.sin(sh.pose.psi0);
+      // reference: where the vessel was placed at its target, or where it lay once the lines were tended
+      const ref = M.moveFrom === 'tended' && M.preX ? M.preX.slice(3 * i, 3 * i + 3) : [sh.pose.X0, sh.pose.Y0, sh.pose.psi0];
+      const a = M.moveAt === 'midships' ? 0 : (sh.targetA || 0);
+      const px = x[3 * i] + a * Math.cos(x[3 * i + 2]), py = x[3 * i + 1] + a * Math.sin(x[3 * i + 2]);
+      const rx = ref[0] + a * Math.cos(ref[2]), ry = ref[1] + a * Math.sin(ref[2]);
+      const dXg = px - rx, dYg = py - ry;
+      const mX = x[3 * i] - sh.pose.X0, mY = x[3 * i + 1] - sh.pose.Y0;
       return {
         name: sh.name, label: sh.label, surge: dXg * c0 + dYg * s0, sway: -dXg * s0 + dYg * c0,
-        yaw: (x[3 * i + 2] - sh.pose.psi0) / D2R, clearance: st.clearances[i]
+        yaw: (x[3 * i + 2] - ref[2]) / D2R, clearance: st.clearances[i],
+        // midships offset from the placed position, kept for the drawings
+        surgeMid: mX * c0 + mY * s0, swayMid: -mX * s0 + mY * c0, at: a
       };
     });
     const s = {
@@ -1498,7 +1535,7 @@ const MoorEngine = (() => {
       anchors: st.anchors.map((a, i) => ({ H: a.H, T: a.T, pct: a.T / M.anchors[i].mbl * 100, lifted: a.lifted })),
       fenders: st.fenders.map((f, j) => {
         const F = M.fenders[j], area = F.ft.area * (F.contact != null ? F.contact : 1);
-        return { d: f.d, R: f.R, over: f.over, pressure: f.R > 0 && area > 0 ? f.R / area : 0, noContact: f.R > 0 && F.contact === 0, swell: Hs > 0 && f.R0 != null };
+        return { d: f.d, R: f.R, over: f.over, pressure: f.R > 0 && area > 0 ? f.R / area : 0, noContact: f.R > 0 && F.contact === 0, missed: !!f.missed, swell: Hs > 0 && f.R0 != null };
       }),
       bollards: st.bollards.map(b => {
         const H = Math.hypot(b.hx, b.hy);
@@ -1703,6 +1740,7 @@ const MoorEngine = (() => {
     const preTol = Math.max(0.5, 1e-4 * (M.lines.reduce((s, l) => s + l.Tp, 0) + M.anchors.reduce((s, a) => s + a.H0, 0)));
     const pre = equilibrium(M, M.x0.slice(), null, 0, preTol);
     const preSum = summarise(M, null, null, pre, pre.iters);
+    M.preX = pre.x.slice();                            // tended position, a reference for the movements
     preSum.check = assess(M, preSum);
     const limitWind = analysis === 'limitWind';
     if (analysis !== 'design') {
@@ -2962,8 +3000,13 @@ const Moor3D = (() => {
       const zs = qTop - ST.t, beamD = Math.min(1.2, ST.t * 0.8);
       const deck = (x0, x1, y0, y1, ztop, thk) => m.box([(x0 + x1) / 2, (y0 + y1) / 2, 0], [1, 0, 0], [0, 1, 0], x1 - x0, y1 - y0, ztop - thk, ztop, conc, top);
       const pile = (x, y, r, z1) => m.cyl(x, y, r, bedZ, z1, pileCol, 10);
-      // main deck, cope along the face, pile-cap beams and the piles under them
-      deck(ST.X0, ST.X1, -ST.W, 0, qTop, ST.t);
+      // main deck, cope along the face, pile-cap beams and the piles under them. See-through: the slab is left
+      // out and only its frame drawn (cope, rear edge beam and a cross beam at each bent), so the piles show.
+      if (ST.see) {
+        m.box([(ST.X0 + ST.X1) / 2, -0.6, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.2, qTop - ST.t, qTop, conc, top);
+        m.box([(ST.X0 + ST.X1) / 2, -ST.W + 0.6, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.2, qTop - ST.t, qTop, conc, top);
+        for (let x = ST.X0 + ST.pitch / 2; x < ST.X1; x += ST.pitch) m.box([x, -ST.W / 2, 0], [1, 0, 0], [0, 1, 0], Math.max(0.8, ST.pileD), ST.W, zs - beamD, qTop - 0.25, capCol, top);
+      } else deck(ST.X0, ST.X1, -ST.W, 0, qTop, ST.t);
       m.box([(ST.X0 + ST.X1) / 2, -0.35, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 0.7, qTop, qTop + 0.12, hex('#D8B23A'));
       for (let i = 0; i < ST.rows; i++) {
         const y = -0.9 - (ST.W - 1.8) * i / (ST.rows - 1);
@@ -2973,7 +3016,8 @@ const Moor3D = (() => {
       if (ST.kind === 'deck') {
         // rock revetment under the deck, land behind it
         const L0 = ST.X0 - 3 * scale, L1 = ST.X1 + 3 * scale, yb = -ST.W;
-        m.quad([L0, -1.5, bedZ], [L1, -1.5, bedZ], [L1, yb, zs - beamD - 0.4], [L0, yb, zs - beamD - 0.4], rock);
+        const toe = ST.toeY != null ? ST.toeY : -1.5;
+        m.quad([L0, toe, bedZ], [L1, toe, bedZ], [L1, yb, zs - beamD - 0.4], [L0, yb, zs - beamD - 0.4], rock);
         m.quad([L0, yb, zs - beamD - 0.4], [L1, yb, zs - beamD - 0.4], [L1, yb, qTop], [L0, yb, qTop], hex('#8C8576'));
         m.quad([ST.X0, yb - 40, qTop], [ST.X0, yb, qTop], [ST.X1, yb, qTop], [ST.X1, yb - 40, qTop], hex('#77777A'));
         m.quad([L0, yb - 3 * scale, qTop - 0.02], [L1, yb - 3 * scale, qTop - 0.02], [L1, yb, qTop - 0.02], [L0, yb, qTop - 0.02], hex('#8F8C84'));
@@ -3993,6 +4037,10 @@ function migrate(p) {
   p.lng = Object.assign(defaultLng(), p.lng || {});
   p.states = p.states || [];
   if (!p.environment.damaged) p.environment.damaged = 'off';
+  if (!p.environment.moveAt) p.environment.moveAt = 'target';
+  if (Array.isArray(p.fleet) && p.fleet.length) { p.fleetActive = Math.max(0, Math.min(p.fleet.length - 1, Math.round(Number(p.fleetActive) || 0))); } else { delete p.fleet; p.fleetActive = 0; }
+  if (!p.environment.moveFrom) p.environment.moveFrom = 'tended';
+  if (!p.environment.fenderContact) p.environment.fenderContact = 'flat';
   if (p.environment.allowableDamaged == null || p.environment.allowableDamaged === '') p.environment.allowableDamaged = 70;
   if (!p.environment.damagedCount) p.environment.damagedCount = 3;
   p.fairleads.forEach(f => { if (f.lead == null) f.lead = ''; });
@@ -4820,6 +4868,7 @@ function renderInputs() {
 function renderVesselTab() {
   const tv = $('tab-vessel'); tv.innerHTML = '';
   const sts = P.berth.type === 'sts';
+  tv.append(fleetPanel());
   tv.append(vesselPicker());
   vesselBlock(tv, P.vessel, 1, sts ? 'Vessel 1 — mothership (inboard)' : 'Vessel particulars');
   if (sts) vesselBlock(tv, P.vessel2, 2, 'Vessel 2 — outboard vessel');
@@ -4853,6 +4902,7 @@ function vesselBlock(tv, v, which, title) {
     { key: 'Lpb', label: 'Parallel body length', unit: 'm', inputId: `in${which}-Lpb`, noteId: `calc${which}-Lpb`, auto: () => 0.69 * Number(v.LBP), help: 'Length of the flat side, centred on midships, over which fenders bear on the hull. Left blank it is taken as 0.69 × LBP, the default fendering zone of OptiMoor (0.34 LBP aft to 0.35 LBP forward of midships).' },
     { key: 'windCentroid', label: 'Centroid of above-deck windage, forward of midships', unit: 'm', help: 'Used by wind bases whose centre of action is measured from the windage centroid (such as Pontoon). The hull side below the deck is centred on midships, so the program applies the centroid of the whole side area: this value × side area above deck ÷ total side area. Blank = midships.' },
     { key: 'hullPressure', label: 'Hull pressure limit', unit: 'kPa', help: 'Allowable fender pressure on the hull. 20 t/m² is 196 kPa. Leave blank to skip the check.' },
+    { key: 'targetX', label: 'Target point, forward of midships (blank = manifold or midships)', unit: 'm', help: 'The point on the ship whose movement is reported, as OptiMoor reports the movement of the ship\'s target point. Enter the target point from the OptiMoor vessel file (usually the manifold). Left blank, the manifold is used when the manifold check is on, otherwise midships.' },
     { key: 'flatContour', label: 'Flat-side contour (x, depth; …)', text: true, noteId: `calc${which}-contour`, help: 'Optional, as in OptiMoor: depth of the flat side below the deck at points along the ship, x from midships (forward positive). Sets how much of each fender panel bears on the hull for the hull pressure check. Blank = flat from keel to deck.' }
   ]));
   tv.append(dragBasisPanel(which === 2 ? 2 : 1));
@@ -5034,6 +5084,9 @@ function renderEnvTab() {
   te.append(fieldGrid(E, [
     { key: 'allowable', label: 'Allowable line and chain load', unit: '% MBL' },
     { key: 'maxSurge', label: 'Surge limit (blank = none)', unit: 'm' },
+    { key: 'moveAt', label: 'Movement measured at', options: [['target', 'The target point (as OptiMoor)'], ['midships', 'Midships']], help: 'OptiMoor reports surge and sway at the ship\'s target point, so yaw moves it too. Set the target point on the Vessel tab.' },
+    { key: 'moveFrom', label: 'Movement measured from', options: [['tended', 'The target position, once the lines are tended (as OptiMoor)'], ['placed', 'The berthing position, fenders just touching (earlier TritoMoor)']], help: 'OptiMoor puts the ship at its target and tensions the lines there (Ctrl+I), so the pretension alone shows no movement and the fenders are already squeezed by it. Measuring from the berthing position instead adds that pretension squeeze to every movement onto the berth, which is why earlier TritoMoor read up to about 0.1 m more.' },
+    { key: 'fenderContact', label: 'Fender contact', options: [['flat', 'Only where the fender meets the flat side (as OptiMoor)'], ['outline', 'Anywhere on the hull outline']], help: 'As OptiMoor: a fender carries load only if its panel meets the flat side of the hull at the draft of the load state. A light ship rides high, so low fenders, and fenders near the ends where the flat side is shallow, can miss the hull in ballast and carry nothing. This needs the fender level and panel on the fender type, and the flat-side contour on the Vessel tab.' },
     { key: 'maxSway', label: 'Sway limit (blank = none)', unit: 'm' },
     { key: 'maxRender', label: 'Line render limit (blank = 30% of beam)', unit: 'm', help: 'How much a winch brake may pay out before the line is treated as failed. Left blank, 30% of the vessel beam is used, which is the rule OptiMoor applies.' },
     { key: 'maxLeadV', label: 'Vertical lead limit at the fairlead (blank = none)', unit: '°' },
@@ -6276,6 +6329,8 @@ function renderMethod() {
   <p class="note">OptiMoor sets pretensions when the analysis is initialised (Ctrl+I). Its rule was worked out from OptiMoor runs on the Tin Can berth. With the ship held at its target fore and aft and in yaw, it is pressed inward until the fenders carry the pull of the lines, every line is set to exactly its aim at that position, and the ship is released and settles. OptiMoor does this twice, the second time starting from where the ship surged to; the second pass moves the ship forward again but leaves the tensions unchanged. The rule is fixed rather than iterative, which is why pressing Ctrl+I again changes nothing, and exactly proportional to the aim, which is why aims of 5, 10 and 20 tonnes give tensions and movements in the ratio 1 : 2 : 4. It has no adjustable factor. Against those runs it reproduces the 64 line tensions to 0.4 tonne on average and the vessel movements to print precision, and across the six loaded Tin Can cases line tensions agree with OptiMoor to 0.27% of MBL and fender thrusts to within OptiMoor's own rounding.</p>
   <p class="note">The line load–elongation curve is taken as a proportion of the strength entered for the line, as in OptiMoor. OptiMoor's curve screen shows tensions for the nominal strength of the rope size, so a line whose strength has been overwritten reaches the curve's strain at break at its own entered strength. Reading the curve in tonnes from that screen makes an overwritten line too stiff: on Tin Can the difference was 7.5%.</p>
   <h2>Hull pressure</h2>
+  <p class="note">Movements are reported as OptiMoor reports them: the surge, sway and yaw of the vessel's target point (entered on the Vessel tab; midships, or the manifold when the manifold check is on, if left blank), measured from the target position, which is where the vessel lies once its lines have been tended. The pretension alone therefore shows no movement, and a movement onto the berth does not include the squeeze the pretension has already put on the fenders. The Environment tab can switch back to midships, measured from the berthing position with the fenders just touching, as earlier versions did.</p>
+  <p class="note">Fender contact follows OptiMoor: a quay fender carries load only if its panel meets the flat side of the hull at the draft of the load state. A fender that would bear above the deck edge, below the keel, or below the flat side where the bilge turns in (from the flat-side contour) takes nothing, and the rest of the fenders share the load. A light ship rides high, so in ballast this decides which fenders work. It needs the fender level and panel size on the fender type.</p>
   <p class="note">A fender panel only transfers load through the part of its face that bears on the flat side of the hull. With the panel width and the height of its centre above datum entered on the fender type, the program works out, for each load state, how much of the panel lies between the keel and the deck edge at that fender, allowing for draft, trim and water level. The hull pressure is the fender reaction divided by that contact area and is checked against the vessel's hull pressure limit. A deep-loaded vessel or a falling tide lowers the deck edge down the panel, so the same reaction is spread over less of the hull and the pressure rises.</p>
   <h2>Winches</h2>
   <p class="note">The fairlead-to-winch length is line inboard of the fairlead. Its direction does not change as the vessel moves, but it stretches with the rest of the line, so it softens the mooring. A line on a fixed winch follows its load–elongation curve. With a brake holding load set, the line follows the curve until the tension reaches that load, after which the drum renders: tension stays at the brake load, apart from a small residual, and the length paid out is reported for each case. A constant-tension winch holds its set tension, paying out or heaving in as the vessel moves, and the tension never exceeds what the line would carry at that stretch. Rendering protects the line but lets the vessel move, so the pay-out is also compared with an optional render limit.</p>
@@ -6344,6 +6399,7 @@ function runAnalysis() {
     finish();
     tool = 'view'; preview = null; selFL = null; buildToolbar();
     renderResults(); markTabs(); setTab('results'); setupSlider(); drawPlan();
+    if (P.fleet && P.fleet.length) renderVesselTab();
     if (OPT) renderOptResults();
     const bad = RESALL.runs.reduce((s, R) => s + R.cases.filter(c => !c.ok).length, 0);
     const total = RESALL.runs.reduce((s, R) => s + R.cases.length, 0);
@@ -6626,12 +6682,13 @@ function renderResults() {
     box.append(el('h2', { text: 'Fender reactions' }));
     const frows = A.fenders.map(a => {
       const c = a.hi >= 0 ? R.cases[a.hi] : null;
-      const st = a.over ? '<span class="flag bad">beyond rated deflection</span>' : a.pOver ? '<span class="flag bad">hull pressure over limit</span>' : a.maxR > 0 ? '<span class="flag ok">ok</span>' : '<span class="flag warn">no contact</span>';
+      const st = a.over ? '<span class="flag bad">beyond rated deflection</span>' : a.pOver ? '<span class="flag bad">hull pressure over limit</span>' : a.maxR > 0 ? '<span class="flag ok">ok</span>' : M.fenderContact !== 'outline' && a.f.contact === 0 ? '<span class="flag warn">misses the flat side</span>' : '<span class="flag warn">no contact</span>';
       const hasP = a.f.ft.area > 0;
       return `<tr><td>${esc(a.f.id)}</td><td class="n">${fmt(a.f.X, 1)}</td><td>${esc(a.f.ft.name)}</td><td class="n">${fmt(a.maxD * 1000, 0)}${swm(a.swell)}</td><td class="n">${fmt(a.f.ft.rated, 0)}</td><td class="n" style="font-weight:600">${fmt(a.maxR)}${swm(a.swell)}</td><td class="n">${a.contact != null && a.f.panel ? fmt(a.contact * 100, 0) + '%' : '–'}</td><td class="n"${a.pOver ? ' style="color:#B7372A;font-weight:600"' : ''}>${hasP && a.maxP > 0 ? fmt(a.maxP, 0) + ' (' + fmt(a.maxP / 9.80665, 1) + ')' + swm(a.swell) : '–'}</td><td class="n">${c ? caseLabel(c) : '–'}</td><td>${st}</td></tr>`;
     }).join('');
     box.append(tableBox(`<thead><tr><th>Fender</th><th class="n">X (m)</th><th>Type</th><th class="n">Max deflection (mm)</th><th class="n">Rated (mm)</th><th class="n">Max reaction (kN)</th><th class="n">Flat-side contact</th><th class="n">Hull pressure kPa (t/m²)</th><th class="n">Case</th><th>Status</th></tr></thead><tbody>${frows}</tbody>`));
     if (M.hullPressure > 0) box.append(el('p', { class: 'note', text: `Hull pressure limit ${fmt(M.hullPressure, 0)} kPa (${fmt(M.hullPressure / 9.80665, 1)} t/m²). Pressure is the reaction divided by the part of the fender face bearing on the flat side of the hull below the deck edge.` }));
+    if (M.fenderContact !== 'outline' && A.fenders.some(a => a.f.contact === 0)) box.append(el('p', { class: 'note', text: 'A fender marked "misses the flat side" does not meet the flat side of the hull at this draft, so it carries no load, as in OptiMoor. On a light ship this is usually a low fender, or one near the ends where the flat side is shallow.' }));
     if (A.fenders.some(a => a.swell)) box.append(el('p', { class: 'note', text: `${SWELL_MARK} is the swell peak: the fender is pushed a further Hs/2 beyond its static deflection, any gap taken up first.` }));
   }
 
@@ -6666,7 +6723,7 @@ function renderResults() {
   const ct = tableBox(`<thead><tr><th>Case</th><th class="n">Wind from</th><th class="n">Wind (m/s)</th><th class="n">Current from</th><th class="n">Current (m/s)</th><th class="n">Env. Fx (kN)</th><th class="n">Env. Fy (kN)</th><th class="n">Env. Mz (MNm)</th>${motionHead}${M.quay && M.berthType !== 'pontoon' ? '<th class="n">Quay clearance (m)</th>' : ''}${M.nShips > 1 ? `<th class="n">${M.berthType === 'pontoon' ? 'Hull-pontoon gap (m)' : 'Hull gap (m)'}</th>` : ''}${M.lng ? '<th class="n">Manifold along / off (m)</th>' : ''}<th class="n">Governing use</th><th>Result</th></tr></thead><tbody>${crows}</tbody>`);
   ct.addEventListener('click', e => { const t = e.target.closest('[data-k]'); if (t) selectCase(+t.dataset.k); });
   box.append(ct);
-  box.append(el('p', { class: 'note', text: 'Environmental loads are in the axes of vessel 1. Offsets are from each vessel\'s starting position in its own axes: surge positive forward, sway positive to port (off the berth when alongside), yaw positive bow to port. Governing use is the highest ratio of any check to its limit.' }));
+  box.append(el('p', { class: 'note', text: `Environmental loads are in the axes of vessel 1. Offsets are the movement of ${M.moveAt === 'midships' ? 'midships' : 'each vessel\'s target point (' + M.ships.map((sh, i) => (M.nShips > 1 ? 'V' + (i + 1) + ' ' : '') + (sh.targetA ? fmt(sh.targetA, 1) + ' m ' + (sh.targetA > 0 ? 'forward of' : 'aft of') + ' midships' : 'midships')).join(', ') + '), as OptiMoor reports them,'} measured from ${M.moveFrom === 'tended' ? 'its target position once the lines were tended' : 'its berthing position before tending, fenders just touching'}, in its own axes: surge positive forward, sway positive to port (off the berth when alongside), yaw positive bow to port. Governing use is the highest ratio of any check to its limit.` }));
   box.append(el('div', { class: 'rowbtns' }, el('button', { onclick: exportCSV }, 'Export results (CSV)')));
 }
 function tableBox(html, cls) {
@@ -6756,7 +6813,7 @@ const TOOLS = [
 
 function setupSlider() {
   const s = $('headSlider');
-  const show = !!(RES && !stale && tool === 'view' && !preview);
+  const show = !!(RES && !stale && tool === 'view' && !preview && viewMode !== 'moor');
   $('headCtl').hidden = !show;
   $('magCtl').hidden = !show;
   if (RES) { s.max = RES.cases.length - 1; s.value = sel; }
@@ -6766,7 +6823,7 @@ function buildToolbar() {
   const g = $('tools'); g.innerHTML = '';
   TOOLS.forEach(([id, label, help]) => g.append(el('button', {
     'aria-pressed': tool === id ? 'true' : 'false', title: help,
-    onclick: () => { tool = id; selFL = null; hover = null; editNote = ''; buildToolbar(); setupSlider(); if (viewMode === '3d' && id !== 'view') setViewMode('plan'); else drawPlan(); }
+    onclick: () => { tool = id; selFL = null; hover = null; editNote = ''; buildToolbar(); setupSlider(); if (viewMode !== 'plan' && id !== 'view') setViewMode('plan'); else drawPlan(); }
   }, label)));
 }
 
@@ -6779,6 +6836,10 @@ function setHint() {
     h.hidden = false; return;
   }
   h.hidden = false;
+  if (viewMode === 'moor') {
+    h.append(el('span', { text: 'Every vessel of the project moored at the berth, to the same scale. Add vessels on the Vessel tab; click one to work on it.' }));
+    return;
+  }
   if (viewMode === '3d') {
     h.append(el('span', { text: 'Drag to orbit, right-drag or Shift-drag to pan, scroll to zoom. The view updates as you change inputs; after a run it shows the vessel at the selected case with lines coloured by load.' }));
     return;
@@ -7087,6 +7148,7 @@ function buildScene() {
 }
 
 function drawPlan() {
+  if (viewMode === 'moor') { setHint(); try { drawMoorings(); } catch (e) { $('moorWrap').textContent = 'The moorings view could not be drawn: ' + e.message; } return; }
   const cv = $('planCanvas');
   const ctx = cv.getContext && cv.getContext('2d'); if (!ctx) return;
   const cssW = Math.max(320, cv.parentElement.clientWidth || 800);
@@ -7109,6 +7171,7 @@ function drawPlan() {
   const proj0 = preview ? Object.assign({}, P, { lines: preview.lines }) : P;
   $('planTitle').textContent = (viewMode === '3d' ? '3D view' : 'Plan view') + (preview ? ' (generated arrangement)' : sc.editing ? ' (editing)' : useRes ? ` (${sc.V.label.toLowerCase()})` : (RES && !stale && viewCondSel() !== 'auto' ? ` (${sc.V.label.toLowerCase()}, not analysed: starting position)` : RES ? ' (inputs changed)' : ` (${sc.V.label.toLowerCase()}, starting position)`)) + (sc.provisional ? ` · no draft entered yet: drawn at ${sc.provisional} m` : '');
   $('headVal').textContent = caseR ? caseLabel(caseR) : '';
+  if ($('deckCtl')) $('deckCtl').hidden = viewMode !== '3d' || !sc.quay || (P.berth.structure || 'wall') === 'wall';
 
   const mag = useRes ? Math.max(1, Number($('mag').value) || 1) : 1;
   const showLabels = $('showLabels').checked;
@@ -7154,29 +7217,71 @@ function drawPlan() {
     ctx.restore();
     ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, Hh(yTop)); ctx.lineTo(cssW, Hh(yTop)); ctx.stroke();
   };
-  const slab = (x0, x1, y0, y1) => {   // a concrete deck in plan, Y from y0 (face) back to y1
+  // an open deck on piles in plan: the sea shows through the deck, which is drawn as its beam grid on the piles
+  const slab = (x0, x1, y0, y1, open = true) => {   // Y from y0 (face) back to y1
     const L = W(x0), R = W(x1), T = Hh(y0), B = Hh(y1);
-    ctx.fillStyle = '#DAD6CC'; ctx.fillRect(L, T, R - L, B - T);
-    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 1.5; ctx.strokeRect(L, T, R - L, B - T);
+    ctx.fillStyle = open ? 'rgba(238,235,228,.30)' : '#DAD6CC'; ctx.fillRect(L, T, R - L, B - T);
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 1.5; ctx.setLineDash(open ? [6, 3] : []); ctx.strokeRect(L, T, R - L, B - T); ctx.setLineDash([]);
+  };
+  const grid = (x0, x1, ys2, pitch, d) => {          // pile-cap beams along each row and cross beams at each bent
+    if (pitch * sp < 3) return;
+    ctx.strokeStyle = 'rgba(128,120,104,.5)'; ctx.lineWidth = Math.max(1, Math.min(4, d * 1.2 * sp));
+    ys2.forEach(y => { ctx.beginPath(); ctx.moveTo(W(x0), Hh(y)); ctx.lineTo(W(x1), Hh(y)); ctx.stroke(); });
+    ctx.lineWidth = Math.max(0.6, Math.min(2, 0.6 * d * sp)); ctx.strokeStyle = 'rgba(128,120,104,.3)';
+    for (let x = x0 + pitch / 2; x < x1; x += pitch) { ctx.beginPath(); ctx.moveTo(W(x), Hh(ys2[0])); ctx.lineTo(W(x), Hh(ys2[ys2.length - 1])); ctx.stroke(); }
   };
   const piles = (x0, x1, ys2, pitch, d) => {
-    const r = Math.max(1.2, d / 2 * sp); if (pitch * sp < 4) return;
-    ctx.fillStyle = 'rgba(77,82,87,.55)';
-    ys2.forEach(y => { for (let x = x0 + pitch / 2; x < x1; x += pitch) { ctx.beginPath(); ctx.arc(W(x), Hh(y), r, 0, 2 * Math.PI); ctx.fill(); } });
+    const r = Math.max(1.6, d / 2 * sp); if (pitch * sp < 3) return;
+    ys2.forEach(y => { for (let x = x0 + pitch / 2; x < x1; x += pitch) {
+      ctx.beginPath(); ctx.arc(W(x), Hh(y), r, 0, 2 * Math.PI); ctx.fillStyle = '#4D5257'; ctx.fill();
+      if (r > 2.5) { ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1; ctx.stroke(); }
+    } });
+  };
+  const tag = (text, x, y) => {
+    ctx.font = '600 11px ' + font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = 'rgba(247,249,248,.85)'; ctx.fillRect(x - w / 2, y - 8, w, 16);
+    ctx.fillStyle = '#4B5D70'; ctx.fillText(text, x, y); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   };
   if (ST.kind !== 'wall') {
     const rowY = Array.from({ length: ST.rows }, (_, i) => -0.9 - (ST.W - 1.8) * i / (ST.rows - 1));
-    if (ST.kind === 'deck') { land(-ST.W); slab(Math.min(ST.X0, geom.toWorld(0, 0)[0]), Math.max(ST.X1, geom.toWorld(cssW, 0)[0]), 0, -ST.W); }
-    else {
+    const wx0 = geom.toWorld(0, 0)[0], wx1 = geom.toWorld(cssW, 0)[0];
+    const dx0 = ST.kind === 'deck' ? Math.min(ST.X0, wx0) - ST.pitch : ST.X0, dx1 = ST.kind === 'deck' ? Math.max(ST.X1, wx1) + ST.pitch : ST.X1;
+    if (ST.kind === 'deck') {
+      land(-ST.W);
+      // rock revetment under the deck, seen through it: from its toe on the seabed up to the back of the deck
+      const yT = Hh(ST.toeY), yB = Hh(-ST.W), L = W(dx0), R = W(dx1);
+      const gr = ctx.createLinearGradient(0, yT, 0, yB); gr.addColorStop(0, 'rgba(168,158,136,.12)'); gr.addColorStop(1, 'rgba(142,133,117,.5)');
+      ctx.fillStyle = gr; ctx.fillRect(L, yT, R - L, yB - yT);
+      ctx.save(); ctx.beginPath(); ctx.rect(L, yT, R - L, yB - yT); ctx.clip(); ctx.fillStyle = 'rgba(110,102,88,.22)';
+      const st2 = Math.max(4, 1.6 * sp);
+      for (let yy = yT + st2 / 2, k = 0; yy < yB; yy += st2, k++) for (let xx = (k % 2) * st2 / 2; xx < cssW; xx += st2) { ctx.beginPath(); ctx.arc(xx, yy, Math.max(0.8, st2 * 0.16), 0, 2 * Math.PI); ctx.fill(); }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(110,102,88,.7)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(0, yT); ctx.lineTo(cssW, yT); ctx.stroke(); ctx.setLineDash([]);
+      slab(dx0, dx1, 0, -ST.W);
+    } else {
       const tr = ST.trestle; land(-ST.W - tr.L);
       ctx.strokeStyle = '#6F7780'; ctx.lineWidth = Math.max(1.5, 1.2 * sp);
       ST.catwalks.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(W(a[0]), Hh(a[1])); ctx.lineTo(W(b[0]), Hh(b[1])); ctx.stroke(); });
       slab(tr.X - tr.w / 2, tr.X + tr.w / 2, -ST.W, -ST.W - tr.L);
-      slab(ST.X0, ST.X1, 0, -ST.W);
-      ST.dolphins.forEach(q => slab(q.X - q.sx / 2, q.X + q.sx / 2, q.Y + q.sy / 2, q.Y - q.sy / 2));
+      grid(tr.X - tr.w / 2, tr.X + tr.w / 2, [-ST.W - 0.9], 12, 0.45);
+      for (let y = -ST.W - 6; y > -ST.W - tr.L + 2; y -= 12) piles(tr.X - tr.w / 2 + 0.9 - 0.5, tr.X - tr.w / 2 + 0.9 + 0.5, [y], 1, 0.9), piles(tr.X + tr.w / 2 - 0.9 - 0.5, tr.X + tr.w / 2 - 0.9 + 0.5, [y], 1, 0.9);
+      slab(dx0, dx1, 0, -ST.W);
+      ST.dolphins.forEach(q => {
+        slab(q.X - q.sx / 2, q.X + q.sx / 2, q.Y + q.sy / 2, q.Y - q.sy / 2);
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => piles(q.X + a * (q.sx / 2 - 0.9) - 0.5, q.X + a * (q.sx / 2 - 0.9) + 0.5, [q.Y + b * (q.sy / 2 - 0.9)], 1, 1.0));
+      });
     }
-    piles(ST.kind === 'deck' ? geom.toWorld(0, 0)[0] - ST.pitch : ST.X0, ST.kind === 'deck' ? geom.toWorld(cssW, 0)[0] : ST.X1, rowY, ST.pitch, ST.pileD);
-    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W(ST.kind === 'deck' ? -1e6 : ST.X0), Hh(0)); ctx.lineTo(W(ST.kind === 'deck' ? 1e6 : ST.X1), Hh(0)); ctx.stroke();
+    grid(dx0, dx1, rowY, ST.pitch, ST.pileD);
+    piles(dx0, dx1, rowY, ST.pitch, ST.pileD);
+    // the berthing face: the cope edge of the deck, the line the fenders stand on
+    ctx.strokeStyle = '#6F6656'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(W(dx0), Hh(0)); ctx.lineTo(W(dx1), Hh(0)); ctx.stroke();
+    if (showLabels) {
+      const lx = Math.max(60, Math.min(cssW - 60, W((Math.max(dx0, wx0) + Math.min(dx1, wx1)) / 2) + cssW * 0.28));
+      const ly = Hh(-ST.W / 2);
+      if (Hh(-ST.W) - Hh(0) > 22 && ly > 10 && ly < cssH - 10) tag(`Open deck on piles: ${fmt(ST.W, 0)} m wide, Ø${fmt(ST.pileD, 1)} m piles at ${fmt(ST.pitch, 1)} m`, lx, ly);
+      if (ST.kind === 'deck' && Hh(-ST.W) + 14 < cssH) tag('Revetment under the deck, land behind', lx, Math.min(cssH - 10, Hh(-ST.W) + 14));
+    }
   } else if (sc.quay) {
     const qy = Math.max(0, Math.min(cssH, Hh(0)));
     ctx.fillStyle = '#CFC8BC'; ctx.fillRect(0, qy, cssW, cssH - qy);
@@ -7930,14 +8035,237 @@ function renderOptResults() {
 /* ---------- 3D view ---------- */
 let viewMode = 'plan';
 const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* ---------- vessels at the berth: a project can hold several design vessels ----------
+   Each vessel keeps its own particulars, fairleads, lines, anchors and load states; the berth (bollards,
+   fenders, structure), the line and fender types and the environment are shared. P.fleet holds a snapshot of
+   each vessel; the one being worked on (P.fleetActive) lives in P itself, so every tab works as before. */
+const FLEET_KEYS = ['vessel', 'vessel2', 'fairleads', 'lines', 'anchors', 'states', 'tending', 'lng'];
+const FLEET_RES = new WeakMap();          // results of a vessel's last run, kept for this session only
+function fleetSnap(src) { const o = {}; FLEET_KEYS.forEach(k => { if (src[k] !== undefined) o[k] = JSON.parse(JSON.stringify(src[k])); }); return o; }
+function fleetList() {
+  // every vessel as a project to draw: the active one is P itself
+  if (!(P.fleet && P.fleet.length)) return [{ i: 0, pj: P, active: true }];
+  return P.fleet.map((snap, i) => i === P.fleetActive ? { i, pj: P, active: true } : { i, pj: Object.assign({}, P, snap), active: false, snap });
+}
+function fleetStoreActive() {
+  if (!(P.fleet && P.fleet.length)) return;
+  const snap = fleetSnap(P);
+  FLEET_RES.set(snap, { RESALL, runSel, sel, stale });
+  P.fleet[P.fleetActive] = snap;
+}
+function fleetSwitch(j) {
+  if (!(P.fleet && P.fleet[j]) || j === P.fleetActive) return;
+  fleetStoreActive();
+  const snap = P.fleet[j], kept = FLEET_RES.get(snap);
+  FLEET_KEYS.forEach(k => { if (snap[k] !== undefined) P[k] = JSON.parse(JSON.stringify(snap[k])); });
+  P.fleetActive = j;
+  P = migrate(P);
+  resetResults();
+  if (kept && kept.RESALL) { RESALL = kept.RESALL; stale = kept.stale; setRun(kept.runSel || 0); sel = kept.sel || 0; }
+  syncCoefficients(); persist(); renderInputs(); markTabs(); renderResults(); setupSlider(); drawPlan();
+  showMsg(`Now working on ${P.vessel.name || 'vessel ' + (j + 1)}. Its fairleads, lines and load states are shown; the berth, line types and environment are shared by every vessel.`, 'info');
+}
+function fleetAdd() {
+  if (!(P.fleet && P.fleet.length)) { P.fleet = [fleetSnap(P)]; P.fleetActive = 0; }
+  fleetStoreActive();
+  const snap = fleetSnap(P);
+  snap.vessel.name = (P.vessel.name || 'Vessel') + ' (copy)';
+  P.fleet.push(snap);
+  fleetSwitch(P.fleet.length - 1);
+  showMsg('A copy of the vessel was added. Change its particulars here, or pick another ship from the library above; its lines are kept, so check them against the new hull.', 'info');
+}
+function fleetRemove(j) {
+  if (!(P.fleet && P.fleet.length > 1)) return;
+  const name = (j === P.fleetActive ? P.vessel.name : P.fleet[j].vessel && P.fleet[j].vessel.name) || 'this vessel';
+  if (!confirm(`Remove ${name} from the project, with its fairleads and lines?`)) return;
+  if (j === P.fleetActive) { fleetSwitch(j === 0 ? 1 : j - 1); }
+  fleetStoreActive();
+  P.fleet.splice(j, 1);
+  if (P.fleetActive > j) P.fleetActive--;
+  if (P.fleet.length === 1) { delete P.fleet; P.fleetActive = 0; }
+  persist(); renderInputs(); drawPlan();
+}
+function fleetPanel() {
+  const box = el('div', { class: 'fleet' });
+  box.append(el('h2', { text: 'Vessels at this berth' }));
+  const list = fleetList();
+  box.append(el('p', { class: 'note', text: list.length > 1
+    ? 'This project checks several vessels at the same berth. Each has its own particulars, fairleads, lines and load states; the berth, line and fender types and environment are shared. Choose a vessel to work on it, or see them all moored with the Moorings view beside the plan.'
+    : 'To check other vessels at this berth in the same project, add them here. Each gets its own particulars, fairleads, lines and load states, and the Moorings view beside the plan shows every vessel moored.' }));
+  if (list.length > 1) {
+    const tbl = el('table');
+    tbl.innerHTML = '<thead><tr><th>Vessel</th><th class="n">LOA (m)</th><th class="n">Beam (m)</th><th class="n">Lines</th><th>Results</th><th></th></tr></thead>';
+    const tb = el('tbody');
+    list.forEach(q => {
+      const v = q.pj.vessel || {}, kept = q.active ? (RESALL ? { RESALL, stale } : null) : FLEET_RES.get(q.snap);
+      const peak = kept && kept.RESALL && kept.RESALL.analysis === 'design' ? Math.max(...kept.RESALL.runs.map(runPeak)) : null;
+      const tr = el('tr', { class: q.active ? 'cur' : '' });
+      tr.innerHTML = `<td>${esc(v.name || 'Vessel ' + (q.i + 1))}${q.active ? ' <span class="flag ok">working on</span>' : ''}</td><td class="n">${fmt(Number(v.LOA), 1)}</td><td class="n">${fmt(Number(v.B), 1)}</td><td class="n">${(q.pj.lines || []).length}</td><td>${peak != null ? `peak ${fmt(peak, 1)}% MBL${kept.stale ? ' (inputs changed)' : ''}` : '<span class="note">not run in this session</span>'}</td>`;
+      const td = el('td', { class: 'acts' });
+      if (!q.active) td.append(el('button', { onclick: () => fleetSwitch(q.i) }, 'Work on this'));
+      td.append(el('button', { onclick: () => fleetRemove(q.i), title: 'Remove this vessel from the project' }, 'Remove'));
+      tr.append(td); tb.append(tr);
+    });
+    tbl.append(tb);
+    const w = el('div', { class: 'tablewrap' }); w.append(tbl); box.append(w);
+  }
+  box.append(el('div', { class: 'rowbtns' }, [
+    el('button', { onclick: fleetAdd }, 'Add a vessel'),
+    el('button', { onclick: () => setViewMode('moor') }, 'Show all vessels moored')
+  ]));
+  return box;
+}
+
+// a light scene for one vessel of the fleet: at the berth as moored, or at its governing case once it has been run
+function moorScene(q) {
+  const pj = q.pj, kept = q.active ? (RESALL && !stale ? { RESALL } : null) : FLEET_RES.get(q.snap);
+  const out = { name: (pj.vessel || {}).name || 'Vessel ' + (q.i + 1), active: q.active, i: q.i, ships: [], lines: [], err: null, res: null };
+  try {
+    if (kept && kept.RESALL && kept.RESALL.analysis === 'design' && !kept.stale) {
+      const runs = kept.RESALL.runs; let gi = 0;
+      runs.forEach((R, k) => { if (runPeak(R) > runPeak(runs[gi])) gi = k; });
+      const R = runs[gi], c = R.cases[governingIndex(R)], M = R.M;
+      out.res = { peak: runPeak(R), allow: M.allow, cond: R.state ? R.state.name : R.condition, case: c };
+      out.ships = M.ships.map((sh, k) => ({ V: sh.V, hull: sh.hull, x0: sh.x0, pose: [c.x[3 * k], c.x[3 * k + 1], c.x[3 * k + 2]], label: sh.label }));
+      out.lines = M.lines.map((l, k) => {
+        const p0 = MoorEngine.toGlobal(out.ships[l.si].pose, l.a, l.b);
+        const p1 = l.end.kind === 'ship' ? MoorEngine.toGlobal(out.ships[l.end.si].pose, l.end.a, l.end.b) : [l.end.x, l.end.y];
+        return { p0, p1, pct: c.lines[k].pct };
+      });
+      out.cond = out.res.cond;
+    } else {
+      const st = MoorEngine.statesOf(pj), cond = st.length ? st[0] : 'laden';
+      const nS = MoorEngine.shipCount(pj), Vs = [];
+      for (let k = 0; k < nS; k++) Vs.push(MoorEngine.resolveVessel(pj, cond, k + 1));
+      const sp = MoorEngine.startPoses(pj, Vs.length > 1 ? Vs : [Vs[0], Vs[0]]);
+      out.ships = Vs.map((V, k) => { const x0 = [sp.poses[k].X0, sp.poses[k].Y0, sp.poses[k].psi0]; return { V, x0, pose: x0, hull: (sp.type === 'pontoon' && k === 1) ? [[-V.LOA / 2, -V.B / 2], [V.LOA / 2, -V.B / 2], [V.LOA / 2, V.B / 2], [-V.LOA / 2, V.B / 2]] : MoorEngine.hullPolygon(V.LOA, V.B, V.Lpb) }; });
+      out.cond = typeof cond === 'string' ? cond : cond.name;
+      const shipOf = f => Math.min(nS - 1, Math.max(0, (Number(f.ship) || 1) - 1));
+      const flMap = new Map((pj.fairleads || []).map(f => [String(f.id), f])), bMap = new Map((pj.bollards || []).map(b => [String(b.id), b]));
+      (pj.lines || []).forEach(l => {
+        const f = flMap.get(String(l.fairlead)); if (!f) return;
+        const toF = l.toFairlead ? flMap.get(String(l.toFairlead)) : null, b = toF ? null : bMap.get(String(l.bollard));
+        if (!toF && !b) return;
+        const p0 = MoorEngine.toGlobal(out.ships[shipOf(f)].pose, +f.a, -f.offset);
+        const p1 = toF ? MoorEngine.toGlobal(out.ships[shipOf(toF)].pose, +toF.a, -toF.offset) : [+b.X, +b.Y];
+        out.lines.push({ p0, p1, pct: null });
+      });
+    }
+    out.nLines = out.lines.length;
+  } catch (e) { out.err = e.message; }
+  return out;
+}
+
+function drawMoorings() {
+  const wrap = $('moorWrap'); if (!wrap) return;
+  wrap.innerHTML = '';
+  $('planTitle').textContent = 'Moorings: every vessel at the berth';
+  $('readout').innerHTML = ''; $('legend').innerHTML = '';
+  const list = fleetList(), scenes = list.map(moorScene);
+  const font = getComputedStyle(document.body).fontFamily;
+  // one scale for every panel, so the vessels can be compared
+  const bol = (P.bollards || []).filter(b => b.on !== 'pontoon' && Number.isFinite(+b.X) && Number.isFinite(+b.Y)).map(b => ({ id: String(b.id), X: +b.X, Y: +b.Y }));
+  const fen = (P.fenders || []).filter(f => (f.kind || 'quay') === 'quay' && Number.isFinite(+f.X)).map(f => ({ id: String(f.id), kind: 'quay', X: +f.X, hf: Number(f.face) || 0 }));
+  const hullPts = sh => sh.hull.map(([a, b]) => MoorEngine.toGlobal(sh.pose, a, b));
+  const pts = scenes.flatMap(s2 => s2.ships.flatMap(hullPts));
+  const xs = [...bol.map(b => b.X), ...fen.map(f => f.X), ...pts.map(q => q[0])], ysAll = [...bol.map(b => b.Y), ...pts.map(q => q[1]), 0];
+  if (!xs.length) { wrap.append(el('p', { class: 'note', text: 'Enter a vessel to see it moored.' })); return; }
+  const quay = (P.berth || {}).type !== 'sts' || (P.sts || {}).mode !== 'offshore';
+  const anyShips = scenes.find(s2 => s2.ships.length);
+  const ST = quay && anyShips ? berthStructure({ quay: true, bollards: bol, fenders: fen, ships: anyShips.ships }, [Math.min(...xs) - 1e4, Math.max(...xs) + 1e4]) : { kind: 'wall' };
+  const minX = Math.min(...xs) - 12, maxX = Math.max(...xs) + 12;
+  const minY = Math.min(...ysAll, ST.kind !== 'wall' ? -ST.W - 4 : -8) - 4, maxY = Math.max(...ysAll) + 10;
+  const cssW = Math.max(320, wrap.clientWidth || 700), sp = cssW / (maxX - minX);
+  const cssH = Math.max(120, Math.min(420, Math.round((maxY - minY) * sp)));
+  const dpr = window.devicePixelRatio || 1;
+  const palette = ['#2F6DA3', '#B8472F', '#3F8A5A', '#8A5BA8', '#C98A12', '#2B8C8C', '#6B5B4B'];
+
+  const berth = (ctx, W, Hh) => {
+    ctx.fillStyle = '#CFE1E7'; ctx.fillRect(0, 0, cssW, cssH);
+    if (!quay) return;
+    const landTop = ST.kind === 'wall' ? 0 : ST.kind === 'deck' ? -ST.W : -ST.W - (ST.trestle ? ST.trestle.L : 0);
+    const qy = Math.max(0, Math.min(cssH, Hh(landTop)));
+    ctx.fillStyle = '#CFC8BC'; ctx.fillRect(0, qy, cssW, cssH - qy);
+    ctx.strokeStyle = 'rgba(142,133,117,.35)'; ctx.save(); ctx.beginPath(); ctx.rect(0, qy, cssW, cssH - qy); ctx.clip();
+    for (let k = -cssH; k < cssW + cssH; k += 10) { ctx.beginPath(); ctx.moveTo(k, cssH); ctx.lineTo(k + cssH, 0); ctx.stroke(); }
+    ctx.restore();
+    if (ST.kind !== 'wall') {
+      const x0 = ST.kind === 'deck' ? minX - 20 : ST.X0, x1 = ST.kind === 'deck' ? maxX + 20 : ST.X1;
+      if (ST.kind === 'deck') { ctx.fillStyle = 'rgba(142,133,117,.35)'; ctx.fillRect(W(x0), Hh(ST.toeY), W(x1) - W(x0), Hh(-ST.W) - Hh(ST.toeY)); }
+      ctx.fillStyle = 'rgba(238,235,228,.35)'; ctx.fillRect(W(x0), Hh(0), W(x1) - W(x0), Hh(-ST.W) - Hh(0));
+      ctx.strokeStyle = '#8E8575'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1; ctx.strokeRect(W(x0), Hh(0), W(x1) - W(x0), Hh(-ST.W) - Hh(0)); ctx.setLineDash([]);
+      const rows = Array.from({ length: ST.rows }, (_, i) => -0.9 - (ST.W - 1.8) * i / (ST.rows - 1));
+      if (ST.pitch * sp >= 3) { ctx.fillStyle = '#4D5257'; rows.forEach(y => { for (let x = x0 + ST.pitch / 2; x < x1; x += ST.pitch) { ctx.beginPath(); ctx.arc(W(x), Hh(y), Math.max(1.2, ST.pileD / 2 * sp), 0, 7); ctx.fill(); } }); }
+      (ST.dolphins || []).forEach(q => { ctx.fillStyle = '#DAD6CC'; ctx.fillRect(W(q.X - q.sx / 2), Hh(q.Y + q.sy / 2), q.sx * sp, q.sy * sp); });
+    }
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(ST.kind === 'jetty' ? W(ST.X0) : 0, Hh(0)); ctx.lineTo(ST.kind === 'jetty' ? W(ST.X1) : cssW, Hh(0)); ctx.stroke();
+    fen.forEach(f => { ctx.fillStyle = '#16283D'; ctx.fillRect(W(f.X) - Math.max(2, 1.5 * sp), Hh(f.hf), Math.max(4, 3 * sp), Hh(0) - Hh(f.hf)); });
+    bol.forEach(b => { ctx.fillStyle = '#16283D'; ctx.beginPath(); ctx.arc(W(b.X), Hh(b.Y), 2.6, 0, 7); ctx.fill(); });
+  };
+  const hullPath = (ctx, W, Hh, sh) => { ctx.beginPath(); hullPts(sh).forEach((q, k) => k ? ctx.lineTo(W(q[0]), Hh(q[1])) : ctx.moveTo(W(q[0]), Hh(q[1]))); ctx.closePath(); };
+  const canvasFor = (title, sub, onclick, active) => {
+    const card = el('div', { class: 'mcard' + (active ? ' cur' : '') });
+    card.append(el('div', { class: 'mhead' }, [el('b', { text: title }), el('span', { text: sub })]));
+    const cv = el('canvas', { 'aria-label': title });
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr); cv.style.width = '100%'; cv.style.height = cssH + 'px';
+    if (onclick) { cv.style.cursor = 'pointer'; cv.title = 'Work on this vessel'; cv.addEventListener('click', onclick); }
+    card.append(cv); wrap.append(card);
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  };
+  const W = X => (X - minX) * sp, Hh = Y => cssH - (Y - minY) * sp;
+
+  // all the vessels together, outlines only, to compare their size and where they lie on the berth
+  if (scenes.length > 1) {
+    const ctx = canvasFor('All vessels on the berth', 'outlines at the berthing position, to the same scale', null, false);
+    berth(ctx, W, Hh);
+    scenes.forEach((s2, k) => s2.ships.forEach((sh, m) => {
+      const sh0 = Object.assign({}, sh, { pose: sh.x0 });
+      hullPath(ctx, W, Hh, sh0); ctx.strokeStyle = palette[k % palette.length]; ctx.lineWidth = 2; ctx.setLineDash(m ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]);
+    }));
+    const lg = el('div', { class: 'legend' });
+    scenes.forEach((s2, k) => lg.append(el('span', {}, [el('i', { style: `display:inline-block;width:14px;height:3px;background:${palette[k % palette.length]};margin-right:6px;vertical-align:middle` }), s2.name + (s2.ships[0] ? ` (${fmt(s2.ships[0].V.LOA, 0)} m)` : '')])));
+    wrap.lastChild.append(lg);
+  }
+  scenes.forEach((s2, k) => {
+    const v0 = s2.ships[0] && s2.ships[0].V;
+    const sub = s2.err ? 'cannot be drawn: ' + s2.err
+      : `${fmt(v0.LOA, 0)} × ${fmt(v0.B, 1)} m, draft ${fmt(v0.T, 2)} m (${s2.cond}) · ${s2.nLines} line${s2.nLines === 1 ? '' : 's'}`
+        + (s2.res ? ` · governing case ${caseLabel(s2.res.case)}, peak ${fmt(s2.res.peak, 1)}% MBL` : ' · not run in this session');
+    const ctx = canvasFor((list.length > 1 ? (k + 1) + '. ' : '') + s2.name + (s2.active && list.length > 1 ? ' (working on)' : ''), sub, list.length > 1 && !s2.active ? () => { fleetSwitch(s2.i); setViewMode('plan'); } : null, s2.active && list.length > 1);
+    berth(ctx, W, Hh);
+    if (s2.err) return;
+    s2.ships.forEach((sh, m) => {
+      hullPath(ctx, W, Hh, sh);
+      ctx.fillStyle = m ? '#E9ECEE' : '#F7F9F8'; ctx.fill();
+      ctx.strokeStyle = palette[k % palette.length]; ctx.lineWidth = 1.8; ctx.stroke();
+    });
+    s2.lines.forEach(l => {
+      ctx.strokeStyle = l.pct == null ? '#16283D' : utilColor(l.pct, s2.res.allow); ctx.lineWidth = l.pct == null ? 1.2 : 2;
+      ctx.beginPath(); ctx.moveTo(W(l.p0[0]), Hh(l.p0[1])); ctx.lineTo(W(l.p1[0]), Hh(l.p1[1])); ctx.stroke();
+    });
+    const sh = s2.ships[0], c = MoorEngine.toGlobal(sh.pose, 0, 0);
+    ctx.font = '600 12px ' + font; ctx.textAlign = 'center'; ctx.fillStyle = '#16283D';
+    ctx.fillText(s2.name, W(c[0]), Hh(c[1]) + 4); ctx.textAlign = 'left';
+  });
+  wrap.append(el('p', { class: 'note', text: (scenes.length > 1 ? 'Each vessel is drawn moored at the berth to the same scale. Click a vessel to work on it. ' : 'Add other vessels on the Vessel tab to see them all moored here. ')
+    + 'A vessel that has been run in this session is shown at its governing case, with each line coloured by its load against the allowable; otherwise it is shown at the berthing position with its lines in navy.' }));
+}
+
 function setViewMode(m) {
   viewMode = m;
-  $('planCanvas').hidden = m === '3d';
+  $('planCanvas').hidden = m !== 'plan';
+  $('moorWrap').hidden = m !== 'moor';
+  ['btnFit', 'magCtl', 'headCtl'].forEach(id => { if ($(id) && m === 'moor') $(id).hidden = true; });
+  if ($('btnFit')) $('btnFit').hidden = m === 'moor';
   $('wrap3d').hidden = m !== '3d';
   $('presets').hidden = m !== '3d';
   $('seaCtl').hidden = m !== '3d';
+  $('deckCtl').hidden = m !== '3d' || !P.berth || (P.berth.structure || 'wall') === 'wall';
   document.querySelectorAll('#viewTabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === m ? 'true' : 'false'));
-  if (m === '3d' && tool !== 'view') { tool = 'view'; selFL = null; buildToolbar(); }
+  if (m !== 'plan' && tool !== 'view') { tool = 'view'; selFL = null; buildToolbar(); }
+  if (m !== 'moor') setupSlider();
   drawPlan();
   Moor3D.animate(m === '3d' && !reduceMotion);
 }
@@ -7993,6 +8321,14 @@ function berthStructure(sc, span) {
     if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; }
   }
   const out = { kind, W, t, pileD, pitch, rows, X0, X1, dolphins: [], catwalks: [] };
+  // levels for the section: deck top at the highest bollard, seabed at the berth depth below the water level
+  const lv = (P.bollards || []).map(b => Number(b.level)).filter(Number.isFinite);
+  out.top = lv.length ? Math.max(...lv) : 3.5;
+  const dmax = Math.max(...sc.ships.map(s2 => (s2.V && s2.V.T) || 0), 0);
+  out.bed = -(Number(P.berth.depth) > 0 ? Number(P.berth.depth) : Math.max(12, dmax + 4)) + (Number(P.environment.waterLevel) || 0);
+  // the rock revetment under a deck backed by land rises at 1 in 1.5 from the seabed to the soffit at the back of the deck
+  const soffit = out.top - t - Math.min(1.2, t * 0.8) - 0.4;
+  out.toeY = Math.min(-1.5, -W + 1.5 * Math.max(0, soffit - out.bed));
   if (!jetty) return out;
   out.trestle = { X: num(d.trestleX, (X0 + X1) / 2, () => true), w: num(d.trestleWidth, 8), L: num(d.trestleLength, 120) };
   // dolphins: bollards off the deck carry mooring dolphins, fenders beyond its ends breasting dolphins
@@ -8035,7 +8371,7 @@ function scene3D(sc) {
   const quayX = [Math.min(...sc.bollards.map(b => b.X), cx - scale), Math.max(...sc.bollards.map(b => b.X), cx + scale)];
   return {
     V: sc.ships[0].V, berthType: sc.type, showLabels, scale, centre: [cx, cy], quay: sc.quay,
-    structure: berthStructure(sc, [quayX[0] - 0.3 * scale, quayX[1] + 0.3 * scale]),
+    structure: Object.assign(berthStructure(sc, [quayX[0] - 0.3 * scale, quayX[1] + 0.3 * scale]), { see: !$('deckSee') || $('deckSee').checked }),
     showCargo: $('showCargo') ? $('showCargo').checked : true,
     waterAlpha: $('seaT') ? 1 - 0.9 * Math.max(Number($('seaT').value), seaTouched || !sc.quay || (P.berth.structure || 'wall') === 'wall' ? 0 : 55) / 100 : 1,
     seabed: (Number(proj.berth.depth) > 0 ? Number(proj.berth.depth) : 0) + (Number(proj.environment.waterLevel) || 0),
@@ -9018,6 +9354,7 @@ function init() {
   $('showLabels').addEventListener('change', drawPlan);
   $('showCargo').addEventListener('change', drawPlan);
   $('seaT').addEventListener('input', () => { seaTouched = true; if (viewMode === '3d') drawPlan(); });
+  $('deckSee').addEventListener('change', () => { if (viewMode === '3d') drawPlan(); });
   $('viewCond').addEventListener('change', () => {
     const vc = viewCondSel();
     // show the analysed run for that condition if there is one

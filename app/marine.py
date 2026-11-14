@@ -46,6 +46,7 @@ from . import marine_triton
 
 ASSET_KINDS = [
     ("quay_wall", "Quay wall"),
+    ("deck_on_piles", "Deck on piles (open piled wharf)"),
     ("jetty", "Jetty / pier"),
     ("dolphin", "Dolphin"),
     ("pontoon", "Pontoon"),
@@ -76,6 +77,7 @@ TERMINAL_TYPES = [
     ("general_cargo", "General cargo"),
     ("roro", "RoRo (vehicles)"),
     ("bulk", "Dry bulk"),
+    ("bulk_hoppers", "Dry bulk: ship's own cranes into mobile hoppers"),
     ("multipurpose", "Multipurpose"),
 ]
 # What a berth without crane stoppers (no rail-mounted cranes) is used for: the user sets it per

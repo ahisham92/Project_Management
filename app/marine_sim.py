@@ -142,6 +142,21 @@ TERMINAL = {
     },
 }
 TERMINAL["multipurpose"] = {**TERMINAL["general_cargo"]}
+# The ship's own cranes grab into mobile hoppers, which fill trucks under them.
+TERMINAL["bulk_hoppers"] = {
+    **TERMINAL["bulk"],
+    "links": {"sts": "Ship's cranes and hoppers", "trucks": "Trucks", "rtgs": "Stockpile loaders", "berth": "Berths"},
+    "labels": {"sts": "Mobile hoppers", "max_sts_per_ship": "Hoppers on one ship", "sts_rate": "Grab rate into a hopper",
+               "trucks": "Trucks", "truck_cycle": "Truck round trip", "rtgs": "Wheel loaders at the stockpile",
+               "rtg_rate": "Loader rate", "yard_capacity": "Stockpile", "moves_per_call": "Grabs per call (25 t)"},
+    "defaults": {**TERMINAL["bulk"]["defaults"], "sts": 2, "max_sts_per_ship": 2, "sts_rate": 18, "moves_per_call": 1400,
+                 "trucks": 24, "truck_cycle": 40},
+    "remedy": {
+        "sts": "The ship's cranes and the hoppers set the pace. Add a hopper under a third crane, or use bigger grabs.",
+        "trucks": "Hoppers wait for trucks. Add trucks, or shorten their round trip to the store.",
+        "rtgs": "The store cannot take the trucks as fast as they come. Add a loader or a second tipping bay.",
+    },
+}
 
 
 def vocab(terminal: str) -> dict[str, Any]:

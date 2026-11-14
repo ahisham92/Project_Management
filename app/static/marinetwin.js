@@ -87,7 +87,13 @@ const REAL = {
   shed: new THREE.MeshStandardMaterial({ color: 0x9aa3a8, roughness: 0.7, metalness: 0.3 }),
   coal: new THREE.MeshStandardMaterial({ color: 0x2b2722, roughness: 1 }),
   grain: new THREE.MeshStandardMaterial({ color: 0xc9a85a, roughness: 1 }),
+  cement: new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 1 }),
+  paving: new THREE.MeshStandardMaterial({ color: 0x77736b, roughness: 0.95 }),
+  silo: new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.8 }),
 };
+// The jibs of the ships' own cranes (geared bulk carriers), slewed between hatch and quay as they work.
+const GEAR = [];
+const ROPE = new THREE.MeshBasicMaterial({ color: 0x222222 });
 // The pool of light under each high mast at night: drawn, not lit, so a quay kilometres long can
 // have hundreds of them. Off by day and when the power is cut.
 const GLOW = new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -584,6 +590,126 @@ function quayLine(front, deck) {
   return { legs, length: from };
 }
 
+// --- the deck from the model's own shapes --------------------------------------------
+// A model whose elements are not imported yet has no fenders to trace the quay from. Its deck is
+// then read from its shapes: what lies within 3 m of its top, in 2 m cells in plan. The deck's
+// long axis is the berth; the side its fenders stand out from (the most shapes just beyond the
+// deck's edge, below its top, along the middle of it) is the sea.
+
+// Up to about 400,000 of the model's points, [x, y, z] in the scene, and the deck's top level.
+function modelPoints(group) {
+  group.updateMatrixWorld(true);
+  let total = 0;
+  group.traverse((m) => { if (m.isMesh) total += m.geometry.attributes.position.count; });
+  const step = Math.max(1, Math.floor(total / 400000));
+  const pts = [];
+  const v = new THREE.Vector3();
+  group.traverse((m) => {
+    if (!m.isMesh) return;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i += step) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); pts.push(v.x, v.y, v.z); }
+  });
+  if (pts.length < 150) return null;
+  const ys = [];
+  for (let i = 1; i < pts.length; i += 3) ys.push(pts[i]);
+  ys.sort((a, b) => a - b);
+  // (the top 0.3 % are bollards, lamp posts and the like standing on the deck)
+  return { pts, top: ys[Math.floor(ys.length * 0.997)] };
+}
+
+// The 2 m cells in plan the deck covers.
+function deckCells(model) {
+  const CELL = 2;
+  const cells = new Map();
+  const { pts, top } = model;
+  for (let i = 0; i < pts.length; i += 3) {
+    if (pts[i + 1] < top - 3) continue;
+    const kx = Math.round(pts[i] / CELL);
+    const kz = Math.round(pts[i + 2] / CELL);
+    cells.set(kx * 100003 + kz, [kx * CELL, kz * CELL]);
+  }
+  return [...cells.values()];
+}
+
+// The q-quantile of numbers.
+const quantile = (xs, q) => { const a = [...xs].sort((p, r) => p - r); return a.length ? a[Math.min(a.length - 1, Math.floor(q * a.length))] : 0; };
+
+// The deck read from the shapes: the quay line along its sea edge (as the fenders would give it),
+// its width, its top, and how far the fenders stand out from its edge.
+function deckFromShapes(model) {
+  const plan = deckCells(model);
+  if (plan.length < 20) return null;
+  const mx = plan.reduce((a, p) => a + p[0], 0) / plan.length;
+  const mz = plan.reduce((a, p) => a + p[1], 0) / plan.length;
+  let sxx = 0; let szz = 0; let sxz = 0;
+  for (const [x, z] of plan) { sxx += (x - mx) ** 2; szz += (z - mz) ** 2; sxz += (x - mx) * (z - mz); }
+  const th = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  const u = [Math.cos(th), Math.sin(th)];
+  const n = [-u[1], u[0]];
+  const along = (x, z) => (x - mx) * u[0] + (z - mz) * u[1];
+  const across = (x, z) => (x - mx) * n[0] + (z - mz) * n[1];
+  const ts = plan.map(([x, z]) => along(x, z));
+  const [t0, t1] = [quantile(ts, 0.01), quantile(ts, 0.99)];
+  if (t1 - t0 < 20) return null;
+  // The deck's edges: the 1 m strips across it that most of its length reaches.
+  const reach = new Map();
+  for (const [x, z] of plan) {
+    const k = Math.round(across(x, z));
+    if (!reach.has(k)) reach.set(k, new Set());
+    reach.get(k).add(Math.round(along(x, z) / 5));
+  }
+  const most = Math.max(...[...reach.values()].map((s) => s.size));
+  const kept = [...reach.entries()].filter(([, s]) => s.size >= 0.4 * most).map(([k]) => k);
+  const [c0, c1] = [Math.min(...kept) - 0.5, Math.max(...kept) + 0.5];
+  // The fenders: shapes below the deck's top just beyond either edge, along its middle.
+  const { pts, top } = model;
+  const out = [[], []];
+  const [m0, m1] = [t0 + 0.1 * (t1 - t0), t1 - 0.1 * (t1 - t0)];
+  for (let i = 0; i < pts.length; i += 3) {
+    const y = pts[i + 1];
+    if (y > top - 0.3 || y < top - 9) continue;
+    const t = along(pts[i], pts[i + 2]);
+    if (t < m0 || t > m1) continue;
+    const c = across(pts[i], pts[i + 2]);
+    if (c > c1 + 0.3 && c < c1 + 7) out[1].push(c - c1);
+    else if (c < c0 - 0.3 && c > c0 - 7) out[0].push(c0 - c);
+  }
+  const seaRight = out[1].length >= out[0].length;
+  const edge = seaRight ? c1 : c0;
+  const back = seaRight ? c0 : c1;
+  const stand = out[seaRight ? 1 : 0];
+  const P = (t, c) => [mx + u[0] * t + n[0] * c, mz + u[1] * t + n[1] * c];
+  const front = [];
+  const deck = [];
+  for (let t = t0; t <= t1; t += 4) { front.push(P(t, edge)); deck.push(P(t, (edge + back) / 2)); }
+  return { front, deck, width: c1 - c0, top, fenderOut: stand.length > 30 ? Math.min(4, quantile(stand, 0.9)) : 1.5, sure: stand.length > 30 };
+}
+
+// How deep the deck runs inland of the quay line: for an open piled deck, where its land begins.
+// The 1 m strips behind the line that most of the deck's length reaches, on from the line with
+// no gap wider than 3 m (a slope, a building or a stair at one end does not count).
+function deckDepth(model, leg) {
+  const reach = new Map();
+  for (const [x, z] of deckCells(model)) {
+    const t = (x - leg.a[0]) * leg.dir[0] + (z - leg.a[1]) * leg.dir[1];
+    const d = Math.round((x - leg.a[0]) * leg.land[0] + (z - leg.a[1]) * leg.land[1]);
+    if (t < 0 || t > leg.len || d < -5 || d > 150) continue;
+    if (!reach.has(d)) reach.set(d, new Set());
+    reach.get(d).add(Math.round(t / 5));
+  }
+  if (!reach.size) return 20;
+  const most = Math.max(...[...reach.values()].map((x) => x.size));
+  let depth = 0;
+  let gap = 0;
+  for (let d = 0; d <= 150 && gap <= 3; d++) {
+    if (reach.has(d) && reach.get(d).size >= 0.4 * most) { depth = d; gap = 0; } else gap++;
+  }
+  return Math.max(8, depth + 1);
+}
+
+// Structures standing on piles in open water: the sea runs under the deck, over a rock slope.
+const OPEN_KINDS = new Set(['deck_on_piles', 'jetty']);
+
 // A point's distance along the quay, the leg it is by, and how far off the line.
 function onQuay(quay, p) {
   let best = null;
@@ -639,18 +765,23 @@ function craneBays(quay, stoppers) {
 
 // The land behind the quay and the paved apron and yard on it, following the legs: the land
 // carries on past both ends of the modelled quay, and its edge is the quay wall down to the sea.
-function shore(quay, top, yardDepth) {
+// `set`: how far behind the quay line the land starts: just behind the fenders for a quay wall,
+// behind the whole deck for an open piled one (the sea runs under it).
+function shore(quay, top, yardDepth, set = 2, pave = REAL.asphalt) {
   const g = new THREE.Group();
-  const set = 2;      // the line runs through the fenders: the land starts at the wall just behind
   const first = quay.legs[0];
   const last = quay.legs[quay.legs.length - 1];
   const pt = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
-  const line = [pt(pt(first.a, first.land, set), first.dir, -3000)];
-  for (const l of quay.legs) line.push(pt(l.a, l.land, set));
-  line.push(pt(last.b, last.land, set));
-  line.push(pt(pt(last.b, last.land, set), last.dir, 3000));
-  const outline = [...line, pt(line[line.length - 1], last.land, 6000), pt(line[0], first.land, 6000)];
-  quay.landOutline = outline;           // for keeping the ships on the water (seaChecker)
+  const edge = (k) => {
+    const line = [pt(pt(first.a, first.land, k), first.dir, -3000)];
+    for (const l of quay.legs) line.push(pt(l.a, l.land, k));
+    line.push(pt(last.b, last.land, k));
+    line.push(pt(pt(last.b, last.land, k), last.dir, 3000));
+    return [...line, pt(line[line.length - 1], last.land, 6000), pt(line[0], first.land, 6000)];
+  };
+  // The ships keep off the deck as well as the land (seaChecker): the line at the fenders.
+  quay.landOutline = edge(2);
+  const outline = edge(set);
   const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
   const below = 8;
   const land = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: top - 0.3 + below, bevelEnabled: false }), REAL.land);
@@ -675,10 +806,52 @@ function shore(quay, top, yardDepth) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
   geo.computeVertexNormals();
-  const yard = new THREE.Mesh(geo, REAL.asphalt.clone());
+  const yard = new THREE.Mesh(geo, pave.clone());
   yard.material.side = THREE.DoubleSide;
   yard.receiveShadow = true;
   g.add(yard);
+  return g;
+}
+
+// The rock slope under an open piled deck: from the land's edge behind the deck down to the
+// seabed under its front piles, armour stones in greys and browns, past both ends of the deck.
+function revetment(quay, top, set) {
+  const g = new THREE.Group();
+  const crest = top - 1.2;
+  const toe = -12;
+  // About 1 in 1.5, but not out past the front of the deck.
+  const run = Math.min(set - 2, (crest - toe) * 1.5);
+  const rock = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+  const tones = [0x8b8679, 0x6f6a5e, 0x9a927f, 0x5d5a52, 0x7d7461];
+  const c = new THREE.Color();
+  let seed = 1;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (const l of quay.legs) {
+    const extra = 40;
+    const len = l.len + 2 * extra;
+    const nu = Math.max(4, Math.round(len / 1.6));
+    const nv = Math.max(4, Math.round(Math.hypot(run, crest - toe) / 1.6));
+    const geo = new THREE.PlaneGeometry(1, 1, nu, nv);
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i) + 0.5;                  // 0..1 along the leg
+      const v = pos.getY(i) + 0.5;                  // 0 at the toe, 1 at the crest
+      const along = -extra + u * len;
+      const inland = set - run * (1 - v);
+      const bump = (rnd() - 0.5) * 0.9;
+      pos.setXYZ(i, l.a[0] + l.dir[0] * along + l.land[0] * inland + (rnd() - 0.5) * 0.6,
+        toe + (crest - toe) * v + bump, l.a[1] + l.dir[1] * along + l.land[1] * inland + (rnd() - 0.5) * 0.6);
+      c.setHex(tones[Math.floor(rnd() * tones.length)]);
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const slope = new THREE.Mesh(geo, rock);
+    slope.material.side = THREE.DoubleSide;
+    slope.receiveShadow = true;
+    g.add(slope);
+  }
   return g;
 }
 
@@ -1029,11 +1202,63 @@ function vehicle(kind, colour) {
     g.add(box(12, 0.6, 2.4, REAL.steel, 0, 1.1, 0));
     g.userData.load = box(11.6, 2.55, 2.35, new THREE.MeshStandardMaterial({ color: BOX_COLOURS[(colour >> 3) % BOX_COLOURS.length], roughness: 0.7 }), 0, 2.7, 0);
     g.add(g.userData.load);
+  } else if (kind === 'tipper') {
+    // A bulk tipper: cab, an open steel body, and the load heaped in it.
+    g.add(box(2.6, 2.9, 2.5, paint, 4.6, 1.9, 0));
+    g.add(box(8.4, 0.5, 2.5, REAL.steel, -0.6, 0.9, 0));
+    const body = box(7.6, 1.9, 2.5, REAL.yellow, -1.0, 2.15, 0);
+    g.add(body);
+    for (const x of [3.4, -2.6, -4.0]) for (const z of [-1.1, 1.1]) g.add(box(1.1, 1.1, 0.4, REAL.rubber, x, 0.55, z));
+    const heap = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.1, 0.9, 4), REAL.cement);
+    heap.scale.set(3.2, 1, 1);
+    heap.rotation.y = Math.PI / 4;
+    heap.position.set(-1.0, 3.4, 0);
+    g.add(heap);
   } else {
     g.add(box(3, 2.8, 2.4, paint, 6.5, 1.8, 0));
     g.add(box(12, 3.0, 2.5, REAL.shed, -0.5, 2.1, 0));
   }
   g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+  return g;
+}
+
+// A mobile hopper: a steel funnel with dust screens on four legs, on wheels, over a truck lane
+// that runs through it along the quay. The ship's own cranes drop their grabs into it, and it
+// fills the trucks driven under it.
+function mobileHopper() {
+  const g = new THREE.Group();
+  const paint = REAL.white;
+  const trim = REAL.yellow;
+  for (const [x, z] of [[-4.4, -3.8], [4.4, -3.8], [-4.4, 3.8], [4.4, 3.8]]) {
+    g.add(box(0.8, 8, 0.8, trim, x, 4.6, z));
+    g.add(box(1.8, 1.3, 1.2, REAL.rubber, x, 0.65, z));          // its wheel bogie
+  }
+  // Ties between the legs, above the trucks.
+  for (const z of [-3.8, 3.8]) g.add(box(9.6, 0.6, 0.6, trim, 0, 7.8, z));
+  for (const x of [-4.4, 4.4]) g.add(box(0.6, 0.6, 8.2, trim, x, 7.8, 0));
+  // The funnel, square, wide at the top and narrow at the gate over the lane.
+  const funnelMat = REAL.white.clone();
+  funnelMat.side = THREE.DoubleSide;
+  const funnel = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 1.4, 5.5, 4, 1, true), funnelMat);
+  funnel.rotation.y = Math.PI / 4;
+  funnel.position.y = 11.2;
+  funnel.castShadow = true;
+  g.add(funnel);
+  g.add(box(2, 1.2, 2, REAL.steel, 0, 7.9, 0));                  // the discharge gate
+  // Cargo in the funnel.
+  const heap = new THREE.Mesh(new THREE.ConeGeometry(4.2, 1.6, 4), REAL.cement);
+  heap.rotation.y = Math.PI / 4;
+  heap.position.y = 13.2;
+  g.add(heap);
+  // The rim, and dust screens on the three sides away from the ship (open to the sea side, -z).
+  for (const z of [-5.1, 5.1]) g.add(box(10.4, 0.5, 0.4, trim, 0, 14, z));
+  for (const x of [-5.1, 5.1]) g.add(box(0.4, 0.5, 10.4, trim, x, 14, 0));
+  g.add(box(10.4, 3.2, 0.25, paint, 0, 15.8, 5.1));
+  for (const x of [-5.1, 5.1]) g.add(box(0.25, 3.2, 10.4, paint, x, 15.8, 0));
+  // The dust filter units and the operator's cab on the side.
+  for (const x of [-2.8, 2.8]) g.add(box(1.8, 2.4, 1.6, REAL.steel, x, 18.6, 4.4));
+  g.add(box(2.2, 2.2, 2.2, REAL.glass, 5.8, 9.2, 2.8));
+  g.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
   return g;
 }
 
@@ -1083,6 +1308,33 @@ function ship(type, loa, beam, draught, rng, flag = 'PA') {
     g.userData.stacks = containerStacks(blocks, rng, true);
     g.add(g.userData.stacks);
   } else if (kind === 'bulk' || kind === 'general') {
+    if (/geared/i.test(type)) {
+      // Her own cranes on the centreline between the hatches, each with a grab on its hoist.
+      const gear = [];
+      for (let x = houseX + 33; x < loa / 2 - beam - 10; x += 52) {
+        const ped = cylinder(1.3, 7, REAL.crane, x, deck + 3.5, 0);
+        g.add(ped);
+        const pivot = new THREE.Group();
+        pivot.position.set(x, deck + 7, 0);
+        pivot.add(box(4, 3.4, 3.6, REAL.white, 0, 1.7, 0));
+        const L = 25;
+        const luff = 0.42;
+        const jib = box(L, 0.9, 0.9, REAL.crane, (L / 2) * Math.cos(luff), 2.4 + (L / 2) * Math.sin(luff), 0);
+        jib.rotation.z = luff;
+        pivot.add(jib);
+        const tip = [L * Math.cos(luff), 2.4 + L * Math.sin(luff)];
+        const drop = 9 + (gear.length % 2) * 4;
+        pivot.add(box(0.12, drop, 0.12, ROPE, tip[0], tip[1] - drop / 2, 0));
+        pivot.add(box(2.6, 2, 2.6, REAL.yellow, tip[0], tip[1] - drop - 1, 0));
+        pivot.userData.phase = gear.length * 1.7;
+        pivot.userData.ship = g;
+        pivot.rotation.y = -0.15;
+        g.add(pivot);
+        gear.push(pivot);
+        GEAR.push(pivot);
+      }
+      g.userData.gear = gear;
+    }
     for (let x = houseX + 20; x < loa / 2 - beam; x += 26) {
       g.add(box(16, 1.6, beam * 0.6, kind === 'bulk' ? REAL.hull : REAL.shed, x, deck + 0.8, 0));
       if (kind === 'general') {
@@ -1222,28 +1474,34 @@ function terminal(scene, frame, twin, rng, quay) {
   // Apron and yard: paved land behind the berth, and plain land beyond. Along a traced quay
   // they follow its legs; otherwise they are laid square behind the berth.
   const yardDepth = 320;
-  if (quay) g.add(shore(quay, top, yardDepth));
-  else {
+  // An open piled deck: the land, and all that stands on it, begins behind the deck.
+  const open = !!frame.open;
+  const back = open ? (frame.deckDepth || 20) + 1 : 0;
+  const F = front + back;
+  if (quay) {
+    g.add(shore(quay, top, yardDepth, open ? back : 2, /bulk/.test(kind) ? REAL.paving : REAL.asphalt));
+    if (open) g.add(revetment(quay, top, back));
+  } else {
   const yard = new THREE.Mesh(new THREE.PlaneGeometry(length + 600, yardDepth), REAL.asphalt);
   yard.rotation.x = -Math.PI / 2;
-  yard.position.set(centre, top - 0.05, front + yardDepth / 2);
+  yard.position.set(centre, top - 0.05, F + yardDepth / 2);
   yard.receiveShadow = true;
   g.add(yard);
   const land = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), REAL.land);
   land.rotation.x = -Math.PI / 2;
-  land.position.set(centre, top - 0.3, front + yardDepth + 2000);
+  land.position.set(centre, top - 0.3, F + yardDepth + 2000);
   land.receiveShadow = true;
   land.userData.ground = true;            // cut where the map has water, where the site is located
   g.add(land);
   // The quay wall either side of the modelled berth, so the berth sits in a longer quay.
-  for (const [a, b] of [[minX - 300, minX - 1], [maxX + 1, maxX + 300]]) {
+  for (const [a, b] of open ? [] : [[minX - 300, minX - 1], [maxX + 1, maxX + 300]]) {
     const wall = box(b - a, top + 6, 3, REAL.concrete, (a + b) / 2, (top - 6) / 2, front + 1.5);
     g.add(wall);
   }
   }
   // Lane markings along the apron.
   const paint = new THREE.MeshBasicMaterial({ color: 0xe9e4c9 });
-  for (const z of [front + 6, front + 42]) {
+  for (const z of open ? [] : [front + 6, front + 42]) {
     const line = new THREE.Mesh(new THREE.PlaneGeometry(quay ? length : length + 600, 0.25), paint);
     line.rotation.x = -Math.PI / 2;
     line.position.set(centre, top + 0.02, z);
@@ -1267,12 +1525,12 @@ function terminal(scene, frame, twin, rng, quay) {
   // in front of the stacks, between them and behind them.
   for (let i = 0; i < 4; i++) {
     const mast = mastLight(30);
-    mast.position.set(yardFrom + (i % 2 + 0.5) * yardLength / 2, top, front + 45 + Math.floor(i / 2) * 60);
+    mast.position.set(yardFrom + (i % 2 + 0.5) * yardLength / 2, top, kind === 'bulk_hoppers' ? F - 3 + Math.floor(i / 2) * 63 : F + 45 + Math.floor(i / 2) * 60);
     g.add(mast);
     lights.push(mast);
   }
   const rows = [];
-  for (let x = yardFrom + 35; x < yardFrom + yardLength; x += 70) for (const z of [45, 105, 165]) rows.push([x, front + z]);
+  for (let x = yardFrom + 35; x < yardFrom + yardLength; x += 70) for (const z of kind === 'bulk_hoppers' ? [-3, 60] : [45, 105, 165]) rows.push([x, F + z]);
   const yardMasts = mastRow(rows.filter(([x, z]) => !lights.some((l) => Math.hypot(l.position.x - x, l.position.z - z) < 30)));
   yardMasts.position.y = top;
   g.add(yardMasts);
@@ -1356,7 +1614,7 @@ function terminal(scene, frame, twin, rng, quay) {
     const blocks = [];
     for (let b = 0; b < (kind === 'container' ? 6 : 2); b++) {
       const back = Math.floor(b / 3) > 0;
-      blocks.push({ x: yardFrom + 10 + (b % 3) * (yardLength / 3), y: top, z: front + 60 + Math.floor(b / 3) * 70, bays: Math.max(4, Math.floor(yardLength / 3 / 12.6) - 1), rows: 6, tiers: 4,
+      blocks.push({ x: yardFrom + 10 + (b % 3) * (yardLength / 3), y: top, z: F + 60 + Math.floor(b / 3) * 70, bays: Math.max(4, Math.floor(yardLength / 3 / 12.6) - 1), rows: 6, tiers: 4,
         lane: back ? 5 * 2.6 + 6 : -6, back });
     }
     const stacks = yardStacks(blocks, rng, BOX_COLOURS);
@@ -1368,7 +1626,7 @@ function terminal(scene, frame, twin, rng, quay) {
       b.crane.main = true;
       yardCranes.push(b.crane);
     }
-    for (const b of blocks.filter((x) => x.back)) gateTruck(b, (x, z) => [x, z], b.z + b.lane, front + yardDepth - 20, 1, { main: true });
+    for (const b of blocks.filter((x) => x.back)) gateTruck(b, (x, z) => [x, z], b.z + b.lane, F + yardDepth - 20, 1, { main: true });
   }
   if (kind === 'general_cargo' || kind === 'multipurpose') {
     for (let i = 0; i < (bays.length ? 0 : 2); i++) {
@@ -1377,12 +1635,12 @@ function terminal(scene, frame, twin, rng, quay) {
       g.add(c);
       cranes.push(c);
     }
-    g.add(box(90, 14, 36, REAL.shed, centre - 40, top + 7, front + 90));
-    g.add(box(90, 14, 36, REAL.shed, centre + 70, top + 7, front + 90));
+    g.add(box(90, 14, 36, REAL.shed, centre - 40, top + 7, F + 90));
+    g.add(box(90, 14, 36, REAL.shed, centre + 70, top + 7, F + 90));
     // Steel coils and timber on the apron.
     for (let i = 0; i < 24; i++) {
       const coil = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.45, 8, 16), REAL.steel);
-      coil.position.set(centre - 70 + (i % 8) * 2.6, top + 1.2, front + 50 + Math.floor(i / 8) * 2.8);
+      coil.position.set(centre - 70 + (i % 8) * 2.6, top + 1.2, F + 50 + Math.floor(i / 8) * 2.8);
       coil.castShadow = true;
       g.add(coil);
     }
@@ -1394,12 +1652,12 @@ function terminal(scene, frame, twin, rng, quay) {
       g.add(c);
       cranes.push(c);
     }
-    const belt = box(2.4, 1.2, 180, REAL.steel, centre + 40, top + 6, front + 100);
+    const belt = box(2.4, 1.2, 180, REAL.steel, centre + 40, top + 6, F + 100);
     g.add(belt);
     for (let i = 0; i < 3; i++) {
       const pile = new THREE.Mesh(new THREE.ConeGeometry(28, 18, 24), i % 2 ? REAL.coal : REAL.grain);
       pile.scale.set(1.6, 1, 1);
-      pile.position.set(centre - 80 + i * 80, top + 9, front + 200);
+      pile.position.set(centre - 80 + i * 80, top + 9, F + 200);
       pile.castShadow = pile.receiveShadow = true;
       g.add(pile);
     }
@@ -1414,7 +1672,7 @@ function terminal(scene, frame, twin, rng, quay) {
     for (let row = 0; row < 30; row++) {
       for (let k = 0; k < 30; k++) {
         const filled = rng() < 0.82;
-        m.makeTranslation(centre - 90 + k * 5.2 + (row % 2) * 2, filled ? top + 0.75 : -100, front + 50 + row * 4.4 + Math.floor(row / 2) * 3);
+        m.makeTranslation(centre - 90 + k * 5.2 + (row % 2) * 2, filled ? top + 0.75 : -100, F + 50 + row * 4.4 + Math.floor(row / 2) * 3);
         cars.setMatrixAt(i, m);
         cars.setColorAt(i, c.setHex(carColours[Math.floor(rng() * carColours.length)]));
         i++;
@@ -1422,7 +1680,58 @@ function terminal(scene, frame, twin, rng, quay) {
     }
     cars.castShadow = cars.receiveShadow = true;
     g.add(cars);
-    g.add(box(60, 18, 30, REAL.shed, centre + 120, top + 9, front + 70));      // vehicle processing centre
+    g.add(box(60, 18, 30, REAL.shed, centre + 120, top + 9, F + 70));      // vehicle processing centre
+  }
+
+  const hoppers = [];
+  if (kind === 'bulk_hoppers') {
+    // No cranes ashore: the ship's own cranes grab the cargo into mobile hoppers on the deck, and
+    // tipper trucks drive through under them, onto the deck from the land and back to the store.
+    const n = Math.max(1, Math.min(3, equipment.length || 2, Math.floor(length / 60)));
+    for (let i = 0; i < n; i++) {
+      const h = mobileHopper();
+      const hx = centre + (i - (n - 1) / 2) * 52;
+      h.position.set(hx, top, front + 6);
+      h.userData.pick = () => ({
+        kind: 'Mobile hopper', title: (equipment[i] && equipment[i].name) || `HOP${i + 1}`, state: CRANE_STATE[stateOf(i)] || 'neutral', stateWord: capital(stateOf(i)),
+        rows: [['Fed by', "The ship's own cranes, by grab"], ['Fills', 'Tipper trucks driven through under it'], ...(equipment[i] && equipment[i].why ? [['Why', equipment[i].why]] : [])],
+      });
+      g.add(h);
+      hoppers.push(h);
+      // Its trucks: in from the land, through under the hopper along the deck, and back.
+      const lane = front + 6;
+      const curve = loop([[hx - 60, F + 30], [hx - 26, lane + 1], [hx, lane], [hx + 26, lane + 1], [hx + 60, F + 30], [hx + 30, F + 62], [hx - 30, F + 62]], top + 0.1);
+      for (let k = 0; k < 3; k++) {
+        const v = vehicle('tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
+        g.add(v);
+        movers.push({ object: v, curve, offset: k / 3 + rng() * 0.05, speed: 5 / curve.getLength(), apron: true, main: true });
+      }
+    }
+    // Ashore behind the deck: the cement silos, the covered store and its stockpiles, and the
+    // weighbridge on the way out.
+    for (let i = 0; i < 4; i++) {
+      const silo = cylinder(7, 34, REAL.silo, centre - 75 + i * 17, top + 17, F + 115, 24);
+      g.add(silo);
+      g.add(cylinder(7.3, 1.2, REAL.steel, centre - 75 + i * 17, top + 34.6, F + 115, 24));
+    }
+    g.add(box(68, 2, 3, REAL.steel, centre - 49, top + 36, F + 115));               // the conveyor gallery over the silos
+    const store = box(150, 16, 48, REAL.shed, centre + 70, top + 8, F + 180);
+    g.add(store);
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 150, 3), REAL.shed);
+    roof.scale.set(28, 1, 8);
+    roof.rotation.set(0, 0, Math.PI / 2);
+    roof.position.set(centre + 70, top + 16 + 4, F + 180);
+    roof.castShadow = true;
+    g.add(roof);
+    for (let i = 0; i < 3; i++) {
+      const pile = new THREE.Mesh(new THREE.ConeGeometry(18, 11, 24), i === 1 ? REAL.coal : REAL.cement);
+      pile.scale.set(1.5, 1, 1);
+      pile.position.set(centre - 40 + i * 55, top + 5.5, F + 245);
+      pile.castShadow = pile.receiveShadow = true;
+      g.add(pile);
+    }
+    g.add(box(18, 0.4, 4, REAL.steel, centre + 10, top + 0.2, F + 88));            // weighbridge
+    g.add(box(4, 3, 3, REAL.white, centre + 10, top + 1.5, F + 92));
   }
 
   // Vehicles on the move: tractors, trucks or cars, each on its own loop.
@@ -1430,9 +1739,9 @@ function terminal(scene, frame, twin, rng, quay) {
   const shipFootX = centre - (shipLength || 200) / 2 + 18;
   if (kind === 'roro') {
     for (let k = 0; k < 4; k++) {
-      loops.push({ curve: loop([[shipFootX, front + 2], [shipFootX + 20, front + 20], [centre - 60 + k * 30, front + 40], [centre - 60 + k * 30, front + 130], [centre + 80, front + 140], [centre + 90, front + 30], [shipFootX + 30, front + 8]], top + 0.1), kind: 'car', n: 7 });
+      loops.push({ curve: loop([[shipFootX, front + 2], [shipFootX + 20, front + 20], [centre - 60 + k * 30, F + 40], [centre - 60 + k * 30, F + 130], [centre + 80, F + 140], [centre + 90, front + 30], [shipFootX + 30, front + 8]], top + 0.1), kind: 'car', n: 7 });
     }
-  } else {
+  } else if (kind !== 'bulk_hoppers') {
     // Each crane working the main berth has two tractors (trucks at a cargo berth) of its own,
     // each running between the crane and a stack (or a shed) and back.
     const mainCranes = cranes.filter((c) => !c.userData.idle);
@@ -1447,17 +1756,17 @@ function terminal(scene, frame, twin, rng, quay) {
         if (front3.length) {
           // Into the truck lane under a yard crane, along it to a bay, so the box lines up with the stack.
           const bl = front3[Math.floor(rng() * front3.length)];
-          Object.assign(mv, toBlock(bl, (x, z) => [x, z], [cx, front + 20], [cx, front + 34], front + 44, bl.z + bl.lane));
+          Object.assign(mv, toBlock(bl, (x, z) => [x, z], [cx, front + 20], [cx, F + 34], F + 44, bl.z + bl.lane));
         } else {
           const sx = centre - 80 + rng() * 220;                         // a shed's door
-          mv.trip = trip([[cx, front + 20], [cx, front + 34], [sx, front + 44], [sx, front + 66]]);
+          mv.trip = trip([[cx, front + 20], [cx, F + 34], [sx, F + 44], [sx, F + 66]]);
         }
         movers.push(mv);
       }
     }
   }
   // Road trucks on the access road at the back.
-  loops.push({ curve: loop([[centre - 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 10], [centre + 400, front + yardDepth - 2], [centre - 400, front + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
+  loops.push({ curve: loop([[centre - 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 2], [centre - 400, F + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
   for (const l of loops) {
     for (let k = 0; k < l.n; k++) {
       const v = vehicle(l.kind, [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825, 0x2e7d32, 0x37474f][Math.floor(rng() * 6)]);
@@ -1642,7 +1951,7 @@ function terminal(scene, frame, twin, rng, quay) {
       }
     }
   }
-  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress, yards, yardCranes };
+  return { group: g, movers, cranes, lights, kind, yardDepth, berths, quay, mainBerth, dress, yards, yardCranes, hoppers, open, back };
 }
 
 // --- the scene -----------------------------------------------------------------------
@@ -1738,10 +2047,16 @@ async function main() {
   });
   let quay = null;
   let mainLeg = null;
+  let traced = null;                     // the deck read from the shapes, when nothing else gives the quay
+  const shapes = twin.model ? modelPoints(content) : null;
   if (twin.model) {
     const fenderPts = plan((k) => k === 'fender');
     const deckPts = plan((k) => k !== 'fender' && k !== 'crane_stopper');
     quay = quayLine(fenderPts.length >= 4 ? fenderPts : plan((k) => k === 'bollard'), deckPts.length > 3000 ? deckPts.filter((_, i) => i % Math.ceil(deckPts.length / 3000) === 0) : deckPts);
+    if (!quay && shapes) {
+      traced = deckFromShapes(shapes);
+      if (traced) quay = quayLine(traced.front, traced.deck);
+    }
     if (quay) {
       const stopperPts = plan((k) => k === 'crane_stopper');     // before the turn, like the rest
       mainLeg = quay.legs.reduce((a, l) => (l.len > a.len ? l : a));
@@ -1777,10 +2092,20 @@ async function main() {
   const slabTops = clickable.filter((m) => ['slab', 'beam'].includes(m.userData.element.kind)).map((m) => new THREE.Box3().setFromObject(m).max.y);
   const frame = {
     minX: legX ? legX[0] : bbox.min.x, maxX: legX ? legX[1] : bbox.max.x,
-    front: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.max(m, b.max.z), -Infinity) : bbox.min.z,
-    fenderFace: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.min(m, b.min.z), Infinity) : bbox.min.z - 1.5,
-    top: slabTops.length ? slabTops.reduce((m, y) => Math.max(m, y), -Infinity) : bbox.max.y,
+    front: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.max(m, b.max.z), -Infinity) : traced ? mainLeg.a[1] : bbox.min.z,
+    fenderFace: fenderBoxes.length ? fenderBoxes.reduce((m, b) => Math.min(m, b.min.z), Infinity) : traced ? mainLeg.a[1] - traced.fenderOut : bbox.min.z - 1.5,
+    top: slabTops.length ? slabTops.reduce((m, y) => Math.max(m, y), -Infinity) : traced ? traced.top : bbox.max.y,
   };
+  // An open piled deck: the sea runs under it, and the land begins behind it.
+  frame.open = OPEN_KINDS.has(twin.asset.kind);
+  if (frame.open && quay && shapes) {
+    const turnedShapes = { pts: shapes.pts.slice(), top: frame.top };
+    for (let i = 0; i < turnedShapes.pts.length; i += 3) {
+      const [x, z] = turned([turnedShapes.pts[i], turnedShapes.pts[i + 2]], content.rotation.y);
+      turnedShapes.pts[i] = x; turnedShapes.pts[i + 2] = z;
+    }
+    frame.deckDepth = deckDepth(turnedShapes, mainLeg);
+  } else if (frame.open) frame.deckDepth = 20;
 
   // Sky, sun and sea.
   const lat = twin.asset.latitude ?? 0;
@@ -2561,6 +2886,7 @@ async function main() {
   let t = 0;
   const point = new THREE.Vector3();
   const ahead = new THREE.Vector3();
+  const gearAt = new THREE.Vector3();
   let around = null;                     // the real surroundings, once the map has given them
   function animate() {
     const dt = Math.min(timer.getDelta(), 0.1);
@@ -2569,6 +2895,24 @@ async function main() {
     if (moving) {
       const pace = player ? player.pace : 1;
       t += dt * pace;
+      // A geared ship alongside works her own cranes: each jib swings from over its hatch to the
+      // nearest hopper on the deck (or out over the quay) and back.
+      for (const p of GEAR) {
+        const sh = p.userData.ship;
+        if (!sh.parent || !sh.visible) continue;
+        sh.getWorldPosition(gearAt);
+        const off = site.quay ? onQuay(site.quay, [gearAt.x, gearAt.z]).off : Math.abs(gearAt.z - frame.fenderFace);
+        if (off > sh.userData.beam + 4) continue;
+        let aim = -Math.PI / 2;
+        if (site.hoppers && site.hoppers.length) {
+          p.getWorldPosition(gearAt);
+          const h = site.hoppers.reduce((a, b) => (a.position.distanceToSquared(gearAt) < b.position.distanceToSquared(gearAt) ? a : b));
+          const local = sh.worldToLocal(h.position.clone()).sub(p.position);
+          aim = Math.atan2(-local.z, local.x);
+        }
+        const k = 0.5 - 0.5 * Math.cos(t * 0.3 + p.userData.phase);
+        p.rotation.y = -0.15 + (aim + 0.15) * k;
+      }
       for (const m of site.movers) {
         if (m.curve) {
           if (player && m.apron && !player.working) continue;      // nothing to carry: the apron waits
@@ -2724,8 +3068,10 @@ async function main() {
     if (site.quay) {
       const legs = site.quay.legs;
       const P = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
+      // (an open piled deck has water under it: the land is kept from behind the deck)
+      const from = site.open ? site.back : -3;
       legs.forEach((l, i) => {
-        keepLand.push([P(l.a, l.land, -3), P(l.b, l.land, -3), P(l.b, l.land, D), P(l.a, l.land, D)]);
+        keepLand.push([P(l.a, l.land, from), P(l.b, l.land, from), P(l.b, l.land, D + from + 3), P(l.a, l.land, D + from + 3)]);
         const [a, b] = [P(l.a, l.dir, -60), P(l.b, l.dir, 60)];
         keepSea.push([P(a, l.land, -3), P(b, l.land, -3), P(b, l.land, -400), P(a, l.land, -400)]);
         if (i + 1 < legs.length) keepLand.push([l.b, P(l.b, l.land, D), P(l.b, legs[i + 1].land, D)]);
@@ -2751,7 +3097,12 @@ async function main() {
       .then(({ addSurroundings }) => addSurroundings({
         THREE, scene, twin, toScene, toEn, top: frame.top, grounds, vehicle, view, keepLand, keepSea,
         keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
-        mainLeg: site.quay ? site.quay.legs.reduce((m, l) => (l.len > m.len ? l : m)) : { a: [frame.minX, frame.fenderFace], b: [frame.maxX, frame.fenderFace] },
+        // The map's coast is lined up on the quay's face, or on the land's edge behind an open deck.
+        mainLeg: site.quay ? (() => {
+          const l = site.quay.legs.reduce((m, x) => (x.len > m.len ? x : m));
+          const k = site.open ? site.back : 0;
+          return { ...l, a: [l.a[0] + l.land[0] * k, l.a[1] + l.land[1] * k], b: [l.b[0] + l.land[0] * k, l.b[1] + l.land[1] * k] };
+        })() : { a: [frame.minX, frame.fenderFace], b: [frame.maxX, frame.fenderFace] },
         centre: { x: (frame.minX + frame.maxX) / 2, z: frame.front + 100 },
       }))
       .then((got) => { around = got; view.dataset.surroundings = got && got.found ? 'yes' : 'no'; })

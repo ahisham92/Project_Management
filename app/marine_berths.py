@@ -146,6 +146,12 @@ FLEET = {
         ("Ocean Grain", "Bulk carrier", "Ocean Grain", "CY", 180, 30.0, 11.5, 45000, 900),
     ],
 }
+FLEET["bulk_hoppers"] = [
+        ("Sider Pioneer", "Bulk carrier", "Sider", "MT", 180, 30.0, 10.5, 32000, 900),
+        ("Clipper Iris", "Bulk carrier", "Clipper", "BS", 169, 27.0, 9.8, 28000, 800),
+        ("Nord Taurus", "Bulk carrier", "Norden", "SG", 190, 32.3, 11.5, 38000, 1000),
+        ("Med Cement", "Bulk carrier", "Med Cement", "LB", 150, 24.0, 9.0, 20000, 700),
+]
 FLEET["multipurpose"] = FLEET["container"][:6] + FLEET["general_cargo"][:3] + FLEET["roro"][:2]
 
 SHORT_LINE = {"Evergreen": "Ever", "Hapag-Lloyd": "Hapag", "COSCO": "Cosco", "Hyundai Glovis": "Glovis",
@@ -200,11 +206,12 @@ def estimate_berths(length: float, terminal: str, stoppers: int = 0) -> list[dic
     """Berths of about 300 m along the quay until the 3D view has found the real ones."""
     n = max(1, round(length / 290))
     each = max(length / n, 300.0)      # a model shorter than a berth is taken as a section of one
-    use = {"container": "container", "roro": "roro", "bulk": "bulk", "multipurpose": "mixed"}.get(terminal, "general_cargo")
-    kind = "STS" if terminal == "container" and stoppers else "ramp" if terminal == "roro" else "MHC"
-    depth = {"container": 17.0, "bulk": 15.0, "roro": 11.0, "multipurpose": 16.0}.get(terminal, 13.0)
+    use = {"container": "container", "roro": "roro", "bulk": "bulk", "bulk_hoppers": "bulk", "multipurpose": "mixed"}.get(terminal, "general_cargo")
+    kind = ("STS" if terminal == "container" and stoppers else "ramp" if terminal == "roro"
+            else "none" if terminal == "bulk_hoppers" else "MHC")
+    depth = {"container": 17.0, "bulk": 15.0, "bulk_hoppers": 12.0, "roro": 11.0, "multipurpose": 16.0}.get(terminal, 13.0)
     return [{"n": i + 1, "name": f"Berth {i + 1}", "length": round(each), "depth": depth,
-             "cranes": 3 if kind == "STS" else 2 if kind == "MHC" else 1, "crane_kind": kind, "use": use,
+             "cranes": 3 if kind == "STS" else 2 if kind in ("MHC", "none") else 1, "crane_kind": kind, "use": use,
              "main": i == n // 2, "source": "estimate"} for i in range(n)]
 
 
@@ -219,7 +226,7 @@ def save_layout(db, asset: Any, found: Iterable[dict[str, Any]]) -> int:
     """The berths the 3D view found: kept for berths the person has not changed."""
     terminal = asset["terminal_type"] or "container"
     have = {r["n"]: dict(r) for r in db.execute("SELECT * FROM marine_berths WHERE asset_id = ?", (asset["id"],))}
-    depth = {"container": 17.0, "bulk": 15.0, "roro": 11.0, "multipurpose": 16.0}.get(terminal, 13.0)
+    depth = {"container": 17.0, "bulk": 15.0, "bulk_hoppers": 12.0, "roro": 11.0, "multipurpose": 16.0}.get(terminal, 13.0)
     written = 0
     for b in found:
         try:
@@ -236,8 +243,8 @@ def save_layout(db, asset: Any, found: Iterable[dict[str, Any]]) -> int:
             seen = int(b.get("cranes")) if b.get("cranes") is not None else None   # the cranes the 3D view drew
         except (TypeError, ValueError):
             seen = None
-        use = b.get("use") or ("container" if sts else {"roro": "roro", "bulk": "bulk"}.get(terminal, "mixed"))
-        kind = "STS" if sts else "ramp" if use == "roro" else "MHC"
+        use = b.get("use") or ("container" if sts else {"roro": "roro", "bulk": "bulk", "bulk_hoppers": "bulk"}.get(terminal, "mixed"))
+        kind = "STS" if sts else "ramp" if use == "roro" else "none" if terminal == "bulk_hoppers" else "MHC"
         db.execute("INSERT INTO marine_berths (asset_id, n, name, length, depth, cranes, crane_kind, use, main, source)"
                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'model') ON CONFLICT(asset_id, n) DO UPDATE SET length = excluded.length,"
                    " crane_kind = excluded.crane_kind, cranes = excluded.cranes, use = excluded.use, main = excluded.main",

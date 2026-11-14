@@ -685,14 +685,25 @@ function deckFromShapes(model) {
 }
 
 // How deep the deck runs inland of the quay line: for an open piled deck, where its land begins.
+// The 1 m strips behind the line that most of the deck's length reaches, on from the line with
+// no gap wider than 3 m (a slope, a building or a stair at one end does not count).
 function deckDepth(model, leg) {
-  const ds = [];
+  const reach = new Map();
   for (const [x, z] of deckCells(model)) {
     const t = (x - leg.a[0]) * leg.dir[0] + (z - leg.a[1]) * leg.dir[1];
-    const d = (x - leg.a[0]) * leg.land[0] + (z - leg.a[1]) * leg.land[1];
-    if (t > 0.1 * leg.len && t < 0.9 * leg.len && d > -5 && d < 120) ds.push(d);
+    const d = Math.round((x - leg.a[0]) * leg.land[0] + (z - leg.a[1]) * leg.land[1]);
+    if (t < 0 || t > leg.len || d < -5 || d > 150) continue;
+    if (!reach.has(d)) reach.set(d, new Set());
+    reach.get(d).add(Math.round(t / 5));
   }
-  return ds.length > 10 ? Math.max(8, quantile(ds, 0.97)) : 20;
+  if (!reach.size) return 20;
+  const most = Math.max(...[...reach.values()].map((x) => x.size));
+  let depth = 0;
+  let gap = 0;
+  for (let d = 0; d <= 150 && gap <= 3; d++) {
+    if (reach.has(d) && reach.get(d).size >= 0.4 * most) { depth = d; gap = 0; } else gap++;
+  }
+  return Math.max(8, depth + 1);
 }
 
 // Structures standing on piles in open water: the sea runs under the deck, over a rock slope.

@@ -88,6 +88,7 @@ const REAL = {
   coal: new THREE.MeshStandardMaterial({ color: 0x2b2722, roughness: 1 }),
   grain: new THREE.MeshStandardMaterial({ color: 0xc9a85a, roughness: 1 }),
   cement: new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 1 }),
+  paving: new THREE.MeshStandardMaterial({ color: 0x77736b, roughness: 0.95 }),
   silo: new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.8 }),
 };
 // The jibs of the ships' own cranes (geared bulk carriers), slewed between hatch and quay as they work.
@@ -766,7 +767,7 @@ function craneBays(quay, stoppers) {
 // carries on past both ends of the modelled quay, and its edge is the quay wall down to the sea.
 // `set`: how far behind the quay line the land starts: just behind the fenders for a quay wall,
 // behind the whole deck for an open piled one (the sea runs under it).
-function shore(quay, top, yardDepth, set = 2) {
+function shore(quay, top, yardDepth, set = 2, pave = REAL.asphalt) {
   const g = new THREE.Group();
   const first = quay.legs[0];
   const last = quay.legs[quay.legs.length - 1];
@@ -805,7 +806,7 @@ function shore(quay, top, yardDepth, set = 2) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
   geo.computeVertexNormals();
-  const yard = new THREE.Mesh(geo, REAL.asphalt.clone());
+  const yard = new THREE.Mesh(geo, pave.clone());
   yard.material.side = THREE.DoubleSide;
   yard.receiveShadow = true;
   g.add(yard);
@@ -1478,7 +1479,7 @@ function terminal(scene, frame, twin, rng, quay) {
   const back = open ? (frame.deckDepth || 20) + 1 : 0;
   const F = front + back;
   if (quay) {
-    g.add(shore(quay, top, yardDepth, open ? back : 2));
+    g.add(shore(quay, top, yardDepth, open ? back : 2, /bulk/.test(kind) ? REAL.paving : REAL.asphalt));
     if (open) g.add(revetment(quay, top, back));
   } else {
   const yard = new THREE.Mesh(new THREE.PlaneGeometry(length + 600, yardDepth), REAL.asphalt);

@@ -879,6 +879,20 @@ function pierShore(quay, frame, root, shoreX, top) {
   g.add(mesh);
   const tipX = root > 0 ? frame.minX : frame.maxX;
   const back = front + frame.deckDepth;
+  const rootX = root > 0 ? frame.maxX : frame.minX;
+  if (Math.abs(shoreX - rootX) > 4) {
+    // The causeway from the shore out to the deck: a rock mound with its road on top.
+    const len = Math.abs(shoreX - rootX) + 4;
+    const mid = (shoreX + rootX) / 2;
+    const rock = new THREE.MeshStandardMaterial({ color: 0x7d7461, roughness: 1 });
+    const mound = new THREE.Mesh(new THREE.CylinderGeometry(frame.deckDepth / 2 + 2, frame.deckDepth / 2 + 14, top + 12, 6, 1), rock);
+    mound.scale.set(1, 1, len / (frame.deckDepth + 4));
+    mound.rotation.y = Math.PI / 2;
+    mound.position.set(mid, (top - 12) / 2 - 0.4, front + frame.deckDepth / 2);
+    mound.receiveShadow = true;
+    g.add(mound);
+    g.add(box(len, 0.3, frame.deckDepth - 4, REAL.concrete, mid, top - 0.25, front + frame.deckDepth / 2));
+  }
   quay.landOutline = [[shoreX, front - 6000], [far, front - 6000], [far, front + 6000], [shoreX, front + 6000],
     [shoreX, back], [tipX - root * 2, back], [tipX - root * 2, front], [shoreX, front]];
   quay.pier = { root, shoreX, tipX };
@@ -1564,7 +1578,7 @@ function terminal(scene, frame, twin, rng, quay) {
   const root = open && frame.root ? frame.root : 0;
   const rootX = root > 0 ? maxX : minX;
   const tipX = root > 0 ? minX : maxX;
-  const shoreX = rootX + root * 2;             // the land meets the deck at its root
+  const shoreX = rootX + root * (2 + (frame.shoreGap || 0));   // the shore, past any causeway out to the deck
   if (quay && root) g.add(pierShore(quay, frame, root, shoreX, top));
   else if (quay) {
     g.add(shore(quay, top, yardDepth, open ? back : 2, /bulk/.test(kind) ? REAL.paving : REAL.asphalt));
@@ -2286,6 +2300,27 @@ async function main() {
       new Promise((done) => setTimeout(() => done(null), 25000)),   // the first visit asks OpenStreetMap; later ones are kept
     ]).catch(() => null);
     if (land) frame.root = Math.abs(land[0]) > 0.7 ? Math.sign(land[0]) : 0;
+    // Better still: which end of the deck, looked past by 60 to 450 m, reaches land first. (Where the
+    // map draws the pier itself into its coastline, the coast's average way can point anywhere; a
+    // model of the deck alone may stop well short of the shore, out on the causeway.)
+    const midZ = frame.front + frame.deckDepth / 2;
+    const reach = [60, 150, 300, 450];
+    const ends = await import('./marinetwin-surroundings.js').then(({ landAt }) => landAt({
+      twin, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: midZ },
+      points: reach.flatMap((d) => [[frame.minX - d, midZ], [frame.maxX + d, midZ]]) })).catch(() => null);
+    for (let i = 0; ends && i < reach.length; i++) {
+      const [lo, hi] = [ends[2 * i], ends[2 * i + 1]];
+      if (lo !== hi && (lo > 0 || hi > 0)) { frame.root = lo > 0 ? -1 : 1; break; }
+    }
+    if (frame.root) {
+      // How far past the root the shore is: the causeway out to the deck runs that far.
+      const endX = frame.root > 0 ? frame.maxX : frame.minX;
+      const steps = Array.from({ length: 25 }, (_, k) => 20 * k);
+      const on = await import('./marinetwin-surroundings.js').then(({ landAt }) => landAt({
+        twin, toEn, centre: { x: endX, z: midZ }, points: steps.map((d) => [endX + frame.root * d, midZ]) })).catch(() => null);
+      const k = on ? on.findIndex((x) => x > 0) : -1;
+      frame.shoreGap = k > 0 ? steps[k] - 10 : 0;
+    }
   }
 
   // The terminal around it.
@@ -3237,7 +3272,7 @@ async function main() {
         keepOut: (x, z) => keepLand.some((poly) => inside(poly, x, z)),
         // The map's coast is lined up on the quay's face, or on the land's edge behind an open deck.
         // (for a pier, the shore line across its root, with the land on away from the pier)
-        mainLeg: site.root ? { a: [site.shoreX, frame.front - 150], b: [site.shoreX, frame.front + 150], land: [site.root, 0], len: 300, reach: 600 } : site.quay ? (() => {
+        mainLeg: site.root ? { a: [site.shoreX, frame.front - 150], b: [site.shoreX, frame.front + 150], land: [site.root, 0], len: 300, reach: 600, fixed: frame.shoreGap > 0 } : site.quay ? (() => {
           const l = site.quay.legs.reduce((m, x) => (x.len > m.len ? x : m));
           const k = site.open ? site.back : 0;
           return { ...l, a: [l.a[0] + l.land[0] * k, l.a[1] + l.land[1] * k], b: [l.b[0] + l.land[0] * k, l.b[1] + l.land[1] * k] };

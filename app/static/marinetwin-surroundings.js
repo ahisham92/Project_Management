@@ -390,7 +390,8 @@ export async function addSurroundings(o) {
   // coast runs along the quay (or across a pier's root) with the land behind it, as much as it can.
   let base = ([e, n]) => toScene(e, n);
   let quarter = 0;
-  if (data && o.mainLeg && (data.coast || []).length) {
+  // A mainLeg marked fixed was itself found on this map (a pier's shore): the map stays where the site's location puts it.
+  if (data && o.mainLeg && !o.mainLeg.fixed && (data.coast || []).length) {
     const [mx, mz] = [(o.mainLeg.a[0] + o.mainLeg.b[0]) / 2, (o.mainLeg.a[1] + o.mainLeg.b[1]) / 2];
     const turnBy = (k) => {
       const [c, s] = [Math.round(Math.cos((k * Math.PI) / 2)), Math.round(Math.sin((k * Math.PI) / 2))];
@@ -407,7 +408,7 @@ export async function addSurroundings(o) {
     }
     if (best) { base = best.at; quarter = best.k; }
   }
-  const fit = data ? lineUp(data.coast || [], base, o.mainLeg) : null;
+  const fit = data && !(o.mainLeg && o.mainLeg.fixed) ? lineUp(data.coast || [], base, o.mainLeg) : null;
   const at = fit ? (p) => fit.move(base(p)) : base;
 
   // The ground: the land behind the quay (and a sheet for a far shore) with the map's water cut

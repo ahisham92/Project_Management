@@ -146,11 +146,13 @@ FLEET = {
         ("Ocean Grain", "Bulk carrier", "Ocean Grain", "CY", 180, 30.0, 11.5, 45000, 900),
     ],
 }
-FLEET["bulk_hoppers"] = [
-        ("Sider Pioneer", "Bulk carrier", "Sider", "MT", 180, 30.0, 10.5, 32000, 900),
-        ("Clipper Iris", "Bulk carrier", "Clipper", "BS", 169, 27.0, 9.8, 28000, 800),
-        ("Nord Taurus", "Bulk carrier", "Norden", "SG", 190, 32.3, 11.5, 38000, 1000),
-        ("Med Cement", "Bulk carrier", "Med Cement", "LB", 150, 24.0, 9.0, 20000, 700),
+FLEET["bulk_hoppers"] = [   # from Sibline's Basis of Design, Table 3-1
+        ("Sibline Star", "Cement carrier", "Ciment de Sibline", "LB", 210, 40.0, 11.2, 45000, 1500),
+        ("Cedar Cement", "Cement carrier", "Ciment de Sibline", "LB", 120, 35.0, 10.5, 25000, 900),
+        ("Jiyeh Trader", "Cement carrier", "Med Bulk", "MT", 105, 25.0, 8.5, 10000, 500),
+        ("Med Cement", "Cement carrier", "Med Cement", "CY", 100, 20.0, 7.0, 8000, 400),
+        ("Damour", "Cement carrier", "Levant Lines", "LB", 110, 14.0, 6.1, 6000, 300),
+        ("Saida Bay", "Cement carrier", "Levant Lines", "LB", 107, 17.0, 6.0, 5000, 250),
 ]
 FLEET["multipurpose"] = FLEET["container"][:6] + FLEET["general_cargo"][:3] + FLEET["roro"][:2]
 
@@ -183,6 +185,7 @@ FITS_USE = {
     "Multipurpose": {"general_cargo", "mixed", "multipurpose", "container"},
     "Breakbulk": {"general_cargo", "mixed", "multipurpose", "container"},
     "Bulk carrier": {"bulk", "general_cargo", "mixed", "multipurpose"},
+    "Cement carrier": {"bulk", "general_cargo", "mixed", "multipurpose"},
 }
 USES = [("container", "Containers"), ("general_cargo", "General cargo"), ("roro", "RoRo and cars"),
         ("mixed", "Any ship"), ("bulk", "Dry bulk")]

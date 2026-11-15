@@ -27,6 +27,9 @@
 {% if request.args.get('not') == 'pontoon' %}
   <div class="flashes"><div class="flash error">Your account has not been given Pontoon. Ask the administrator.</div></div>
 {% endif %}
+{% if request.args.get('not') == 'jedsa' %}
+  <div class="flashes"><div class="flash error">Your account has not been given JEDSA. Ask the administrator.</div></div>
+{% endif %}
 {% if request.args.get('not') == 'sitetwin' %}
   <div class="flashes"><div class="flash error">Your account has not been given SiteTwin. Ask the administrator.</div></div>
 {% endif %}
@@ -165,6 +168,18 @@
       with every check's working, 3D views and mode shapes, and an IFC model for Revit.
     </span>
     <span class="door-go">Open Pontoon →</span>
+  </a>
+  {% endif %}
+  {% if 'jedsa' in my_programs %}
+  <a class="door{% if not jedsa['ready'] %} door-shut{% endif %}" href="{{ jedsa['href'] }}">
+    <span class="door-mark door-mark-jedsa" aria-hidden="true"><svg viewBox="0 0 64 64" width="42" height="42" focusable="false"><rect width="64" height="64" rx="14" fill="#14181D"/><rect x="27" y="14" width="10" height="40" rx="1.5" fill="#C08A2E"/><path d="M20 18 H44 M20 25 H44 M20 32 H44 M20 39 H44" stroke="#C08A2E" stroke-width="3.5" stroke-linecap="round"/><path d="M14 54 H50" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg></span>
+    <span class="door-name">JEDSA<span class="door-tagline">Structural analysis &amp; design</span>{% if not jedsa['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      2D and 3D frames and shells with automatic meshing: load combinations, settlements and
+      springs, seismic to EN 1998 with accidental torsion, and design to Eurocodes, ACI and BS.
+      It runs in your browser; a model is saved as a file on your own machine.
+    </span>
+    <span class="door-go">Open JEDSA →</span>
   </a>
   {% endif %}
   {% if 'sitetwin' in my_programs %}

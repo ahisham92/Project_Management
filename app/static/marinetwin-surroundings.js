@@ -259,10 +259,22 @@ function waterMask(data, toPx, width, height, keepLand, keepSea = []) {
   // The modelled terminal is land, and the water in front of its quay is water, whatever the map says.
   fill(keepSea, '#000');
   fill(keepLand, '#fff');
-  // Past the square the land behind the quay carries on as land.
-  g.strokeStyle = '#fff';
-  g.lineWidth = 8;
-  g.strokeRect(0, 0, width, height);
+  // Past the square the ground carries on as its edge is (the texture is clamped there): land
+  // where the edge is land, sea where it is sea. A rim a few pixels deep takes its value from just
+  // inside it, so a coastline stroke or a seam on the very edge does not run off as a stripe.
+  const img = g.getImageData(0, 0, width, height);
+  const px = img.data;
+  const RIM = 6;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x >= RIM && y >= RIM && x < width - RIM && y < height - RIM) { x = width - RIM - 1; continue; }
+      const sx = Math.min(Math.max(x, RIM), width - RIM - 1);
+      const sy = Math.min(Math.max(y, RIM), height - RIM - 1);
+      const [i, j] = [(y * width + x) * 4, (sy * width + sx) * 4];
+      px[i] = px[i + 1] = px[i + 2] = px[j] > 127 ? 255 : 0;
+    }
+  }
+  g.putImageData(img, 0, 0);
   return canvas;
 }
 
@@ -414,6 +426,10 @@ export async function addSurroundings(o) {
   // The ground: the land behind the quay (and a sheet for a far shore) with the map's water cut
   // away, on a square of the scene round the berth.
   const shore = data && ((data.coast || []).length || (data.water || []).length);
+  // Land in the scene, from the water mask: what the map puts in the sea or past the ground drawn
+  // (Overpass hands back whole roads, running on for kilometres) is left out, so no road, car or
+  // building stands in the water. Everything counts as land when the map has no shore at all.
+  let onLand = () => true;
   if (shore) {
     const SIZE = 2048;
     const x0 = o.centre.x - RADIUS;
@@ -422,7 +438,20 @@ export async function addSurroundings(o) {
     const sceneToPx = ([x, z]) => [(x - x0) * scale, (z - z0) * scale];
     const toPx = (p) => sceneToPx(at(p));
     const raw = (polys) => polys.map((p) => ({ px: true, p: p.map(sceneToPx) }));
-    const mask = new THREE.CanvasTexture(waterMask(data, toPx, SIZE, SIZE, raw(keepLand), raw(keepSea)));
+    const canvas = waterMask(data, toPx, SIZE, SIZE, raw(keepLand), raw(keepSea));
+    const px = canvas.getContext('2d').getImageData(0, 0, SIZE, SIZE).data;
+    // Land at a point, or within a couple of pixels of it (a road along the water's edge stays).
+    onLand = (x, z) => {
+      const [u, v] = sceneToPx([x, z]).map(Math.round);
+      for (let dv = -2; dv <= 2; dv += 2) {
+        for (let du = -2; du <= 2; du += 2) {
+          const [a, b] = [u + du, v + dv];
+          if (a >= 0 && b >= 0 && a < SIZE && b < SIZE && px[(b * SIZE + a) * 4] > 127) return true;
+        }
+      }
+      return false;
+    };
+    const mask = new THREE.CanvasTexture(canvas);
     const mat = grounds.length ? grounds[0].material.clone() : new THREE.MeshStandardMaterial({ color: 0x8c8a6c, roughness: 1 });
     mat.alphaMap = mask;
     mat.alphaTest = 0.5;
@@ -459,7 +488,7 @@ export async function addSurroundings(o) {
       const pts = b.p.map(at);
       const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
       const cz = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-      if (keepOut(cx, cz)) return;
+      if (keepOut(cx, cz) || !onLand(cx, cz)) return;
       const area = Math.abs(pts.reduce((s, p, k) => { const q = pts[(k + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
       if (area < 12) return;
       const h = b.h || TALL[b.k] || (area > 2500 ? 12 : area > 400 ? 8 : 6);
@@ -503,12 +532,22 @@ export async function addSurroundings(o) {
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(v.length).fill(0).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
       return geo;
     };
-    const runs = (p) => {
-      // The stretches of a line outside the terminal.
+    const runs = (p, bridge = false) => {
+      // The stretches of a line outside the terminal and on land (a bridge may cross water),
+      // checked every 10 m or so, so a long straight line cannot jump across a bay.
       const out = [];
       let cur = [];
-      for (const q of p.map(at)) {
-        if (keepOut(q[0], q[1])) { if (cur.length > 1) out.push(cur); cur = []; } else cur.push(q);
+      const pts = [];
+      p.map(at).forEach((q, k, all) => {
+        if (k) {
+          const o = all[k - 1];
+          const steps = Math.floor(Math.hypot(q[0] - o[0], q[1] - o[1]) / 10);
+          for (let i = 1; i < steps; i++) pts.push([o[0] + ((q[0] - o[0]) * i) / steps, o[1] + ((q[1] - o[1]) * i) / steps]);
+        }
+        pts.push(q);
+      });
+      for (const q of pts) {
+        if (keepOut(q[0], q[1]) || (!bridge && !onLand(q[0], q[1]))) { if (cur.length > 1) out.push(cur); cur = []; } else cur.push(q);
       }
       if (cur.length > 1) out.push(cur);
       return out;
@@ -516,7 +555,7 @@ export async function addSurroundings(o) {
     const roadGeo = [];
     const busy = [];
     for (const r of data.roads) {
-      for (const run of runs(r.p)) {
+      for (const run of runs(r.p, !!r.b)) {
         roadGeo.push(ribbon(run, ROAD_WIDTH[r.k] || 6, top - 0.22 + (ROAD_WIDTH[r.k] || 6) * 0.002 + (r.b ? 0.3 : 0)));
         if (BUSY.has(r.k)) busy.push(run);
       }

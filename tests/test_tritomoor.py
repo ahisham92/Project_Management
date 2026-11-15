@@ -238,3 +238,10 @@ def test_the_video_shows_loading_water_level_and_directions(signed_in):
     page = text(signed_in.get("/tritomoor/"))
     assert "function arrowList" in page and "S.arrows" in page
     assert "function section(x, s, sc2" in page and "Tfrom" in page
+
+
+def test_the_page_draws_the_surroundings_waves_and_the_fender_squeeze(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    for part in ("function siteBlock", "function earclip", "uWave", "S.site",
+                 "Hull to the berth face", "Fender squeezed", "m clear", "paintT"):
+        assert part in page, part

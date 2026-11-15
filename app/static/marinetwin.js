@@ -2283,7 +2283,7 @@ async function main() {
     const land = await Promise.race([
       import('./marinetwin-surroundings.js').then(({ landToward }) => landToward({
         twin, toScene, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: frame.front + frame.deckDepth / 2 } })),
-      new Promise((done) => setTimeout(() => done(null), 8000)),
+      new Promise((done) => setTimeout(() => done(null), 25000)),   // the first visit asks OpenStreetMap; later ones are kept
     ]).catch(() => null);
     if (land) frame.root = Math.abs(land[0]) > 0.7 ? Math.sign(land[0]) : 0;
   }

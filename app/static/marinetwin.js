@@ -2286,13 +2286,18 @@ async function main() {
       new Promise((done) => setTimeout(() => done(null), 25000)),   // the first visit asks OpenStreetMap; later ones are kept
     ]).catch(() => null);
     if (land) frame.root = Math.abs(land[0]) > 0.7 ? Math.sign(land[0]) : 0;
-    // Better still: which end of the deck, looked past by 100 m, is on land. (Where the map draws
-    // the pier itself into its coastline, the coast's average way can point anywhere.)
+    // Better still: which end of the deck, looked past by 60 to 450 m, reaches land first. (Where the
+    // map draws the pier itself into its coastline, the coast's average way can point anywhere; a
+    // model of the deck alone may stop well short of the shore, out on the causeway.)
     const midZ = frame.front + frame.deckDepth / 2;
+    const reach = [60, 150, 300, 450];
     const ends = await import('./marinetwin-surroundings.js').then(({ landAt }) => landAt({
-      twin, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: midZ }, points: [[frame.minX - 100, midZ], [frame.maxX + 100, midZ]] }))
-      .catch(() => null);
-    if (ends && ends[0] !== ends[1] && ends[0] * ends[1] <= 0 && (ends[0] > 0 || ends[1] > 0)) frame.root = ends[0] > 0 ? -1 : 1;
+      twin, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: midZ },
+      points: reach.flatMap((d) => [[frame.minX - d, midZ], [frame.maxX + d, midZ]]) })).catch(() => null);
+    for (let i = 0; ends && i < reach.length; i++) {
+      const [lo, hi] = [ends[2 * i], ends[2 * i + 1]];
+      if (lo !== hi && (lo > 0 || hi > 0)) { frame.root = lo > 0 ? -1 : 1; break; }
+    }
   }
 
   // The terminal around it.

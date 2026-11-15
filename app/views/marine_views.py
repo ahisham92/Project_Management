@@ -1229,11 +1229,15 @@ def model(asset_id: int):
 # of tracked elements (each tracked element is a shape of its own): change either and they are
 # built again.
 
+# Raise when the browser's reader changes what it draws, so kept shapes are built again.
+SHAPES_VERSION = "2"   # 2: analysis-only objects (mooring lines, design vessels, section fills) left out
+
+
 def _shapes_key(asset, elements) -> str:
     path = models_dir() / asset["model_file"]
     refs = sorted({str(e["element"]["model_ref"] or e["element"]["name"]).strip().lower() for e in elements}
                   | {str(e["element"]["name"]).strip().lower() for e in elements})
-    seed = f"{asset['model_file']}|{path.stat().st_size if path.exists() else 0}|{path.stat().st_mtime_ns if path.exists() else 0}|" + "\n".join(refs)
+    seed = f"v{SHAPES_VERSION}|{asset['model_file']}|{path.stat().st_size if path.exists() else 0}|{path.stat().st_mtime_ns if path.exists() else 0}|" + "\n".join(refs)
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 

@@ -1341,6 +1341,12 @@ function mobileHopper() {
   funnel.castShadow = true;
   g.add(funnel);
   g.add(box(2, 1.2, 2, REAL.steel, 0, 7.9, 0));                  // the discharge gate
+  // The cement running from the gate into a truck under it, shown while one is being filled.
+  const chute = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.9, 4.2, 10), REAL.cement);
+  chute.position.y = 5.2;
+  chute.visible = false;
+  g.add(chute);
+  g.userData.chute = chute;
   // Cargo in the funnel.
   const heap = new THREE.Mesh(new THREE.ConeGeometry(4.2, 1.6, 4), REAL.cement);
   heap.rotation.y = Math.PI / 4;
@@ -1422,6 +1428,12 @@ function ship(type, loa, beam, draught, rng, flag = 'PA') {
         const drop = 9 + (gear.length % 2) * 4;
         pivot.add(box(0.12, drop, 0.12, ROPE, tip[0], tip[1] - drop / 2, 0));
         pivot.add(box(2.6, 2, 2.6, REAL.yellow, tip[0], tip[1] - drop - 1, 0));
+        // The cement falling from the opened grab, shown while it is over a hopper.
+        const fall = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.6, 7, 10), REAL.cement);
+        fall.position.set(tip[0], tip[1] - drop - 2 - 3.5, 0);
+        fall.visible = false;
+        pivot.add(fall);
+        pivot.userData.fall = fall;
         pivot.userData.phase = gear.length * 1.7;
         pivot.userData.ship = g;
         pivot.rotation.y = -0.15;
@@ -1811,6 +1823,10 @@ function terminal(scene, frame, twin, rng, quay) {
           [shoreX + root * 620, lane + 46], [shoreX + root * 260, lane + 28], [shoreX + root * 20, F - 7], [hx - root * 25, F - 7]]
         : [[hx - 60, F + 30], [hx - 26, lane + 1], [hx, lane], [hx + 26, lane + 1], [hx + 60, F + 30], [hx + 30, F + 62], [hx - 30, F + 62]];
       const curve = loop(pts, top + 0.1);
+      // Where on its loop a truck stands under the hopper to be filled.
+      const spaced = curve.getSpacedPoints(600);
+      let under = 0;
+      spaced.forEach((q, j) => { if (Math.hypot(q.x - hx, q.z - lane) < Math.hypot(spaced[Math.round(under * 600)].x - hx, spaced[Math.round(under * 600)].z - lane)) under = j / 600; });
       if (root) {
         // Ashore, a two-lane road under the trucks' way out and back, not a sheet of asphalt.
         const way = curve.getSpacedPoints(160);
@@ -1828,6 +1844,7 @@ function terminal(scene, frame, twin, rng, quay) {
         const v = vehicle(kind === 'bulk_hoppers' ? 'cement' : 'tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
         g.add(v);
         movers.push({ object: v, curve, offset: k / many + rng() * 0.03, speed: (root ? 9 : 5) / curve.getLength(), apron: true, main: true,
+          stop: { u: under, wait: 14, hopper: h, status: root ? 'Carrying the cement from the hopper to the plant' : undefined },
           status: root ? 'Carrying the cement from the hopper to the plant' : undefined });
       }
     }
@@ -3056,7 +3073,18 @@ async function main() {
   if (LIVE) {
     progress(twin.model ? 0.95 : 0.8, 'Loading the next two days at the berth', twin.model ? 0.03 : 0.1);
     const { startLive } = await import('./marinetwin-live.js');
+    // The model's bollards, where the ships' lines are made fast: the top of each, in the scene.
+    const bollards = [];
+    content.updateMatrixWorld(true);
+    const bb = new THREE.Box3();
+    content.traverse((m) => {
+      const e = m.isMesh && m.userData.element;
+      if (!e || e.kind !== 'bollard') return;
+      bb.setFromObject(m);
+      if (!bb.isEmpty()) bollards.push(new THREE.Vector3((bb.min.x + bb.max.x) / 2, bb.max.y - 0.2, (bb.min.z + bb.max.z) / 2));
+    });
     player = await startLive({
+      bollards,
       THREE, view, scene, camera, controls, renderer, twin, frame, site, rng, focus, radius, water, sky, sunLight, hemi,
       ship, vehicle, box, REAL, BOX_COLOURS, berthShipType, shipPose, quayPoint, setFill, yardFill, berthSpot, atSea: seaChecker(site.quay, frame),
       flagCode, FLAG_NAMES, follow: startFollow, stopFollow, following: () => follow && follow.object,
@@ -3113,6 +3141,7 @@ async function main() {
         }
         const k = 0.5 - 0.5 * Math.cos(t * 0.3 + p.userData.phase);
         p.rotation.y = -0.15 + (aim + 0.15) * k;
+        if (p.userData.fall) p.userData.fall.visible = !!(site.hoppers && site.hoppers.length) && k > 0.93;
       }
       for (const m of site.movers) {
         if (m.curve) {
@@ -3121,6 +3150,23 @@ async function main() {
           const b = m.dressed ? m.berth : null;
           if (b && (!b.state || (m.needs === 'roro') !== (b.shipKind === 'roro'))) continue;
           if (m.berth && m.berth.closed) continue;                        // closed by an event: all stopped
+          if (m.stop) {
+            // A truck under a hopper stands while it is filled, the cement running from the gate.
+            if (m.held > 0) {
+              m.held -= dt * pace;
+              m.stop.hopper.userData.chute.visible = m.held > 1;
+              if (m.held > 0) { m.status = 'Being filled under the hopper'; continue; }
+              m.stop.hopper.userData.chute.visible = false;
+              m.status = m.stop.status;
+            }
+            const was = m.u ?? m.offset;
+            const next = was + dt * pace * m.speed;
+            const at = m.stop.u;
+            if ((was < at && next >= at) || (next >= 1 && next - 1 >= at && at < was)) {
+              m.u = at; m.held = m.stop.wait;
+              continue;
+            }
+          }
           m.u = ((m.u ?? m.offset) + dt * pace * m.speed) % 1;
           const u = m.u;
           // A tractor runs full from the cranes to the stacks when the ship is discharging, and

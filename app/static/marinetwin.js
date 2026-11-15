@@ -2996,27 +2996,54 @@ async function main() {
       try { data = await (await fetch(`${view.dataset.plan}?year=${encodeURIComponent(year)}`, { credentials: 'same-origin' })).json(); } catch (err) { return; }
       if (mine !== asked) return;
       pins.clear();
-      const stacked = new Map();
+      // The sensors on each element, spread over its top in rows along its length (not stacked
+      // into a pole), each standing on whatever is on top there: a pile's pins on the deck above it.
+      const byBox = new Map();
       for (const s of data.sensors) {
         const box = tops.get(s.ref) || tops.get(s.host);
         if (!box) continue;
-        const n = stacked.get(s.ref) || 0;
-        stacked.set(s.ref, n + 1);
+        if (!byBox.has(box)) byBox.set(box, []);
+        byBox.get(box).push(s);
+      }
+      const down = new THREE.Raycaster();
+      const from = new THREE.Vector3();
+      const dir = new THREE.Vector3(0, -1, 0);
+      const high = bbox.max.y + 50;
+      const surface = (x, z, floor) => {
+        from.set(x, high, z);
+        down.set(from, dir);
+        const hit = down.intersectObject(content, true).find((h) => h.object.isMesh && h.object.visible);
+        return hit ? Math.max(hit.point.y, floor) : floor;
+      };
+      const gap = 2.6 * size;
+      for (const [box, list] of byBox) {
         const c = box.getCenter(new THREE.Vector3());
-        const pin = new THREE.Group();
-        const head = new THREE.Mesh(pinGeo, pinMat(s.state));
-        head.position.y = (2.4 + n * 2.4) * size;
-        const stem = new THREE.Mesh(stemGeo, pinMat(s.state));
-        stem.position.y = 1.1 * size;
-        pin.add(head, stem);
-        pin.position.set(c.x + (s.face === 'back' ? 0.8 : 0), box.max.y, c.z);
-        pin.userData.pick = () => ({
-          kind: 'sensor', title: `${s.tag} · ${s.name}`, state: s.state,
-          rows: [['On', s.host || '—'], ['Year of service', String(data.year)],
-            ['Assumed reading', s.value == null ? 'no reading series' : `${Number(s.value).toLocaleString()} ${s.unit}`],
-            ['Maintenance check', s.check_note]],
+        const sz = box.getSize(new THREE.Vector3());
+        const alongX = sz.x >= sz.z;
+        const len = Math.max(alongX ? sz.x : sz.z, gap);
+        const cols = Math.max(1, Math.min(list.length, Math.floor(len / gap)));
+        const rows = Math.ceil(list.length / cols);
+        list.forEach((s, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const u = (col - (Math.min(list.length - row * cols, cols) - 1) / 2) * Math.min(gap, len / cols);
+          const v = (row - (rows - 1) / 2) * gap + (s.face === 'back' ? 0.8 : 0);
+          const [x, z] = alongX ? [c.x + u, c.z + v] : [c.x + v, c.z + u];
+          const pin = new THREE.Group();
+          const head = new THREE.Mesh(pinGeo, pinMat(s.state));
+          head.position.y = 2.4 * size;
+          const stem = new THREE.Mesh(stemGeo, pinMat(s.state));
+          stem.position.y = 1.1 * size;
+          pin.add(head, stem);
+          pin.position.set(x, surface(x, z, box.max.y), z);
+          pin.userData.pick = () => ({
+            kind: 'sensor', title: `${s.tag} · ${s.name}`, state: s.state,
+            rows: [['On', s.host || '—'], ['Year of service', String(data.year)],
+              ['Assumed reading', s.value == null ? 'no reading series' : `${Number(s.value).toLocaleString()} ${s.unit}`],
+              ['Maintenance check', s.check_note]],
+          });
+          pins.add(pin);
         });
-        pins.add(pin);
       }
       view.dataset.pins = String(pins.children.length);
     };

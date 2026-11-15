@@ -329,7 +329,7 @@ tr.best td{background:#EAF4F0}
         <div class="ctl"><label><input type="checkbox" id="showLabels" checked> Labels</label></div>
         <div class="ctl"><label for="viewCond">Condition</label><select id="viewCond" title="Loading condition shown. As analysed shows the results; laden or ballast shows that condition, with its results if it has been analysed."><option value="auto">As analysed</option><option value="laden">Laden</option><option value="ballast">Ballast</option></select></div>
         <div class="ctl"><label title="Show the deck cargo (container stacks). It does not change the analysis, which uses the windage areas."><input type="checkbox" id="showCargo" checked> Deck cargo</label></div>
-        <div class="ctl" id="deckCtl" hidden><label title="Draw the piled deck as its frame only, so the piles and the water under it can be seen"><input type="checkbox" id="deckSee" checked> See-through deck</label></div>
+        <div class="ctl" id="deckCtl" hidden><label title="Draw the piled deck as its frame only, so the piles and the water under it can be seen"><input type="checkbox" id="deckSee"> See-through deck</label></div>
         <div class="ctl" id="seaCtl" hidden><label for="seaT">Sea transparency</label><input type="range" id="seaT" min="0" max="100" step="5" value="20" aria-label="Sea transparency"></div>
       </div>
       <div class="hint" id="planHint"></div>
@@ -3098,7 +3098,13 @@ const Moor3D = (() => {
         m.box([(ST.X0 + ST.X1) / 2, -0.6, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.2, qTop - ST.t, qTop, conc, top);
         m.box([(ST.X0 + ST.X1) / 2, -ST.W + 0.6, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.2, qTop - ST.t, qTop, conc, top);
         for (let x = ST.X0 + ST.pitch / 2; x < ST.X1; x += ST.pitch) m.box([x, -ST.W / 2, 0], [1, 0, 0], [0, 1, 0], Math.max(0.8, ST.pileD), ST.W, zs - beamD, qTop - 0.25, capCol, top);
-      } else deck(ST.X0, ST.X1, -ST.W, 0, qTop, ST.t);
+      } else {
+        deck(ST.X0, ST.X1, -ST.W, 0, qTop, ST.t);
+        // under the slab: the edge beams along the face and the back, and a cross beam over the piles at each bent
+        m.box([(ST.X0 + ST.X1) / 2, -0.7, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.4, zs - beamD, zs, conc);
+        m.box([(ST.X0 + ST.X1) / 2, -ST.W + 0.7, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 1.4, zs - beamD, zs, conc);
+        for (let x = ST.X0 + ST.pitch / 2; x < ST.X1; x += ST.pitch) m.box([x, -ST.W / 2, 0], [1, 0, 0], [0, 1, 0], Math.max(0.9, ST.pileD * 1.3), ST.W - 1, zs - beamD, zs, capCol);
+      }
       m.box([(ST.X0 + ST.X1) / 2, -0.35, 0], [1, 0, 0], [0, 1, 0], ST.X1 - ST.X0, 0.7, qTop, qTop + 0.12, hex('#D8B23A'));
       for (let i = 0; i < ST.rows; i++) {
         const y = -0.9 - (ST.W - 1.8) * i / (ST.rows - 1);
@@ -3117,6 +3123,40 @@ const Moor3D = (() => {
           const L = 0.35 * scale, Dp = 0.14 * scale, Hs = Math.max(8, 0.05 * scale);
           m.box([xs2 + L / 2, yb - 40 - Dp / 2 - 8, 0], [1, 0, 0], [0, 1, 0], L, Dp, qTop, qTop + Hs, hex('#C9CDD0'), hex('#8E9AA3'));
         }
+      } else if (ST.kind === 'pier') {
+        // as MarineTwin: the rock causeway from the root of the deck to the shore, and the
+        // shore beyond it with its rock slope down to the seabed
+        const r = ST.root, rx = ST.rootX, sx = ST.shoreX, h = qTop - bedZ, run = 1.5 * h, yc = -ST.W / 2;
+        const rockC = hex('#8B8679'), rockD = hex('#6F6A5E'), landC = hex('#B5AE9C');
+        const crest = qTop - 0.4, hw = ST.W / 2 - 0.5;
+        // the causeway's crest runs from under the deck's root (a few bents in) out to the shore
+        const cx0 = rx - r * Math.min(3 * ST.pitch, (ST.X1 - ST.X0) / 3), cx1 = sx;
+        const xa = Math.min(cx0, cx1), xb = Math.max(cx0, cx1);
+        if (xb - xa > 0.5) {
+          m.quad([xa, yc + hw, crest], [xb, yc + hw, crest], [xb, yc + hw + run, bedZ], [xa, yc + hw + run, bedZ], rockC);
+          m.quad([xa, yc - hw, crest], [xb, yc - hw, crest], [xb, yc - hw - run, bedZ], [xa, yc - hw - run, bedZ], rockD);
+          const xe = r > 0 ? xa : xb, xo = xe - r * run;     // its head, sloping down under the deck
+          m.quad([xe, yc + hw, crest], [xe, yc - hw, crest], [xo, yc - hw, bedZ], [xo, yc + hw, bedZ], rockD);
+          m.quad([xe, yc + hw, crest], [xo, yc + hw, bedZ], [xe, yc + hw + run, bedZ], [xe, yc + hw, crest], rockC);
+          m.quad([xe, yc - hw, crest], [xo, yc - hw, bedZ], [xe, yc - hw - run, bedZ], [xe, yc - hw, crest], rockD);
+          // the road from the deck to the shore
+          const ra = Math.min(rx, sx), rb = Math.max(rx, sx);
+          if (rb - ra > 0.5) {
+            m.box([(ra + rb) / 2, yc, 0], [1, 0, 0], [0, 1, 0], rb - ra, ST.W - 2, crest, qTop - 0.05, hex('#77777A'));
+            [yc + ST.W / 2 - 1.1, yc - ST.W / 2 + 1.1].forEach(y => m.box([(ra + rb) / 2, y, 0], [1, 0, 0], [0, 1, 0], rb - ra, 0.3, qTop - 0.05, qTop + 0.9, hex('#C7C2B8')));
+          }
+        }
+        // the shore: its rock slope into the sea and the land on beyond
+        const far = sx + r * 3 * scale, ytop = cy + 4 * scale, ybot = cy - 4 * scale;
+        m.quad([sx - r * run, ytop, bedZ], [sx - r * run, ybot, bedZ], [sx, ybot, qTop], [sx, ytop, qTop], rockC);
+        m.quad([sx, ytop, qTop], [sx, ybot, qTop], [far, ybot, qTop], [far, ytop, qTop], landC);
+        m.quad([sx + r * 2, yc + 30, qTop + 0.02], [sx + r * 2, yc - 30, qTop + 0.02], [sx + r * 60, yc - 30, qTop + 0.02], [sx + r * 60, yc + 30, qTop + 0.02], hex('#8F8C84'));
+        // ashore: cement silos and a covered store, as at a cement terminal
+        for (let k = 0; k < 3; k++) {
+          const xs3 = sx + r * (45 + k * 16), ys3 = yc - 55;
+          m.cyl(xs3, ys3, 6.5, qTop, qTop + 32, hex('#D9D6CF'), 18, hex('#BFBBB2'));
+        }
+        m.box([sx + r * 110, yc - 50, 0], [1, 0, 0], [0, 1, 0], 70, 30, qTop, qTop + 14, hex('#C9CDD0'), hex('#8E9AA3'));
       } else {
         // approach trestle to the shore, and the shore with its beach
         const tr = ST.trestle, yT0 = -ST.W, yT1 = -ST.W - tr.L, tw = tr.w;
@@ -3130,6 +3170,8 @@ const Moor3D = (() => {
         m.quad([S0, toe, bedZ], [S1, toe, bedZ], [S1, yT1, qTop], [S0, yT1, qTop], hex('#B9AE8E'));
         m.quad([S0, yT1 - 3 * scale, qTop], [S0, yT1, qTop], [S1, yT1, qTop], [S1, yT1 - 3 * scale, qTop], hex('#8F8C84'));
         m.quad([tr.X - 6, yT1 - 30, qTop + 0.01], [tr.X - 6, yT1, qTop + 0.01], [tr.X + 6, yT1, qTop + 0.01], [tr.X + 6, yT1 - 30, qTop + 0.01], hex('#77777A'));
+      }
+      if (ST.kind !== 'deck') {
         // dolphins, each on four piles, and the catwalks back to the deck
         ST.dolphins.forEach(q => {
           const ztop = q.kind === 'mooring' ? (S.bollards.find(b => Math.abs(b.X - q.X) < 0.01 && Math.abs(b.Y - q.Y) < 0.01) || { z: qTop }).z : qTop;
@@ -3181,8 +3223,9 @@ const Moor3D = (() => {
       m.box(o, ex, ey, proj * 0.95, proj * 1.7, -r * 0.55, r * 0.85, f.color ? hex(f.color) : hex('#2A2C30'));
       m.box(o, ex, ey, proj * 1.0, proj * 0.5, r * 0.3, r * 0.45, hex('#B8B4AC'));
     });
-    /* bollards */
+    /* bollards; one standing just in front of a piled deck's face sits on a plinth cantilevered off the cope */
     S.bollards.forEach(b => {
+      if (piled && b.Y > 0.2 && b.Y <= 3 && b.X >= ST.X0 - 0.5 && b.X <= ST.X1 + 0.5) m.box([b.X, (b.Y + 0.9) / 2, 0], [1, 0, 0], [0, 1, 0], 1.8, b.Y + 0.9, b.z - 1.0, b.z, hex('#B3AEA4'), hex('#BDB8AE'));
       m.cyl(b.X, b.Y, 0.55, b.z, b.z + 0.25, hex('#2B2F33'), 12);
       m.cyl(b.X, b.Y, 0.35, b.z + 0.25, b.z + 0.9, hex('#33383D'), 12);
       m.cyl(b.X, b.Y, 0.5, b.z + 0.9, b.z + 1.05, hex('#3A4046'), 12);
@@ -4175,7 +4218,7 @@ function migrate(p) {
   }
   if (p.berth.depth == null) p.berth.depth = '';
   if (!p.berth.structure) p.berth.structure = 'wall';
-  p.berth.deck = Object.assign({ width: '', thickness: '', length: '', pileD: '', pitch: '', rows: '', trestleLength: '', trestleWidth: '', trestleX: '' }, p.berth.deck || {});
+  p.berth.deck = Object.assign({ width: '', thickness: '', length: '', pileD: '', pitch: '', rows: '', trestleLength: '', trestleWidth: '', trestleX: '', root: 'east', causeway: '' }, p.berth.deck || {});
   // drag basis: projects carrying their own coefficient tables keep them; the rest use the library
   [[1, p.vessel], [2, p.vessel2]].forEach(([ship, vv]) => {
     if (!vv || vv.drag) return;
@@ -6006,27 +6049,31 @@ function renderBerthTab() {
     { key: 'channelWidth', label: 'Channel width for current (blank = 500 m)', unit: 'm', help: 'Used only with the Generic (Barge and Pontoon) current basis, as in OptiMoor (its berth input "Width of Channel (for Current)", 500 m by default). The hull blocks part of this channel, so the flow speeds up past it and the current force rises; above a critical speed the case fails for insufficient clearance. OCIMF and other measured current data already include the shallow-water effect and are not changed.' }
   ]));
   if (!offshore) {
-    const stc = br.structure || 'wall', jetty = stc === 'jetty';
+    const stc = br.structure || 'wall', jetty = stc === 'jetty', pier = stc === 'pier', offshore = jetty || pier;
     tb.append(el('h2', { text: 'Berth structure' }));
-    tb.append(el('p', { class: 'note', text: 'What the berth is built as. It changes the plan and 3D drawings only: the analysis treats the berthing face (Y = 0) the same way for all three, with the fenders on it and the hull clearance measured to it.' }));
+    tb.append(el('p', { class: 'note', text: 'What the berth is built as. It changes the plan and 3D drawings only: the analysis treats the berthing face (Y = 0) the same way for all of them, with the fenders on it and the hull clearance measured to it.' }));
     tb.append(fieldGrid(br, [
-      { key: 'structure', label: 'Structure', rerender: true, options: [['wall', 'Quay wall (solid, land behind)'], ['deck', 'Open deck on piles, backed by land'], ['jetty', 'Jetty in the sea: deck on piles with an approach trestle']] }
+      { key: 'structure', label: 'Structure', rerender: true, options: [['wall', 'Quay wall (solid, land behind)'], ['deck', 'Open deck on piles, backed by land'], ['pier', 'Pier: deck on piles out from the shore at one end, on a rock causeway (as MarineTwin)'], ['jetty', 'Jetty in the sea: deck on piles with an approach trestle']] }
     ]));
     if (stc !== 'wall') {
       tb.append(fieldGrid(br.deck, [
-        { key: 'width', label: `Deck width from the berthing face (blank = ${jetty ? 20 : 30} m)`, unit: 'm' },
-        { key: 'length', label: jetty ? 'Deck length (blank = the fenders plus 8 m each end)' : 'Deck length (blank = the whole berth drawn)', unit: 'm' },
+        { key: 'width', label: `Deck width from the berthing face (blank = ${offshore ? 20 : 30} m)`, unit: 'm' },
+        { key: 'length', label: offshore ? 'Deck length (blank = the fenders plus 8 m each end)' : 'Deck length (blank = the whole berth drawn)', unit: 'm' },
         { key: 'thickness', label: 'Deck thickness (blank = 1.5 m); the top is the highest bollard level', unit: 'm' },
         { key: 'pileD', label: 'Pile diameter (blank = 1.0 m)', unit: 'm' },
         { key: 'pitch', label: 'Pile spacing along the berth (blank = 7 m)', unit: 'm' },
         { key: 'rows', label: 'Rows of piles across the deck (blank = one every 7 m)' },
+        ...(pier ? [
+          { key: 'root', label: 'Shore end of the pier (its root)', rerender: true, options: [['east', 'East: the +X end'], ['west', 'West: the −X end']] },
+          { key: 'causeway', label: 'Rock causeway from the deck to the shore (blank = 40 m)', unit: 'm' }
+        ] : []),
         ...(jetty ? [
           { key: 'trestleLength', label: 'Approach trestle length to the shore (blank = 120 m)', unit: 'm' },
           { key: 'trestleWidth', label: 'Approach trestle width (blank = 8 m)', unit: 'm' },
           { key: 'trestleX', label: 'Approach trestle position X (blank = the middle of the deck)', unit: 'm' }
         ] : [])
       ]));
-      if (jetty) tb.append(el('p', { class: 'note', text: 'Bollards beyond the ends of the deck, or behind it, are drawn on mooring dolphins, and fenders beyond its ends on breasting dolphins, each joined back to the deck by a catwalk.' }));
+      if (offshore) tb.append(el('p', { class: 'note', text: 'Bollards beyond the ends of the deck, or behind it, are drawn on mooring dolphins, and fenders beyond its ends on breasting dolphins, each joined back to the deck by a catwalk.' }));
     }
   }
   if (sts) {
@@ -7401,13 +7448,16 @@ function drawPlan() {
       ctx.strokeStyle = 'rgba(110,102,88,.7)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(0, yT); ctx.lineTo(cssW, yT); ctx.stroke(); ctx.setLineDash([]);
       slab(dx0, dx1, 0, -ST.W);
     } else {
-      const tr = ST.trestle; land(-ST.W - tr.L);
+      if (ST.kind === 'pier') pierPlan(ctx, W, Hh, ST, cssW, cssH, sp);
+      else {
+        const tr = ST.trestle; land(-ST.W - tr.L);
+        slab(tr.X - tr.w / 2, tr.X + tr.w / 2, -ST.W, -ST.W - tr.L);
+        grid(tr.X - tr.w / 2, tr.X + tr.w / 2, [-ST.W - 0.9], 12, 0.45);
+        for (let y = -ST.W - 6; y > -ST.W - tr.L + 2; y -= 12) piles(tr.X - tr.w / 2 + 0.9 - 0.5, tr.X - tr.w / 2 + 0.9 + 0.5, [y], 1, 0.9), piles(tr.X + tr.w / 2 - 0.9 - 0.5, tr.X + tr.w / 2 - 0.9 + 0.5, [y], 1, 0.9);
+      }
       ctx.strokeStyle = '#6F7780'; ctx.lineWidth = Math.max(1.5, 1.2 * sp);
       ST.catwalks.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(W(a[0]), Hh(a[1])); ctx.lineTo(W(b[0]), Hh(b[1])); ctx.stroke(); });
-      slab(tr.X - tr.w / 2, tr.X + tr.w / 2, -ST.W, -ST.W - tr.L);
-      grid(tr.X - tr.w / 2, tr.X + tr.w / 2, [-ST.W - 0.9], 12, 0.45);
-      for (let y = -ST.W - 6; y > -ST.W - tr.L + 2; y -= 12) piles(tr.X - tr.w / 2 + 0.9 - 0.5, tr.X - tr.w / 2 + 0.9 + 0.5, [y], 1, 0.9), piles(tr.X + tr.w / 2 - 0.9 - 0.5, tr.X + tr.w / 2 - 0.9 + 0.5, [y], 1, 0.9);
-      slab(dx0, dx1, 0, -ST.W);
+      slab(dx0, dx1, 0, -ST.W, ST.kind !== 'pier');
       ST.dolphins.forEach(q => {
         slab(q.X - q.sx / 2, q.X + q.sx / 2, q.Y + q.sy / 2, q.Y - q.sy / 2);
         [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => piles(q.X + a * (q.sx / 2 - 0.9) - 0.5, q.X + a * (q.sx / 2 - 0.9) + 0.5, [q.Y + b * (q.sy / 2 - 0.9)], 1, 1.0));
@@ -7420,7 +7470,8 @@ function drawPlan() {
     if (showLabels) {
       const lx = Math.max(60, Math.min(cssW - 60, W((Math.max(dx0, wx0) + Math.min(dx1, wx1)) / 2) + cssW * 0.28));
       const ly = Hh(-ST.W / 2);
-      if (Hh(-ST.W) - Hh(0) > 22 && ly > 10 && ly < cssH - 10) tag(`Open deck on piles: ${fmt(ST.W, 0)} m wide, Ø${fmt(ST.pileD, 1)} m piles at ${fmt(ST.pitch, 1)} m`, lx, ly);
+      if (Hh(-ST.W) - Hh(0) > 22 && ly > 10 && ly < cssH - 10) tag(`${ST.kind === 'pier' ? 'Pier deck' : 'Open deck'} on piles: ${fmt(ST.W, 0)} m wide, Ø${fmt(ST.pileD, 1)} m piles at ${fmt(ST.pitch, 1)} m`, lx, ly);
+      if (ST.kind === 'pier') { const cxw = W((ST.rootX + ST.shoreX) / 2); if (ST.causeway * sp > 70 && cxw > 40 && cxw < cssW - 40) tag('Rock causeway', cxw, Hh(-ST.W / 2)); }
       if (ST.kind === 'deck' && Hh(-ST.W) + 14 < cssH) tag('Revetment under the deck, land behind', lx, Math.min(cssH - 10, Hh(-ST.W) + 14));
     }
   } else if (sc.quay) {
@@ -8324,8 +8375,9 @@ function drawMoorings(target, onPick) {
   const berth = (ctx, W, Hh) => {
     ctx.fillStyle = '#CFE1E7'; ctx.fillRect(0, 0, cssW, cssH);
     if (!quay) return;
-    const landTop = ST.kind === 'wall' ? 0 : ST.kind === 'deck' ? -ST.W : -ST.W - (ST.trestle ? ST.trestle.L : 0);
+    const landTop = ST.kind === 'wall' ? 0 : ST.kind === 'deck' ? -ST.W : ST.kind === 'pier' ? -1e6 : -ST.W - (ST.trestle ? ST.trestle.L : 0);
     const qy = Math.max(0, Math.min(cssH, Hh(landTop)));
+    if (ST.kind === 'pier') pierPlan(ctx, W, Hh, ST, cssW, cssH, sp);
     ctx.fillStyle = '#CFC8BC'; ctx.fillRect(0, qy, cssW, cssH - qy);
     ctx.strokeStyle = 'rgba(142,133,117,.35)'; ctx.save(); ctx.beginPath(); ctx.rect(0, qy, cssW, cssH - qy); ctx.clip();
     for (let k = -cssH; k < cssW + cssH; k += 10) { ctx.beginPath(); ctx.moveTo(k, cssH); ctx.lineTo(k + cssH, 0); ctx.stroke(); }
@@ -8333,14 +8385,15 @@ function drawMoorings(target, onPick) {
     if (ST.kind !== 'wall') {
       const x0 = ST.kind === 'deck' ? minX - 20 : ST.X0, x1 = ST.kind === 'deck' ? maxX + 20 : ST.X1;
       if (ST.kind === 'deck') { ctx.fillStyle = 'rgba(142,133,117,.35)'; ctx.fillRect(W(x0), Hh(ST.toeY), W(x1) - W(x0), Hh(-ST.W) - Hh(ST.toeY)); }
-      ctx.fillStyle = 'rgba(238,235,228,.35)'; ctx.fillRect(W(x0), Hh(0), W(x1) - W(x0), Hh(-ST.W) - Hh(0));
+      ctx.fillStyle = ST.kind === 'pier' ? '#DAD6CC' : 'rgba(238,235,228,.35)'; ctx.fillRect(W(x0), Hh(0), W(x1) - W(x0), Hh(-ST.W) - Hh(0));
       ctx.strokeStyle = '#8E8575'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1; ctx.strokeRect(W(x0), Hh(0), W(x1) - W(x0), Hh(-ST.W) - Hh(0)); ctx.setLineDash([]);
       const rows = Array.from({ length: ST.rows }, (_, i) => -0.9 - (ST.W - 1.8) * i / (ST.rows - 1));
       if (ST.pitch * sp >= 3) { ctx.fillStyle = '#4D5257'; rows.forEach(y => { for (let x = x0 + ST.pitch / 2; x < x1; x += ST.pitch) { ctx.beginPath(); ctx.arc(W(x), Hh(y), Math.max(1.2, ST.pileD / 2 * sp), 0, 7); ctx.fill(); } }); }
       (ST.dolphins || []).forEach(q => { ctx.fillStyle = '#DAD6CC'; ctx.fillRect(W(q.X - q.sx / 2), Hh(q.Y + q.sy / 2), q.sx * sp, q.sy * sp); });
     }
     ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath();
-    ctx.moveTo(ST.kind === 'jetty' ? W(ST.X0) : 0, Hh(0)); ctx.lineTo(ST.kind === 'jetty' ? W(ST.X1) : cssW, Hh(0)); ctx.stroke();
+    const offs = ST.kind === 'jetty' || ST.kind === 'pier';
+    ctx.moveTo(offs ? W(ST.X0) : 0, Hh(0)); ctx.lineTo(offs ? W(ST.X1) : cssW, Hh(0)); ctx.stroke();
     fen.forEach(f => { ctx.fillStyle = '#16283D'; ctx.fillRect(W(f.X) - Math.max(2, 1.5 * sp), Hh(f.hf), Math.max(4, 3 * sp), Hh(0) - Hh(f.hf)); });
     bol.forEach(b => { ctx.fillStyle = '#16283D'; ctx.beginPath(); ctx.arc(W(b.X), Hh(b.Y), 2.6, 0, 7); ctx.fill(); });
   };
@@ -8439,15 +8492,41 @@ function passerAt(sc, pos) {
   const a = dir * pos * Lc, b = side * eta, c = Math.cos(x0[2]), s = Math.sin(x0[2]);
   return { V: V2, pos, pose: [x0[0] + a * c - b * s, x0[1] + a * s + b * c, x0[2] + (dir < 0 ? Math.PI : 0)], hull: MoorEngine.hullPolygon(V2.LOA, V2.B, V2.Lpb) };
 }
-/* The berth as built, for drawing only: a quay wall, an open deck on piles backed by land, or a jetty in the sea
-   (deck head on piles, approach trestle to the shore, dolphins for bollards and fenders beyond the deck). */
+/* The berth as built, for drawing only: a quay wall, an open deck on piles backed by land, a jetty in the sea
+   (deck head on piles, approach trestle to the shore, dolphins for bollards and fenders beyond the deck), or a pier
+   (as MarineTwin draws one: a deck on piles running out from the shore at one end, its root, on a rock causeway,
+   with the sea under it and on both sides). */
 let seaTouched = false;
+/* A pier in plan: the shore past its root end, the rock causeway out to the deck with its road on top. The sea runs
+   round the rest of the deck and under it. W, Hh: world X, Y to canvas. */
+function pierPlan(ctx, W, Hh, ST, cssW, cssH, sp) {
+  const sx = W(ST.shoreX), r = ST.root;
+  const L = r > 0 ? Math.max(0, sx) : 0, R = r > 0 ? cssW : Math.min(cssW, sx);
+  if (R > L) {
+    ctx.fillStyle = '#CFC8BC'; ctx.fillRect(L, 0, R - L, cssH);
+    ctx.save(); ctx.beginPath(); ctx.rect(L, 0, R - L, cssH); ctx.clip(); ctx.strokeStyle = 'rgba(142,133,117,.35)';
+    for (let k = -cssH; k < cssW + cssH; k += 12) { ctx.beginPath(); ctx.moveTo(k, cssH); ctx.lineTo(k + cssH, 0); ctx.stroke(); }
+    ctx.restore();
+    ctx.strokeStyle = '#8E8575'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, cssH); ctx.stroke();
+  }
+  // the causeway: armour rock sloping at 1 in 1.5 either side of its crest, the road along the top
+  const bank = 1.5 * 6, x0 = Math.min(ST.rootX, ST.shoreX), x1 = Math.max(ST.rootX, ST.shoreX);
+  if (x1 - x0 > 0.5) {
+    const T = Hh(bank), B = Hh(-ST.W - bank);
+    ctx.fillStyle = '#9A927F'; ctx.fillRect(W(x0), T, W(x1) - W(x0), B - T);
+    ctx.save(); ctx.beginPath(); ctx.rect(W(x0), T, W(x1) - W(x0), B - T); ctx.clip(); ctx.fillStyle = 'rgba(93,90,82,.45)';
+    const st = Math.max(4, 1.8 * sp);
+    for (let yy = T + st / 2, k = 0; yy < B; yy += st, k++) for (let xx = W(x0) + (k % 2) * st / 2; xx < W(x1); xx += st) { ctx.beginPath(); ctx.arc(xx, yy, Math.max(0.9, st * 0.22), 0, 2 * Math.PI); ctx.fill(); }
+    ctx.restore();
+    ctx.fillStyle = '#77777A'; ctx.fillRect(W(x0), Hh(-1.5), W(x1) - W(x0), Hh(-ST.W + 1.5) - Hh(-1.5));
+  }
+}
 function berthStructure(sc, span) {
   const kind = (P.berth && P.berth.structure) || 'wall';
   if (!sc.quay || kind === 'wall') return { kind: 'wall' };
-  const d = P.berth.deck || {}, jetty = kind === 'jetty';
+  const d = P.berth.deck || {}, jetty = kind === 'jetty', pier = kind === 'pier', offshore = jetty || pier;
   const num = (v, def, ok = x => x > 0) => (v === '' || v == null || !Number.isFinite(Number(v)) || !ok(Number(v))) ? def : Number(v);
-  const W = num(d.width, jetty ? 20 : 30), t = num(d.thickness, 1.5), pileD = num(d.pileD, 1.0), pitch = num(d.pitch, 7);
+  const W = num(d.width, offshore ? 20 : 30), t = num(d.thickness, 1.5), pileD = num(d.pileD, 1.0), pitch = num(d.pitch, 7);
   const rows = Math.max(2, Math.round(num(d.rows, Math.round(W / 7) + 1)));
   const onPont = new Set((P.bollards || []).filter(b => b.on === 'pontoon').map(b => String(b.id)));
   const bol = sc.bollards.filter(b => !onPont.has(String(b.id)));
@@ -8456,7 +8535,7 @@ function berthStructure(sc, span) {
   const cx = sc.ships.reduce((a, s2) => a + s2.x0[0], 0) / sc.ships.length;
   let X0, X1;
   const len = num(d.length, null);
-  if (!jetty) { [X0, X1] = span; if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; } }
+  if (!offshore) { [X0, X1] = span; if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; } }
   else {
     const xs = fen.length >= 2 ? fen.map(f => f.X) : bol.length ? bol.map(b => b.X) : [cx - 0.3 * LOA, cx + 0.3 * LOA];
     X0 = Math.min(...xs) - 8; X1 = Math.max(...xs) + 8;
@@ -8471,10 +8550,18 @@ function berthStructure(sc, span) {
   // the rock revetment under a deck backed by land rises at 1 in 1.5 from the seabed to the soffit at the back of the deck
   const soffit = out.top - t - Math.min(1.2, t * 0.8) - 0.4;
   out.toeY = Math.min(-1.5, -W + 1.5 * Math.max(0, soffit - out.bed));
-  if (!jetty) return out;
-  out.trestle = { X: num(d.trestleX, (X0 + X1) / 2, () => true), w: num(d.trestleWidth, 8), L: num(d.trestleLength, 120) };
+  if (!offshore) return out;
+  if (jetty) out.trestle = { X: num(d.trestleX, (X0 + X1) / 2, () => true), w: num(d.trestleWidth, 8), L: num(d.trestleLength, 120) };
+  else {
+    // the root: the end where the pier meets the shore, on a rock causeway as long as entered
+    out.root = d.root === 'west' ? -1 : 1;
+    out.causeway = num(d.causeway, 40, x => x >= 0);
+    out.rootX = out.root > 0 ? X1 : X0;
+    out.shoreX = out.rootX + out.root * out.causeway;
+  }
   // dolphins: bollards off the deck carry mooring dolphins, fenders beyond its ends breasting dolphins
-  const offDeck = (x, y) => x < X0 - 0.5 || x > X1 + 0.5 || y < -W - 0.5 || y > 0.5;
+  // (a bollard up to 3 m in front of the face stands on the cope, on a short cantilevered plinth)
+  const offDeck = (x, y) => x < X0 - 0.5 || x > X1 + 0.5 || y < -W - 0.5 || y > 3;
   fen.filter(f => offDeck(f.X, -1)).forEach(f => out.dolphins.push({ kind: 'breasting', X: f.X, Y: -3, sx: 7, sy: 6, id: f.id }));
   bol.filter(b => offDeck(b.X, b.Y)).forEach(b => {
     const near = out.dolphins.find(q => Math.abs(q.X - b.X) < q.sx / 2 && Math.abs(q.Y - b.Y) < q.sy / 2);

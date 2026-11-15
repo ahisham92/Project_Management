@@ -441,15 +441,15 @@ def read(text: str | bytes | mmap.mmap) -> dict[str, Any]:
                 rotation = math.degrees(math.atan2(nx, ny))
                 break
         # Revit can store the turn between project north and true north in the
-        # IfcSite placement itself instead of a map conversion. The shapes come
-        # out of the placement chain already turned, so take that turn back off.
+        # IfcSite placement itself instead of a map conversion: the site's x axis
+        # is the project's east, so its turn is added (checked on Sibline, a pier).
         for eid in model.of("IFCSITE")[:1]:
             args = model.get(eid)[1]
             placement = _deref(model, args[5]) if len(args) > 5 else None
             if placement and placement[1][0] is None:
                 x = _axes(model, placement)[0]
                 if abs(x[0]) + abs(x[1]) > 1e-9:
-                    rotation = (rotation or 0.0) - math.degrees(math.atan2(x[1], x[0]))
+                    rotation = (rotation or 0.0) + math.degrees(math.atan2(x[1], x[0]))
         if rotation is not None:
             rotation = (rotation + 180.0) % 360.0 - 180.0
     site["rotation"] = round(rotation or 0.0, 3)

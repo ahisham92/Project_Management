@@ -114,7 +114,40 @@ async function fromOverpass(lat0, lon0, centre) {
   return { got: out, why: second.got ? '' : second.why };
 }
 
-async function mapData(twin, lat0, lon0, centre) {
+let asked = null;                         // one map fetch per page: the land check and the surroundings share it
+function mapData(twin, lat0, lon0, centre) {
+  if (!asked) asked = mapDataOnce(twin, lat0, lon0, centre);
+  return asked;
+}
+
+// Which way the land lies from the site, in the scene, from the map's coastline near it (OpenStreetMap
+// draws a coastline with the land on its left). Null when there is no coast to go by. A site a few hundred
+// metres out still gets the right answer: only the coast's direction counts, not where it is.
+export async function landToward({ twin, toScene, toEn, centre, within = 1500 }) {
+  const lat0 = twin.asset.latitude;
+  const lon0 = twin.asset.longitude;
+  if (lat0 == null || lon0 == null || !twin.surroundings) return null;
+  const c = toEn(centre.x, centre.z);
+  const { got } = await mapData(twin, lat0, lon0, c).catch(() => ({}));
+  if (!got || !(got.coast || []).length) return null;
+  let [lx, ln, w] = [0, 0, 0];
+  for (const k of got.coast) {
+    for (let i = 1; i < k.p.length; i++) {
+      const [p, q] = [k.p[i - 1], k.p[i]];
+      const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (l < 1 || Math.hypot((p[0] + q[0]) / 2 - c[0], (p[1] + q[1]) / 2 - c[1]) > within) continue;
+      lx += (-(q[1] - p[1]) / l) * l;        // the left normal, weighted by length
+      ln += ((q[0] - p[0]) / l) * l;
+      w += l;
+    }
+  }
+  if (!w || Math.hypot(lx, ln) < 0.3 * w) return null;   // a winding coast all round: no one way
+  const [a, b] = [toScene(c[0], c[1]), toScene(c[0] + lx / w * 100, c[1] + ln / w * 100)];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+}
+
+async function mapDataOnce(twin, lat0, lon0, centre) {
   const s = twin.surroundings;
   if (s.kept) {
     try {

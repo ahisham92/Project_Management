@@ -259,10 +259,22 @@ function waterMask(data, toPx, width, height, keepLand, keepSea = []) {
   // The modelled terminal is land, and the water in front of its quay is water, whatever the map says.
   fill(keepSea, '#000');
   fill(keepLand, '#fff');
-  // Past the square the land behind the quay carries on as land.
-  g.strokeStyle = '#fff';
-  g.lineWidth = 8;
-  g.strokeRect(0, 0, width, height);
+  // Past the square the ground carries on as its edge is (the texture is clamped there): land
+  // where the edge is land, sea where it is sea. A rim a few pixels deep takes its value from just
+  // inside it, so a coastline stroke or a seam on the very edge does not run off as a stripe.
+  const img = g.getImageData(0, 0, width, height);
+  const px = img.data;
+  const RIM = 6;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x >= RIM && y >= RIM && x < width - RIM && y < height - RIM) { x = width - RIM - 1; continue; }
+      const sx = Math.min(Math.max(x, RIM), width - RIM - 1);
+      const sy = Math.min(Math.max(y, RIM), height - RIM - 1);
+      const [i, j] = [(y * width + x) * 4, (sy * width + sx) * 4];
+      px[i] = px[i + 1] = px[i + 2] = px[j] > 127 ? 255 : 0;
+    }
+  }
+  g.putImageData(img, 0, 0);
   return canvas;
 }
 

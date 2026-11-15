@@ -1896,8 +1896,14 @@ function terminal(scene, frame, twin, rng, quay) {
       }
     }
   }
-  // Road trucks on the access road at the back.
-  loops.push({ curve: loop([[centre - 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 2], [centre - 400, F + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
+  // Road trucks on the access road at the back: behind a quay, along it; at a pier, ashore along
+  // the coast past the pier's root (behind a pier's deck is the sea).
+  if (root) {
+    const rx = shoreX + root * 150;
+    loops.push({ curve: loop([[rx - 4, front - 400], [rx - 4, front + 400], [rx + 4, front + 400], [rx + 4, front - 400]], top + 0.1), kind: 'truck', n: 6, road: true });
+  } else {
+    loops.push({ curve: loop([[centre - 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 10], [centre + 400, F + yardDepth - 2], [centre - 400, F + yardDepth - 2]], top + 0.1), kind: 'truck', n: 6, road: true });
+  }
   for (const l of loops) {
     for (let k = 0; k < l.n; k++) {
       const v = vehicle(l.kind, [0xeeeeee, 0x1565c0, 0xc62828, 0xf9a825, 0x2e7d32, 0x37474f][Math.floor(rng() * 6)]);

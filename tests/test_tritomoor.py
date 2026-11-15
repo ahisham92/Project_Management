@@ -200,3 +200,27 @@ def test_it_cannot_be_shared_with_an_account_without_tritomoor(app, signed_in):
     assert nid not in [p["id"] for p in signed_in.get("/tritomoor/api/people").get_json()["people"]]
     refused = post(signed_in, f"/tritomoor/api/projects/{made['id']}/shares", {"user_id": nid, "access": "edit"})
     assert refused.status_code == 400 and "TritoMoor" in refused.get_json()["detail"]
+
+
+def test_the_listing_describes_each_project_for_its_card(signed_in):
+    fleet_project = dict(PROJECT, lines=[{}, {}], bollards=[{}] * 3, fenders=[{}] * 2,
+                         report={"client": "Port authority", "projectNo": "P-101"},
+                         fleet=[{"vessel": {"name": "Old tanker"}, "lines": [{}]}, {"vessel": {"name": "stale copy"}}],
+                         fleetActive=1, vessel={"name": "Big tanker", "LOA": 250, "type": "tanker"},
+                         analyses=[{"at": "2026-11-15T10:00:00Z", "vessel": "Big tanker", "kind": "design",
+                                    "pass": False, "peak": 61.2, "allow": 50}, {"at": "earlier"}])
+    post(signed_in, "/tritomoor/api/projects", {"data": fleet_project})
+    card = signed_in.get("/tritomoor/api/projects").get_json()["projects"][0]
+    assert [v["name"] for v in card["vessels"]] == ["Old tanker", "Big tanker"]
+    assert [v["lines"] for v in card["vessels"]] == [1, 2] and card["vessels"][1]["loa"] == 250
+    assert card["bollards"] == 3 and card["fenders"] == 2
+    assert card["client"] == "Port authority" and card["number"] == "P-101"
+    assert card["analyses"] == 2
+    assert card["last_analysis"]["pass"] is False and card["last_analysis"]["peak"] == 61.2
+
+
+def test_a_project_without_vessels_or_analyses_still_lists(signed_in):
+    post(signed_in, "/tritomoor/api/projects", {"data": PROJECT})
+    card = signed_in.get("/tritomoor/api/projects").get_json()["projects"][0]
+    assert [v["name"] for v in card["vessels"]] == ["Example tanker"]
+    assert card["analyses"] == 0 and card["last_analysis"] is None

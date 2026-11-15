@@ -139,10 +139,53 @@ def _owner_name(conn: sqlite3.Connection, owner_id: int) -> str:
     return (who["name"] or who["email"]) if who else ""
 
 
+def _num(v: Any) -> float | None:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if x == x and abs(x) != float("inf") else None
+
+
+def digest(text: str) -> dict[str, Any]:
+    """What the projects page shows on a project's card, read from the project itself.
+
+    Its vessels (a project can check several at one berth), the counts of its mooring, the report's
+    client and project number, and the analyses run on it (TritoMoor keeps a short record of each
+    run in ``analyses``, newest first). Anything missing or malformed is just left out.
+    """
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    fleet = data.get("fleet") if isinstance(data.get("fleet"), list) and data.get("fleet") else None
+    active = int(_num(data.get("fleetActive")) or 0)
+    ships: list[dict[str, Any]] = []
+    for i, snap in enumerate(fleet or [data]):
+        src = data if (fleet is None or i == active) else (snap if isinstance(snap, dict) else {})
+        v = src.get("vessel") if isinstance(src.get("vessel"), dict) else {}
+        lines = src.get("lines") if isinstance(src.get("lines"), list) else []
+        ships.append({"name": str(v.get("name") or f"Vessel {i + 1}")[:120], "type": str(v.get("type") or "")[:40],
+                      "loa": _num(v.get("LOA")), "lines": len(lines)})
+    report = data.get("report") if isinstance(data.get("report"), dict) else {}
+    runs = [a for a in (data.get("analyses") or []) if isinstance(a, dict)] if isinstance(data.get("analyses"), list) else []
+    last = None
+    if runs:
+        a = runs[0]
+        last = {"at": str(a.get("at") or ""), "vessel": str(a.get("vessel") or ""), "kind": str(a.get("kind") or ""),
+                "pass": bool(a.get("pass")), "peak": _num(a.get("peak")), "allow": _num(a.get("allow"))}
+    count = lambda k: len(data.get(k)) if isinstance(data.get(k), list) else 0  # noqa: E731
+    return {"vessels": ships, "bollards": count("bollards"), "fenders": count("fenders"),
+            "client": str(report.get("client") or "")[:200], "number": str(report.get("projectNo") or "")[:80],
+            "analyses": len(runs), "last_analysis": last}
+
+
 def summary(row: sqlite3.Row, conn: sqlite3.Connection | None = None, user_id: int | None = None) -> dict[str, Any]:
     out = {"id": row["id"], "name": row["name"], "vessel": row["vessel"], "berth": row["berth"],
            "version": row["version"], "created_at": row["created_at"], "updated_at": row["updated_at"],
-           "size": len(row["data"])}
+           "size": len(row["data"]), **digest(row["data"])}
     if conn is not None and user_id is not None:
         _, access = _access(conn, user_id, row["id"])
         out["access"] = access

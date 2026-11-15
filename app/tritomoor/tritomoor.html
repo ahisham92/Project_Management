@@ -126,19 +126,92 @@ button[aria-pressed=true]{font-weight:600}
 #o3d:active{cursor:grabbing}
 dialog#reportDlg{border:1px solid var(--rule);border-radius:4px;padding:0;max-width:760px;width:calc(100% - 32px);color:var(--ink)}
 dialog#reportDlg::backdrop{background:rgba(22,40,61,.45)}
-dialog#projDlg{border:1px solid var(--rule);border-radius:4px;padding:0;max-width:900px;width:calc(100% - 32px);color:var(--ink)}
-dialog#projDlg::backdrop{background:rgba(22,40,61,.45)}
-#projDlg .plist{max-height:52vh;overflow:auto;border:1px solid var(--rule);border-radius:3px;margin-top:10px}
-#projDlg .plist td{white-space:normal;vertical-align:middle}
-#projDlg .plist tr.cur td{background:#EEF5F2}
-#projDlg .plist .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
-#projDlg .plist .acts button{padding:3px 9px;font-size:12px}
-#projDlg .plist tr.vers td{background:var(--panel);font-size:12px}
-#projDlg .tag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--ok);color:#fff;margin-left:6px;white-space:nowrap}
-#projDlg .tag.view{background:var(--ink-2)}
-#projDlg .tag.share{background:#1F6FB2}
-#projDlg .shr{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
-#projDlg .shr select{padding:3px 6px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:#fff}
+.tag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--ok);color:#fff;margin-left:6px;white-space:nowrap}
+.tag.view{background:var(--ink-2)}
+.tag.share{background:#1F6FB2}
+.shr{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.shr select{padding:3px 6px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:#fff}
+/* the projects home and each project's dashboard (served from the site) */
+.crumbs{display:flex;align-items:center;gap:6px;font-size:13px;color:#A9BCCB;min-width:0}
+.crumbs a{color:#EAF1F4;text-decoration:none;border-bottom:1px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:36ch}
+.crumbs a:hover{border-bottom-color:#9CC7EA}
+.crumbs b{color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:36ch}
+.crumbs i{font-style:normal;opacity:.6}
+body[data-mode=home] .proj,body[data-mode=home] .actions,body[data-mode=dash] .proj,body[data-mode=dash] .actions{display:none}
+body[data-mode=home] main.layout,body[data-mode=dash] main.layout{display:none}
+body:not([data-mode=home]) #home,body:not([data-mode=dash]) #dash{display:none}
+.page{padding:18px 22px 48px;max-width:1500px}
+.page h1{margin:0;font-size:22px;font-weight:600}
+.page .lede{margin:4px 0 0;color:var(--ink-2);max-width:80ch}
+.phead{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between}
+.phead .meta{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--ink-2)}
+.pbtns{display:flex;gap:8px;flex-wrap:wrap}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}
+.tile{background:#fff;border:1px solid var(--rule);border-radius:3px;padding:10px 14px;border-left:4px solid var(--ink)}
+.tile .n{font-family:var(--num);font-size:26px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
+.tile .l{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2)}
+.tile .s{font-size:12px;color:var(--ink-2)}
+.tile.ok{border-left-color:var(--ok)}.tile.bad{border-left-color:var(--bad)}.tile.warn{border-left-color:var(--warn)}.tile.mute{border-left-color:var(--rule)}
+.box{background:#fff;border:1px solid var(--rule);border-radius:3px;min-width:0}
+.box>h2{margin:0;padding:10px 14px;border-bottom:1px solid var(--rule);font-size:15px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.box>h2 small{font-weight:400;color:var(--ink-2);font-size:12px}
+.box>h2 .pbtns{margin-left:auto}
+.box .in{padding:12px 14px}
+.box .tablewrap{border:0;border-radius:0}
+.box td{vertical-align:middle}
+.box .pbtns button{padding:4px 10px;font-size:12px}
+.starts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:16px}
+.start{background:#fff;border:1px solid var(--rule);border-top:3px solid #E8B04A;border-radius:3px;padding:12px 14px}
+.start h3{margin:0 0 8px;font-size:14px}
+.start .row{display:flex;gap:8px;flex-wrap:wrap}
+.start .row input,.start .row select{flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--rule);border-radius:3px;background:#fff}
+.start p{margin:6px 0 0;font-size:12px;color:var(--ink-2)}
+.start.draft{border-top-color:var(--warn)}
+.listhead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;margin:26px 0 10px}
+.listhead h2{margin:0}
+.listhead .count{display:inline-block;min-width:22px;padding:0 7px;margin-left:4px;border-radius:999px;background:var(--ink);color:#fff;font-size:12px;text-align:center;vertical-align:2px}
+.listtools{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.listtools input,.listtools select{padding:5px 8px;border:1px solid var(--rule);border-radius:3px;background:#fff}
+.listtools input{width:260px;max-width:100%}
+.seg{display:inline-flex}
+.seg button{border-radius:0}
+.seg button+button{border-left:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.pcard{background:#fff;border:1px solid var(--rule);border-top:4px solid var(--berth,#2F6DA3);border-radius:3px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;gap:6px;transition:box-shadow .15s}
+.pcard:hover,.pcard:focus-visible{box-shadow:0 3px 12px rgba(22,40,61,.16);outline:none}
+.pcard h3{margin:0;font-size:16px;overflow-wrap:anywhere;flex:1}
+.pcard .ptop{display:flex;gap:8px;align-items:baseline}
+.pcard .num{font-size:12px;color:var(--ink-2);background:var(--panel);border:1px solid var(--rule);border-radius:3px;padding:0 6px;white-space:nowrap}
+.pcard .sub{font-size:13px;color:var(--ink-2)}
+.pcard .berth{font-size:12px;font-weight:600;color:var(--berth,#2F6DA3);text-transform:uppercase;letter-spacing:.04em}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:12px;padding:1px 7px;border-radius:9px;background:var(--panel);border:1px solid var(--rule);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.pcard .stats{display:flex;gap:12px;font-size:12px;color:var(--ink-2)}
+.pcard .stats b{color:var(--ink);font-family:var(--num)}
+.pcard .res{font-size:12px}
+.pcard .foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:7px;border-top:1px solid var(--rule);font-size:12px;color:var(--ink-2)}
+.pcard .foot .go{margin-left:auto;display:flex;gap:6px}
+.pcard .foot button{padding:3px 9px;font-size:12px}
+tr.link{cursor:pointer}
+tr.link:hover td{background:#EEF5F2}
+tr.cur td{background:#EEF5F2}
+.dgrid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start}
+.dgrid .col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.dgrid+.box,.box+.dgrid{margin-top:14px}
+.dgrid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media (max-width:900px){.dgrid.two{grid-template-columns:minmax(0,1fr)}}
+td .sub2{display:block;font-size:12px;color:var(--ink-2)}
+@media (max-width:1100px){.dgrid{grid-template-columns:minmax(0,1fr)}}
+dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0;font-size:13px}
+dl.kv dt{color:var(--ink-2)}
+dl.kv dd{margin:0;font-variant-numeric:tabular-nums}
+.empty.small{padding:14px;font-size:13px}
+.dash .moorwrap{padding:4px 0 0}
+.mdet{margin:0;border:0;border-top:1px solid var(--rule);border-radius:0;background:#fff;padding:8px 14px 12px}
+.mdet summary{font-size:13px}
+.vers{font-size:12px}
+@media (max-width:640px){.page{padding:14px 16px 40px}.top{padding:12px 16px}}
 .proj{flex-wrap:wrap}
 .cloud{font-size:12px;color:#A9BCCB;white-space:nowrap;flex-basis:100%}
 .cloud.warn{color:#F2C265}
@@ -208,6 +281,7 @@ tr.best td{background:#EAF4F0}
     <h1>TritoMoor</h1>
     <p>Static mooring analysis: alongside, Mediterranean and ship-to-ship. Runs offline.</p>
   </div>
+  <nav class="crumbs" id="crumbs" aria-label="Where you are" hidden></nav>
   <div class="proj"><input id="projName" aria-label="Project name"><span id="cloudState" class="cloud" hidden></span></div>
   <div class="actions">
     <select id="exampleSel" class="btn" aria-label="Load a worked example"><option value="">Load example…</option><option value="alongside">Tanker alongside</option><option value="med">Ro-pax Mediterranean mooring</option><option value="sts">Ship-to-ship lightering</option><option value="lng">LNG carrier at a jetty</option><option value="pontoon">Ferry at a floating pontoon</option></select>
@@ -219,6 +293,8 @@ tr.best td{background:#EAF4F0}
 </header>
 <div class="progress" id="progress"></div>
 <div id="msg" class="msg" hidden></div>
+<section id="home" class="page" aria-label="Projects"></section>
+<section id="dash" class="page dash" aria-label="Project dashboard"></section>
 <main class="layout">
   <section class="left">
     <nav class="tabs" role="tablist" id="tabs"></nav>
@@ -265,21 +341,6 @@ tr.best td{background:#EAF4F0}
     </div>
   </aside>
 </main>
-<dialog id="projDlg" aria-labelledby="projTitle">
-  <div class="dlg">
-    <h2 id="projTitle">Your projects on the site</h2>
-    <p class="note">Projects here are kept under your account and open from any computer you sign in on. The open project saves itself as you work; earlier versions are kept, so any of them can be brought back. Share a project with colleagues on the site to let them view it or work on it with you.</p>
-    <div class="rowbtns" style="flex-wrap:wrap">
-      <button id="pjSave" class="primary">Save this project to the site</button>
-      <button id="pjNew">New project</button>
-      <label class="btn" title="Put .trito files from your computer on the site">Upload .trito files<input type="file" id="pjUpload" accept=".trito,.json" multiple hidden></label>
-      <button id="pjDownload">Download this project (.trito)</button>
-    </div>
-    <p id="pjStatus" class="note"></p>
-    <div class="plist"><table><thead><tr><th>Project</th><th>Vessel</th><th>Berth</th><th>Owner</th><th>Last saved</th><th></th></tr></thead><tbody id="pjRows"></tbody></table></div>
-    <div class="rowbtns"><button id="pjClose">Close</button></div>
-  </div>
-</dialog>
 <dialog id="reportDlg" aria-labelledby="repTitle">
   <div class="dlg">
     <h2 id="repTitle">Export report</h2>
@@ -6436,12 +6497,55 @@ function runAnalysis() {
     renderResults(); markTabs(); setTab('results'); setupSlider(); drawPlan();
     if (P.fleet && P.fleet.length) renderVesselTab();
     if (OPT) renderOptResults();
+    logAnalysis();
     const bad = RESALL.runs.reduce((s, R) => s + R.cases.filter(c => !c.ok).length, 0);
     const total = RESALL.runs.reduce((s, R) => s + R.cases.length, 0);
     if (bad && RESALL.analysis === 'design') showMsg(bad + ' of ' + total + ' cases did not converge. Check the flagged rows in the results.');
     if (P.environment.damaged && P.environment.damaged !== 'off') runDamagedPass();
   };
   setTimeout(step, 0);
+}
+/* ---------- a record of each analysis, kept with the project ----------
+   Results themselves are worked out again on each run and are not saved, but every run leaves a short record in
+   P.analyses (newest first): which vessel, what was run, whether it met the criteria and the peak loads and
+   movements. The project's dashboard lists them, and says when the inputs have changed since. */
+const ANALYSIS_KIND = { design: 'Design check', limitWind: 'Limiting wind speed', limitCurrent: 'Limiting current speed' };
+const LOG_KEEP = 40;
+function inputPrint(src) {
+  const keys = ['berth', 'bollards', 'fenders', 'lineTypes', 'fenderTypes', 'environment', 'sts', 'pontoon', 'fenderDesign', 'ropeEdits', ...FLEET_KEYS];
+  const s = JSON.stringify(keys.map(k => src[k] === undefined ? null : src[k]));
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36) + s.length.toString(36);
+}
+function logAnalysis() {
+  if (!RESALL) return;
+  try {
+    const design = RESALL.analysis === 'design';
+    const r2 = x => Math.round(x * 100) / 100;
+    const runs = RESALL.runs.map(R => {
+      const m = ropeMetrics({ runs: [R] }, '');
+      let gov = null;
+      R.cases.forEach(c => { if (c.check && c.check.gov && (!gov || c.check.gov.ratio > gov.ratio)) gov = c.check.gov; });
+      const o = { cond: R.state ? R.state.name : R.condition, cases: R.cases.length, passN: R.cases.filter(c => c.check && c.check.pass).length,
+        peak: r2(m.pct), allow: m.allow, lineT: r2(m.peakT), bollardT: r2(m.bol), fenderT: r2(m.fen), surge: r2(m.surge), sway: r2(m.sway) };
+      if (gov) o.gov = gov.text;
+      if (!design) { const mn = Math.min(...R.cases.map(c => c.limit && c.limit.reached ? c.limit.speed : Infinity)); o.limit = Number.isFinite(mn) ? r2(mn) : null; }
+      return o;
+    });
+    const top = runs.reduce((a, b) => b.peak > a.peak ? b : a, runs[0]);
+    const entry = { id: Date.now().toString(36), at: new Date().toISOString(), vessel: P.vessel.name || 'Vessel ' + ((P.fleetActive || 0) + 1),
+      vi: P.fleetActive || 0, kind: RESALL.analysis, cases: runs.reduce((n, q) => n + q.cases, 0),
+      pass: design ? runs.every(q => q.passN === q.cases) : null, peak: top ? top.peak : 0, allow: top ? top.allow : null, fp: inputPrint(P), runs };
+    if (!design) { const ls = runs.map(q => q.limit).filter(x => x != null); entry.limit = ls.length ? Math.min(...ls) : null; }
+    P.analyses = [entry, ...(Array.isArray(P.analyses) ? P.analyses : [])].slice(0, LOG_KEEP);
+    persist();
+  } catch (e) { /* a record that cannot be made never stops the results showing */ }
+}
+// the inputs of vessel i as they are now, to tell whether a recorded analysis is still current
+function vesselPrint(i) {
+  if (!(P.fleet && P.fleet.length) || i === P.fleetActive) return inputPrint(P);
+  return P.fleet[i] ? inputPrint(Object.assign({}, P, P.fleet[i])) : null;
 }
 function runDamagedPass() {
   let gen;
@@ -8193,11 +8297,11 @@ function moorScene(q) {
   return out;
 }
 
-function drawMoorings() {
-  const wrap = $('moorWrap'); if (!wrap) return;
+// target: draw somewhere other than the plan panel (the project dashboard); onPick(i) is then called on a click
+function drawMoorings(target, onPick) {
+  const wrap = target || $('moorWrap'); if (!wrap) return;
   wrap.innerHTML = '';
-  $('planTitle').textContent = 'Moorings: every vessel at the berth';
-  $('readout').innerHTML = ''; $('legend').innerHTML = '';
+  if (!target) { $('planTitle').textContent = 'Moorings: every vessel at the berth'; $('readout').innerHTML = ''; $('legend').innerHTML = ''; }
   const list = fleetList(), scenes = list.map(moorScene);
   const font = getComputedStyle(document.body).fontFamily;
   // one scale for every panel, so the vessels can be compared
@@ -8270,7 +8374,8 @@ function drawMoorings() {
     const sub = s2.err ? 'cannot be drawn: ' + s2.err
       : `${fmt(v0.LOA, 0)} × ${fmt(v0.B, 1)} m, draft ${fmt(v0.T, 2)} m (${s2.cond}) · ${s2.nLines} line${s2.nLines === 1 ? '' : 's'}`
         + (s2.res ? ` · governing case ${caseLabel(s2.res.case)}, peak ${fmt(s2.res.peak, 1)}% MBL` : ' · not run in this session');
-    const ctx = canvasFor((list.length > 1 ? (k + 1) + '. ' : '') + s2.name + (s2.active && list.length > 1 ? ' (working on)' : ''), sub, list.length > 1 && !s2.active ? () => { fleetSwitch(s2.i); setViewMode('plan'); } : null, s2.active && list.length > 1);
+    const pick = onPick ? () => onPick(s2.i) : list.length > 1 && !s2.active ? () => { fleetSwitch(s2.i); setViewMode('plan'); } : null;
+    const ctx = canvasFor((list.length > 1 ? (k + 1) + '. ' : '') + s2.name + (s2.active && list.length > 1 && !target ? ' (working on)' : ''), sub, pick, s2.active && list.length > 1 && !target);
     berth(ctx, W, Hh);
     if (s2.err) return;
     s2.ships.forEach((sh, m) => {
@@ -8286,7 +8391,7 @@ function drawMoorings() {
     ctx.font = '600 12px ' + font; ctx.textAlign = 'center'; ctx.fillStyle = '#16283D';
     ctx.fillText(s2.name, W(c[0]), Hh(c[1]) + 4); ctx.textAlign = 'left';
   });
-  wrap.append(el('p', { class: 'note', text: (scenes.length > 1 ? 'Each vessel is drawn moored at the berth to the same scale. Click a vessel to work on it. ' : 'Add other vessels on the Vessel tab to see them all moored here. ')
+  if (!target) wrap.append(el('p', { class: 'note', text: (scenes.length > 1 ? 'Each vessel is drawn moored at the berth to the same scale. Click a vessel to work on it. ' : 'Add other vessels on the Vessel tab to see them all moored here. ')
     + 'A vessel that has been run in this session is shown at its governing case, with each line coloured by its load against the allowable; otherwise it is shown at the berthing position with its lines in navy.' }));
 }
 
@@ -9108,20 +9213,40 @@ function exportCSV() {
 /* ---------- projects kept on the site ----------
    Served from the team site, TritoMoor keeps its projects under the signed-in account: the open project saves
    itself a couple of seconds after each change, and opens again from any computer. Offline there is no site,
-   and projects are saved to and opened from .trito files as before. */
+   and projects are saved to and opened from .trito files as before.
+   On the site TritoMoor opens on the projects page (#/): every project as a card, with its vessels and its last
+   analysis. A project opens on its dashboard (#/p/<id>): its vessels at the berth, the analyses run on it, the
+   berth and environment, the report, sharing and earlier versions. Its inputs and results are #/p/<id>/work. */
 const Cloud = (() => {
   const SITE = window.__TM_SITE || null;
   const KEY = 'tritomoor-site-project';
+  const DRAFT_KEY = 'tritomoor-unsaved-draft';      // a project worked on here that is not on the site yet
+  const PREFS_KEY = 'tritomoor-projects-view';
   let st = { id: null, version: null, name: '', dirty: false, access: 'owner', owner: '' };
   let timer = null, saving = false, again = false, edits = 0, lastSaved = null, trouble = '';
+  let ready = Promise.resolve(), mode = 'work', me = 0, peopleCache = null, unsaved = false;   // unsaved: work here that is not on the site
   const api = (path, opts = {}) => fetch(SITE.api + path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, opts))
     .then(async r => { let j = null; try { j = await r.json(); } catch (e) {} if (!r.ok) { const er = new Error((j && j.detail) || ('The site answered ' + r.status + '.')); er.status = r.status; er.body = j; throw er; } return j; });
   const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
-  const when = t => { if (!t) return ''; const d = new Date(String(t).replace(' ', 'T') + 'Z'); if (isNaN(d)) return t;
+  const stamp = t => { if (!t) return null; const d = new Date(/T/.test(t) ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? null : d; };
+  const when = t => { const d = stamp(t); if (!d) return t || '';
     const today = new Date().toDateString() === d.toDateString();
     return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
-  const berthName = b => ({ alongside: 'Alongside', med: 'Mediterranean', sts: 'Ship-to-ship', pontoon: 'Pontoon' })[b] || b || '';
+  const ago = t => { const d = stamp(t); if (!d) return ''; const s = (Date.now() - d) / 1000;
+    if (s < 90) return 'just now'; if (s < 3600) return Math.round(s / 60) + ' minutes ago';
+    if (s < 86400) { const h = Math.round(s / 3600); return h + ' hour' + (h === 1 ? '' : 's') + ' ago'; }
+    if (s < 172800) return 'yesterday'; if (s < 7 * 86400) return Math.floor(s / 86400) + ' days ago';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const BERTHS = { alongside: ['Alongside', '#2F6DA3'], med: ['Mediterranean', '#8A5BA8'], sts: ['Ship-to-ship', '#2B8C8C'], pontoon: ['Floating pontoon', '#C98A12'] };
+  const berthName = b => (BERTHS[b] || [b || ''])[0];
+  const berthColor = b => (BERTHS[b] || [0, '#4B5D70'])[1];
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const resultFlag = a => !a ? el('span', { class: 'note', text: 'No analysis run yet' })
+    : a.pass == null ? el('span', { class: 'flag warn', text: (ANALYSIS_KIND[a.kind] || 'Limiting speed') + (a.limit != null ? ' ' + fmt(a.limit, 1) + ' m/s' : '') })
+    : a.pass ? el('span', { class: 'flag ok', text: 'Meets all criteria' }) : el('span', { class: 'flag bad', text: 'Fails criteria' });
+  const peakText = a => a && a.peak != null ? `peak line ${fmt(a.peak, 1)}% MBL` + (a.allow != null ? ` (allowable ${fmt(a.allow, 0)}%)` : '') : '';
 
+  /* ---------- keeping the open project on the site ---------- */
   function status() {
     const c = $('cloudState'); if (!c) return;
     c.hidden = false; c.className = 'cloud'; c.innerHTML = '';
@@ -9134,11 +9259,16 @@ const Cloud = (() => {
     P = migrate(data); resetResults(); syncCoefficients();
     renderInputs(); renderResults(); setupSlider(); markTabs(); persist(true); drawPlan();
   }
-  function link(r) { st = { id: r.id, version: r.version, name: r.name, dirty: false, access: r.access || 'owner', owner: r.owner || '' }; lastSaved = r.updated_at; trouble = ''; keep(); status(); }
-  function detach() { clearTimeout(timer); st = { id: null, version: null, name: '', dirty: false, access: 'owner', owner: '' }; trouble = ''; keep(); status(); }
-  function saveCopy() { const nm = (P.name || st.name || 'Project') + ' (copy)'; detach(); P.name = nm; $('projName').value = nm; saveNew(); }
+  function link(r) { st = { id: r.id, version: r.version, name: r.name, dirty: false, access: r.access || 'owner', owner: r.owner || '' }; lastSaved = r.updated_at; trouble = ''; keep(); status(); crumbs(); }
+  function detach() {
+    clearTimeout(timer); st = { id: null, version: null, name: '', dirty: false, access: 'owner', owner: '' }; trouble = ''; keep(); status();
+    if (SITE && /^#\/p\//.test(location.hash)) history.replaceState(null, '', '#/work');
+    crumbs();
+  }
+  function saveCopy() { const nm = (P.name || st.name || 'Project') + ' (copy)'; detach(); P.name = nm; $('projName').value = nm; saveNew(nm); }
 
   function touched() {
+    if (!st.id) unsaved = true;
     if (!st.id || st.access === 'view') { status(); return; }
     st.dirty = true; edits++; keep(); status();
     clearTimeout(timer); timer = setTimeout(flush, 1800);
@@ -9167,119 +9297,220 @@ const Cloud = (() => {
     const t = cur ? when(cur.updated_at) : 'recently';
     if (confirm('"' + (cur ? cur.name : st.name) + '" was saved from another computer, or by a colleague it is shared with (' + t + '), after you opened it here.\n\n' +
       'OK — open that newer copy here (the changes made on this page since are dropped).\nCancel — keep this page and save it over that copy (the other copy is kept as an earlier version).')) {
-      await open(st.id, true);
+      await open(st.id, 'newer');
     } else { st.dirty = true; await flush(true); }
   }
-  async function open(id, quietly) {
+  // how: undefined says so in the message bar, 'newer' after a conflict, 'quiet' says nothing
+  async function open(id, how) {
     try {
       const r = await api('/projects/' + id);
       apply(r.data); link(r);
-      if (!quietly) showMsg(r.access === 'view' ? 'Opened ' + r.name + ', shared by ' + r.owner + ' to view only. Save a copy to change it.' : 'Opened ' + r.name + (r.owner ? ', shared by ' + r.owner : '') + ' from the site.', 'info'); else showMsg('Opened the newer copy of ' + r.name + ' from the site.', 'info');
+      if (how === 'newer') showMsg('Opened the newer copy of ' + r.name + ' from the site.', 'info');
+      else if (r.access === 'view') showMsg('Opened ' + r.name + ', shared by ' + r.owner + ' to view only. Save a copy to change it.', 'info');
+      else if (how !== 'quiet') showMsg('Opened ' + r.name + (r.owner ? ', shared by ' + r.owner : '') + ' from the site.', 'info');
       return true;
     } catch (e) { showMsg('Could not open that project. ' + e.message); return false; }
   }
-  async function saveNew() {
-    const name = prompt('Name for this project on the site:', P.name || st.name || 'Untitled project');
+  async function saveNew(suggest) {
+    const name = prompt('Name for this project on the site:', (typeof suggest === 'string' && suggest) || P.name || st.name || 'Untitled project');
     if (name == null) return;
     try {
       P.name = name.trim() || P.name; $('projName').value = P.name || '';
       const r = await api('/projects', { method: 'POST', body: JSON.stringify({ data: P, name: P.name }) });
-      link(r); persist(true);
+      link(r); persist(true); dropDraft();
       showMsg('Saved ' + r.name + ' to the site. It saves itself from now on.', 'info');
-      if ($('projDlg').open) list();
+      if (mode !== 'home') history.replaceState(null, '', '#/p/' + r.id + (mode === 'work' ? '/work' : '')); else showHome();
     } catch (e) { showMsg('Could not save to the site. ' + e.message); }
   }
 
-  /* the projects window */
-  const dlgMsg = (t, bad) => { const p = $('pjStatus'); p.textContent = t || ''; p.style.color = bad ? 'var(--bad)' : ''; };
-  async function list(keepShare) {
-    const tb = $('pjRows'); tb.innerHTML = '';
-    $('pjSave').textContent = st.id ? 'Save a copy as a new project' : 'Save this project to the site';
-    let rows;
-    try { rows = (await api('/projects')).projects; } catch (e) { dlgMsg('Could not read your projects. ' + e.message, true); return; }
-    const nMine = rows.filter(r => (r.access || 'owner') === 'owner').length, nShared = rows.length - nMine;
-    dlgMsg(rows.length ? nMine + ' project' + (nMine === 1 ? '' : 's') + ' of yours' + (nShared ? ', ' + nShared + ' shared with you' : '') + '.' : 'No projects on the site yet. Save this one, start a new one or upload your .trito files.');
-    rows.forEach(r => {
-      const cur = r.id === st.id, mine = (r.access || 'owner') === 'owner';
-      const tr = el('tr', { class: cur ? 'cur' : '' }, [
-        el('td', {}, [el('b', { text: r.name || 'Untitled project' }), cur ? el('span', { class: 'tag', text: 'open' }) : null,
-          mine && r.shared_with ? el('span', { class: 'tag share', text: 'shared with ' + r.shared_with }) : null]),
-        el('td', { text: r.vessel }), el('td', { text: berthName(r.berth) }),
-        el('td', {}, mine ? 'You' : [r.owner, el('span', { class: 'tag' + (r.access === 'view' ? ' view' : ''), text: r.access === 'view' ? 'view only' : 'can edit' })]),
-        el('td', { text: when(r.updated_at) }),
-        el('td', {}, el('div', { class: 'acts' }, [
-          el('button', { class: cur ? '' : 'primary', disabled: cur, onclick: async () => {
-            if (st.id && st.dirty) await flush();
-            if (!st.id && !confirm('The project open on this page is not on the site. Open "' + r.name + '" in its place?\n\nSave it to the site or download it first if you want to keep it.')) return;
-            if (await open(r.id)) $('projDlg').close();
-          } }, cur ? 'Open now' : 'Open'),
-          el('button', { title: 'A copy of your own', onclick: async () => { try { await api('/projects/' + r.id + '/duplicate', { method: 'POST', body: '{}' }); list(); } catch (e) { dlgMsg(e.message, true); } } }, 'Copy'),
-          mine ? el('button', { onclick: () => sharePanel(r, tr) }, 'Share') : null,
-          r.access !== 'view' ? el('button', { onclick: () => versions(r, tr) }, 'Earlier versions') : null,
-          mine ? el('button', { onclick: async () => {
-            if (!confirm('Delete "' + r.name + '" from the site, with its earlier versions?' + (r.shared_with ? ' The colleagues it is shared with lose it too.' : '') + ' This cannot be undone.')) return;
-            try { await api('/projects/' + r.id, { method: 'DELETE' }); if (cur) detach(); list(); } catch (e) { dlgMsg(e.message, true); }
-          } }, 'Delete') : el('button', { title: 'Take it off your list; the owner keeps it', onclick: async () => {
-            if (!confirm('Take "' + r.name + '" off your list? ' + r.owner + ' keeps it, and can share it with you again.')) return;
-            try { await api('/projects/' + r.id + '/shares/' + me, { method: 'DELETE' }); if (cur) detach(); list(); } catch (e) { dlgMsg(e.message, true); }
-          } }, 'Remove from my list')
-        ]))
-      ]);
-      tb.append(tr);
-      if (keepShare === r.id) sharePanel(r, tr);
-    });
+  /* ---------- work not on the site ----------
+     A project worked on here before it was saved to the site is kept aside on this computer when another project
+     is opened in its place, and shows on the projects page to go back to, save or discard. */
+  function readDraft() { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return d && d.data && d.data.vessel ? d : null; } catch (e) { return null; } }
+  function stashDraft() { if (st.id || !unsaved) return; try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ at: new Date().toISOString(), data: P })); } catch (e) {} }
+  function dropDraft() { if (!st.id) unsaved = false; try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
+
+  /* ---------- where you are: the projects, a project's dashboard, its analysis ---------- */
+  function route() {
+    const h = location.hash.replace(/^#\/?/, '');
+    const m = h.match(/^p\/(\d+)(?:\/(work))?\/?$/);
+    if (m) return { name: m[2] ? 'work' : 'dash', id: +m[1] };
+    if (h === 'work') return { name: 'work' };
+    return { name: 'home' };
   }
-  async function versions(r, tr) {
-    const nx = tr.nextElementSibling; if (nx && nx.classList.contains('vers')) { nx.remove(); return; }
-    const td = el('td', { colspan: 6, text: 'Reading earlier versions…' }), row = el('tr', { class: 'vers' }, td);
-    tr.after(row);
-    try {
-      const v = (await api('/projects/' + r.id + '/versions')).versions;
-      td.innerHTML = '';
-      if (!v.length) { td.textContent = 'No earlier versions yet. One is kept every quarter of an hour of work, and before a version is brought back.'; return; }
-      td.append(el('div', { text: 'Bringing one back makes it the newest; the version it replaces is kept too.' }));
-      v.forEach(q => td.append(el('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:4px' }, [
-        el('span', { text: when(q.saved_at) + ' — ' + (q.name || '') }),
-        el('button', { onclick: async () => {
-          if (!confirm('Bring back the version of "' + r.name + '" saved ' + when(q.saved_at) + '?')) return;
-          try {
-            const back = await api('/projects/' + r.id + '/versions/' + q.id + '/restore', { method: 'POST', body: '{}' });
-            if (r.id === st.id) { apply(back.data); link(back); showMsg('Brought back the version saved ' + when(q.saved_at) + '.', 'info'); }
-            list();
-          } catch (e) { dlgMsg(e.message, true); }
-        } }, 'Bring back')
-      ])));
-    } catch (e) { td.textContent = e.message; }
+  function setMode(m) {
+    mode = m; document.body.dataset.mode = m; crumbs();
+    if (m === 'work') { document.title = (P.name ? P.name + ' — ' : '') + 'TritoMoor'; requestAnimationFrame(() => { try { drawPlan(); } catch (e) {} }); }
   }
-  let me = 0, peopleCache = null;
-  async function sharePanel(r, tr) {
-    const nx = tr.nextElementSibling; if (nx && nx.classList.contains('vers')) { nx.remove(); return; }
-    const td = el('td', { colspan: 6, text: 'Reading who it is shared with…' }), row = el('tr', { class: 'vers' }, td);
-    tr.after(row);
-    const accessSel = v => el('select', { 'aria-label': 'Access' }, [['edit', 'can edit'], ['view', 'view only']].map(([k, l]) => el('option', { value: k, selected: k === v }, l)));
-    const draw = (shares, people) => {
-      td.innerHTML = '';
-      td.append(el('div', { text: shares.length ? 'Shared with:' : 'Not shared with anybody yet.' }));
-      shares.forEach(sh => {
-        const sel = accessSel(sh.access);
-        sel.addEventListener('change', async () => { try { draw((await api('/projects/' + r.id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: sh.user_id, access: sel.value }) })).shares, people); } catch (e) { dlgMsg(e.message, true); } });
-        td.append(el('div', { class: 'shr' }, [el('b', { text: sh.name }), el('span', { class: 'note', text: sh.email }), sel,
-          el('button', { onclick: async () => { try { await api('/projects/' + r.id + '/shares/' + sh.user_id, { method: 'DELETE' }); list(r.id); } catch (e) { dlgMsg(e.message, true); } } }, 'Stop sharing')]));
-      });
-      const others = people.filter(p => !shares.some(sh => sh.user_id === p.id));
-      if (!others.length) { td.append(el('div', { class: 'note', text: people.length ? 'Everyone who can open TritoMoor has it.' : 'Nobody else on the site can open TritoMoor yet. The administrator gives it to an account on the Admin page.' })); return; }
-      const who = el('select', { 'aria-label': 'Share with' }, [el('option', { value: '' }, 'Share with…'), ...others.map(p => el('option', { value: p.id }, p.name + (p.email ? ' — ' + p.email : '')))]);
-      const acc = accessSel('edit');
-      td.append(el('div', { class: 'shr' }, [who, acc, el('button', { class: 'primary', onclick: async () => {
-        if (!who.value) { who.focus(); return; }
-        try { await api('/projects/' + r.id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: +who.value, access: acc.value }) }); list(r.id); } catch (e) { dlgMsg(e.message, true); }
-      } }, 'Share')]));
-      td.append(el('div', { class: 'note', text: 'Can edit: they work on this project with you and it saves for both of you. View only: they can open it and save a copy of their own. Only people the administrator has given TritoMoor are listed.' }));
+  function crumbs() {
+    const c = $('crumbs'); if (!c || !SITE) return;
+    c.hidden = false; c.innerHTML = '';
+    const sep = () => el('i', { text: '›' });
+    if (mode === 'home') { c.append(el('b', { text: 'Projects' })); return; }
+    c.append(el('a', { href: '#/' }, 'Projects'), sep());
+    const nm = P.name || st.name || 'Untitled project';
+    if (mode === 'dash') { c.append(el('b', { text: nm })); return; }
+    if (st.id) c.append(el('a', { href: '#/p/' + st.id, title: "The project's dashboard" }, nm), sep(), el('b', { text: 'Analysis' }));
+    else c.append(el('b', { text: nm + ' (not on the site)' }));
+  }
+  async function go() {
+    await ready;
+    const r = route();
+    if (r.name === 'home') return showHome();
+    if (r.name === 'work' && !r.id) { if (st.id) { history.replaceState(null, '', '#/p/' + st.id + '/work'); } setMode('work'); return; }
+    if (st.id !== r.id) {
+      if (st.id && st.dirty) await flush();
+      stashDraft();
+      $('dash').innerHTML = ''; $('dash').append(el('p', { class: 'note', text: 'Opening the project…' })); setMode('dash');
+      if (!await open(r.id, 'quiet')) { location.hash = '#/'; return; }
+    }
+    if (r.name === 'dash') showDash(); else setMode('work');
+  }
+  const goWork = then => { location.hash = '#/p/' + st.id + '/work'; if (then) setTimeout(then, 60); };
+
+  /* ---------- the projects page ---------- */
+  function prefs() { try { return Object.assign({ sort: 'recent', view: 'cards' }, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch (e) { return { sort: 'recent', view: 'cards' }; } }
+  async function showHome() {
+    stashDraft(); setMode('home'); document.title = 'TritoMoor — projects';
+    const host = $('home'); host.innerHTML = '';
+    const pref = prefs();
+    host.append(el('div', { class: 'phead' }, [el('div', {}, [el('h1', { text: 'Projects' }),
+      el('p', { class: 'lede', text: 'Each project is one berth: its vessels, mooring lines, fenders and environment, and the analyses run on them. Open one to see its dashboard.' })])]));
+    const tiles = el('div', { class: 'tiles' }); host.append(tiles);
+
+    // start something
+    const nm = el('input', { placeholder: 'Project name, e.g. Berth 4 tanker jetty', 'aria-label': 'New project name' });
+    const kind = el('select', { 'aria-label': 'Start from' }, [['alongside', 'Alongside a quay (tanker)'], ['med', 'Mediterranean mooring (ro-pax)'], ['sts', 'Ship-to-ship'], ['lng', 'LNG carrier at a jetty'], ['pontoon', 'Floating pontoon (ferry)']].map(([k, l]) => el('option', { value: k }, l)));
+    const create = async () => {
+      const p = migrate(kind.value === 'med' ? exampleMedProject() : kind.value === 'sts' ? exampleStsProject() : kind.value === 'lng' ? exampleLngProject() : kind.value === 'pontoon' ? examplePontoonProject() : exampleProject());
+      p.name = nm.value.trim() || 'New mooring project';
+      try {
+        const r = await api('/projects', { method: 'POST', body: JSON.stringify({ data: p, name: p.name }) });
+        apply(p); link(r);
+        location.hash = '#/p/' + r.id + '/work';
+        showMsg('Started ' + r.name + ' from the worked example — change the vessel, berth and lines to suit.', 'info');
+      } catch (e) { showMsg('Could not start the project. ' + e.message); }
     };
-    try {
-      if (!peopleCache) peopleCache = (await api('/people')).people;
-      draw((await api('/projects/' + r.id + '/shares')).shares, peopleCache);
-    } catch (e) { td.textContent = e.message; }
+    nm.addEventListener('keydown', e => { if (e.key === 'Enter') create(); });
+    const up = el('input', { type: 'file', accept: '.trito,.json', multiple: true, hidden: true });
+    const upNote = el('p', { text: 'Projects saved as files from TritoMoor. Each becomes a project here.' });
+    up.addEventListener('change', async () => { const fs = [...up.files]; up.value = ''; if (fs.length) { upNote.textContent = 'Uploading…'; upNote.textContent = await upload(fs); draw(true); } });
+    const starts = el('div', { class: 'starts' }, [
+      el('div', { class: 'start' }, [el('h3', { text: 'Start a new project' }), el('div', { class: 'row' }, [nm]),
+        el('div', { class: 'row', style: 'margin-top:6px' }, [kind, el('button', { class: 'primary', onclick: create }, 'Create')]),
+        el('p', { text: 'It starts from the worked example of that kind of berth; change the vessel, berth and lines to suit.' })]),
+      el('div', { class: 'start' }, [el('h3', { text: 'Upload .trito files' }),
+        el('div', { class: 'row' }, [el('label', { class: 'btn' }, ['Choose files…', up])]), upNote])
+    ]);
+    const draft = readDraft();
+    if (draft) {
+      const dn = draft.data.name || 'Untitled project';
+      starts.append(el('div', { class: 'start draft' }, [el('h3', { text: 'On this computer only' }),
+        el('div', { style: 'font-weight:600' }, dn),
+        el('p', { text: 'Worked on here ' + ago(draft.at) + ' and not saved to the site.' }),
+        el('div', { class: 'row', style: 'margin-top:8px' }, [
+          el('button', { class: 'primary', onclick: async () => { if (st.id && st.dirty) await flush(); detach(); apply(draft.data); unsaved = true; saveNew(dn); } }, 'Save to the site'),
+          el('button', { onclick: async () => { if (st.id && st.dirty) await flush(); detach(); apply(draft.data); unsaved = true; location.hash = '#/work'; } }, 'Open'),
+          el('button', { onclick: () => { if (confirm('Discard "' + dn + '"? It is only on this computer, so it cannot be brought back.')) { dropDraft(); showHome(); } } }, 'Discard')])]));
+    }
+    host.append(starts);
+
+    // the projects
+    const count = el('span', { class: 'count' });
+    const find = el('input', { type: 'search', placeholder: 'Search by name, vessel, client or number', 'aria-label': 'Search projects' });
+    const sort = el('select', { 'aria-label': 'Sort by' }, [['recent', 'Last saved first'], ['name', 'Name A to Z'], ['number', 'Project number'], ['analysed', 'Last analysed first']].map(([k, l]) => el('option', { value: k, selected: k === pref.sort }, l)));
+    const seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Show as' }, [['cards', 'Cards'], ['table', 'Table']].map(([k, l]) => el('button', { 'data-view': k, 'aria-pressed': String(pref.view === k) }, l)));
+    const tools = el('div', { class: 'listtools' }, [find, sort, seg]);
+    host.append(el('div', { class: 'listhead' }, [el('h2', {}, ['Your projects', count]), tools]));
+    const list = el('div', {}, el('div', { class: 'empty small', text: 'Reading your projects…' })); host.append(list);
+
+    let rows = [];
+    async function draw(reload) {
+      if (reload) {
+        try { rows = (await api('/projects')).projects; }
+        catch (e) { list.innerHTML = ''; list.append(el('div', { class: 'empty small', text: 'Could not read your projects. ' + e.message })); return; }
+        tilesFor(tiles, rows);
+      }
+      count.textContent = rows.length || '';
+      tools.hidden = !rows.length;
+      list.innerHTML = '';
+      if (!rows.length) { list.append(el('div', { class: 'empty', text: 'No projects on the site yet. Start one above, or upload your .trito files.' })); return; }
+      const q = find.value.trim().toLowerCase();
+      const hit = r => !q || [r.name, r.client, r.number, r.owner, berthName(r.berth), ...(r.vessels || []).map(v => v.name)].some(t => String(t || '').toLowerCase().includes(q));
+      const by = {
+        recent: (a, b) => String(b.updated_at).localeCompare(String(a.updated_at)),
+        name: (a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }),
+        number: (a, b) => String(a.number || '~').localeCompare(String(b.number || '~'), undefined, { numeric: true }),
+        analysed: (a, b) => String((b.last_analysis || {}).at || '').localeCompare(String((a.last_analysis || {}).at || ''))
+      }[sort.value] || (() => 0);
+      const shown = rows.filter(hit).sort(by);
+      if (!shown.length) { list.append(el('div', { class: 'empty small', text: 'No project matches "' + find.value + '".' })); return; }
+      list.append(pref.view === 'table' ? projectTable(shown) : projectCards(shown));
+    }
+    find.addEventListener('input', () => draw());
+    sort.addEventListener('change', () => { pref.sort = sort.value; try { localStorage.setItem(PREFS_KEY, JSON.stringify(pref)); } catch (e) {} draw(); });
+    seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      pref.view = b.dataset.view; try { localStorage.setItem(PREFS_KEY, JSON.stringify(pref)); } catch (e) {}
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); draw();
+    }));
+    draw(true);
+  }
+  function tilesFor(box, rows) {
+    box.innerHTML = '';
+    const mine = rows.filter(r => (r.access || 'owner') === 'owner').length;
+    const ships = rows.reduce((n, r) => n + (r.vessels || []).length, 0);
+    const runs = rows.reduce((n, r) => n + (r.analyses || 0), 0);
+    const failing = rows.filter(r => r.last_analysis && r.last_analysis.pass === false).length;
+    const never = rows.filter(r => !r.last_analysis).length;
+    const tile = (cls, l, n, s) => el('div', { class: 'tile ' + cls }, [el('div', { class: 'l', text: l }), el('div', { class: 'n', text: String(n) }), el('div', { class: 's', text: s })]);
+    box.append(
+      tile('', 'Projects', rows.length, mine === rows.length ? 'all of them yours' : mine + ' yours, ' + (rows.length - mine) + ' shared with you'),
+      tile('', 'Vessels', ships, 'design vessels across the berths'),
+      tile(runs ? 'ok' : 'mute', 'Analyses run', runs, never ? plural(never, 'project') + ' not analysed yet' : 'every project analysed'),
+      tile(failing ? 'bad' : 'ok', 'Need attention', failing, failing ? 'last analysis fails the criteria' : 'no failing analysis'));
+  }
+  const openRow = r => { location.hash = '#/p/' + r.id; };
+  function ownerText(r) { return (r.access || 'owner') === 'owner' ? (r.shared_with ? 'Yours, shared with ' + r.shared_with : 'Yours') : 'Shared by ' + r.owner + (r.access === 'view' ? ' (view only)' : ''); }
+  function projectCards(rows) {
+    const box = el('div', { class: 'pcards' });
+    rows.forEach(r => {
+      const vs = r.vessels || [], a = r.last_analysis;
+      const card = el('article', { class: 'pcard', tabindex: '0', style: '--berth:' + berthColor(r.berth), 'aria-label': r.name || 'Untitled project' }, [
+        el('div', { class: 'berth', text: berthName(r.berth) || 'Berth' }),
+        el('div', { class: 'ptop' }, [el('h3', { text: r.name || 'Untitled project' }), r.number ? el('span', { class: 'num', text: r.number }) : null, r.id === st.id ? el('span', { class: 'tag', text: 'open' }) : null]),
+        r.client ? el('div', { class: 'sub', text: r.client }) : null,
+        vs.length ? el('div', { class: 'chips' }, [...vs.slice(0, 3).map(v => el('span', { class: 'chip', title: v.name + (v.loa ? ', ' + fmt(v.loa, 0) + ' m LOA' : ''), text: v.name })), vs.length > 3 ? el('span', { class: 'chip', text: '+' + (vs.length - 3) + ' more' }) : null]) : null,
+        el('div', { class: 'stats' }, [el('span', {}, [el('b', { text: String(vs.length) }), ' vessel' + (vs.length === 1 ? '' : 's')]),
+          el('span', {}, [el('b', { text: String(vs.reduce((n, v) => n + (v.lines || 0), 0)) }), ' lines']),
+          el('span', {}, [el('b', { text: String(r.fenders || 0) }), ' fenders']),
+          el('span', {}, [el('b', { text: String(r.analyses || 0) }), ' analys' + (r.analyses === 1 ? 'is' : 'es')])]),
+        el('div', { class: 'res' }, [resultFlag(a), a ? ' ' + [peakText(a), a.vessel && vs.length > 1 ? a.vessel : '', ago(a.at)].filter(Boolean).join(' · ') : '']),
+        el('div', { class: 'foot' }, [el('span', { title: 'Saved ' + when(r.updated_at) + ' · ' + ownerText(r), text: 'Saved ' + ago(r.updated_at) + ((r.access || 'owner') !== 'owner' ? ' · shared by ' + r.owner : r.shared_with ? ' · shared' : '') }),
+          el('span', { class: 'go' }, [el('button', { 'data-work': '1', title: 'Straight to the inputs and the analysis' }, 'Analysis'), el('button', { class: 'primary' }, 'Open')])])
+      ]);
+      card.addEventListener('click', e => { if (e.target.closest('[data-work]')) location.hash = '#/p/' + r.id + '/work'; else openRow(r); });
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === card) openRow(r); });
+      box.append(card);
+    });
+    return box;
+  }
+  function projectTable(rows) {
+    const w = el('div', { class: 'tablewrap' }), t = el('table');
+    t.innerHTML = '<thead><tr><th>Project</th><th>Number</th><th>Client</th><th>Berth</th><th>Vessels</th><th>Last analysis</th><th>Owner</th><th>Last saved</th></tr></thead>';
+    const tb = el('tbody');
+    rows.forEach(r => {
+      const a = r.last_analysis;
+      const tr = el('tr', { class: 'link' + (r.id === st.id ? ' cur' : ''), tabindex: '0' }, [
+        el('td', {}, el('b', { text: r.name || 'Untitled project' })), el('td', { text: r.number || '' }), el('td', { text: r.client || '' }),
+        el('td', {}, [el('span', { style: 'display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:' + berthColor(r.berth) }), berthName(r.berth)]),
+        el('td', { text: (r.vessels || []).map(v => v.name).join(', ') }),
+        el('td', {}, [resultFlag(a), a ? ' ' + [a.peak != null ? fmt(a.peak, 1) + '% MBL' : '', ago(a.at)].filter(Boolean).join(' · ') : '']),
+        el('td', { text: ownerText(r) }), el('td', { text: when(r.updated_at) })]);
+      tr.addEventListener('click', () => openRow(r));
+      tr.addEventListener('keydown', e => { if (e.key === 'Enter') openRow(r); });
+      tb.append(tr);
+    });
+    t.append(tb); w.append(t); return w;
   }
   async function upload(files) {
     let ok = 0; const bad = [];
@@ -9291,54 +9522,224 @@ const Cloud = (() => {
         ok++;
       } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
     }
-    await list();
-    dlgMsg((ok ? 'Uploaded ' + ok + ' project' + (ok === 1 ? '' : 's') + '. ' : '') + (bad.length ? 'Could not upload ' + bad.join(', ') + '.' : ''), bad.length > 0);
+    return (ok ? 'Uploaded ' + plural(ok, 'project') + '. ' : '') + (bad.length ? 'Could not upload ' + bad.join(', ') + '.' : '');
   }
-  function openDialog() { const d = $('projDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); list(); }
+
+  /* ---------- a project's dashboard ---------- */
+  function showDash() {
+    setMode('dash'); document.title = (P.name || 'Project') + ' — TritoMoor';
+    const host = $('dash'); host.innerHTML = '';
+    const mine = st.access === 'owner', canEdit = st.access !== 'view';
+    const vs = fleetList(), log = Array.isArray(P.analyses) ? P.analyses : [];
+    const rep = P.report || {}, env = P.environment || {}, b = P.berth || {};
+    const latestFor = q => log.find(a => (a.vi === q.i && (a.vessel === ((q.pj.vessel || {}).name || a.vessel))) || (a.vessel && a.vessel === (q.pj.vessel || {}).name));
+    const current = a => { const q = vs.find(x => x.i === a.vi && (x.pj.vessel || {}).name === a.vessel) || vs.find(x => (x.pj.vessel || {}).name === a.vessel); return q && a.fp && vesselPrint(q.i) === a.fp; };
+    const workOn = (i, then) => { if (P.fleet && P.fleet.length && i !== P.fleetActive) fleetSwitch(i); goWork(then); };
+
+    // heading
+    const meta = [berthName(b.type) + ' berth', rep.client, rep.projectNo ? 'No. ' + rep.projectNo : '', mine ? '' : 'Shared by ' + (st.owner || 'a colleague') + (st.access === 'view' ? ', view only' : ''), lastSaved ? 'Saved ' + ago(lastSaved) : ''].filter(Boolean);
+    const btn = (t, f, cls, title) => el('button', { class: cls || '', title: title || '', onclick: f }, t);
+    host.append(el('div', { class: 'phead' }, [
+      el('div', {}, [el('h1', { text: P.name || 'Untitled project' }), el('div', { class: 'meta' }, meta.map(m => el('span', { text: m })))]),
+      el('div', { class: 'pbtns' }, [
+        btn('Open the analysis', () => goWork(), 'primary', 'The inputs, the plan and 3D views and the results'),
+        btn('Run analysis', () => goWork(() => runAnalysis()), '', 'Open the analysis and run it on ' + (P.vessel.name || 'the vessel')),
+        btn('Export report', () => goWork(() => openReportDialog()), ''),
+        btn('Download .trito', () => download(safeName() + '.trito', JSON.stringify(P, null, 2), 'application/json'), '', 'This project as a file on your computer'),
+        canEdit ? btn('Rename', async () => { const n = prompt('Name of the project:', P.name || ''); if (n == null || !n.trim()) return; P.name = n.trim(); $('projName').value = P.name; persist(); await flush(true); showDash(); }) : null,
+        btn('Copy', async () => { try { const r = await api('/projects/' + st.id + '/duplicate', { method: 'POST', body: '{}' }); if (confirm('Made "' + r.name + '", a copy of your own. Open it now?')) location.hash = '#/p/' + r.id; } catch (e) { showMsg(e.message); } }, '', 'A copy of your own'),
+        mine ? btn('Delete', async () => {
+          if (!confirm('Delete "' + (P.name || 'this project') + '" from the site, with its earlier versions? This cannot be undone.')) return;
+          try { await api('/projects/' + st.id, { method: 'DELETE' }); detach(); location.hash = '#/'; showMsg('Deleted the project.', 'info'); } catch (e) { showMsg(e.message); }
+        }) : btn('Remove from my list', async () => {
+          if (!confirm('Take "' + P.name + '" off your list? ' + st.owner + ' keeps it, and can share it with you again.')) return;
+          try { await api('/projects/' + st.id + '/shares/' + me, { method: 'DELETE' }); detach(); location.hash = '#/'; } catch (e) { showMsg(e.message); }
+        })])]));
+    if (st.access === 'view') host.append(el('p', { class: 'note warnnote', text: 'Shared with you to view only: you can open the analysis and run it, but changes are not saved. Copy it to work on a project of your own.' }));
+
+    // tiles
+    const last = log[0];
+    const nLines = vs.reduce((n, q) => n + (q.pj.lines || []).length, 0);
+    const tile = (cls, l, n, s) => el('div', { class: 'tile ' + cls }, [el('div', { class: 'l', text: l }), el('div', { class: 'n', text: String(n) }), el('div', { class: 's', text: s })]);
+    host.append(el('div', { class: 'tiles' }, [
+      tile('', 'Vessels', vs.length, vs.map(q => (q.pj.vessel || {}).name).filter(Boolean).slice(0, 3).join(', ') + (vs.length > 3 ? '…' : '')),
+      tile('', 'Mooring lines', nLines, vs.length > 1 ? 'across ' + plural(vs.length, 'vessel') : plural((P.fairleads || []).length, 'fairlead')),
+      tile('', 'Berth', (P.bollards || []).length + ' / ' + (P.fenders || []).length, 'bollards / fenders'),
+      tile(!last ? 'mute' : last.pass === false ? 'bad' : last.pass ? 'ok' : 'warn', 'Last analysis',
+        !last ? '–' : last.pass == null ? (last.limit != null ? fmt(last.limit, 1) + ' m/s' : '–') : fmt(last.peak, 1) + '%',
+        !last ? 'not run yet' : (last.pass == null ? ANALYSIS_KIND[last.kind] : (last.pass ? 'meets all criteria' : 'fails criteria') + ', allowable ' + fmt(last.allow, 0) + '% MBL') + ' · ' + ago(last.at))]));
+
+    const grid = el('div', { class: 'dgrid' }), left = el('div', { class: 'col' }), right = el('div', { class: 'col' });
+    grid.append(left, right); host.append(grid);
+    const more = el('div', { class: 'dgrid two' });
+    const box = (title, sub, btns) => { const bx = el('section', { class: 'box' }); bx.append(el('h2', {}, [title, sub ? el('small', { text: sub }) : null, btns ? el('div', { class: 'pbtns' }, btns) : null])); return bx; };
+
+    // vessels
+    const vb = box('Vessels at the berth', vs.length > 1 ? 'each with its own particulars, fairleads and lines' : '', [
+      canEdit ? btn('Add a vessel', () => goWork(() => { fleetAdd(); setTab('vessel'); })) : null]);
+    const vt = el('table');
+    vt.innerHTML = '<thead><tr><th>Vessel</th><th class="n">LOA (m)</th><th class="n">Beam (m)</th><th class="n">Draft laden / ballast (m)</th><th class="n">Lines</th><th>Last analysis</th><th></th></tr></thead>';
+    const vtb = el('tbody');
+    vs.forEach(q => {
+      const v = q.pj.vessel || {}, cd = v.conditions || {}, a = latestFor(q);
+      const dr = c => c && c.draft !== '' && c.draft != null ? fmt(Number(c.draft), 2) : '–';
+      vtb.append(el('tr', {}, [el('td', {}, [el('b', { text: v.name || 'Vessel ' + (q.i + 1) }), el('span', { class: 'sub2', text: ({ tanker: 'Tanker / bulk carrier', lngMembrane: 'LNG carrier, membrane', lngMoss: 'LNG carrier, Moss', container: 'Container ship', ropax: 'Ro-pax / ferry', general: 'General cargo', barge: 'Barge / pontoon' })[v.type] || v.type || '' })]),
+        el('td', { class: 'n', text: fmt(Number(v.LOA), 1) }), el('td', { class: 'n', text: fmt(Number(v.B), 1) }),
+        el('td', { class: 'n', text: dr(cd.laden) + ' / ' + dr(cd.ballast) }), el('td', { class: 'n', text: String((q.pj.lines || []).length) }),
+        el('td', {}, [resultFlag(a), a ? el('span', { class: 'sub2', text: [a.peak != null && a.pass != null ? fmt(a.peak, 1) + '% MBL' : '', ago(a.at), current(a) ? '' : 'inputs changed since'].filter(Boolean).join(' · ') }) : null]),
+        el('td', {}, el('div', { class: 'pbtns', style: 'justify-content:flex-end;flex-wrap:nowrap' }, [btn('Open', () => workOn(q.i), '', 'Work on this vessel'), btn('Run', () => workOn(q.i, () => runAnalysis()), '', 'Run the analysis on this vessel')]))]));
+    });
+    vt.append(vtb);
+    const vw = el('div', { class: 'tablewrap' }); vw.append(vt); vb.append(vw);
+    // the vessels drawn moored: open for one vessel, a click away for several (they take room)
+    const moor = el('div', { class: 'moorwrap' });
+    const det = el('details', { class: 'mdet' }, [el('summary', { text: vs.length > 1 ? 'Show every vessel moored at the berth' : 'Moored at the berth' }), moor]);
+    det.open = vs.length === 1;
+    let drawn = false;
+    const drawMoor = () => { if (drawn || !det.open) return; drawn = true; try { drawMoorings(moor, i => workOn(i)); } catch (e) { moor.textContent = 'The berth could not be drawn: ' + e.message; } };
+    det.addEventListener('toggle', drawMoor);
+    vb.append(det);
+    left.append(vb);
+
+    // analyses
+    const ab = box('Mooring analyses', log.length ? plural(log.length, 'run') + ' recorded, newest first' : '', [btn('Run analysis', () => goWork(() => runAnalysis()), 'primary')]);
+    if (!log.length) ab.append(el('div', { class: 'in' }, el('p', { class: 'note', text: 'No analysis has been recorded on this project yet. Open the analysis and press Run analysis: every run is recorded here, with whether it met the criteria and its peak loads and movements.' })));
+    else {
+      const at = el('table');
+      at.innerHTML = '<thead><tr><th>When</th><th>Vessel</th><th>Analysis</th><th>Conditions</th><th class="n">Cases</th><th>Result</th><th class="n">Peak line % MBL</th><th class="n">Line / bollard / fender (t)</th><th class="n">Surge / sway (m)</th><th></th></tr></thead>';
+      const atb = el('tbody');
+      log.forEach((a, k) => {
+        const rs = a.runs || [], mx = key => Math.max(0, ...rs.map(q => Number(q[key]) || 0));
+        const cur = current(a);
+        const q = vs.find(x => x.i === a.vi && (x.pj.vessel || {}).name === a.vessel) || vs.find(x => (x.pj.vessel || {}).name === a.vessel);
+        atb.append(el('tr', {}, [el('td', { title: new Date(a.at).toLocaleString(), text: when(a.at) }), el('td', { text: a.vessel || '' }),
+          el('td', { text: ANALYSIS_KIND[a.kind] || a.kind || '' }), el('td', { text: rs.map(q2 => q2.cond).filter(Boolean).join(', ') }),
+          el('td', { class: 'n', text: String(a.cases || 0) }),
+          el('td', {}, [resultFlag(a), rs.length && a.pass === false ? el('div', { class: 'note', style: 'margin:2px 0 0', text: (rs.find(q2 => q2.gov && q2.passN < q2.cases) || {}).gov || '' }) : null]),
+          el('td', { class: 'n', style: a.allow != null && a.peak > a.allow ? 'color:var(--bad);font-weight:600' : '', text: fmt(a.peak, 1) + (a.allow != null ? ' / ' + fmt(a.allow, 0) : '') }),
+          el('td', { class: 'n', text: fmt(mx('lineT'), 1) + ' / ' + fmt(mx('bollardT'), 1) + ' / ' + fmt(mx('fenderT'), 1) }),
+          el('td', { class: 'n', text: fmt(mx('surge'), 2) + ' / ' + fmt(mx('sway'), 2) }),
+          el('td', {}, [k === 0 || cur ? el('span', { class: cur ? 'flag ok' : 'flag warn', title: cur ? 'The inputs are as they were for this run' : 'The vessel, berth, lines or environment have changed since this run', text: cur ? 'current' : 'inputs changed' }) : el('span', { class: 'note', text: 'earlier' }),
+            q ? btn('Run again', () => workOn(q.i, () => runAnalysis())) : null])]));
+      });
+      at.append(atb);
+      const aw = el('div', { class: 'tablewrap' }); aw.append(at); ab.append(aw);
+      ab.append(el('div', { class: 'in' }, el('p', { class: 'note', style: 'margin:0', text: 'The results themselves are worked out again each time the analysis runs; this is the record of each run. Loads are the worst over every case of the run.' })));
+    }
+    host.append(ab, more);
+
+    // the berth and its environment
+    const sweep = (m, d, v) => m === 'sweep' ? `${fmt(Number(v), 1)} m/s from every heading` : m === 'off' ? 'none' : `${fmt(Number(v), 1)} m/s from ${fmt(Number(d), 0)}°`;
+    const kv = pairs => el('dl', { class: 'kv' }, pairs.filter(([, v]) => v !== '' && v != null).flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: String(v) })]));
+    const bb = box('Berth and environment', '', [btn('Edit', () => goWork(() => setTab('berth')))]);
+    bb.append(el('div', { class: 'in' }, kv([
+      ['Berth', berthName(b.type)], ['Structure', ({ wall: 'Quay wall', deck: 'Piled deck', jetty: 'Jetty with dolphins' })[b.structure] || b.structure || ''],
+      ['Water depth', b.depth !== '' && b.depth != null ? fmt(Number(b.depth), 1) + ' m' : ''],
+      ['Bollards', (P.bollards || []).length], ['Fenders', (P.fenders || []).length], ['Line types', (P.lineTypes || []).length],
+      ['Analysis', ANALYSIS_KIND[env.analysis] || env.analysis || ''], ['Loading', (P.states || []).length ? plural(P.states.length, 'load state') : ({ laden: 'Laden', ballast: 'Ballast', both: 'Laden and ballast' })[env.conditions] || env.conditions || ''],
+      ['Wind', sweep(env.windMode, env.windDir, env.windSpeed)], ['Current', sweep(env.currentMode, env.currentDir, env.currentSpeed)],
+      ['Allowable line load', env.allowable !== '' && env.allowable != null ? fmt(Number(env.allowable), 0) + '% MBL' : '']])));
+    right.append(bb);
+
+    // report
+    const rb = box('Report', '', [btn('Edit and export', () => goWork(() => openReportDialog()))]);
+    rb.append(el('div', { class: 'in' }, kv([['Title', rep.title], ['Client', rep.client], ['Project number', rep.projectNo], ['Document number', rep.docNo], ['Revision', rep.revision],
+      ['Prepared by', rep.preparedBy], ['Checked by', rep.checkedBy], ['Approved by', rep.approvedBy]])));
+    right.append(rb);
+
+    // sharing and earlier versions
+    if (mine) { const sb = box('Shared with', 'colleagues on the site who have TritoMoor'); const inn = el('div', { class: 'in' }); sb.append(inn); more.append(sb); shareInto(inn); }
+    if (canEdit) { const eb = box('Earlier versions', 'one kept every quarter of an hour of work'); const inn = el('div', { class: 'in vers' }); eb.append(inn); more.append(eb); versionsInto(inn); }
+    if (!more.children.length) more.remove();
+
+    requestAnimationFrame(drawMoor);
+  }
+  async function versionsInto(td) {
+    td.textContent = 'Reading earlier versions…';
+    try {
+      const v = (await api('/projects/' + st.id + '/versions')).versions;
+      td.innerHTML = '';
+      if (!v.length) { td.textContent = 'No earlier versions yet. One is kept every quarter of an hour of work, and before a version is brought back.'; return; }
+      td.append(el('div', { class: 'note', text: 'Bringing one back makes it the newest; the version it replaces is kept too.' }));
+      v.forEach(q => td.append(el('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:4px' }, [
+        el('span', { text: when(q.saved_at) + ' — ' + (q.name || '') }),
+        el('button', { style: 'padding:2px 8px;font-size:12px', onclick: async () => {
+          if (!confirm('Bring back the version of "' + (P.name || '') + '" saved ' + when(q.saved_at) + '?')) return;
+          try {
+            const back = await api('/projects/' + st.id + '/versions/' + q.id + '/restore', { method: 'POST', body: '{}' });
+            apply(back.data); link(back); showMsg('Brought back the version saved ' + when(q.saved_at) + '.', 'info'); showDash();
+          } catch (e) { showMsg(e.message); }
+        } }, 'Bring back')
+      ])));
+    } catch (e) { td.textContent = e.message; }
+  }
+  async function shareInto(td) {
+    const id = st.id;
+    td.textContent = 'Reading who it is shared with…';
+    const accessSel = v => el('select', { 'aria-label': 'Access' }, [['edit', 'can edit'], ['view', 'view only']].map(([k, l]) => el('option', { value: k, selected: k === v }, l)));
+    const draw = (shares, people) => {
+      td.innerHTML = '';
+      td.append(el('div', { text: shares.length ? '' : 'Not shared with anybody yet.' }));
+      shares.forEach(sh => {
+        const sel = accessSel(sh.access);
+        sel.addEventListener('change', async () => { try { draw((await api('/projects/' + id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: sh.user_id, access: sel.value }) })).shares, people); } catch (e) { showMsg(e.message); } });
+        td.append(el('div', { class: 'shr' }, [el('b', { text: sh.name }), el('span', { class: 'note', style: 'margin:0', text: sh.email }), sel,
+          el('button', { onclick: async () => { try { draw((await api('/projects/' + id + '/shares/' + sh.user_id, { method: 'DELETE' })).shares, people); } catch (e) { showMsg(e.message); } } }, 'Stop sharing')]));
+      });
+      const others = people.filter(p => !shares.some(sh => sh.user_id === p.id));
+      if (!others.length) { td.append(el('p', { class: 'note', text: people.length ? 'Everyone who can open TritoMoor has it.' : 'Nobody else on the site can open TritoMoor yet. The administrator gives it to an account on the Admin page.' })); return; }
+      const who = el('select', { 'aria-label': 'Share with' }, [el('option', { value: '' }, 'Share with…'), ...others.map(p => el('option', { value: p.id }, p.name + (p.email ? ' — ' + p.email : '')))]);
+      const acc = accessSel('edit');
+      td.append(el('div', { class: 'shr' }, [who, acc, el('button', { class: 'primary', onclick: async () => {
+        if (!who.value) { who.focus(); return; }
+        try { draw((await api('/projects/' + id + '/shares', { method: 'POST', body: JSON.stringify({ user_id: +who.value, access: acc.value }) })).shares, people); } catch (e) { showMsg(e.message); }
+      } }, 'Share')]));
+      td.append(el('p', { class: 'note', text: 'Can edit: they work on this project with you and it saves for both of you. View only: they can open it and save a copy of their own.' }));
+    };
+    try {
+      if (!peopleCache) peopleCache = (await api('/people')).people;
+      draw((await api('/projects/' + id + '/shares')).shares, peopleCache);
+    } catch (e) { td.textContent = e.message; }
+  }
 
   function init() {
     if (!SITE) return false;
     me = SITE.me || 0;
+    let had = false;
     try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.id) st = s; } catch (e) {}
+    try { had = !!localStorage.getItem(STORE_KEY); } catch (e) {}
+    if (!st.id && had) { unsaved = true; if (!readDraft()) stashDraft(); }
     cloudTouched = touched;
     // the header: Projects in place of opening a file; Save goes to the site
     const openLbl = $('fileOpen').closest('label');
-    const pb = el('button', { id: 'btnProjects', title: 'Your projects on the site: open, copy, bring back an earlier version, upload or download', onclick: openDialog }, 'Projects');
+    const pb = el('button', { id: 'btnProjects', title: 'All your projects on the site', onclick: () => { location.hash = '#/'; } }, 'Projects');
     openLbl.replaceWith(pb);
     const sv = $('btnSave'), sv2 = sv.cloneNode(true); sv.replaceWith(sv2);
     sv2.textContent = 'Save'; sv2.title = 'Save to the site now (it also saves itself as you work)';
     sv2.addEventListener('click', () => !st.id ? saveNew() : st.access === 'view' ? saveCopy() : flush(true));
-    $('pjSave').addEventListener('click', () => { if (st.id) { detach(); } saveNew(); });
-    $('pjNew').addEventListener('click', async () => {
-      if (!st.id && !confirm('The project open on this page is not on the site. Start a new project in its place?')) return;
-      if (st.id && st.dirty) await flush();
-      const name = prompt('Name for the new project:', 'New mooring project'); if (name == null) return;
-      const p = exampleProject(); p.name = name.trim() || 'New mooring project';
-      try { const r = await api('/projects', { method: 'POST', body: JSON.stringify({ data: p, name: p.name }) }); apply(r.name ? Object.assign(p, { name: r.name }) : p); link(r); $('projDlg').close();
-        showMsg('Started ' + r.name + ' from the worked example — change the vessel, berth and lines to suit.', 'info'); } catch (e) { dlgMsg(e.message, true); }
-    });
-    $('pjUpload').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); });
-    $('pjDownload').addEventListener('click', () => download(safeName() + '.trito', JSON.stringify(P, null, 2), 'application/json'));
-    $('pjClose').addEventListener('click', () => $('projDlg').close());
-    window.addEventListener('beforeunload', e => {
+    $('projName').addEventListener('input', crumbs);
+    window.addEventListener('beforeunload', () => {
       if (st.id && st.dirty) {
         try { fetch(SITE.api + '/projects/' + st.id, { method: 'PUT', keepalive: true, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: P, name: P.name || '', base_version: st.version }) }); } catch (er) {}
-      }
+      } else if (!st.id) stashDraft();
     });
+    window.addEventListener('hashchange', go);
+    mode = route().name; document.body.dataset.mode = mode;
     status();
     // the project last open on this computer: is the site's copy newer?
     if (st.id) {
-      api('/projects/' + st.id).then(r => {
+      ready = api('/projects/' + st.id).then(r => {
         const was = st.access; st.access = r.access || 'owner'; st.owner = r.owner || ''; keep();
         if (st.access === 'view' && was !== 'view') { st.dirty = false; showMsg(r.name + ' is now shared with you to view only. Save a copy to change it.', 'info'); }
         if (r.version === st.version || st.access === 'view') { if (r.version !== st.version) { apply(r.data); link(r); } lastSaved = r.updated_at; status(); if (st.dirty) flush(); return; }
-        if (!st.dirty) { apply(r.data); link(r); showMsg('Opened the latest ' + r.name + ' from the site.', 'info'); }
-        else conflict(r);
+        if (!st.dirty) { apply(r.data); link(r); }
+        else return conflict(r);
       }).catch(e => { if (e.status === 404) { detach(); } else { trouble = 'Cannot reach the site — will retry'; status(); timer = setTimeout(flush, 15000); } });
     }
+    go();
     return true;
   }
-  return { init, detach, flush, openDialog, get linked() { return !!st.id; }, get on() { return !!SITE; } };
+  return { init, detach, flush, get linked() { return !!st.id; }, get on() { return !!SITE; } };
 })();
 
 function init() {

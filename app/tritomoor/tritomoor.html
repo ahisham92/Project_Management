@@ -512,14 +512,32 @@ const MoorEngine = (() => {
       if (nums.length !== 2 || !nums.every(Number.isFinite)) throw new Error(`Flat-side contour, point ${i + 1} ("${q}"): enter it as x, depth, for example -150, 15.3.`);
       const [x, d] = nums;
       if (V && Math.abs(x) > V.LOA / 2) throw new Error(`Flat-side contour, point ${i + 1}: x = ${x} m is outside the ship (LOA ${V.LOA} m, so x must be between ${-V.LOA / 2} and ${V.LOA / 2}).`);
-      if (!(d > 0)) throw new Error(`Flat-side contour, point ${i + 1}: the depth must be greater than zero.`);
+      if (!(d >= 0)) throw new Error(`Flat-side contour, point ${i + 1}: the depth cannot be negative.`);
       if (V && d > V.D) throw new Error(`Flat-side contour, point ${i + 1}: a depth of ${d} m is more than the moulded depth of ${V.D} m.`);
       return [x, d];
     }).sort((a, b) => a[0] - b[0]);
-    for (let i = 1; i < pts.length; i++) if (pts[i][0] === pts[i - 1][0]) throw new Error(`Flat-side contour: two points at x = ${pts[i][0]} m.`);
+    for (let i = 2; i < pts.length; i++) if (pts[i][0] === pts[i - 1][0] && pts[i][0] === pts[i - 2][0]) throw new Error(`Flat-side contour: more than two points at x = ${pts[i][0]} m.`);
     return { points: pts, blank: false };
   }
 
+  // depth of the flat side below the deck at x, from the contour; none outside it. Two points at the same x
+  // make a step (the end of the flat side), and the step is taken at its deeper value.
+  // Two constants fitted to OptiMoor's interim 25,000 DWT ballast operational case (8 runs, 6 fenders,
+  // RMS 0.7 t). FLAT_CHECK_OFFSET: the flat side is checked this fraction of the panel height below the
+  // fender level, which reproduces OptiMoor's 25 % / 18 % contact at the end fenders. FLAT_RECESS_SLOPE:
+  // metres the hull stands off per metre from a partly-contacting fender's centre to the nearest flat side.
+  const FLAT_CHECK_OFFSET = 1 / 6;
+  const FLAT_RECESS_SLOPE = 0.025;
+  function flatDepthAt(fc, x) {
+    if (!fc.length || x < fc[0][0] || x > fc[fc.length - 1][0]) return 0;
+    let d = 0;
+    for (let k = 0; k < fc.length - 1; k++) {
+      const [x0, d0] = fc[k], [x1, d1] = fc[k + 1];
+      if (x < x0 || x > x1) continue;
+      d = Math.max(d, x1 === x0 ? Math.max(d0, d1) : d0 + (d1 - d0) * (x - x0) / (x1 - x0));
+    }
+    return fc.length === 1 ? fc[0][1] : d;
+  }
   // hull waterline outline in ship axes (a forward, b to port), used for fender contact and wall clearance
   function hullPolygon(LOA, B, Lpb) {
     const Lh = LOA / 2, B2 = B / 2, pb = Math.min(Lpb / 2, Lh * 0.95), bowA = pb + 0.65 * (Lh - pb);
@@ -891,27 +909,31 @@ const MoorEngine = (() => {
           a: num(f.X, 'Fender ' + f.id + ' position along its host'), hf: num(f.face, 'Fender ' + f.id + ' projection', x => x > 0, 'must be greater than zero.') };
       }
       const X = num(f.X, 'Fender ' + f.id + ' X');
-      let contact = 1, panel = null;
+      let contact = 1, panel = null, recess = 0;
       if (ft.area > 0 && ft.width > 0 && ft.level != null && Number.isFinite(ft.level)) {
         const h = ft.area / ft.width, bot = ft.level - h / 2, top = ft.level + h / 2;
         const sh0 = ships[0], a = X - sh0.x0[0];
         const tLocal = V.T - (Number(state.trim) || 0) * a / V.LBP;       // draft at this fender
         const keel = WL - tLocal, deck = WL + (V.D - tLocal);             // heights above datum
-        // flat-side contour (OptiMoor): depth of the flat side below the deck at points along the ship
-        let flatBot = keel;
         const fc = flatContour(p.vessel || {}, V).points;
         if (fc.length) {
-          let dep;
-          if (a <= fc[0][0]) dep = fc[0][1];
-          else if (a >= fc[fc.length - 1][0]) dep = fc[fc.length - 1][1];
-          else for (let k = 0; k < fc.length - 1; k++) if (a >= fc[k][0] && a <= fc[k + 1][0]) { dep = fc[k][1] + (fc[k + 1][1] - fc[k][1]) * (a - fc[k][0]) / (fc[k + 1][0] - fc[k][0]); break; }
-          flatBot = Math.max(keel, deck - dep);
+          // OptiMoor: the flat-side contour gives, along the ship, how far the flat side reaches below the deck.
+          // At this draft the fender bears wherever the flat side reaches down to it; its contact is the part
+          // of the panel's width that lies over such flat side. Outside the contour there is no flat side.
+          const tChk = deck - ft.level - FLAT_CHECK_OFFSET * h;
+          const N = 88; let hit = 0, near = Infinity;
+          for (let k = 0; k < N; k++) { const x = a - ft.width / 2 + ft.width * (k + 0.5) / N; if (flatDepthAt(fc, x) >= tChk && top > keel) { hit++; near = Math.min(near, Math.abs(x - a)); } }
+          contact = tChk < 0 ? 0 : hit / N;
+          // a fender only partly over the flat side bears where the hull has begun to turn in, so it meets the
+          // hull further off: the hull is taken to recede from the end of the flat side at FLAT_RECESS_SLOPE
+          if (hit && hit < N && flatDepthAt(fc, a) < tChk) recess = FLAT_RECESS_SLOPE * near;
+        } else {
+          const ov = Math.max(0, Math.min(top, deck) - Math.max(bot, keel));
+          contact = Math.max(0, Math.min(1, ov / h));
         }
-        const ov = Math.max(0, Math.min(top, deck) - Math.max(bot, flatBot));
-        contact = Math.max(0, Math.min(1, ov / h));
         panel = { bot, top, deck, keel };
       }
-      return { id: String(f.id), kind: 'quay', X, hf: num(f.face, 'Fender ' + f.id + ' face offset', x => x >= 0, 'cannot be negative.'), ft, contact, panel };
+      return { id: String(f.id), kind: 'quay', X, hf: num(f.face, 'Fender ' + f.id + ' face offset', x => x >= 0, 'cannot be negative.') - recess, ft, contact, panel, recess };
     });
 
     const anchors = (p.anchors || []).map(A => {

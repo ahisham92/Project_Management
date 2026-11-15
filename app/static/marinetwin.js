@@ -1760,6 +1760,18 @@ function terminal(scene, frame, twin, rng, quay) {
           [shoreX + root * 620, lane + 46], [shoreX + root * 260, lane + 28], [shoreX + root * 20, F - 7], [hx - root * 25, F - 7]]
         : [[hx - 60, F + 30], [hx - 26, lane + 1], [hx, lane], [hx + 26, lane + 1], [hx + 60, F + 30], [hx + 30, F + 62], [hx - 30, F + 62]];
       const curve = loop(pts, top + 0.1);
+      if (root) {
+        // Ashore, a two-lane road under the trucks' way out and back, not a sheet of asphalt.
+        const way = curve.getSpacedPoints(160);
+        for (let j = 1; j < way.length; j++) {
+          const [a, b] = [way[j - 1], way[j]];
+          if (root * (a.x - shoreX) < 0 || root * (b.x - shoreX) < 0) continue;
+          const len = Math.hypot(b.x - a.x, b.z - a.z);
+          const seg = box(len + 0.6, 0.2, 8, REAL.asphalt, (a.x + b.x) / 2, top - 0.12, (a.z + b.z) / 2);
+          seg.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+          g.add(seg);
+        }
+      }
       const many = root ? 6 : 3;
       for (let k = 0; k < many; k++) {
         const v = vehicle('tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
@@ -1769,8 +1781,7 @@ function terminal(scene, frame, twin, rng, quay) {
       }
     }
     if (root) {
-      // Ashore at the root: the road the trucks take inland, and the weighbridge they cross.
-      g.add(box(640, 0.2, 64, REAL.asphalt, shoreX + root * 330, top - 0.15, front + 24));
+      // Ashore at the root: the weighbridge the trucks cross.
       g.add(box(18, 0.4, 4, REAL.steel, shoreX + root * 60, top + 0.2, front + 8));
       g.add(box(4, 3, 3, REAL.white, shoreX + root * 60, top + 1.5, front + 2));
     }
@@ -2228,6 +2239,17 @@ async function main() {
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envTarget = null;
 
+  // An open deck's root is the end towards the land on the map: a pier runs out to sea from the
+  // shore, whatever the model has at its ends. (The model's shapes are the guess with no map.)
+  if (frame.open && frame.deckDepth && twin.surroundings && twin.asset.latitude != null) {
+    const land = await Promise.race([
+      import('./marinetwin-surroundings.js').then(({ landToward }) => landToward({
+        twin, toScene, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: frame.front + frame.deckDepth / 2 } })),
+      new Promise((done) => setTimeout(() => done(null), 8000)),
+    ]).catch(() => null);
+    if (land) frame.root = Math.abs(land[0]) > 0.7 ? Math.sign(land[0]) : 0;
+  }
+
   // The terminal around it.
   const rng = makeRng(twin.asset.id * 7919);
   const site = terminal(scene, frame, twin, rng, quay);
@@ -2333,8 +2355,11 @@ async function main() {
       if (!m.isMesh) return;
       const e = m.userData.element;
       if (byCondition) {
-        if (e) {
-          const state = stateOf(e);
+        const state = e ? stateOf(e) : null;
+        if (e && !eventStates && !['warning', 'critical'].includes(state)) {
+          // Sound or unmonitored elements stay as built: only what needs watching or acting on is coloured.
+          m.material = REAL[REAL_FOR_KIND[e.kind] || 'concrete'];
+        } else if (e) {
           if (!conditionMats.has(state)) conditionMats.set(state, material(state));
           m.material = conditionMats.get(state);
         } else {

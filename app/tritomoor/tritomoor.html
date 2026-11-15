@@ -778,12 +778,14 @@ const MoorEngine = (() => {
         LOA: Vi.LOA, LBP: Vi.LBP, B: Vi.B, T: Vi.T, AL: Vi.AL, AT: Vi.AT, Ls: Vi.LBP / 2
       };
     });
-    // target point on each vessel (OptiMoor reports the movement of this point): metres forward of midships on the
-    // centreline. Left blank it is the manifold when the manifold check is on, otherwise midships.
+    // target point on each vessel (OptiMoor reports the movement of this point): metres forward of midships, on the
+    // ship's side towards the berth (OptiMoor's "Stbd Target"), so yaw moves it fore and aft as well. Left blank it
+    // is the manifold when the manifold check is on, otherwise midships.
     ships.forEach((sh, i) => {
       const vin = i === 0 ? (p.vessel || {}) : (sh.kind === 'pontoon' ? {} : (p.vessel2 || {}));
       const lngOn = i === 0 && p.lng && p.lng.enabled;
       sh.targetA = given(vin.targetX) ? Number(vin.targetX) : (lngOn ? (Number(p.lng.manifoldX) || 0) : 0);
+      sh.targetB = i === 0 && sp.type !== 'med' ? -sh.B / 2 : 0;          // starboard side, towards the berth (centreline when stern-to)
       if (!Number.isFinite(sh.targetA) || Math.abs(sh.targetA) > sh.LOA / 2) throw new Error((i ? 'Second vessel' : 'Vessel') + ': the target point must lie on the ship, within half the LOA of midships.');
     });
     const x0 = ships.reduce((acc, sh) => acc.concat(sh.x0), []);
@@ -994,7 +996,7 @@ const MoorEngine = (() => {
       // movement: of the target point (OptiMoor) or of midships; from the target position, where the vessel lies
       // once its lines are tended (OptiMoor: Ctrl+I puts the ship there, so the pretension alone shows no movement),
       // or from the berthing position before tending, with the fenders just touching (earlier TritoMoor). Fender contact: on the flat side only (OptiMoor), or anywhere on the outline.
-      moveAt: e.moveAt === 'midships' ? 'midships' : 'target', moveFrom: e.moveFrom === 'placed' ? 'placed' : 'tended',
+      moveAt: e.moveAt === 'midships' ? 'midships' : 'target', moveFrom: e.moveFrom === 'tended' ? 'tended' : 'placed',
       fenderContact: e.fenderContact === 'outline' ? 'outline' : 'flat',
       LOA: V.LOA, LBP: V.LBP, B: V.B, T: V.T, Lpb: V.Lpb, AL: V.AL, AT: V.AT,
       WL, Vw, Vc: Vc * currentProfile(e, waterDepth, V.T), VcGiven: Vc, currentProfileFactor: currentProfile(e, waterDepth, V.T), rhoA, rhoW, C: ships[0].C, coefInfo: ships[0].coefInfo, hT: ships[0].hT, chartDepth, waterDepth, channelWidth: Number(br.channelWidth) > 0 ? Number(br.channelWidth) : 500, pose: ships[0].pose, x0, hull: ships[0].hull, Ls: V.LBP / 2,
@@ -1538,9 +1540,9 @@ const MoorEngine = (() => {
       const c0 = Math.cos(sh.pose.psi0), s0 = Math.sin(sh.pose.psi0);
       // reference: where the vessel was placed at its target, or where it lay once the lines were tended
       const ref = M.moveFrom === 'tended' && M.preX ? M.preX.slice(3 * i, 3 * i + 3) : [sh.pose.X0, sh.pose.Y0, sh.pose.psi0];
-      const a = M.moveAt === 'midships' ? 0 : (sh.targetA || 0);
-      const px = x[3 * i] + a * Math.cos(x[3 * i + 2]), py = x[3 * i + 1] + a * Math.sin(x[3 * i + 2]);
-      const rx = ref[0] + a * Math.cos(ref[2]), ry = ref[1] + a * Math.sin(ref[2]);
+      const a = M.moveAt === 'midships' ? 0 : (sh.targetA || 0), b = M.moveAt === 'midships' ? 0 : (sh.targetB || 0);
+      const pt = (X, Y, q) => [X + a * Math.cos(q) - b * Math.sin(q), Y + a * Math.sin(q) + b * Math.cos(q)];
+      const [px, py] = pt(x[3 * i], x[3 * i + 1], x[3 * i + 2]), [rx, ry] = pt(ref[0], ref[1], ref[2]);
       const dXg = px - rx, dYg = py - ry;
       const mX = x[3 * i] - sh.pose.X0, mY = x[3 * i + 1] - sh.pose.Y0;
       return {
@@ -4068,7 +4070,9 @@ function migrate(p) {
   if (!p.environment.damaged) p.environment.damaged = 'off';
   if (!p.environment.moveAt) p.environment.moveAt = 'target';
   if (Array.isArray(p.fleet) && p.fleet.length) { p.fleetActive = Math.max(0, Math.min(p.fleet.length - 1, Math.round(Number(p.fleetActive) || 0))); } else { delete p.fleet; p.fleetActive = 0; }
-  if (!p.environment.moveFrom) p.environment.moveFrom = 'tended';
+  // movement rule 2 (15 Nov 2026): OptiMoor measures from the berthing position at its side target. Projects saved
+  // under the earlier rule had 'tended' put in by default, so move them over once.
+  if (!(p.environment.moveRule >= 2)) { p.environment.moveFrom = 'placed'; p.environment.moveRule = 2; }
   if (!p.environment.fenderContact) p.environment.fenderContact = 'flat';
   if (p.environment.allowableDamaged == null || p.environment.allowableDamaged === '') p.environment.allowableDamaged = 70;
   if (!p.environment.damagedCount) p.environment.damagedCount = 3;
@@ -5113,8 +5117,10 @@ function renderEnvTab() {
   te.append(fieldGrid(E, [
     { key: 'allowable', label: 'Allowable line and chain load', unit: '% MBL' },
     { key: 'maxSurge', label: 'Surge limit (blank = none)', unit: 'm' },
-    { key: 'moveAt', label: 'Movement measured at', options: [['target', 'The target point (as OptiMoor)'], ['midships', 'Midships']], help: 'OptiMoor reports surge and sway at the ship\'s target point, so yaw moves it too. Set the target point on the Vessel tab.' },
-    { key: 'moveFrom', label: 'Movement measured from', options: [['tended', 'The target position, once the lines are tended (as OptiMoor)'], ['placed', 'The berthing position, fenders just touching (earlier TritoMoor)']], help: 'OptiMoor puts the ship at its target and tensions the lines there (Ctrl+I), so the pretension alone shows no movement and the fenders are already squeezed by it. Measuring from the berthing position instead adds that pretension squeeze to every movement onto the berth, which is why earlier TritoMoor read up to about 0.1 m more.' },
+    { key: 'moveAt', label: 'Movement measured at', options: [['target', 'The target point on the ship\'s side (as OptiMoor)'], ['midships', 'Midships, on the centreline']], help: 'OptiMoor reports surge and sway at its "Stbd Target": the target point\'s station on the side of the ship towards the berth. Yaw moves that point fore and aft by up to half the beam times the yaw. Set the station on the Vessel tab.' },
+
+    { key: 'moveFrom', label: 'Movement measured from', options: [['placed', 'The target position, fenders just touching (as OptiMoor)'], ['tended', 'Where the ship settles once the lines are tended']], help: 'OptiMoor places the ship at its target with the fenders just touching and reports every movement from there, so a pretension that pulls the ship along the berth shows in each run. Checked against 40 OptiMoor runs on two vessels: surge and sway at the side target agree within 0.02 m.' },
+
     { key: 'fenderContact', label: 'Fender contact', options: [['flat', 'Only where the fender meets the flat side (as OptiMoor)'], ['outline', 'Anywhere on the hull outline']], help: 'As OptiMoor: a fender carries load only if its panel meets the flat side of the hull at the draft of the load state. A light ship rides high, so low fenders, and fenders near the ends where the flat side is shallow, can miss the hull in ballast and carry nothing. This needs the fender level and panel on the fender type, and the flat-side contour on the Vessel tab.' },
     { key: 'maxSway', label: 'Sway limit (blank = none)', unit: 'm' },
     { key: 'maxRender', label: 'Line render limit (blank = 30% of beam)', unit: 'm', help: 'How much a winch brake may pay out before the line is treated as failed. Left blank, 30% of the vessel beam is used, which is the rule OptiMoor applies.' },
@@ -6754,7 +6760,7 @@ function renderResults() {
   const ct = tableBox(`<thead><tr><th>Case</th><th class="n">Wind from</th><th class="n">Wind (m/s)</th><th class="n">Current from</th><th class="n">Current (m/s)</th><th class="n">Env. Fx (kN)</th><th class="n">Env. Fy (kN)</th><th class="n">Env. Mz (MNm)</th>${motionHead}${M.quay && M.berthType !== 'pontoon' ? '<th class="n">Quay clearance (m)</th>' : ''}${M.nShips > 1 ? `<th class="n">${M.berthType === 'pontoon' ? 'Hull-pontoon gap (m)' : 'Hull gap (m)'}</th>` : ''}${M.lng ? '<th class="n">Manifold along / off (m)</th>' : ''}<th class="n">Governing use</th><th>Result</th></tr></thead><tbody>${crows}</tbody>`);
   ct.addEventListener('click', e => { const t = e.target.closest('[data-k]'); if (t) selectCase(+t.dataset.k); });
   box.append(ct);
-  box.append(el('p', { class: 'note', text: `Environmental loads are in the axes of vessel 1. Offsets are the movement of ${M.moveAt === 'midships' ? 'midships' : 'each vessel\'s target point (' + M.ships.map((sh, i) => (M.nShips > 1 ? 'V' + (i + 1) + ' ' : '') + (sh.targetA ? fmt(sh.targetA, 1) + ' m ' + (sh.targetA > 0 ? 'forward of' : 'aft of') + ' midships' : 'midships')).join(', ') + '), as OptiMoor reports them,'} measured from ${M.moveFrom === 'tended' ? 'its target position once the lines were tended' : 'its berthing position before tending, fenders just touching'}, in its own axes: surge positive forward, sway positive to port (off the berth when alongside), yaw positive bow to port. Governing use is the highest ratio of any check to its limit.` }));
+  box.append(el('p', { class: 'note', text: `Environmental loads are in the axes of vessel 1. Offsets are the movement of ${M.moveAt === 'midships' ? 'midships' : 'each vessel\'s target point on its side towards the berth (' + M.ships.map((sh, i) => (M.nShips > 1 ? 'V' + (i + 1) + ' ' : '') + (sh.targetA ? fmt(sh.targetA, 1) + ' m ' + (sh.targetA > 0 ? 'forward of' : 'aft of') + ' midships' : 'midships')).join(', ') + '), as OptiMoor reports them,'} measured from ${M.moveFrom === 'tended' ? 'where it settled once the lines were tended' : 'its target position with the fenders just touching, before any load, as OptiMoor does'}, in its own axes: surge positive forward, sway positive to port (off the berth when alongside), yaw positive bow to port. Governing use is the highest ratio of any check to its limit.` }));
   box.append(el('div', { class: 'rowbtns' }, el('button', { onclick: exportCSV }, 'Export results (CSV)')));
 }
 function tableBox(html, cls) {

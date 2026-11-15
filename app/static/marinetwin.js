@@ -729,6 +729,33 @@ function pierRoot(model, frame) {
   return 0;
 }
 
+// The model's shapes that are not tracked elements (the rock mound, the revetment, the seabed)
+// come as one mesh. Under an open deck, what is off the deck or stands above it is the rock
+// mound and revetment: it is drawn in armour-stone tones, the deck itself stays concrete.
+function rockMound(content, frame) {
+  const deck = new THREE.Color(0xb9b5ab);
+  const tones = [0x8b8679, 0x6f6a5e, 0x9a927f, 0x5d5a52, 0x7d7461].map((c) => new THREE.Color(c));
+  const v = new THREE.Vector3();
+  content.updateMatrixWorld(true);
+  content.traverse((m) => {
+    if (!m.isMesh || m.userData.element || m.userData.ground || m.userData.pick || !m.geometry?.attributes?.position) return;
+    const pos = m.geometry.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    let rocks = 0;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      const onDeck = v.x > frame.minX - 1 && v.x < frame.maxX + 1 && v.z > frame.front - 2 && v.z < frame.front + frame.deckDepth + 1
+        && v.y < frame.top + 0.4 && v.y > frame.top - 3;
+      const c = onDeck ? deck : tones[(Math.floor(v.x * 0.7) * 7 + Math.floor(v.z * 0.7) * 13 + Math.floor(v.y)) & 3 | 0];
+      if (!onDeck) rocks++;
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    if (!rocks) return;
+    m.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    m.userData.rock = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+  });
+}
+
 // Structures standing on piles in open water: the sea runs under the deck, over a rock slope.
 const OPEN_KINDS = new Set(['deck_on_piles', 'jetty']);
 
@@ -1259,6 +1286,16 @@ function vehicle(kind, colour) {
     heap.rotation.y = Math.PI / 4;
     heap.position.set(-1.0, 3.4, 0);
     g.add(heap);
+  } else if (kind === 'cement') {
+    // A bulk cement tanker: cab, and the grey pressure barrel tipped up for discharge at the plant.
+    g.add(box(2.6, 2.9, 2.5, paint, 4.6, 1.9, 0));
+    g.add(box(9.4, 0.5, 2.4, REAL.steel, -1.1, 0.9, 0));
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 8.6, 14), new THREE.MeshStandardMaterial({ color: 0xd9dadb, roughness: 0.35, metalness: 0.6 }));
+    barrel.rotation.z = Math.PI / 2;
+    barrel.position.set(-1.3, 2.45, 0);
+    g.add(barrel);
+    for (const x of [-3.4, 0.8]) g.add(box(0.5, 0.5, 0.5, REAL.steel, x, 3.75, 0));      // manholes
+    for (const x of [3.4, -3.0, -4.4]) for (const z of [-1.1, 1.1]) g.add(box(1.1, 1.1, 0.4, REAL.rubber, x, 0.55, z));
   } else {
     g.add(box(3, 2.8, 2.4, paint, 6.5, 1.8, 0));
     g.add(box(12, 3.0, 2.5, REAL.shed, -0.5, 2.1, 0));
@@ -1774,10 +1811,10 @@ function terminal(scene, frame, twin, rng, quay) {
       }
       const many = root ? 6 : 3;
       for (let k = 0; k < many; k++) {
-        const v = vehicle('tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
+        const v = vehicle(kind === 'bulk_hoppers' ? 'cement' : 'tipper', [0xeeeeee, 0x1565c0, 0xc62828, 0x2e7d32, 0x37474f][(i * 3 + k) % 5]);
         g.add(v);
         movers.push({ object: v, curve, offset: k / many + rng() * 0.03, speed: (root ? 9 : 5) / curve.getLength(), apron: true, main: true,
-          status: root ? 'Carrying the cargo from the hopper to the factory' : undefined });
+          status: root ? 'Carrying the cement from the hopper to the plant' : undefined });
       }
     }
     if (root) {
@@ -2186,6 +2223,7 @@ async function main() {
     }
     frame.deckDepth = deckDepth(turnedShapes, mainLeg);
     frame.root = pierRoot(turnedShapes, frame);
+    rockMound(content, frame);
   } else if (frame.open) frame.deckDepth = 20;
 
   // Sky, sun and sea.
@@ -2363,10 +2401,10 @@ async function main() {
           if (!conditionMats.has(state)) conditionMats.set(state, material(state));
           m.material = conditionMats.get(state);
         } else {
-          m.material = REAL.concrete;
+          m.material = m.userData.rock || REAL.concrete;
         }
       } else {
-        m.material = REAL[REAL_FOR_KIND[e?.kind] || 'concrete'];
+        m.material = !e && m.userData.rock ? m.userData.rock : REAL[REAL_FOR_KIND[e?.kind] || 'concrete'];
       }
     });
   }

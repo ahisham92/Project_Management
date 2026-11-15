@@ -124,11 +124,15 @@ FLEETS = {
              ("Star Kirkenes", "Bulk carrier", 200, 32.3, 12.8, 80000, 11),
              ("Ocean Grain", "Bulk carrier", 180, 30.0, 11.5, 60000, 10)],
 }
-# Geared bulk carriers: their own deck cranes grab the cargo into mobile hoppers on the quay.
-FLEETS["bulk_hoppers"] = [("Sider Pioneer", "Bulk carrier (geared)", 180, 30.0, 10.5, 45000, 22),
-                          ("Clipper Iris", "Bulk carrier (geared)", 169, 27.0, 9.8, 36000, 22),
-                          ("Nord Taurus", "Bulk carrier (geared)", 190, 32.3, 11.5, 58000, 23),
-                          ("Med Cement", "Bulk carrier (geared)", 150, 24.0, 9.0, 26000, 20)]
+# Geared cement carriers: their own deck cranes grab the cement into mobile hoppers on the deck.
+FLEETS["bulk_hoppers"] = [
+    # Sibline's Basis of Design (L26100-0100D, Table 3-1): cement carriers worked by their own cranes.
+    ("Sibline Star", "Cement carrier (geared)", 210, 40.0, 11.2, 57174, 24),     # 45,000 DWT design vessel
+    ("Cedar Cement", "Cement carrier (geared)", 120, 35.0, 10.5, 32000, 20),     # 25,000 DWT interim vessel
+    ("Jiyeh Trader", "Cement carrier (geared)", 105, 25.0, 8.5, 13500, 17),      # 10,000 DWT
+    ("Med Cement", "Cement carrier (geared)", 100, 20.0, 7.0, 10800, 16),        # 8,000 DWT
+    ("Damour", "Cement carrier (geared)", 110, 14.0, 6.1, 8200, 15),             # 6,000 DWT
+    ("Saida Bay", "Cement carrier (geared)", 107, 17.0, 6.0, 6900, 15)]          # 5,000 DWT
 FLEETS["multipurpose"] = FLEETS["container"][:3] + FLEETS["general_cargo"][:2] + FLEETS["roro"][:1]
 # What works the ships at each kind of terminal, by name prefix and what it is called.
 EQUIPMENT = {

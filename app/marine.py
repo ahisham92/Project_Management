@@ -77,7 +77,7 @@ TERMINAL_TYPES = [
     ("general_cargo", "General cargo"),
     ("roro", "RoRo (vehicles)"),
     ("bulk", "Dry bulk"),
-    ("bulk_hoppers", "Dry bulk: ship's own cranes into mobile hoppers"),
+    ("bulk_hoppers", "Cement: ship's own cranes into mobile hoppers"),
     ("multipurpose", "Multipurpose"),
 ]
 # What a berth without crane stoppers (no rail-mounted cranes) is used for: the user sets it per

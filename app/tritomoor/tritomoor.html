@@ -1140,7 +1140,7 @@ const MoorEngine = (() => {
       return Math.max(0, Math.min(T, curveTension(L, e)));
     }
     const T = curveTension(L, e);
-    if (L.brake > 0 && T > L.brake) return L.brake + (T - L.brake) * 0.02;   // the winch brake renders
+    if (L.brake > 0 && T > L.brake) return L.brake + (T - L.brake) * 0.002;   // the winch brake renders
     return T;
   }
   const renderedLength = (L, e) => {
@@ -2990,6 +2990,15 @@ const Moor3D = (() => {
   const VS = `attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol;
     uniform mat4 uVP; uniform mat4 uLVP; varying vec3 vN; varying vec3 vC; varying vec3 vW; varying vec4 vL;
     void main(){ vN=aNrm; vC=aCol; vW=aPos; vL=uLVP*vec4(aPos,1.0); gl_Position=uVP*vec4(aPos,1.0); }`;
+  // the sea surface rises and falls with the swell (uWaveA: amplitude in metres), less in the lee at the berth
+  const VSW = `attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol;
+    uniform mat4 uVP; uniform mat4 uLVP; uniform vec4 uWave; uniform float uWaveW; uniform float uWaveA; uniform float uTime;
+    varying vec3 vN; varying vec3 vC; varying vec3 vW; varying vec4 vL;
+    void main(){ vec3 p=aPos;
+      float ph=(p.x*uWave.x+p.y*uWave.y)*uWave.z+uTime*uWaveW;
+      float bend=0.35*sin((p.x*uWave.y-p.y*uWave.x)*uWave.z*0.37+1.3*sin(ph*0.21));
+      p.z+=uWaveA*(0.45+0.55*smoothstep(0.0,90.0,p.y))*sin(ph+bend);
+      vN=aNrm; vC=aCol; vW=p; vL=uLVP*vec4(p,1.0); gl_Position=uVP*vec4(p,1.0); }`;
   const VS_DEPTH = `attribute vec3 aPos; uniform mat4 uVP; void main(){ gl_Position=uVP*vec4(aPos,1.0); }`;
   // how much of the sun reaches a point: 1 in the open, 0 in shadow, from the depth map drawn from the sun
   const SHADOW = `varying vec4 vL; uniform sampler2D uShadow; uniform float uShadowOn; uniform float uTexel;
@@ -3027,7 +3036,7 @@ const Moor3D = (() => {
       gl_FragColor=vec4(col,1.0);
     }`;
   const FSW = HEAD + SHADOW + `varying vec3 vN; varying vec3 vC; varying vec3 vW;
-    uniform vec3 uSun; uniform vec3 uEye; uniform vec3 uSky; uniform float uFog; uniform float uTime; uniform float uAlpha; uniform vec4 uWave; uniform float uWaveW;
+    uniform vec3 uSun; uniform vec3 uEye; uniform vec3 uSky; uniform float uFog; uniform float uTime; uniform float uAlpha; uniform vec4 uWave; uniform float uWaveW; uniform vec3 uCur;
     void main(){
       vec3 p=vW; float t=uTime;
       // the sea state: swell from its direction (uWave.xy points to where it comes from), by its length and steepness
@@ -3052,6 +3061,12 @@ const Moor3D = (() => {
       col*=1.0+uWave.w*1.1*sh2;
       float foam=smoothstep(0.90,1.0,sh2+0.06*rx)*smoothstep(0.10,0.30,uWave.w)*(0.55+0.45*cos(p.x*0.9+p.y*1.3));
       col=mix(col,vec3(0.93,0.96,0.97),clamp(foam,0.0,0.8));
+      // the current: streaks drifting downstream, faster and closer together as it runs harder
+      if(uCur.z>0.0){ float al=p.x*uCur.x+p.y*uCur.y, ac=p.x*uCur.y-p.y*uCur.x;
+        float lane=floor(ac/6.0), off=fract(sin(lane*12.9898)*43758.5453);
+        float d=fract((al+t*(2.0+uCur.z*7.0))/44.0+off), wd=abs(fract(ac/6.0)-0.5);
+        float st=smoothstep(0.09,0.0,wd)*smoothstep(0.0,0.06,d)*smoothstep(0.42,0.22,d);
+        col=mix(col,vec3(0.86,0.96,1.0),0.42*st*(1.0-0.75*fade)); }
       float fog=clamp(length(uEye-p)/uFog,0.0,1.0);
       col=mix(col,uSky,fog*fog*0.9);
       gl_FragColor=vec4(col,clamp(uAlpha*(0.80+0.18*fres),0.05,0.99));
@@ -3070,14 +3085,14 @@ const Moor3D = (() => {
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
     return s;
   }
-  function program(fs) {
+  function program(fs, vs) {
     const p = gl.createProgram();
-    gl.attachShader(p, compile(VS, gl.VERTEX_SHADER)); gl.attachShader(p, compile(fs, gl.FRAGMENT_SHADER));
+    gl.attachShader(p, compile(vs || VS, gl.VERTEX_SHADER)); gl.attachShader(p, compile(fs, gl.FRAGMENT_SHADER));
     gl.bindAttribLocation(p, 0, 'aPos'); gl.bindAttribLocation(p, 1, 'aNrm'); gl.bindAttribLocation(p, 2, 'aCol');
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     const u = n => gl.getUniformLocation(p, n);
-    return { p, uLVP: u('uLVP'), uShadow: u('uShadow'), uShadowOn: u('uShadowOn'), uTexel: u('uTexel'), uVP: u('uVP'), uSun: u('uSun'), uEye: u('uEye'), uSky: u('uSky'), uFog: u('uFog'), uTime: u('uTime'), uAlpha: u('uAlpha'), uUnder: u('uUnder'), uWave: u('uWave'), uWaveW: u('uWaveW') };
+    return { p, uLVP: u('uLVP'), uShadow: u('uShadow'), uShadowOn: u('uShadowOn'), uTexel: u('uTexel'), uVP: u('uVP'), uSun: u('uSun'), uEye: u('uEye'), uSky: u('uSky'), uFog: u('uFog'), uTime: u('uTime'), uAlpha: u('uAlpha'), uUnder: u('uUnder'), uWave: u('uWave'), uWaveW: u('uWaveW'), uWaveA: u('uWaveA'), uCur: u('uCur') };
   }
 
   function init(cv, ov) {
@@ -3085,7 +3100,7 @@ const Moor3D = (() => {
     try {
       gl = cv.getContext('webgl', { antialias: true, preserveDrawingBuffer: true }) || cv.getContext('experimental-webgl', { preserveDrawingBuffer: true });
       if (!gl) throw new Error('WebGL is not available in this browser.');
-      progs = { solid: program(FS), water: program(FSW) };
+      progs = { solid: program(FS), water: program(FSW, VSW) };
       const sp = gl.createProgram();
       gl.attachShader(sp, compile(VS_SKY, gl.VERTEX_SHADER)); gl.attachShader(sp, compile(FS_SKY, gl.FRAGMENT_SHADER));
       gl.bindAttribLocation(sp, 0, 'aPos'); gl.linkProgram(sp);
@@ -3617,7 +3632,12 @@ const Moor3D = (() => {
       m.quad([cx - R, yNear, zb], [cx - R, cy + R, zb], [cx + R, cy + R, zb], [cx + R, yNear, zb], hex('#B9AE8E'));
       if (wall) m.quad([cx - R, -0.05, zb], [cx + R, -0.05, zb], [cx + R, -0.05, 0], [cx - R, -0.05, 0], hex('#8C8576'));
     }
-    wm.quad([cx - R, yNear, 0], [cx + R, yNear, 0], [cx + R, cy + R, 0], [cx - R, cy + R, 0], [0, 0, 0]);
+    // a grid fine enough for the swell to lift it: about a twelfth of a wave length where there is a sea state
+    const nW = S.wave && S.wave.amp > 0 ? Math.max(24, Math.min(150, Math.round(2 * R / Math.max(6, S.wave.lam / 12)))) : 1;
+    for (let i = 0; i < nW; i++) for (let j = 0; j < nW; j++) {
+      const x0 = cx - R + 2 * R * i / nW, x1 = cx - R + 2 * R * (i + 1) / nW, y0 = yNear + (cy + R - yNear) * j / nW, y1 = yNear + (cy + R - yNear) * (j + 1) / nW;
+      wm.quad([x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0], [0, 0, 0]);
+    }
     return { m, wm, scale };
   }
 
@@ -3699,7 +3719,8 @@ const Moor3D = (() => {
       gl.uniform3f(pr.uSky, SKY[0], SKY[1], SKY[2]);
       gl.uniform1f(pr.uFog, cam.dist * 9);
       if (pr.uTime) gl.uniform1f(pr.uTime, time);
-      if (pr.uWave) { const wv = lastScene && lastScene.wave; gl.uniform4f(pr.uWave, wv ? wv.ux : 1, wv ? wv.uy : 0, wv ? wv.k : 0.05, wv ? wv.slope : 0); gl.uniform1f(pr.uWaveW, wv ? wv.omega : 0); }
+      if (pr.uWave) { const wv = lastScene && lastScene.wave; gl.uniform4f(pr.uWave, wv ? wv.ux : 1, wv ? wv.uy : 0, wv ? wv.k : 0.05, wv ? wv.slope : 0); gl.uniform1f(pr.uWaveW, wv ? wv.omega : 0); if (pr.uWaveA) gl.uniform1f(pr.uWaveA, wv && wv.amp ? wv.amp : 0);
+        const cu = lastScene && lastScene.cur; if (pr.uCur) gl.uniform3f(pr.uCur, cu ? cu.ux : 1, cu ? cu.uy : 0, cu ? cu.v : 0); }
       if (pr.uUnder) gl.uniform1f(pr.uUnder, Math.min(1, Math.max(0, (waterAlpha - 0.1) / 0.9)));
     };
     const bind = buf => {
@@ -8959,7 +8980,7 @@ function scene3D(sc) {
   const E3 = proj.environment || {}, wHs = Number(E3.waveHs) || 0, wT = Number(E3.wavePeriod) || 8;
   const depth3 = Number(proj.berth.depth) > 0 ? Number(proj.berth.depth) + WL : 20;
   const waveOf = (dir, hs, per) => { const lam = Math.max(25, Math.min(1.56 * per * per, per * Math.sqrt(9.81 * depth3))), q = dir * Math.PI / 180;
-    return { ux: Math.cos(q), uy: Math.sin(q), k: 2 * Math.PI / lam, slope: Math.min(0.36, 1.6 * Math.PI * hs / lam), omega: 2 * Math.PI / per, hs, lam }; };
+    return { ux: Math.cos(q), uy: Math.sin(q), k: 2 * Math.PI / lam, slope: Math.min(0.36, 1.6 * Math.PI * hs / lam), omega: 2 * Math.PI / per, hs, lam, per, amp: hs / 2 }; };
   return {
     V: sc.ships[0].V, berthType: sc.type, showLabels, scale, centre: [cx, cy], quay: sc.quay,
     structure: ST, site, waveOf,
@@ -9253,18 +9274,18 @@ function scenarioProject(job, lines) {
   return pj;
 }
 function jobSummary(RA) {
-  const o = { pct: 0, line: '', bol: 0, bolId: '', bolSwl: 0, bolU: 0, fen: 0, fenId: '', fenD: 0, fenDId: '', fenRated: 0, fenRun: 0, fenCase: 0, bolRun: 0, bolCase: 0, surge: 0, sway: 0, cases: 0, fails: 0, bad: 0, run: 0, case: 0, gov: null, allow: 0, clear: Infinity, perLine: [] };
+  const o = { pct: 0, line: '', bol: 0, bolId: '', bolSwl: 0, bolU: 0, fen: 0, fenId: '', fenD: 0, fenDId: '', fenRated: 0, fenRun: 0, fenCase: 0, bolRun: 0, bolCase: 0, lineRun: 0, lineCase: 0, clrRun: 0, clrCase: 0, surge: 0, sway: 0, cases: 0, fails: 0, bad: 0, run: 0, case: 0, gov: null, allow: 0, clear: Infinity, perLine: [] };
   let best = -1;
   RA.runs.forEach((R, ri) => {
     o.allow = R.M.allow;
     if (!o.perLine.length) o.perLine = R.M.lines.map(l => ({ name: l.name, pct: 0 }));
     R.cases.forEach((c, ci) => {
       o.cases++; if (!c.ok) o.bad++; if (!(c.check && c.check.pass)) o.fails++;
-      c.lines.forEach((l, i) => { if (l.pct > o.pct) { o.pct = l.pct; o.line = R.M.lines[i].name; } if (o.perLine[i] && l.pct > o.perLine[i].pct) o.perLine[i].pct = l.pct; });
+      c.lines.forEach((l, i) => { if (l.pct > o.pct) { o.pct = l.pct; o.line = R.M.lines[i].name; if (c.ok) { o.lineRun = ri; o.lineCase = ci; } } if (o.perLine[i] && l.pct > o.perLine[i].pct) o.perLine[i].pct = l.pct; });
       c.bollards.forEach((b, j) => { const B = R.M.bollards[j]; if (b.total > o.bol) { o.bol = b.total; o.bolId = B.id; o.bolSwl = B.swl; if (c.ok) { o.bolRun = ri; o.bolCase = ci; } } if (B.swl > 0) o.bolU = Math.max(o.bolU, b.total / B.swl); });
       c.fenders.forEach((f, j) => { const F = R.M.fenders[j]; if (f.R > o.fen) { o.fen = f.R; o.fenId = F.id; } if (f.d > o.fenD) { o.fenD = f.d; o.fenDId = F.id; o.fenRated = (F.ft && F.ft.rated || 0) / 1000; if (c.ok) { o.fenRun = ri; o.fenCase = ci; } } });
       o.surge = Math.max(o.surge, Math.abs(c.surge)); o.sway = Math.max(o.sway, Math.abs(c.sway));
-      if (Number.isFinite(c.clearance)) o.clear = Math.min(o.clear, c.clearance);
+      if (Number.isFinite(c.clearance) && c.clearance < o.clear) { o.clear = c.clearance; if (c.ok) { o.clrRun = ri; o.clrCase = ci; } }
       const r = c.check && c.check.gov ? c.check.gov.ratio : 0;
       if (c.ok && r > best) { best = r; o.run = ri; o.case = ci; o.gov = c.check.gov; }
     });
@@ -9475,7 +9496,7 @@ function openScenarioResult(k) {
    each scenario at its governing case, and close-ups of the most compressed fender and the most loaded bollard. */
 const Video = (() => {
   const V = { open: false, playing: false, rec: null, chunks: [], shots: [], total: 0, t: 0, last: 0, raf: 0, paused: false, manual: false, cam: null, userCam: null,
-    w: 1280, h: 720, opts: { minutes: 3, size: '1280x720', camera: 'auto', format: 'auto', title: '', client: '' }, cache: new Map(), stage: null, ctx: null, saved: null, done: null };
+    w: 1280, h: 720, opts: { minutes: 'auto', mode: 'detailed', size: '1280x720', camera: 'auto', format: 'auto', title: '', client: '' }, cache: new Map(), stage: null, ctx: null, saved: null, done: null };
   const ease = u => u < 0 ? 0 : u > 1 ? 1 : u * u * (3 - 2 * u);
   const lerp = (a, b, u) => a + (b - a) * u;
   const mix = (c0, c1, u) => { const o = {}; for (const k of ['yaw', 'pitch', 'dist', 'tx', 'ty', 'tz']) o[k] = lerp(c0[k], c1[k], u); return o; };
@@ -9536,6 +9557,7 @@ const Video = (() => {
     // (the camera stays over the gap, looking along it and down: the hull is on one side and the berth on the other)
     fender: (I, X, z, side, g) => ({ yaw: side > 0 ? 0 : 180, pitch: 24, dist: 13, tx: X, ty: g, tz: z }),
     fender2: (I, X, z, side, g) => ({ yaw: side > 0 ? -5 : 185, pitch: 40, dist: 30, tx: X, ty: g, tz: z }),
+    gap: (I, X, g, side) => ({ yaw: side > 0 ? -4 : 184, pitch: 50, dist: 36, tx: X, ty: g / 2, tz: 1.5 }),
     bollard: (I, X, Y, z, side) => ({ yaw: side > 0 ? -128 : -52, pitch: 15, dist: 24, tx: X, ty: Y + 2, tz: z + 1.5 }),
     bollard2: (I, X, Y, z, side) => ({ yaw: side > 0 ? -100 : -80, pitch: 24, dist: 34, tx: X, ty: Y + 4, tz: z + 2 })
   };
@@ -9543,6 +9565,7 @@ const Video = (() => {
   /* ----- the shot list ----- */
   function buildShots() {
     const list = SCN.list.filter(r => !r.error);
+    const brief = V.opts.mode === 'summary';
     const shots = [], byV = new Map();
     list.forEach(r => { if (!byV.has(r.job.vi)) byV.set(r.job.vi, []); byV.get(r.job.vi).push(r); });
     const first = list[0];
@@ -9558,10 +9581,16 @@ const Video = (() => {
     shots.push({ kind: 'berth', dur: 8, J: first, C: C0, cam0: CAM.high(I0), cam1: CAM.berthA(I0), anim: 'rest', head: 'The berth',
       lines: [`${nF} fender${nF === 1 ? '' : 's'}${ftn ? ': ' + ftn : ''}`, `${nB} bollard${nB === 1 ? '' : 's'}${swl > 0 ? ', up to ' + kNt(swl) + ' safe working load' : ''}`,
         Number(P.berth.depth) > 0 ? `Water depth ${fmt(Number(P.berth.depth), 1)} m below chart datum` : null, `${byV.size} vessel${byV.size === 1 ? '' : 's'} checked in ${list.length} run${list.length === 1 ? '' : 's'}`].filter(Boolean) });
-    byV.forEach(rs => {
+    // a summary follows the largest and the smallest vessel and any part-built stage of the berth; the governing
+    // fender, bollard, gap and berthing results are still looked for across every vessel
+    const partBuilt = rs => { const f = MoorEngine.berthFrame(rs[0].pj); return Number.isFinite(f.lo + f.hi); };
+    const groups = [...byV.values()], lenOf = rs => { const v = rs[0].pj.vessel, cl = (v.conditions || {}).laden || {}; return Number(cl.disp) > 0 ? Number(cl.disp) : 0.75 * 1.025 * (Number(v.LOA) || 0) * (Number(v.B) || 0) * (Number(cl.draft) || 0); };   // size by displacement
+    const shown = new Set(!brief || groups.length <= 3 ? groups : [groups.reduce((a, b) => lenOf(b) > lenOf(a) ? b : a), groups.reduce((a, b) => lenOf(b) < lenOf(a) ? b : a), ...groups.filter(partBuilt)]);
+    const late = [];
+    groups.forEach(rs => {
       const J0 = rs[0], Cb = sceneOf(J0, null, 0), I = infoOf(Cb), v = J0.pj.vessel, Vs = Cb.sc.ships[0].V;
-      const cs = v.conditions || {};
-      shots.push({ kind: 'vessel', dur: 5.5, pri: 1, I, J: J0, C: Cb, cam0: CAM.high(I), cam1: CAM.quarter(I), anim: 'rest', head: J0.job.vessel, cut: true,
+      const cs = v.conditions || {}, mine = shown.has(rs), out = brief ? late : shots;
+      if (mine) shots.push({ kind: 'vessel', dur: 6, pri: 1, I, J: J0, C: Cb, cam0: CAM.high(I), cam1: CAM.quarter(I), anim: 'rest', head: J0.job.vessel, cut: true,
         lines: [`${fmt(Number(v.LOA), 0)} m long, ${fmt(Number(v.B), 1)} m beam`, `Draft ${cs.laden && cs.laden.draft ? fmt(Number(cs.laden.draft), 1) + ' m laden' : ''}${cs.ballast && cs.ballast.draft ? ', ' + fmt(Number(cs.ballast.draft), 1) + ' m in ballast' : ''}`,
           `${(J0.pj.lines || []).length} mooring lines`, `${rs.length} scenario${rs.length === 1 ? '' : 's'}`,
           Number.isFinite(MoorEngine.berthFrame(J0.pj).lo + MoorEngine.berthFrame(J0.pj).hi) ? 'Only part of the berth is in service: the rest stands as bare piles' : null].filter(Boolean) });
@@ -9578,7 +9607,7 @@ const Video = (() => {
             let alShow = fd.alpha;
             for (; alShow > 0.5; alShow -= 0.5) { const q = -alShow * Math.PI / 180, sn = Math.sin(q), cq = Math.cos(q), Y0 = fx.hf - (fd.x * sn - Vs.B / 2 * cq);
               if (hp.every(([a, b]) => Y0 - ft.l1.Dmm / 1000 + a * sn + b * cq * 1.03 > 0.5)) break; }
-            shots.push({ kind: 'berthing', dur: 10, pri: 2, rank: ft.l1.uc, J: J0, C: Cb, cam0: side > 0 ? CAM.quarter2(I) : CAM.stern(I), cam1: Object.assign(CAM.fender2(I, fx.X, z, side, g), { dist: 19, pitch: 27 }), camBy: 0.42, anim: 'berthing', fd, ft, fx, alShow, head: 'Berthing on the fenders',
+            out.push({ kind: 'berthing', dur: 11, pri: 2, rank: ft.l1.uc, cut: brief, check: { name: 'Berthing energy against the fender', val: `${fmt(fd.EA, 0)} kNm to absorb`, lim: `fender takes ${fmt(ft.l1.uc > 0 ? fd.EA / ft.l1.uc : 0, 0)} kNm`, ok: ft.ok }, J: J0, C: Cb, cam0: side > 0 ? CAM.quarter2(I) : CAM.stern(I), cam1: Object.assign(CAM.fender2(I, fx.X, z, side, g), { dist: 19, pitch: 27 }), camBy: 0.42, anim: 'berthing', fd, ft, fx, alShow, head: 'Berthing on the fenders',
               lines: [`Approach at ${fmt(fd.Vb, 2)} m/s and ${fmt(fd.alpha, 0)}° to the berth`, `Berthing energy ${fmt(fd.EN, 0)} kNm, ${fmt(fd.EA, 0)} kNm with the abnormal factor`,
                 `Fender ${fx.id} is squeezed ${fmt(ft.l1.Dmm, 0)} mm (${fmt(ft.l1.Dpct, 0)}% of its rated deflection)`, `Reaction ${kNt(ft.l1.R)}, ${fmt(ft.l1.uc * 100, 0)}% of the fender's energy capacity`,
                 ft.ok ? 'Fender check: safe' : 'Fender check: ' + ft.why.join('; ')] });
@@ -9589,28 +9618,54 @@ const Video = (() => {
       const baseOf = (J, C) => {
         const c = C.c, E = J.pj.environment, R = J.RESALL.runs[C.ri];
         const wx = [c.env && c.env.Vw > 0 ? `Wind ${fmt(c.env.Vw, 1)} m/s from ${c.windHeading}°` : null, c.env && c.env.Vc > 0 ? `Current ${fmt(c.env.Vc, 2)} m/s from ${c.currentHeading}°` : null,
-          E.waveMode !== 'off' && Number(E.waveHs) > 0 ? `Waves Hs ${fmt(Number(E.waveHs), 2)} m` : null].filter(Boolean).join(' · ');
+          E.waveMode !== 'off' && Number(E.waveHs) > 0 ? `Waves Hs ${fmt(Number(E.waveHs), 2)} m, period ${fmt(Number(E.wavePeriod) || 0, 1)} s${c.scnWave != null ? ' from ' + c.scnWave + '°' : ''}` : null].filter(Boolean).join(' · ');
         const state = (R && R.state && R.state.name) || '';
         return { J, C, ri: C.ri, ci: C.ci, scn: J.job.scn.name, sub: `${state ? state + ', draft ' + fmt(C.sc.ships[0].V.T, 1) + ' m' : ''}${wx ? ' · ' + wx : ''}`, hud: true };
       };
       const caseOf = (J, ri, ci) => { const C = Object.assign({}, sceneOf(J, ri, ci)); C.ri = ri; C.ci = ci; return C; };
-      // the most demanding scenario of each loading condition is always shown, laden before ballast,
-      // and the ship and the water are seen to rise or fall from one to the next
-      const conds = [...new Set(rs.map(J => J.job.scn.cond || ''))];
+      // every scenario in turn: laden before ballast, and within each loading the milder weather before the harsher,
+      // so the sea, the loads and the ship are seen to change from one to the next and the caption says by how much
+      const conds = [...new Set(rs.map(J => J.job.scn.cond || ''))].sort((a, b) => (a === 'laden' ? 0 : 1) - (b === 'laden' ? 0 : 1));
+      const sev = J => (Number(J.pj.environment.windSpeed) || 0) + 10 * (Number(J.pj.environment.waveHs) || 0) + 20 * (Number(J.pj.environment.currentSpeed) || 0);
       const worst = new Map(conds.map(cd => [cd, rs.filter(J => (J.job.scn.cond || '') === cd).reduce((a, b) => b.m.util > a.m.util ? b : a)]));
-      const order = rs.slice().sort((p, q) => (worst.get(p.job.scn.cond || '') === p ? 0 : 1) - (worst.get(q.job.scn.cond || '') === q ? 0 : 1) || conds.indexOf(p.job.scn.cond || '') - conds.indexOf(q.job.scn.cond || ''));
+      const order = rs.slice().sort((p, q) => conds.indexOf(p.job.scn.cond || '') - conds.indexOf(q.job.scn.cond || '') || sev(p) - sev(q));
+      const mvLim = Math.max(Number(J0.pj.environment.maxSurge) || 0, Number(J0.pj.environment.maxSway) || 0);
       let prev = null;
-      order.forEach((J, k) => {
-        const C = caseOf(J, J.m.run, J.m.case), c = C.c, m = J.m, key = worst.get(J.job.scn.cond || '') === J;
-        const T = C.sc.ships[0].V.T, WL = Number(J.pj.environment.waterLevel) || 0;
+      if (mine) order.forEach((J, k) => {
+        const m = J.m, C = caseOf(J, m.lineRun, m.lineCase), c = C.c, key = worst.get(J.job.scn.cond || '') === J, E = J.pj.environment;
+        const T = C.sc.ships[0].V.T, WL = Number(E.waterLevel) || 0;
         const from = prev && (Math.abs(prev.T - T) > 0.05 || Math.abs(prev.WL - WL) > 0.05) ? prev : null;
-        shots.push(Object.assign({ kind: 'scenario', dur: key ? (from ? 9 : 7.5) : 5, pri: key ? 1 : 3, rank: m.util, I, Tfrom: from ? from.T : null, WLfrom: from ? from.WL : null,
+        let cmp = '';
+        if (prev) {
+          const pe = prev.J.pj.environment, ch = [];
+          const d = (lab, a, b, dp, unit) => { if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 0.5 * Math.pow(10, -dp)) ch.push(`${lab} ${fmt(a, dp)} to ${fmt(b, dp)} ${unit}`); };
+          d('draft', prev.T, T, 1, 'm'); d('water level', prev.WL, WL, 1, 'm'); d('wind', Number(pe.windSpeed), Number(E.windSpeed), 0, 'm/s'); d('waves', Number(pe.waveHs), Number(E.waveHs), 1, 'm'); d('current', Number(pe.currentSpeed), Number(E.currentSpeed), 1, 'm/s');
+          cmp = ` Against ${prev.J.job.scn.name}: ${ch.length ? ch.join(', ') + '; ' : ''}highest line ${fmt(prev.J.m.pct, 0)}% to ${fmt(m.pct, 0)}%, bollard ${fmt(tonnes(prev.J.m.bol), 0)} to ${fmt(tonnes(m.bol), 0)} t.`;
+        }
+        shots.push(Object.assign({ kind: 'scenario', dur: key ? (from ? 10 : 8.5) : (from ? 8.5 : 7), pri: brief || key ? 1 : 2, rank: m.util, I, Tfrom: from ? from.T : null, WLfrom: from ? from.WL : null,
           cam0: k % 2 ? CAM.stern(I) : CAM.quarter2(I), cam1: k % 2 ? Object.assign(CAM.quay2(I), { yaw: 248 }) : CAM.quay(I), anim: 'out', mag: C.autoMag, labels: 'lines',
-          cap: `${J === gov ? 'The most demanding scenario for this vessel. ' : ''}Governing case of ${m.cases}: highest line ${m.line} at ${fmt(m.pct, 0)}% of its breaking load (allowable ${fmt(m.allow, 0)}%).${Number.isFinite(m.clear) ? ` Smallest gap between hull and berth ${fmt(m.clear, 2)} m.` : ''} ${m.pass ? 'Criteria met.' : 'Criteria not met.'}` }, baseOf(J, C)));
-        prev = { T, WL };
-        if (J === gov) shots.push(Object.assign({ kind: 'plan', dur: 6, pri: 5, rank: m.util, I, cam0: CAM.quarter(I), cam1: CAM.top(I), anim: 'out', mag: C.autoMag, labels: 'lines',
-            cap: `From above: the vessel moves ${fmt(Math.abs(c.surge), 2)} m along the berth and ${fmt(Math.abs(c.sway), 2)} m across it${C.autoMag > 1 ? ` (the movement along the berth is shown ${C.autoMag} times larger so it can be seen)` : ''}.` }, baseOf(J, C)));
+          check: { name: 'Mooring line tension', val: `${m.line} at ${fmt(m.pct, 0)}% of its breaking load`, lim: `allowable ${fmt(m.allow, 0)}%`, ok: m.pct <= m.allow + 1e-9 },
+          cap: `${J === gov ? 'The most demanding scenario for this vessel. ' : ''}The worst of ${m.cases} combinations of wind, current and wave direction.${cmp}` }, baseOf(J, C)));
+        prev = { T, WL, J };
+        if (J === gov && !brief) shots.push(Object.assign({ kind: 'plan', dur: 7, pri: 4, rank: m.util, I, cam0: CAM.quarter(I), cam1: CAM.top(I), anim: 'out', mag: C.autoMag, labels: 'lines',
+            check: { name: 'Vessel movement at the berth', val: `${fmt(Math.max(m.surge, m.sway), 2)} m at most`, lim: mvLim > 0 ? `limit ${fmt(mvLim, 1)} m` : '', ok: !(mvLim > 0) || Math.max(m.surge, m.sway) <= mvLim },
+            cap: `From above: in this case the vessel moves ${fmt(Math.abs(c.surge), 2)} m along the berth and ${fmt(Math.abs(c.sway), 2)} m across it${C.autoMag > 1 ? ` (the movement along the berth is shown ${C.autoMag} times larger so it can be seen)` : ''}.` }, baseOf(J, C)));
       });
+      // the scenarios of this vessel side by side
+      if (mine && order.length > 1) shots.push({ kind: 'matrix', dur: 5 + 1.2 * order.length, pri: 1, J: J0, C: Cb, I, cam0: CAM.quarter(I), cam1: CAM.high(I), anim: 'rest',
+        rows: order.map(J => ({ name: J.job.scn.name, pct: J.m.pct, allow: J.m.allow, bol: tonnes(J.m.bol), swl: tonnes(J.m.bolSwl), fen: tonnes(J.m.fen), fenD: J.m.fenD * 1000, mv: Math.max(J.m.surge, J.m.sway), clear: J.m.clear })) });
+      // the smallest gap between the hull and the berth in any scenario: where it is, and how it comes about
+      const jg = rs.reduce((a, b) => b.m.clear < a.m.clear ? b : a, rs[0]);
+      if (Number.isFinite(jg.m.clear)) {
+        const C = caseOf(jg, jg.m.clrRun, jg.m.clrCase), sh = C.sc.ships[0], h1 = hullMin(sh, sh.pose), h0 = hullMin(sh, sh.x0, h1.i);
+        const yawD = (sh.pose[2] - sh.x0[2]) * 180 / Math.PI, swayIn = sh.x0[1] - sh.pose[1], rest = h0.Y, clear = jg.m.clear;
+        const where = Math.abs(yawD) < 0.03 ? 'along the flat side of the hull' : Math.abs(h1.a) < 0.12 * Vs.LOA ? 'near amidships' : h1.a > 0 ? 'at the forward end of the flat side' : 'at the after end of the flat side';
+        const minC = Number(jg.pj.berth.minClearance) || 0, side = h1.X >= I.cx ? 1 : -1;
+        out.push(Object.assign({ kind: 'gap', dur: 10, pri: 2, rank: -clear, cut: true, cam0: CAM.top(I), cam1: CAM.gap(I, h1.X, Math.max(0.5, clear), side), camBy: 0.5, anim: 'out', mag: 1, labels: 'none', gapAt: { i: h1.i, where },
+          calc: [['Gap with the ship resting on the fenders', rest], [`Ship pressed ${swayIn >= 0 ? 'onto' : 'off'} the fenders`, -swayIn], [`Ship turned ${fmt(Math.abs(yawD), 1)}°, this end swings ${rest - swayIn - clear >= 0 ? 'in' : 'out'}`, -(rest - swayIn - clear)], ['Clear gap left', clear, true]],
+          check: { name: 'Gap between the hull and the berth', val: `${fmt(clear, 2)} m ${where}`, lim: minC > 0 ? `at least ${fmt(minC, 2)} m` : 'the hull must not touch the berth', ok: clear > minC },
+          cap: `The closest the hull comes to the berth face in any case of any scenario for this vessel, ${where}. The fenders hold the ship off the berth: the gap is what is left of their stand-off after they are squeezed and the ship has turned.` }, baseOf(jg, C)));
+      }
       // the hardest squeeze of a fender in any scenario of this vessel, at true scale
       const jf = rs.reduce((a, b) => b.m.fenD > a.m.fenD ? b : a, rs[0]);
       if (jf.m.fenD > 0) {
@@ -9618,8 +9673,8 @@ const Video = (() => {
         let fi = -1; c.fenders.forEach((f, j) => { if (f.d > 0 && C.M.fenders[j].kind === 'quay' && (fi < 0 || f.d > c.fenders[fi].d)) fi = j; });
         if (fi >= 0) {
           const F = C.M.fenders[fi], z = fenderZ(jf, F), side = F.X >= I.cx ? 1 : -1, f = c.fenders[fi], g = Math.max(0.5, (F.hf - f.d) / 2);
-          shots.push(Object.assign({ kind: 'fender', dur: 8, pri: 2, rank: F.ft && F.ft.rated > 0 ? f.d * 1000 / F.ft.rated : 0, cam0: CAM.fender2(I, F.X, z, side, g), cam1: CAM.fender(I, F.X, z, side, g), anim: 'out', mag: 1, labels: 'fenders', focus: fi, cut: true, fm: { hf: F.hf, d: f.d, R: f.R, rated: F.ft && F.ft.rated > 0 ? F.ft.rated : f.d * 1000, Rmax: jf.fd && jf.fd.types && jf.fd.types[0] && jf.fd.types[0].l1 ? Math.max(f.R, jf.fd.types[0].l1.R) : f.R },
-            cap: `The hardest squeeze of a fender for this vessel: fender ${F.id} is pressed in ${fmt(f.d * 1000, 0)} mm${F.ft && F.ft.rated > 0 ? ` (${fmt(f.d * 1000 / F.ft.rated * 100, 0)}% of its rated deflection)` : ''} and pushes back with ${kNt(f.R)}. Closest the hull comes to the berth: ${Number.isFinite(jf.m.clear) ? fmt(jf.m.clear, 2) + ' m' : 'n/a'}.` }, baseOf(jf, C)));
+          out.push(Object.assign({ kind: 'fender', dur: 9, pri: 2, check: { name: 'Fender deflection under the mooring loads', val: `${F.id} squeezed ${fmt(f.d * 1000, 0)} mm`, lim: F.ft && F.ft.rated > 0 ? `rated ${fmt(F.ft.rated, 0)} mm` : '', ok: !(F.ft && F.ft.rated > 0) || f.d * 1000 <= F.ft.rated }, rank: F.ft && F.ft.rated > 0 ? f.d * 1000 / F.ft.rated : 0, cam0: CAM.fender2(I, F.X, z, side, g), cam1: CAM.fender(I, F.X, z, side, g), anim: 'out', mag: 1, labels: 'fenders', focus: fi, cut: true, fm: { hf: F.hf, d: f.d, R: f.R, rated: F.ft && F.ft.rated > 0 ? F.ft.rated : f.d * 1000, Rmax: jf.fd && jf.fd.types && jf.fd.types[0] && jf.fd.types[0].l1 ? Math.max(f.R, jf.fd.types[0].l1.R) : f.R },
+            cap: `The hardest squeeze of a fender for this vessel: fender ${F.id} is pressed in ${fmt(f.d * 1000, 0)} mm${F.ft && F.ft.rated > 0 ? ` (${fmt(f.d * 1000 / F.ft.rated * 100, 0)}% of its rated deflection)` : ''} and pushes back with ${kNt(f.R)}.` }, baseOf(jf, C)));
         }
       }
       // the highest bollard load in any scenario of this vessel
@@ -9630,21 +9685,23 @@ const Video = (() => {
         if (bi >= 0 && c.bollards[bi].total > 0 && C.M.bollards[bi].si == null) {
           const B = C.M.bollards[bi], b = c.bollards[bi], side = B.X >= I.cx ? 1 : -1;
           const by = B.Y > 0.05 && B.Y <= 3 ? -B.Y : B.Y;
-          shots.push(Object.assign({ kind: 'bollard', dur: 6, pri: 4, rank: B.swl > 0 ? b.total / B.swl : 0, cam0: CAM.bollard2(I, B.X, by, B.z, side), cam1: CAM.bollard(I, B.X, by, B.z, side), anim: 'hold', mag: 1, labels: 'bollards', focus: bi,
+          out.push(Object.assign({ kind: 'bollard', dur: 7.5, pri: 3, cut: brief, check: { name: 'Bollard load', val: `${B.id} carries ${fmt(tonnes(b.total), 0)} t`, lim: B.swl > 0 ? `safe working load ${fmt(tonnes(B.swl), 0)} t` : '', ok: !(B.swl > 0) || b.total <= B.swl }, rank: B.swl > 0 ? b.total / B.swl : 0, cam0: CAM.bollard2(I, B.X, by, B.z, side), cam1: CAM.bollard(I, B.X, by, B.z, side), anim: 'hold', mag: 1, labels: 'bollards', focus: bi,
             cap: `The highest bollard load for this vessel: bollard ${B.id} carries ${kNt(b.total)}${B.swl > 0 ? `, ${fmt(b.total / B.swl * 100, 0)}% of its ${fmt(tonnes(B.swl), 0)} t safe working load` : ''}.` }, baseOf(jb, C)));
         }
       }
     });
-    // the hardest worked bollard of the whole project is always shown
-    const bs = shots.filter(q => q.kind === 'bollard');
-    if (bs.length) bs.reduce((a, b) => b.rank > a.rank ? b : a, bs[0]).pri = 1;
-    ['berthing', 'fender'].forEach(kd => { const q = shots.filter(z => z.kind === kd); if (q.length) q.reduce((a, b) => b.rank > a.rank ? b : a, q[0]).pri = 1; });
-    shots.push({ kind: 'summary', dur: Math.min(16, 7 + list.length * 0.5), J: first, C: C0, cam0: CAM.quarter(I0), cam1: CAM.high(I0), anim: 'rest', cut: true });
+    // the governing berthing, fender, gap and bollard of the whole project are always shown; a summary shows only those
+    ['berthing', 'gap', 'fender', 'bollard'].forEach(kd => {
+      const q = (brief ? late : shots).filter(z => z.kind === kd); if (!q.length) return;
+      const best = q.reduce((a, b) => b.rank > a.rank ? b : a, q[0]); best.pri = 1;
+      if (brief) { best.cap = (best.cap ? `Governing for the whole berth (${best.J.job.vessel}). ` + best.cap : best.cap); if (best.lines) best.lines = best.lines.concat(); shots.push(best); }
+    });
+    shots.push({ kind: 'summary', dur: Math.min(18, 8 + list.length * 0.5), J: first, C: C0, cam0: CAM.quarter(I0), cam1: CAM.high(I0), anim: 'rest', cut: true });
     // fit the running time asked for: shots are slowed or quickened a little, and where that is not enough
     // the least important ones are left out (every scenario still appears in the closing table)
-    const want = Math.max(20, (Number(V.opts.minutes) || 3) * 60), KMIN = 0.72, KMAX = 1.8;
     const keep = shots.slice();
     const total = () => keep.reduce((a, s) => a + s.dur, 0);
+    const auto = !(Number(V.opts.minutes) > 0), want = auto ? total() : Math.max(20, Number(V.opts.minutes) * 60), KMIN = 0.72, KMAX = 1.8;
     V.dropped = 0;
     while (total() * KMIN > want) {
       let w = -1;
@@ -9656,6 +9713,14 @@ const Video = (() => {
     let t = 0;
     keep.forEach(s => { s.dur = Math.max(3.2, s.dur * k); s.t0 = t; t += s.dur; });
     V.shots = keep; V.total = t;
+  }
+  // the point of the hull outline nearest the berth face in a given pose (or the same point i in another pose)
+  function hullMin(sh, pose, i) {
+    const Vs = sh.V, hp = MoorEngine.hullPolygon(Vs.LOA, Vs.B, Vs.Lpb || 0.69 * Vs.LBP), c = Math.cos(pose[2]), sn = Math.sin(pose[2]);
+    const at = j => ({ i: j, a: hp[j][0], X: pose[0] + hp[j][0] * c - hp[j][1] * sn, Y: pose[1] + hp[j][0] * sn + hp[j][1] * c });
+    if (i != null) return at(i);
+    let best = null; hp.forEach((q, j) => { const o = at(j); if (!best || o.Y < best.Y - 1e-6) best = o; });
+    return best;
   }
   function fenderZ(J, f) {
     const pf = (J.pj.fenders || []).find(q => String(q.id) === String(f.id)) || {}, t = (J.pj.fenderTypes || []).find(q => q.name === pf.type) || {};
@@ -9725,6 +9790,7 @@ const Video = (() => {
     // the sea state of this case, growing as the loads come on
     const cc = s.C.c, Ev = s.J.pj.environment;
     S.wave = cc && cc.scnWave != null && Number(Ev.waveHs) > 0 ? S.waveOf(cc.scnWave, Number(Ev.waveHs) * (s.now && s.now.a != null ? 0.35 + 0.65 * s.now.a : 1), Number(Ev.wavePeriod) || 8) : null;
+    S.cur = cc && cc.env && cc.env.Vc > 0 && cc.currentHeading != null ? { ux: Math.cos(cc.currentHeading * Math.PI / 180), uy: Math.sin(cc.currentHeading * Math.PI / 180), v: cc.env.Vc * (s.now && s.now.a != null ? 0.3 + 0.7 * s.now.a : 1) } : null;
     Moor3D.render(S, { width: V.w, height: V.h, cam });
     const x = V.ctx;
     x.setTransform(1, 0, 0, 1, 0, 0);
@@ -9764,9 +9830,11 @@ const Video = (() => {
       text(x, s.head, pad + 22 * k, H - hh - 46 * k + 40 * k, 25, '#fff', 600);
       s.lines.forEach((ln, j) => text(x, ln, pad + 22 * k, H - hh - 46 * k + 72 * k + j * lh, 16.5, j === s.lines.length - 1 && /safe$/.test(ln) ? '#8FE0C4' : '#DCE7EC'));
       if (s.kind === 'vessel') sizes(x, s, W - pad - 330 * k, H - 46 * k);
+      if (s.check) chip(x, s, pad, H - hh - 46 * k - 44 * k);
       if (s.kind === 'berthing' && s.now) meter(x, W - pad - 300 * k, H - 196 * k, 300 * k, [
         ['Fender deflection', s.now.d * 1000, s.ft.l1.Dmm, 'mm'], ['Fender reaction', s.now.R, s.ft.l1.R, 'kN'], ['Hull to the berth face', s.now.face, s.fx.hf + 9, 'm', true]]);
     } else if (s.kind === 'summary') summary(x);
+    else if (s.kind === 'matrix') matrix(x, s);
     else if (s.hud) {
       // lower third: scenario, conditions and what this shot shows
       x.font = `500 ${Math.round(17 * k)}px ${FONT()}`;
@@ -9777,13 +9845,16 @@ const Video = (() => {
       x.font = `500 ${Math.round(13.5 * k)}px ${FONT()}`;
       text(x, wrap(x, s.sub || '', maxW)[0] || '', pad + 20 * k, H - hh - 40 * k + 56 * k, 13.5, '#9FB4C2');
       cl.forEach((ln, j) => text(x, ln, pad + 20 * k, H - hh - 40 * k + 84 * k + j * 24 * k, 17, '#E9F0F3'));
+      if (s.check) chip(x, s, pad, H - hh - 40 * k - 44 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') bars(x, s, sc2, W - pad - 310 * k, 96 * k, 310 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') compass(x, s, W - pad - 88 * k, H - 132 * k, 62 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') arrows(x, s);
       if (s.kind === 'scenario') section(x, s, sc2, pad, 92 * k, 250 * k, 150 * k);
       if (s.kind === 'fender' && s.fm) { const a2 = s.now && s.now.a != null ? s.now.a : 1; meter(x, W - pad - 330 * k, 96 * k, 330 * k, [
         ['Fender squeezed (rated ' + fmt(s.fm.rated, 0) + ')', s.fm.d * 1000 * a2, s.fm.rated, 'mm'], ['Fender reaction', s.fm.R * a2, s.fm.Rmax, 'kN'], ['Hull to the berth face', s.fm.hf - s.fm.d * a2, s.fm.hf, 'm', true]]);
-        gapLine(x, s, S, sc2); }
+        const sf = sc2.fenders.filter(q => q.kind === 'quay'), j = sf.findIndex(q => String(q.id) === String(s.C.M.fenders[s.focus].id)), f = j >= 0 ? S.fendersQuay[j] : null;
+        if (f) gapLine(x, f.X, (f.z != null ? f.z : 1) + 2.4, Math.max(0, sf[j].hf - sf[j].d)); }
+      if (s.kind === 'gap') { const h = hullMin(sc2.ships[0], sc2.ships[0].pose, s.gapAt.i); gapLine(x, h.X, 1.2, Math.max(0, h.Y)); calc(x, s, W - pad - 400 * k, 96 * k, 400 * k); }
       tags(x, s, S, sc2);
     }
     x.globalAlpha = 1;
@@ -9835,7 +9906,8 @@ const Video = (() => {
       text(x, lab, cx - Math.sin(q) * (r + 11 * k), cy - Math.cos(q) * (r + 11 * k) + 4 * k, 11.5, col, 700, 'center');
     };
     if (c.env && c.env.Vw > 0) arrow(c.windHeading, '#FFFFFF', 'wind');
-    if (c.env && c.env.Vc > 0) arrow(c.currentHeading, '#7FC4EE', 'current');
+    if (c.env && c.env.Vc > 0) arrow(c.currentHeading, '#7FC4EE', c.windHeading === c.currentHeading ? '' : 'current');
+    if (c.scnWave != null) arrow(c.scnWave, '#9BE3D0', c.scnWave === c.windHeading || c.scnWave === c.currentHeading ? '' : 'waves');
   }
   // labels pinned to things in the picture
   function tags(x, s, S, sc2) {
@@ -9845,6 +9917,7 @@ const Video = (() => {
       x.font = `600 ${Math.round(13 * k)}px ${FONT()}`;
       const w = x.measureText(str).width + 14 * k, X = q[0] - w / 2, Y = q[1] - 30 * k;
       if (X < 4 || Y < 90 * k || X + w > V.w - 4 || Y > V.h - 150 * k) return;
+      if ((s.kind === 'scenario' || s.kind === 'plan') && X + w > V.w - 345 * k && Y < 440 * k) return;   // clear of the line load panel
       if (used.some(r => X < r[0] + r[2] && X + w > r[0] && Y < r[1] + 22 * k && Y + 22 * k > r[1])) return;
       used.push([X, Y, w]);
       x.fillStyle = 'rgba(16,28,44,.86)'; x.fillRect(X, Y, w, 22 * k); x.fillStyle = col || '#fff'; x.fillRect(X, Y, 4 * k, 22 * k);
@@ -9865,7 +9938,7 @@ const Video = (() => {
     const E = s.J.pj.environment, items = [];
     if (c.env && c.env.Vw > 0 && c.windHeading != null) items.push([c.windHeading, '#FFFFFF', `Wind ${fmt(c.env.Vw, 1)} m/s`, false]);
     if (c.env && c.env.Vc > 0 && c.currentHeading != null) items.push([c.currentHeading, '#7FC4EE', `Current ${fmt(c.env.Vc, 2)} m/s`, false]);
-    if (c.scnWave != null) items.push([c.scnWave, '#9BE3D0', `Waves Hs ${fmt(Number(E.waveHs), 1)} m`, true]);
+    if (c.scnWave != null) items.push([c.scnWave, '#9BE3D0', `Waves ${fmt(Number(E.waveHs), 1)} m high, every ${fmt(Number(E.wavePeriod) || 0, 1)} s`, true]);
     const L = I.L, len = 0.26 * L, y0 = I.cy + I.B / 2 + 0.45 * L;
     return items.map(([th, color, label, crests], j) => {
       const q = th * Math.PI / 180, ux = Math.cos(q), uy = Math.sin(q), cx = I.cx + (j - (items.length - 1) / 2) * 0.36 * L;
@@ -9908,10 +9981,49 @@ const Video = (() => {
     text(x, 'Freeboard', tx, Y + 114 * k, 11.5, '#9FB4C2'); text(x, `${fmt(D - T, 1)} m`, tx, Y + 132 * k, 15, '#fff', 600);
   }
   // the clear distance from the berth face to the hull at the fender in the close-up, drawn as a dimension
-  function gapLine(x, s, S, sc2) {
-    const k = V.k, sf = sc2.fenders.filter(q => q.kind === 'quay'), j = sf.findIndex(q => String(q.id) === String(s.C.M.fenders[s.focus].id)); if (j < 0) return;
-    const f = S.fendersQuay[j]; if (!f) return;
-    const z = (f.z != null ? f.z : 1) + 2.4, gap = Math.max(0, sf[j].hf - sf[j].d), a = Moor3D.project([f.X, 0, z]), b = Moor3D.project([f.X, gap, z]); if (!a || !b) return;
+  // what is being checked in this shot, the value found and the limit it is held against
+  function chip(x, s, X, Y) {
+    const k = V.k, c = s.check; x.font = `600 ${Math.round(15 * k)}px ${FONT()}`;
+    const t1 = 'CHECK', t2 = c.name, t3 = c.val + (c.lim ? '  ·  ' + c.lim : ''), t4 = c.ok ? 'met' : 'not met';
+    const w1 = x.measureText(t1).width, w2 = x.measureText(t2).width, w3 = x.measureText(t3).width, w4 = x.measureText(t4).width, g = 14 * k, Wd = w1 + w2 + w3 + w4 + 5 * g + 16 * k;
+    panel(x, X, Y, Wd, 34 * k, 0.9);
+    x.fillStyle = '#E3B23C'; x.fillRect(X, Y, 5 * k, 34 * k);
+    let px = X + g; text(x, t1, px, Y + 23 * k, 12.5, '#E3B23C', 700); px += w1 * 12.5 / 15 + g;
+    text(x, t2, px, Y + 23 * k, 15, '#fff', 600); px += w2 + g;
+    text(x, t3, px, Y + 23 * k, 15, '#DCE7EC', 500); px += w3 + g;
+    text(x, t4, px, Y + 23 * k, 15, c.ok ? '#8FE0C4' : '#F2A093', 700);
+  }
+  // how the gap comes about, as a short sum
+  function calc(x, s, X, Y, W) {
+    const k = V.k, rows = s.calc, a = s.now && s.now.a != null ? s.now.a : 1; panel(x, X, Y, W, 44 * k + rows.length * 30 * k);
+    text(x, 'Gap between the hull and the berth', X + 16 * k, Y + 27 * k, 14, '#CFE1E7', 600);
+    rows.forEach(([lab, v, sum], j) => {
+      const y = Y + 58 * k + j * 30 * k, show = j === 0 || a > 0.25 + 0.2 * j;
+      if (sum) { x.fillStyle = 'rgba(255,255,255,.4)'; x.fillRect(X + 16 * k, y - 20 * k, W - 32 * k, 1.5 * k); }
+      text(x, lab, X + 16 * k, y, 14, sum ? '#fff' : '#DCE7EC', sum ? 700 : 500);
+      if (show) text(x, `${j === 0 || sum ? '' : v < 0 ? '\u2212 ' : '+ '}${fmt(Math.abs(v), 2)} m`, X + W - 16 * k, y, 15, sum ? '#8FE0C4' : '#fff', 700, 'right');
+    });
+  }
+  // the scenarios of one vessel side by side, the highest of each column picked out
+  function matrix(x, s) {
+    const W = V.w, H = V.h, k = V.k, pad = 22 * k, rows = s.rows, rh = 34 * k, PW = Math.min(W - 2 * pad, 900 * k), PH = 96 * k + rows.length * rh, Y0 = H - PH - 40 * k;
+    panel(x, pad, Y0, PW, PH, 0.88);
+    text(x, 'How the cases compare', pad + 22 * k, Y0 + 36 * k, 22, '#fff', 600);
+    const cols = [['Scenario', 0, r => r.name], ['Highest line', 0.30, r => `${fmt(r.pct, 0)}%`, r => r.pct], ['Bollard', 0.46, r => `${fmt(r.bol, 0)} t`, r => r.bol], ['Fender', 0.58, r => `${fmt(r.fen, 0)} t, ${fmt(r.fenD, 0)} mm`, r => r.fenD], ['Moves', 0.76, r => `${fmt(r.mv, 2)} m`, r => r.mv], ['Smallest gap', 0.87, r => Number.isFinite(r.clear) ? `${fmt(r.clear, 2)} m` : 'n/a', r => -r.clear]];
+    const X0 = pad + 22 * k, TW = PW - 44 * k;
+    cols.forEach(([h, f]) => text(x, h, X0 + TW * f, Y0 + 64 * k, 13, '#9FB4C2', 600));
+    rows.forEach((r, j) => {
+      const y = Y0 + 72 * k + (j + 0.68) * rh;
+      if (j % 2 === 0) { x.fillStyle = 'rgba(255,255,255,.05)'; x.fillRect(X0 - 8 * k, Y0 + 72 * k + j * rh, TW + 16 * k, rh); }
+      cols.forEach(([h, f, str, val]) => { const top = val && rows.every(q => val(q) <= val(r) + 1e-9); text(x, String(str(r)).slice(0, 34), X0 + TW * f, y, 15.5, top ? '#E3B23C' : '#E9F0F3', top ? 700 : 500); });
+      // the line load as a bar against the allowable
+      x.fillStyle = 'rgba(255,255,255,.16)'; x.fillRect(X0 + TW * 0.30, y + 5 * k, TW * 0.13, 3 * k);
+      x.fillStyle = '#39B58A'; x.fillRect(X0 + TW * 0.30, y + 5 * k, TW * 0.13 * Math.max(0, Math.min(1, r.allow > 0 ? r.pct / r.allow : 0)), 3 * k);
+    });
+    text(x, s.J.job.vessel + ': the highest value of each column is in amber', X0, Y0 + PH - 12 * k, 12.5, '#9FB4C2');
+  }
+  function gapLine(x, X, z, gap) {
+    const k = V.k, a = Moor3D.project([X, 0, z]), b = Moor3D.project([X, gap, z]); if (!a || !b) return;
     x.strokeStyle = '#fff'; x.lineWidth = 2.5 * k; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.stroke();
     [a, b].forEach(q => { x.beginPath(); x.moveTo(q[0], q[1] - 9 * k); x.lineTo(q[0], q[1] + 9 * k); x.stroke(); });
     const lab = `${fmt(gap, 2)} m clear`, mx = (a[0] + b[0]) / 2, my = Math.min(a[1], b[1]) - 16 * k;
@@ -10052,7 +10164,8 @@ const Video = (() => {
     const sel = (key, options) => el('select', { onchange: e => { V.opts[key] = e.target.value; } }, options.map(([v, l]) => el('option', { value: v, selected: String(V.opts[key]) === String(v) }, l)));
     add('Title on the video', el('input', { type: 'text', value: V.opts.title, oninput: e => { V.opts.title = e.target.value; } }));
     add('Client (optional)', el('input', { type: 'text', value: V.opts.client, oninput: e => { V.opts.client = e.target.value; } }));
-    add('Length, about', sel('minutes', [['1', '1 minute'], ['2', '2 minutes'], ['3', '3 minutes'], ['4', '4 minutes'], ['5', '5 minutes']]));
+    add('What to show', sel('mode', [['detailed', 'Detailed: every vessel and every scenario'], ['summary', 'Summary: largest and smallest vessel, part-built stage, governing results']]));
+    add('Length, about', sel('minutes', [['auto', 'As long as it needs'], ['1', '1 minute'], ['2', '2 minutes'], ['3', '3 minutes'], ['4', '4 minutes'], ['5', '5 minutes'], ['8', '8 minutes']]));
     add('Picture size', sel('size', [['1280x720', '1280 × 720 (HD)'], ['1920x1080', '1920 × 1080 (Full HD)']]));
     add('Camera', sel('camera', [['auto', 'Automatic: it flies between the views'], ['manual', 'I move it myself while it plays']]));
     add('File', sel('format', [['auto', 'MP4 if this browser can, otherwise WebM'], ['webm', 'WebM']]));

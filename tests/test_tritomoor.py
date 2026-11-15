@@ -245,3 +245,16 @@ def test_the_page_draws_the_surroundings_waves_and_the_fender_squeeze(signed_in)
     for part in ("function siteBlock", "function earclip", "uWave", "S.site",
                  "Hull to the berth face", "Fender squeezed", "m clear", "paintT"):
         assert part in page, part
+
+
+def test_the_video_has_a_summary_mode_and_names_each_check(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    for part in ("mode: 'detailed'", "Summary: largest and smallest vessel", "function chip(x, s, X, Y)",
+                 "function matrix(x, s)", "function calc(x, s, X, Y, W)", "function hullMin", "kind: 'gap'",
+                 "uWaveA", "uCur", "lineRun", "clrRun"):
+        assert part in page, part
+
+
+def test_a_rendering_winch_brake_holds_its_load(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert "return L.brake + (T - L.brake) * 0.002;" in page

@@ -147,6 +147,32 @@ export async function landToward({ twin, toScene, toEn, centre, within = 1500 })
   return [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
 }
 
+// Whether each scene point is on land (+1) or at sea (-1) on the map: by the side of the nearest
+// stretch of coastline it lies (the land is on a coastline's left). 0 with no coast within 600 m.
+export async function landAt({ twin, toEn, centre, points }) {
+  const lat0 = twin.asset.latitude;
+  const lon0 = twin.asset.longitude;
+  if (lat0 == null || lon0 == null || !twin.surroundings) return null;
+  const { got } = await mapData(twin, lat0, lon0, toEn(centre.x, centre.z)).catch(() => ({}));
+  if (!got || !(got.coast || []).length) return null;
+  return points.map(([x, z]) => {
+    const [e, n] = toEn(x, z);
+    let best = null;
+    for (const k of got.coast) {
+      for (let i = 1; i < k.p.length; i++) {
+        const [p, q] = [k.p[i - 1], k.p[i]];
+        const [dx, dn] = [q[0] - p[0], q[1] - p[1]];
+        const l2 = dx * dx + dn * dn;
+        if (!l2) continue;
+        const t = Math.max(0, Math.min(1, ((e - p[0]) * dx + (n - p[1]) * dn) / l2));
+        const d = Math.hypot(p[0] + dx * t - e, p[1] + dn * t - n);
+        if (!best || d < best.d) best = { d, side: Math.sign(dx * (n - p[1]) - dn * (e - p[0])) };
+      }
+    }
+    return best && best.d < 600 ? best.side : 0;
+  });
+}
+
 async function mapDataOnce(twin, lat0, lon0, centre) {
   const s = twin.surroundings;
   if (s.kept) {

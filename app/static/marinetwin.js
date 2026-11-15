@@ -2286,6 +2286,13 @@ async function main() {
       new Promise((done) => setTimeout(() => done(null), 25000)),   // the first visit asks OpenStreetMap; later ones are kept
     ]).catch(() => null);
     if (land) frame.root = Math.abs(land[0]) > 0.7 ? Math.sign(land[0]) : 0;
+    // Better still: which end of the deck, looked past by 100 m, is on land. (Where the map draws
+    // the pier itself into its coastline, the coast's average way can point anywhere.)
+    const midZ = frame.front + frame.deckDepth / 2;
+    const ends = await import('./marinetwin-surroundings.js').then(({ landAt }) => landAt({
+      twin, toEn, centre: { x: (frame.minX + frame.maxX) / 2, z: midZ }, points: [[frame.minX - 100, midZ], [frame.maxX + 100, midZ]] }))
+      .catch(() => null);
+    if (ends && ends[0] !== ends[1] && ends[0] * ends[1] <= 0 && (ends[0] > 0 || ends[1] > 0)) frame.root = ends[0] > 0 ? -1 : 1;
   }
 
   // The terminal around it.

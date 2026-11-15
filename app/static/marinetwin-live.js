@@ -211,15 +211,31 @@ export async function startLive(ctx) {
     menHead.setMatrixAt(menUsed, mm.makeTranslation(x, frame.top + 1.6, z));
     menUsed++;
   }
+  // A line is made fast on the model's nearest bollard to where it would land (within 40 m), one
+  // line to a bollard where there are enough of them; with no bollard near, on the quay edge.
+  const BOLLARDS = ctx.bollards || [];
+  function madeFast(q, used) {
+    let best = null;
+    let bestD = 40 * 40;
+    for (const b of BOLLARDS) {
+      const d = (b.x - q.x) ** 2 + (b.z - q.z) ** 2 + (used.has(b) ? 15 * 15 : 0);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    if (!best) return q;
+    used.add(best);
+    return best;
+  }
   function moor(mesh, v, tide) {
     const ud = mesh.userData;
     if (!v || !v.lines) return;
     const a = [Math.cos(v.rot), -Math.sin(v.rot)];            // along the ship, bow-wards
     const l = [Math.sin(v.rot), Math.cos(v.rot)];             // towards the quay
+    const used = new Set();
     for (const k of LINE_ORDER.slice(0, v.lines)) {
       const [sx, qx] = LINES[k];
+      const quay = new THREE.Vector3(v.pos.x + a[0] * qx * ud.loa + l[0] * (ud.beam / 2 + 3.5), frame.top + 0.6, v.pos.z + a[1] * qx * ud.loa + l[1] * (ud.beam / 2 + 3.5));
       rope(new THREE.Vector3(v.pos.x + a[0] * sx * ud.loa + l[0] * (ud.beam / 2 - 0.5), tide + ud.deck, v.pos.z + a[1] * sx * ud.loa + l[1] * (ud.beam / 2 - 0.5)),
-        new THREE.Vector3(v.pos.x + a[0] * qx * ud.loa + l[0] * (ud.beam / 2 + 3.5), frame.top + 0.6, v.pos.z + a[1] * qx * ud.loa + l[1] * (ud.beam / 2 + 3.5)));
+        madeFast(quay, used));
     }
     // The linesmen at the bollards of the lines being handled now.
     if (v.phase === 'lines-in' || v.phase === 'lines-out') {

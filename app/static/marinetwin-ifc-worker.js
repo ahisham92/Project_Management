@@ -35,6 +35,10 @@ async function download(url) {
   return got === total ? bytes : bytes.subarray(0, got);
 }
 
+// Revit objects modelled for an analysis or a section drawing, not built: mooring lines from a
+// mooring study (ML-...), design vessels, and the illustrative ground, water and fills.
+const ANALYSIS_ONLY = /(^|:)\s*ML-|mooring line|^Vessel\b|:\s*Vessel\b|illustrative|for the section views/i;
+
 // The products with a shape, as web-ifc's StreamAllMeshes picks them: every element type in the
 // file but openings and spaces.
 function products(api, WebIFC, modelID) {
@@ -159,9 +163,13 @@ self.onmessage = async (ev) => {
     let origin = null;
     let done = 0;
     const rest = new Bucket();
+    const wantedName = (v) => [v.global, v.name, v.tag].some((x) => x && wanted.has(String(x).trim().toLowerCase()));
     let parts = 0;
     const kept = keepAt && typeof CompressionStream !== 'undefined' ? [] : null;
     const take = (flat, ids) => {
+      // Objects modelled only for analysis or section drawings are not part of the structure
+      // (the twin draws its own ships and lines): left out of the 3D.
+      if (!wantedName(ids) && ANALYSIS_ONLY.test(String(ids.name || ''))) return;
       const placed = flat.geometries;
       const tracked = [ids.global, ids.name, ids.tag].some((v) => v && wanted.has(String(v).trim().toLowerCase()));
       const bucket = tracked ? new Bucket() : rest;

@@ -211,12 +211,12 @@ export async function startLive(ctx) {
     menHead.setMatrixAt(menUsed, mm.makeTranslation(x, frame.top + 1.6, z));
     menUsed++;
   }
-  // A line is made fast on the model's nearest bollard to where it would land (within 40 m), one
+  // A line is made fast on the model's nearest bollard to where it would land (within 120 m), one
   // line to a bollard where there are enough of them; with no bollard near, on the quay edge.
   const BOLLARDS = ctx.bollards || [];
   function madeFast(q, used) {
     let best = null;
-    let bestD = 40 * 40;
+    let bestD = 120 * 120;
     for (const b of BOLLARDS) {
       const d = (b.x - q.x) ** 2 + (b.z - q.z) ** 2 + (used.has(b) ? 15 * 15 : 0);
       if (d < bestD) { bestD = d; best = b; }

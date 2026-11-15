@@ -522,12 +522,10 @@ const MoorEngine = (() => {
 
   // depth of the flat side below the deck at x, from the contour; none outside it. Two points at the same x
   // make a step (the end of the flat side), and the step is taken at its deeper value.
-  // Two constants fitted to OptiMoor's interim 25,000 DWT ballast operational case (8 runs, 6 fenders,
-  // RMS 0.7 t). FLAT_CHECK_OFFSET: the flat side is checked this fraction of the panel height below the
-  // fender level, which reproduces OptiMoor's 25 % / 18 % contact at the end fenders. FLAT_RECESS_SLOPE:
-  // metres the hull stands off per metre from a partly-contacting fender's centre to the nearest flat side.
-  const FLAT_CHECK_OFFSET = 1 / 6;
-  const FLAT_RECESS_SLOPE = 0.025;
+  // A fender only partly on the flat side meets the hull this much further off per metre that the flat side
+  // at its centre stops short of the panel's centre depth. Fitted to OptiMoor's interim 25,000 DWT and final
+  // 45,000 DWT ballast operational cases (16 runs, RMS 0.35 t on the fender thrusts).
+  const FLAT_RECESS_SLOPE = 0.045;
   function flatDepthAt(fc, x) {
     if (!fc.length || x < fc[0][0] || x > fc[fc.length - 1][0]) return 0;
     let d = 0;
@@ -918,15 +916,23 @@ const MoorEngine = (() => {
         const fc = flatContour(p.vessel || {}, V).points;
         if (fc.length) {
           // OptiMoor: the flat-side contour gives, along the ship, how far the flat side reaches below the deck.
-          // At this draft the fender bears wherever the flat side reaches down to it; its contact is the part
-          // of the panel's width that lies over such flat side. Outside the contour there is no flat side.
-          const tChk = deck - ft.level - FLAT_CHECK_OFFSET * h;
-          const N = 88; let hit = 0, near = Infinity;
-          for (let k = 0; k < N; k++) { const x = a - ft.width / 2 + ft.width * (k + 0.5) / N; if (flatDepthAt(fc, x) >= tChk && top > keel) { hit++; near = Math.min(near, Math.abs(x - a)); } }
-          contact = tChk < 0 ? 0 : hit / N;
-          // a fender only partly over the flat side bears where the hull has begun to turn in, so it meets the
-          // hull further off: the hull is taken to recede from the end of the flat side at FLAT_RECESS_SLOPE
-          if (hit && hit < N && flatDepthAt(fc, a) < tChk) recess = FLAT_RECESS_SLOPE * near;
+          // Outside the contour there is no flat side.
+          // Panel depths below the deck: zTop at the panel's top edge, h tall, cut off at the keel. A point of
+          // the panel bears where the flat side reaches down past it, so the contact is the share of the
+          // panel's area inside the contour (a sloping contour clips the panel's corners).
+          const zTop = deck - top, zKeel = deck - keel, N = 88;
+          let acc = 0;
+          for (let k = 0; k < N; k++) {
+            const x = a - ft.width / 2 + ft.width * (k + 0.5) / N;
+            const zf = Math.min(flatDepthAt(fc, x), zKeel);
+            acc += Math.max(0, Math.min(1, (zf - zTop) / h));
+          }
+          contact = acc / N;
+          // a fender only partly on the flat side bears where the hull has begun to turn in, so it meets the
+          // hull further off: by FLAT_RECESS_SLOPE times how far the flat side at its centre stops short of
+          // the panel's centre
+          const zf0 = Math.min(flatDepthAt(fc, a), zKeel), zMid = zTop + h / 2;
+          if (contact > 0 && contact < 1 && zf0 < zMid) recess = FLAT_RECESS_SLOPE * (zMid - zf0);
         } else {
           const ov = Math.max(0, Math.min(top, deck) - Math.max(bot, keel));
           contact = Math.max(0, Math.min(1, ov / h));
@@ -6354,7 +6360,7 @@ function renderMethod() {
   <h2>Hull pressure</h2>
   <p class="note">Movements are reported as OptiMoor reports them: the surge, sway and yaw of the vessel's target point (entered on the Vessel tab; midships, or the manifold when the manifold check is on, if left blank), measured from the target position, which is where the vessel lies once its lines have been tended. The pretension alone therefore shows no movement, and a movement onto the berth does not include the squeeze the pretension has already put on the fenders. The Environment tab can switch back to midships, measured from the berthing position with the fenders just touching, as earlier versions did.</p>
   <p class="note">Fender contact follows OptiMoor: a quay fender carries load only if its panel meets the flat side of the hull at the draft of the load state. A fender that would bear above the deck edge, below the keel, or below the flat side where the bilge turns in (from the flat-side contour) takes nothing, and the rest of the fenders share the load. A light ship rides high, so in ballast this decides which fenders work. It needs the fender level and panel size on the fender type.</p>
-  <p class="note">A fender panel only transfers load through the part of its face that bears on the flat side of the hull. With the panel width and the height of its centre above datum entered on the fender type, the program works out, for each load state, how much of the panel lies between the keel and the deck edge at that fender, allowing for draft, trim and water level. The hull pressure is the fender reaction divided by that contact area and is checked against the vessel's hull pressure limit. A deep-loaded vessel or a falling tide lowers the deck edge down the panel, so the same reaction is spread over less of the hull and the pressure rises.</p>
+  <p class="note">A fender panel only transfers load through the part of its face that bears on the flat side of the hull. With the panel width and the height of its centre above datum entered on the fender type, the program works out, for each load state, how much of the panel lies between the keel and the deck edge at that fender, allowing for draft, trim and water level. The hull pressure is the fender reaction divided by that contact area and is checked against the vessel's hull pressure limit. A deep-loaded vessel or a falling tide lowers the deck edge down the panel, so the same reaction is spread over less of the hull and the pressure rises. When the vessel has a flat-side contour (from the OptiMoor vessel file), the contact is instead the share of the panel's area that lies inside the contour, as OptiMoor reports it: a sloping contour near the ends clips the panel's corners. A fender only partly on the flat side meets the hull where it has begun to turn in, so it is taken to stand slightly further off the hull and carries less load.</p>
   <h2>Winches</h2>
   <p class="note">The fairlead-to-winch length is line inboard of the fairlead. Its direction does not change as the vessel moves, but it stretches with the rest of the line, so it softens the mooring. A line on a fixed winch follows its load–elongation curve. With a brake holding load set, the line follows the curve until the tension reaches that load, after which the drum renders: tension stays at the brake load, apart from a small residual, and the length paid out is reported for each case. A constant-tension winch holds its set tension, paying out or heaving in as the vessel moves, and the tension never exceeds what the line would carry at that stretch. Rendering protects the line but lets the vessel move, so the pay-out is also compared with an optional render limit.</p>
   <h2>Equalising pretensions</h2>

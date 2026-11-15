@@ -26,6 +26,7 @@ from ..iris_door import describe as describe_iris
 from ..sitetwin_door import describe as describe_sitetwin
 from ..talus_door import describe as describe_talus
 from ..pontoon_door import describe as describe_pontoon
+from ..jedsa_door import describe as describe_jedsa
 from .tritomoor_views import describe as describe_tritomoor
 
 bp = Blueprint("home", __name__)
@@ -55,7 +56,8 @@ def chooser():
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
                            workload=describe_workload(), iris=describe_iris(),
                            tritomoor=describe_tritomoor(), sitetwin=describe_sitetwin(),
-                           talus=describe_talus(), pontoon=describe_pontoon())
+                           talus=describe_talus(), pontoon=describe_pontoon(),
+                           jedsa=describe_jedsa())
 
 
 @bp.get("/triton/")
@@ -98,3 +100,10 @@ def talus_missing():
 def pontoon_missing():
     """Only reached when Pontoon is not mounted in front of this address: say why."""
     return render_template("pontoon_missing.html", pontoon=describe_pontoon())
+
+
+@bp.get("/jedsa/")
+@login_required
+def jedsa_missing():
+    """Only reached when JEDSA is not mounted in front of this address: say why."""
+    return render_template("jedsa_missing.html", jedsa=describe_jedsa())

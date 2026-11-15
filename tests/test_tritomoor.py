@@ -224,3 +224,11 @@ def test_a_project_without_vessels_or_analyses_still_lists(signed_in):
     card = signed_in.get("/tritomoor/api/projects").get_json()["projects"][0]
     assert [v["name"] for v in card["vessels"]] == ["Example tanker"]
     assert card["analyses"] == 0 and card["last_analysis"] is None
+
+
+def test_the_page_carries_scenarios_and_the_video_export(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert 'id="btnVideo"' in page and "Export video" in page
+    assert "Scenarios &amp; video" in page or "Scenarios & video" in page
+    assert "captureStream" in page and "MediaRecorder" in page
+    assert "function lineReduction" in page and "function berthFrame" in page

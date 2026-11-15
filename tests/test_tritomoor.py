@@ -232,3 +232,9 @@ def test_the_page_carries_scenarios_and_the_video_export(signed_in):
     assert "Scenarios &amp; video" in page or "Scenarios & video" in page
     assert "captureStream" in page and "MediaRecorder" in page
     assert "function lineReduction" in page and "function berthFrame" in page
+
+
+def test_the_video_shows_loading_water_level_and_directions(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert "function arrowList" in page and "S.arrows" in page
+    assert "function section(x, s, sc2" in page and "Tfrom" in page

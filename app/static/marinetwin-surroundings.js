@@ -235,6 +235,7 @@ function lineUp(coast, at, leg) {
   const u = [(bx - ax) / len, (bz - az) / len];
   const n = [-u[1], u[0]];
   const mid = [(ax + bx) / 2, (az + bz) / 2];
+  const reach = leg.reach || 300;   // how far off the coast may be (further for a pier's root)
   let w = 0;
   let turn = 0;
   for (const c of coast) {
@@ -244,7 +245,7 @@ function lineUp(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
       const along = m[0] * u[0] + m[1] * u[1];
       const across = m[0] * n[0] + m[1] * n[1];
-      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      if (Math.abs(along) > len / 2 || Math.abs(across) > reach) continue;
       const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
       if (l < 1) continue;
       // The angle between the segment and the leg, either way along it, in (-90°, 90°].
@@ -269,7 +270,7 @@ function lineUp(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2 - mid[0], (p[1] + q[1]) / 2 - mid[1]];
       const along = m[0] * u[0] + m[1] * u[1];
       const across = m[0] * n[0] + m[1] * n[1];
-      if (Math.abs(along) > len / 2 || Math.abs(across) > 300) continue;
+      if (Math.abs(along) > len / 2 || Math.abs(across) > reach) continue;
       const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
       off += across * l;
       ow += l;
@@ -300,7 +301,7 @@ function landBehind(coast, at, leg) {
       const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
       const sm = at(m);
       const d = [sm[0] - mid[0], sm[1] - mid[1]];
-      if (Math.abs(d[0] * u[0] + d[1] * u[1]) > len / 2 + 200 || Math.abs(d[0] * -u[1] + d[1] * u[0]) > 400) continue;
+      if (Math.abs(d[0] * u[0] + d[1] * u[1]) > len / 2 + 200 || Math.abs(d[0] * -u[1] + d[1] * u[0]) > (leg.reach || 300) + 100) continue;
       const left = at([m[0] - (q[1] - p[1]) / l * 20, m[1] + (q[0] - p[0]) / l * 20]);
       vote += Math.sign((left[0] - sm[0]) * leg.land[0] + (left[1] - sm[1]) * leg.land[1]) * l;
     }
@@ -325,13 +326,27 @@ export async function addSurroundings(o) {
   }
 
   // The map in the scene, lined up on the quay where its coastline runs along it.
-  // Where the map has its land in front of the quay, it is turned half round about the quay first.
+  // The model's north may be off on the map (Revit's project north is not always true north). The
+  // map is tried as it is and turned about the quay in quarter turns; the turn kept is the one whose
+  // coast runs along the quay (or across a pier's root) with the land behind it, as much as it can.
   let base = ([e, n]) => toScene(e, n);
-  let flipped = false;
-  if (data && o.mainLeg && landBehind(data.coast || [], base, o.mainLeg) < 0) {
+  let quarter = 0;
+  if (data && o.mainLeg && (data.coast || []).length) {
     const [mx, mz] = [(o.mainLeg.a[0] + o.mainLeg.b[0]) / 2, (o.mainLeg.a[1] + o.mainLeg.b[1]) / 2];
-    base = ([e, n]) => { const [x, z] = toScene(e, n); return [2 * mx - x, 2 * mz - z]; };
-    flipped = true;
+    const turnBy = (k) => {
+      const [c, s] = [Math.round(Math.cos((k * Math.PI) / 2)), Math.round(Math.sin((k * Math.PI) / 2))];
+      return ([e, n]) => { const [x, z] = toScene(e, n); const [dx, dz] = [x - mx, z - mz]; return [mx + dx * c - dz * s, mz + dx * s + dz * c]; };
+    };
+    let best = null;
+    for (const k of [0, 1, 2, 3]) {
+      const at = turnBy(k);
+      const vote = landBehind(data.coast, at, o.mainLeg);
+      const fits = !!lineUp(data.coast, at, o.mainLeg);
+      const score = (fits ? 1e9 : 0) + vote;
+      if (vote > 0 && (!best || score > best.score)) best = { k, at, score };
+      if (k === 0 && vote > 0 && fits) break; // the model's own north already fits: keep it
+    }
+    if (best) { base = best.at; quarter = best.k; }
   }
   const fit = data ? lineUp(data.coast || [], base, o.mainLeg) : null;
   const at = fit ? (p) => fit.move(base(p)) : base;
@@ -468,8 +483,9 @@ export async function addSurroundings(o) {
         movers.push({ object: v, curve, len, s: (k / 6 + Math.random() * 0.1) * len, dir: k % 2 ? -1 : 1, speed: truck ? 9 : 12 });
       }
     }
-    const lined = (fit ? `, lined up on the quay (turned ${((fit.turn * 180) / Math.PI + (flipped ? 180 : 0)).toFixed(1)}°, moved ${Math.abs(fit.shift).toFixed(0)} m)` : '')
-      + (flipped ? '. The map had the land in front of the quay, so it was turned round: check the model\'s rotation (true north) in Set up' : '');
+    const turnedBy = ((fit ? (fit.turn * 180) / Math.PI : 0) + quarter * 90 + 540) % 360 - 180;
+    const lined = (fit ? `, lined up on the quay (turned ${turnedBy.toFixed(1)}°, moved ${Math.abs(fit.shift).toFixed(0)} m)` : '')
+      + (quarter ? `. The map's coast only fits the model turned ${quarter * 90}°: set the model's rotation (true north) in Set up so it needs no turn` : '');
     credits.push(`Map data © OpenStreetMap contributors: ${data.buildings.length.toLocaleString()} buildings, ${data.roads.length.toLocaleString()} roads${lined}`);
   }
   scene.add(group);

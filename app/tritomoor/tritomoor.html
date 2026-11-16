@@ -3058,9 +3058,9 @@ const Moor3D = (() => {
       col*=0.72+0.28*lit;
       col+=vec3(1.0,0.96,0.88)*pow(max(dot(n,h),0.0),220.0)*1.2*lit;
       // light backs and dark troughs, and broken crests when it is steep
-      col*=1.0+uWave.w*1.1*sh2;
-      float foam=smoothstep(0.90,1.0,sh2+0.06*rx)*smoothstep(0.10,0.30,uWave.w)*(0.55+0.45*cos(p.x*0.9+p.y*1.3));
-      col=mix(col,vec3(0.93,0.96,0.97),clamp(foam,0.0,0.8));
+      col*=1.0+min(0.5,uWave.w*2.4)*sh2;
+      float foam=smoothstep(0.80,0.97,sh2+0.08*rx)*smoothstep(0.03,0.15,uWave.w)*(0.70+0.30*cos(p.x*0.9+p.y*1.3));
+      col=mix(col,vec3(0.93,0.96,0.97),clamp(foam,0.0,0.85));
       // the current: streaks drifting downstream, faster and closer together as it runs harder
       if(uCur.z>0.0){ float al=p.x*uCur.x+p.y*uCur.y, ac=p.x*uCur.y-p.y*uCur.x;
         float lane=floor(ac/6.0), off=fract(sin(lane*12.9898)*43758.5453);
@@ -9550,6 +9550,7 @@ const Video = (() => {
     stern: I => ({ yaw: 138, pitch: 17, dist: 1.1 * I.L, tx: I.cx - 0.08 * I.L, ty: I.cy * 0.6, tz: 4 }),
     quay: I => ({ yaw: -62, pitch: 26, dist: 0.95 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
     quay2: I => ({ yaw: -112, pitch: 22, dist: 0.9 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
+    side: I => ({ yaw: 90, pitch: 5, dist: 1.2 * I.L, tx: I.cx, ty: I.cy, tz: 4 }),
     top: I => ({ yaw: 90, pitch: 82, dist: 1.5 * I.L, tx: I.cx, ty: I.cy * 0.6, tz: 0 }),
     berthA: I => ({ yaw: 20, pitch: 12, dist: 0.6 * I.L, tx: I.cx + 0.25 * I.L, ty: 2, tz: 2 }),
     berthB: I => ({ yaw: 160, pitch: 14, dist: 0.6 * I.L, tx: I.cx - 0.25 * I.L, ty: 2, tz: 2 }),
@@ -9585,12 +9586,17 @@ const Video = (() => {
     // fender, bollard, gap and berthing results are still looked for across every vessel
     const partBuilt = rs => { const f = MoorEngine.berthFrame(rs[0].pj); return Number.isFinite(f.lo + f.hi); };
     const groups = [...byV.values()], lenOf = rs => { const v = rs[0].pj.vessel, cl = (v.conditions || {}).laden || {}; return Number(cl.disp) > 0 ? Number(cl.disp) : 0.75 * 1.025 * (Number(v.LOA) || 0) * (Number(v.B) || 0) * (Number(cl.draft) || 0); };   // size by displacement
-    const shown = new Set(!brief || groups.length <= 3 ? groups : [groups.reduce((a, b) => lenOf(b) > lenOf(a) ? b : a), groups.reduce((a, b) => lenOf(b) < lenOf(a) ? b : a), ...groups.filter(partBuilt)]);
+    const utilOf = rs => Math.max(...rs.map(r => r.m.util)), govOf = gs => gs.length ? gs.reduce((a, b) => utilOf(b) > utilOf(a) ? b : a) : null;
+    // a summary follows the governing vessel of the finished berth and of any part-built stage, and gives the smallest vessel one shot
+    const stageGov = [govOf(groups.filter(g => !partBuilt(g))), govOf(groups.filter(partBuilt))].filter(Boolean);
+    const least = brief && groups.length > stageGov.length ? groups.filter(g => !stageGov.includes(g)).reduce((a, b) => lenOf(b) < lenOf(a) ? b : a) : null;
+    const shown = new Set(!brief ? groups : stageGov.concat(least ? [least] : []));
     const late = [];
-    groups.forEach(rs => {
+    (brief ? [...stageGov, ...(least ? [least] : []), ...groups.filter(g => !shown.has(g))] : groups).forEach(rs => {
       const J0 = rs[0], Cb = sceneOf(J0, null, 0), I = infoOf(Cb), v = J0.pj.vessel, Vs = Cb.sc.ships[0].V;
       const cs = v.conditions || {}, mine = shown.has(rs), out = brief ? late : shots;
-      if (mine) shots.push({ kind: 'vessel', dur: 6, pri: 1, I, J: J0, C: Cb, cam0: CAM.high(I), cam1: CAM.quarter(I), anim: 'rest', head: J0.job.vessel, cut: true,
+      const few = brief && rs === least, stage = !brief ? '' : few ? 'The smallest vessel. ' : partBuilt(rs) ? 'Governing vessel of the interim stage. ' : 'Governing vessel of the finished berth. ';
+      if (mine && !few) shots.push({ kind: 'vessel', dur: 5.5, pri: 1, I, J: J0, C: Cb, cam0: CAM.high(I), cam1: CAM.quarter(I), anim: 'rest', head: J0.job.vessel, cut: true,
         lines: [`${fmt(Number(v.LOA), 0)} m long, ${fmt(Number(v.B), 1)} m beam`, `Draft ${cs.laden && cs.laden.draft ? fmt(Number(cs.laden.draft), 1) + ' m laden' : ''}${cs.ballast && cs.ballast.draft ? ', ' + fmt(Number(cs.ballast.draft), 1) + ' m in ballast' : ''}`,
           `${(J0.pj.lines || []).length} mooring lines`, `${rs.length} scenario${rs.length === 1 ? '' : 's'}`,
           Number.isFinite(MoorEngine.berthFrame(J0.pj).lo + MoorEngine.berthFrame(J0.pj).hi) ? 'Only part of the berth is in service: the rest stands as bare piles' : null].filter(Boolean) });
@@ -9607,7 +9613,7 @@ const Video = (() => {
             let alShow = fd.alpha;
             for (; alShow > 0.5; alShow -= 0.5) { const q = -alShow * Math.PI / 180, sn = Math.sin(q), cq = Math.cos(q), Y0 = fx.hf - (fd.x * sn - Vs.B / 2 * cq);
               if (hp.every(([a, b]) => Y0 - ft.l1.Dmm / 1000 + a * sn + b * cq * 1.03 > 0.5)) break; }
-            out.push({ kind: 'berthing', dur: 11, pri: 2, rank: ft.l1.uc, cut: brief, check: { name: 'Berthing energy against the fender', val: `${fmt(fd.EA, 0)} kNm to absorb`, lim: `fender takes ${fmt(ft.l1.uc > 0 ? fd.EA / ft.l1.uc : 0, 0)} kNm`, ok: ft.ok }, J: J0, C: Cb, cam0: side > 0 ? CAM.quarter2(I) : CAM.stern(I), cam1: Object.assign(CAM.fender2(I, fx.X, z, side, g), { dist: 19, pitch: 27 }), camBy: 0.42, anim: 'berthing', fd, ft, fx, alShow, head: 'Berthing on the fenders',
+            out.push({ kind: 'berthing', dur: 10, pri: 2, rank: ft.l1.uc, cut: brief, check: { name: 'Berthing energy against the fender', val: `${fmt(fd.EA, 0)} kNm to absorb`, lim: `fender takes ${fmt(ft.l1.uc > 0 ? fd.EA / ft.l1.uc : 0, 0)} kNm`, ok: ft.ok }, J: J0, C: Cb, cam0: side > 0 ? CAM.quarter2(I) : CAM.stern(I), cam1: Object.assign(CAM.fender2(I, fx.X, z, side, g), { dist: 19, pitch: 27 }), camBy: 0.42, anim: 'berthing', fd, ft, fx, alShow, head: 'Berthing on the fenders',
               lines: [`Approach at ${fmt(fd.Vb, 2)} m/s and ${fmt(fd.alpha, 0)}° to the berth`, `Berthing energy ${fmt(fd.EN, 0)} kNm, ${fmt(fd.EA, 0)} kNm with the abnormal factor`,
                 `Fender ${fx.id} is squeezed ${fmt(ft.l1.Dmm, 0)} mm (${fmt(ft.l1.Dpct, 0)}% of its rated deflection)`, `Reaction ${kNt(ft.l1.R)}, ${fmt(ft.l1.uc * 100, 0)}% of the fender's energy capacity`,
                 ft.ok ? 'Fender check: safe' : 'Fender check: ' + ft.why.join('; ')] });
@@ -9631,7 +9637,10 @@ const Video = (() => {
       const order = rs.slice().sort((p, q) => conds.indexOf(p.job.scn.cond || '') - conds.indexOf(q.job.scn.cond || '') || sev(p) - sev(q));
       const mvLim = Math.max(Number(J0.pj.environment.maxSurge) || 0, Number(J0.pj.environment.maxSway) || 0);
       let prev = null;
-      if (mine) order.forEach((J, k) => {
+      let kk = 0;
+      if (mine) order.forEach(J => {
+        if (brief && (few ? J !== gov : worst.get(J.job.scn.cond || '') !== J)) return;
+        const k = kk++;
         const m = J.m, C = caseOf(J, m.lineRun, m.lineCase), c = C.c, key = worst.get(J.job.scn.cond || '') === J, E = J.pj.environment;
         const T = C.sc.ships[0].V.T, WL = Number(E.waterLevel) || 0;
         const from = prev && (Math.abs(prev.T - T) > 0.05 || Math.abs(prev.WL - WL) > 0.05) ? prev : null;
@@ -9640,19 +9649,23 @@ const Video = (() => {
           const pe = prev.J.pj.environment, ch = [];
           const d = (lab, a, b, dp, unit) => { if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 0.5 * Math.pow(10, -dp)) ch.push(`${lab} ${fmt(a, dp)} to ${fmt(b, dp)} ${unit}`); };
           d('draft', prev.T, T, 1, 'm'); d('water level', prev.WL, WL, 1, 'm'); d('wind', Number(pe.windSpeed), Number(E.windSpeed), 0, 'm/s'); d('waves', Number(pe.waveHs), Number(E.waveHs), 1, 'm'); d('current', Number(pe.currentSpeed), Number(E.currentSpeed), 1, 'm/s');
-          cmp = ` Against ${prev.J.job.scn.name}: ${ch.length ? ch.join(', ') + '; ' : ''}highest line ${fmt(prev.J.m.pct, 0)}% to ${fmt(m.pct, 0)}%, bollard ${fmt(tonnes(prev.J.m.bol), 0)} to ${fmt(tonnes(m.bol), 0)} t.`;
+          if (!brief) cmp = ` Against ${prev.J.job.scn.name}: ${ch.length ? ch.join(', ') + '; ' : ''}highest line ${fmt(prev.J.m.pct, 0)}% to ${fmt(m.pct, 0)}%, bollard ${fmt(tonnes(prev.J.m.bol), 0)} to ${fmt(tonnes(m.bol), 0)} t.`;
         }
-        shots.push(Object.assign({ kind: 'scenario', dur: key ? (from ? 10 : 8.5) : (from ? 8.5 : 7), pri: brief || key ? 1 : 2, rank: m.util, I, Tfrom: from ? from.T : null, WLfrom: from ? from.WL : null,
-          cam0: k % 2 ? CAM.stern(I) : CAM.quarter2(I), cam1: k % 2 ? Object.assign(CAM.quay2(I), { yaw: 248 }) : CAM.quay(I), anim: 'out', mag: C.autoMag, labels: 'lines',
+        if (brief) {
+          const cd = J.job.scn.cond || '', oth = rs.filter(q => q !== J && (q.job.scn.cond || '') === cd);
+          cmp = oth.length ? ` Highest line ${fmt(m.pct, 0)}% of its breaking load and bollard ${fmt(tonnes(m.bol), 0)} t, against ${oth.map(q => `${fmt(q.m.pct, 0)}% and ${fmt(tonnes(q.m.bol), 0)} t in ${q.job.scn.name}`).join(', ')}.` : '';
+        }
+        shots.push(Object.assign({ kind: 'scenario', dur: key || brief ? (from ? 10 : 7.5) : (from ? 7.5 : 5.5), pri: brief || key ? 1 : 2, rank: m.util, I, Tfrom: from ? from.T : null, WLfrom: from ? from.WL : null, camHold: from ? 0.4 : 0, cut: brief && few,
+          cam0: from ? CAM.side(I) : k % 2 ? CAM.stern(I) : CAM.quarter2(I), cam1: k % 2 ? Object.assign(CAM.quay2(I), { yaw: 248 }) : CAM.quay(I), anim: 'out', mag: C.autoMag, labels: 'lines',
           check: { name: 'Mooring line tension', val: `${m.line} at ${fmt(m.pct, 0)}% of its breaking load`, lim: `allowable ${fmt(m.allow, 0)}%`, ok: m.pct <= m.allow + 1e-9 },
-          cap: `${J === gov ? 'The most demanding scenario for this vessel. ' : ''}The worst of ${m.cases} combinations of wind, current and wave direction.${cmp}` }, baseOf(J, C)));
+          cap: `${brief ? stage : J === gov ? 'The most demanding scenario for this vessel. ' : ''}The worst of ${m.cases} combinations of wind, current and wave direction.${cmp}` }, baseOf(J, C)));
         prev = { T, WL, J };
-        if (J === gov && !brief) shots.push(Object.assign({ kind: 'plan', dur: 7, pri: 4, rank: m.util, I, cam0: CAM.quarter(I), cam1: CAM.top(I), anim: 'out', mag: C.autoMag, labels: 'lines',
+        if (J === gov && !brief) shots.push(Object.assign({ kind: 'plan', dur: 6, pri: 4, rank: m.util, I, cam0: CAM.quarter(I), cam1: CAM.top(I), anim: 'out', mag: C.autoMag, labels: 'lines',
             check: { name: 'Vessel movement at the berth', val: `${fmt(Math.max(m.surge, m.sway), 2)} m at most`, lim: mvLim > 0 ? `limit ${fmt(mvLim, 1)} m` : '', ok: !(mvLim > 0) || Math.max(m.surge, m.sway) <= mvLim },
             cap: `From above: in this case the vessel moves ${fmt(Math.abs(c.surge), 2)} m along the berth and ${fmt(Math.abs(c.sway), 2)} m across it${C.autoMag > 1 ? ` (the movement along the berth is shown ${C.autoMag} times larger so it can be seen)` : ''}.` }, baseOf(J, C)));
       });
       // the scenarios of this vessel side by side
-      if (mine && order.length > 1) shots.push({ kind: 'matrix', dur: 5 + 1.2 * order.length, pri: 1, J: J0, C: Cb, I, cam0: CAM.quarter(I), cam1: CAM.high(I), anim: 'rest',
+      if (mine && !brief && order.length > 1) shots.push({ kind: 'matrix', dur: 4 + 0.9 * order.length, pri: 3, J: J0, C: Cb, I, cam0: Object.assign(CAM.top(I), { pitch: 58 }), cam1: Object.assign(CAM.top(I), { pitch: 64, dist: 1.4 * I.L }), anim: 'rest',
         rows: order.map(J => ({ name: J.job.scn.name, pct: J.m.pct, allow: J.m.allow, bol: tonnes(J.m.bol), swl: tonnes(J.m.bolSwl), fen: tonnes(J.m.fen), fenD: J.m.fenD * 1000, mv: Math.max(J.m.surge, J.m.sway), clear: J.m.clear })) });
       // the smallest gap between the hull and the berth in any scenario: where it is, and how it comes about
       const jg = rs.reduce((a, b) => b.m.clear < a.m.clear ? b : a, rs[0]);
@@ -9661,7 +9674,7 @@ const Video = (() => {
         const yawD = (sh.pose[2] - sh.x0[2]) * 180 / Math.PI, swayIn = sh.x0[1] - sh.pose[1], rest = h0.Y, clear = jg.m.clear;
         const where = Math.abs(yawD) < 0.03 ? 'along the flat side of the hull' : Math.abs(h1.a) < 0.12 * Vs.LOA ? 'near amidships' : h1.a > 0 ? 'at the forward end of the flat side' : 'at the after end of the flat side';
         const minC = Number(jg.pj.berth.minClearance) || 0, side = h1.X >= I.cx ? 1 : -1;
-        out.push(Object.assign({ kind: 'gap', dur: 10, pri: 2, rank: -clear, cut: true, cam0: CAM.top(I), cam1: CAM.gap(I, h1.X, Math.max(0.5, clear), side), camBy: 0.5, anim: 'out', mag: 1, labels: 'none', gapAt: { i: h1.i, where },
+        out.push(Object.assign({ kind: 'gap', dur: 9, pri: 2, rank: -clear, cut: true, cam0: CAM.top(I), cam1: CAM.gap(I, h1.X, Math.max(0.5, clear), side), camBy: 0.5, anim: 'out', mag: 1, labels: 'none', gapAt: { i: h1.i, where },
           calc: [['Gap with the ship resting on the fenders', rest], [`Ship pressed ${swayIn >= 0 ? 'onto' : 'off'} the fenders`, -swayIn], [`Ship turned ${fmt(Math.abs(yawD), 1)}°, this end swings ${rest - swayIn - clear >= 0 ? 'in' : 'out'}`, -(rest - swayIn - clear)], ['Clear gap left', clear, true]],
           check: { name: 'Gap between the hull and the berth', val: `${fmt(clear, 2)} m ${where}`, lim: minC > 0 ? `at least ${fmt(minC, 2)} m` : 'the hull must not touch the berth', ok: clear > minC },
           cap: `The closest the hull comes to the berth face in any case of any scenario for this vessel, ${where}. The fenders hold the ship off the berth: the gap is what is left of their stand-off after they are squeezed and the ship has turned.` }, baseOf(jg, C)));
@@ -9673,7 +9686,7 @@ const Video = (() => {
         let fi = -1; c.fenders.forEach((f, j) => { if (f.d > 0 && C.M.fenders[j].kind === 'quay' && (fi < 0 || f.d > c.fenders[fi].d)) fi = j; });
         if (fi >= 0) {
           const F = C.M.fenders[fi], z = fenderZ(jf, F), side = F.X >= I.cx ? 1 : -1, f = c.fenders[fi], g = Math.max(0.5, (F.hf - f.d) / 2);
-          out.push(Object.assign({ kind: 'fender', dur: 9, pri: 2, check: { name: 'Fender deflection under the mooring loads', val: `${F.id} squeezed ${fmt(f.d * 1000, 0)} mm`, lim: F.ft && F.ft.rated > 0 ? `rated ${fmt(F.ft.rated, 0)} mm` : '', ok: !(F.ft && F.ft.rated > 0) || f.d * 1000 <= F.ft.rated }, rank: F.ft && F.ft.rated > 0 ? f.d * 1000 / F.ft.rated : 0, cam0: CAM.fender2(I, F.X, z, side, g), cam1: CAM.fender(I, F.X, z, side, g), anim: 'out', mag: 1, labels: 'fenders', focus: fi, cut: true, fm: { hf: F.hf, d: f.d, R: f.R, rated: F.ft && F.ft.rated > 0 ? F.ft.rated : f.d * 1000, Rmax: jf.fd && jf.fd.types && jf.fd.types[0] && jf.fd.types[0].l1 ? Math.max(f.R, jf.fd.types[0].l1.R) : f.R },
+          (brief && mine && !few ? shots : out).push(Object.assign({ kind: 'fender', dur: 8, pri: 2, check: { name: 'Fender deflection under the mooring loads', val: `${F.id} squeezed ${fmt(f.d * 1000, 0)} mm`, lim: F.ft && F.ft.rated > 0 ? `rated ${fmt(F.ft.rated, 0)} mm` : '', ok: !(F.ft && F.ft.rated > 0) || f.d * 1000 <= F.ft.rated }, rank: F.ft && F.ft.rated > 0 ? f.d * 1000 / F.ft.rated : 0, cam0: CAM.fender2(I, F.X, z, side, g), cam1: CAM.fender(I, F.X, z, side, g), anim: 'out', mag: 1, labels: 'fenders', focus: fi, cut: true, fm: { hf: F.hf, d: f.d, R: f.R, rated: F.ft && F.ft.rated > 0 ? F.ft.rated : f.d * 1000, Rmax: jf.fd && jf.fd.types && jf.fd.types[0] && jf.fd.types[0].l1 ? Math.max(f.R, jf.fd.types[0].l1.R) : f.R },
             cap: `The hardest squeeze of a fender for this vessel: fender ${F.id} is pressed in ${fmt(f.d * 1000, 0)} mm${F.ft && F.ft.rated > 0 ? ` (${fmt(f.d * 1000 / F.ft.rated * 100, 0)}% of its rated deflection)` : ''} and pushes back with ${kNt(f.R)}.` }, baseOf(jf, C)));
         }
       }
@@ -9685,18 +9698,18 @@ const Video = (() => {
         if (bi >= 0 && c.bollards[bi].total > 0 && C.M.bollards[bi].si == null) {
           const B = C.M.bollards[bi], b = c.bollards[bi], side = B.X >= I.cx ? 1 : -1;
           const by = B.Y > 0.05 && B.Y <= 3 ? -B.Y : B.Y;
-          out.push(Object.assign({ kind: 'bollard', dur: 7.5, pri: 3, cut: brief, check: { name: 'Bollard load', val: `${B.id} carries ${fmt(tonnes(b.total), 0)} t`, lim: B.swl > 0 ? `safe working load ${fmt(tonnes(B.swl), 0)} t` : '', ok: !(B.swl > 0) || b.total <= B.swl }, rank: B.swl > 0 ? b.total / B.swl : 0, cam0: CAM.bollard2(I, B.X, by, B.z, side), cam1: CAM.bollard(I, B.X, by, B.z, side), anim: 'hold', mag: 1, labels: 'bollards', focus: bi,
+          (brief && mine && !few ? shots : out).push(Object.assign({ kind: 'bollard', dur: 6, pri: 3, cut: brief, check: { name: 'Bollard load', val: `${B.id} carries ${fmt(tonnes(b.total), 0)} t`, lim: B.swl > 0 ? `safe working load ${fmt(tonnes(B.swl), 0)} t` : '', ok: !(B.swl > 0) || b.total <= B.swl }, rank: B.swl > 0 ? b.total / B.swl : 0, cam0: CAM.bollard2(I, B.X, by, B.z, side), cam1: CAM.bollard(I, B.X, by, B.z, side), anim: 'hold', mag: 1, labels: 'bollards', focus: bi,
             cap: `The highest bollard load for this vessel: bollard ${B.id} carries ${kNt(b.total)}${B.swl > 0 ? `, ${fmt(b.total / B.swl * 100, 0)}% of its ${fmt(tonnes(B.swl), 0)} t safe working load` : ''}.` }, baseOf(jb, C)));
         }
       }
     });
     // the governing berthing, fender, gap and bollard of the whole project are always shown; a summary shows only those
-    ['berthing', 'gap', 'fender', 'bollard'].forEach(kd => {
+    (brief ? ['berthing', 'gap'] : ['berthing', 'gap', 'fender', 'bollard']).forEach(kd => {
       const q = (brief ? late : shots).filter(z => z.kind === kd); if (!q.length) return;
       const best = q.reduce((a, b) => b.rank > a.rank ? b : a, q[0]); best.pri = 1;
       if (brief) { best.cap = (best.cap ? `Governing for the whole berth (${best.J.job.vessel}). ` + best.cap : best.cap); if (best.lines) best.lines = best.lines.concat(); shots.push(best); }
     });
-    shots.push({ kind: 'summary', dur: Math.min(18, 8 + list.length * 0.5), J: first, C: C0, cam0: CAM.quarter(I0), cam1: CAM.high(I0), anim: 'rest', cut: true });
+    shots.push({ kind: 'summary', dur: brief ? 9 : Math.min(16, 8 + list.length * 0.5), J: first, C: C0, cam0: CAM.quarter(I0), cam1: CAM.high(I0), anim: 'rest', cut: true });
     // fit the running time asked for: shots are slowed or quickened a little, and where that is not enough
     // the least important ones are left out (every scenario still appears in the closing table)
     const keep = shots.slice();
@@ -9747,8 +9760,8 @@ const Video = (() => {
       return Object.assign({}, sc, { ships, fenders, pose, lines: [] });
     }
     // where the loading or the water level differs from the shot before, the ship and the water move to it first
-    const rise = s.Tfrom != null, r = rise ? ease(u / 0.32) : 1;
-    const a = s.anim === 'hold' ? 1 : rise ? ease((u - 0.3) / 0.4) : ease(u / 0.55), mag = s.mag || 1, k = a * mag;
+    const rise = s.Tfrom != null, r = rise ? ease((u - 0.12) / 0.26) : 1;
+    const a = s.anim === 'hold' ? 1 : rise ? ease((u - 0.4) / 0.4) : ease(u / 0.55), mag = s.mag || 1, k = a * mag;
     // only the movement along the berth and away from it is enlarged: toward the berth it is drawn true,
     // so the hull is never shown closer to the fenders and the berth than it comes
     const ships = sc.ships.map(s2 => {
@@ -9767,7 +9780,7 @@ const Video = (() => {
     return Object.assign({}, sc, { ships, lines, fenders, pose: ships[0].pose });
   }
   function camAt(s, u, i) {
-    let c = mix(s.cam0, s.cam1, ease(s.camBy ? Math.min(1, u / s.camBy) : u));
+    const h0 = s.camHold || 0; let c = mix(s.cam0, s.cam1, ease(s.camBy ? Math.min(1, u / s.camBy) : (u - h0) / (1 - h0)));
     // fly in from where the last shot ended, unless the scene was cut
     const prev = V.shots[i - 1], tl = u * s.dur;
     if (prev && !s.cut && tl < 1.6) c = mix(prev.cam1, c, ease(tl / 1.6));
@@ -9850,6 +9863,13 @@ const Video = (() => {
       if (s.kind === 'scenario' || s.kind === 'plan') compass(x, s, W - pad - 88 * k, H - 132 * k, 62 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') arrows(x, s);
       if (s.kind === 'scenario') section(x, s, sc2, pad, 92 * k, 250 * k, 150 * k);
+      if (s.kind === 'scenario' && s.Tfrom != null && u < 0.45) {
+        const T1 = s.C.sc.ships[0].V.T, dT = s.Tfrom - T1, msg = `Draft ${fmt(s.Tfrom, 1)} m to ${fmt(T1, 1)} m: the ship rides ${fmt(Math.abs(dT), 1)} m ${dT >= 0 ? 'higher' : 'lower'}`;
+        x.globalAlpha = Math.max(0, Math.min(fade, (0.45 - u) / 0.05));
+        x.font = `600 ${Math.round(17 * k)}px ${FONT()}`; const mw = x.measureText(msg).width + 36 * k, mx = Math.max(pad + 262 * k, Math.min((W - mw) / 2, W - pad - 322 * k - mw));
+        panel(x, mx, 96 * k, mw, 40 * k, 0.9); text(x, msg, mx + 18 * k, 122 * k, 17, '#fff', 600);
+        x.globalAlpha = Math.max(0, fade);
+      }
       if (s.kind === 'fender' && s.fm) { const a2 = s.now && s.now.a != null ? s.now.a : 1; meter(x, W - pad - 330 * k, 96 * k, 330 * k, [
         ['Fender squeezed (rated ' + fmt(s.fm.rated, 0) + ')', s.fm.d * 1000 * a2, s.fm.rated, 'mm'], ['Fender reaction', s.fm.R * a2, s.fm.Rmax, 'kN'], ['Hull to the berth face', s.fm.hf - s.fm.d * a2, s.fm.hf, 'm', true]]);
         const sf = sc2.fenders.filter(q => q.kind === 'quay'), j = sf.findIndex(q => String(q.id) === String(s.C.M.fenders[s.focus].id)), f = j >= 0 ? S.fendersQuay[j] : null;
@@ -9965,7 +9985,13 @@ const Video = (() => {
     const zy = z => y0 + (zTop - z) / (zTop - zBot) * (y1 - y0);
     x.save(); x.beginPath(); x.rect(x0, y0, x1 - x0, y1 - y0); x.clip();
     x.fillStyle = '#BFD6DE'; x.fillRect(x0, y0, x1 - x0, y1 - y0);
-    x.fillStyle = '#3F86A6'; x.fillRect(x0, zy(WL), x1 - x0, y1 - zy(WL));
+    const cw = s.C.c, Hs = cw && cw.scnWave != null ? (Number(s.J.pj.environment.waveHs) || 0) * (n.a != null ? 0.35 + 0.65 * n.a : 1) : 0, per = Number(s.J.pj.environment.wavePeriod) || 8;
+    x.fillStyle = '#3F86A6';
+    if (Hs > 0.05) {     // the swell to the same scale as the ship: its height is the wave height
+      x.beginPath(); x.moveTo(x0, y1);
+      for (let px = x0; px <= x1; px += 2 * k) x.lineTo(px, zy(WL + Hs / 2 * Math.sin((px - x0) / (26 * k) * 2 * Math.PI - V.t * 2 * Math.PI / per)));
+      x.lineTo(x1, y1); x.closePath(); x.fill();
+    } else x.fillRect(x0, zy(WL), x1 - x0, y1 - zy(WL));
     x.fillStyle = '#8A7F6A'; x.fillRect(x0, zy(-depth) - 3 * k, x1 - x0, 6 * k);
     const qx = x1 - 26 * k;                                    // berth on the right
     x.fillStyle = '#B9B2A3'; x.fillRect(qx, zy(deck), x1 - qx, 5 * k); x.fillRect(qx + 8 * k, zy(deck), 5 * k, y1 - zy(deck));
@@ -9973,6 +9999,7 @@ const Video = (() => {
     x.fillStyle = '#8C2B24'; x.fillRect(hx, zy(WL - T + Math.min(T, D)), hw, bot - zy(WL - T + Math.min(T, D)));
     x.fillStyle = '#23364A'; x.fillRect(hx, top, hw, zy(WL) - top);
     x.fillStyle = '#8C2B24'; x.fillRect(hx, zy(WL), hw, bot - zy(WL));
+    if (Hs > 0.05) { x.fillStyle = '#fff'; x.fillRect(x0 + 5 * k, zy(WL + Hs / 2), 2 * k, zy(WL - Hs / 2) - zy(WL + Hs / 2)); x.fillRect(x0 + 2 * k, zy(WL + Hs / 2), 8 * k, 1.5 * k); x.fillRect(x0 + 2 * k, zy(WL - Hs / 2), 8 * k, 1.5 * k); }
     x.fillStyle = '#1B1E22'; x.fillRect(qx - 8 * k, zy(deck - 1.2) - 4 * k, 8 * k, 8 * k);     // fender
     x.restore();
     const tx = x1 + 8 * k;
@@ -10043,11 +10070,12 @@ const Video = (() => {
     });
   }
   function summary(x) {
-    const W = V.w, H = V.h, k = V.k, list = SCN.list.filter(r => !r.error), pad = 40 * k;
+    const W = V.w, H = V.h, k = V.k, all = SCN.list.filter(r => !r.error), pad = 40 * k, briefT = V.opts.mode === 'summary';
+    const list = !briefT ? all : [...new Set(all.map(r => r.job.vi))].map(vi => all.filter(r => r.job.vi === vi).reduce((a, b) => b.m.util > a.m.util ? b : a));
     const cols = [['Vessel', 0.0], ['Scenario', 0.22], ['Line % MBL', 0.47], ['Bollard', 0.58], ['Fender', 0.70], ['Movement', 0.82], ['', 0.93]];
     const rh = Math.min(30 * k, (H - 230 * k) / Math.max(1, list.length)), X0 = pad + 24 * k, TW = W - 2 * pad - 48 * k;
     panel(x, pad, 96 * k, W - 2 * pad, 96 * k + list.length * rh + 44 * k, 0.88);
-    text(x, 'Results of every scenario', X0, 138 * k, 24, '#fff', 600);
+    text(x, briefT ? 'The governing scenario of each vessel' : 'Results of every scenario', X0, 138 * k, 24, '#fff', 600);
     cols.forEach(([h, f]) => text(x, h, X0 + TW * f, 172 * k, 13, '#9FB4C2', 600));
     const fs = Math.min(15, rh / k * 0.56);
     list.forEach((r, j) => {
@@ -10061,7 +10089,7 @@ const Video = (() => {
       text(x, `${fmt(Math.max(m.surge, m.sway), 2)} m`, X0 + TW * 0.82, y, fs, '#E9F0F3');
       text(x, m.pass ? 'met' : 'not met', X0 + TW * 0.93, y, fs, m.pass ? '#8FE0C4' : '#F2A093', 700);
     });
-    const allOk = list.every(r => r.m.pass), worst = list.reduce((a2, b) => b.m.util > a2.m.util ? b : a2, list[0]);
+    const allOk = all.every(r => r.m.pass), worst = all.reduce((a2, b) => b.m.util > a2.m.util ? b : a2, list[0]);
     text(x, allOk ? `Every scenario meets the criteria. The most demanding is ${worst.job.vessel}, ${worst.job.scn.name}, using ${fmt(worst.m.util * 100, 0)}% of its governing limit.` : 'Some scenarios do not meet the criteria.',
       X0, 180 * k + list.length * rh + 34 * k, 15.5, allOk ? '#8FE0C4' : '#F2A093', 600);
   }

@@ -7630,18 +7630,20 @@ function openHatches(features, loaded) {
   const out = [];
   features.forEach(f => {
     if (!f.hatch) { out.push(f); return; }
+    if (!(loaded > 0.5)) { out.push(f); return; }                    // in ballast the hatches are closed
     const h = f.hatch, st = Math.min(2.6, h.hl / 6);
     out.push({ kind: 'box', a: h.x + h.end * (h.hl / 2 - 0.8), b: 0, L: 1.5, W: h.w, z0: 1.5, z1: 1.5 + st, color: '#8E3B2E', top: '#A14636', plan: 'none' });
     if (h.end > 0) return;
-    const L = h.hl - 3.4, W = h.w - 0.6;
-    if (loaded > 0.5) {
-      // cargo heaped above the coaming, in a colour that reads as cargo from any distance
-      [[1, 1.5, 2.3, '#A9844C', '#B8935A'], [0.8, 2.3, 3.0, '#B08B52', '#C09B61'], [0.58, 3.0, 3.6, '#B8935A', '#C8A46A'], [0.34, 3.6, 4.1, '#C09B61', '#D0AD74']]
-        .forEach(([k, z0, z1, col, top]) => out.push({ kind: 'box', a: h.x, b: 0, L: L * k, W: W * k, z0, z1, color: col, top, plan: 'none' }));
-    } else out.push({ kind: 'box', a: h.x, b: 0, L, W, z0: 1.45, z1: 1.75, color: '#0D1012', top: '#0D1012', plan: 'none' });
+    // loaded: a pile of bulk cargo standing well above the coaming, ridge along the hold, at its natural slope
+    const L = h.hl - 3.4, W = h.w - 0.6, H = Math.min(0.32 * W, 7.5), n = 14;
+    for (let k = 0; k < n; k++) { const u = k / n, cut = u * (W - 1.2), sh = 0.86 + 0.14 * u, c = Math.round(203 * sh), c2 = Math.round(196 * sh), c3 = Math.round(178 * sh);
+      const col = '#' + [c, c2, c3].map(q => Math.min(255, q).toString(16).padStart(2, '0')).join(''), top = '#' + [c + 14, c2 + 14, c3 + 14].map(q => Math.min(255, q).toString(16).padStart(2, '0')).join('');
+      out.push({ kind: 'box', a: h.x, b: 0, L: Math.max(1.5, L - cut), W: W - cut, z0: 1.5 + H * u, z1: 1.5 + H * (k + 1) / n, color: col, top, plan: 'none' }); }
   });
   return out;
 }
+// how full the ship is at draft T, 0 in ballast to 1 laden, from the drafts of her loading conditions
+function loadedFrac(vObj, T) { const ds = Object.values((vObj || {}).conditions || {}).map(q => Number(q && q.draft) || 0).filter(q => q > 0), lo = Math.min(T, ...ds), hi = Math.max(T, ...ds); return hi - lo > 0.2 ? (T - lo) / (hi - lo) : 1; }
 // deck cargo as stacks, bay by bay over the hatch area, clear of the deckhouse and inside the hull
 function cargoStacks(V, td) {
   const cg = V.cargo || {}; if (!(cg.L > 0 && cg.H > 0)) return [];
@@ -7961,6 +7963,7 @@ function drawPlan() {
         if (q.plan === 'none') return;
         if (q.plan === 'dot') { const g = toG(i, q.a, q.b); ctx.beginPath(); ctx.arc(W(g[0]), Hh(g[1]), Math.max(1.5, q.r * sp), 0, 2 * Math.PI); ctx.fillStyle = '#B58F1E'; ctx.fill(); return; }
         rectAt(q.a, q.b, q.L, q.W);
+        if (q.plan === 'rect' && (vObj || {}).type === 'bulk') { ctx.fillStyle = loadedFrac(vObj, s2.V.T) > 0.5 ? '#CBC4B2' : '#A14636'; ctx.fill(); }
         if (q.plan === 'fill') { ctx.fillStyle = q.color; ctx.fill(); }
         else { ctx.strokeStyle = q.plan === 'line' ? '#8A969A' : '#7C8791'; ctx.lineWidth = 0.7; ctx.stroke(); }
       });
@@ -9066,7 +9069,7 @@ function scene3D(sc) {
         paintT: pontoonBody ? 0 : Math.max(s2.V.T, ...Object.values((i ? proj.vessel2 : proj.vessel).conditions || {}).map(q => Number(q && q.draft) || 0)),
         vesselType: pontoonBody ? null : ((i ? proj.vessel2 : proj.vessel).type || 'tanker'),
         house: td ? td.house : { L: 0, B: 0, H: 0 }, houseCentre: td ? td.houseCentre : null,
-        features: td ? openHatches(td.features, (() => { const ds = Object.values((i ? proj.vessel2 : proj.vessel).conditions || {}).map(q => Number(q && q.draft) || 0).filter(q => q > 0), lo = Math.min(s2.V.T, ...ds), hi = Math.max(s2.V.T, ...ds); return hi - lo > 0.2 ? (s2.V.T - lo) / (hi - lo) : 1; })()).concat($('showCargo') && !$('showCargo').checked ? [] : cargoStacks(s2.V, td)) : [],
+        features: td ? openHatches(td.features, loadedFrac(i ? proj.vessel2 : proj.vessel, s2.V.T)).concat($('showCargo') && !$('showCargo').checked ? [] : cargoStacks(s2.V, td)) : [],
         cargo: { L: 0, B: 0, H: 0 },
         hullColor: pontoonBody ? '#4A4A46' : (i ? '#3B4C34' : '#23364A'), deckColor: pontoonBody ? '#9B9484' : (i ? '#6B6256' : '#5F7B64')
       };

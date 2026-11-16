@@ -2997,7 +2997,7 @@ const Moor3D = (() => {
     void main(){ vec3 p=aPos;
       float ph=(p.x*uWave.x+p.y*uWave.y)*uWave.z+uTime*uWaveW;
       float bend=0.35*sin((p.x*uWave.y-p.y*uWave.x)*uWave.z*0.37+1.3*sin(ph*0.21));
-      p.z+=uWaveA*(0.45+0.55*smoothstep(0.0,90.0,p.y))*sin(ph+bend);
+      p.z+=uWaveA*(0.45+0.55*smoothstep(0.0,60.0,p.y))*sin(ph+bend);
       vN=aNrm; vC=aCol; vW=p; vL=uLVP*vec4(p,1.0); gl_Position=uVP*vec4(p,1.0); }`;
   const VS_DEPTH = `attribute vec3 aPos; uniform mat4 uVP; void main(){ gl_Position=uVP*vec4(aPos,1.0); }`;
   // how much of the sun reaches a point: 1 in the open, 0 in shadow, from the depth map drawn from the sun
@@ -3058,8 +3058,8 @@ const Moor3D = (() => {
       col*=0.72+0.28*lit;
       col+=vec3(1.0,0.96,0.88)*pow(max(dot(n,h),0.0),220.0)*1.2*lit;
       // light backs and dark troughs, and broken crests when it is steep
-      col*=1.0+min(0.5,uWave.w*2.4)*sh2;
-      float foam=smoothstep(0.80,0.97,sh2+0.08*rx)*smoothstep(0.03,0.15,uWave.w)*(0.70+0.30*cos(p.x*0.9+p.y*1.3));
+      col*=1.0+min(0.45,uWave.w*2.2)*sh2+min(0.30,uWave.w*1.5)*sw;
+      float foam=smoothstep(0.90,0.99,sh2+0.07*gx)*smoothstep(0.03,0.15,uWave.w);
       col=mix(col,vec3(0.93,0.96,0.97),clamp(foam,0.0,0.85));
       // the current: streaks drifting downstream, faster and closer together as it runs harder
       if(uCur.z>0.0){ float al=p.x*uCur.x+p.y*uCur.y, ac=p.x*uCur.y-p.y*uCur.x;
@@ -3446,7 +3446,7 @@ const Moor3D = (() => {
       const up = Math.max(0, Math.min(fb - 1.2, (sh.paintT || T) - T));
       const lw = up > 0.15 ? ring(1, 1.003, up, 1) : null;
       const bt = ring(1, 1.005, up + 0.6, 1), deckR = ring(1, 1.012, fb, 1.02, true), rail = ring(1, 1.012, fb + 1.1, 1.02, true);
-      const red = hex('#8C2B24'), boot = hex('#1B1E22'), topside = hex(sh.hullColor || '#23364A');
+      const red = hex('#B5382B'), boot = hex('#F1F1EC'), topside = hex(sh.hullColor || '#23364A');
       const loft = (r1, r2, col) => { for (let i = 0; i < r1.length; i++) { const j = (i + 1) % r1.length; m.quad(r1[i], r1[j], r2[j], r2[i], col); } };
       loft(keel, bilge, red); loft(bilge, wl, red); if (lw) { loft(wl, lw, red); loft(lw, bt, boot); } else loft(wl, bt, boot); loft(bt, deckR, topside); loft(deckR, rail, topside);
       const fan = (r, z, col) => { const ax = r.reduce((s2, q) => s2 + q[0], 0) / r.length, ay = r.reduce((s2, q) => s2 + q[1], 0) / r.length; for (let i = 0; i < r.length; i++) m.tri([ax, ay, z], r[i], r[(i + 1) % r.length], col); };
@@ -9551,6 +9551,8 @@ const Video = (() => {
     quay: I => ({ yaw: -62, pitch: 26, dist: 0.95 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
     quay2: I => ({ yaw: -112, pitch: 22, dist: 0.9 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
     side: I => ({ yaw: 90, pitch: 5, dist: 1.2 * I.L, tx: I.cx, ty: I.cy, tz: 4 }),
+    cmp: I => ({ yaw: 20, pitch: 4, dist: 1.0 * I.L, tx: I.cx, ty: I.cy, tz: 7 }),
+    cmp2: I => ({ yaw: 27, pitch: 6, dist: 0.95 * I.L, tx: I.cx, ty: I.cy, tz: 7 }),
     top: I => ({ yaw: 90, pitch: 82, dist: 1.5 * I.L, tx: I.cx, ty: I.cy * 0.6, tz: 0 }),
     berthA: I => ({ yaw: 20, pitch: 12, dist: 0.6 * I.L, tx: I.cx + 0.25 * I.L, ty: 2, tz: 2 }),
     berthB: I => ({ yaw: 160, pitch: 14, dist: 0.6 * I.L, tx: I.cx - 0.25 * I.L, ty: 2, tz: 2 }),
@@ -9637,6 +9639,9 @@ const Video = (() => {
       const order = rs.slice().sort((p, q) => conds.indexOf(p.job.scn.cond || '') - conds.indexOf(q.job.scn.cond || '') || sev(p) - sev(q));
       const mvLim = Math.max(Number(J0.pj.environment.maxSurge) || 0, Number(J0.pj.environment.maxSway) || 0);
       let prev = null;
+      // the same vessel laden and in ballast, side by side from the same place
+      const jl = worst.get('laden'), jb2 = worst.get('ballast');
+      if (mine && !few && jl && jb2) shots.push({ kind: 'compare', dur: 6.5, pri: brief ? 1 : 2, rank: 1, J: J0, C: Cb, I, pair: [jl, jb2], cam0: CAM.cmp(I), cam1: CAM.cmp2(I), anim: 'rest', cut: true });
       let kk = 0;
       if (mine) order.forEach(J => {
         if (brief && (few ? J !== gov : worst.get(J.job.scn.cond || '') !== J)) return;
@@ -9789,6 +9794,7 @@ const Video = (() => {
   function frame(t) {
     let i = V.shots.findIndex(s => t < s.t0 + s.dur); if (i < 0) i = V.shots.length - 1;
     const s = V.shots[i], u = Math.max(0, Math.min(1, (t - s.t0) / s.dur));
+    if (s.kind === 'compare') { compareFrame(s, u, i, t); V.shotIndex = i; return; }
     const sc2 = sceneAt(s, u);
     const cam = V.manual ? (V.userCam || (V.userCam = Object.assign({}, s.cam1))) : camAt(s, u, i);
     let S = null;
@@ -9861,7 +9867,7 @@ const Video = (() => {
       if (s.check) chip(x, s, pad, H - hh - 40 * k - 44 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') bars(x, s, sc2, W - pad - 310 * k, 96 * k, 310 * k);
       if (s.kind === 'scenario' || s.kind === 'plan') compass(x, s, W - pad - 88 * k, H - 132 * k, 62 * k);
-      if (s.kind === 'scenario' || s.kind === 'plan') arrows(x, s);
+      if (s.kind === 'scenario' || s.kind === 'plan') { arrows(x, s); waveMark(x, s, S); }
       if (s.kind === 'scenario') section(x, s, sc2, pad, 92 * k, 250 * k, 150 * k);
       if (s.kind === 'scenario' && s.Tfrom != null && u < 0.45) {
         const T1 = s.C.sc.ships[0].V.T, dT = s.Tfrom - T1, msg = `Draft ${fmt(s.Tfrom, 1)} m to ${fmt(T1, 1)} m: the ship rides ${fmt(Math.abs(dT), 1)} m ${dT >= 0 ? 'higher' : 'lower'}`;
@@ -9882,6 +9888,37 @@ const Video = (() => {
     x.fillStyle = 'rgba(255,255,255,.22)'; x.fillRect(0, H - 5 * k, W, 5 * k);
     x.fillStyle = '#E3B23C'; x.fillRect(0, H - 5 * k, W * Math.min(1, t / V.total), 5 * k);
     if (dip > 0) { x.fillStyle = `rgba(10,18,30,${Math.min(1, dip)})`; x.fillRect(0, 0, W, H); }
+  }
+  // two renders of the same vessel, each in its own half of the picture: laden on the left, in ballast on the right
+  function compareFrame(s, u, i, t) {
+    const x = V.ctx, W = V.w, H = V.h, k = V.k = H / 720, cam = camAt(s, u, i), hw = Math.round(W / 2), marks = [];
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    s.pair.forEach((J, h) => {
+      const C = sceneOf(J, null, 0); let S = null;
+      withJob(J, null, 0, () => { S = scene3D(C.sc); });
+      S.lineR = Math.max(0.05, Math.min(0.4, cam.dist * 0.0016)); S.showLabels = false; S.lines.forEach(l => { l.label = null; }); S.arrows = []; S.wave = null; S.cur = null;
+      Moor3D.render(S, { width: hw, height: H, cam });
+      x.drawImage($('c3d'), 0, 0, hw, H, h * hw, 0, hw, H);
+      const sh = C.sc.ships[0], Vs = sh.V, fb = Vs.D - Vs.T, c = Math.cos(sh.x0[2]), sn = Math.sin(sh.x0[2]), a = 0.2 * Vs.LOA, b = Vs.B / 2 + 0.4;
+      const px = sh.x0[0] + a * c - b * sn, py = sh.x0[1] + a * sn + b * c, p0 = Moor3D.project([px, py, 0]), p1 = Moor3D.project([px, py, fb]);
+      marks.push({ h, p0, p1, fb, T: Vs.T, cond: J.job.scn.cond || '', WL: Number(J.pj.environment.waterLevel) || 0 });
+    });
+    marks.forEach(m => {
+      const X0 = m.h * hw;
+      if (m.p0 && m.p1) {
+        const ax = X0 + m.p0[0], y0 = m.p0[1], y1 = m.p1[1];
+        x.strokeStyle = '#fff'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(ax, y0); x.lineTo(ax, y1); x.moveTo(ax - 10 * k, y0); x.lineTo(ax + 10 * k, y0); x.moveTo(ax - 10 * k, y1); x.lineTo(ax + 10 * k, y1); x.stroke();
+        const lab = `Freeboard ${fmt(m.fb, 1)} m`; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 18 * k;
+        x.fillStyle = 'rgba(16,28,44,.88)'; x.fillRect(ax + 14 * k, (y0 + y1) / 2 - 15 * k, w, 30 * k); x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(lab, ax + 23 * k, (y0 + y1) / 2 + 6 * k);
+      }
+      panel(x, X0 + 22 * k, H - 150 * k, hw - 44 * k, 104 * k, 0.88);
+      text(x, m.cond === 'ballast' ? 'In ballast' : m.cond === 'laden' ? 'Laden' : 'As set', X0 + 44 * k, H - 108 * k, 26, '#fff', 700);
+      text(x, `Draft ${fmt(m.T, 1)} m   ·   deck ${fmt(m.fb, 1)} m above the water`, X0 + 44 * k, H - 74 * k, 17, '#DCE7EC', 500);
+    });
+    x.fillStyle = '#0F1B2B'; x.fillRect(hw - 2 * k, 0, 4 * k, H);
+    if (marks.length === 2) { const d = marks[1].fb - marks[0].fb, msg = `The same vessel: in ballast it rides ${fmt(Math.abs(d), 1)} m ${d >= 0 ? 'higher' : 'lower'}, with the red bottom paint showing below the white load line`;
+      x.font = `600 ${Math.round(16.5 * k)}px ${FONT()}`; const mw = x.measureText(msg).width + 36 * k; panel(x, (W - mw) / 2, 92 * k, mw, 40 * k, 0.9); text(x, msg, (W - mw) / 2 + 18 * k, 118 * k, 16.5, '#fff', 600); }
+    hud(x, s, u, i, t, null, null);
   }
   function meter(x, X, Y, W, rows) {
     const k = V.k; panel(x, X, Y, W, 24 * k + rows.length * 44 * k);
@@ -9964,6 +10001,16 @@ const Video = (() => {
       const q = th * Math.PI / 180, ux = Math.cos(q), uy = Math.sin(q), cx = I.cx + (j - (items.length - 1) / 2) * 0.36 * L;
       return { p0: [cx + ux * len / 2, y0 + uy * len / 2], p1: [cx - ux * len / 2, y0 - uy * len / 2], w: 0.02 * L, color, crests, label };
     });
+  }
+  function waveMark(x, s, S) {
+    const k = V.k, w = S && S.wave, A = arrowList(s).find(q => q.crests); if (!w || !A || !(w.hs > 0.3)) return;
+    const bx = A.p1[0] - w.ux * 0.02 * s.I.L, by = A.p1[1] - w.uy * 0.02 * s.I.L, a = Moor3D.project([bx, by, -w.hs / 2]), b = Moor3D.project([bx, by, w.hs / 2]);
+    const c0 = Moor3D.project([bx, by, 0]), c1 = Moor3D.project([bx + w.ux * w.lam, by + w.uy * w.lam, 0]);
+    x.strokeStyle = '#fff'; x.lineWidth = 2.5 * k;
+    const free = (px, py) => px > 24 * k && px < V.w - 350 * k && py > 250 * k && py < V.h - 240 * k;
+    const lab = (str, px, py) => { x.font = `700 ${Math.round(13 * k)}px ${FONT()}`; const tw = x.measureText(str).width + 12 * k; x.fillStyle = 'rgba(16,28,44,.86)'; x.fillRect(px, py - 11 * k, tw, 22 * k); x.fillStyle = '#9BE3D0'; x.textAlign = 'left'; x.fillText(str, px + 6 * k, py + 5 * k); };
+    if (a && b && Math.abs(a[1] - b[1]) > 5 * k && free(a[0], a[1])) { x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.moveTo(a[0] - 7 * k, a[1]); x.lineTo(a[0] + 7 * k, a[1]); x.moveTo(b[0] - 7 * k, b[1]); x.lineTo(b[0] + 7 * k, b[1]); x.stroke(); lab(`${fmt(w.hs, 1)} m trough to crest`, a[0] + 12 * k, (a[1] + b[1]) / 2); }
+    if (c0 && c1 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 60 * k && free(c0[0], c0[1]) && free(c1[0], c1[1])) { x.setLineDash([6 * k, 5 * k]); x.beginPath(); x.moveTo(c0[0], c0[1]); x.lineTo(c1[0], c1[1]); x.stroke(); x.setLineDash([]); lab(`${fmt(w.lam, 0)} m between crests`, (c0[0] + c1[0]) / 2 - 60 * k, (c0[1] + c1[1]) / 2 + 18 * k); }
   }
   function arrows(x, s) {
     const k = V.k, used = [];

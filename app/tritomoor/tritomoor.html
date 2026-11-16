@@ -3442,14 +3442,38 @@ const Moor3D = (() => {
       const Lh = V.LOA / 2, B2 = V.B / 2;
       const sheer = a => 0.018 * V.LOA * Math.pow(Math.max(0, a) / Lh, 2) + 0.006 * V.LOA * Math.pow(Math.max(0, -a) / Lh, 2);
       const ring = (sx, sy, z, trimBow = 1, withSheer = false) => sh.hull.map(([a, b]) => G(a > 0 ? a * trimBow : a * sx, b * sy, z + (withSheer ? sheer(a) : 0)));
-      const keel = ring(0.97, 0.78, -T, 0.93), bilge = ring(1, 0.97, -T * 0.7, 0.98), wl = ring(1, 1, 0, 1);
-      // the bottom paint reaches the loaded waterline, so a light ship shows a band of it above the water
-      const up = Math.max(0, Math.min(fb - 1.2, (sh.paintT || T) - T));
-      const lw = up > 0.15 ? ring(1, 1.003, up, 1) : null;
-      const bt = ring(1, 1.005, up + 0.6, 1), deckR = ring(1, 1.012, fb, 1.02, true), rail = ring(1, 1.012, fb + 1.1, 1.02, true);
-      const red = hex('#B5382B'), boot = hex('#F1F1EC'), topside = hex(sh.hullColor || '#23364A');
+      // The hull is one shape whatever the draft, built up from the keel: the bottom paint reaches the loaded
+      // waterline (Tl), so a light ship shows a band of it, with her bulb, propeller and rudder coming out of the water.
+      const Tl = Math.max(T, Math.min(V.D - 1.2, sh.paintT || T)), zk = h => -T + h;
+      // below the counter the hull fines away to the sternpost, leaving the propeller and rudder in the open
+      const fine = (r, k) => r.map((q, i) => { const a = sh.hull[i][0], u = Math.max(0, Math.min(1, (-a - 0.7 * Lh) / (0.3 * Lh))); if (!(u > 0)) return q;
+        const a2 = (a > 0 ? a : a * (k[0])), w = 1 - (1 - k[1]) * u * u, b = sh.hull[i][1] * k[2] * w; return G(a2, b, q[2]); });
+      const keel = fine(ring(0.86, 0.78, zk(0), 0.93), [0.86, 0.06, 0.78]), bilge = fine(ring(0.875, 0.97, zk(0.3 * Tl), 0.98), [0.875, 0.12, 0.97]), run = fine(ring(0.9, 1, zk(0.72 * Tl), 0.995), [0.9, 0.3, 1]), wl = ring(1, 1, zk(0.86 * Tl), 1);
+      const lw = ring(1, 1.003, zk(Tl), 1);
+      const bt = ring(1, 1.005, zk(Tl) + 0.6, 1), deckR = ring(1, 1.012, fb, 1.02, true), rail = ring(1, 1.012, fb + 1.1, 1.02, true);
+      const red = hex('#C63F30'), boot = hex('#F1F1EC'), topside = hex(sh.hullColor || '#23364A');
       const loft = (r1, r2, col) => { for (let i = 0; i < r1.length; i++) { const j = (i + 1) % r1.length; m.quad(r1[i], r1[j], r2[j], r2[i], col); } };
-      loft(keel, bilge, red); loft(bilge, wl, red); if (lw) { loft(wl, lw, red); loft(lw, bt, boot); } else loft(wl, bt, boot); loft(bt, deckR, topside); loft(deckR, rail, topside);
+      loft(keel, bilge, red); loft(bilge, run, red); loft(run, wl, red); loft(wl, lw, red); loft(lw, bt, boot); loft(bt, deckR, topside); loft(deckR, rail, topside);
+      if (!sh.passing && V.LOA > 60) {
+        const dark = hex('#8E2A20'), bronze = hex('#C9A24B'), white = hex('#F1F1EC');
+        // bulbous bow
+        if (sh.vesselType !== 'ropax') { const r = Math.min(0.3 * Tl, 0.1 * V.B), h = 0.5 * Tl, st = [[0.84, 0.55], [0.93, 1], [0.99, 0.95], [1.022, 0.66], [1.04, 0.14]];
+          for (let i = 0; i + 1 < st.length; i++) m.frustum(G(Lh * st[i][0], 0, zk(h)), G(Lh * st[i + 1][0], 0, zk(h)), r * st[i][1], r * st[i + 1][1], red, 14); }
+        // propeller in the aperture under the counter, and the rudder behind it
+        const rp = 0.33 * Tl, hp = 0.36 * Tl, ap = -0.925 * Lh;
+        m.frustum(G(-0.86 * Lh, 0, zk(hp)), G(ap - 0.3, 0, zk(hp)), 0.22 * rp, 0.16 * rp, dark, 10);
+        m.frustum(G(ap - 0.3, 0, zk(hp)), G(ap - 1.1, 0, zk(hp)), 0.16 * rp, 0.03, bronze, 10);
+        for (let q = 0; q < 4; q++) { const t0 = q * Math.PI / 2 + 0.5, w = 0.42;
+          const pt = (rr, tt, da) => G(ap - 0.6 + da, rr * Math.cos(tt), zk(hp) + rr * Math.sin(tt));
+          const A = pt(0.14 * rp, t0 - 0.25, -0.2), B = pt(0.14 * rp, t0 + 0.25, 0.2), C = pt(rp, t0 + w, 0.25), D = pt(rp, t0 - w * 0.2, -0.25), E = pt(0.8 * rp, t0 + w * 1.25, 0.2);
+          m.quad(A, B, C, D, bronze); m.quad(D, C, B, A, bronze); m.tri(B, E, C, bronze); m.tri(C, E, B, bronze); }
+        m.box(G(-0.962 * Lh, 0, 0), [c, s], [-s, c], Math.max(3, 0.032 * V.LOA), 0.55, zk(0.03 * Tl), zk(0.79 * Tl), red);
+        m.box(G(-0.962 * Lh, 0, 0), [c, s], [-s, c], 0.9, 0.9, zk(0.79 * Tl), zk(0.84 * Tl), dark);
+        // draft marks amidships on both sides: a tick every metre, longer every fifth, up to the load line
+        [1, -1].forEach(sd => { for (let h = 1; h <= Tl + 0.01; h++) { const long = h % 5 === 0;
+          m.box(G(long ? 0.45 : 0, sd * (V.B / 2 * 1.004 + 0.03), 0), [c, s], [-s, c], long ? 1.8 : 0.9, 0.08, zk(h) - 0.07, zk(h) + 0.07, white); }
+          m.box(G(-3.2, sd * (V.B / 2 * 1.004 + 0.03), 0), [c, s], [-s, c], 2.4, 0.08, zk(Tl) - 0.1, zk(Tl) + 0.1, white); });
+      }
       const fan = (r, z, col) => { const ax = r.reduce((s2, q) => s2 + q[0], 0) / r.length, ay = r.reduce((s2, q) => s2 + q[1], 0) / r.length; for (let i = 0; i < r.length; i++) m.tri([ax, ay, z], r[i], r[(i + 1) % r.length], col); };
       fan(keel, -T, red);
       { const r = deckR, ax = r.reduce((s2, q) => s2 + q[0], 0) / r.length, ay = r.reduce((s2, q) => s2 + q[1], 0) / r.length;
@@ -7611,9 +7635,9 @@ function openHatches(features, loaded) {
     if (h.end > 0) return;
     const L = h.hl - 3.4, W = h.w - 0.6;
     if (loaded > 0.5) {
-      out.push({ kind: 'box', a: h.x, b: 0, L, W, z0: 1.5, z1: 1.8, color: '#6F6A60', top: '#8C8679', plan: 'none' });
-      out.push({ kind: 'box', a: h.x, b: 0, L: L * 0.72, W: W * 0.72, z0: 1.8, z1: 2.5, color: '#7D776B', top: '#9A9486', plan: 'none' });
-      out.push({ kind: 'box', a: h.x, b: 0, L: L * 0.4, W: W * 0.4, z0: 2.5, z1: 3.1, color: '#8A8477', top: '#A6A092', plan: 'none' });
+      // cargo heaped above the coaming, in a colour that reads as cargo from any distance
+      [[1, 1.5, 2.3, '#A9844C', '#B8935A'], [0.8, 2.3, 3.0, '#B08B52', '#C09B61'], [0.58, 3.0, 3.6, '#B8935A', '#C8A46A'], [0.34, 3.6, 4.1, '#C09B61', '#D0AD74']]
+        .forEach(([k, z0, z1, col, top]) => out.push({ kind: 'box', a: h.x, b: 0, L: L * k, W: W * k, z0, z1, color: col, top, plan: 'none' }));
     } else out.push({ kind: 'box', a: h.x, b: 0, L, W, z0: 1.45, z1: 1.75, color: '#0D1012', top: '#0D1012', plan: 'none' });
   });
   return out;
@@ -9640,8 +9664,8 @@ const Video = (() => {
     quay: I => ({ yaw: -62, pitch: 26, dist: 0.95 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
     quay2: I => ({ yaw: -112, pitch: 22, dist: 0.9 * I.L, tx: I.cx, ty: I.cy * 0.5, tz: 4 }),
     side: I => ({ yaw: 90, pitch: 5, dist: 1.2 * I.L, tx: I.cx, ty: I.cy, tz: 4 }),
-    cmp: I => ({ yaw: 22, pitch: 18, dist: 1.05 * I.L, tx: I.cx, ty: I.cy, tz: 2 }),
-    cmp2: I => ({ yaw: 28, pitch: 21, dist: 1.0 * I.L, tx: I.cx, ty: I.cy, tz: 2 }),
+    cmp: I => ({ yaw: 100, pitch: 4, dist: 0.6 * I.L, tx: I.cx - 0.06 * I.L, ty: I.cy, tz: 5 }),
+    cmp2: I => ({ yaw: 106, pitch: 4.5, dist: 0.58 * I.L, tx: I.cx - 0.06 * I.L, ty: I.cy, tz: 5 }),
     top: I => ({ yaw: 90, pitch: 82, dist: 1.5 * I.L, tx: I.cx, ty: I.cy * 0.6, tz: 0 }),
     berthA: I => ({ yaw: 20, pitch: 12, dist: 0.6 * I.L, tx: I.cx + 0.25 * I.L, ty: 2, tz: 2 }),
     berthB: I => ({ yaw: 160, pitch: 14, dist: 0.6 * I.L, tx: I.cx - 0.25 * I.L, ty: 2, tz: 2 }),
@@ -10023,37 +10047,43 @@ const Video = (() => {
     x.restore();
   }
   // two renders of the same vessel, each in its own half of the picture: laden on the left, in ballast on the right
+  // laden above, ballast below: the same vessel from the same side-on camera, so the only difference is how she sits
   function compareFrame(s, u, i, t) {
-    const x = V.ctx, W = V.w, H = V.h, k = V.k = H / 720, cam = camAt(s, u, i), hw = Math.round(W / 2), marks = [];
+    const x = V.ctx, W = V.w, H = V.h, k = V.k = H / 720, cam = camAt(s, u, i), hh = Math.round(H / 2), marks = [];
     x.setTransform(1, 0, 0, 1, 0, 0);
     s.pair.forEach((J, h) => {
       const C = sceneOf(J, null, 0); let S = null;
       withJob(J, null, 0, () => { S = scene3D(C.sc); });
-      S.lineR = Math.max(0.05, Math.min(0.4, cam.dist * 0.0016)); S.showLabels = false; S.lines.forEach(l => { l.label = null; }); S.arrows = []; S.wave = null; S.cur = null; S.waterAlpha = 0.3;     // the water is drawn part see-through, to show how deep the hull sits
-      Moor3D.render(S, { width: hw, height: H, cam });
-      x.drawImage($('c3d'), 0, 0, hw, H, h * hw, 0, hw, H);
-      const sh = C.sc.ships[0], Vs = sh.V, fb = Vs.D - Vs.T, c = Math.cos(sh.x0[2]), sn = Math.sin(sh.x0[2]), a = 0.2 * Vs.LOA, b = Vs.B / 2 + 0.4;
-      const px = sh.x0[0] + a * c - b * sn, py = sh.x0[1] + a * sn + b * c, p0 = Moor3D.project([px, py, 0]), p1 = Moor3D.project([px, py, fb]);
-      const pk = Moor3D.project([px, py, -Vs.T]);
-      marks.push({ h, p0, p1, pk, disp: Number(Vs.disp) || 0, fb, T: Vs.T, cond: J.job.scn.cond || '', WL: Number(J.pj.environment.waterLevel) || 0 });
+      S.lineR = Math.max(0.05, Math.min(0.4, cam.dist * 0.0016)); S.showLabels = false; S.lines.forEach(l => { l.label = null; }); S.arrows = []; S.wave = null; S.cur = null; S.waterAlpha = 0.45;     // the water is drawn part see-through, to show how deep the hull sits
+      Moor3D.render(S, { width: W, height: hh, cam });
+      x.drawImage($('c3d'), 0, 0, W, hh, 0, h * hh, W, hh);
+      const sh = C.sc.ships[0], Vs = sh.V, fb = Vs.D - Vs.T, c = Math.cos(sh.x0[2]), sn = Math.sin(sh.x0[2]), sd = Math.sign(sh.x0[1]) || 1, b = sd * (Vs.B / 2 + 0.4);
+      const at = (a, z) => Moor3D.project([sh.x0[0] + a * c - b * sn, sh.x0[1] + a * sn + b * c, z]);
+      const Tl = Math.max(Vs.T, ...Object.values(J.pj.vessel.conditions || {}).map(q => Number(q && q.draft) || 0));
+      marks.push({ h, p0: at(0.12 * Vs.LOA, 0), p1: at(0.12 * Vs.LOA, fb), r0: at(-0.1 * Vs.LOA, 0), r1: at(-0.1 * Vs.LOA, Tl - Vs.T), bow: Moor3D.project([sh.x0[0] + 0.505 * Vs.LOA * c, sh.x0[1] + 0.505 * Vs.LOA * sn, 0]), aft: Moor3D.project([sh.x0[0] - 0.475 * Vs.LOA * c, sh.x0[1] - 0.475 * Vs.LOA * sn, 0]),
+        disp: Number(Vs.disp) || 0, fb, T: Vs.T, red: Tl - Vs.T, cond: J.job.scn.cond || '', WL: Number(J.pj.environment.waterLevel) || 0 });
     });
+    const chip = (lab, px, py, col, right) => { x.font = `700 ${Math.round(15 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 18 * k, X0 = right ? px - 14 * k - w : px + 14 * k;
+      x.fillStyle = 'rgba(16,28,44,.9)'; x.fillRect(X0, py - 14 * k, w, 28 * k); x.fillStyle = col; x.textAlign = 'left'; x.fillText(lab, X0 + 9 * k, py + 5.5 * k); };
+    const dim = (pa, pb, Y0, col, lab, right) => { if (!pa || !pb) return; const ax = pa[0], y0 = Y0 + pa[1], y1 = Y0 + pb[1];
+      x.strokeStyle = col; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(ax, y0); x.lineTo(ax, y1); x.moveTo(ax - 9 * k, y0); x.lineTo(ax + 9 * k, y0); x.moveTo(ax - 9 * k, y1); x.lineTo(ax + 9 * k, y1); x.stroke(); chip(lab, ax, (y0 + y1) / 2, col, right); };
     marks.forEach(m => {
-      const X0 = m.h * hw;
-      if (m.p0 && m.p1) {
-        const ax = X0 + m.p0[0], y0 = m.p0[1], y1 = m.p1[1];
-        x.strokeStyle = '#fff'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(ax, y0); x.lineTo(ax, y1); x.moveTo(ax - 10 * k, y0); x.lineTo(ax + 10 * k, y0); x.moveTo(ax - 10 * k, y1); x.lineTo(ax + 10 * k, y1); x.stroke();
-        const lab = `Freeboard ${fmt(m.fb, 1)} m`; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 18 * k;
-        x.fillStyle = 'rgba(16,28,44,.88)'; x.fillRect(ax + 14 * k, (y0 + y1) / 2 - 15 * k, w, 30 * k); x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(lab, ax + 23 * k, (y0 + y1) / 2 + 6 * k);
-        if (m.pk) { const y2 = m.pk[1], bx = X0 + (m.p0[0] + m.pk[0]) / 2; x.strokeStyle = '#8FD3F0'; x.beginPath(); x.moveTo(ax, y0); x.lineTo(bx, y2); x.moveTo(bx - 10 * k, y2); x.lineTo(bx + 10 * k, y2); x.stroke();
-          const l2 = `Draft ${fmt(m.T, 1)} m under water`, w2 = x.measureText(l2).width + 18 * k; x.fillStyle = 'rgba(16,28,44,.88)'; x.fillRect(bx + 14 * k, (y0 + y2) / 2 - 15 * k, w2, 30 * k); x.fillStyle = '#8FD3F0'; x.fillText(l2, bx + 23 * k, (y0 + y2) / 2 + 6 * k); }
-      }
-      panel(x, X0 + 22 * k, H - 150 * k, hw - 44 * k, 104 * k, 0.88);
-      text(x, m.cond === 'ballast' ? 'In ballast' : m.cond === 'laden' ? 'Laden' : 'As set', X0 + 44 * k, H - 108 * k, 26, '#fff', 700);
-      text(x, `${m.disp > 0 ? 'Displacement ' + fmt(m.disp, 0) + ' t   ·   ' : ''}${m.cond === 'ballast' ? 'holds empty' : m.cond === 'laden' ? 'holds full' : 'draft ' + fmt(m.T, 1) + ' m'}`, X0 + 44 * k, H - 74 * k, 17, '#DCE7EC', 500);
+      const Y0 = m.h * hh;
+      const lf = m.p0 && m.r0 && m.p0[0] < m.r0[0];
+      dim(m.p0, m.p1, Y0, '#fff', `Freeboard ${fmt(m.fb, 1)} m`, lf);
+      if (m.red > 0.3) dim(m.r0, m.r1, Y0, '#FFB3A6', `${fmt(m.red, 1)} m of red bottom showing`, !lf);
+      const call = (lab, q) => { if (!q) return; const px = q[0], py = Y0 + q[1], cy = Y0 + hh - 46 * k, right = px > W / 2;
+        x.strokeStyle = '#FFB3A6'; x.lineWidth = 2 * k; x.beginPath(); x.moveTo(px, py + 6 * k); x.lineTo(px, cy); x.stroke(); chip(lab, px + (right ? 14 : -14) * k, cy, '#FFB3A6', right); };
+      if (m.red > 0.3) { call('Bulb out of the water', m.bow); call('Propeller and rudder showing', m.aft); }
+      const title = m.cond === 'ballast' ? 'In ballast' : m.cond === 'laden' ? 'Laden' : 'As set';
+      const sub = `${m.cond === 'ballast' ? 'holds empty' : m.cond === 'laden' ? 'holds full' : ''}${m.cond ? '   ·   ' : ''}draft ${fmt(m.T, 1)} m${m.disp > 0 ? '   ·   displacement ' + fmt(m.disp, 0) + ' t' : ''}`;
+      x.font = `500 ${Math.round(15 * k)}px ${FONT()}`; const pw = Math.max(250 * k, x.measureText(sub).width + 44 * k), PX = (W - pw) / 2 - 18 * k;
+      panel(x, PX, Y0 + 14 * k + (m.h ? 26 * k : 62 * k), pw, 66 * k, 0.9);
+      { const py = Y0 + 14 * k + (m.h ? 26 * k : 62 * k); text(x, title, PX + 18 * k, py + 30 * k, 22, '#fff', 700); text(x, sub, PX + 18 * k, py + 54 * k, 15, '#DCE7EC', 500); }
     });
-    x.fillStyle = '#0F1B2B'; x.fillRect(hw - 2 * k, 0, 4 * k, H);
+    x.fillStyle = '#0F1B2B'; x.fillRect(0, hh - 2 * k, W, 4 * k);
     if (marks.length === 2) { const d = marks[1].fb - marks[0].fb, dd = marks[0].disp - marks[1].disp, msg = `The same vessel${marks[0].disp > 0 && marks[1].disp > 0 ? `: ${fmt(Math.abs(dd), 0)} t ${dd >= 0 ? 'lighter' : 'heavier'} in ballast, and` : ':'} riding ${fmt(Math.abs(d), 1)} m ${d >= 0 ? 'higher' : 'lower'}`;
-      x.font = `600 ${Math.round(16.5 * k)}px ${FONT()}`; const mw = x.measureText(msg).width + 36 * k; panel(x, (W - mw) / 2, 92 * k, mw, 40 * k, 0.9); text(x, msg, (W - mw) / 2 + 18 * k, 118 * k, 16.5, '#fff', 600); }
+      x.font = `600 ${Math.round(16.5 * k)}px ${FONT()}`; const mw = x.measureText(msg).width + 36 * k; panel(x, (W - mw) / 2, hh - 20 * k, mw, 40 * k, 0.95); text(x, msg, (W - mw) / 2 + 18 * k, hh + 6 * k, 16.5, '#fff', 600); }
     hud(x, s, u, i, t, null, null);
   }
   function meter(x, X, Y, W, rows) {

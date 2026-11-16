@@ -9935,17 +9935,24 @@ const Video = (() => {
     // top strip: project, and where we are
     const g = x.createLinearGradient(0, 0, 0, 86 * k); g.addColorStop(0, 'rgba(16,28,44,.72)'); g.addColorStop(1, 'rgba(16,28,44,0)');
     x.fillStyle = g; x.fillRect(0, 0, W, 86 * k);
-    text(x, V.opts.title || P.name || 'Mooring analysis', pad, 34 * k, 19, '#fff', 600);
+    if (s.kind !== 'title' && s.kind !== 'map') text(x, V.opts.title || P.name || 'Mooring analysis', pad, 34 * k, 19, '#fff', 600);   // on the opening card the title is in the box only
     if (s.kind !== 'title' && s.kind !== 'map') text(x, s.scn ? `${s.J.job.vessel}  ·  ${s.scn}` : (s.kind === 'summary' ? 'Summary' : s.J.job.vessel), pad, 58 * k, 15, '#CFE1E7', 500);
     text(x, 'TritoMoor', W - pad, 34 * k, 14, 'rgba(255,255,255,.75)', 600, 'right');
 
     x.globalAlpha = Math.max(0, fade);
     if (s.kind === 'title' || s.kind === 'map') {
       if (s.kind === 'map') x.globalAlpha = Math.max(0, Math.min(fade, 1 - (u - 0.55) / 0.12));
-      panel(x, pad, H * 0.56, Math.min(W - 2 * pad, 760 * k), 170 * k);
-      text(x, V.opts.title || P.name || 'Mooring analysis', pad + 26 * k, H * 0.56 + 62 * k, 38, '#fff', 600);
-      text(x, 'Mooring and fender analysis' + (V.opts.client ? '  ·  ' + V.opts.client : ''), pad + 26 * k, H * 0.56 + 100 * k, 20, '#CFE1E7');
-      text(x, new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), pad + 26 * k, H * 0.56 + 134 * k, 16, '#9FB4C2');
+      // the opening card: the title always inside the box (the box widens, then the title shrinks and wraps), and no date
+      const ttl = V.opts.title || P.name || 'Mooring analysis', maxIn = W - 2 * pad - 52 * k;
+      let fs = 38; x.font = `600 ${Math.round(fs * k)}px ${FONT()}`;
+      while (fs > 26 && x.measureText(ttl).width > maxIn) { fs -= 2; x.font = `600 ${Math.round(fs * k)}px ${FONT()}`; }
+      const tl = wrap(x, ttl, maxIn).slice(0, 3), sub = (/mooring/i.test(ttl) ? '' : 'Mooring and fender analysis') + (V.opts.client ? (/mooring/i.test(ttl) ? '' : '  ·  ') + V.opts.client : '');
+      x.font = `500 ${Math.round(20 * k)}px ${FONT()}`; const sw = sub ? x.measureText(sub).width : 0;
+      x.font = `600 ${Math.round(fs * k)}px ${FONT()}`;
+      const bw = Math.min(W - 2 * pad, Math.max(420 * k, ...tl.map(q => x.measureText(q).width), sw) + 52 * k), lh = fs * 1.22 * k, bh = 44 * k + tl.length * lh + (sub ? 36 * k : 0);
+      panel(x, pad, H * 0.56, bw, bh);
+      tl.forEach((q, j) => text(x, q, pad + 26 * k, H * 0.56 + 24 * k + (j + 0.8) * lh, fs, '#fff', 600));
+      if (sub) text(x, sub, pad + 26 * k, H * 0.56 + 24 * k + tl.length * lh + 30 * k, 20, '#CFE1E7');
     } else if (s.head) {
       const lh = 27 * k, hh = 62 * k + s.lines.length * lh;
       panel(x, pad, H - hh - 46 * k, Math.min(W - 2 * pad, 700 * k), hh);

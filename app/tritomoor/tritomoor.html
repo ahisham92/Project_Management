@@ -610,10 +610,11 @@ const MoorEngine = (() => {
 
   // depth of the flat side below the deck at x, from the contour; none outside it. Two points at the same x
   // make a step (the end of the flat side), and the step is taken at its deeper value.
-  // A fender only partly on the flat side meets the hull this much further off per metre that the flat side
-  // at its centre stops short of the panel's centre depth. Fitted to OptiMoor's interim 25,000 DWT and final
-  // 45,000 DWT ballast operational cases (16 runs, RMS 0.35 t on the fender thrusts).
-  const FLAT_RECESS_SLOPE = 0.045;
+  // A fender only partly on the flat side meets the hull further off. OptiMoor sets it back in two steps: by
+  // FLAT_RECESS[0] while the flat side at the fender's centre stops short of the panel's centre by less than a
+  // quarter of the panel height, and by FLAT_RECESS[1] beyond that. Read from 320 OptiMoor ballast runs on the
+  // interim 25,000 DWT and final 45,000 DWT vessels, with two moulded depths each.
+  const FLAT_RECESS = [0.015, 0.037];
   function flatDepthAt(fc, x) {
     if (!fc.length || x < fc[0][0] || x > fc[fc.length - 1][0]) return 0;
     let d = 0;
@@ -1044,10 +1045,10 @@ const MoorEngine = (() => {
           }
           contact = acc / N;
           // a fender only partly on the flat side bears where the hull has begun to turn in, so it meets the
-          // hull further off: by FLAT_RECESS_SLOPE times how far the flat side at its centre stops short of
-          // the panel's centre
+          // hull further off: by one of the two FLAT_RECESS steps, by how far the flat side at its centre stops
+          // short of the panel's centre
           const zf0 = Math.min(flatDepthAt(fc, a), zKeel), zMid = zTop + h / 2;
-          if (contact > 0 && contact < 1 && zf0 < zMid) recess = FLAT_RECESS_SLOPE * (zMid - zf0);
+          if (contact > 0 && contact < 1 && zf0 < zMid) recess = FLAT_RECESS[(zMid - zf0) / h >= 0.25 ? 1 : 0];
         } else {
           const ov = Math.max(0, Math.min(top, deck) - Math.max(bot, keel));
           contact = Math.max(0, Math.min(1, ov / h));

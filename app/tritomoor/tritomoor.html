@@ -4563,7 +4563,7 @@ function migrate(p) {
   }
   if (p.berth.depth == null) p.berth.depth = '';
   if (!p.berth.structure) p.berth.structure = 'wall';
-  p.berth.deck = Object.assign({ width: '', thickness: '', length: '', pileD: '', pitch: '', rows: '', trestleLength: '', trestleWidth: '', trestleX: '', root: 'east', causeway: '' }, p.berth.deck || {});
+  p.berth.deck = Object.assign({ width: '', thickness: '', length: '', pileD: '', pitch: '', rows: '', trestleLength: '', trestleWidth: '', trestleX: '', centreX: '', root: 'east', causeway: '' }, p.berth.deck || {});
   // drag basis: projects carrying their own coefficient tables keep them; the rest use the library
   [[1, p.vessel], [2, p.vessel2]].forEach(([ship, vv]) => {
     if (!vv || vv.drag) return;
@@ -6442,6 +6442,7 @@ function renderBerthTab() {
       tb.append(fieldGrid(br.deck, [
         { key: 'width', label: `Deck width from the berthing face (blank = ${offshore ? 20 : 30} m)`, unit: 'm' },
         { key: 'length', label: offshore ? 'Deck length (blank = the fenders plus 8 m each end)' : 'Deck length (blank = the whole berth drawn)', unit: 'm' },
+        { key: 'centreX', label: offshore ? 'Deck centre along the berth X (blank = the middle of the fenders)' : 'Deck centre along the berth X (blank = the middle of the berth drawn)', unit: 'm' },
         { key: 'thickness', label: 'Deck thickness (blank = 1.5 m); the top is the highest bollard level', unit: 'm' },
         { key: 'pileD', label: 'Pile diameter (blank = 1.0 m)', unit: 'm' },
         { key: 'pitch', label: 'Pile spacing along the berth (blank = 7 m)', unit: 'm' },
@@ -8966,12 +8967,15 @@ function berthStructure(sc, span) {
   const cx = sc.ships.reduce((a, s2) => a + s2.x0[0], 0) / sc.ships.length;
   let X0, X1;
   const len = num(d.length, null);
-  if (!offshore) { [X0, X1] = span; if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; } }
+  if (!offshore) [X0, X1] = span;
   else {
     const xs = fen.length >= 2 ? fen.map(f => f.X) : bol.length ? bol.map(b => b.X) : [cx - 0.3 * LOA, cx + 0.3 * LOA];
     X0 = Math.min(...xs) - 8; X1 = Math.max(...xs) + 8;
-    if (len) { const c = (X0 + X1) / 2; X0 = c - len / 2; X1 = c + len / 2; }
   }
+  // the deck where the user puts it: its centre X in berth coordinates (as bollards and fenders are entered), for
+  // when the fenders alone do not say where it is, as on a part-built berth
+  const cX = num(d.centreX, null, () => true), L = len || X1 - X0;
+  if (len || cX != null) { const c = cX != null ? MoorEngine.berthFrame(P).to(cX) : (X0 + X1) / 2; X0 = c - L / 2; X1 = c + L / 2; }
   const out = { kind, W, t, pileD, pitch, rows, X0, X1, dolphins: [], catwalks: [] };
   // levels for the section: deck top at the highest bollard, seabed at the berth depth below the water level
   const lv = (P.bollards || []).map(b => Number(b.level)).filter(Number.isFinite);

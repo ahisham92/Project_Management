@@ -234,6 +234,12 @@ def test_the_page_carries_scenarios_and_the_video_export(signed_in):
     assert "function lineReduction" in page and "function berthFrame" in page
 
 
+def test_the_video_is_made_in_one_click_without_playing_it_through(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert ">Download video</button>" in page
+    assert "function renderFile" in page and "new VideoEncoder" in page and "function mp4Of" in page
+
+
 def test_the_video_shows_loading_water_level_and_directions(signed_in):
     page = text(signed_in.get("/tritomoor/"))
     assert "function arrowList" in page and "S.arrows" in page

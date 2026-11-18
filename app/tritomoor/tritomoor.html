@@ -10055,7 +10055,7 @@ const Video = (() => {
       if (s.kind === 'fender' && s.fm) { const a2 = s.now && s.now.a != null ? s.now.a : 1; meter(x, W - pad - 330 * k, 96 * k, 330 * k, [
         ['Fender squeezed (rated ' + fmt(s.fm.rated, 0) + ')', s.fm.d * 1000 * a2, s.fm.rated, 'mm'], ['Fender reaction', s.fm.R * a2, s.fm.Rmax, 'kN'], ['Hull to the berth face', s.fm.hf - s.fm.d * a2, s.fm.hf, 'm', true]]);
         const sf = sc2.fenders.filter(q => q.kind === 'quay'), j = sf.findIndex(q => String(q.id) === String(s.C.M.fenders[s.focus].id)), f = j >= 0 ? S.fendersQuay[j] : null;
-        if (f) gapLine(x, f.X, (f.z != null ? f.z : 1) + 2.4, Math.max(0, sf[j].hf - sf[j].d)); }
+        if (f && !s.row) gapLine(x, f.X, (f.z != null ? f.z : 1) + 2.4, Math.max(0, sf[j].hf - sf[j].d)); }
       if (s.kind === 'gap') { const h = hullMin(sc2.ships[0], sc2.ships[0].pose, s.gapAt.i); gapLine(x, h.X, 1.2, Math.max(0, h.Y)); calc(x, s, W - pad - 400 * k, 96 * k, 400 * k); }
       tags(x, s, S, sc2);
     }

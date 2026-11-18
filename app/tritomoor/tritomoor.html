@@ -372,8 +372,8 @@ tr.best td{background:#EAF4F0}
     <div id="vidFields"></div>
     <p id="vidState" class="note" aria-live="polite"></p>
     <div class="rowbtns">
-      <button id="vidRecord" class="primary">Record and download</button>
-      <button id="vidPreview">Play without recording</button>
+      <button id="vidRecord" class="primary" title="Makes the video file and saves it to your downloads">Download video</button>
+      <button id="vidPreview">Play it here first</button>
       <button id="vidClose">Close</button>
     </div>
   </div>
@@ -9557,9 +9557,11 @@ function openScenarioResult(k) {
   showMsg(`Showing ${r.job.vessel}, ${r.job.scn.name}. The Environment tab now carries this scenario's loading, water level and weather.`, 'info');
 }
 
-/* ---------- video export: the project walked through on camera, recorded as it plays ----------
-   Not a render: the 3D view is drawn live, frame by frame, onto a canvas with the results laid over it, and the
-   browser records that canvas while it plays (MediaRecorder), so a three minute video takes three minutes. The
+/* ---------- video export: the project walked through on camera, saved as a video file ----------
+   The 3D view is drawn frame by frame onto a canvas with the results laid over it. "Download video" steps through
+   every frame without waiting for the clock, encodes each one (WebCodecs, H.264) and packs them into an MP4 here, so
+   no frame is dropped on a slow machine. Where the browser cannot encode, or the camera is moved by hand, the canvas
+   is recorded while it plays instead (MediaRecorder), and a three minute video takes three minutes. The
    director builds a list of shots from the scenario results: the berth, then each vessel berthing on the fenders,
    each scenario at its governing case, and close-ups of the most compressed fender and the most loaded bollard. */
 // the countries of the world in outline (Natural Earth 1:110m, public domain, as packed by world-atlas): the map that opens the video
@@ -10310,6 +10312,91 @@ const Video = (() => {
       X0, 180 * k + list.length * rh + 34 * k, 15.5, allOk ? '#8FE0C4' : '#F2A093', 600);
   }
 
+  /* ----- rendered straight to a file: each frame drawn, encoded and packed into an MP4, not tied to the clock ----- */
+  const FPS = 30;
+  async function encoderFor(w, h) {
+    if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') return null;
+    for (const codec of ['avc1.640028', 'avc1.4d0028', 'avc1.420028']) {
+      const cfg = { codec, width: w, height: h, bitrate: h >= 1080 ? 12e6 : 7e6, framerate: FPS, avc: { format: 'avc' } };
+      try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch (e) {}
+    }
+    return null;
+  }
+  // an MP4 of one H.264 video track at a constant frame rate, the index ahead of the pictures so it starts playing at once
+  function mp4Of(samples, w, h, avcC, fps) {
+    const te = new TextEncoder(), u32 = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255], u16 = n => [(n >> 8) & 255, n & 255];
+    const zeros = n => new Array(n).fill(0), str = t => Array.from(te.encode(t));
+    const cat = parts => {
+      const len = parts.reduce((a, q) => a + q.length, 0), o = new Uint8Array(len); let at = 0;
+      parts.forEach(q => { o.set(q, at); at += q.length; });
+      return o;
+    };
+    const box = (type, ...parts) => { const body = cat(parts); return cat([u32(8 + body.length), str(type), body]); };
+    const n = samples.length, TS = fps * 1000, durMs = Math.round(n * 1000 / fps), matrix = [].concat(u32(0x10000), zeros(12), u32(0x10000), zeros(12), u32(0x40000000));
+    const keys = []; samples.forEach((q, i) => { if (q.key) keys.push(i + 1); });
+    const sizes = new Uint8Array(4 * n), dv = new DataView(sizes.buffer); let bytes = 0;
+    samples.forEach((q, i) => { dv.setUint32(4 * i, q.data.length); bytes += q.data.length; });
+    const ftyp = box('ftyp', str('isom'), u32(0x200), str('isomiso2avc1mp41'));
+    const moov = off => box('moov',
+      box('mvhd', zeros(12), u32(1000), u32(durMs), u32(0x10000), u16(0x100), zeros(10), matrix, zeros(24), u32(2)),
+      box('trak',
+        box('tkhd', [0, 0, 0, 3], zeros(8), u32(1), zeros(4), u32(durMs), zeros(16), matrix, u32(w << 16), u32(h << 16)),
+        box('mdia',
+          box('mdhd', zeros(12), u32(TS), u32(n * 1000), u16(0x55C4), u16(0)),
+          box('hdlr', zeros(8), str('vide'), zeros(12), str('VideoHandler'), [0]),
+          box('minf',
+            box('vmhd', [0, 0, 0, 1], zeros(8)),
+            box('dinf', box('dref', zeros(4), u32(1), box('url ', [0, 0, 0, 1]))),
+            box('stbl',
+              box('stsd', zeros(4), u32(1), box('avc1', zeros(6), u16(1), zeros(16), u16(w), u16(h), u32(0x480000), u32(0x480000), zeros(4), u16(1), zeros(32), u16(24), u16(0xFFFF), box('avcC', avcC))),
+              box('stts', zeros(4), u32(1), u32(n), u32(1000)),
+              box('stss', zeros(4), u32(keys.length), ...keys.map(u32)),
+              box('stsc', zeros(4), u32(1), u32(1), u32(n), u32(1)),
+              box('stsz', zeros(4), u32(0), u32(n), sizes),
+              box('stco', zeros(4), u32(1), u32(off)))))));
+    const head = moov(ftyp.length + moov(0).length + 8);
+    return new Blob([ftyp, head, new Uint8Array(u32(8 + bytes).concat(str('mdat')))].concat(samples.map(q => q.data)), { type: 'video/mp4' });
+  }
+  async function renderFile(cfg) {
+    const stage = $('vidStage'), n = Math.max(1, Math.round(V.total * FPS)), samples = [], st = $('vidState2'), began = performance.now();
+    let avcC = null, fail = null, enc = null;
+    const idle = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+    try {
+      enc = new VideoEncoder({
+        output: (chunk, meta) => {
+          const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); samples.push({ data: d, key: chunk.type === 'key' });
+          const q = meta && meta.decoderConfig && meta.decoderConfig.description;
+          if (q && !avcC) avcC = q instanceof ArrayBuffer ? new Uint8Array(q.slice(0)) : new Uint8Array(q.buffer.slice(q.byteOffset, q.byteOffset + q.byteLength));
+        },
+        error: e => { fail = e; }
+      });
+      enc.configure(cfg);
+      for (let i = 0; i < n && !fail; i++) {
+        while (V.paused && V.playing) await new Promise(r => setTimeout(r, 120));
+        if (!V.playing) break;
+        V.t = Math.min(V.total - 0.001, i / FPS);
+        frame(V.t);
+        const vf = new VideoFrame(stage, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+        enc.encode(vf, { keyFrame: i % (2 * FPS) === 0 }); vf.close();
+        if (st) {
+          const el2 = (performance.now() - began) / 1000, left = i > 20 ? el2 / (i + 1) * (n - i - 1) : null;
+          st.textContent = `Making the video: ${clock(V.t)} of ${clock(V.total)}, ${Math.floor((i + 1) / n * 100)}%${left != null ? ', about ' + (left < 90 ? Math.max(1, Math.round(left)) + ' s' : Math.round(left / 60) + ' min') + ' left' : ''}`;
+        }
+        do { await idle(); } while (enc.encodeQueueSize > 4 && !fail && V.playing);
+      }
+      if (!V.playing) { try { enc.close(); } catch (e) {} return; }   // stopped by hand: nothing is saved
+      if (!fail) await enc.flush();
+      try { enc.close(); } catch (e) {}
+      if (fail) throw fail;
+      if (!V.playing) return;
+      if (!avcC || !samples.length) throw new Error('the encoder gave no picture');
+      finish(true, null, { name: `${safeName()}-mooring-video.mp4`, blob: mp4Of(samples, V.w, V.h, avcC, FPS) });
+    } catch (e) {
+      console.error(e); try { if (enc && enc.state !== 'closed') enc.close(); } catch (e2) {}
+      if (V.playing) finish(false, e.message || String(e));
+    }
+  }
+
   /* ----- playing and recording ----- */
   function loop(now) {
     if (!V.playing) return;
@@ -10342,6 +10429,12 @@ const Video = (() => {
     Moor3D.animate(false);
     document.body.classList.add('vidmode');
     V.rec = null; V.chunks = [];
+    // one click: drawn, encoded and saved without waiting for the clock, where the browser can and the camera is automatic
+    const cfg = record && !V.manual && V.opts.format !== 'webm' && !V.realtime ? await encoderFor(V.w, V.h) : null;
+    if (cfg) {
+      V.t = 0; V.paused = false; V.playing = true;
+      return renderFile(cfg);
+    }
     if (record) {
       const mime = mimeFor(V.opts.format);
       if (!mime || !stage.captureStream) { document.body.classList.remove('vidmode'); showMsg('This browser cannot record a canvas. Use a current Chrome, Edge or Firefox.'); return; }
@@ -10355,7 +10448,7 @@ const Video = (() => {
     V.t = 0; V.last = 0; V.paused = false; V.playing = true;
     V.raf = requestAnimationFrame(loop);
   }
-  function finish(completed, err) {
+  function finish(completed, err, made) {
     V.playing = false; cancelAnimationFrame(V.raf);
     const done = () => {
       document.body.classList.remove('vidmode');
@@ -10366,6 +10459,7 @@ const Video = (() => {
       if (V.done) { const f = V.done; V.done = null; f(V.lastBlob || null); }
     };
     V.lastFile = ''; V.lastBlob = null;
+    if (made) { V.lastFile = made.name; V.lastBlob = made.blob; if (!V.noDownload) download(made.name, made.blob, made.blob.type); }
     if (V.rec) {
       const rec = V.rec; V.rec = null;
       rec.onstop = () => {
@@ -10413,11 +10507,11 @@ const Video = (() => {
     add('Length, about', sel('minutes', [['auto', 'As long as it needs'], ['1', '1 minute'], ['2', '2 minutes'], ['3', '3 minutes'], ['4', '4 minutes'], ['5', '5 minutes'], ['8', '8 minutes']]));
     add('Picture size', sel('size', [['1280x720', '1280 × 720 (HD)'], ['1920x1080', '1920 × 1080 (Full HD)']]));
     add('Camera', sel('camera', [['auto', 'Automatic: it flies between the views'], ['manual', 'I move it myself while it plays']]));
-    add('File', sel('format', [['auto', 'MP4 if this browser can, otherwise WebM'], ['webm', 'WebM']]));
+    add('File', sel('format', [['auto', 'MP4'], ['webm', 'WebM']]));
     f.append(grid);
     const jobs = scenarioJobs();
     $('vidNote').textContent = `The video opens on the berth, then takes each vessel in turn: berthing on the fenders, its scenarios at their governing case with the line loads on screen, a close-up of its most squeezed fender and most loaded bollard, and the movement from above. It ends on a table of every result. There ${jobs.length === 1 ? 'is 1 run' : 'are ' + jobs.length + ' runs'}; where they do not all fit the length chosen, the most demanding scenario of each vessel is kept and the rest appear in the closing table, so choose a longer video to see more of them. `
-      + 'It is recorded as it plays, so it takes as long as the video is; keep this tab in front until it finishes. Moving the camera yourself: drag to orbit, Shift-drag to pan, scroll to zoom, keys 1 to 6 for set views. Space pauses, the arrow keys skip a shot, Esc stops.';
+      + 'Download video makes the file by itself, frame by frame, shows how far it is and saves it when it is done. If you move the camera yourself or choose WebM, or this browser cannot encode video, it is recorded while it plays instead, which takes as long as the video is, with this tab kept in front. Moving the camera yourself: drag to orbit, Shift-drag to pan, scroll to zoom, keys 1 to 6 for set views. Space pauses, the arrow keys skip a shot, Esc stops.';
     $('vidState').textContent = SCN && !scnStale() ? 'The scenarios have been run.' : 'The scenarios will be run first.';
     if (!dlg.open) dlg.showModal();
   }

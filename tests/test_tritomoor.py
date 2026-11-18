@@ -264,3 +264,11 @@ def test_the_video_has_a_summary_mode_and_names_each_check(signed_in):
 def test_a_rendering_winch_brake_holds_its_load(signed_in):
     page = text(signed_in.get("/tritomoor/"))
     assert "return L.brake + (T - L.brake) * 0.002;" in page
+
+
+def test_the_video_shows_the_berth_and_the_mooring_before_the_cases(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert "kind: 'berthview'" in page and "kind: 'moor'" in page and "How she is moored" in page
+    assert "She comes in from the sea" not in page
+    assert "Governing line: " in page and "function moorList" in page
+

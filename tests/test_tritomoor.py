@@ -272,3 +272,10 @@ def test_the_video_shows_the_berth_and_the_mooring_before_the_cases(signed_in):
     assert "She comes in from the sea" not in page
     assert "Governing line: " in page and "function moorList" in page
 
+
+def test_the_video_holds_the_camera_in_a_load_case_and_shows_the_movement(signed_in):
+    page = text(signed_in.get("/tritomoor/"))
+    assert "cam0: CAM.caseView(I), cam1: CAM.caseView(I)" in page
+    assert "Vessel movement in this case" in page and "S.ghostHouse" in page
+    assert "the hull hits the berth" in page and "The hull is on the berth" in page
+

@@ -9725,7 +9725,13 @@ const Video = (() => {
     const m = P.video && P.video.vessels ? P.video.vessels[name] : null;
     if (!m) return { mode: 'full', show: [] };
     if (typeof m === 'string') return { mode: m, show: [] };
-    return { mode: m.mode || 'short', show: Array.isArray(m.show) ? m.show : [] };
+    return { mode: m.mode || 'short', show: Array.isArray(m.show) ? m.show : [], bearing: m.bearing || null };
+  }
+  // directions written on the video: the model's own (vessel axes), or true bearings when the vessel entry gives
+  // bearing: { add, sign } -> shown = add + sign x model direction (e.g. { add: 180, sign: -1 } for a berth modelled bow south)
+  function shownDir(name, d) {
+    const b = vesselMode(name).bearing; if (!b || d == null || !isFinite(Number(d))) return d;
+    return Math.round((((Number(b.add) || 0) + (Number(b.sign) < 0 ? -1 : 1) * Number(d)) % 360 + 360) % 360);
   }
   function cardShot(cd, byV, first) {
     const rs = [...byV.values()].find(g => g[0].job.vessel === cd.vessel) || [...byV.values()][0] || [first];
@@ -9834,8 +9840,9 @@ const Video = (() => {
       const gov = rs.reduce((a, b) => b.m.util > a.m.util ? b : a, rs[0]);
       const baseOf = (J, C) => {
         const c = C.c, E = J.pj.environment, R = J.RESALL.runs[C.ri];
-        const wx = [c.env && c.env.Vw > 0 ? `Wind ${fmt(c.env.Vw, 1)} m/s from ${c.windHeading}°` : null, c.env && c.env.Vc > 0 ? `Current ${fmt(c.env.Vc, 2)} m/s from ${c.currentHeading}°` : null,
-          E.waveMode !== 'off' && Number(E.waveHs) > 0 ? `Waves Hs ${fmt(Number(E.waveHs), 2)} m, period ${fmt(Number(E.wavePeriod) || 0, 1)} s${c.scnWave != null ? ' from ' + c.scnWave + '°' : ''}` : null].filter(Boolean).join(' · ');
+        const sd = d => shownDir(J.job.vessel, d);
+        const wx = [c.env && c.env.Vw > 0 ? `Wind ${fmt(c.env.Vw, 1)} m/s from ${sd(c.windHeading)}°` : null, c.env && c.env.Vc > 0 ? `Current ${fmt(c.env.Vc, 2)} m/s from ${sd(c.currentHeading)}°` : null,
+          E.waveMode !== 'off' && Number(E.waveHs) > 0 ? `Waves Hs ${fmt(Number(E.waveHs), 2)} m, period ${fmt(Number(E.wavePeriod) || 0, 1)} s${c.scnWave != null ? ' from ' + sd(c.scnWave) + '°' : ''}` : null].filter(Boolean).join(' · ');
         const state = (R && R.state && R.state.name) || '';
         return { J, C, ri: C.ri, ci: C.ci, scn: J.job.scn.name, sub: `${state ? state + ', draft ' + fmt(C.sc.ships[0].V.T, 1) + ' m' : ''}${wx ? ' · ' + wx : ''}`, hud: true };
       };

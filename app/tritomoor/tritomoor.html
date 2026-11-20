@@ -667,9 +667,12 @@ const MoorEngine = (() => {
   function berthOf(p) {
     if (!p || p._berthView) return p;
     const fr = berthFrame(p);
-    if (!fr.on) return p;
+    // a bollard or fender may belong to one stage only: stage 'interim' (there only while part of the berth is in use,
+    // e.g. a temporary mooring point) or 'final' (there only on the finished berth); without it, it is there in both
+    const part = fr.lo > -Infinity || fr.hi < Infinity, staged = q => !q.stage || (q.stage === 'interim' ? part : q.stage === 'final' ? !part : true);
+    if (!fr.on) return [...(p.bollards || []), ...(p.fenders || [])].every(staged) ? p : Object.assign({}, p, { bollards: (p.bollards || []).filter(staged), fenders: (p.fenders || []).filter(staged), _berthView: true });
     const fixed = q => !Number.isFinite(Number(q.X)) || q.on === 'pontoon' || q.kind === 'sts' || q.kind === 'pontoon';
-    const map = list => (list || []).filter(q => fixed(q) || fr.inside(Number(q.X))).map(q => fixed(q) ? q : Object.assign({}, q, { X: Math.round(fr.to(Number(q.X)) * 1000) / 1000 }));
+    const map = list => (list || []).filter(staged).filter(q => fixed(q) || fr.inside(Number(q.X))).map(q => fixed(q) ? q : Object.assign({}, q, { X: Math.round(fr.to(Number(q.X)) * 1000) / 1000 }));
     return Object.assign({}, p, { bollards: map(p.bollards), fenders: map(p.fenders), _berthView: true });
   }
 
@@ -9715,17 +9718,18 @@ const Video = (() => {
 
   /* ----- the shot list ----- */
   // what the project asks of the video (P.video, optional): cards of its own between the shots, and how much of each vessel to show
-  //   P.video.cards:   [{ at: 'start' | 'before:<vessel>' | 'after:<vessel>' | 'beforeSummary' | 'end', type: 'text' | 'table' | 'windage' | 'spacing',
+  //   P.video.cards:   [{ at: 'start' | 'before:<vessel>' | 'after:<vessel>' | 'after:<vessel>:<shot kind>' | 'beforeSummary' | 'end',
+  //                       type: 'text' | 'table' | 'windage' | 'spacing' | 'bowland' (the bow landing on two fenders, from cd.bow),
   //                       head, sub, lines: [...], cols: [...], rows: [[...]], vessel: <vessel name for the picture behind>, view: 'far' | 'high' | 'top' | 'quarter',
   //                       dur: seconds, profiles: [...] (windage), note }]
   //   P.video.vessels: { '<vessel name>': 'full' | 'short' | 'skip' | { mode: 'short', show: ['berth', 'moor', 'berthing', 'compare', 'plan', 'matrix', 'gap', 'fender', 'bollard'] } }
-  //   a short vessel is shown arriving and in its governing scenario only, plus any shots listed in show
+  //   a short vessel is shown arriving and in its governing scenario only, plus any shots listed in show; hide: ['vessel'] leaves out its arrival
   function videoCards() { return P.video && Array.isArray(P.video.cards) ? P.video.cards.filter(c => c && (c.head || c.type)) : []; }
   function vesselMode(name) {
     const m = P.video && P.video.vessels ? P.video.vessels[name] : null;
     if (!m) return { mode: 'full', show: [] };
     if (typeof m === 'string') return { mode: m, show: [] };
-    return { mode: m.mode || 'short', show: Array.isArray(m.show) ? m.show : [], bearing: m.bearing || null };
+    return { mode: m.mode || 'short', show: Array.isArray(m.show) ? m.show : [], hide: Array.isArray(m.hide) ? m.hide : [], bearing: m.bearing || null };
   }
   // directions written on the video: the model's own (vessel axes), or true bearings when the vessel entry gives
   // bearing: { add, sign } -> shown = add + sign x model direction (e.g. { add: 180, sign: -1 } for a berth modelled bow south)
@@ -9811,8 +9815,9 @@ const Video = (() => {
       const vm = vesselMode(J0.job.vessel); if (vm.mode === 'skip') return;
       const shortV = vm.mode === 'short', vwant = kd => !shortV || vm.show.includes(kd);
       cardsAt('before:' + J0.job.vessel);
+      const n0 = shots.length;
       if (mine && !few && vwant('berth')) berthShot(J0, Cb, I, nShown++);
-      if (mine && !few) shots.push({ kind: 'vessel', dur: 6.5, pri: 1, I, J: J0, C: Cb, cam0: CAM.berthTop(I), cam1: CAM.quarter(I), anim: 'arrive', head: J0.job.vessel,
+      if (mine && !few && !(vm.hide || []).includes('vessel')) shots.push({ kind: 'vessel', dur: 6.5, pri: 1, I, J: J0, C: Cb, cam0: CAM.berthTop(I), cam1: CAM.quarter(I), anim: 'arrive', head: J0.job.vessel,
         lines: [`${fmt(Number(v.LOA), 0)} m long, ${fmt(Number(v.B), 1)} m beam`, `Draft ${cs.laden && cs.laden.draft ? fmt(Number(cs.laden.draft), 1) + ' m laden' : ''}${cs.ballast && cs.ballast.draft ? ', ' + fmt(Number(cs.ballast.draft), 1) + ' m in ballast' : ''}`,
           `${(J0.pj.lines || []).length} mooring lines`, `${rs.length} scenario${rs.length === 1 ? '' : 's'}`,
           'She is brought alongside onto the fenders'].filter(Boolean) });
@@ -9925,6 +9930,14 @@ const Video = (() => {
             cap: `The highest bollard load for this vessel: bollard ${B.id} carries ${kNt(b.total)}${B.swl > 0 ? `, ${fmt(b.total / B.swl * 100, 0)}% of its ${fmt(tonnes(B.swl), 0)} t safe working load` : ''}.` }, baseOf(jb, C)));
         }
       }
+      // cards placed right after one shot of this vessel: at 'after:<vessel>:<kind>' (kind: berthview, vessel, moor, berthing,
+      // scenario, plan, gap, fender, bollard), after the last shot of that kind (at the end of the vessel when it has none)
+      const pre = 'after:' + J0.job.vessel + ':';
+      VC.filter(c => typeof c.at === 'string' && c.at.startsWith(pre)).forEach(c => {
+        const kd = c.at.slice(pre.length); let j = -1;
+        for (let q = shots.length - 1; q >= n0; q--) if (shots[q].kind === kd) { j = q; break; }
+        shots.splice(j >= 0 ? j + 1 : shots.length, 0, cardShot(c, byV, first));
+      });
       cardsAt('after:' + J0.job.vessel);
     });
     // the governing berthing, fender, gap and bollard of the whole project are always shown; a summary shows only those
@@ -10472,6 +10485,7 @@ const Video = (() => {
     const a0 = x.globalAlpha;
     x.fillStyle = `rgba(10,20,32,${type === 'spacing' || cd.place === 'bottom' ? 0.12 : 0.46})`; x.fillRect(0, 86 * k, W, H - 86 * k);
     if (type === 'windage') return windage(x, s, u);
+    if (type === 'bowland') return bowland(x, s, u);
     if (type === 'spacing') spacingMarks(x, s, u, sc2);
     if (Array.isArray(cd.marks)) shipMarks(x, s, u, sc2, cd.marks);
     const lines = Array.isArray(cd.lines) ? cd.lines : [], cols = Array.isArray(cd.cols) ? cd.cols : [], rows = Array.isArray(cd.rows) ? cd.rows : [];
@@ -10557,6 +10571,75 @@ const Video = (() => {
       }
     });
   }
+  // the curved bow landing between two fenders, seen from above: the ship comes in, both fenders are squeezed, and the
+  // gap left between the hull and the berth face midway is measured. cd.bow: { S spacing m, R bow radius m, proj fender
+  // projection with its panel m, d deflection of each fender m, gap m, need least gap m, H rubber height m, panel m, base m, name, pct }
+  function bowland(x, s, u) {
+    const cd = s.card, b = cd.bow || {}, W = V.w, H = V.h, k = V.k, pad = 22 * k;
+    const S = Number(b.S) || 15, R = Number(b.R) || 30, proj = Number(b.proj) || 1.75, dd = Number(b.d) || 0.3, Hr = Number(b.H) || Math.max(0.5, proj - 0.35);
+    const pnl = Number(b.panel) || 4.0, base = Number(b.base) || 2.2, sag = R - Math.sqrt(Math.max(R * R - S * S / 4, 0)), gap = b.gap != null ? Number(b.gap) : proj - dd - sag;
+    const bw = Math.min(W - 2 * pad, 1240 * k), bx = (W - bw) / 2, by = 96 * k, bh = H - 140 * k;
+    panel(x, bx, by, bw, bh, 0.92); x.fillStyle = '#E3A33B'; x.fillRect(bx, by, 6 * k, bh);
+    text(x, cd.head || 'Fender spacing', bx + 28 * k, by + 42 * k, 27, '#fff', 650);
+    const lines = Array.isArray(cd.lines) ? cd.lines : [];
+    x.font = `500 ${Math.round(17 * k)}px ${FONT()}`;
+    let ly = by + 72 * k; lines.slice(0, 2).forEach(ln => wrap(x, ln, bw - 60 * k).forEach(q => { text(x, q, bx + 28 * k, ly, 17, '#DCE7EC'); ly += 24 * k; }));
+    // the drawing: metres along the berth from -0.3 S to 1.3 S; across the berth, heights drawn larger so the gap can be seen
+    const dx0 = bx + 60 * k, dw = bw - 120 * k, top = ly + 20 * k, bot = by + bh - (lines.length > 2 ? 86 : 50) * k, deckH = 34 * k;
+    const span = 1.6 * S, sx = dw / span, yr = 4.2, sy = Math.min((bot - deckH - top) / yr, 9 * sx), ex = sy / sx;
+    const PX = m => dx0 + (m + 0.3 * S) * sx, PY = h => bot - deckH - h * sy;
+    // water and the berth
+    x.fillStyle = 'rgba(70,140,170,.22)'; x.fillRect(dx0, top, dw, bot - deckH - top);
+    x.fillStyle = '#6B7480'; x.fillRect(dx0, bot - deckH, dw, deckH);
+    text(x, 'Berth face', dx0 + 10 * k, bot - 11 * k, 14, '#fff', 650);
+    // timeline: approach, touch, squeeze, hold
+    const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+    const a = ease((u - 0.1) / 0.3), q = ease((u - 0.42) / 0.18), hcur = proj - q * dd, off = (1 - a) * 2.2;
+    // the hull: a circle of the bow radius, lowest midway between the fenders, resting on both panels
+    const yH = m => off + hcur - sag + (R - Math.sqrt(Math.max(R * R - (m - S / 2) ** 2, 0)));
+    // the fenders: rubber cone from the berth face, panel on its front, turning to lie flat on the curved hull as it lands
+    const pt = Math.max(0.2, proj - Hr);
+    [0, S].forEach(X0 => {
+      const hr = hcur - pt, c0 = [PX(X0 - 0.5), PY(yH(X0 - 0.5))], c1 = [PX(X0 + 0.5), PY(yH(X0 + 0.5))], ang = a * Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
+      x.fillStyle = '#1F2329'; x.beginPath(); x.moveTo(PX(X0 - base / 2), PY(0)); x.lineTo(PX(X0 + base / 2), PY(0)); x.lineTo(PX(X0 + 0.32 * base), PY(hr)); x.lineTo(PX(X0 - 0.32 * base), PY(hr)); x.closePath(); x.fill();
+      x.save(); x.translate(PX(X0), PY(hcur)); x.rotate(ang); x.fillStyle = '#E3B23C'; x.fillRect(-pnl / 2 * sx, 0, pnl * sx, pt * sy); x.restore();
+    });
+    x.beginPath(); x.moveTo(PX(-0.3 * S), top);
+    for (let i = 0; i <= 80; i++) { const m = -0.3 * S + span * i / 80; x.lineTo(PX(m), Math.max(top, PY(yH(m)))); }
+    x.lineTo(PX(1.3 * S), top); x.closePath(); x.fillStyle = '#4C4F55'; x.fill(); x.strokeStyle = '#B9C3CA'; x.lineWidth = 2 * k; x.stroke();
+    text(x, b.name || 'Bow of the ship', PX(S / 2), top + 26 * k, 16, '#fff', 650, 'center');
+    if (a < 1) { // approach arrow
+      x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3 * k; const ax = PX(S / 2), ay = PY(yH(S / 2)) + 14 * k;
+      x.beginPath(); x.moveTo(ax, ay); x.lineTo(ax, ay + 34 * k); x.lineTo(ax - 8 * k, ay + 24 * k); x.moveTo(ax, ay + 34 * k); x.lineTo(ax + 8 * k, ay + 24 * k); x.stroke();
+    }
+    const ga = x.globalAlpha, show = Math.max(0, Math.min(1, (u - 0.6) / 0.08));
+    if (show > 0) {
+      x.globalAlpha = ga * show;
+      // the squeeze of each fender, beside it on the outer side
+      [0, S].forEach(X0 => {
+        const lab = `squeezed ${fmt(dd * 1000, 0)} mm${b.pct ? ' (' + fmt(Number(b.pct), 0) + '%)' : ''}`;
+        x.font = `700 ${Math.round(15 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 16 * k, out = X0 < S / 2;
+        const lx = out ? Math.max(dx0 + 4 * k, PX(X0 - base / 2) - 10 * k - w) : Math.min(dx0 + dw - w - 4 * k, PX(X0 + base / 2) + 10 * k), ly2 = PY(hcur * 0.45);
+        x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(lx, ly2 - 13 * k, w, 24 * k); x.fillStyle = '#FFD27A'; x.textAlign = 'left'; x.fillText(lab, lx + 8 * k, ly2 + 4 * k);
+      });
+      // the gap midway
+      const gx = PX(S / 2), g0 = PY(0), g1 = PY(yH(S / 2)), ok = gap >= (Number(b.need) || 0);
+      x.strokeStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(gx, g0); x.lineTo(gx, g1); x.stroke();
+      [g0, g1].forEach(yy => { x.beginPath(); x.moveTo(gx - 10 * k, yy); x.lineTo(gx + 10 * k, yy); x.stroke(); });
+      const gl = `${fmt(gap, 2)} m clear${b.need ? ' (needs ' + fmt(Number(b.need), 2) + ' m)' : ''}`;
+      x.font = `700 ${Math.round(17 * k)}px ${FONT()}`; const gw2 = x.measureText(gl).width + 18 * k;
+      x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(gx + 16 * k, (g0 + g1) / 2 - 15 * k, gw2, 28 * k); x.fillStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.fillText(gl, gx + 25 * k, (g0 + g1) / 2 + 5 * k);
+      // the spacing, on the berth
+      const sy2 = bot - deckH / 2; x.strokeStyle = '#FFD27A'; x.lineWidth = 2.5 * k;
+      x.beginPath(); x.moveTo(PX(0), sy2); x.lineTo(PX(S), sy2); x.stroke();
+      [PX(0), PX(S)].forEach(xx => { x.beginPath(); x.moveTo(xx, sy2 - 9 * k); x.lineTo(xx, sy2 + 9 * k); x.stroke(); });
+      const sl = `${fmt(S, 1)} m between fenders`; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const sw2 = x.measureText(sl).width + 16 * k;
+      x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(PX(S / 2) - sw2 / 2, sy2 - 13 * k, sw2, 26 * k); x.fillStyle = '#FFD27A'; x.textAlign = 'center'; x.fillText(sl, PX(S / 2), sy2 + 6 * k); x.textAlign = 'left';
+      x.globalAlpha = ga;
+    }
+    if (ex > 1.5) text(x, `Distances off the berth drawn ${fmt(ex, 0)} times larger than along it`, dx0 + dw, top - 6 * k, 12.5, '#9FB4C2', 500, 'right');
+    if (lines.length > 2 && u > 0.66) { x.font = `600 ${Math.round(17 * k)}px ${FONT()}`; const qq = wrap(x, lines.slice(2).join(' '), bw - 60 * k); qq.forEach((t2, j) => text(x, t2, bx + 28 * k, by + bh - 22 * k - (qq.length - 1 - j) * 24 * k, 17, '#FFD27A', 600)); }
+  }
   // the side wind area of each vessel, built up from the hull above water, the accommodation and what is on deck, to one scale
   function windage(x, s, u) {
     const cd = s.card, W = V.w, H = V.h, k = V.k, pad = 22 * k, P2 = Array.isArray(cd.profiles) ? cd.profiles : [];
@@ -10567,11 +10650,14 @@ const Video = (() => {
     x.font = `500 ${Math.round(16 * k)}px ${FONT()}`;
     let ly = by + 70 * k; lines.slice(0, 2).forEach(ln => wrap(x, ln, bw - 60 * k).forEach(q => { text(x, q, bx + 28 * k, ly, 16, '#DCE7EC'); ly += 22 * k; }));
     if (!P2.length) return;
-    const ncol = P2.length > 2 ? 2 : 1, nrow = Math.ceil(P2.length / ncol), gx = bx + 28 * k, gy = ly + 12 * k, gw = (bw - 56 * k) / ncol, gh = (by + bh - 64 * k - gy) / nrow;
+    // the grid: two columns when there are more than two profiles, or as the profiles place themselves (row, col from 0)
+    const placed = P2.every(p => Number.isFinite(Number(p.row)) && Number.isFinite(Number(p.col)));
+    const ncol = placed ? Math.max(...P2.map(p => Number(p.col))) + 1 : P2.length > 2 ? 2 : 1, nrow = placed ? Math.max(...P2.map(p => Number(p.row))) + 1 : Math.ceil(P2.length / ncol);
+    const gx = bx + 28 * k, gy = ly + 12 * k, gw = (bw - 56 * k) / ncol, gh = (by + bh - 64 * k - gy) / nrow;
     const Lmax = Math.max(...P2.map(p => Number(p.L) || 0)), sc = Math.min((gw - 150 * k) / Lmax, (gh - 46 * k) / 34);
     const sweep = Math.max(0, Math.min(1, (u - 0.12) / 0.4));
     P2.forEach((p, i) => {
-      const col = i % ncol, row = Math.floor(i / ncol), ox = gx + col * gw + 10 * k, wy = gy + row * gh + gh - 30 * k;   // waterline
+      const col = placed ? Number(p.col) : i % ncol, row = placed ? Number(p.row) : Math.floor(i / ncol), ox = gx + col * gw + 10 * k, wy = gy + row * gh + gh - 30 * k;   // waterline
       const L = Number(p.L) || 100, fb = Number(p.fb) || 5, A = Number(p.A) || L * fb, hull = L * fb, rest = Math.max(0, A - hull), cargo = p.type === 'general';
       const hW = 0.13 * L, hA = rest * (cargo ? 0.38 : 0.72), hH = Math.min(26, hA / hW), dA = rest - hW * hH, dL = 0.6 * L, dH = Math.max(0.8, dA / dL);
       const X = m => ox + m * sc, Y = h => wy - h * sc;
@@ -10601,6 +10687,8 @@ const Video = (() => {
         x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const lw = x.measureText(lab).width;
         text(x, lab, X(0.18 * L), ty, 16, '#FFD27A', 700);
         if (p.vs) text(x, p.vs, X(0.18 * L) + lw + 14 * k, ty, 15, '#FFB4AA', 700);
+        // a sense of the size (feel: e.g. 'about 7 tennis courts'), beside the name
+        if (p.feel) { x.font = `650 ${Math.round(15 * k)}px ${FONT()}`; const nw = x.measureText(p.name || '').width; text(x, p.feel, ox + nw + 16 * k, wy + 28 * k, 14.5, '#FFD27A', 600); }
       }
     });
     if (lines.length > 2 && u > 0.6) { x.font = `600 ${Math.round(16.5 * k)}px ${FONT()}`; const q = wrap(x, lines.slice(2).join(' '), bw - 60 * k); q.forEach((t2, j) => text(x, t2, bx + 28 * k, by + bh - 20 * k - (q.length - 1 - j) * 22 * k, 16.5, '#FFD27A', 600)); }

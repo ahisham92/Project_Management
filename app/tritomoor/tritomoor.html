@@ -3394,14 +3394,17 @@ const Moor3D = (() => {
       m.box([f.X, 0.04, 0], [1, 0, 0], [0, 1, 0], 2 * rb + 0.3, 0.08, zc - rb - 0.15, zc + rb + 0.15, hex('#3A3D41'));
       m.frustum([f.X, 0.08, zc], [f.X, Math.max(0.2, yPanel * 0.45), zc], rb, rb * 0.82, rubber, 18);
       m.frustum([f.X, Math.max(0.2, yPanel * 0.45), zc], [f.X, Math.max(0.3, yPanel), zc], rb * 0.82, rt, rubber, 18);
-      m.box([f.X, yPanel + tp * 0.35, 0], [1, 0, 0], [0, 1, 0], pw, tp * 0.7, zc - ph / 2, zc + ph / 2, steel);
+      // the panel turns in plan (f.tilt, radians) to lie flat on a hull that meets it at an angle, about its centre
+      const tl = Number(f.tilt) || 0, ct = Math.cos(tl), st = Math.sin(tl), ex3 = [ct, st, 0], ey3 = [-st, ct, 0];
+      const at = (u, v) => [f.X + u * ct - v * st, yPanel + u * st + v * ct];
+      m.box([...at(0, tp * 0.35), 0], ex3, ey3, pw, tp * 0.7, zc - ph / 2, zc + ph / 2, steel);
       // the pads: a grid of facing pads with gaps between them
       const nx = Math.max(2, Math.round(pw / 1.1)), nz = Math.max(2, Math.round(ph / 0.9)), gx = pw / nx, gz = ph / nz;
       for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++)
-        m.box([f.X - pw / 2 + gx * (i + 0.5), yPanel + tp * 0.85, 0], [1, 0, 0], [0, 1, 0], gx - 0.08, tp * 0.3, zc - ph / 2 + gz * k + 0.04, zc - ph / 2 + gz * (k + 1) - 0.04, pad);
+        m.box([...at(-pw / 2 + gx * (i + 0.5), tp * 0.85), 0], ex3, ey3, gx - 0.08, tp * 0.3, zc - ph / 2 + gz * k + 0.04, zc - ph / 2 + gz * (k + 1) - 0.04, pad);
       // weight and shear chains from the panel's corners back to the face
       [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(([sx, sz]) =>
-        m.tube([[f.X + sx * (pw / 2 - 0.25), yPanel, zc + sz * (ph / 2 - 0.2)], [f.X + sx * (rb + 0.25), 0.05, zc + sz * (sz > 0 ? rb + 0.35 : rb * 0.4)]], 0.035, hex('#55595E'), 5));
+        m.tube([[...at(sx * (pw / 2 - 0.25), 0), zc + sz * (ph / 2 - 0.2)], [f.X + sx * (rb + 0.25), 0.05, zc + sz * (sz > 0 ? rb + 0.35 : rb * 0.4)]], 0.035, hex('#55595E'), 5));
     });
     /* ship-to-ship fenders: floating pneumatic units between the hulls */
     S.fendersSts.forEach(f => {
@@ -3452,8 +3455,11 @@ const Moor3D = (() => {
       const fine = (r, k) => r.map((q, i) => { const a = sh.hull[i][0], u = Math.max(0, Math.min(1, (-a - 0.7 * Lh) / (0.3 * Lh))); if (!(u > 0)) return q;
         const a2 = (a > 0 ? a : a * (k[0])), w = 1 - (1 - k[1]) * u * u, b = sh.hull[i][1] * k[2] * w; return G(a2, b, q[2]); });
       const keel = fine(ring(0.86, 0.78, zk(0), 0.93), [0.86, 0.06, 0.78]), bilge = fine(ring(0.875, 0.97, zk(0.3 * Tl), 0.98), [0.875, 0.12, 0.97]), run = fine(ring(0.9, 1, zk(0.72 * Tl), 0.995), [0.9, 0.3, 1]), wl = ring(1, 1, zk(0.86 * Tl), 1);
-      const lw = ring(1, 1.003, zk(Tl), 1);
-      const bt = ring(1, 1.005, zk(Tl) + 0.6, 1), deckR = ring(1, 1.012, fb, 1.02, true), rail = ring(1, 1.012, fb + 1.1, 1.02, true);
+      // above the waterline the sides flare out a little; sh.noFlare draws them plumb, so that seen from above the deck edge
+      // is the hull line at fender level (a gap measured there then reads true)
+      const fA = sh.noFlare ? 1 : 1.003, fB = sh.noFlare ? 1 : 1.005, fD = sh.noFlare ? 1 : 1.012, fT = sh.noFlare ? 1 : 1.02;
+      const lw = ring(1, fA, zk(Tl), 1);
+      const bt = ring(1, fB, zk(Tl) + 0.6, 1), deckR = ring(1, fD, fb, fT, true), rail = ring(1, fD, fb + 1.1, fT, true);
       const red = hex('#C63F30'), boot = hex('#F1F1EC'), topside = hex(sh.hullColor || '#23364A');
       const loft = (r1, r2, col) => { for (let i = 0; i < r1.length; i++) { const j = (i + 1) % r1.length; m.quad(r1[i], r1[j], r2[j], r2[i], col); } };
       loft(keel, bilge, red); loft(bilge, run, red); loft(run, wl, red); loft(wl, lw, red); loft(lw, bt, boot); loft(bt, deckR, topside); loft(deckR, rail, topside);
@@ -9088,7 +9094,7 @@ function scene3D(sc) {
       const cond = pontoonBody ? {} : vesselCond(i), house = pontoonBody ? {} : ((i ? proj.vessel2 : proj.vessel).house || {});
       const td = pontoonBody ? null : typeDisplay(s2.V, (i ? proj.vessel2 : proj.vessel).type || 'tanker', house);
       return {
-        V: s2.V, x: s2.pose, hull: s2.hull, name: s2.name, kind: pontoonBody ? 'pontoon' : 'vessel',
+        V: s2.V, x: s2.pose, hull: s2.hull, noFlare: !!s2.noFlare, name: s2.name, kind: pontoonBody ? 'pontoon' : 'vessel',
         paintT: pontoonBody ? 0 : Math.max(s2.V.T, ...Object.values((i ? proj.vessel2 : proj.vessel).conditions || {}).map(q => Number(q && q.draft) || 0)),
         vesselType: pontoonBody ? null : ((i ? proj.vessel2 : proj.vessel).type || 'tanker'),
         house: td ? td.house : { L: 0, B: 0, H: 0 }, houseCentre: td ? td.houseCentre : null,
@@ -9102,7 +9108,7 @@ function scene3D(sc) {
         features: td.features, cargo: { L: 0, B: 0, H: 0 }, hullColor: '#7A2E24', deckColor: '#8C7A62', passing: true };
     })()] : []),
     bollards: sc.bollards.map(b => ({ X: b.X, Y: onDeck(b.X, b.Y), z: bz.get(String(b.id)) ?? 2 })),
-    fendersQuay: sc.fenders.filter(f => f.kind === 'quay').map(f => Object.assign({ X: f.X, proj: f.hf, d: f.d || 0, color: f.over ? '#B7372A' : null }, fenderShape(f.id))),
+    fendersQuay: sc.fenders.filter(f => f.kind === 'quay').map(f => Object.assign({ X: f.X, proj: f.hf, d: f.d || 0, tilt: f.tilt || 0, color: f.over ? '#B7372A' : null }, fenderShape(f.id))),
     fendersSts: sc.fenders.filter(f => f.kind !== 'quay').map(f => {
       const side = f.side || 1, h = f.host;
       return { p: G(h, f.a, side * sc.ships[h].V.B / 2), n: [-trig[h].s * side, trig[h].c * side], proj: f.hf, d: f.d || 0, color: f.over ? '#B7372A' : null };
@@ -9719,7 +9725,10 @@ const Video = (() => {
   /* ----- the shot list ----- */
   // what the project asks of the video (P.video, optional): cards of its own between the shots, and how much of each vessel to show
   //   P.video.cards:   [{ at: 'start' | 'before:<vessel>' | 'after:<vessel>' | 'after:<vessel>:<shot kind>' | 'beforeSummary' | 'end',
-  //                       type: 'text' | 'table' | 'windage' | 'spacing' | 'bowland' (the bow landing on two fenders, from cd.bow),
+  //                       type: 'text' | 'table' | 'windage' | 'spacing' | 'bowland' (the bow landing on two fenders, from cd.bow;
+  //                       a negative cd.bow.gap shows the bow hitting the berth face) | 'chart' (a line chart, from cd.chart) |
+  //                       'sections' (midship sections with the water moving with each ship, from cd.sections) |
+  //                       'bow3d' (the bow landing on two fenders, live on the 3D berth, from cd.bow with S, R, proj, gap, need, count, ship),
   //                       head, sub, lines: [...], cols: [...], rows: [[...]], vessel: <vessel name for the picture behind>, view: 'far' | 'high' | 'top' | 'quarter',
   //                       dur: seconds, profiles: [...] (windage), note }]
   //   P.video.vessels: { '<vessel name>': 'full' | 'short' | 'skip' | { mode: 'short', show: ['berth', 'moor', 'berthing', 'compare', 'plan', 'matrix', 'gap', 'fender', 'bollard'] } }
@@ -9749,9 +9758,17 @@ const Video = (() => {
       const bx = I.cx + 0.36 * I.L;
       cam0 = { yaw: 90, pitch: 70, dist: 0.62 * I.L, tx: bx, ty: I.cy * 0.35, tz: 0 }; cam1 = Object.assign({}, cam0, { pitch: 78, dist: 0.5 * I.L });
     }
+    if (cd.type === 'bow3d') {
+      // over the berth from the land side, between the two fenders the bow lands on
+      const xs = C.sc.fenders.filter(f => f.kind === 'quay').map(f => f.X), Xm = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : I.cx, S = Number((cd.bow || {}).S) || 15;
+      cam0 = { yaw: -90, pitch: 48, dist: Math.max(75, 4.2 * S), tx: Xm, ty: 10, tz: 0 };
+      // straight down over the gap: from any slant the ship's deck, higher than the cope, would be drawn over the gap
+      const g0 = Math.max(0, Number((cd.bow || {}).gap) || 0);
+      cam1 = { yaw: -90, pitch: 88.5, dist: Math.max(24, 1.4 * S), tx: Xm, ty: g0 / 2, tz: 2.5 };
+    }
     const lines = Array.isArray(cd.lines) ? cd.lines : [], rows = Array.isArray(cd.rows) ? cd.rows : [];
     const dur = Number(cd.dur) > 0 ? Number(cd.dur) : Math.max(6, Math.min(16, 4 + 1.6 * lines.length + 1.1 * rows.length + (cd.type === 'windage' ? 6 : 0)));
-    return { kind: 'card', card: cd, dur, pri: 0, J, C, I, cam0, cam1, anim: cd.empty ? 'empty' : 'rest', cut: true };
+    return { kind: 'card', card: cd, dur, pri: 0, J, C, I, cam0, cam1, camBy: cd.type === 'bow3d' ? 0.5 : 0, anim: cd.type === 'bow3d' ? 'bow3d' : cd.empty ? 'empty' : 'rest', cut: true };
   }
   function buildShots() {
     const list = SCN.list.filter(r => !r.error);
@@ -9994,6 +10011,43 @@ const Video = (() => {
       const N = sc.lines.length, n = Math.min(N, Math.ceil(N * Math.max(0, Math.min(1, (u - 0.18) / 0.5)) - 1e-9));
       s.now = { n };
       return Object.assign({}, sc, { lines: sc.lines.slice(0, n) });
+    }
+    if (s.anim === 'bow3d') {
+      // the bow landing between two fenders, live (card bow: { S spacing, R bow radius, proj fender stand-off, gap, ship: {LOA, B, T, D, Lpb} }):
+      // the fenders are laid out S apart about the middle of the berth; the ship's bow is a circle of radius R in plan, tangent
+      // to the flat side LOA/4 forward of midships and reaching the stem (the bow radius estimate), and comes in at the angle that
+      // puts its lowest point midway between two fenders; both fenders squeeze, and the hull stops at the gap of the calculation
+      const b = s.card.bow || {}, S = Number(b.S) || 15, R = Number(b.R) || 30, hf = Number(b.proj) || 1.75;
+      const sag = R - Math.sqrt(Math.max(R * R - S * S / 4, 0)), gap = b.gap != null ? Number(b.gap) : hf - (Number(b.d) || 0) - sag;
+      const sh0 = sc.ships[0], V0 = Object.assign({}, sh0.V, b.ship || {}), L = V0.LOA, B2 = V0.B / 2, Lh = L / 2, a0 = L / 4;
+      const pb = Math.min((Number(V0.Lpb) || 0.69 * (V0.LBP || L)) / 2, a0);
+      const side = [];
+      for (let i = 0; i <= 24; i++) { const a = a0 + (Lh - a0) * i / 24, w = B2 - (R - Math.sqrt(Math.max(R * R - (a - a0) ** 2, 0))); side.push([a, -Math.max(0.02 * B2, w)]); }
+      const hull = [[-Lh, -0.85 * B2], [-pb, -B2], ...side, ...side.slice().reverse().map(([a, w]) => [a, -w]), [-pb, B2], [-Lh, 0.85 * B2]];
+      const xs = sc.fenders.filter(f => f.kind === 'quay').map(f => f.X), lo = Math.min(...xs), hi = Math.max(...xs), Xm = (lo + hi) / 2;
+      const al = Math.asin(Math.min(0.9, (S / 2 + 2.5) / R)), psi = -al, c = Math.cos(psi), sn = Math.sin(psi);
+      const land = ease((u - 0.06) / 0.5), bot = Math.max(gap, 0) + 9 * (1 - land), Cy = bot + R, Cx = Xm;
+      const cb = -B2 + R, X = Cx - a0 * c + cb * sn, Y = Cy - a0 * sn - cb * c;
+      // the hull's berth side: the bow circle forward of the tangent point, the straight flat side aft of it
+      const Xt = Cx - R * Math.sin(al), Yt = Cy - R * Math.cos(al);
+      const hullY = Xq => Xq < Xt ? Yt + (Xt - Xq) * Math.tan(al) : Math.abs(Xq - Cx) < R ? Cy - Math.sqrt(R * R - (Xq - Cx) ** 2) : 1e9;
+      const ids = sc.fenders.filter(f => f.kind === 'quay').map(f => f.id);
+      const nF = Math.max(1, Math.floor((hi - Xm) / S + 0.5)), fenders = [];
+      // each panel stays square to the berth until the hull comes down onto its inner edge, then turns to lie along the hull
+      const pw = Number(b.panel) || 4.4, slope = Xq => (hullY(Xq + 0.05) - hullY(Xq - 0.05)) / 0.1;
+      for (let k = -nF; k < nF; k++) {
+        const Xf = Xm + (k + 0.5) * S, d = Math.max(0, Math.min(hf, hf - hullY(Xf))), face = hf - d, inner = Xf + (Xf < Cx ? 1 : -1) * pw / 2;
+        const turn = Math.max(0, Math.min(1, 1 - (hullY(inner) - face) / 0.25)), tilt = turn * Math.atan(Math.max(-2, Math.min(2, slope(Xf))));
+        fenders.push({ id: ids[(k + nF) % ids.length], kind: 'quay', X: Xf, hf, R: 0, d, tilt, over: false });
+      }
+      const pair = fenders.filter(f => Math.abs(f.X - Xm) < S * 0.51);
+      s.now = { Xm, S, hf, gap: bot, hit: gap < 0, pair: pair.map(f => ({ X: f.X, d: f.d })), land };
+      s.now.R = R;
+      // the bollards stand at the fender stations, so they move with the fenders of each option
+      const bq = sc.bollards.slice().sort((p, q) => p.Y - q.Y), tpl = bq[Math.floor(bq.length / 2)] || null;
+      const bollards = tpl ? fenders.map((f, i) => Object.assign({}, tpl, { X: f.X, id: tpl.id, idx: i })) : sc.bollards;
+      const ships = sc.ships.map((s2, i) => i ? s2 : Object.assign({}, s2, { V: V0, hull, noFlare: true, pose: [X, Y, psi] }));
+      return Object.assign({}, sc, { ships, fenders, bollards, pose: [X, Y, psi], lines: [] });
     }
     if (s.anim === 'arrive') {
       // the last of the approach only: she starts close off the berth, nearly parallel, and is brought sideways onto the fenders
@@ -10483,9 +10537,12 @@ const Video = (() => {
   function card(x, s, u, S, sc2) {
     const cd = s.card, W = V.w, H = V.h, k = V.k, pad = 22 * k, type = cd.type || (Array.isArray(cd.rows) && cd.rows.length ? 'table' : 'text');
     const a0 = x.globalAlpha;
+    if (type === 'bow3d') return bow3dMarks(x, s, u);
     x.fillStyle = `rgba(10,20,32,${type === 'spacing' || cd.place === 'bottom' ? 0.12 : 0.46})`; x.fillRect(0, 86 * k, W, H - 86 * k);
     if (type === 'windage') return windage(x, s, u);
     if (type === 'bowland') return bowland(x, s, u);
+    if (type === 'chart') return lineChart(x, s, u);
+    if (type === 'sections') return hullSections(x, s, u);
     if (type === 'spacing') spacingMarks(x, s, u, sc2);
     if (Array.isArray(cd.marks)) shipMarks(x, s, u, sc2, cd.marks);
     const lines = Array.isArray(cd.lines) ? cd.lines : [], cols = Array.isArray(cd.cols) ? cd.cols : [], rows = Array.isArray(cd.rows) ? cd.rows : [];
@@ -10586,27 +10643,34 @@ const Video = (() => {
     let ly = by + 72 * k; lines.slice(0, 2).forEach(ln => wrap(x, ln, bw - 60 * k).forEach(q => { text(x, q, bx + 28 * k, ly, 17, '#DCE7EC'); ly += 24 * k; }));
     // the drawing: metres along the berth from -0.3 S to 1.3 S; across the berth, heights drawn larger so the gap can be seen
     const dx0 = bx + 60 * k, dw = bw - 120 * k, top = ly + 20 * k, bot = by + bh - (lines.length > 2 ? 86 : 50) * k, deckH = 34 * k;
-    const span = 1.6 * S, sx = dw / span, yr = 4.2, sy = Math.min((bot - deckH - top) / yr, 9 * sx), ex = sy / sx;
-    const PX = m => dx0 + (m + 0.3 * S) * sx, PY = h => bot - deckH - h * sy;
+    // b.span (m shown along the berth) and b.ex (how much larger distances off the berth are drawn) keep one scale across
+    // several cards, so that the same hull looks the same at every spacing
+    const span = Number(b.span) > S ? Number(b.span) : 1.6 * S, sx = dw / span, yr = 4.2, sy = Number(b.ex) > 0 ? Number(b.ex) * sx : Math.min((bot - deckH - top) / yr, 9 * sx), ex = sy / sx;
+    const x0m = (span - S) / 2, PX = m => dx0 + (m + x0m) * sx, PY = h => bot - deckH - h * sy;
     // water and the berth
     x.fillStyle = 'rgba(70,140,170,.22)'; x.fillRect(dx0, top, dw, bot - deckH - top);
     x.fillStyle = '#6B7480'; x.fillRect(dx0, bot - deckH, dw, deckH);
     text(x, 'Berth face', dx0 + 10 * k, bot - 11 * k, 14, '#fff', 650);
     // timeline: approach, touch, squeeze, hold
     const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
-    const a = ease((u - 0.1) / 0.3), q = ease((u - 0.42) / 0.18), hcur = proj - q * dd, off = (1 - a) * 2.2;
+    const a = ease((u - 0.1) / 0.3), q = ease((u - 0.42) / 0.18), off = (1 - a) * 2.2;
+    // a gap below zero means the bow reaches the berth face: the hull stops there, and the fenders take only what they reach
+    const hit = gap < 0, hcur = proj - q * (hit ? Math.max(0, proj - sag) : dd);
+    const yb = off + Math.max(0, hcur - sag);                                   // the lowest point of the hull, midway
     // the hull: a circle of the bow radius, lowest midway between the fenders, resting on both panels
-    const yH = m => off + hcur - sag + (R - Math.sqrt(Math.max(R * R - (m - S / 2) ** 2, 0)));
+    const yH = m => yb + (R - Math.sqrt(Math.max(R * R - (m - S / 2) ** 2, 0)));
     // the fenders: rubber cone from the berth face, panel on its front, turning to lie flat on the curved hull as it lands
-    const pt = Math.max(0.2, proj - Hr);
+    const pt = Math.max(0.2, proj - Hr), hf = Math.min(proj, yb + sag), dShow = hit ? Math.max(0, proj - sag) : dd;
     [0, S].forEach(X0 => {
-      const hr = hcur - pt, c0 = [PX(X0 - 0.5), PY(yH(X0 - 0.5))], c1 = [PX(X0 + 0.5), PY(yH(X0 + 0.5))], ang = a * Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
+      // the panel stays flat until the hull comes down onto its inner edge, then turns to lie along the hull
+      const hr = hf - pt, inner = X0 + (X0 < S / 2 ? 1 : -1) * pnl / 2, tilt = Math.max(0, Math.min(1, 1 - (yH(inner) - hf) / 0.25));
+      const c0 = [PX(X0 - 0.5), PY(yH(X0 - 0.5))], c1 = [PX(X0 + 0.5), PY(yH(X0 + 0.5))], ang = tilt * Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
       x.fillStyle = '#1F2329'; x.beginPath(); x.moveTo(PX(X0 - base / 2), PY(0)); x.lineTo(PX(X0 + base / 2), PY(0)); x.lineTo(PX(X0 + 0.32 * base), PY(hr)); x.lineTo(PX(X0 - 0.32 * base), PY(hr)); x.closePath(); x.fill();
-      x.save(); x.translate(PX(X0), PY(hcur)); x.rotate(ang); x.fillStyle = '#E3B23C'; x.fillRect(-pnl / 2 * sx, 0, pnl * sx, pt * sy); x.restore();
+      x.save(); x.translate(PX(X0), PY(hf)); x.rotate(ang); x.fillStyle = '#E3B23C'; x.fillRect(-pnl / 2 * sx, 0, pnl * sx, pt * sy); x.restore();
     });
-    x.beginPath(); x.moveTo(PX(-0.3 * S), top);
-    for (let i = 0; i <= 80; i++) { const m = -0.3 * S + span * i / 80; x.lineTo(PX(m), Math.max(top, PY(yH(m)))); }
-    x.lineTo(PX(1.3 * S), top); x.closePath(); x.fillStyle = '#4C4F55'; x.fill(); x.strokeStyle = '#B9C3CA'; x.lineWidth = 2 * k; x.stroke();
+    x.beginPath(); x.moveTo(PX(-x0m), top);
+    for (let i = 0; i <= 120; i++) { const m = -x0m + span * i / 120; x.lineTo(PX(m), Math.max(top, PY(yH(m)))); }
+    x.lineTo(PX(S + x0m), top); x.closePath(); x.fillStyle = '#4C4F55'; x.fill(); x.strokeStyle = '#B9C3CA'; x.lineWidth = 2 * k; x.stroke();
     text(x, b.name || 'Bow of the ship', PX(S / 2), top + 26 * k, 16, '#fff', 650, 'center');
     if (a < 1) { // approach arrow
       x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3 * k; const ax = PX(S / 2), ay = PY(yH(S / 2)) + 14 * k;
@@ -10617,28 +10681,194 @@ const Video = (() => {
       x.globalAlpha = ga * show;
       // the squeeze of each fender, beside it on the outer side
       [0, S].forEach(X0 => {
-        const lab = `squeezed ${fmt(dd * 1000, 0)} mm${b.pct ? ' (' + fmt(Number(b.pct), 0) + '%)' : ''}`;
+        const lab = dShow < 0.005 ? 'fender not reached' : `squeezed ${fmt(dShow * 1000, 0)} mm${b.pct && !hit ? ' (' + fmt(Number(b.pct), 0) + '%)' : ''}`;
         x.font = `700 ${Math.round(15 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 16 * k, out = X0 < S / 2;
         const lx = out ? Math.max(dx0 + 4 * k, PX(X0 - base / 2) - 10 * k - w) : Math.min(dx0 + dw - w - 4 * k, PX(X0 + base / 2) + 10 * k), ly2 = PY(hcur * 0.45);
         x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(lx, ly2 - 13 * k, w, 24 * k); x.fillStyle = '#FFD27A'; x.textAlign = 'left'; x.fillText(lab, lx + 8 * k, ly2 + 4 * k);
       });
       // the gap midway
-      const gx = PX(S / 2), g0 = PY(0), g1 = PY(yH(S / 2)), ok = gap >= (Number(b.need) || 0);
-      x.strokeStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(gx, g0); x.lineTo(gx, g1); x.stroke();
-      [g0, g1].forEach(yy => { x.beginPath(); x.moveTo(gx - 10 * k, yy); x.lineTo(gx + 10 * k, yy); x.stroke(); });
-      const gl = `${fmt(gap, 2)} m clear${b.need ? ' (needs ' + fmt(Number(b.need), 2) + ' m)' : ''}`;
+      const gx = PX(S / 2), g0 = PY(0), g1 = PY(yH(S / 2)), ok = !hit && gap >= (Number(b.need) || 0);
+      x.strokeStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.lineWidth = 3 * k;
+      if (hit) { // a burst where the bow meets the berth face
+        for (let i = 0; i < 10; i++) { const t = i * Math.PI / 9; x.beginPath(); x.moveTo(gx + Math.cos(t) * 8 * k, g0 - Math.sin(t) * 8 * k); x.lineTo(gx + Math.cos(t) * 24 * k, g0 - Math.sin(t) * 24 * k); x.stroke(); }
+      } else {
+        x.beginPath(); x.moveTo(gx, g0); x.lineTo(gx, g1); x.stroke();
+        [g0, g1].forEach(yy => { x.beginPath(); x.moveTo(gx - 10 * k, yy); x.lineTo(gx + 10 * k, yy); x.stroke(); });
+      }
+      const gl = hit ? `the bow hits the berth face${b.need ? ' (needs ' + fmt(Number(b.need), 2) + ' m clear)' : ''}` : `${fmt(gap, 2)} m clear${b.need ? ' (needs ' + fmt(Number(b.need), 2) + ' m)' : ''}`;
       x.font = `700 ${Math.round(17 * k)}px ${FONT()}`; const gw2 = x.measureText(gl).width + 18 * k;
-      x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(gx + 16 * k, (g0 + g1) / 2 - 15 * k, gw2, 28 * k); x.fillStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.fillText(gl, gx + 25 * k, (g0 + g1) / 2 + 5 * k);
+      const gyL = hit ? g0 - 44 * k : (g0 + g1) / 2;
+      x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(gx + 16 * k, gyL - 15 * k, gw2, 28 * k); x.fillStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.fillText(gl, gx + 25 * k, gyL + 5 * k);
       // the spacing, on the berth
       const sy2 = bot - deckH / 2; x.strokeStyle = '#FFD27A'; x.lineWidth = 2.5 * k;
       x.beginPath(); x.moveTo(PX(0), sy2); x.lineTo(PX(S), sy2); x.stroke();
       [PX(0), PX(S)].forEach(xx => { x.beginPath(); x.moveTo(xx, sy2 - 9 * k); x.lineTo(xx, sy2 + 9 * k); x.stroke(); });
-      const sl = `${fmt(S, 1)} m between fenders`; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const sw2 = x.measureText(sl).width + 16 * k;
+      const sl = `${fmt(S, Math.abs(S * 10 - Math.round(S * 10)) > 1e-6 ? 2 : 1)} m between fenders`; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const sw2 = x.measureText(sl).width + 16 * k;
       x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(PX(S / 2) - sw2 / 2, sy2 - 13 * k, sw2, 26 * k); x.fillStyle = '#FFD27A'; x.textAlign = 'center'; x.fillText(sl, PX(S / 2), sy2 + 6 * k); x.textAlign = 'left';
       x.globalAlpha = ga;
     }
     if (ex > 1.5) text(x, `Distances off the berth drawn ${fmt(ex, 0)} times larger than along it`, dx0 + dw, top - 6 * k, 12.5, '#9FB4C2', 500, 'right');
     if (lines.length > 2 && u > 0.66) { x.font = `600 ${Math.round(17 * k)}px ${FONT()}`; const qq = wrap(x, lines.slice(2).join(' '), bw - 60 * k); qq.forEach((t2, j) => text(x, t2, bx + 28 * k, by + bh - 22 * k - (qq.length - 1 - j) * 24 * k, 17, '#FFD27A', 600)); }
+  }
+  // the labels of the live bow landing (sceneAt 'bow3d'): the squeeze of the two fenders, the gap left midway and the
+  // spacing with its fender count (cd.bow.count), drawn on the 3D berth; the card's heading and lines in a panel below
+  function bow3dMarks(x, s, u) {
+    const cd = s.card, b = cd.bow || {}, nw = s.now || {}, W = V.w, H = V.h, k = V.k, pad = 22 * k, ga = x.globalAlpha;
+    const WL = Number(s.J.pj.environment.waterLevel) || 0, zt = (V.deck != null ? V.deck : 3) - WL, zf = zt - 1.1;
+    const tag = (q, lab, col, dy = 0) => { if (!q) return; x.font = `700 ${Math.round(16 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 18 * k, X = Math.max(4, Math.min(W - w - 4, q[0] - w / 2)), Y = q[1] - 46 * k + dy;
+      x.strokeStyle = col; x.lineWidth = 2 * k; x.beginPath(); x.moveTo(q[0], Y + 26 * k); x.lineTo(q[0], q[1]); x.stroke();
+      x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(X, Y, w, 26 * k); x.fillStyle = col; x.textAlign = 'left'; x.fillText(lab, X + 9 * k, Y + 18 * k); };
+    const show = Math.max(0, Math.min(1, (u - 0.5) / 0.08));
+    if (show > 0 && nw.pair) {
+      x.globalAlpha = ga * show;
+      // the spacing, on the deck edge, with the number of fenders it gives
+      const p0 = Moor3D.project([nw.Xm - nw.S / 2, -1.0, zt + 0.2]), p1 = Moor3D.project([nw.Xm + nw.S / 2, -1.0, zt + 0.2]);
+      if (p0 && p1) { x.strokeStyle = '#FFD27A'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(p0[0], p0[1]); x.lineTo(p1[0], p1[1]); x.stroke();
+        [p0, p1].forEach(q => { x.beginPath(); x.moveTo(q[0], q[1] - 10 * k); x.lineTo(q[0], q[1] + 10 * k); x.stroke(); });
+        const lab = `${fmt(nw.S, Math.abs(nw.S * 10 - Math.round(nw.S * 10)) > 1e-6 ? 2 : 1)} m between fenders${b.count ? ' · ' + b.count + ' fenders' : ''}`;
+        x.font = `700 ${Math.round(17 * k)}px ${FONT()}`; const w = x.measureText(lab).width + 18 * k, mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2 + 30 * k;
+        x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(mx - w / 2, my - 18 * k, w, 26 * k); x.fillStyle = '#FFD27A'; x.textAlign = 'center'; x.fillText(lab, mx, my); x.textAlign = 'left'; }
+      // each fender's squeeze
+      nw.pair.forEach(f => tag(Moor3D.project([f.X, nw.hf / 2, zf]), f.d < 0.005 ? 'fender not reached' : `squeezed ${fmt(f.d * 1000, 0)} mm`, '#FFD27A'));
+      // the gap midway (b.hideGap leaves it to later shots)
+      const ok = !nw.hit && nw.gap >= (Number(b.need) || 0) - 1e-6;
+      if (!b.hideGap) tag(Moor3D.project([nw.Xm, Math.max(0, nw.gap) / 2, zf]), nw.hit ? 'the bow hits the berth face' : `${b.gapText || fmt(nw.gap, 2)} m clear${b.need ? ' (needs ' + fmt(Number(b.need), 2) + ' m)' : ''}`, ok ? '#8FE0C4' : '#FFB4AA', -40 * k);
+      // an inset between the two fenders with distances off the berth drawn larger, so that a small gap reads as what it is
+      if (!b.hideGap && nw.R > 0) {
+        const iw = 470 * k, ih = 172 * k, ix = W - pad - iw, iy = 88 * k, R = nw.R, S = nw.S, hf = nw.hf, gp = Math.max(0, nw.gap), need = Number(b.need) || 0;
+        panel(x, ix, iy, iw, ih, 0.92); x.fillStyle = '#E3A33B'; x.fillRect(ix, iy, 5 * k, ih);
+        // only the lowest metre or so is shown, so the gap is drawn several times larger than the distances along the berth
+        const gx0 = ix + 22 * k, gw = iw - 44 * k, gb = iy + ih - 34 * k, gt = iy + 44 * k, vr = Math.max(1.0, gp + 0.75), sx = gw / (1.15 * S), sy = (gb - gt) / vr, ex = sy / sx;
+        text(x, `Between the two fenders, distances off the berth ${fmt(ex, 0)} × larger`, ix + 20 * k, iy + 26 * k, 13.5, '#CFE1E7', 650);
+        x.save(); x.beginPath(); x.rect(gx0, gt - 8 * k, gw, gb - gt + 22 * k); x.clip();
+        const PX = m => gx0 + gw / 2 + m * sx, PY = h => gb - h * sy;
+        x.fillStyle = '#6B7480'; x.fillRect(gx0, gb, gw, 14 * k); text(x, 'Berth face', gx0 + 6 * k, gb + 11 * k, 11.5, '#fff', 650);
+        // fenders at each end, squeezed
+        nw.pair.forEach(f => { const fx = PX(f.X - nw.Xm), h = hf - f.d; x.fillStyle = '#1F2329'; x.fillRect(fx - 9 * k, PY(h), 18 * k, gb - PY(h)); x.fillStyle = '#E3B23C'; x.fillRect(fx - 26 * k, PY(h) - 5 * k, 52 * k, 5 * k); });
+        // the hull: the bow circle, lowest midway
+        x.beginPath(); for (let i = 0; i <= 60; i++) { const m = -0.575 * S + 1.15 * S * i / 60, hh = gp + R - Math.sqrt(Math.max(R * R - m * m, 0)); i ? x.lineTo(PX(m), Math.max(gt - 8 * k, PY(hh))) : x.moveTo(PX(m), Math.max(gt - 8 * k, PY(hh))); }
+        x.lineTo(PX(0.575 * S), gt - 8 * k); x.lineTo(PX(-0.575 * S), gt - 8 * k); x.closePath(); x.fillStyle = 'rgba(76,79,85,.95)'; x.fill(); x.strokeStyle = '#B9C3CA'; x.lineWidth = 2 * k; x.stroke();
+        // what is needed, and what is left
+        x.strokeStyle = '#FF8A7A'; x.lineWidth = 1.8 * k; x.setLineDash([7 * k, 5 * k]); x.beginPath(); x.moveTo(gx0, PY(need)); x.lineTo(gx0 + gw, PY(need)); x.stroke(); x.setLineDash([]);
+        text(x, `${fmt(need, 2)} m needed`, gx0 + 6 * k, PY(need) - 5 * k, 12, '#FF8A7A', 700);
+        const cx2 = PX(0); x.strokeStyle = ok ? '#8FE0C4' : '#FFB4AA'; x.lineWidth = 2.5 * k; x.beginPath(); x.moveTo(cx2, gb); x.lineTo(cx2, PY(gp)); x.stroke();
+        [gb, PY(gp)].forEach(yy => { x.beginPath(); x.moveTo(cx2 - 8 * k, yy); x.lineTo(cx2 + 8 * k, yy); x.stroke(); });
+        x.restore();
+        text(x, nw.hit ? 'hits the berth' : `${b.gapText || fmt(gp, 2)} m`, cx2 + 12 * k, nw.hit ? gb - 8 * k : (gb + PY(gp)) / 2 + 5 * k, 15, ok ? '#8FE0C4' : '#FFB4AA', 700);
+      }
+      x.globalAlpha = ga;
+    }
+    // the heading and the lines, in a panel along the bottom
+    const lines = Array.isArray(cd.lines) ? cd.lines : [], bw = W - 2 * pad;
+    x.font = `500 ${Math.round(17 * k)}px ${FONT()}`; const wl = lines.map(ln => wrap(x, ln, bw - 56 * k)), nL = wl.reduce((p, q) => p + q.length, 0);
+    const bh = 58 * k + nL * 24 * k + 12 * k, by = H - bh - 30 * k;
+    panel(x, pad, by, bw, bh, 0.86); x.fillStyle = '#E3A33B'; x.fillRect(pad, by, 6 * k, bh);
+    text(x, cd.head || '', pad + 28 * k, by + 38 * k, 25, '#fff', 650);
+    let y = by + 66 * k;
+    wl.forEach((ls, j) => { x.globalAlpha = ga * reveal(u, j, wl.length); ls.forEach(q => { text(x, q, pad + 28 * k, y, 17, '#E9F0F3', 500); y += 24 * k; }); x.globalAlpha = ga; });
+  }
+  // midship sections side by side, to one scale, with the water that moves with each ship as it comes sideways onto the
+  // berth (BS 6349-4 hydrodynamic mass: CM = 1 + 2D/B, i.e. about 2 x draft^2 of water per metre of ship, half on each side).
+  // cd.sections: [{ name, B, T, fb, cm, sub: [lines below], color }]
+  function hullSections(x, s, u) {
+    const cd = s.card, SEC = Array.isArray(cd.sections) ? cd.sections : [], W = V.w, H = V.h, k = V.k, pad = 22 * k;
+    const bw = Math.min(W - 2 * pad, 1240 * k), bx = (W - bw) / 2, by = 96 * k, bh = H - 140 * k;
+    panel(x, bx, by, bw, bh, 0.92); x.fillStyle = '#E3A33B'; x.fillRect(bx, by, 6 * k, bh);
+    text(x, cd.head || '', bx + 28 * k, by + 42 * k, 27, '#fff', 650);
+    const lines = Array.isArray(cd.lines) ? cd.lines : [];
+    x.font = `500 ${Math.round(17 * k)}px ${FONT()}`;
+    let ly = by + 72 * k; lines.slice(0, 2).forEach(ln => wrap(x, ln, bw - 60 * k).forEach(q => { text(x, q, bx + 28 * k, ly, 17, '#DCE7EC'); ly += 24 * k; }));
+    if (!SEC.length) return;
+    const n = SEC.length, cw = (bw - 56 * k) / n, top = ly + 16 * k, nSub = Math.max(...SEC.map(q => (q.sub || []).length)), subH = (nSub * 24 + 34) * k;
+    const bot = by + bh - (lines.length > 2 ? 64 : 24) * k - subH;
+    const wid = q => Number(q.B) + 2 * 1.27 * Number(q.T) + 6, hgt = q => Number(q.T) + Math.max(4, Number(q.fb) || 5) + 3;
+    const sc = Math.min(...SEC.map(q => (cw - 30 * k) / wid(q)), (bot - top) / Math.max(...SEC.map(hgt)));
+    const grow = Math.max(0, Math.min(1, (u - 0.15) / 0.3)), ga = x.globalAlpha;
+    SEC.forEach((q, i) => {
+      const B = Number(q.B), T = Number(q.T), fb = Math.max(4, Number(q.fb) || 5), cx = bx + 28 * k + cw * (i + 0.5);
+      const wl = top + (Math.max(...SEC.map(z => Math.max(4, Number(z.fb) || 5))) + 1.5) * sc, X = m => cx + m * sc, Y = h => wl - h * sc;
+      // sea below the waterline
+      x.fillStyle = 'rgba(70,140,170,.25)'; x.fillRect(cx - cw / 2 + 10 * k, wl, cw - 20 * k, bot - wl);
+      x.strokeStyle = 'rgba(160,210,230,.8)'; x.lineWidth = 1.5 * k; x.beginPath(); x.moveTo(cx - cw / 2 + 10 * k, wl); x.lineTo(cx + cw / 2 - 10 * k, wl); x.stroke();
+      // the water moving with the ship: a quarter ellipse each side, 1.27 x draft wide, down to the keel (2 T^2 in all)
+      const a = 1.27 * T * grow;
+      if (a > 0.05) [-1, 1].forEach(sd => {
+        x.fillStyle = 'rgba(90,200,255,.38)'; x.beginPath(); x.moveTo(X(sd * B / 2), Y(0));
+        for (let j = 0; j <= 30; j++) { const t = j / 30 * Math.PI / 2; x.lineTo(X(sd * (B / 2 + a * Math.cos(t))), Y(-T * Math.sin(t))); }
+        x.lineTo(X(sd * B / 2), Y(-T)); x.closePath(); x.fill();
+      });
+      // the hull section with round bilges
+      const r = Math.min(3, 0.15 * B);
+      x.fillStyle = q.color || '#4C4F55'; x.strokeStyle = '#B9C3CA'; x.lineWidth = 2 * k; x.beginPath();
+      x.moveTo(X(-B / 2), Y(fb)); x.lineTo(X(B / 2), Y(fb)); x.lineTo(X(B / 2), Y(-T + r));
+      x.quadraticCurveTo(X(B / 2), Y(-T), X(B / 2 - r), Y(-T)); x.lineTo(X(-B / 2 + r), Y(-T)); x.quadraticCurveTo(X(-B / 2), Y(-T), X(-B / 2), Y(-T + r)); x.closePath(); x.fill(); x.stroke();
+      // beam and draft dimensions
+      x.strokeStyle = '#FFD27A'; x.lineWidth = 1.8 * k;
+      x.beginPath(); x.moveTo(X(-B / 2), Y(fb) - 12 * k); x.lineTo(X(B / 2), Y(fb) - 12 * k); x.stroke();
+      text(x, `beam ${fmt(B, 0)} m`, cx, Y(fb) - 18 * k, 14.5, '#FFD27A', 700, 'center');
+      x.beginPath(); x.moveTo(X(-B / 2) - 10 * k, Y(0)); x.lineTo(X(-B / 2) - 10 * k, Y(-T)); x.stroke();
+      x.save(); x.translate(X(-B / 2) - 18 * k, Y(-T / 2)); x.rotate(-Math.PI / 2); text(x, `draft ${fmt(T, 1)} m`, 0, 0, 14, '#FFD27A', 700, 'center'); x.restore();
+      text(x, q.name || '', cx, Y(fb / 2) + 6 * k, 16, '#fff', 700, 'center');
+      // sideways motion onto the berth
+      if (u < 0.5) { const ax = X(B / 2 + 1.27 * T) + 6 * k, ay = Y(-T / 2); x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3 * k; x.beginPath(); x.moveTo(ax, ay); x.lineTo(ax + 30 * k, ay); x.lineTo(ax + 21 * k, ay - 7 * k); x.moveTo(ax + 30 * k, ay); x.lineTo(ax + 21 * k, ay + 7 * k); x.stroke(); }
+      // what it adds up to
+      x.globalAlpha = ga * Math.max(0, Math.min(1, (u - 0.45) / 0.1));
+      (q.sub || []).forEach((t2, j) => text(x, t2, cx, bot + (30 + 24 * j) * k, j ? 16 : 17, j === (q.sub.length - 1) ? (q.hot ? '#FFB4AA' : '#8FE0C4') : '#E9F0F3', j === (q.sub.length - 1) ? 700 : 550, 'center'));
+      x.globalAlpha = ga;
+    });
+    if (lines.length > 2 && u > 0.62) { x.font = `600 ${Math.round(17 * k)}px ${FONT()}`; const qq = wrap(x, lines.slice(2).join(' '), bw - 60 * k); qq.forEach((t2, j) => text(x, t2, bx + 28 * k, by + bh - 22 * k - (qq.length - 1 - j) * 24 * k, 17, '#FFD27A', 600)); }
+  }
+  // a line chart drawn in as the card plays: cd.chart = { x: { min, max, step, label }, y: { min, max, step, label },
+  //   series: [{ name, pts: [[x, y], ...], color, bold, dash }], hlines: [{ y, label, color }], vlines: [{ x, label, color }], shade: { below, label } }
+  function lineChart(x, s, u) {
+    const cd = s.card, ch = cd.chart || {}, W = V.w, H = V.h, k = V.k, pad = 22 * k;
+    const bw = Math.min(W - 2 * pad, 1240 * k), bx = (W - bw) / 2, by = 96 * k, bh = H - 140 * k;
+    panel(x, bx, by, bw, bh, 0.92); x.fillStyle = '#E3A33B'; x.fillRect(bx, by, 6 * k, bh);
+    text(x, cd.head || '', bx + 28 * k, by + 42 * k, 27, '#fff', 650);
+    const lines = Array.isArray(cd.lines) ? cd.lines : [];
+    x.font = `500 ${Math.round(17 * k)}px ${FONT()}`;
+    let ly = by + 72 * k; lines.slice(0, 2).forEach(ln => wrap(x, ln, bw - 60 * k).forEach(q => { text(x, q, bx + 28 * k, ly, 17, '#DCE7EC'); ly += 24 * k; }));
+    const ax = ch.x || {}, ay = ch.y || {}, SR = Array.isArray(ch.series) ? ch.series : [];
+    const x0 = Number(ax.min) || 0, x1 = Number(ax.max) || 1, y0 = Number(ay.min) || 0, y1 = Number(ay.max) || 1;
+    const gl = bx + 96 * k, gr = bx + bw - 250 * k, gt = ly + 18 * k, gb = by + bh - (lines.length > 2 ? 92 : 62) * k;
+    const PX = v => gl + (v - x0) / (x1 - x0) * (gr - gl), PY = v => gb - (v - y0) / (y1 - y0) * (gb - gt);
+    // the region where the check fails, then the grid
+    if (ch.shade) { const yb2 = Math.max(y0, Math.min(y1, Number(ch.shade.below))); x.fillStyle = 'rgba(220,80,70,.16)'; x.fillRect(gl, PY(yb2), gr - gl, gb - PY(yb2));
+      if (ch.shade.label) text(x, ch.shade.label, gl + 12 * k, gb - 12 * k, 14, '#FFB4AA', 650); }
+    x.strokeStyle = 'rgba(255,255,255,.12)'; x.lineWidth = 1 * k;
+    const st = (a, b, n) => { const out = []; for (let v = Math.ceil(a / n - 1e-9) * n; v <= b + 1e-9; v += n) out.push(+v.toFixed(6)); return out; };
+    st(x0, x1, Number(ax.step) || (x1 - x0) / 8).forEach(v => { x.beginPath(); x.moveTo(PX(v), gt); x.lineTo(PX(v), gb); x.stroke(); text(x, fmt(v, Number(ax.dp) || 0), PX(v), gb + 20 * k, 13.5, '#9FB4C2', 500, 'center'); });
+    st(y0, y1, Number(ay.step) || (y1 - y0) / 6).forEach(v => { x.beginPath(); x.moveTo(gl, PY(v)); x.lineTo(gr, PY(v)); x.stroke(); text(x, fmt(v, Number(ay.dp) || 1), gl - 10 * k, PY(v) + 5 * k, 13.5, '#9FB4C2', 500, 'right'); });
+    x.strokeStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.moveTo(gl, gt); x.lineTo(gl, gb); x.lineTo(gr, gb); x.stroke();
+    if (ax.label) text(x, ax.label, (gl + gr) / 2, gb + 44 * k, 14.5, '#CFE1E7', 650, 'center');
+    if (ay.label) { x.save(); x.translate(bx + 30 * k, (gt + gb) / 2); x.rotate(-Math.PI / 2); text(x, ay.label, 0, 0, 14.5, '#CFE1E7', 650, 'center'); x.restore(); }
+    // the series, drawn in from the left
+    const grow = Math.max(0, Math.min(1, (u - 0.08) / 0.42)), xe = x0 + grow * (x1 - x0), ga = x.globalAlpha;
+    x.save(); x.beginPath(); x.rect(gl, gt - 2, gr - gl + 2, gb - gt + 4); x.clip();
+    SR.forEach(sr => {
+      const pts = (sr.pts || []).filter(p => p[0] <= xe); if (pts.length < 2) return;
+      x.strokeStyle = sr.color || '#CFE1E7'; x.lineWidth = (sr.bold ? 4.5 : 2.4) * k; x.globalAlpha = ga * (sr.bold ? 1 : 0.85);
+      x.setLineDash(sr.dash ? [12 * k, 8 * k] : []);
+      x.beginPath(); pts.forEach((p, i) => i ? x.lineTo(PX(p[0]), PY(p[1])) : x.moveTo(PX(p[0]), PY(p[1]))); x.stroke();
+      x.setLineDash([]);
+    });
+    x.restore(); x.globalAlpha = ga;
+    // the limits across and the spacings marked up the chart
+    const show = Math.max(0, Math.min(1, (u - 0.5) / 0.08));
+    (ch.hlines || []).forEach(h => { const yy = PY(Number(h.y)); x.strokeStyle = h.color || '#FF8A7A'; x.lineWidth = 2.5 * k; x.setLineDash([10 * k, 6 * k]); x.beginPath(); x.moveTo(gl, yy); x.lineTo(gr, yy); x.stroke(); x.setLineDash([]);
+      if (h.label) text(x, h.label, gl + 12 * k, yy - 8 * k, 14.5, h.color || '#FF8A7A', 700); });
+    x.globalAlpha = ga * show;
+    (ch.vlines || []).forEach((v, n) => { const xx = PX(Number(v.x)); x.strokeStyle = v.color || '#FFD27A'; x.lineWidth = 2 * k; x.beginPath(); x.moveTo(xx, gt + 26 * k); x.lineTo(xx, gb); x.stroke();
+      if (v.label) { x.font = `700 ${Math.round(14 * k)}px ${FONT()}`; const w = x.measureText(v.label).width + 14 * k, lx = Math.max(gl, Math.min(gr - w, xx - w / 2)), yy = gt + 4 * k + (Number(v.row) || 0) * 26 * k;
+        x.fillStyle = 'rgba(16,28,44,.92)'; x.fillRect(lx, yy, w, 22 * k); x.fillStyle = v.color || '#FFD27A'; x.textAlign = 'left'; x.fillText(v.label, lx + 7 * k, yy + 16 * k); } });
+    // names at the right-hand end of each line, spread so that they do not sit on each other
+    const ends = SR.map(sr => { const p = (sr.pts || [])[sr.pts.length - 1]; return { sr, y: PY(Math.max(y0, Math.min(y1, p[1]))) }; }).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 20 * k) ends[i].y = ends[i - 1].y + 20 * k;
+    for (let i = ends.length - 2; i >= 0; i--) if (ends[i].y > gb - 4 * k - (ends.length - 1 - i) * 20 * k) ends[i].y = Math.min(ends[i].y, ends[i + 1].y - 20 * k);
+    x.globalAlpha = ga * Math.max(0, Math.min(1, (u - 0.46) / 0.08));
+    ends.forEach(e => text(x, e.sr.name || '', gr + 12 * k, e.y + 5 * k, e.sr.bold ? 15 : 14, e.sr.color || '#CFE1E7', e.sr.bold ? 700 : 600));
+    x.globalAlpha = ga;
+    if (lines.length > 2 && u > 0.62) { x.font = `600 ${Math.round(17 * k)}px ${FONT()}`; const qq = wrap(x, lines.slice(2).join(' '), bw - 60 * k); qq.forEach((t2, j) => text(x, t2, bx + 28 * k, by + bh - 22 * k - (qq.length - 1 - j) * 24 * k, 17, '#FFD27A', 600)); }
   }
   // the side wind area of each vessel, built up from the hull above water, the accommodation and what is on deck, to one scale
   function windage(x, s, u) {

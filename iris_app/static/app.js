@@ -18,6 +18,7 @@
   let keys = null;            // its imported key, or null when this phone lacks it
   const questions = new Map(); // question id -> its list item
   const shown = new Set();     // the ids of the messages shown in the open chat: none is shown twice
+  const openQs = new Map();    // the open chat's questions still waiting for you: id -> list item
   let chat = 0;                // which opening of a chat this is: a read for one left behind is dropped
 
   // ---- small helpers -------------------------------------------------------
@@ -29,9 +30,15 @@
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.json);
     }
+    // A request the network never answers (a phone moving between Wi-Fi and mobile data) is given up, so the
+    // chat keeps reading instead of waiting on it until the app is opened again (21 Nov 2026).
+    const ctl = window.AbortController ? new AbortController() : null;
+    if (ctl) opts.signal = ctl.signal;
+    const timer = ctl ? setTimeout(() => ctl.abort(), opts.wait || 20000) : 0;
     let reply;
     try { reply = await fetch(ROOT + path, opts); }
     catch (e) { const err = new Error("No connection."); err.network = true; throw err; }
+    finally { clearTimeout(timer); }
     if (reply.status === 401) { location.href = ROOT + "/"; throw new Error("Signed out."); }
     const data = await reply.json().catch(() => ({}));
     if (!reply.ok) throw new Error(data.error || "Something went wrong (" + reply.status + ").");
@@ -268,6 +275,9 @@
     lastDay = "";
     questions.clear();
     shown.clear();
+    openQs.clear();
+    openBar();
+    dropPhoto();
     show("tool");
     document.body.classList.add("in-chat");
     fitViewport();
@@ -376,7 +386,87 @@
       lastSide = m.side;
     }
     ticks();
+    openBar();
   }
+
+  // ---- open questions -----------------------------------------------------
+
+  // A bar over the chat: how many questions wait for you, and a tap goes to the
+  // oldest one (21 Nov 2026: "there is an unanswered question, I don't know where").
+  function openBar() {
+    const bar = $("open-qs");
+    const n = openQs.size;
+    bar.hidden = n === 0;
+    if (!n) return;
+    bar.textContent = (n === 1 ? "1 question waits for you" : n + " questions wait for you") + " ›";
+  }
+
+  $("open-qs").onclick = () => {
+    const first = [...openQs.entries()].sort((a, b) => a[0] - b[0])[0];
+    if (!first) return;
+    const li = first[1];
+    li.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    li.classList.remove("flash");
+    void li.offsetWidth;
+    li.classList.add("flash");
+    const box = li.querySelector(".answer input");
+    if (box && !matchMedia("(pointer: coarse)").matches) box.focus({ preventScroll: true });
+  };
+
+  // ---- pictures -----------------------------------------------------------
+
+  function picture(src) {
+    const img = el("img", "msg-img");
+    img.src = src;
+    img.alt = "Picture";
+    img.loading = "lazy";
+    img.onclick = () => { $("viewer-img").src = src; $("viewer").hidden = false; };
+    img.onload = () => { if (nearBottom()) toBottom(); };
+    return img;
+  }
+
+  $("viewer-close").onclick = () => { $("viewer").hidden = true; $("viewer-img").removeAttribute("src"); };
+  $("viewer").onclick = (e) => { if (e.target === $("viewer")) $("viewer-close").onclick(); };
+
+  // A picture is made smaller on the phone (at most 1600 px, JPEG) before it is
+  // sealed: a few hundred KB instead of a 5 MB camera photo.
+  let photo = null; // the data URL waiting to go with the next message
+  function shrink(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That picture couldn't be read.")); };
+      img.src = url;
+    });
+  }
+
+  function dropPhoto() {
+    photo = null;
+    $("photo-row").hidden = true;
+    $("photo-preview").removeAttribute("src");
+    $("photo").value = "";
+  }
+
+  $("photo").onchange = async () => {
+    const file = $("photo").files && $("photo").files[0];
+    if (!file) return;
+    try {
+      photo = await shrink(file);
+      $("photo-preview").src = photo;
+      $("photo-row").hidden = false;
+      say.focus();
+    } catch (e) { dropPhoto(); toast(e.message); }
+  };
+  $("photo-drop").onclick = dropPhoto;
 
   // Your messages carry WhatsApp's ticks: one grey tick once Iris has it, two
   // blue ticks once the tool took it in. When the newest message is yours and
@@ -408,7 +498,8 @@
     if (m.kind === "question") li.appendChild(el("div", "label small", "Question"));
     if (m.kind === "answer") li.appendChild(el("div", "label small", "Your answer"));
     const text = m.kind === "command" ? (/stop/i.test(v.command) ? "⏹ " : "▶ ") + v.command : v.text || "";
-    li.appendChild(el("div", "msg-text", text));
+    if (typeof v.image === "string" && v.image.startsWith("data:image/")) li.appendChild(picture(v.image));
+    if (text) li.appendChild(el("div", "msg-text", text));
     const meta = el("span", "meta small", clock(m.created));
     if (m.side === "phone") {
       const tick = el("span", "tick", "✓");
@@ -419,7 +510,7 @@
     if (m.kind === "question") {
       questions.set(m.id, li);
       if (v.assumed) li.appendChild(el("div", "small muted", "If you don't answer" + (v.deadline ? " by " + new Date(v.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "") + ": " + v.assumed));
-      if (m.state === "open") li.appendChild(answerBox(m, v));
+      if (m.state === "open") { li.appendChild(answerBox(m, v)); openQs.set(m.id, li); }
       else li.appendChild(el("div", "settled small", m.state === "answered" ? "Answered" : "Settled on the PC"));
     }
     return li;
@@ -446,6 +537,8 @@
   }
 
   function settle(m, v) {
+    openQs.delete(m.reply_to);
+    openBar();
     const li = questions.get(m.reply_to);
     if (!li) return;
     const box = li.querySelector(".answer");
@@ -465,7 +558,7 @@
     json.cid = newCid();
     const path = "/api/me/tools/" + current.id + "/messages";
     for (let attempt = 0; ; attempt++) {
-      try { return await api(path, { json }); }
+      try { return await api(path, { json, wait: 60000 }); }
       catch (e) {
         if (!e.network || attempt >= 2) throw e;
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
@@ -542,11 +635,12 @@
   });
 
   let sending = false;
-  async function send(text) {
-    if (!text || sending || !keys) return false;
+  async function send(text, image) {
+    if ((!text && !image) || sending || !keys) return false;
     sending = true;
     try {
-      await post({ kind: "message", topic, body: await C.seal(keys, { text }) });
+      const value = image ? { text: text || "", image } : { text };
+      await post({ kind: "message", topic, body: await C.seal(keys, value) });
       await afterSend();
       return true;
     } catch (err) {
@@ -560,11 +654,14 @@
   $("composer").onsubmit = async (e) => {
     e.preventDefault();
     const text = say.value.trim();
-    if (!text) return;
+    const image = photo;
+    if (!text && !image) return;
     say.value = "";
     grow();
+    if (image) { $("photo-row").hidden = true; }
     say.focus(); // the keyboard stays up, as in WhatsApp
-    if (!(await send(text))) { say.value = text; grow(); }
+    if (!(await send(text, image))) { say.value = text; grow(); if (image) $("photo-row").hidden = false; }
+    else if (image && photo === image) dropPhoto();
   };
 
   $("notify").onchange = () => api("/api/me/tools/" + current.id + "/notify", { json: { notify: $("notify").value } }).then(() => { current.notify = $("notify").value; });
@@ -667,9 +764,13 @@
     if (!(await pending())) await loadTools();
     offerNotifications();
     (function tick() {
-      poll().catch(() => {}).finally(() => setTimeout(tick, Date.now() < fastUntil ? 3000 : 8000));
+      // Every 3 s while a chat is open on screen, so replies show up as they come; 8 s otherwise.
+      poll().catch(() => {}).finally(() => setTimeout(tick, current && !document.hidden || Date.now() < fastUntil ? 3000 : 8000));
     })();
     setInterval(() => { if (!document.hidden && $("confirm").hidden) loadTools().catch(() => {}); }, 15000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll().catch(() => {}); loadTools().catch(() => {}); } });
+    window.addEventListener("online", () => poll().catch(() => {}));
+    // A notification that came while the app is open: read at once.
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener("message", (e) => { if (e.data && e.data.iris === "new") poll().catch(() => {}); });
   })();
 })();

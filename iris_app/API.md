@@ -53,3 +53,8 @@ few minutes otherwise.
 
 Notifications: a question always notifies (unless the person turned the tool's
 notifications off); updates notify only when they chose "Questions and updates".
+
+### Pictures
+
+A `message` (phone) or `update` (tool) may carry a picture: the sealed value is `{"text", "image": "data:image/jpeg;base64,..."}`. The phone makes its pictures at most 1600 px (JPEG) before sealing; tools should do the same. A sealed body may be up to 4 MB.
+

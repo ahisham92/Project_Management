@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS messages (
     body        TEXT NOT NULL,              -- encrypted, never read here
     state       TEXT NOT NULL DEFAULT '',   -- a question: open, answered, closed
     created     REAL NOT NULL,
-    topic       TEXT NOT NULL DEFAULT ''    -- which of the tool's chats (Sketch ProMax: the project), '' for its main one
+    topic       TEXT NOT NULL DEFAULT '',   -- which of the tool's chats (Sketch ProMax: the project), '' for its main one
+    cid         TEXT NOT NULL DEFAULT ''    -- the sender's own id for it: sent again (a retry), it is not stored twice
 );
 CREATE INDEX IF NOT EXISTS messages_tool ON messages(tool_id, id);
 
@@ -130,8 +131,12 @@ class Store:
                 db.execute("ALTER TABLE tools ADD COLUMN read_upto INTEGER NOT NULL DEFAULT 0")
             if "agent" not in columns:
                 db.execute("ALTER TABLE tools ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
-            if "topic" not in {r["name"] for r in db.execute("PRAGMA table_info(messages)")}:
+            message_columns = {r["name"] for r in db.execute("PRAGMA table_info(messages)")}
+            if "topic" not in message_columns:
                 db.execute("ALTER TABLE messages ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
+            if "cid" not in message_columns:
+                db.execute("ALTER TABLE messages ADD COLUMN cid TEXT NOT NULL DEFAULT ''")
+            db.execute("CREATE INDEX IF NOT EXISTS messages_cid ON messages(tool_id, side, cid)")
             if db.execute("PRAGMA user_version").fetchone()[0] < 1:
                 # Tools connected before 31 Oct 2026 notified about questions only, so updates and replies
                 # never buzzed the phone: every tool notifies about everything now (each can be turned down).
@@ -285,7 +290,11 @@ class Store:
 
     # ---- messages --------------------------------------------------------
 
-    def post(self, tool_id: int, side: str, kind: str, body: str, reply_to: int | None = None, topic: Any = "") -> dict[str, Any]:
+    def post(self, tool_id: int, side: str, kind: str, body: str, reply_to: int | None = None, topic: Any = "",
+             cid: Any = "") -> dict[str, Any]:
+        """Stores a message. ``cid`` is the sender's own id for it: a message sent again with the same one (the
+        sender timed out waiting for the answer and tried again) is not stored twice, and its first id comes back
+        (21 Nov 2026: a slow site made the tool resend questions and the phone show them twice)."""
         allowed = TOOL_KINDS if side == "tool" else PHONE_KINDS
         if kind not in allowed:
             raise StoreError(400, f"A {side} cannot send '{kind}'.")
@@ -294,7 +303,14 @@ class Store:
         if len(body) > MAX_BODY:
             raise StoreError(413, "That message is too long.")
         now = self.clock()
+        cid = cid.strip()[:80] if isinstance(cid, str) else ""
         with self._db() as db:
+            if cid:
+                first = db.execute("SELECT id, created, kind, state FROM messages WHERE tool_id = ? AND side = ? AND cid = ?"
+                                   " ORDER BY id DESC LIMIT 1", (tool_id, side, cid)).fetchone()
+                # A question asked again after it was settled is a new question; anything else sent again is the same one.
+                if first is not None and not (first["kind"] == "question" and first["state"] != "open"):
+                    return {"id": first["id"], "created": first["created"], "again": True}
             if reply_to is not None:
                 question = db.execute(
                     "SELECT * FROM messages WHERE id = ? AND tool_id = ? AND kind = 'question'",
@@ -309,9 +325,9 @@ class Store:
             elif kind in ("answer", "closed"):
                 raise StoreError(400, "Say which question this settles.")
             cur = db.execute(
-                "INSERT INTO messages (tool_id, side, kind, reply_to, body, state, created, topic)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (tool_id, side, kind, reply_to, body, "open" if kind == "question" else "", now, clean_topic(topic)))
+                "INSERT INTO messages (tool_id, side, kind, reply_to, body, state, created, topic, cid)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (tool_id, side, kind, reply_to, body, "open" if kind == "question" else "", now, clean_topic(topic), cid))
             db.execute("DELETE FROM messages WHERE created < ?", (now - keep_days() * 86400,))
         return {"id": cur.lastrowid, "created": now}
 

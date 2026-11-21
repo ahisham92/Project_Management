@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "iris_app" / "clients" / "python"))
 from iris_app.app import SITE_KEY, create_app, is_public  # noqa: E402
 from iris_app.store import Store  # noqa: E402
 import iris_client  # noqa: E402
+from iris_app import push as iris_push  # noqa: E402
 
 
 class Clock:
@@ -368,3 +369,45 @@ def test_topic_column_added_to_an_old_database(tmp_path):
     Store(tmp_path / "iris.db")
     db = sqlite3.connect(tmp_path / "iris.db")
     assert "topic" in {r[1] for r in db.execute("PRAGMA table_info(messages)")}
+
+
+def test_phones_are_buzzed_after_the_tool_has_its_answer(tmp_path, monkeypatch):
+    # 21 Nov 2026: a slow push kept the question's request open past the tool's wait, so it sent the question again.
+    monkeypatch.setenv("IRIS_DATA_DIR", str(tmp_path))
+    calls = []
+    monkeypatch.setattr(iris_push, "notify", lambda store, account, payload, contact="": calls.append(payload) or 1)
+    app = create_app(Store(tmp_path / "iris.db"))
+    me = phone(app)
+    tool_client, auth, accepted = pair(app)
+    reply = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "b"}, headers=auth)
+    assert reply.status_code == 200 and calls == []  # the answer went first
+    reply.close()
+    assert len(calls) == 1 and calls[0]["body"].endswith("has a question")
+
+
+def test_a_message_sent_again_is_kept_once(world):
+    app, clock, pushes = world
+    me = phone(app)
+    tool_client, auth, accepted = pair(app)
+    first = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "b", "cid": "q-7"}, headers=auth).get_json()
+    again = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "b2", "cid": "q-7"}, headers=auth).get_json()
+    assert again["id"] == first["id"] and again.get("again")
+    assert len(pushes) == 1  # the phone was buzzed once
+    tid = accepted["id"]
+    sent = me.post(f"/api/me/tools/{tid}/messages", json={"kind": "message", "body": "hi", "cid": "p-1"}).get_json()
+    twice = me.post(f"/api/me/tools/{tid}/messages", json={"kind": "message", "body": "hi", "cid": "p-1"}).get_json()
+    assert twice["id"] == sent["id"]
+    # An answer sent again is not refused as "already settled": it is the same answer.
+    a1 = me.post(f"/api/me/tools/{tid}/messages", json={"kind": "answer", "reply_to": first["id"], "body": "y", "cid": "p-2"})
+    a2 = me.post(f"/api/me/tools/{tid}/messages", json={"kind": "answer", "reply_to": first["id"], "body": "y", "cid": "p-2"})
+    assert a1.status_code == 200 and a2.status_code == 200 and a2.get_json()["id"] == a1.get_json()["id"]
+    bodies = [m["body"] for m in me.get(f"/api/me/tools/{tid}/messages").get_json()["messages"]]
+    assert bodies == ["b", "hi", "y"]
+    # The question asked again once it was answered (the PC missed the answer): asked anew.
+    anew = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "b", "cid": "q-7"}, headers=auth).get_json()
+    assert anew["id"] != first["id"] and not anew.get("again")
+    assert tool_client.post("/api/tool/messages", json={"kind": "question", "body": "b", "cid": "q-7"}, headers=auth).get_json()["id"] == anew["id"]
+    # Without a cid (an older tool) every message is kept, as before.
+    tool_client.post("/api/tool/messages", json={"kind": "update", "body": "u"}, headers=auth)
+    tool_client.post("/api/tool/messages", json={"kind": "update", "body": "u"}, headers=auth)
+    assert len(me.get(f"/api/me/tools/{tid}/messages").get_json()["messages"]) == 6

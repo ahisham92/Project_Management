@@ -17,6 +17,8 @@
   let fastUntil = 0;          // poll every 3 s until then (you just wrote)
   let keys = null;            // its imported key, or null when this phone lacks it
   const questions = new Map(); // question id -> its list item
+  const shown = new Set();     // the ids of the messages shown in the open chat: none is shown twice
+  let chat = 0;                // which opening of a chat this is: a read for one left behind is dropped
 
   // ---- small helpers -------------------------------------------------------
 
@@ -27,7 +29,9 @@
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.json);
     }
-    const reply = await fetch(ROOT + path, opts);
+    let reply;
+    try { reply = await fetch(ROOT + path, opts); }
+    catch (e) { const err = new Error("No connection."); err.network = true; throw err; }
     if (reply.status === 401) { location.href = ROOT + "/"; throw new Error("Signed out."); }
     const data = await reply.json().catch(() => ({}));
     if (!reply.ok) throw new Error(data.error || "Something went wrong (" + reply.status + ").");
@@ -254,6 +258,7 @@
   }
 
   async function openTool(id, chatTopic) {
+    const mineChat = ++chat;
     current = tools.find((t) => t.id === id);
     topic = chatTopic || "";
     lastId = 0;
@@ -262,6 +267,7 @@
     lastSide = "";
     lastDay = "";
     questions.clear();
+    shown.clear();
     show("tool");
     document.body.classList.add("in-chat");
     fitViewport();
@@ -280,6 +286,7 @@
       return;
     }
     const data = await api("/api/me/tools/" + id + "/messages?" + inChat());
+    if (mineChat !== chat) return; // another chat was opened meanwhile
     if (!data.messages.length) $("feed").appendChild(el("li", "note", "Say hi to " + who(current) + (topic ? " about " + topic : "") + ". Write below, or tap a quick message."));
     readUpto = data.read_upto || 0;
     await render(data.messages);
@@ -309,9 +316,24 @@
   function nearBottom() { const f = feedBox(); return f.scrollHeight - f.scrollTop - f.clientHeight < 60; }
   function toBottom() { const f = feedBox(); f.scrollTop = f.scrollHeight; }
 
-  async function poll() {
+  // One read at a time (21 Nov 2026: the timer's read and the one after sending ran together, both
+  // got the new message and it showed twice). A read asked for while one runs runs once after it.
+  let reading = null, readAgain = false;
+  function poll() {
+    if (reading) { readAgain = true; return reading; }
+    reading = (async () => {
+      try {
+        do { readAgain = false; await readNew(); } while (readAgain);
+      } finally { reading = null; }
+    })();
+    return reading;
+  }
+
+  async function readNew() {
     if (!current || !keys || document.hidden) return;
+    const mineChat = chat;
     const data = await api("/api/me/tools/" + current.id + "/messages?after=" + lastId + "&" + inChat());
+    if (mineChat !== chat) return; // the chat was left or opened again meanwhile
     if ((data.read_upto || 0) !== readUpto) { readUpto = data.read_upto || 0; ticks(); }
     if (data.messages.length) {
       const end = nearBottom();
@@ -342,6 +364,8 @@
     $("typing") && $("typing").remove();
     for (const m of messages) {
       lastId = Math.max(lastId, m.id);
+      if (shown.has(m.id)) continue;
+      shown.add(m.id);
       let value;
       try { value = await C.open(keys, m.body); } catch (e) { value = { text: "(could not be read: " + e.message + ")" }; }
       if (m.kind === "answer" || m.kind === "closed") settle(m, value);
@@ -429,14 +453,38 @@
     if (!li.querySelector(".settled")) li.appendChild(el("div", "settled small", m.kind === "answer" ? "Answered: " + v.text : (v.text || "Settled on the PC")));
   }
 
+  // Sends one message of yours. It carries its own id (cid), so when the answer is lost on a weak
+  // connection and it is sent again, Iris keeps it once. Sent is sent: reading the chat afterwards
+  // can fail without asking you to send it again (that made it show twice).
+  function newCid() {
+    if (window.crypto && crypto.randomUUID) return "p-" + crypto.randomUUID();
+    return "p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  }
+
+  async function post(json) {
+    json.cid = newCid();
+    const path = "/api/me/tools/" + current.id + "/messages";
+    for (let attempt = 0; ; attempt++) {
+      try { return await api(path, { json }); }
+      catch (e) {
+        if (!e.network || attempt >= 2) throw e;
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+    }
+  }
+
+  async function afterSend() {
+    fastUntil = Date.now() + 10 * 60 * 1000;
+    try { await poll(); } catch (e) { /* shown by the next read */ }
+    toBottom();
+  }
+
   async function answer(id, text, box) {
     for (const b of box.querySelectorAll("button, input")) b.disabled = true;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "answer", reply_to: id, topic, body: await C.seal(keys, { text }) } });
-      fastUntil = Date.now() + 10 * 60 * 1000;
-      await poll();
-      toBottom();
-      loadTools();
+      await post({ kind: "answer", reply_to: id, topic, body: await C.seal(keys, { text }) });
+      await afterSend();
+      loadTools().catch(() => {});
     } catch (e) {
       for (const b of box.querySelectorAll("button, input")) b.disabled = false;
       toast(e.message);
@@ -469,10 +517,8 @@
   async function command(name) {
     if (/stop/i.test(name) && !confirm(name + " " + (topic ? topic + "'s Autopilot" : current.name) + "?")) return;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "command", topic, body: await C.seal(keys, { command: name }) } });
-      fastUntil = Date.now() + 10 * 60 * 1000;
-      await poll();
-      toBottom();
+      await post({ kind: "command", topic, body: await C.seal(keys, { command: name }) });
+      await afterSend();
     } catch (e) { toast("Not sent: " + e.message); }
   }
 
@@ -500,10 +546,8 @@
     if (!text || sending || !keys) return false;
     sending = true;
     try {
-      await api("/api/me/tools/" + current.id + "/messages", { json: { kind: "message", topic, body: await C.seal(keys, { text }) } });
-      fastUntil = Date.now() + 10 * 60 * 1000;
-      await poll();
-      toBottom();
+      await post({ kind: "message", topic, body: await C.seal(keys, { text }) });
+      await afterSend();
       return true;
     } catch (err) {
       toast("Not sent: " + err.message + " Try again.");

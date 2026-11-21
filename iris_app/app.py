@@ -45,7 +45,21 @@ def create_app(store: Store | None = None) -> Flask:
     app.config["JSON_SORT_KEYS"] = False
     app.store = store or Store()
     notify = push.notify
-    app.notify = lambda account, payload: notify(app.store, account, payload, contact=push.contact(request.host_url))
+
+    def send_push(account: str, payload: dict[str, Any], contact: str = "") -> int:
+        return notify(app.store, account, payload, contact=contact or push.contact(request.host_url))
+
+    app.notify = send_push
+
+    def notify_later(reply: Response, account: str, payload: dict[str, Any]) -> Response:
+        """Buzzes the phones after the answer has gone (21 Nov 2026: Apple's push service kept a question's
+        request open past the tool's 20 s wait, so the tool thought it failed and sent it again)."""
+        if app.notify is not send_push:
+            app.notify(account, payload)  # a stand-in (the tests): told at once
+            return reply
+        contact = push.contact(request.host_url)
+        reply.call_on_close(lambda: send_push(account, payload, contact))
+        return reply
 
     @app.errorhandler(StoreError)
     def _store_error(exc: StoreError):
@@ -132,7 +146,9 @@ def create_app(store: Store | None = None) -> Flask:
         data = body()
         kind = data.get("kind", "")
         topic = clean_topic(data.get("topic", ""))
-        sent = app.store.post(row["id"], "tool", kind, data.get("body", ""), data.get("reply_to"), topic)
+        sent = app.store.post(row["id"], "tool", kind, data.get("body", ""), data.get("reply_to"), topic, data.get("cid", ""))
+        if sent.get("again"):
+            return jsonify(sent)  # a retry of one already here: the phone was told the first time
         # An update soon after the user wrote to that chat is its reply: notified unless notifications are off.
         replied = kind == "update" and row["notify"] != "none" and app.store.wrote_lately(row["id"], topic=topic)
         if kind == "question" and row["notify"] in ("all", "questions") or kind == "update" and row["notify"] == "all" or replied:
@@ -142,7 +158,7 @@ def create_app(store: Store | None = None) -> Flask:
             note = {"title": title, "body": f"{who} {words}", "tool": row["id"], "message": sent["id"]}
             if topic:
                 note["topic"] = topic
-            app.notify(row["account"], note)
+            return notify_later(jsonify(sent), row["account"], note)
         return jsonify(sent)
 
     @app.get("/api/tool/inbox")
@@ -184,7 +200,7 @@ def create_app(store: Store | None = None) -> Flask:
         app.store.tool_for(account()["id"], tool_id)
         data = body()
         return jsonify(app.store.post(tool_id, "phone", data.get("kind", ""), data.get("body", ""),
-                                      data.get("reply_to"), data.get("topic", "")))
+                                      data.get("reply_to"), data.get("topic", ""), data.get("cid", "")))
 
     @app.post("/api/me/tools/<int:tool_id>/notify")
     def my_notify(tool_id: int):

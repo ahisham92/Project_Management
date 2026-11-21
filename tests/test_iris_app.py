@@ -411,3 +411,29 @@ def test_a_message_sent_again_is_kept_once(world):
     tool_client.post("/api/tool/messages", json={"kind": "update", "body": "u"}, headers=auth)
     tool_client.post("/api/tool/messages", json={"kind": "update", "body": "u"}, headers=auth)
     assert len(me.get(f"/api/me/tools/{tid}/messages").get_json()["messages"]) == 6
+
+
+def test_an_old_open_question_still_shows_when_the_chat_opens(world):
+    app, clock, pushes = world
+    me = phone(app)
+    tool_client, auth, accepted = pair(app)
+    tid = accepted["id"]
+    old = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "q-old", "topic": "TIN"}, headers=auth).get_json()
+    done = tool_client.post("/api/tool/messages", json={"kind": "question", "body": "q-done", "topic": "TIN"}, headers=auth).get_json()
+    me.post(f"/api/me/tools/{tid}/messages", json={"kind": "answer", "reply_to": done["id"], "body": "a"})
+    for i in range(120):
+        tool_client.post("/api/tool/messages", json={"kind": "update", "body": f"u{i}", "topic": "TIN"}, headers=auth)
+    feed = me.get(f"/api/me/tools/{tid}/messages?topic=TIN").get_json()["messages"]
+    assert feed[0]["id"] == old["id"] and feed[0]["state"] == "open"
+    assert all(m["id"] != done["id"] for m in feed)  # an answered one stays out
+    assert feed[-1]["body"] == "u119" and len(feed) == 101
+
+
+def test_a_picture_fits(world):
+    app, clock, pushes = world
+    me = phone(app)
+    tool_client, auth, accepted = pair(app)
+    big = "v1." + "A" * (900 * 1024)  # a sealed picture of about 650 KB
+    sent = me.post(f"/api/me/tools/{accepted['id']}/messages", json={"kind": "message", "body": big})
+    assert sent.status_code == 200
+    assert tool_client.get("/api/tool/inbox?after=0", headers=auth).get_json()["messages"][0]["body"] == big

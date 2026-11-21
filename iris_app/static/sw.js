@@ -7,6 +7,9 @@ self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
   const scope = self.registration.scope;
+  // An open Iris reads the chat at once, instead of at its next read.
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then((open) => { for (const c of open) c.postMessage({ iris: "new" }); }).catch(() => {}));
   event.waitUntil(self.registration.showNotification(data.title || "Iris", {
     body: data.body || "You have a new message.",
     icon: scope + "static/icon-192.png",

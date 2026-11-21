@@ -85,7 +85,7 @@ PAIR_SECONDS = 10 * 60
 #: Unambiguous letters and digits only: no 0/O, 1/I/L.
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 #: A message body may be this long once encrypted (pictures go elsewhere).
-MAX_BODY = 64 * 1024
+MAX_BODY = 4 * 1024 * 1024  # a sealed picture (made at most 1600 px on the phone) fits
 #: A chat's name (a topic) may be this long.
 MAX_TOPIC = 40
 
@@ -332,10 +332,15 @@ class Store:
         return {"id": cur.lastrowid, "created": now}
 
     def messages(self, tool_id: int, after: int = 0, side: str | None = None, limit: int = 200,
-                 topic: str | None = None) -> list[dict[str, Any]]:
-        """Messages after ``after``, oldest first; only one chat's when ``topic`` is given."""
+                 topic: str | None = None, before: int | None = None, kind: str | None = None,
+                 state: str | None = None) -> list[dict[str, Any]]:
+        """Messages after ``after`` (and before ``before``), oldest first; only one chat's when ``topic`` is given."""
         sql = "SELECT * FROM messages WHERE tool_id = ? AND id > ?"
         args: list[Any] = [tool_id, int(after or 0)]
+        for column, value in (("id <", before), ("kind =", kind), ("state =", state)):
+            if value is not None:
+                sql += f" AND {column} ?"
+                args.append(value)
         if side:
             sql += " AND side = ?"
             args.append(side)
@@ -376,7 +381,12 @@ class Store:
             args.append(clean_topic(topic))
         with self._db() as db:
             last = db.execute(sql + " ORDER BY id DESC LIMIT 1 OFFSET ?", (*args, max(0, limit - 1))).fetchone()
-        return self.messages(tool_id, after=(last["id"] - 1) if last else 0, limit=limit, topic=topic)
+        start = last["id"] if last else 0
+        window = self.messages(tool_id, after=start - 1 if start else 0, limit=limit, topic=topic)
+        # Questions still open from before the window come first, so the phone shows every question waiting for
+        # an answer, however long ago it was asked (21 Nov 2026: one was waiting somewhere further up).
+        older = [m for m in self.messages(tool_id, 0, limit=500, topic=topic, before=start, kind="question", state="open")] if start else []
+        return older + window
 
     # ---- phones (push) ---------------------------------------------------
 

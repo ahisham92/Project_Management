@@ -12,13 +12,10 @@ def test_library_is_consistent():
     assert check(procedures.library()) == []
 
 
-def test_sibline_starts_from_its_checklist(signed_in):
+def test_sibline_starts_blank(signed_in):
     state = signed_in.get("/projects/1/procedures/state").get_json()
-    assert state["answers"]["num"] == "S25001-0100D"
-    s = procedures.summary(state)
-    assert s["total"] == 213
-    assert s["counts"]["done"] == 1 and s["counts"]["na"] == 1
-    assert s["counts"]["locked"] == 0
+    assert state["answers"]["num"] == "SIBLINE-PORT"
+    assert state["status"] == {} and state["notes"] == {}
 
 
 def test_tab_and_journey_page_render(signed_in):

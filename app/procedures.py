@@ -30,7 +30,6 @@ from .db import execute, query_one
 HERE = Path(__file__).resolve().parent / "journey"
 LIBRARY_FILE = HERE / "library.json"
 PAGE_FILE = HERE / "journey.html"
-SEED_DIR = Path(__file__).resolve().parent.parent / "seed"
 
 # The parts of a project's state that are maps of id -> value, and so can be
 # changed one key at a time.
@@ -208,19 +207,6 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-def _seeded_state(project) -> dict[str, Any] | None:
-    """A project that came with its journey already under way (the Sibline demo)."""
-    path = SEED_DIR / f"journey-{project['code'].lower()}.json"
-    if not path.exists():
-        return None
-    seeded = json.loads(path.read_text(encoding="utf-8"))
-    state = blank_state(project)
-    for key in MAPS:
-        state[key].update(seeded.get(key, {}))
-    state["answers"].setdefault("title", project["name"])
-    return state
-
-
 def load_state(project) -> dict[str, Any]:
     row = query_one("SELECT state FROM project_journeys WHERE project_id = ?", (project["id"],))
     if row is not None:
@@ -229,7 +215,7 @@ def load_state(project) -> dict[str, Any]:
             state.setdefault(key, {})
         state["id"] = f"project-{project['id']}"
         return state
-    return _seeded_state(project) or blank_state(project)
+    return blank_state(project)
 
 
 def save_state(project_id: int, state: dict, user_id: int | None) -> None:

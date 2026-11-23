@@ -16,9 +16,7 @@ sees one copy. Changes are sent as only the keys they touch, so two people clear
 actions at once both keep their work. Keep action ids stable: progress is stored against them.
 
 **Ongoing projects** open on the same journey; tick off what is already done station by station
-(the List view has a checkbox per action). **Sibline Port** starts from its own checklist
-(S25001-0100D): `seed/journey-sibline-port.json`, read the first time its tab is opened.
-A project whose code matches another `seed/journey-<code>.json` file starts from that the same way.
+(the List view has a checkbox per action). Every project, Sibline Port included, starts blank.
 
 What is overdue or waiting on a question also shows in the project's **Needs attention** view.
 

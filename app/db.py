@@ -228,6 +228,13 @@ def _ensure_journeys(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Sibline's journey was first filled in from the S25001-0100D checklist; it
+    # is now left blank for the project team to fill. Only that prefilled copy
+    # is removed: one the team has started carries the project's own code.
+    conn.execute(
+        "DELETE FROM project_journeys WHERE json_extract(state, '$.answers.num') = 'S25001-0100D'"
+        " AND project_id IN (SELECT id FROM projects WHERE code = 'SIBLINE-PORT')"
+    )
 
 
 def _ensure_tritomoor(conn: sqlite3.Connection) -> None:

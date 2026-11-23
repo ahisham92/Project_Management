@@ -70,6 +70,7 @@ def create_app(database: str | None = None, testing: bool = False) -> Flask:
     from .views.meetings_views import bp as meetings_bp
     from .views.portfolio_views import bp as portfolio_bp
     from .views.projects_views import bp as projects_bp
+    from .views import journey_views  # noqa: F401  (adds the Procedures and Attention tabs)
     from .views.specs_views import bp as specs_bp
     from .views.tritomoor_views import bp as tritomoor_bp
 

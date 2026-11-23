@@ -45,6 +45,44 @@ TABS: tuple[dict[str, Any], ...] = (
                   "float", "weight", "ntp"),
     },
     {
+        "key": "attention",
+        "name": "Needs attention",
+        "endpoints": ("projects.attention",),
+        "what": "Everything waiting for someone to think about it, with the question each one is really asking.",
+        "start_here": "Press Walk me through them and take the cards one at a time, starting with the red ring.",
+        "steps": (
+            "The inner, red ring is what needs a decision now: late deliverables, the client's overdue "
+            "reviews, overdue minutes actions and procedure questions nobody has answered.",
+            "The middle ring is this week; the outer ring is worth a thought before it becomes urgent.",
+            "Point at a dot to find its card, or pick a ring to show only its cards.",
+            "Open takes you to the page where the thing is actually fixed.",
+        ),
+        "watch": (
+            "A procedure question left unanswered keeps its actions locked, so they never show as overdue.",
+            "Hours running ahead of progress shows here before it shows on the invoice.",
+        ),
+        "terms": ("data date",),
+    },
+    {
+        "key": "procedures",
+        "name": "Procedures",
+        "endpoints": ("projects.procedures",),
+        "what": "The project's journey through the company procedures (PRC-PM-02 and the procedures around it).",
+        "start_here": "Press Continue on the map and clear the cards at the station the project has reached.",
+        "steps": (
+            "Answer a question when it comes up: each answer unlocks the actions that apply and removes the ones that don't.",
+            "Clear each action as Done or N/A, or set it aside for later. Every card names the procedure section it comes from.",
+            "For a project already under way, switch a station to List and tick off what is already done.",
+            "Give an action a target date and it shows on Needs attention once it is past.",
+            "The journey's Menu prints a status report or exports the checklist to Excel.",
+        ),
+        "watch": (
+            "Everyone on the project sees and changes the same copy; it saves as you go.",
+            "Confirm the current revision of a procedure on the QMS before relying on a detail.",
+        ),
+        "terms": (),
+    },
+    {
         "key": "progress",
         "name": "Progress",
         "endpoints": ("projects.tasks", "projects.task_history"),

@@ -22,6 +22,25 @@
   </form>
 </div>
 
+{% if needs %}
+  {% set n_now = needs[0]['items'] | length %}
+  {% set n_week = needs[1]['items'] | length %}
+  {% set n_soon = needs[2]['items'] | length %}
+  <a class="needs-strip {{ 'has-now' if n_now }}" href="{{ url_for('projects.attention', project_id=project['id']) }}">
+    <span class="needs-dot" aria-hidden="true"></span>
+    <span>
+      {% if n_now or n_week or n_soon %}
+        <b>{{ n_now }} need{{ 's' if n_now == 1 }} a decision now</b>
+        <span class="muted">· {{ n_week }} this week · {{ n_soon }} worth a thought</span>
+        {% if needs[0]['items'] %}<span class="needs-first muted">First: {{ needs[0]['items'][0]['title'] }}</span>{% endif %}
+      {% else %}
+        <b>Nothing needs a decision right now</b>
+      {% endif %}
+    </span>
+    <span class="needs-go">See what needs attention →</span>
+  </a>
+{% endif %}
+
 {# The project on one line, before anything is broken down: when it runs, how
    much room it has left, and where it has got to. #}
 <div class="card" style="margin-bottom:16px">

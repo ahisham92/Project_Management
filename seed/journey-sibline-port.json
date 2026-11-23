@@ -1,0 +1,51 @@
+{
+ "answers": {
+  "num": "S25001-0100D",
+  "sust": "cert",
+  "suppliers": "yes",
+  "process": "bim",
+  "drd": "yes",
+  "route": "full",
+  "departure": "yes",
+  "type": "building",
+  "tender": "yes",
+  "eir": "no",
+  "moisture": "yes",
+  "office": "std",
+  "constr": "no",
+  "clientqr": "no",
+  "reviewproj": "no",
+  "special": "no",
+  "industrial": "no",
+  "parking": "no",
+  "pedestrian": "no",
+  "basement": "no",
+  "subprojects": "no",
+  "mega": "no",
+  "bimlarge": "no",
+  "digital": "no",
+  "contract": "signed",
+  "interfaces": "no",
+  "twopm": "no",
+  "multigl": "no",
+  "confidential": "no",
+  "hardcopy": "no",
+  "multioffice": "no",
+  "aide": "yes"
+ },
+ "status": {
+  "st-memo": "done",
+  "st-prop": "na"
+ },
+ "notes": {
+  "st-auth": "Asked RO on Monday"
+ },
+ "due": {},
+ "doneAt": {
+  "st-memo": 1795392000000
+ },
+ "visited": {
+  "0": true
+ },
+ "skipped": {}
+}

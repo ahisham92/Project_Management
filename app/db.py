@@ -171,6 +171,7 @@ def init_db(path: Path | str | None = None) -> None:
         _ensure_specs(conn)
         _ensure_marine(conn)
         _ensure_tritomoor(conn)
+        _ensure_journeys(conn)
         for table, column, definition in (
             # A workflow line that hands nothing over. Its hours are not lost:
             # they flow to whatever it feeds, so the deliverable that does go
@@ -209,6 +210,24 @@ def _ensure_marine(conn: sqlite3.Connection) -> None:
     from .marine import ensure_schema
 
     ensure_schema(conn)
+
+
+def _ensure_journeys(conn: sqlite3.Connection) -> None:
+    """Each project's progress through the company procedures (see procedures.py).
+
+    One row per project holding the journey as JSON: answers, which actions are
+    done or not applicable, notes and target dates, keyed by the library's ids.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_journeys (
+          project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+          state      TEXT NOT NULL DEFAULT '{}',
+          updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
 
 
 def _ensure_tritomoor(conn: sqlite3.Connection) -> None:

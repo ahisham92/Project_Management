@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}Needs attention · {{ project['name'] }} — AHM{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+{% set now_n = lanes[0]['items'] | length %}
+<div class="page-head">
+  <div>
+    <h1>Needs attention</h1>
+    <p class="small muted" style="margin-top:2px">
+      Everything on this project that is waiting for someone to think about it, in one place:
+      late deliverables, the client's overdue reviews, actions from the minutes, the hours against the work,
+      and the procedure questions nobody has answered yet. Read at {{ short_date(data_date) }}.
+    </p>
+  </div>
+  {% if items %}
+  <button type="button" class="btn btn-primary" data-walk>Walk me through them</button>
+  {% endif %}
+</div>
+
+{% if not items %}
+  <div class="card attn-clear">
+    <div class="card-body" style="text-align:center;padding:40px 16px">
+      <div class="attn-calm" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h2 style="margin:14px 0 4px">Nothing needs a decision right now</h2>
+      <p class="muted" style="margin:0">No late deliverables, no overdue actions, no unanswered procedure questions.</p>
+    </div>
+  </div>
+{% else %}
+
+<div class="attn-hero card">
+  <div class="attn-radar-wrap">
+    <svg class="attn-radar" viewBox="-195 -172 390 344" role="img"
+         aria-label="{{ items | length }} things need attention, {{ now_n }} of them now">
+      <defs>
+        <radialGradient id="attn-sweep-g" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+                        gradientTransform="scale(150)">
+          <stop offset="0" stop-color="var(--series-1)" stop-opacity="0.0"/>
+          <stop offset="1" stop-color="var(--series-1)" stop-opacity="0.22"/>
+        </radialGradient>
+      </defs>
+      <circle class="ring ring-soon" r="148"/>
+      <circle class="ring ring-week" r="104"/>
+      <circle class="ring ring-now" r="60"/>
+      <g class="spokes"></g>
+      <g class="sweep"><path d="M0 0 L150 0 A150 150 0 0 0 129.9 -75 Z" fill="url(#attn-sweep-g)"/>
+        <line x1="0" y1="0" x2="150" y2="0" class="sweep-line"/></g>
+      <g class="dots"></g>
+      <circle r="30" class="core"/>
+      <text class="core-n" y="6">{{ now_n }}</text>
+      <text class="core-l" y="20">now</text>
+    </svg>
+  </div>
+  <div class="attn-legend">
+    {% for lane in lanes %}
+      <button type="button" class="attn-lane-key lane-{{ lane['key'] }}" data-lane-filter="{{ lane['key'] }}"
+              aria-pressed="false">
+        <span class="sw" aria-hidden="true"></span>
+        <span><b>{{ lane['items'] | length }}</b> {{ lane['title'] }}<br>
+          <span class="small muted">{{ lane['hint'] }}</span></span>
+      </button>
+    {% endfor %}
+    <p class="small muted" style="margin:8px 0 0">The inner ring is what needs a decision now; the outer ones can wait a little.
+      Point at a dot to see what it is, or pick a ring to show only its cards.</p>
+  </div>
+</div>
+
+<div class="attn-lanes">
+  {% for lane in lanes %}
+  <section class="attn-lane lane-{{ lane['key'] }}" data-lane="{{ lane['key'] }}">
+    <h2><span class="sw" aria-hidden="true"></span>{{ lane['title'] }} <span class="muted">· {{ lane['items'] | length }}</span></h2>
+    {% if not lane['items'] %}
+      <p class="small muted attn-none">Nothing here.</p>
+    {% endif %}
+    {% for i in lane['items'] %}
+      <article class="attn-card{{ ' more' if loop.index > 6 }}" tabindex="-1" data-kind="{{ i['kind'] }}" data-lane="{{ i['lane'] }}"
+               style="--d:{{ loop.index0 * 60 }}ms">
+        <div class="attn-top">
+          <span class="attn-kind k-{{ i['kind'] }}">{{ i['kind_label'] }}</span>
+          {% if i['days'] is not none and i['days'] < 0 %}<span class="attn-days bad">{{ -i['days'] }}d over</span>
+          {% elif i['days'] is not none and i['days'] <= 7 %}<span class="attn-days">in {{ i['days'] }}d</span>{% endif %}
+        </div>
+        <h3>{{ i['title'] }}</h3>
+        <p class="attn-think"><span class="attn-q" aria-hidden="true">?</span>{{ i['think'] }}</p>
+        <p class="small muted attn-detail">{{ i['detail'] }}</p>
+        <a class="btn btn-ghost btn-sm" href="{{ i['href'] }}">Open</a>
+      </article>
+    {% endfor %}
+    {% if lane['items'] | length > 6 %}
+      <button type="button" class="btn btn-ghost btn-sm attn-more" data-more>Show all {{ lane['items'] | length }}</button>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+{# One at a time, for thinking each one through. #}
+<dialog class="attn-walk" id="attnWalk" aria-label="Walk through what needs attention">
+  <div class="attn-walk-in">
+    <div class="attn-walk-head">
+      <span class="small muted" id="walkPos"></span>
+      <button type="button" class="btn btn-ghost btn-sm" data-walk-close>Close</button>
+    </div>
+    <div class="attn-walk-stage" id="walkStage"></div>
+    <div class="attn-walk-bar"><i id="walkBar"></i></div>
+    <div class="attn-walk-nav">
+      <button type="button" class="btn btn-ghost" data-walk-step="-1">Back</button>
+      <span class="small muted">← → to move · Esc to close</span>
+      <button type="button" class="btn btn-primary" data-walk-step="1">Next</button>
+    </div>
+  </div>
+</dialog>
+{% endif %}
+
+<style>
+  .attn-hero { display: grid; grid-template-columns: minmax(240px, 360px) 1fr; gap: 24px; align-items: center; padding: 18px; margin-bottom: 18px; }
+  @media (max-width: 760px) { .attn-hero { grid-template-columns: 1fr; } .attn-radar-wrap { max-width: 300px; margin: 0 auto; } }
+  .attn-radar { width: 100%; height: auto; display: block; overflow: visible; }
+  .attn-radar .ring { fill: none; stroke: var(--border); stroke-width: 1; }
+  .attn-radar .ring-now { fill: color-mix(in srgb, var(--critical) 6%, transparent); stroke: color-mix(in srgb, var(--critical) 35%, transparent); }
+  .attn-radar .ring-week { stroke: color-mix(in srgb, var(--warning) 45%, transparent); }
+  .attn-radar .ring-soon { stroke: color-mix(in srgb, var(--series-1) 35%, transparent); }
+  .attn-radar .spokes line { stroke: var(--border); stroke-dasharray: 2 4; }
+  .attn-radar .spokes text { fill: var(--muted); font-size: 9px; text-anchor: middle; }
+  .attn-radar .sweep { transform-origin: 0 0; transform: rotate(-90deg); animation: attn-spin 6s linear infinite; }
+  .attn-radar .sweep-line { stroke: color-mix(in srgb, var(--series-1) 60%, transparent); stroke-width: 1.2; }
+  .attn-radar .core { fill: var(--surface); stroke: var(--border); }
+  .attn-radar .core-n { font-size: 22px; font-weight: 700; text-anchor: middle; fill: var(--ink); }
+  .attn-radar .core-l { font-size: 9px; text-anchor: middle; fill: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .attn-radar .dot { cursor: pointer; opacity: 0; transform-box: fill-box; transform-origin: center;
+                     animation: attn-pop .5s cubic-bezier(.2,.9,.3,1.4) forwards; animation-delay: var(--d); }
+  .attn-radar .dot circle.b { stroke: var(--surface); stroke-width: 2; }
+  .attn-radar .dot.now circle.b { fill: var(--critical); }
+  .attn-radar .dot.week circle.b { fill: var(--warning); }
+  .attn-radar .dot.soon circle.b { fill: var(--series-1); }
+  .attn-radar .dot.now circle.h { fill: none; stroke: var(--critical); stroke-width: 1.5; transform-box: fill-box; transform-origin: center;
+                                  animation: attn-ping 2.2s ease-out infinite; animation-delay: calc(var(--d) + .5s); }
+  .attn-radar .dot:hover circle.b, .attn-radar .dot.hot circle.b { stroke: var(--ink); }
+  .attn-radar .dot.dim { opacity: .15 !important; }
+  @keyframes attn-spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+  @keyframes attn-pop { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+  @keyframes attn-ping { 0% { transform: scale(1); opacity: .9; } 80%, 100% { transform: scale(3); opacity: 0; } }
+
+  .attn-legend { display: grid; gap: 8px; }
+  .attn-lane-key { display: flex; gap: 10px; align-items: flex-start; text-align: left; background: none;
+                   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--ink); font: inherit; }
+  .attn-lane-key:hover { background: var(--pm-tint); }
+  .attn-lane-key[aria-pressed="true"] { border-color: var(--ink); box-shadow: var(--pm-ring); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 5px; }
+  .lane-now .sw { background: var(--critical); } .lane-week .sw { background: var(--warning); } .lane-soon .sw { background: var(--series-1); }
+
+  .attn-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  @media (max-width: 1000px) { .attn-lanes { grid-template-columns: 1fr; } }
+  .attn-lane h2 { font-size: 1rem; display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+  .attn-lane h2 .sw { margin-top: 0; }
+  .attn-lane.hide { display: none; }
+  .attn-lane:not(.open) .attn-card.more { display: none; }
+  .attn-lane.open .attn-more { display: none; }
+  .attn-card .btn { align-self: flex-start; }
+  .attn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
+               box-shadow: var(--pm-shadow); opacity: 0; transform: translateY(10px);
+               animation: attn-in .45s ease-out forwards; animation-delay: var(--d); transition: box-shadow .2s, border-color .2s; }
+  .attn-lane.lane-now .attn-card { border-left: 3px solid var(--critical); }
+  .attn-lane.lane-week .attn-card { border-left: 3px solid var(--warning); }
+  .attn-lane.lane-soon .attn-card { border-left: 3px solid var(--series-1); }
+  .attn-card.hot { border-color: var(--ink); box-shadow: var(--pm-ring); }
+  .attn-card h3 { font-size: .95rem; margin: 6px 0 6px; line-height: 1.3; }
+  .attn-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .attn-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .attn-days { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .attn-days.bad { color: var(--critical); font-weight: 600; }
+  .attn-think { display: flex; gap: 8px; margin: 0 0 6px; font-size: .875rem; }
+  .attn-q { flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center;
+            font-size: 11px; font-weight: 700; color: var(--surface); background: var(--ink-2, var(--muted)); margin-top: 1px; }
+  .attn-detail { margin: 0 0 8px; }
+  @keyframes attn-in { to { opacity: 1; transform: none; } }
+
+  .attn-calm { display: inline-flex; gap: 6px; }
+  .attn-calm span { width: 10px; height: 10px; border-radius: 50%; background: var(--good); animation: attn-breathe 2.4s ease-in-out infinite; }
+  .attn-calm span:nth-child(2) { animation-delay: .3s; } .attn-calm span:nth-child(3) { animation-delay: .6s; }
+  @keyframes attn-breathe { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+
+  .attn-walk { border: 1px solid var(--border); border-radius: 16px; padding: 0; width: min(620px, calc(100vw - 32px));
+               background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .attn-walk::backdrop { background: rgba(10, 12, 16, .45); backdrop-filter: blur(2px); }
+  .attn-walk-in { padding: 16px 18px; }
+  .attn-walk-head, .attn-walk-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .attn-walk-stage { position: relative; min-height: 230px; overflow: hidden; margin: 10px 0; }
+  .attn-walk-stage .attn-card { position: absolute; inset: 0; margin: 0; opacity: 1; transform: none; animation: none;
+                                padding: 18px 20px; font-size: 1.05rem; display: flex; flex-direction: column; justify-content: center; }
+  .attn-walk-stage .attn-card h3 { font-size: 1.2rem; }
+  .attn-walk-stage .attn-think { font-size: 1rem; }
+  .attn-walk-stage .enter-r { animation: walk-in-r .38s ease-out both; }
+  .attn-walk-stage .enter-l { animation: walk-in-l .38s ease-out both; }
+  .attn-walk-stage .leave-l { animation: walk-out-l .3s ease-in both; }
+  .attn-walk-stage .leave-r { animation: walk-out-r .3s ease-in both; }
+  @keyframes walk-in-r { from { transform: translateX(60%) rotate(4deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes walk-in-l { from { transform: translateX(-60%) rotate(-4deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes walk-out-l { to { transform: translateX(-60%) rotate(-4deg); opacity: 0; } }
+  @keyframes walk-out-r { to { transform: translateX(60%) rotate(4deg); opacity: 0; } }
+  .attn-walk-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: 12px; }
+  .attn-walk-bar i { display: block; height: 100%; width: 0; background: var(--series-1); transition: width .35s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .attn-radar .sweep, .attn-radar .dot.now circle.h, .attn-calm span { animation: none; }
+    .attn-radar .dot, .attn-card { animation: none; opacity: 1; transform: none; }
+    .attn-walk-stage .enter-r, .attn-walk-stage .enter-l, .attn-walk-stage .leave-l, .attn-walk-stage .leave-r { animation: none; }
+  }
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var cards = Array.prototype.slice.call(document.querySelectorAll(".attn-lanes .attn-card"));
+  if (!cards.length) return;
+  var svg = document.querySelector(".attn-radar");
+  var NS = "http://www.w3.org/2000/svg";
+  var kinds = ["deliverable", "client", "action", "procedure", "question", "budget"];
+  var names = {deliverable: "Deliverables", client: "Client", action: "Minutes", procedure: "Procedures", question: "Decisions", budget: "Budget"};
+  var band = {now: [36, 58], week: [66, 100], soon: [110, 144]};
+
+  // Six sectors, one per kind of thing, so the same kind always sits in the same place.
+  var spokes = svg.querySelector(".spokes");
+  kinds.forEach(function (k, n) {
+    var a = (n / kinds.length) * Math.PI * 2 - Math.PI / 2;
+    var l = document.createElementNS(NS, "line");
+    l.setAttribute("x1", 0); l.setAttribute("y1", 0);
+    l.setAttribute("x2", 150 * Math.cos(a)); l.setAttribute("y2", 150 * Math.sin(a));
+    spokes.appendChild(l);
+    var mid = a + Math.PI / kinds.length, t = document.createElementNS(NS, "text");
+    t.setAttribute("x", 157 * Math.cos(mid)); t.setAttribute("y", 157 * Math.sin(mid) + 3);
+    t.textContent = names[k]; spokes.appendChild(t);
+  });
+
+  // A stable scatter inside each sector, so a dot does not jump between visits.
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967295; }
+  var dots = svg.querySelector(".dots");
+  cards.forEach(function (card, n) {
+    var k = card.dataset.kind, lane = card.dataset.lane, title = card.querySelector("h3").textContent;
+    var ki = Math.max(0, kinds.indexOf(k)), span = Math.PI * 2 / kinds.length;
+    var a = -Math.PI / 2 + ki * span + span * (0.12 + 0.76 * hash(title + n));
+    var r = band[lane][0] + (band[lane][1] - band[lane][0]) * hash(n + title);
+    // The place is on an outer group: the animation scales the inner one, and a
+    // CSS transform would otherwise replace the position.
+    var at = document.createElementNS(NS, "g");
+    at.setAttribute("transform", "translate(" + (r * Math.cos(a)).toFixed(1) + " " + (r * Math.sin(a)).toFixed(1) + ")");
+    var g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "dot " + lane);
+    at.appendChild(g);
+    // Each dot appears as the sweep first passes over it.
+    var deg = ((a * 180 / Math.PI) % 360 + 360) % 360;
+    g.style.setProperty("--d", (0.2 + ((deg + 90) % 360) / 360 * 2).toFixed(2) + "s");
+    g.innerHTML = '<circle class="h" r="5"/><circle class="b" r="5.5"/><title></title>';
+    g.querySelector("title").textContent = title;
+    g.setAttribute("tabindex", "0");
+    g.addEventListener("mouseenter", function () { hot(card, g, true); });
+    g.addEventListener("mouseleave", function () { hot(card, g, false); });
+    g.addEventListener("click", function () { card.scrollIntoView({behavior: "smooth", block: "center"}); hot(card, g, true); setTimeout(function () { hot(card, g, false); }, 1600); });
+    g.addEventListener("keydown", function (e) { if (e.key === "Enter") g.dispatchEvent(new Event("click")); });
+    card.addEventListener("mouseenter", function () { hot(card, g, true); });
+    card.addEventListener("mouseleave", function () { hot(card, g, false); });
+    card._dot = g;
+    dots.appendChild(at);
+  });
+  function hot(card, dot, on) { card.classList.toggle("hot", on); dot.classList.toggle("hot", on); }
+
+  // Pick a ring to see only its cards.
+  var keys = document.querySelectorAll("[data-lane-filter]"), chosen = null;
+  keys.forEach(function (b) {
+    b.addEventListener("click", function () {
+      chosen = chosen === b.dataset.laneFilter ? null : b.dataset.laneFilter;
+      keys.forEach(function (x) { x.setAttribute("aria-pressed", String(x.dataset.laneFilter === chosen)); });
+      document.querySelectorAll(".attn-lane").forEach(function (s) { s.classList.toggle("hide", !!chosen && s.dataset.lane !== chosen); });
+      cards.forEach(function (c) { c._dot.classList.toggle("dim", !!chosen && c.dataset.lane !== chosen); });
+    });
+  });
+
+  document.querySelectorAll("[data-more]").forEach(function (b) {
+    b.addEventListener("click", function () { b.closest(".attn-lane").classList.add("open"); });
+  });
+  // When a dot is picked whose card is folded away, unfold its lane first.
+  cards.forEach(function (c) { c._dot.addEventListener("click", function () { c.closest(".attn-lane").classList.add("open"); }, true); });
+
+  // Walk through them, one card at a time.
+  var dlg = document.getElementById("attnWalk"), stage = document.getElementById("walkStage"), at = 0;
+  function show(n, dir) {
+    var old = stage.firstElementChild;
+    if (old) { old.className = old.className.replace(/ ?enter-[lr]/, "") + (dir > 0 ? " leave-l" : " leave-r"); setTimeout(function () { if (old.parentNode) old.remove(); }, 300); }
+    at = (n + cards.length) % cards.length;
+    var c = cards[at].cloneNode(true);
+    c.classList.remove("hot", "more"); c.removeAttribute("style");
+    c.classList.add(dir < 0 ? "enter-l" : "enter-r");
+    var lane = cards[at].dataset.lane;
+    c.style.borderLeft = "4px solid var(" + (lane === "now" ? "--critical" : lane === "week" ? "--warning" : "--series-1") + ")";
+    stage.appendChild(c);
+    document.getElementById("walkPos").textContent = (at + 1) + " of " + cards.length;
+    document.getElementById("walkBar").style.width = ((at + 1) / cards.length * 100) + "%";
+  }
+  document.querySelector("[data-walk]").addEventListener("click", function () { stage.innerHTML = ""; dlg.showModal(); show(0, 1); });
+  dlg.querySelector("[data-walk-close]").addEventListener("click", function () { dlg.close(); });
+  dlg.querySelectorAll("[data-walk-step]").forEach(function (b) {
+    b.addEventListener("click", function () { var d = +b.dataset.walkStep; show(at + d, d); });
+  });
+  dlg.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight") { e.preventDefault(); show(at + 1, 1); }
+    if (e.key === "ArrowLeft") { e.preventDefault(); show(at - 1, -1); }
+  });
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });
+})();
+</script>
+{% endblock %}

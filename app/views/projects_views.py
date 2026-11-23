@@ -148,6 +148,7 @@ def dashboard(project_id: int):
         project=project, role=role, snapshot=snapshot, data_date=data_date,
         overview=project_overview(project, snapshot),
         attention=attention,
+        needs=_attention_lanes(project, snapshot),
         s_curve=charts.s_curve(points, snapshot["data_date"]),
         trade_progress=charts.trade_progress(snapshot["trades"]),
         trade_weight=charts.trade_weight(snapshot["trades"]),
@@ -155,6 +156,17 @@ def dashboard(project_id: int):
         # asked in the currency a team leader staffs with.
         hours_curve=charts.hours_curve(resource_curve(resource_plan(project, snapshot))),
     )
+
+
+def _attention_lanes(project, snapshot):
+    """The counts for the "needs attention" strip; never allowed to break the page."""
+    from .. import attention as attn
+
+    try:
+        return attn.lanes(attn.gather(project, snapshot))
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Could not gather what needs attention")
+        return None
 
 
 @bp.get("/help")

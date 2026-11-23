@@ -8,19 +8,27 @@
   {% set here = request.view_args.get('kind') if request.view_args else none %}
   {% set internal = request.endpoint in ('meetings.week', 'meetings.weekly_meeting')
                     or (request.endpoint in ('meetings.index', 'meetings.agenda') and here == 'internal') %}
-  {% set tabs = [
-    ('projects.dashboard', 'Dashboard', none),
-    ('projects.tasks', 'Progress', none),
-    ('projects.schedule', 'Schedule', none),
-    ('projects.budget', 'Finance', none),
-    ('projects.submittals', 'Submittals', none),
-    ('projects.resources', 'Resources', none),
-    ('projects.period', 'Summarized Progress', none),
-    ('meetings.index', 'Minutes', 'client'),
-    ('assistant.index', 'Carmen', none),
-    ('projects.setup', 'Setup', none),
-    ('projects.guide', 'How to use', none),
+  {# Grouped by the question each set answers, with a hairline between the
+     groups, so thirteen tabs read as five short rows of thought rather than
+     one long list: how is it going, what are we delivering, what does it cost,
+     who is doing what, and how is it set up. #}
+  {% set groups = [
+    [('projects.dashboard', 'Dashboard', none),
+     ('projects.attention', 'Needs attention', none)],
+    [('projects.tasks', 'Progress', none),
+     ('projects.schedule', 'Schedule', none),
+     ('projects.submittals', 'Submittals', none),
+     ('projects.procedures', 'Procedures', none)],
+    [('projects.budget', 'Finance', none),
+     ('projects.resources', 'Resources', none),
+     ('projects.period', 'Summarized Progress', none)],
+    [('meetings.index', 'Minutes', 'client'),
+     ('assistant.index', 'Carmen', none)],
+    [('projects.setup', 'Setup', none),
+     ('projects.guide', 'How to use', none)],
   ] %}
+  {% for tabs in groups %}
+  {% if not loop.first %}<span class="tab-sep" aria-hidden="true"></span>{% endif %}
   {% for endpoint, label, register in tabs %}
     {% if register %}
       <a href="{{ url_for(endpoint, project_id=project['id'], kind=register) }}"
@@ -33,5 +41,6 @@
       <a href="{{ url_for(endpoint, project_id=project['id']) }}"
          class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
     {% endif %}
+  {% endfor %}
   {% endfor %}
 </nav>

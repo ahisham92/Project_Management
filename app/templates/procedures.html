@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Procedures · {{ project['name'] }} — AHM{% endblock %}
+{% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Company procedures</h1>
+    <p class="small muted" style="margin-top:2px">
+      This project's journey through PRC-PM-02 and the {{ library['sources'] | length - 1 }} procedures around it,
+      from award to close-out. Answer a question when it comes up and the actions that apply appear;
+      clear each one as Done or N/A. Everyone on the project sees the same copy, and it saves as you go.
+    </p>
+  </div>
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.attention', project_id=project['id']) }}">What needs attention</a>
+</div>
+
+<div class="card journey-card">
+  <iframe class="journey-frame" title="Procedure journey"
+          src="{{ url_for('projects.procedures_app', project_id=project['id']) }}"></iframe>
+</div>
+<p class="small muted" style="margin-top:8px">
+  {{ library['version'] }}. Each action cites the procedure section it comes from; confirm the current revision on the QMS.
+  The journey's own menu prints a status report or exports the checklist to Excel.
+</p>
+{% endblock %}

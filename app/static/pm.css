@@ -155,3 +155,38 @@ body.pm-app { accent-color: var(--series-1); }
   .pm-app .tile, .pm-app .card, .pm-app .btn-primary { box-shadow: none; }
   .pm-app .chart { max-width: none; }
 }
+
+/* --- project tabs, in groups ------------------------------------------------ */
+
+.pm-app .tabs { align-items: center; scrollbar-width: thin; }
+.pm-app .tab-sep { flex: none; width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.pm-app .tabs a { padding: 8px 9px; }
+
+/* --- procedures: the journey, shown inside the tab ---------------------------- */
+
+.pm-app .journey-card { overflow: hidden; padding: 0; }
+.pm-app .journey-frame {
+  display: block; width: 100%; border: 0;
+  height: calc(100vh - 150px); min-height: 640px;
+}
+@media (max-width: 720px) { .pm-app .journey-frame { height: calc(100vh - 110px); min-height: 520px; } }
+
+/* --- dashboard: what needs attention, in one line ----------------------------- */
+
+.pm-app .needs-strip {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; margin-bottom: 16px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  text-decoration: none; transition: box-shadow var(--pm-fast), border-color var(--pm-fast);
+}
+.pm-app .needs-strip:hover { border-color: var(--series-1); box-shadow: var(--pm-ring); }
+.pm-app .needs-strip > span:nth-child(2) { flex: 1 1 320px; min-width: 0; }
+.pm-app .needs-first { display: block; font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-app .needs-go { font-size: 0.875rem; font-weight: 600; color: var(--series-1); white-space: nowrap; }
+.pm-app .needs-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
+.pm-app .needs-strip.has-now .needs-dot { background: var(--critical); animation: pm-needs 2.2s ease-out infinite; }
+@keyframes pm-needs {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--critical) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 9px transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .pm-app .needs-strip.has-now .needs-dot { animation: none; } }

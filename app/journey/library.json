@@ -1,0 +1,3734 @@
+{
+ "version": "Built 23 Nov 2026 from PRC-PM-02 Rev 52 and 18 related procedures",
+ "sources": {
+  "PM-02": "PRC-PM-02 Project management, Rev 52 (09/12/2025)",
+  "PM-03": "PRC-PM-03 Contract review, Rev 11",
+  "PM-04": "PRC-PM-04 Procedures for use on minor projects, Rev 39",
+  "PM-05": "PRC-PM-05 Quality planning, Rev 13 (F1 Rev 31)",
+  "PM-06": "PRC-PM-06 Contract variation control, Rev 6",
+  "PM-07": "PRC-PM-07 Project documentation and correspondence control, Rev 33",
+  "PM-08": "PRC-PM-08 Numbering of project documentation, Rev 44",
+  "PM-09": "PRC-PM-09 Archiving technical documents, Rev 19",
+  "PM-10": "PRC-PM-10 Supplier control, Rev 19",
+  "PM-11": "PRC-PM-11 Design review projects, Rev 2",
+  "PM-12": "PRC-PM-12 Electronic submittal, Rev 3",
+  "PM-13": "PRC-PM-13 Sustainability procedures, Rev 11",
+  "PM-14": "PRC-PM-14 Project risk assessment, Rev 3",
+  "PM-15": "PRC-PM-15 BIM for building and campus projects, Rev 3",
+  "PM-16": "PRC-PM-16 Management of lessons learned, Rev 0",
+  "PM-18": "PRC-PM-18 BIM for transportation projects, Rev 0",
+  "PM-19": "PRC-PM-19 Digital ready design, Rev 4",
+  "EN-01": "PRC-EN-01 Design control, Rev 25",
+  "EN-02": "PRC-EN-02 Drawing control, Rev 12"
+ },
+ "phases": [
+  {
+   "id": "start",
+   "t": "Award & start-up",
+   "d": "Confirm the appointments, gather the proposal and budget, and set up the project filing before you touch the systems.",
+   "s": "Award"
+  },
+  {
+   "id": "init",
+   "t": "Initiation on PMIS & D365",
+   "d": "PMIS step 1, departmental initiation (step 3), D365 set-up, budget approval and activating the project.",
+   "s": "Initiation"
+  },
+  {
+   "id": "contract",
+   "t": "Contract review",
+   "d": "Review the contract and proposal within two weeks of work starting and record it on PMIS.",
+   "s": "Contract"
+  },
+  {
+   "id": "quality",
+   "t": "Quality plan, work instructions & OC",
+   "d": "Set the project quality system, record departures through work instructions, and publish the organisation chart.",
+   "s": "Quality & OC"
+  },
+  {
+   "id": "plan",
+   "t": "Planning: kick-off, schedule, numbering, codes, risks, lessons",
+   "d": "The baseline documents the project is controlled against.",
+   "s": "Planning"
+  },
+  {
+   "id": "bimset",
+   "t": "BIM set-up & BIM Execution Plan",
+   "d": "Roles, CDE, training and the BEP signing chain, before production starts.",
+   "s": "BIM set-up"
+  },
+  {
+   "id": "sustset",
+   "t": "Sustainability & digital ready design set-up",
+   "d": "Classification, waivers, champions and targets for PRC-PM-13 and PRC-PM-19.",
+   "s": "Sustainability & DRD"
+  },
+  {
+   "id": "exec",
+   "t": "Running the design",
+   "d": "Weekly progress, design reviews, coordination and correspondence while the design is under way.",
+   "s": "Design"
+  },
+  {
+   "id": "check",
+   "t": "Checking: SDC, IDC & DSR",
+   "d": "The checks EN-01 requires before anything goes to design and safety review or to the client.",
+   "s": "Checking"
+  },
+  {
+   "id": "change",
+   "t": "Design changes & contract variations",
+   "d": "Every change request goes through the change log; scope changes go to the PD and may become a claim.",
+   "s": "Changes"
+  },
+  {
+   "id": "supply",
+   "t": "Suppliers & sub-consultants",
+   "d": "Selecting, controlling and paying suppliers under PRC-PM-10.",
+   "s": "Suppliers"
+  },
+  {
+   "id": "review",
+   "t": "Design review workflow",
+   "d": "For projects where Dar reviews designs prepared by others (PRC-PM-11). PM-02 or PM-04 still applies in full.",
+   "s": "Design review"
+  },
+  {
+   "id": "submit",
+   "t": "Gateways & submissions",
+   "d": "What must be true before a package leaves the office, how it is signed and issued, and the reports at the end of each phase.",
+   "s": "Submissions"
+  },
+  {
+   "id": "close",
+   "t": "Project completion & archiving",
+   "d": "Closing the design phase in the systems, with the client and in the archive.",
+   "s": "Close-out"
+  },
+  {
+   "id": "aide",
+   "t": "Aide-mémoire by design stage",
+   "d": "PRC-PM-02 Appendix 1. The procedure says these lists may be used as an aide-mémoire, so treat them as checks rather than mandatory steps.",
+   "s": "Stage checks"
+  }
+ ],
+ "questions": [
+  {
+   "sec": "Project",
+   "id": "num",
+   "type": "text",
+   "label": "Project number",
+   "ph": "e.g. S19070-0100D",
+   "req": true
+  },
+  {
+   "sec": "Project",
+   "id": "title",
+   "type": "text",
+   "label": "Project title",
+   "ph": "Short project name"
+  },
+  {
+   "sec": "Project",
+   "id": "pm",
+   "type": "text",
+   "label": "Project manager",
+   "ph": "Name"
+  },
+  {
+   "sec": "Project",
+   "id": "pd",
+   "type": "text",
+   "label": "Project director",
+   "ph": "Name"
+  },
+  {
+   "sec": "Quality route",
+   "id": "route",
+   "short": "Quality route",
+   "label": "How will quality be planned for this project?",
+   "req": true,
+   "help": "Every project needs quality planning. With QM approval, the full quality plan may be replaced by the Minor Projects procedure (studies and small-scale projects; PM-04 gives no size threshold, so agree it with the QM) or by a work instruction where quality requirements are limited to budgeting and progress monitoring.",
+   "ref": "PM-02 §4.2.3; PM-04 §1",
+   "opts": [
+    [
+     "full",
+     "Full project quality plan (PRC-PM-05)"
+    ],
+    [
+     "minor",
+     "Minor project (PRC-PM-04)"
+    ],
+    [
+     "wi",
+     "Work instruction only (budget & progress monitoring)"
+    ]
+   ]
+  },
+  {
+   "sec": "Quality route",
+   "id": "departure",
+   "short": "Procedure departure",
+   "label": "Will you need to depart from any standard company procedure?",
+   "help": "Allowed only for client-specific requirements or where the standard is excessive for the project size. Includes a numbering system that differs from PRC-PM-08. It must be agreed in writing with the QM and documented by a project WI or a project-specific procedure.",
+   "ref": "PM-02 §4.2.3; PM-08 §3; EN-02 §4.4",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Quality route",
+   "id": "clientqr",
+   "short": "Client quality requirements",
+   "label": "Has the client specified their own quality requirements?",
+   "help": "If so, the PM passes them to the QM for contract review.",
+   "ref": "PM-02 §4.2.2",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "type",
+   "short": "Project type",
+   "label": "What kind of project is it?",
+   "req": true,
+   "help": "Drives the BIM procedure (PM-15 for buildings and campus, PM-18 for transportation, both when a transportation project has stations or terminals), the internal gateway (F14) and who leads each component's design.",
+   "ref": "PM-02 §3, §4.4.1; PM-15 §2; PM-18 §2–3",
+   "opts": [
+    [
+     "building",
+     "Building or campus (incl. utility buildings)"
+    ],
+    [
+     "building_ext",
+     "Building with infrastructure / external works"
+    ],
+    [
+     "transport",
+     "Transportation (highway, road, airport, rail, port)"
+    ],
+    [
+     "transport_bld",
+     "Transportation with building components (stations, terminals, substations)"
+    ],
+    [
+     "infra",
+     "Other infrastructure"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "reviewproj",
+   "short": "Design review project",
+   "label": "Is Dar reviewing designs prepared by others (a design review project)?",
+   "help": "For example reviewing a contractor's or the client's design submittals. PRC-PM-11 then adds its own workflow on top of PM-02 / PM-04.",
+   "ref": "PM-11 §2–3",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "re",
+   "short": "Resident engineer",
+   "label": "Is there site supervision with a Dar resident engineer (RE)?",
+   "show": {
+    "reviewproj": "yes"
+   },
+   "help": "With an RE, communication and uploads run through the RE (PM-11 §3.1); without, through the area office or client (§3.2).",
+   "ref": "PM-11 §3.1, §3.2",
+   "opts": [
+    [
+     "yes",
+     "Yes, with an RE"
+    ],
+    [
+     "no",
+     "No, through the area office / client"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "special",
+   "short": "Special facility",
+   "label": "Does the scope include a sewage pump station, fuel farm/station, power plant, electrical substation or data centre?",
+   "help": "The mechanical GL (pump station, fuel) or the electrical GL (power, substations, data centre) then leads that component's design and checking.",
+   "ref": "PM-02 §3",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "industrial",
+   "short": "Industrial buildings",
+   "label": "Does it include industrial buildings?",
+   "show": {
+    "type": [
+     "building",
+     "building_ext"
+    ]
+   },
+   "help": "Adds item 10 of the internal gateway checklist.",
+   "ref": "PM-02 (F14)",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "parking",
+   "short": "Car parking",
+   "label": "Does the building scope include car parking?",
+   "show": {
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   },
+   "help": "Brings in the transportation design requirements for buildings with parking.",
+   "ref": "PM-02 App. 3",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "pedestrian",
+   "short": "Heavy pedestrian use",
+   "label": "Is heavy pedestrian movement expected (large rail or airport terminal, stadium, religious facility, mall)?",
+   "show": {
+    "type": [
+     "building",
+     "building_ext",
+     "transport",
+     "transport_bld"
+    ]
+   },
+   "help": "Pedestrian modelling is then needed at concept stage.",
+   "ref": "PM-02 App. 3 item 6",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "basement",
+   "short": "Below-ground works",
+   "label": "Are there basements, deep excavations or other below-ground works where groundwater matters?",
+   "help": "Brings in the design water table level (DWL) guidelines and the groundwater checks.",
+   "ref": "PM-02 §4.8, App. 2",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "moisture",
+   "short": "Moisture-critical",
+   "label": "Is moisture control critical for this project (e.g. GCC climate)?",
+   "help": "The AR and ME GLs then sign the moisture control checklist PRC-EN-01 (CKL-02) at preliminary and final design.",
+   "ref": "EN-01 §4.4.1; PM-05 (F1) §15.1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "tender",
+   "short": "Tender / BOQ scope",
+   "label": "Does Dar's scope include tender documents or BOQs?",
+   "help": "Brings in PMC's compilation time, BOQ issue control and the tender checklists.",
+   "ref": "PM-02 §4.2.5; EN-01 CKL-11a/11b",
+   "opts": [
+    [
+     "yes",
+     "Yes"
+    ],
+    [
+     "no",
+     "No"
+    ]
+   ],
+   "def": "yes"
+  },
+  {
+   "sec": "Type & scope",
+   "id": "subprojects",
+   "short": "Sub-projects",
+   "label": "Is this a main project with connected sub-projects (e.g. 0100D with 0101D, 0102D)?",
+   "ref": "PM-02 §4.2.1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Type & scope",
+   "id": "mega",
+   "short": "Mega project",
+   "label": "Is it a mega project?",
+   "help": "A PMC planner is allocated to mega projects.",
+   "ref": "PM-02 §4.2.5",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "process",
+   "short": "Design process",
+   "label": "Which design process will be used?",
+   "req": true,
+   "help": "BIM is mandatory for all building, campus and transportation projects. Not using it needs a derogation approved by the PD, raised by the PM on project-specific grounds.",
+   "ref": "PM-15 §4.1 note 4; PM-18 §4.1 note 3",
+   "opts": [
+    [
+     "bim",
+     "BIM"
+    ],
+    [
+     "cadd",
+     "CADD / other (no BIM)"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "eir",
+   "short": "Client EIR",
+   "label": "Has the client given exchange information requirements (EIR)?",
+   "show": {
+    "process": "bim"
+   },
+   "help": "Without a client EIR, Dar BIM standards apply.",
+   "ref": "PM-15 note 5; PM-18 note 4",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "bimlarge",
+   "short": "Large / complex BIM",
+   "label": "Is it a large or complex BIM project, or does the client's EIR call for a production or information manager?",
+   "show": {
+    "process": "bim"
+   },
+   "ref": "PM-15 notes 1–2; PM-18 notes 1–2",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "sust",
+   "short": "Sustainability",
+   "label": "What is the project's sustainability level under PRC-PM-13?",
+   "req": true,
+   "help": "PRC-PM-13 has no \"no sustainability\" level: every project is classified at initiation as §4.1, §4.2 or §4.3. §4.1 applies to every project where Dar develops the planning and concept design, even if the contract says nothing about sustainability. If sustainability isn't in the scope of work, you may ask the Sustainability Director to waive the requirements; until the waiver is accepted, §4.1 still applies.",
+   "ref": "PM-13 §4",
+   "opts": [
+    [
+     "driven",
+     "Sustainability-driven planning & concept by Dar (§4.1)"
+    ],
+    [
+     "client",
+     "Goals defined by the client (§4.2)"
+    ],
+    [
+     "cert",
+     "Certification required (§4.3)"
+    ],
+    [
+     "waiver",
+     "Not in scope of work: ask the SD for a waiver"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "drd",
+   "short": "DRD",
+   "label": "Do the project's categories on PMIS trigger Digital Ready Design?",
+   "help": "Decided at initiation from the categories and metrics selected on PMIS. If DRD is triggered but you think it shouldn't apply, the PD approves or rejects a waiver.",
+   "ref": "PM-19 §4.1, App. 1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ],
+    [
+     "waiver",
+     "Yes, but requesting a waiver"
+    ]
+   ]
+  },
+  {
+   "sec": "Design process",
+   "id": "digital",
+   "short": "Digital scope",
+   "label": "Does the project need a digital solutions scope (DSS)?",
+   "show": {
+    "drd": "yes"
+   },
+   "ref": "PM-19 §3",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "contract",
+   "short": "Signed contract",
+   "label": "Is there a formal signed contract yet?",
+   "req": true,
+   "help": "Without one, the information available (even a verbal instruction) must still be reviewed and recorded.",
+   "ref": "PM-02 §4.2.2; PM-03",
+   "opts": [
+    [
+     "signed",
+     "Yes, signed"
+    ],
+    [
+     "none",
+     "Not yet"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "suppliers",
+   "short": "Suppliers",
+   "label": "Will suppliers or sub-consultants be used?",
+   "ref": "PM-02 §4.2.1, §4.10; PM-10",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "interfaces",
+   "short": "Complex interfaces",
+   "label": "Are the interfaces complex (more than one external party)?",
+   "help": "An interface overview chart is then required.",
+   "ref": "PM-02 §4.2.4",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "twopm",
+   "short": "Two PMs",
+   "label": "Will the project have two PMs?",
+   "ref": "PM-02 §4.2.4",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "multigl",
+   "short": "Several GLs per unit",
+   "label": "Will any department have more than one GL from the same unit?",
+   "ref": "PM-02 §4.2.1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "confidential",
+   "short": "Confidential",
+   "label": "Is the project confidential (by its nature or by client requirement)?",
+   "ref": "PM-02 §4.2.1; PM-07 §3.1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Contract & team",
+   "id": "hardcopy",
+   "short": "Hard copies",
+   "label": "Does the client want hard-copy submissions?",
+   "ref": "PM-07 §3.1; EN-02 §4.3",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Closeout",
+   "id": "office",
+   "short": "Archiving office",
+   "label": "Which office will archive the project?",
+   "help": "Archiving runs differently in Dar Cairo.",
+   "ref": "PM-09 §4–7",
+   "opts": [
+    [
+     "std",
+     "Amman / Beirut / London / Pune"
+    ],
+    [
+     "cairo",
+     "Dar Cairo"
+    ],
+    [
+     "other",
+     "Other / not sure yet"
+    ]
+   ]
+  },
+  {
+   "sec": "Closeout",
+   "id": "multioffice",
+   "short": "Several design offices",
+   "label": "Is the design shared between more than one design office?",
+   "ref": "PM-09 §5.1",
+   "opts": [
+    [
+     "no",
+     "No"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Closeout",
+   "id": "constr",
+   "short": "Dar construction supervision",
+   "label": "Will Dar supervise construction after design?",
+   "help": "Changes what happens to construction follow-up documents at archiving.",
+   "ref": "PM-09 §3.2",
+   "opts": [
+    [
+     "no",
+     "No / not known"
+    ],
+    [
+     "yes",
+     "Yes"
+    ]
+   ]
+  },
+  {
+   "sec": "Options",
+   "id": "aide",
+   "short": "Aide-mémoire",
+   "label": "Include the stage-by-stage aide-mémoire checks?",
+   "help": "About 37 extra checks from PM-02 Appendix 1, from data collection to final design. Written mainly with building projects in mind.",
+   "ref": "PM-02 App. 1",
+   "opts": [
+    [
+     "yes",
+     "Yes"
+    ],
+    [
+     "no",
+     "No"
+    ]
+   ],
+   "def": "yes"
+  }
+ ],
+ "items": [
+  {
+   "id": "st-memo",
+   "ph": "start",
+   "t": "Confirm the project number memo naming the PD, PM and APC",
+   "d": "After award the RO, with the AD, creates the project number and title and circulates them by memo to the RD, SL, PD, PM, M&C and APC.",
+   "who": "RO / AD",
+   "rec": "Memo",
+   "ref": "PM-02 §4.1"
+  },
+  {
+   "id": "st-prop",
+   "ph": "start",
+   "t": "Get the final technical proposal and commercial budget from the APC",
+   "d": "The APC provides the final submitted or negotiated technical proposal and commercial budget, with the AD's consent. SL and PD are informed.",
+   "who": "APC",
+   "rec": "Proposal / budget",
+   "ref": "PM-02 §4.2"
+  },
+  {
+   "id": "st-auth",
+   "ph": "start",
+   "t": "Identify statutory and authority requirements",
+   "d": "The APC does this with the PM and the discipline GLs. Confirm the local codes with the GLs at the same time.",
+   "who": "APC / PM / GLs",
+   "ref": "PM-02 §4.2; PM-04 §3.2"
+  },
+  {
+   "id": "st-files",
+   "ph": "start",
+   "t": "Set up the project filing: PCW, P: drive and hard-copy file",
+   "d": "Open the P: drive folder and sub-folders and have IT create the PCW and its design deliverables QM module. The PCW is the basis of filing; give the PMIS team Edit rights per the permission matrix. Ask for any PCW customisation the project needs.",
+   "who": "PM / IT",
+   "rec": "PCW / P: drive",
+   "ref": "PM-02 App. 4 (1.5); PM-07 §2.1, §3.1"
+  },
+  {
+   "id": "st-reg",
+   "ph": "start",
+   "t": "Set up the document register and the drawing register",
+   "d": "At start-up, to control every deliverable. The department assistant keeps the document register; allocated staff keep the drawing register. Keep both current.",
+   "who": "PM / assistant",
+   "rec": "Document & drawing registers",
+   "ref": "PM-07 §3.3"
+  },
+  {
+   "id": "st-hc",
+   "ph": "start",
+   "t": "Set up hard-copy master files with the department assistants",
+   "d": "PM and each GL keep master files; make the Appendix B filing list project-specific. Stamp client and external correspondence \"Copy To Be Preserved\".",
+   "who": "PM / GLs / assistant",
+   "rec": "PM-07 App. B filing list",
+   "ref": "PM-07 §3.1",
+   "when": {
+    "hardcopy": "yes"
+   }
+  },
+  {
+   "id": "st-cprop",
+   "ph": "start",
+   "t": "Safeguard the data and documents the client provides",
+   "d": "Keep them on the PCW under Project References and Procedures / Other. Report any loss, damage or unsuitability to the client and keep the records.",
+   "who": "PM",
+   "rec": "PCW",
+   "ref": "PM-07 §3.2"
+  },
+  {
+   "id": "in-review",
+   "ph": "init",
+   "t": "Review the proposal-stage information and the contract",
+   "d": "Do this before filling in project initiation on PMIS and D365.",
+   "who": "PM",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-gen",
+   "ph": "init",
+   "t": "PMIS step 1: fill in general information",
+   "d": "Project description and components/scope, design office(s), client, director, location, estimated construction cost, date contract signed, work type, man-months contracted, and an image illustrating the project.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-class",
+   "ph": "init",
+   "t": "PMIS step 1: fill in classification and metrics",
+   "d": "Category, subcategory and metrics. These also decide whether Digital Ready Design is triggered.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1; PM-19 §4.1"
+  },
+  {
+   "id": "in-bg",
+   "ph": "init",
+   "t": "PMIS step 1: fill in background information",
+   "d": "Groundwater table checking and seismic design requirements (as applicable), items needing special attention, lessons learned from previous projects, source of technical documents, and construction contract information coordinated with PMC.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-seis",
+   "ph": "init",
+   "t": "Fill the seismic design requirements from the S&B GL's feedback",
+   "d": "The S&B GL coordinates any site-specific requirements with the GHCE GL. Give this special attention at start-up.",
+   "who": "PM / S&B GL / GHCE GL",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.8"
+  },
+  {
+   "id": "in-proc",
+   "ph": "init",
+   "t": "PMIS step 1: record the design process",
+   "d": "Software to be adopted (CADD / BIM / other), selection of the BIM team, and whether DRD applies.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-derog",
+   "ph": "init",
+   "t": "Get the PD's approval for a BIM derogation",
+   "d": "BIM is mandatory for building, campus and transportation projects. Raise the derogation with the PD on project-specific grounds and keep the approval.",
+   "who": "PM / PD",
+   "rec": "PD approval",
+   "ref": "PM-15 §4.1 note 4; PM-18 §4.1 note 3",
+   "topic": "BIM",
+   "when": {
+    "process": "cadd",
+    "type": [
+     "building",
+     "building_ext",
+     "transport",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "in-pay",
+   "ph": "init",
+   "t": "Have the PD enter contract and payment terms on PMIS",
+   "d": "Contract value, contract type (phase/deliverable, deployment), deliverable fees and payment terms per deliverable are entered by the PD. The billing schedule drives the invoices.",
+   "who": "PD",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-sust",
+   "ph": "init",
+   "t": "PMIS step 1: enter the sustainability classification",
+   "d": "§4.1: \"Sustainability Driven Planning and Design\". §4.2: \"Sustainability Goal defined by Client\". PM-13 gives no label for §4.3 certification, so confirm the wording on PMIS.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1; PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "in-firms",
+   "ph": "init",
+   "t": "PMIS step 1: enter firms and suppliers",
+   "d": "Name, scope, involved phases, expected deliverables, status and expected dates, plus the supplier contract.",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1; PM-10 §2.3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "in-sub",
+   "ph": "init",
+   "t": "List shared suppliers under the main project and map them to sub-projects",
+   "d": "The main PM lists suppliers working across several sub-projects under one contract and identifies their sub-projects. Supplier fees go into each sub-project's WBS and budget as Expenses. Sub-project PMs track the supplier deliverables.",
+   "who": "Main PM / sub-project PMs",
+   "rec": "PMIS / D365",
+   "ref": "PM-02 §4.2.1; PM-04 note 1",
+   "when": {
+    "subprojects": "yes",
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "in-other",
+   "ph": "init",
+   "t": "PMIS step 1: enter other parties (firm and role)",
+   "who": "PM",
+   "rec": "PMIS step 1",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-conf",
+   "ph": "init",
+   "t": "Set the project as confidential",
+   "d": "PCW rights are then limited to the PMIS team.",
+   "who": "PM",
+   "rec": "PMIS / PCW",
+   "ref": "PM-02 §4.2.1; PM-07 §3.1",
+   "when": {
+    "confidential": "yes"
+   }
+  },
+  {
+   "id": "in-d365",
+   "ph": "init",
+   "t": "D365: fill in general and scheduling information",
+   "d": "Lead department, projected and actual start dates, projected end date, total planned effort in hours, scheduling calendar.",
+   "who": "PM",
+   "rec": "D365",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-wbs",
+   "ph": "init",
+   "t": "D365: build the WBS with a budget for every task",
+   "d": "Activities with start and end dates, budget (man-hours and expenses), responsible department(s) and status. Base the budget on the contract or the successful proposal, whichever is available. Supplier fees go in as expenses (ODC).",
+   "who": "PM",
+   "rec": "D365 WBS",
+   "ref": "PM-02 §4.2.1; PM-10 §2.3",
+   "tip": {
+    "src": "L2 · L9",
+    "text": "Plan in levels: a Level 1 summary for the whole job, Level 2–3 detail only for the stage you can see. Keeping man-hours per task also gives you the baseline for earned value later."
+   }
+  },
+  {
+   "id": "in-effort",
+   "ph": "init",
+   "t": "D365: distribute budgeted man-hours by department, office and grade",
+   "who": "PM",
+   "rec": "D365 effort distribution",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-glmain",
+   "ph": "init",
+   "t": "Select the GL Main for each department and notify them to complete PMIS step 3",
+   "d": "GLs Main set up their teams on D365 and re-distribute man-hours by office and grade if needed. Other GLs in the same department get read access.",
+   "who": "PM / GLs Main",
+   "rec": "PMIS step 3 / D365",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "in-step3",
+   "ph": "init",
+   "t": "Make sure every department's step 3 is complete",
+   "d": "General information (description, design criteria and concept, items needing special attention, lessons learned), the documents and drawings list (expected drawing count at final, tentative list, minimum and proposed IDC requirements), and contract review. Base budget per phase, grade and office plus the team on D365.",
+   "who": "GLs → PM",
+   "rec": "PMIS step 3 / D365",
+   "ref": "EN-01 §4.1–4.2"
+  },
+  {
+   "id": "in-champ-bim",
+   "ph": "init",
+   "t": "Make sure the GLs Main select the BIM coordinators",
+   "d": "For all trades. The role can be full-time or covered by the GL or the PE/PA.",
+   "who": "GLs Main",
+   "rec": "D365 / OC",
+   "ref": "PM-02 §4.2.1; PM-15/18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "in-champ-drd",
+   "ph": "init",
+   "t": "Make sure the GLs Main select DRD champions",
+   "d": "With the DRD Lead, once DRD is notified as applicable.",
+   "who": "GLs Main",
+   "rec": "D365",
+   "ref": "PM-02 §4.2.1; PM-19 §4.1",
+   "topic": "DRD",
+   "when": {
+    "drd": "yes"
+   }
+  },
+  {
+   "id": "in-multigl",
+   "ph": "init",
+   "t": "Define on D365 the roles of each GL from the same unit",
+   "who": "PM / GL Main",
+   "rec": "D365",
+   "ref": "PM-02 §4.2.1",
+   "when": {
+    "multigl": "yes"
+   }
+  },
+  {
+   "id": "in-approve",
+   "ph": "init",
+   "t": "Review and approve the departmental initiation (PMIS step 3)",
+   "d": "Once all departments have completed step 3. Settle the clarification register at the same time.",
+   "who": "PM",
+   "rec": "PMIS step 3",
+   "ref": "PM-02 §4.2.1, App. 4 (1.3)"
+  },
+  {
+   "id": "in-budget",
+   "ph": "init",
+   "t": "Import the WBS estimates and submit the total budget for PD approval",
+   "d": "Include the ODC budget. Once the PD approves on D365, set the project to Active. The system sends the initiation report to the SL, AD and APC and makes the budget available to the RO. Only the team assigned on D365 can then charge hours.",
+   "who": "PM / PD",
+   "rec": "D365",
+   "ref": "PM-02 §4.2.1; PM-04 §3.2.1"
+  },
+  {
+   "id": "in-gis",
+   "ph": "init",
+   "t": "Give the GIS team the project site location through PMIS",
+   "d": "For the GW@DAR database. If it isn't known yet, the system sends monthly reminders; it must be provided before project completion.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "cr-dist",
+   "ph": "contract",
+   "t": "Distribute the contract information to the reviewers",
+   "d": "The PD passes the contract information to the PM; GLs are allocated review responsibilities where the scope is outside the PM's expertise.",
+   "who": "PM / PD / GLs",
+   "rec": "Memo / PMIS",
+   "ref": "PM-03"
+  },
+  {
+   "id": "cr-review",
+   "ph": "contract",
+   "t": "Review the contract and proposal and fill in the contract review on PMIS",
+   "d": "Within two weeks of work starting. Confirm all Dar obligations are met. Each reviewer covers their specialist input and says so if the information is incomplete.",
+   "who": "PM / GLs Main",
+   "rec": "Contract review on PMIS",
+   "ref": "PM-02 §4.2.2; PM-03",
+   "freq": "Within 2 weeks",
+   "tip": {
+    "src": "L6 · L7",
+    "text": "Terms worth pulling out for the team: basis of fees, advance payment, reimbursables, monthly vs progress payments, settlement period, retention, set-off, client review periods, suspension and force majeure, termination, professional liability limit, indemnities, and liability for the cost estimate."
+   }
+  },
+  {
+   "id": "cr-nocon",
+   "ph": "contract",
+   "t": "Review whatever information exists, even a verbal instruction, and record it",
+   "d": "Where there is no formal contract, still complete the PMIS contract review with comments based on what is available. Seek clarification and supporting information as needed.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.2.2; PM-03",
+   "when": {
+    "contract": "none"
+   }
+  },
+  {
+   "id": "cr-clar",
+   "ph": "contract",
+   "t": "Log open points in the clarification register and resolve them with the PD or client",
+   "d": "Monitor the register of outstanding items until every one is closed.",
+   "who": "PM",
+   "rec": "Clarification register on PMIS",
+   "ref": "PM-02 §4.2.2; PM-03"
+  },
+  {
+   "id": "cr-hold",
+   "ph": "contract",
+   "t": "Tell the team that no work proceeds on items awaiting clarification without your written authorisation",
+   "d": "Advise the team of interim actions and notify them of the actions arising from each clarification point.",
+   "who": "PM",
+   "rec": "PMIS / e-mail",
+   "ref": "PM-03"
+  },
+  {
+   "id": "cr-qr",
+   "ph": "contract",
+   "t": "Pass the client's quality requirements to the QM for contract review",
+   "who": "PM",
+   "ref": "PM-02 §4.2.2",
+   "when": {
+    "clientqr": "yes"
+   }
+  },
+  {
+   "id": "cr-file",
+   "ph": "contract",
+   "t": "File the contract review documents",
+   "who": "PM",
+   "rec": "Project file / website",
+   "ref": "PM-03"
+  },
+  {
+   "id": "qa-scope",
+   "ph": "quality",
+   "t": "Review the scope of work with the QM to find all applicable quality requirements",
+   "who": "PM / QM",
+   "ref": "PM-05",
+   "when": {
+    "route": "full"
+   }
+  },
+  {
+   "id": "qa-qp",
+   "ph": "quality",
+   "t": "Prepare the project quality plan on the PRC-PM-05 (F1) template",
+   "d": "16 sections: introduction, organisation, definitions, quality policy and objectives, brief, design packaging, phasing and methodology, authorities and requirements, codes and availability, KPIs, documentation numbering, risk, lessons learned, audits, internal QC stages (SDC, IDC, DSR), activities table. Reference the procedures that govern every technical activity. Number it PRJNUM-PLN-PM-DD REV Z.",
+   "who": "PM",
+   "rec": "PRC-PM-05 (F1)",
+   "ref": "PM-02 §4.2.3; PM-05; PM-08 §4.1.1.1",
+   "when": {
+    "route": "full"
+   }
+  },
+  {
+   "id": "qa-qpapp",
+   "ph": "quality",
+   "t": "Attach the four quality plan appendices",
+   "d": "Risk register, lessons learned register, organisation chart and baseline schedule. Each is valid only at the date of distribution; the latest lives on PCW/PMIS.",
+   "who": "PM",
+   "rec": "PRC-PM-05 (F1) appendices",
+   "ref": "PM-05 (F1) appendices",
+   "when": {
+    "route": "full"
+   }
+  },
+  {
+   "id": "qa-qpsign",
+   "ph": "quality",
+   "t": "Get the quality policy signed by the PD and the plan authorised by the QM",
+   "d": "The PM signs the plan; the QM authorises it for implementation.",
+   "who": "PM / PD / QM",
+   "rec": "PRC-PM-05 (F1) revision table",
+   "ref": "PM-05; PM-02 App. 4 (1.4.2)",
+   "when": {
+    "route": "full"
+   }
+  },
+  {
+   "id": "qa-minor",
+   "ph": "quality",
+   "t": "Agree with the QM, at start-up, to use the Minor Projects procedure",
+   "d": "PM-04 replaces the full quality system only by agreement with the company QM.",
+   "who": "PM / QM",
+   "rec": "PRC-PM-04",
+   "ref": "PM-02 §4.2.3; PM-04 §1",
+   "when": {
+    "route": "minor"
+   }
+  },
+  {
+   "id": "qa-minor2",
+   "ph": "quality",
+   "t": "Make PRC-PM-04 project-specific and fill in its Appendix A",
+   "d": "Add the project number; list the applicable company procedures on the cover page if there are deliverables. Appendix A: scope, authorities and their requirements, codes and availability, DSR required or not, documents in other languages, OC, schedule, risk register, lessons register. PM and QM sign the authorisation record; the PD signs the quality policy.",
+   "who": "PM / QM / PD",
+   "rec": "PRC-PM-04 App. A",
+   "ref": "PM-04 §3.2.3, §3.5, §4",
+   "when": {
+    "route": "minor"
+   }
+  },
+  {
+   "id": "qa-minor3",
+   "ph": "quality",
+   "t": "Set up the checking system for a minor project",
+   "d": "Every deliverable is checked by a competent engineer who isn't the originator; the check copy is marked and initialled. Keep IDC comments until project completion.",
+   "who": "PM",
+   "ref": "PM-04 §3.10",
+   "when": {
+    "route": "minor"
+   }
+  },
+  {
+   "id": "qa-wionly",
+   "ph": "quality",
+   "t": "Prepare a work instruction to replace the quality plan and get QM approval",
+   "d": "Lists the applicable procedures and requirements where quality requirements are limited to budgeting and progress monitoring. Number it PRJNUM-WI-XX.",
+   "who": "PM / QM",
+   "rec": "PRJNUM-WI-01",
+   "ref": "PM-02 §4.2.3",
+   "when": {
+    "route": "wi"
+   }
+  },
+  {
+   "id": "qa-post",
+   "ph": "quality",
+   "t": "Post the approved quality document on the PCW, register it and notify the team",
+   "d": "Post under Project References & Procedures > Manuals and procedures. Distribute to the PD, QM, APC and project GLs. Register it as a PM document in the lead department's document registry.",
+   "who": "PM",
+   "rec": "PCW / document registry",
+   "ref": "PM-02 §4.2.3; PM-05; PM-04 §3.2.3; PM-07 §3.1"
+  },
+  {
+   "id": "qa-dep",
+   "ph": "quality",
+   "t": "Agree each departure from a standard procedure in writing with the QM",
+   "d": "Only for client-specific requirements or where the standard is excessive for the project size. Quality must not be compromised.",
+   "who": "PM / QM",
+   "rec": "Written agreement",
+   "ref": "PM-02 §4.2.3",
+   "when": {
+    "departure": "yes"
+   }
+  },
+  {
+   "id": "qa-wi",
+   "ph": "quality",
+   "t": "Issue a project work instruction for each approved departure",
+   "d": "Number it PRJNUM-WI-XX (e.g. S19070-0100D-WI-01). It must cross-reference the parent procedure and be reviewed and approved by the QM. Post it on the PCW and issue it to the team, copying the QM.",
+   "who": "PM / QM",
+   "rec": "PRJNUM-WI-XX on PCW",
+   "ref": "PM-02 §4.2.3, App. 4 (1.4.4)",
+   "when": {
+    "departure": "yes"
+   }
+  },
+  {
+   "id": "qa-psp",
+   "ph": "quality",
+   "t": "Or make the company procedure project-specific",
+   "d": "Revise it and add the project number in the footer (e.g. S19070-0100D-PRC-EN-02). The QM processes and approves it.",
+   "who": "PM / QM",
+   "rec": "Project-specific procedure",
+   "ref": "PM-02 §4.2.3",
+   "when": {
+    "departure": "yes"
+   }
+  },
+  {
+   "id": "qa-train",
+   "ph": "quality",
+   "t": "Request extra QMS training for the team if needed",
+   "d": "Quality management runs training under PRC-QA-03.",
+   "who": "PM / QM",
+   "ref": "PM-02 §4.2.3"
+  },
+  {
+   "id": "oc-prep",
+   "ph": "quality",
+   "t": "Prepare the project organisation chart (OC)",
+   "d": "Positions and personnel assigned to the project, up to and including the client and any suppliers, all GLs and the APC. Show the revision and date.",
+   "who": "PD / PM",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.4; PM-04 §3.2.4",
+   "tip": {
+    "src": "L4",
+    "text": "Use the chart to settle the PM / functional manager split early: the PM controls project time and cost, each GL controls time, cost and quality of their own sub-tasks, and trade-offs are agreed jointly."
+   }
+  },
+  {
+   "id": "oc-pub",
+   "ph": "quality",
+   "t": "Publish the OC on PMIS",
+   "d": "The team is notified automatically. If the chart isn't generated from PMIS, sign it, include revision and date, post it on the PCW and notify the team.",
+   "who": "PM",
+   "rec": "PMIS / PCW",
+   "ref": "PM-02 §4.2.4, App. 4 (1.4.5)"
+  },
+  {
+   "id": "oc-2pm",
+   "ph": "quality",
+   "t": "Show each PM's responsibilities on the OC",
+   "who": "PM",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.4",
+   "when": {
+    "twopm": "yes"
+   }
+  },
+  {
+   "id": "oc-spec",
+   "ph": "quality",
+   "t": "Include a specification coordinator in the AR team",
+   "d": "Per the Specifications procedure PRC-EN-03.",
+   "who": "PM / AR GL",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.4",
+   "when": {
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "oc-sust",
+   "ph": "quality",
+   "t": "Show the sustainability leader and the sustainability champions on the OC",
+   "d": "PM-02 names the sustainability leader; PM-13 adds the champions of each trade.",
+   "who": "PM",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.4; PM-13 §4.2 note 1",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "oc-bim",
+   "ph": "quality",
+   "t": "Show the BIM team on the OC",
+   "d": "BIM Manager, BIM coordinators and any production / information manager.",
+   "who": "PM",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.4; PM-15/18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "oc-sup",
+   "ph": "quality",
+   "t": "Add the suppliers to the OC",
+   "who": "PM",
+   "rec": "OC",
+   "ref": "PM-10 §2.3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "oc-aware",
+   "ph": "quality",
+   "t": "Make sure every team member knows their project obligations",
+   "who": "PM",
+   "ref": "PM-02 §4.2.4"
+  },
+  {
+   "id": "oc-iface",
+   "ph": "quality",
+   "t": "Prepare an interface overview chart and circulate it to the team",
+   "d": "Shows the interfaces with all external parties, including points of contact.",
+   "who": "PD / PM",
+   "rec": "Interface chart",
+   "ref": "PM-02 §4.2.4",
+   "when": {
+    "interfaces": "yes"
+   }
+  },
+  {
+   "id": "oc-lead",
+   "ph": "quality",
+   "t": "Confirm who leads each component's design",
+   "d": "The AR GL leads the building components and the infrastructure GL leads the infrastructure components: code compliance, SDC, IDC and level of detail before submission to the PM. Overall management stays with the lead department.",
+   "who": "PM / AR GL / infra GL",
+   "ref": "PM-02 §3",
+   "when": {
+    "type": [
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "oc-special",
+   "ph": "quality",
+   "t": "Confirm the ME or EL GL leads the special facility component",
+   "d": "Mechanical GL for sewage pump stations and fuel farms/stations; electrical GL for power plants, substations and data centres. They make sure SDC, IDC and BIM requirements are met before submitting to the PM.",
+   "who": "PM / ME GL / EL GL",
+   "ref": "PM-02 §3",
+   "when": {
+    "special": "yes"
+   }
+  },
+  {
+   "id": "pl-ko",
+   "ph": "plan",
+   "t": "Hold the kick-off meeting to review the scope with the team",
+   "d": "Prepare the minutes, sign and post them on the PCW, and issue them to the trades.",
+   "who": "PM / GLs",
+   "rec": "Kick-off MOM on PCW",
+   "ref": "PM-02 §4.2, App. 4 (1.4.1)",
+   "tip": {
+    "src": "L4",
+    "text": "Use the kick-off to fix the communication channels: who issues instructions, how reviews and approvals flow between disciplines, and how sub-consultants are coordinated."
+   }
+  },
+  {
+   "id": "pl-gw",
+   "ph": "plan",
+   "t": "Raise the groundwater table at kick-off",
+   "d": "Make sure all involved departments use the design water table level guidelines in Appendix 2 (GHCE, WE, S&B and AR interfaces).",
+   "who": "PM",
+   "ref": "PM-02 §4.8, App. 2",
+   "when": {
+    "basement": "yes"
+   }
+  },
+  {
+   "id": "pl-sched",
+   "ph": "plan",
+   "t": "Prepare the baseline schedule with the PD",
+   "d": "Show all key activities and milestones, including the Preliminary and Final DSR and the DDRs where applicable.",
+   "who": "PM / PD",
+   "rec": "Baseline schedule",
+   "ref": "PM-02 §4.2.5; EN-01 §4.4",
+   "tip": {
+    "src": "L9",
+    "text": "Rolling-wave planning: detail only a few weeks ahead and refine as the brief firms up. Build in client review periods and authority approval time so the dates are realistic."
+   }
+  },
+  {
+   "id": "pl-sched-bim",
+   "ph": "plan",
+   "t": "Add a final model-based coordination one week before each submission",
+   "who": "PM",
+   "rec": "Baseline schedule",
+   "ref": "PM-02 §4.2.5",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "pl-sched-pmc",
+   "ph": "plan",
+   "t": "Agree with PMC the time they need to compile the tender documents",
+   "d": "Including non-technical reviews (formatting, headers, footers, presentation) before submission. Agree it per project based on scope and number of deliverables, and show it in the schedule.",
+   "who": "PM / PMC",
+   "rec": "Baseline schedule",
+   "ref": "PM-02 §4.2.5",
+   "when": {
+    "tender": "yes"
+   }
+  },
+  {
+   "id": "pl-sched-sust",
+   "ph": "plan",
+   "t": "Put the certification online-submission dates in the schedule",
+   "d": "The sustainability leader coordinates the dates with you.",
+   "who": "PM / SLD",
+   "rec": "Baseline schedule",
+   "ref": "PM-02 §4.2.5; PM-13 §4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "cert"
+   }
+  },
+  {
+   "id": "pl-sched-post",
+   "ph": "plan",
+   "t": "Sign the baseline schedule and post it on the PCW",
+   "d": "Show the revision code and date. Notify the AD, PD, GLs, APC and QM.",
+   "who": "PM",
+   "rec": "PCW",
+   "ref": "PM-02 §4.2.5"
+  },
+  {
+   "id": "pl-planner",
+   "ph": "plan",
+   "t": "Get a PMC planner allocated",
+   "d": "The planner updates the schedule, flags foreseen delays and proposes mitigation.",
+   "who": "PM / PMC",
+   "ref": "PM-02 §4.2.5",
+   "when": {
+    "mega": "yes"
+   }
+  },
+  {
+   "id": "pl-noschd",
+   "ph": "plan",
+   "t": "If no schedule can be built, tell the team the expected completion date and the contractual limit for actioning submittals",
+   "who": "PM",
+   "ref": "PM-11 §2.2",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "pl-num",
+   "ph": "plan",
+   "t": "Set the documentation numbering system and instruct the team",
+   "d": "Documents: PRJNUM-PH-BBB-CC-DD REV Z (PH = CD/PD/DD/FD/TD; BBB = document type such as SPC, BOQ, RPT, MOM; CC = department). Drawings: PRJNUM-PH-C-XNN, or PRJNUM-PH-C-NNN without a sheet type. Client contractual numbering takes precedence. Record it in the quality plan §11.",
+   "who": "PM / QM",
+   "rec": "Quality plan §11",
+   "ref": "PM-08 §1, §4.1"
+  },
+  {
+   "id": "pl-numwi",
+   "ph": "plan",
+   "t": "Issue a QM-approved work instruction for any numbering that differs from PRC-PM-08",
+   "d": "Also give the team your instructions on revision type (alphabetical or numeric), the Description attribute and a header/footer sample. PM-08 has no \"WI\" document type, so agree the WI's own number with the QM.",
+   "who": "PM / QM",
+   "rec": "Project WI",
+   "ref": "PM-08 §3; EN-02 §4.4; EN-01 CKL-03",
+   "when": {
+    "departure": "yes"
+   }
+  },
+  {
+   "id": "pl-codes",
+   "ph": "plan",
+   "t": "Authorise the design codes and standards",
+   "d": "GLs pick the international and country codes for their departments using the PCW tool. Approve the applicable ones and reject unauthorised or superseded codes, giving the reason. Engineers may use only the codes you authorised.",
+   "who": "GLs / PM",
+   "rec": "PCW codes tool",
+   "ref": "PM-02 §4.2.7; EN-01 §4.3",
+   "tip": {
+    "src": "L6",
+    "text": "Include the authority and permit codes, not just design codes: the consultant is expected to design to the requirements of every authority having jurisdiction."
+   }
+  },
+  {
+   "id": "pl-codes-lib",
+   "ph": "plan",
+   "t": "Send codes missing from the country codes database to the library unit",
+   "who": "GLs / PM",
+   "ref": "PM-02 §4.2.7"
+  },
+  {
+   "id": "pl-risk",
+   "ph": "plan",
+   "t": "Have the GLs enter their department risks in the PCW risk tool",
+   "d": "At start-up. Categories: technical, organisational, project management, HSSE, information security, other.",
+   "who": "GLs",
+   "rec": "PCW risk tool",
+   "ref": "PM-02 §4.9; PM-14 §3"
+  },
+  {
+   "id": "pl-risk2",
+   "ph": "plan",
+   "t": "Review and approve the GLs' risks and add the project management risks",
+   "d": "Each risk: cause, consequence, probability and impact (1–5), rating, owner, mitigation and residual rating.",
+   "who": "PM",
+   "rec": "PCW risk tool",
+   "ref": "PM-14 §2, §3.1–3.3"
+  },
+  {
+   "id": "pl-risk3",
+   "ph": "plan",
+   "t": "Publish the risk register and distribute it",
+   "d": "Generate it under the \"published register\" tab. Send to the PD, AD, APC and GLs and attach it to the quality plan or PM-04.",
+   "who": "PM",
+   "rec": "Published risk register",
+   "ref": "PM-14 §3"
+  },
+  {
+   "id": "pl-risk4",
+   "ph": "plan",
+   "t": "Get the PD or the client to accept any residual risk that stays high",
+   "who": "PD / client",
+   "rec": "Risk register",
+   "ref": "PM-14 §2, §3.4"
+  },
+  {
+   "id": "pl-ll-search",
+   "ph": "plan",
+   "t": "Search the PMIS lessons-learned database with the GLs",
+   "d": "List the valid lessons under \"lessons learned from previous projects\" on PMIS and share the relevant ones with the team.",
+   "who": "PM / GLs",
+   "rec": "PMIS",
+   "ref": "PM-16 §2.2, §3",
+   "tip": {
+    "src": "L10",
+    "text": "Knowledge leaves with people. Pull the lessons into actions the team will actually see (risk register lines, checklist items) rather than leaving them in a list."
+   }
+  },
+  {
+   "id": "pl-ll-reg",
+   "ph": "plan",
+   "t": "Set up the lessons learned register",
+   "d": "Revision control is alphabetical (A, B, C) for internal issues and numerical (0, 1, 2) for external issues.",
+   "who": "PM",
+   "rec": "PRC-PM-16 (F1)",
+   "ref": "PM-02 §4.2; PM-16 §3"
+  },
+  {
+   "id": "pl-me",
+   "ph": "plan",
+   "t": "Give the ME GL the schedule, road map and latest country code",
+   "d": "Where there are no local codes, agree the codes and employer guidelines with the ME GL, the area office and fire & life safety.",
+   "who": "PM → ME GL",
+   "rec": "PRC-EN-01 (CKL-09)",
+   "ref": "EN-01 CKL-09 A.2"
+  },
+  {
+   "id": "bm-mgr",
+   "ph": "bimset",
+   "t": "Assign the project BIM Manager",
+   "d": "From the lead trade, with at least one BIM project of experience.",
+   "who": "PM",
+   "rec": "PMIS / OC",
+   "ref": "PM-15 §4.1; PM-18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-dpu",
+   "ph": "bimset",
+   "t": "Agree whether the Lead BIM Manager comes from the Digital Practice Unit",
+   "d": "An option for large, complex or advanced-BIM building projects.",
+   "who": "PM",
+   "ref": "PM-15 §4.1 notes 2–3",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "bimlarge": "yes",
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "bm-prod",
+   "ph": "bimset",
+   "t": "Assign a production manager (and an information manager on building projects)",
+   "d": "For big-scale projects, or where the client's EIR asks for them.",
+   "who": "PM / BIM Manager",
+   "ref": "PM-15 note 1; PM-18 note 1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "bimlarge": "yes"
+   }
+  },
+  {
+   "id": "bm-ar",
+   "ph": "bimset",
+   "t": "Assign an Architecture BIM Manager for the building components",
+   "d": "PM-15 governs the building components. The TR Lead BIM Manager and the AR BIM Manager manage the interface together and sign a joint BEP.",
+   "who": "PM",
+   "ref": "PM-18 §3, note 6",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": "transport_bld"
+   }
+  },
+  {
+   "id": "bm-dpu2",
+   "ph": "bimset",
+   "t": "Ask the DPU to assign the Lead BIM Specialist and the BIM specialists team",
+   "who": "PM",
+   "rec": "Email",
+   "ref": "PM-15 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "bm-ko",
+   "ph": "bimset",
+   "t": "Hold the BIM kick-off meeting",
+   "d": "Introduce the scope, milestones and EIR to the team (and the BIM specialists on building projects). Issue minutes.",
+   "who": "PM",
+   "rec": "MOM",
+   "ref": "PM-15 §4.1; PM-18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-noeir",
+   "ph": "bimset",
+   "t": "Tell the team Dar BIM standards apply in the absence of a client EIR",
+   "who": "PM / BIM Manager",
+   "ref": "PM-15 note 5; PM-18 note 4",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "eir": "no"
+   }
+  },
+  {
+   "id": "bm-comp",
+   "ph": "bimset",
+   "t": "Define the project composition type",
+   "d": "Building: single building, multi-building or campus. Transportation: highway, road, airport/heliport, rail or port.",
+   "who": "PM",
+   "rec": "Email",
+   "ref": "PM-15 §4.1; PM-18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-cde",
+   "ph": "bimset",
+   "t": "Ask IT to set up the project CDE and install the BIM tools",
+   "d": "Shared drive and PCW folder structure per project category; tools such as BIMcollab.",
+   "who": "PM / IT",
+   "rec": "Shared drive / PCW",
+   "ref": "PM-15 §4.1; PM-18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-train",
+   "ph": "bimset",
+   "t": "Arrange BIM training or awareness sessions if needed",
+   "d": "Revit, Civil3D, Navisworks, BIMcollab, the BEP, iLOD, roles and folder structure, per the Dar training plan.",
+   "who": "PM",
+   "rec": "HR training record",
+   "ref": "PM-15 note 6; PM-18 note 5",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-input",
+   "ph": "bimset",
+   "t": "Give the BIM Manager your input on BIM requirements and standards",
+   "d": "Model breakdown strategy, naming and presentation standards, title block.",
+   "who": "PM / GLs",
+   "rec": "BEP",
+   "ref": "PM-15 §4.1; PM-18 §4.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-bep",
+   "ph": "bimset",
+   "t": "Develop the BIM Execution Plan with the BIM Manager",
+   "d": "On the PRC-PM-15 (F1) template (also used for transportation). Includes the RACI, a supplier EIR if there are suppliers, and the TIDPs combined into the MIDP. It is read together with the quality plan.",
+   "who": "BIM Manager / PM",
+   "rec": "PRC-PM-15 (F1)",
+   "ref": "PM-02 §4.2; PM-15 §4.2; PM-18 §4.2",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-sign",
+   "ph": "bimset",
+   "t": "Check and sign the BEP, then get the PD's approval",
+   "d": "BIM Manager signs \"By\" → you request changes until it's final and sign \"Checked by\" (on building projects with the Lead BIM Specialist) → PD signs \"Approved by\".",
+   "who": "BIM Manager / PM / PD",
+   "rec": "BEP signatures",
+   "ref": "PM-15 §4.2; PM-18 §4.2",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-issue",
+   "ph": "bimset",
+   "t": "Post the BEP on the PCW, issue it and register it",
+   "d": "Issue to the team copying the PD and QM; register it in the document registry. You must be copied whenever the BIM Manager issues a revision. Keep it current: it is a living document.",
+   "who": "PM / BIM Manager",
+   "rec": "PCW / document registry",
+   "ref": "PM-15 §4.2 note 7; PM-15 (F1) §6.1",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "bm-infra",
+   "ph": "bimset",
+   "t": "Confirm with the QM which BIM procedure applies",
+   "d": "PM-15 covers building and campus projects and PM-18 transportation; neither names other infrastructure.",
+   "who": "PM / QM",
+   "ref": "PM-15 §2; PM-18 §2",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": "infra"
+   }
+  },
+  {
+   "id": "bm-sup",
+   "ph": "bimset",
+   "t": "Give suppliers PCW access and the supplier EIR",
+   "d": "Suppliers upload to their PCW directory; external files are quarantined (Shared_Ext) until the assigned trade checks them.",
+   "who": "BIM Manager / PM",
+   "rec": "PCW",
+   "ref": "PM-15/18 §4.2, §7",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "su-level",
+   "ph": "sustset",
+   "t": "Review the scope of work and confirm the sustainability level with the client",
+   "d": "§4.1 driven by Dar's planning and concept, §4.2 goals set by the client, or §4.3 certification.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-13 §4",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-waiver",
+   "ph": "sustset",
+   "t": "Ask the Sustainability Director to waive the sustainability requirements",
+   "d": "PM-13 has no \"not applicable\" option, so the requirements stay unless they're waived. Give a valid justification (e.g. not in the scope of work); the notification goes to the SD for review. If the SD doesn't accept it, change the sustainability answer to §4.1: it applies wherever Dar develops the planning and concept design.",
+   "who": "PM → SD",
+   "ref": "PM-13 §4",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "waiver"
+   },
+   "rec": "Waiver request / SD decision"
+  },
+  {
+   "id": "su-sld",
+   "ph": "sustset",
+   "t": "Make sure the Sustainability Director appoints the sustainability leader (SLD)",
+   "d": "At project initiation.",
+   "who": "SD",
+   "ref": "PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-brief",
+   "ph": "sustset",
+   "t": "Brief the SLD and tell the team the sustainability goals",
+   "d": "Exact location, expected area programme, client requirements and anything else that affects sustainability.",
+   "who": "PM",
+   "ref": "PM-13 §4.1, §4.2",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-kpi",
+   "ph": "sustset",
+   "t": "Agree the goals and KPIs the SLD proposes",
+   "d": "The SLD then assigns the sustainability coordinator (SCO).",
+   "who": "PM / SLD",
+   "ref": "PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-champ",
+   "ph": "sustset",
+   "t": "Make sure every trade has a sustainability champion (SC)",
+   "d": "The SCO coordinates with the GLs to assign them; each SC needs experience of at least one relevant sustainable project.",
+   "who": "SCO / GLs; PM ensures",
+   "rec": "OC",
+   "ref": "PM-02 §4.2.1; PM-13 §4.2–4.3, note 1",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-char",
+   "ph": "sustset",
+   "t": "Hold the integrated design charrette with all parties",
+   "d": "After project initiation, led by the SLD with you.",
+   "who": "SLD / PM",
+   "ref": "PM-13 §4.2",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-kpipcw",
+   "ph": "sustset",
+   "t": "Make sure the KPI list is registered on the PCW",
+   "who": "SCO",
+   "rec": "PCW",
+   "ref": "PM-13 §4.2",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "su-ckl",
+   "ph": "sustset",
+   "t": "Make sure the coordinated certification checklist is prepared and agreed",
+   "d": "The SLD gives the SCO a tentative checklist; the SCO coordinates it with the champions and assigns responsibilities. Number it per PRC-PM-08 with CKL and SUS.",
+   "who": "SLD / SCO / SCs",
+   "rec": "Certification checklist",
+   "ref": "PM-13 §4.3 note 4",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "cert"
+   }
+  },
+  {
+   "id": "su-cost",
+   "ph": "sustset",
+   "t": "Make sure the certification cost has been assessed",
+   "d": "By the relevant department or a cost consultant, in line with the contract.",
+   "who": "SLD",
+   "ref": "PM-13 §4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "cert"
+   }
+  },
+  {
+   "id": "su-tr",
+   "ph": "sustset",
+   "t": "Agree the TR / sustainability lead and support split",
+   "d": "Per the App. 2.6 matrix: stakeholder engagement, alignment, earthworks balance, multimodal, climate resilience, noise, micro-simulation, KPIs. Infrastructure certifications (Envision, BREEAM, SITES) are led by the sustainability team.",
+   "who": "TR GL / SUS team",
+   "ref": "PM-13 App. 2.6",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ],
+    "type": [
+     "transport",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "dr-app",
+   "ph": "sustset",
+   "t": "Record on PMIS whether DRD applies",
+   "d": "Based on the categories and metrics identified at initiation. Once listed as applicable, make sure the DRD Lead and DRD Interface Manager are notified.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-19 §4.1, App. 1",
+   "topic": "DRD",
+   "when": {
+    "drd": [
+     "yes",
+     "waiver"
+    ]
+   }
+  },
+  {
+   "id": "dr-waiver",
+   "ph": "sustset",
+   "t": "Request the DRD waiver with a valid justification",
+   "d": "The PD approves or rejects it on PMIS.",
+   "who": "PM → PD",
+   "rec": "PMIS",
+   "ref": "PM-19 §4.1, App. 1",
+   "topic": "DRD",
+   "when": {
+    "drd": "waiver"
+   }
+  },
+  {
+   "id": "dr-dss",
+   "ph": "sustset",
+   "t": "Engage Digital Solutions & Services (DSS) for the digital scope",
+   "who": "PM",
+   "ref": "PM-19 §3",
+   "topic": "DRD",
+   "when": {
+    "digital": "yes"
+   }
+  },
+  {
+   "id": "ex-prog",
+   "ph": "exec",
+   "t": "Make sure each GL Main reports progress on D365 every week",
+   "d": "Progress %, abortive work, problems and proposed solutions, foreseen delays, comments and team. Then approve the departmental progress and complete the PM progress report.",
+   "who": "GLs Main / PM",
+   "rec": "D365",
+   "ref": "PM-02 §4.3, App. 4 (2.1.1)",
+   "freq": "Weekly",
+   "tip": {
+    "src": "L1 · L2",
+    "text": "Read CPI and SPI together: earned value compares the budget of work actually done against both the plan and the hours spent, so you see a slip before it shows in the dates."
+   }
+  },
+  {
+   "id": "ex-status",
+   "ph": "exec",
+   "t": "Reconfirm the status and dates of every deliverable in the WBS",
+   "d": "Not Started, In Process, On Hold, Submitted, Approved as noted, Approved. Progress can't be reported on Not Started or On Hold; Approved counts as 100%.",
+   "who": "PM",
+   "rec": "D365 WBS",
+   "ref": "PM-02 §4.3",
+   "freq": "Weekly"
+  },
+  {
+   "id": "ex-dash",
+   "ph": "exec",
+   "t": "Review the PMIS dashboard: CPI, SPI and EAC",
+   "who": "PM / PD / AD / APC",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.3"
+  },
+  {
+   "id": "ex-supprog",
+   "ph": "exec",
+   "t": "Update the progress of involved suppliers",
+   "d": "Under project initiation / firms and suppliers.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "ex-time",
+   "ph": "exec",
+   "t": "Make sure GLs approve team timecards weekly",
+   "d": "Block timecards by phase, task, office or department where needed.",
+   "who": "GLs / PM",
+   "rec": "PMIS / D365",
+   "ref": "PM-02 §4.2.1",
+   "freq": "Weekly"
+  },
+  {
+   "id": "ex-ddr",
+   "ph": "exec",
+   "t": "Hold the design development reviews (DDRs) and issue minutes",
+   "d": "Call all or part of the team as scheduled; the minutes are the record.",
+   "who": "PM",
+   "rec": "DDR MOM",
+   "ref": "PM-02 §4.8",
+   "when": {
+    "process": "cadd"
+   }
+  },
+  {
+   "id": "ex-ddr-bimb",
+   "ph": "exec",
+   "t": "Hold model-based DDRs every week",
+   "d": "Cover the coordination requirements of PRC-PM-15. Issue minutes.",
+   "who": "PM",
+   "rec": "DDR MOM",
+   "ref": "PM-02 §4.8; PM-15 §3, §4.3",
+   "freq": "Weekly",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "building",
+     "building_ext"
+    ]
+   }
+  },
+  {
+   "id": "ex-ddr-bimt",
+   "ph": "exec",
+   "t": "Hold model-based DDRs every two weeks",
+   "d": "Cover the coordination requirements of PRC-PM-18 (and PM-15 for the building components). Issue minutes.",
+   "who": "PM",
+   "rec": "DDR MOM",
+   "ref": "PM-02 §4.8; PM-18 §3, §4.3",
+   "freq": "Bi-weekly",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "transport",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ex-freeze",
+   "ph": "exec",
+   "t": "Freeze design changes one week before each submission",
+   "d": "From schematic design onwards. Put the whole team's effort into final model-based coordination and clash resolution.",
+   "who": "PM / GLs",
+   "ref": "PM-02 §4.8; PM-15/18 §4.3",
+   "freq": "Each submission",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "ex-clash",
+   "ph": "exec",
+   "t": "Make sure the federated model and clash detection run at the BEP frequency",
+   "d": "Federated model maintained as trade models are published; clash detection per the clash matrix; issues raised in BIMcollab and resolved iteratively.",
+   "who": "BIM Manager / coordinators; PM / GLs resolve",
+   "rec": "Clash report / BIMcollab",
+   "ref": "PM-15/18 §4.3",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "ex-bimqa",
+   "ph": "exec",
+   "t": "Make sure model QA and BIM SDC are done and the SDC covers signed",
+   "d": "Model check reports count as the SDC reports. The GL and BIM coordinator sign the SDC cover and post it on the PCW.",
+   "who": "GLs / BIM coordinators",
+   "rec": "PRC-PM-15 (F3) / PRC-PM-18 (F1)",
+   "ref": "PM-15/18 §4.3 note 8",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "ex-bimcomp",
+   "ph": "exec",
+   "t": "Follow up the monthly BIM compliance review",
+   "d": "The reviewer signs the compliance report and sends it to the BIM Manager for corrective action; it's posted on the PCW.",
+   "who": "Lead BIM Specialist / BIM Manager",
+   "rec": "Compliance report",
+   "ref": "PM-15 §4.3",
+   "freq": "Monthly",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ex-bimrisk",
+   "ph": "exec",
+   "t": "Add BIM risks and lessons to the project registers",
+   "d": "The BIM Manager and coordinators report them to you and the GLs.",
+   "who": "PM / GLs",
+   "rec": "Risk / lessons registers",
+   "ref": "PM-15/18 §5–6",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "ex-park",
+   "ph": "exec",
+   "t": "Make sure AR and TR apply the transportation requirements for buildings with parking",
+   "d": "Entrance and exit geometry, vehicle types, ramps, stalls, aisles, clearances, gradients, signage, entries and booths, pedestrian capacity and traffic simulation. TR attends coordination meetings and continues IDC through preliminary and final design.",
+   "who": "PM / AR GL / TR GL",
+   "ref": "PM-02 §4.8, App. 3",
+   "when": {
+    "parking": "yes"
+   }
+  },
+  {
+   "id": "ex-tis",
+   "ph": "exec",
+   "t": "Have TR arrange a traffic impact study (TIS) at concept stage",
+   "d": "Appendix 3 requires a TIS for all new buildings regardless of size, following local requirements.",
+   "who": "TR GL",
+   "ref": "PM-02 App. 3 item 1",
+   "when": {
+    "type": [
+     "building",
+     "building_ext"
+    ]
+   }
+  },
+  {
+   "id": "ex-ped",
+   "ph": "exec",
+   "t": "Have TR prepare pedestrian modelling during concept design",
+   "who": "TR GL",
+   "ref": "PM-02 App. 3 item 6",
+   "when": {
+    "pedestrian": "yes"
+   }
+  },
+  {
+   "id": "ex-comp",
+   "ph": "exec",
+   "t": "Make sure TR prepares the composite drawings",
+   "d": "Combining all related departments (street lighting, crossings and ramps, trees, signs, utilities). They're subject to IDC and DSR and signed by reviewers and designers.",
+   "who": "TR GL",
+   "rec": "Composite drawings",
+   "ref": "EN-02 §4.5; PM-05 (F1) §15.3",
+   "when": {
+    "type": [
+     "transport",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ex-sumeet",
+   "ph": "exec",
+   "t": "Hold the sustainability meeting at planning / concept stage",
+   "d": "The SCO attends with all parties and makes sure the GLs deliver. Calls or emails can replace it.",
+   "who": "SCO / PM",
+   "ref": "PM-13 §4.1 note 3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "driven"
+   }
+  },
+  {
+   "id": "ex-sumeet2",
+   "ph": "exec",
+   "t": "Hold a sustainability meeting at each design phase",
+   "d": "Checks progress against targets. You may agree to skip it for a stage with no changes affecting sustainability; calls or emails can replace it.",
+   "who": "SLD / PM / SCO",
+   "ref": "PM-13 §4.2 notes 2–3",
+   "freq": "Each phase",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "ex-suan",
+   "ph": "exec",
+   "t": "Make sure the mandatory sustainability analyses are done",
+   "d": "AR: climate and microclimate, energy, daylight, thermal comfort, onsite renewables. PUD/landscape: also outdoor thermal comfort, water demand and supply, stormwater. Depth varies by stage.",
+   "who": "SUS team / trades",
+   "rec": "Analysis report",
+   "ref": "PM-13 §4.1, App. 2.1, 2.5",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ],
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ex-sukpi",
+   "ph": "exec",
+   "t": "Make sure the KPI tracker is completed each design phase",
+   "d": "Champions submit it to the SCO and report changes.",
+   "who": "SCs / SCO",
+   "rec": "KPI tracker",
+   "ref": "PM-13 §4.2",
+   "freq": "Each phase",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "ex-sucert",
+   "ph": "exec",
+   "t": "Follow the online certification submissions",
+   "d": "The SCO follows up the team and champions; the SLD briefs you on status.",
+   "who": "SCO / SLD",
+   "ref": "PM-13 §4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "cert"
+   }
+  },
+  {
+   "id": "ex-drd",
+   "ph": "exec",
+   "t": "Make sure the DRD checklist is filled on the PCW before the first submission",
+   "d": "Filled by the departmental GLs and validated by the DRD champions; keep it updated throughout.",
+   "who": "GLs / DRD champions",
+   "rec": "DRD checklist on PCW",
+   "ref": "PM-19 §4.2",
+   "topic": "DRD",
+   "when": {
+    "drd": "yes"
+   }
+  },
+  {
+   "id": "ex-delay",
+   "ph": "exec",
+   "t": "Investigate every schedule delay and agree mitigation with the PD",
+   "d": "Inform the SL, AD and APC.",
+   "who": "PM / PD",
+   "ref": "PM-02 §4.2.5"
+  },
+  {
+   "id": "ex-rebase",
+   "ph": "exec",
+   "t": "Revise the baseline schedule only when allowed, and redistribute it",
+   "d": "Only for a change to the contracted scope, or when actual progress has drifted so far that the baseline is no longer meaningful. Upload each new revision to the PCW, copying the AD, PD, APC and QM.",
+   "who": "PM",
+   "rec": "PCW",
+   "ref": "PM-02 §4.2.5"
+  },
+  {
+   "id": "ex-update",
+   "ph": "exec",
+   "t": "Keep the control documents current",
+   "d": "Update when needed: organisation chart, work instructions, project schedule, quality plan (numbering section included), risk register, lessons learned register.",
+   "who": "PM",
+   "ref": "PM-02 App. 4 (2.1.2); PM-05 (F1) §2, §11"
+  },
+  {
+   "id": "ex-codes",
+   "ph": "exec",
+   "t": "Keep the design codes list reviewed and updated",
+   "who": "PM / GLs",
+   "rec": "PCW codes tool",
+   "ref": "PM-02 §4.2.7"
+  },
+  {
+   "id": "ex-risk",
+   "ph": "exec",
+   "t": "Review and re-publish the risk register at each phase end or new risk",
+   "d": "Redistribute it to the PD, AD, APC and GLs. Tick \"show in client report\" for any risks you share with the client.",
+   "who": "PM",
+   "rec": "PCW risk register",
+   "ref": "PM-02 §4.9; PM-14 §3",
+   "freq": "Each phase"
+  },
+  {
+   "id": "ex-ll",
+   "ph": "exec",
+   "t": "Identify lessons learned with the GLs at the end of each phase",
+   "d": "Log them in the register and track their action plans. Schedule a lessons learned workshop if one is needed. Liaise with the area manager/coordinator to collect lessons throughout.",
+   "who": "PM / GLs",
+   "rec": "PRC-PM-16 (F1)",
+   "ref": "PM-16 §2.2, §3",
+   "freq": "Each phase"
+  },
+  {
+   "id": "ex-corr",
+   "ph": "exec",
+   "t": "Sign the correspondence to the client and area manager",
+   "d": "Every outgoing item carries the project number and a reference. Contractual and schedule communications are copied to you.",
+   "who": "PM",
+   "rec": "PRC-PM-07 (F1e), (F2e)",
+   "ref": "PM-07 §3.4–3.5"
+  },
+  {
+   "id": "ex-mom",
+   "ph": "exec",
+   "t": "Issue minutes and transmittals on the project forms",
+   "d": "Minutes go to all attendees promptly and become final if there are no comments. Transmittals are used for information, approval, comment or IDC.",
+   "who": "PM / originator",
+   "rec": "PRC-PM-07 (F6), (F7)",
+   "ref": "PM-07 §3.4"
+  },
+  {
+   "id": "ex-efs",
+   "ph": "exec",
+   "t": "Make sure the team files email through EFS and submits deliverables through the PCW",
+   "who": "PM / GLs",
+   "rec": "EFS / PCW",
+   "ref": "PM-07 §2.1, §2.4, §3.4"
+  },
+  {
+   "id": "ex-car",
+   "ph": "exec",
+   "t": "Close any QM audit findings (CARs) within the allocated time",
+   "d": "The QM audits the project to its audit schedule; rectify each CAR and prevent recurrence.",
+   "who": "PM",
+   "rec": "CAR (PRC-QA-06)",
+   "ref": "PM-05 (F1) §14",
+   "when": {
+    "route": "full"
+   }
+  },
+  {
+   "id": "ex-qprob",
+   "ph": "exec",
+   "t": "Copy the QM on quality problems",
+   "d": "For example lack of response from other departments or inadequate checking.",
+   "who": "PM",
+   "ref": "PM-02 §4.12"
+  },
+  {
+   "id": "ex-compl",
+   "ph": "exec",
+   "t": "Bring anything that may be a customer complaint to the AD/AM",
+   "who": "PM",
+   "ref": "PM-02 §4.11"
+  },
+  {
+   "id": "ex-pend",
+   "ph": "exec",
+   "t": "Set the project status on D365 when work pauses",
+   "d": "Pending for short or review periods; On Hold when long inactivity is expected.",
+   "who": "PM",
+   "rec": "D365",
+   "ref": "PM-02 App. 4 (2.3)"
+  },
+  {
+   "id": "ck-sdc",
+   "ph": "check",
+   "t": "Make sure each GL completes single departmental checking",
+   "d": "The originating department's GL checks work definition, methods, accuracy, document quality and conflicts. Where a department has only one specialist engineer, the DD, HOD or a nominee checks.",
+   "who": "GLs",
+   "ref": "EN-01 §4.4.1",
+   "freq": "Each submission"
+  },
+  {
+   "id": "ck-ckl",
+   "ph": "check",
+   "t": "Collect the signed SDC checklists and the deliverables quality checklist",
+   "d": "One single departmental checklist per department (CKL-01, CKL-04 to CKL-14 by trade) and CKL-03 from the PE/A for each submission, submitted with the deliverables and kept on the PCW.",
+   "who": "GLs / PE → PM",
+   "rec": "PRC-EN-01 (CKL-01, 03–14)",
+   "ref": "EN-01 §4.4.1; PM-05 (F1) §15.1",
+   "freq": "Each submission"
+  },
+  {
+   "id": "ck-moist",
+   "ph": "check",
+   "t": "Get the moisture control checklist signed by the AR and ME GLs",
+   "d": "At preliminary design and at final design; the AR GL submits it to you.",
+   "who": "AR GL / ME GL → PM",
+   "rec": "PRC-EN-01 (CKL-02)",
+   "ref": "EN-01 §4.4.1",
+   "when": {
+    "moisture": "yes"
+   }
+  },
+  {
+   "id": "ck-idc",
+   "ph": "check",
+   "t": "Make sure every interfacing document gets inter-departmental checking (IDC)",
+   "d": "To the minimum IDC requirements declared at initiation. IDC is held at least once before the final design submission. Specs, BOQs, MoM and manuals use the IDC table of contents and signature cover page; drawings are marked up and re-issued at a new revision.",
+   "who": "PE/A / GLs",
+   "rec": "IDC TOC / PCW / registers",
+   "ref": "EN-01 §4.4.2"
+  },
+  {
+   "id": "ck-idcb",
+   "ph": "check",
+   "t": "Run IDC before the schematic / preliminary submission as well",
+   "who": "PE/A / GLs",
+   "ref": "EN-01 §4.4.2 note 1",
+   "when": {
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ck-idcc",
+   "ph": "check",
+   "t": "Make sure IDC comments are closed out and the evidence is on the PCW",
+   "d": "Each comment is marked implemented or discarded; the GL initials discarded ones with the reason. The PCW holds the email to reviewers and their reply. Keep originals until project completion.",
+   "who": "PE/A / GLs",
+   "rec": "PCW",
+   "ref": "EN-01 §4.4.2 notes 2–8; PM-05 (F1) §15.2"
+  },
+  {
+   "id": "ck-bimidc",
+   "ph": "check",
+   "t": "Make sure BIM IDC is done at least once per phase and the IDC covers signed",
+   "d": "Clash detection and BIMcollab reports count as the IDC reports. GLs state why any issue is pending; the BIM Manager agrees an action plan, signs, posts on the PCW and informs you.",
+   "who": "BIM Manager / GLs",
+   "rec": "PRC-PM-15 (F2) / PRC-PM-18 (F2)",
+   "ref": "PM-15/18 §4.3 note 9",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "ck-bimqc",
+   "ph": "check",
+   "t": "Start BIM QC before each client submission",
+   "d": "Email the BIM QC team and share the BEP and models. Required at least once per design phase before submission, even if the client wants no model.",
+   "who": "PM / BIM Manager",
+   "rec": "Email",
+   "ref": "PM-15 §4.4",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ck-bimqc2",
+   "ph": "check",
+   "t": "Check the BIM QC summary report, close its issues and sign F4",
+   "d": "Inform the GLs and make sure every issue is resolved before final submission. F4 is signed by QC, the BIM Manager and you, posted on the PCW and issued for DSR.",
+   "who": "PM / BIM Manager",
+   "rec": "PRC-PM-15 (F4)",
+   "ref": "PM-15 §4.4",
+   "topic": "BIM",
+   "when": {
+    "process": "bim",
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ck-dsrscope",
+   "ph": "check",
+   "t": "Request the DSR and define its scope",
+   "d": "Send the full set of drawings and documents with the document list. The PD/PM assigns the review team leader, who assigns reviewers from the related departments. Schedule it with the team leader.",
+   "who": "PM / PD / RTL",
+   "rec": "PRC-EN-07",
+   "ref": "EN-01 App. 1; PM-05 (F1) §15.3"
+  },
+  {
+   "id": "ck-predsr",
+   "ph": "check",
+   "t": "Make sure everything is checked and IDC'd before the DSR starts",
+   "d": "The checker verifies IDC comments were incorporated. EL/TL and ME single departmental checklists must be with the DSR reviewers before it starts.",
+   "who": "GLs / checkers",
+   "ref": "EN-01 §4.4.1, §4.5"
+  },
+  {
+   "id": "ck-dsrx",
+   "ph": "check",
+   "t": "Add the final-DSR extras to the package",
+   "d": "BIM model reports and QC summary for BIM projects; the DRD checklist validated by each champion for DRD projects; signed composite drawings for transportation.",
+   "who": "PM / GLs",
+   "rec": "DSR package",
+   "ref": "PM-05 (F1) §15.3; PM-19 §4.2",
+   "when": {
+    "any": [
+     {
+      "process": "bim"
+     },
+     {
+      "drd": "yes"
+     },
+     {
+      "type": [
+       "transport",
+       "transport_bld"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "ck-dsr",
+   "ph": "check",
+   "t": "Hold the preliminary and final design and safety reviews (DSR)",
+   "d": "The review team leader issues the DRARs and DSR report to you. Close the DRARs and send the compiled report to the PD and QM. At preliminary DSR, minutes alone are enough.",
+   "who": "RTL / PM",
+   "rec": "DSR report / DRARs / MOM",
+   "ref": "PM-02 §4.8; EN-01 App. 1",
+   "tip": {
+    "src": "L8",
+    "text": "Synthesise the review the way the client's reviewer will: complete against the contract list, compliant with regulations, consistent with the client's criteria, at the right level of detail for the stage, and coordinated across disciplines."
+   }
+  },
+  {
+   "id": "ck-sustckl",
+   "ph": "check",
+   "t": "Make sure the certification checklist is signed and issued each phase",
+   "d": "Champions complete and sign, the SCO reviews and signs, the SLD signs; the SCO posts it on the PCW copying you and the SLD.",
+   "who": "SCs / SCO / SLD",
+   "rec": "PCW / document registry",
+   "ref": "PM-13 §4.3",
+   "freq": "Each phase",
+   "topic": "Sustainability",
+   "when": {
+    "sust": "cert"
+   }
+  },
+  {
+   "id": "ck-sustsdc",
+   "ph": "check",
+   "t": "Make sure trade reports and specs carry their sustainability content",
+   "d": "Each trade report has a Sustainability Aspirations section; specifications carry the SUS requirements; sustainability items are recommended in the SDC checklists.",
+   "who": "GLs / SUS team",
+   "ref": "PM-13 App. 2.1–2.5",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ],
+    "type": [
+     "building",
+     "building_ext",
+     "transport_bld"
+    ]
+   }
+  },
+  {
+   "id": "ck-drddsr",
+   "ph": "check",
+   "t": "Make sure each DRD champion completes the final checklist review at DSR",
+   "d": "Submitted to the DRD Lead and Interface Manager. Validate the DRD status with the Interface Manager.",
+   "who": "DRD champions / PM",
+   "rec": "DRD checklist",
+   "ref": "PM-19 §4.2, App. 1",
+   "topic": "DRD",
+   "when": {
+    "drd": "yes"
+   }
+  },
+  {
+   "id": "ch-log",
+   "ph": "change",
+   "t": "Log every design change request in the change log on the PCW",
+   "d": "From any stakeholder. The PD reviews each request.",
+   "who": "PM / PD",
+   "rec": "Change log on PCW",
+   "ref": "PM-02 App. 4 (2.2)",
+   "tip": {
+    "src": "L5",
+    "text": "For every change ask three questions before you agree: what exactly does it involve, what does it do to the design schedule and fees, and is there a viable solution? Filter out unnecessary changes with the functional managers."
+   }
+  },
+  {
+   "id": "ch-impact",
+   "ph": "change",
+   "t": "Get each GL's man-hour and schedule impact for the change",
+   "d": "When you instruct a change, the GLs review its impact and inform you (PRC-EN-09). Checking of the revised design can be limited to the change and associated documents.",
+   "who": "GLs → PM",
+   "ref": "EN-01 §4.6–4.7"
+  },
+  {
+   "id": "ch-pd",
+   "ph": "change",
+   "t": "Raise anything that may change the contract scope with the PD",
+   "d": "Especially where it affects schedule, man-hours or abortive work. Follow PRC-PM-06.",
+   "who": "PM",
+   "ref": "PM-02 §4.6; PM-06"
+  },
+  {
+   "id": "ch-dcn",
+   "ph": "change",
+   "t": "Process approved changes as design change notes (DCNs) on PMIS",
+   "d": "Update the DCN details, assess the impact with the department director, have GLs fill in and submit their DCNs, and review and approve the DCNs submitted by the trades (PRC-EN-09).",
+   "who": "PM / GLs",
+   "rec": "DCN on PMIS",
+   "ref": "PM-02 App. 4 (2.2); PM-06"
+  },
+  {
+   "id": "ch-claim",
+   "ph": "change",
+   "t": "Prepare the claim when the PD and AD decide one is needed",
+   "d": "The PD assesses changes with the AD. You prepare the claim; the AD/APC reviews it and submits it for client approval. If the AD decides to proceed without a claim, record that.",
+   "who": "PD / AD / PM / APC",
+   "rec": "Claim",
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+  },
+  {
+   "id": "ch-after",
+   "ph": "change",
+   "t": "After the client approves the claim, create the DCN and update the contract terms",
+   "d": "Create the design change note on PMIS (PRC-EN-09). The PD updates contract and payment terms on PMIS and the AD approves them.",
+   "who": "PM / PD / AD",
+   "rec": "PMIS",
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+  },
+  {
+   "id": "ch-rev",
+   "ph": "change",
+   "t": "Make sure revisions follow the revision rules",
+   "d": "No revised issue without a new code; superseded items marked. Alphabetical (A, B, C) before the approved issue, numeric (0, 1, 2) from it. Clouds on drawings, margin lines on text, quote the DCN number. Keep Rev 0 and later revisions for the project duration.",
+   "who": "GLs / PE",
+   "rec": "PRC-PM-08 (F1)",
+   "ref": "PM-08 §4.2; EN-02 §4.4"
+  },
+  {
+   "id": "ch-sust",
+   "ph": "change",
+   "t": "Check changes against the sustainability targets",
+   "d": "The SLD advises you of changes affecting targets and the checklist is updated. If the client adds sustainability scope after concept, move the project to §4.2 or §4.3.",
+   "who": "SLD → PM",
+   "ref": "PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "ch-file",
+   "ph": "change",
+   "t": "Keep all contract variation correspondence in the project files",
+   "who": "PM",
+   "rec": "Project files",
+   "ref": "PM-06 §3"
+  },
+  {
+   "id": "sp-need",
+   "ph": "supply",
+   "t": "Identify the need for each supplier and prepare its scope",
+   "d": "The originating engineer writes the full scope into the contract documents and flows requirements down to any sub-sub-contractor. Coordinate selection with the originating engineer.",
+   "who": "PD / PM / GL / OE",
+   "rec": "Contract documents",
+   "ref": "PM-10 §2.3, §3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-te",
+   "ph": "supply",
+   "t": "Get the technical evaluation (TE) completed",
+   "d": "The originating engineer completes F1 (with IDC if other disciplines' input is needed); the DD reviews it and it goes to the PD, PM and QM.",
+   "who": "OE / DD",
+   "rec": "PRC-PM-10 (F1)",
+   "ref": "PM-10 §3; PM-02 App. 4 (1.1.1)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-db",
+   "ph": "supply",
+   "t": "Check the supplier against the approved supplier database",
+   "d": "Approved: check ISO 9001 validity, that the scope matches, and previous performance reports (F3). Not approved: send the QA questionnaire (F4); the QE prepares the QA evaluation (F2), the QM reviews it, and the RO creates the supplier ID.",
+   "who": "QE / OE / QM",
+   "rec": "PRC-PM-10 (F2), (F3), (F4)",
+   "ref": "PM-10 §3 notes 2–4; PM-02 App. 4 (1.1.1)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-client",
+   "ph": "supply",
+   "t": "Apply the same controls to client-nominated suppliers",
+   "d": "If they don't return the QA questionnaire, Dar reviews their deliverables as the controlling procedure.",
+   "who": "OE / QE",
+   "ref": "PM-10 note 5",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-contract",
+   "ph": "supply",
+   "t": "Make sure each supplier contract has a full specification of work and names its quality system",
+   "d": "Notify the DD, PD, PM and QM of the selected supplier. If the QM recommends an audit, the QM and PD agree it.",
+   "who": "PD / DD / PM",
+   "rec": "Supplier contract",
+   "ref": "PM-02 §4.10; PM-10 §2.1, §3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-iso",
+   "ph": "supply",
+   "t": "Ask for a renewed ISO 9001 certificate if it expires during the project",
+   "who": "QE / OE",
+   "ref": "PM-10 note 4",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-inv",
+   "ph": "supply",
+   "t": "Check each supplier invoice before paying",
+   "d": "Is it in line with progress, payment terms and the client agreement? If so, prepare the billing details for PD approval; the system sends them to the RO and AD.",
+   "who": "PM / PD",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.5",
+   "freq": "Each invoice",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-pmr",
+   "ph": "supply",
+   "t": "Get the supplier performance report completed when their task is finished",
+   "d": "The originating engineer completes F3, the DD reviews it, and it goes to the QM and PM to update the database.",
+   "who": "OE / DD",
+   "rec": "PRC-PM-10 (F3)",
+   "ref": "PM-10 §3 note 6; PM-02 App. 4 (2.1.3)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "rv-chan",
+   "ph": "review",
+   "t": "Agree the communication channels with the RE",
+   "d": "Advise the team and the QM.",
+   "who": "PM / RE",
+   "ref": "PM-11 §3.1",
+   "when": {
+    "reviewproj": "yes",
+    "re": "yes"
+   }
+  },
+  {
+   "id": "rv-chan2",
+   "ph": "review",
+   "t": "Agree the communication channels with the area office or client",
+   "d": "Advise the team and the QM.",
+   "who": "PM / AO",
+   "ref": "PM-11 §3.2",
+   "when": {
+    "reviewproj": "yes",
+    "re": "no"
+   }
+  },
+  {
+   "id": "rv-ko",
+   "ph": "review",
+   "t": "Hold the design review kick-off with the GLs",
+   "d": "Review the scope and agree the review process. The RE may be invited.",
+   "who": "PM",
+   "ref": "PM-11 §3.1–3.2",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-up",
+   "ph": "review",
+   "t": "Make sure every received submittal is uploaded to the PCW",
+   "d": "If the other party won't use the platform, upload for them and return comments by email or FTP.",
+   "who": "PM / RE",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1c, §3.2b, note 3",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-assign",
+   "ph": "review",
+   "t": "Assign each submittal to a lead trade and the involved trades, with a deadline",
+   "d": "The lead trade compiles comments (with IDC as needed) and proposes a status: Approved, Approved as noted, Revise and resubmit, Rejected.",
+   "who": "PM / lead GL",
+   "rec": "PCW tasks",
+   "ref": "PM-11 §3.1d–e, §3.2c–d",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-code",
+   "ph": "review",
+   "t": "Review the comments with the GLs and set the final code",
+   "d": "With PMC if applicable; a meeting is optional.",
+   "who": "PM",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1f–g, §3.2e–f",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-reply",
+   "ph": "review",
+   "t": "Send the final reply and repeat until all comments are cleared",
+   "d": "Through the PCW, to the contractor (via the RE) or to the client / area office.",
+   "who": "PM / RE",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1h–j, §3.2g–i",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-weekly",
+   "ph": "review",
+   "t": "Review the pending submittals every week",
+   "who": "PM",
+   "rec": "PCW tracking",
+   "ref": "PM-11 §3.1i, §3.2h",
+   "freq": "Weekly",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-manual",
+   "ph": "review",
+   "t": "If you don't use the automated review platform, keep the comments matrix by hand",
+   "d": "The PCW is then used for filing only, with manual logs and the comments matrix (action codes I/N/T, acceptance Y/N/O).",
+   "who": "PM / RE",
+   "rec": "PRC-PM-11 (F1)",
+   "ref": "PM-11 note 4",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "sb-gate",
+   "ph": "submit",
+   "t": "Get internal gateway approval before issuing the preliminary / schematic design",
+   "d": "The AR GL and PM fill the F14 checklist (IDC, DSR minutes, risk register, sustainability, acoustics, fire & life safety, envelope, codes, moisture control) and submit it to the PD and the Architecture Design Principal or Director. Post the approved checklist on the PCW.",
+   "who": "AR GL / PM / PD",
+   "rec": "PRC-PM-02 (F14)",
+   "ref": "PM-02 §4.4.1; PM-04 §3.6.1",
+   "when": {
+    "type": [
+     "building",
+     "building_ext"
+    ]
+   }
+  },
+  {
+   "id": "sb-gate-m",
+   "ph": "submit",
+   "t": "Attach the moisture control checklist to the gateway approval",
+   "who": "PM",
+   "rec": "PRC-EN-01 (CKL-02)",
+   "ref": "EN-01 §4.4.1",
+   "when": {
+    "type": [
+     "building",
+     "building_ext"
+    ],
+    "moisture": "yes"
+   }
+  },
+  {
+   "id": "sb-gate-ind",
+   "ph": "submit",
+   "t": "For industrial buildings, review operations with the Industrial Unit Principal Engineer",
+   "d": "F14 item 10: clearances, door heights, bay depth, dangerous goods storage, waste, mechanical systems, cranes, network connections.",
+   "who": "AR GL / Industrial engineer",
+   "rec": "PRC-PM-02 (F14)",
+   "ref": "PM-02 (F14) item 10",
+   "when": {
+    "industrial": "yes"
+   }
+  },
+  {
+   "id": "sb-sign",
+   "ph": "submit",
+   "t": "Make sure documents carry the right signatures for the revision type",
+   "d": "Checked before leaving the department and signed \"By\". Alphabetical revisions to the client: originator and checker. Rev 0 or any numeric revision: approved by the DD or HOD. The GL signs the revision approval box before any external submission.",
+   "who": "PE/A / GL / DD",
+   "ref": "EN-01 §4.5; EN-02 §4.4",
+   "freq": "Each submission"
+  },
+  {
+   "id": "sb-stamp",
+   "ph": "submit",
+   "t": "Stamp drawings leaving the company",
+   "d": "For Construction, For Tender or For Information (other stamps on your request). For Information: designed by PE/A and checked by GL. For Tender or Construction: also approved by the DD/HOD. Tender to Construction with no change keeps the revision and changes only the stamp.",
+   "who": "GL / PM",
+   "ref": "EN-02 §4.2–4.4",
+   "freq": "Each submission"
+  },
+  {
+   "id": "sb-boq",
+   "ph": "submit",
+   "t": "Control the BOQ and tender issue",
+   "d": "Same version to every party, in PDF and protected Excel, with a record of recipients. Tables of contents and IDC forms (PRC-EN-03 (F1A), PRC-EN-05 (F1A), (F3A)) signed at submission. Evaluation criteria and form of conditions approved by the client.",
+   "who": "PMC GL / PM",
+   "rec": "PRC-EN-01 (CKL-11a, 11b)",
+   "ref": "EN-01 CKL-11a, CKL-11b",
+   "when": {
+    "tender": "yes"
+   }
+  },
+  {
+   "id": "sb-pmc",
+   "ph": "submit",
+   "t": "Give PMC a copy of the tender documents for constructability review",
+   "who": "PM",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "tender": "yes"
+   }
+  },
+  {
+   "id": "sb-elec",
+   "ph": "submit",
+   "t": "Set up the electronic submittal",
+   "d": "Advise the GLs; collect PDF or DWF copies; keep the signed hard copy in the project file (or the signed PDF on the project website); send a sample to the area office to test production.",
+   "who": "PM / GLs",
+   "rec": "Project file / website",
+   "ref": "PM-12 §3",
+   "freq": "Each submission"
+  },
+  {
+   "id": "sb-elec-keep",
+   "ph": "submit",
+   "t": "Keep an e-paper copy of every submittal on the W: drive",
+   "d": "Label the storage location as in PM-12 Appendix A. Send native files zipped only if the area office asks.",
+   "who": "PM",
+   "rec": "W: drive",
+   "ref": "PM-12 §3",
+   "freq": "Each submission"
+  },
+  {
+   "id": "sb-hard",
+   "ph": "submit",
+   "t": "Issue hard copies under a cover letter",
+   "who": "PM",
+   "rec": "Cover letter",
+   "ref": "EN-02 §4.3",
+   "when": {
+    "hardcopy": "yes"
+   }
+  },
+  {
+   "id": "sb-bim",
+   "ph": "submit",
+   "t": "Authorise the information model and run the BEP submission process",
+   "d": "Compile the submittal on the P: drive per the submission folder structure, prepare the MIDP for the package, run the health check list, upload to the PCW/CDE for area office or client acceptance.",
+   "who": "PM / BIM Manager",
+   "rec": "CDE / MIDP",
+   "ref": "PM-15 §4.4; PM-15 (F1) §12",
+   "freq": "Each submission",
+   "topic": "BIM",
+   "when": {
+    "process": "bim"
+   }
+  },
+  {
+   "id": "sb-riskfinal",
+   "ph": "submit",
+   "t": "Do a full risk register review before the final submission",
+   "d": "With the GLs if needed. F11 asks whether all risks are mitigated and closed.",
+   "who": "PM / GLs",
+   "rec": "Risk register",
+   "ref": "PM-14 §3; PM-02 (F11) item 4"
+  },
+  {
+   "id": "sb-f11",
+   "ph": "submit",
+   "t": "Fill in the PM checklist for project submittal (F11) and authorise release",
+   "d": "Covers SDC and quality checklists, IDC before Rev 0 with signed tables of contents, design reviews and DRARs, risk register, groundwater, moisture control, contract milestone, client and regulatory requirements. Post on the PCW; send to the PD, PMC and QM.",
+   "who": "PM",
+   "rec": "PRC-PM-02 (F11)",
+   "ref": "PM-02 §4.12.1, App. 4 (2.1.3)",
+   "freq": "Each submission",
+   "tip": {
+    "src": "L8",
+    "text": "Before release, check it the way the client's reviewer will: complete against the contract list, compliant with regulations, consistent with the client's criteria, at the right level of detail for the stage, and coordinated across disciplines."
+   }
+  },
+  {
+   "id": "sb-f11m",
+   "ph": "submit",
+   "t": "Attach the moisture control checklist to the F11 at final submission",
+   "who": "PM",
+   "rec": "PRC-EN-01 (CKL-02)",
+   "ref": "EN-01 §4.4.1; PM-02 (F11) item 6",
+   "when": {
+    "moisture": "yes"
+   }
+  },
+  {
+   "id": "sb-sur",
+   "ph": "submit",
+   "t": "Request a sustainability report where needed",
+   "d": "The SCO prepares it and the SLD reviews it (PRC-EN-11). It can be a section of the design report.",
+   "who": "PM → SCO",
+   "rec": "Sustainability report",
+   "ref": "PM-13 §4.4",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "sb-phcr",
+   "ph": "submit",
+   "t": "Complete the phase completion report (PhCR) at the end of each phase",
+   "d": "The system initiates it. Each GL fills a departmental PhCR (design and quality problems, budget deviation, lessons learned, drawing count against the register); you approve them and fill the PM PhCR, adding complaints and the location of the latest submittal and 3D visuals.",
+   "who": "GLs / PM",
+   "rec": "PhCR on PMIS",
+   "ref": "PM-02 §4.4.2",
+   "freq": "Each phase"
+  },
+  {
+   "id": "sb-bill",
+   "ph": "submit",
+   "t": "Raise the invoice when a payment falls due",
+   "d": "Create the payment milestone linked to the deliverable's payment terms (PMIS step 1, contract and payment terms tab), then initiate the invoice to the RO. Keep the APC informed of billing status if needed.",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.5",
+   "freq": "Each payment"
+  },
+  {
+   "id": "cl-d365",
+   "ph": "close",
+   "t": "Set the project as Completed on D365",
+   "who": "PM",
+   "rec": "D365",
+   "ref": "PM-02 App. 4 (2.4.1)"
+  },
+  {
+   "id": "cl-pcr",
+   "ph": "close",
+   "t": "Get every GL Main to fill the departmental project completion report (PCR)",
+   "d": "Design and quality problems, budget deviation, lessons learned (sent to departmental reviewers for validation), final drawing count against the register. Approve each one.",
+   "who": "GLs Main / PM",
+   "rec": "PCR on PMIS",
+   "ref": "PM-02 §4.12.2"
+  },
+  {
+   "id": "cl-ll",
+   "ph": "close",
+   "t": "Have the GLs summarise lessons learned for the departmental checkers",
+   "d": "Your own lessons are filled once all departmental lessons are validated, including those collected with the area manager/coordinator.",
+   "who": "GLs / checkers / PM",
+   "rec": "PMIS",
+   "ref": "PM-16 §3"
+  },
+  {
+   "id": "cl-pmpcr",
+   "ph": "close",
+   "t": "Finalise the PM PCR",
+   "d": "Design and quality problems, complaints, budget deviation, lessons learned. The system then sends the PCR and the lessons learned report, and creates the archive repository.",
+   "who": "PM",
+   "rec": "PM PCR on PMIS",
+   "ref": "PM-02 §4.12.2; PM-09 §5.2.1"
+  },
+  {
+   "id": "cl-sust",
+   "ph": "close",
+   "t": "Record the sustainability strategy or rating achieved in the PM PCR",
+   "d": "Strategy achieved for §4.1/§4.2; certification rating achieved for §4.3. For certification, make sure the SLD posts the certificate on the PCW and issues it to the AD, PD, PM and M&C.",
+   "who": "PM / SLD",
+   "rec": "PM PCR",
+   "ref": "PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "cl-drd",
+   "ph": "close",
+   "t": "Acknowledge in the PM PCR that DRD was incorporated",
+   "d": "GLs may pass new use cases to the DRD unit for the master checklist.",
+   "who": "PM",
+   "rec": "PM PCR",
+   "ref": "PM-19 §4.4–4.5",
+   "topic": "DRD",
+   "when": {
+    "drd": "yes"
+   }
+  },
+  {
+   "id": "cl-csq",
+   "ph": "close",
+   "t": "Send the customer satisfaction questionnaire to the APC",
+   "d": "Copy the AD and PD. The AD validates the feedback and the APC distributes it.",
+   "who": "PM / APC / AD",
+   "rec": "PRC-QA-04 (F2)",
+   "ref": "PM-02 §4.11"
+  },
+  {
+   "id": "cl-cert",
+   "ph": "close",
+   "t": "Prepare the client certificate with M&C and the APC",
+   "d": "The AD approves it before the APC submits it to the client.",
+   "who": "M&C / PM / APC / AD",
+   "rec": "PRC-QA-04 (F5)",
+   "ref": "PM-02 §4.11"
+  },
+  {
+   "id": "cl-gis",
+   "ph": "close",
+   "t": "Confirm the GIS team has the project site location",
+   "who": "PM",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.2.1"
+  },
+  {
+   "id": "cl-arch",
+   "ph": "close",
+   "t": "Fill in the archive initiation information on Archives@Dar",
+   "d": "Completing the PCR creates the repository and emails you. Enter project, package, phase, submission date, revision and content type; the GLs then get their tasks.",
+   "who": "PM",
+   "rec": "Archives@Dar",
+   "ref": "PM-09 §5.2.1",
+   "when": {
+    "office": [
+     "std",
+     "other"
+    ]
+   }
+  },
+  {
+   "id": "cl-arch2",
+   "ph": "close",
+   "t": "Make sure the GLs upload their deliverables and working files, then close the archive",
+   "d": "Valid file names; working files copied to \\\\db-cfs\\P-Archives\\[ProjectNo]\\[Trade]. Tasks are due in four weeks. Fix anything the archive admin reports; the folder then becomes read-only.",
+   "who": "PM / GLs",
+   "rec": "Archives@Dar",
+   "ref": "PM-09 §4.5–4.6, App. C",
+   "when": {
+    "office": [
+     "std",
+     "other"
+    ]
+   }
+  },
+  {
+   "id": "cl-cairo",
+   "ph": "close",
+   "t": "Run the Dar Cairo archiving steps",
+   "d": "Issue F2; have the draftsmen deposit drawings renamed per the archiving convention; check the trades' Excel lists follow the archiving memo format; issue F1 certifying the files are complete; resolve discrepancies; then tell the draftsmen when to delete from the P: drive.",
+   "who": "PM",
+   "rec": "PRC-PM-09 (F1), (F2)",
+   "ref": "PM-09 §7.1, App. A",
+   "when": {
+    "office": "cairo"
+   }
+  },
+  {
+   "id": "cl-multi",
+   "ph": "close",
+   "t": "Archive in the main design office",
+   "d": "Other offices send their files with an Excel metadata list.",
+   "who": "PM",
+   "ref": "PM-09 §5.1",
+   "when": {
+    "multioffice": "yes"
+   }
+  },
+  {
+   "id": "cl-hard",
+   "ph": "close",
+   "t": "Archive the hard copies and the latest registers",
+   "d": "With no Dar construction supervision: archive the electronic files plus the latest drawing and document registers; one hard copy stamped \"archive\" goes to the archive section (a second stays with you if the PD instructs); request transfer of the hard-copy project files for scanning.",
+   "who": "PM",
+   "ref": "PM-09 §3.2 a",
+   "when": {
+    "constr": "no"
+   }
+  },
+  {
+   "id": "cl-constr",
+   "ph": "close",
+   "t": "Keep the construction follow-up documents in the design department / PMC",
+   "d": "The GL may send selected files to the archive in coordination with you; full archiving follows after construction.",
+   "who": "GL / PM",
+   "ref": "PM-09 §3.2 b",
+   "when": {
+    "constr": "yes"
+   }
+  },
+  {
+   "id": "am-1",
+   "ph": "aide",
+   "t": "Data collection: formal acceptance received for the scope in the proposal",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-2",
+   "ph": "aide",
+   "t": "Data collection: site visit team nominated (with the AM)",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-3",
+   "ph": "aide",
+   "t": "Data collection: building regulations and local or accepted international codes available for every discipline",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-4",
+   "ph": "aide",
+   "t": "Data collection: sustainability scope defined",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes",
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "am-5",
+   "ph": "aide",
+   "t": "Data collection: topographic and survey maps available and matching the client's",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-6",
+   "ph": "aide",
+   "t": "Data collection: geotechnical data given to the departments; groundwater checked by GHCE and WE; seismic requirements checked",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-7",
+   "ph": "aide",
+   "t": "Data collection: climatic data, local construction practice, local materials and plot boundary conditions known",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-8",
+   "ph": "aide",
+   "t": "Data collection: specialist consultants identified, with agreements covering technical and quality scope, and their data available",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-9",
+   "ph": "aide",
+   "t": "Data collection: AM has no comments on the scope, or their comments and the time/cost impact are settled",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-10",
+   "ph": "aide",
+   "t": "Data collection: information collated and sent to all departments, and every department confirms it can start",
+   "d": "Consider a meeting with department representatives on the outcome.",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-11",
+   "ph": "aide",
+   "t": "Pre-design: each department (and consultant) has reported on data collection and accepted the scope",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-12",
+   "ph": "aide",
+   "t": "Pre-design: scope fully defined and matching the proposal, or the time/cost impact agreed with the AM",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-13",
+   "ph": "aide",
+   "t": "Pre-design: instruction issued to the design departments to start conceptual design",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-14",
+   "ph": "aide",
+   "t": "Concept: minuted meetings held with designers on the systems they intend to adopt",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-15",
+   "ph": "aide",
+   "t": "Concept: meetings held with local authorities for approval of the concept",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-16",
+   "ph": "aide",
+   "t": "Concept: team queries answered promptly through the AM, and replies checked",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-17",
+   "ph": "aide",
+   "t": "Concept: list of drawings received from each department, matching the proposal scope",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-18",
+   "ph": "aide",
+   "t": "Concept: specialist consultants' input received on time",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-19",
+   "ph": "aide",
+   "t": "Concept: deliverables compared with the scope and initiation requirements before sending to the AM",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-20",
+   "ph": "aide",
+   "t": "Preliminary: AM approval of the concept received, or out-of-scope requests handled as a variation (PRC-PM-06)",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-21",
+   "ph": "aide",
+   "t": "Preliminary: written instruction issued to start design development, including AM comments",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-22",
+   "ph": "aide",
+   "t": "Preliminary: revised man-hour schedules received and accepted; project schedule updated and distributed",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-23",
+   "ph": "aide",
+   "t": "Preliminary: geotechnical investigation scoped and commissioned",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-24",
+   "ph": "aide",
+   "t": "Preliminary: regular minuted coordination meetings with at least one member per department",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-25",
+   "ph": "aide",
+   "t": "Preliminary: outline specs drafted in the TOR format and performance-spec items identified",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-26",
+   "ph": "aide",
+   "t": "Preliminary: form of client/contractor contract confirmed and schedule milestones confirmed",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-27",
+   "ph": "aide",
+   "t": "Preliminary: PMC's view on the constructability of the selected systems obtained",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-28",
+   "ph": "aide",
+   "t": "Preliminary: written confirmation that departments follow local regulations",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-29",
+   "ph": "aide",
+   "t": "Preliminary: excavation limits, slopes and foundation levels confirmed acceptable geotechnically",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-30",
+   "ph": "aide",
+   "t": "Preliminary: design coordinated across departments; EL has ME loads in writing; S&B loads match AR space use and MEP systems",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-31",
+   "ph": "aide",
+   "t": "Preliminary: external works on schedule; permit regulations known and complied with; correct number of copies prepared",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-32",
+   "ph": "aide",
+   "t": "Final: client approval of the preliminary design received, or out-of-scope requests handled through design change control (PRC-EN-09)",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-33",
+   "ph": "aide",
+   "t": "Final: client comments circulated to departments for man-hour/schedule impact; revised figures accepted and agreed with the client",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-34",
+   "ph": "aide",
+   "t": "Final: order to proceed with variations issued after client approval; schedule updated and distributed",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-35",
+   "ph": "aide",
+   "t": "Final: coordination between designers completed (DSR, PRC-EN-07); electrical loads match mechanical requirements",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-36",
+   "ph": "aide",
+   "t": "Final: correct number of tender document copies issued per TOR",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-37",
+   "ph": "aide",
+   "t": "Final: building permit issued and local approvals secured",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  }
+ ]
+}

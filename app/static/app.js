@@ -2200,6 +2200,105 @@
     });
   })();
 
+  // --- motion ---------------------------------------------------------------
+  // The Project Management pages arrive rather than appear: cards rise in,
+  // headline figures count up, curves draw themselves and bars grow from the
+  // left. All of it hangs off the pm-intro class the page sets before first
+  // paint, which is taken off once the entrance has played, so a live refresh
+  // (which swaps <main>) never replays it. Nothing here hides anything for
+  // good: with the class gone, or motion turned down, the page is simply there.
+  (function () {
+    var root = document.documentElement;
+    if (!document.body.classList.contains('pm-app') || !root.classList.contains('pm-intro')) {
+      root.classList.remove('pm-intro');
+      return;
+    }
+    var main = document.querySelector('main');
+    if (!main) { root.classList.remove('pm-intro'); return; }
+
+    // Figures count up to what they say. Only a plain number with its unit;
+    // anything else (a dash, a date, a sentence) is left alone.
+    function countUp(el, delay) {
+      if (el.children.length) return;
+      var text = el.textContent.trim();
+      var m = /^([+\-−]?)(\d[\d,]*)(\.\d+)?(\D*)$/.exec(text);
+      if (!m) return;
+      var target = parseFloat((m[2] + (m[3] || '')).replace(/,/g, ''));
+      if (!isFinite(target) || target === 0) return;
+      var places = m[3] ? m[3].length - 1 : 0, grouped = m[2].indexOf(',') >= 0;
+      var began = null, took = 800;
+      function show(value) {
+        var s = value.toFixed(places);
+        if (grouped) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        el.textContent = m[1] + s + m[4];
+      }
+      show(0);
+      function step(now) {
+        if (began === null) began = now + (delay || 0);
+        var t = Math.max(0, Math.min(1, (now - began) / took));
+        if (t >= 1) { el.textContent = text; return; }
+        show(target * (1 - Math.pow(1 - t, 3)));
+        window.requestAnimationFrame(step);
+      }
+      window.requestAnimationFrame(step);
+    }
+    var figures = main.querySelectorAll(
+      '.tile-value, .pm-ring-text b, .pm-time-labels b, .pm-hero-stats b');
+    Array.prototype.forEach.call(figures, function (el, i) {
+      if (el.getBoundingClientRect().top < window.innerHeight) countUp(el, 120 + i * 40);
+    });
+
+    // A curve draws itself from left to right; the wash under it follows.
+    function draw(chart) {
+      Array.prototype.forEach.call(chart.querySelectorAll('polyline'), function (line) {
+        var length = 0;
+        try { length = line.getTotalLength(); } catch (err) { return; }
+        if (!length) return;
+        line.style.strokeDasharray = length;
+        line.style.strokeDashoffset = length;
+        line.getBoundingClientRect();
+        line.style.transition = 'stroke-dashoffset 1100ms cubic-bezier(.3,.6,.2,1)';
+        line.style.strokeDashoffset = '0';
+        window.setTimeout(function () {
+          line.style.transition = ''; line.style.strokeDasharray = ''; line.style.strokeDashoffset = '';
+        }, 1300);
+      });
+      Array.prototype.forEach.call(chart.querySelectorAll('rect.mark'), function (bar, i) {
+        bar.style.animationDelay = Math.min(i * 14, 700) + 'ms';
+      });
+      chart.classList.add('pm-drawn');
+    }
+
+    // What is below the fold waits for the reader to get there.
+    var waiting = [];
+    Array.prototype.forEach.call(main.querySelectorAll('.card, .tile, .chart'), function (el) {
+      if (el.classList.contains('chart')) {
+        if (el.getBoundingClientRect().top < window.innerHeight) draw(el); else waiting.push(el);
+      } else if (!el.parentElement.closest('.card') && el.getBoundingClientRect().top > window.innerHeight) {
+        el.classList.add('pm-wait');
+        waiting.push(el);
+      }
+    });
+    if ('IntersectionObserver' in window && waiting.length) {
+      var seen = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          seen.unobserve(entry.target);
+          if (entry.target.classList.contains('chart')) draw(entry.target);
+          else entry.target.classList.remove('pm-wait');
+        });
+      }, { rootMargin: '0px 0px -8% 0px' });
+      waiting.forEach(function (el) { seen.observe(el); });
+    } else {
+      waiting.forEach(function (el) { el.classList.remove('pm-wait'); });
+    }
+    // Printing, or a live refresh, must never meet something still waiting.
+    window.addEventListener('beforeprint', function () {
+      waiting.forEach(function (el) { el.classList.remove('pm-wait'); });
+    });
+    window.setTimeout(function () { root.classList.remove('pm-intro'); }, 1800);
+  })();
+
   // --- jump to a section ----------------------------------------------------
   // The long project pages (Setup, How to use, the Progress register, the
   // Schedule, Finance, Resources) get a bar of their sections under the page

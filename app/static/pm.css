@@ -570,3 +570,91 @@ body.pm-app { accent-color: var(--pm-accent); }
 @media (max-width: 1399px) { .pm-app .tabs .tab-icon { display: none; } .pm-app .tabs a { padding: 10px 8px 9px; } }
 @media (min-width: 1400px) { .pm-app .tabs a { padding: 10px 5px 9px; } }
 @media (max-width: 720px) { .pm-time-key { display: none; } .pm-time-ends { flex-wrap: wrap; gap: 4px 12px; } }
+
+/* ============================================================================
+   Motion. The page arrives rather than appears, then gets out of the way.
+
+   Everything under .pm-intro plays once, on a page's first paint; app.js takes
+   the class off afterwards, so a live refresh never replays it. Each animation
+   ends at the element's ordinary state, so nothing depends on it having run.
+   The reduced-motion rule further up switches all of it off.
+   ========================================================================== */
+
+/* One tab melts into the next instead of blinking; the header stays put. */
+@view-transition { navigation: auto; }
+.pm-app .topbar { view-transition-name: pm-top; }
+.pm-app main { view-transition-name: pm-main; }
+::view-transition-old(pm-main) { animation: pm-vt-out 140ms ease-in both; }
+::view-transition-new(pm-main) { animation: pm-vt-in 260ms cubic-bezier(.2,.7,.2,1) both; }
+@keyframes pm-vt-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes pm-vt-in { from { opacity: 0; transform: translateY(10px); } }
+
+@keyframes pm-rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes pm-pop { from { opacity: 0; transform: scale(.96); } }
+@keyframes pm-grow-x { from { transform: scaleX(0); } }
+@keyframes pm-fade { from { opacity: 0; } }
+@keyframes pm-ring { from { stroke-dasharray: 0 100; } }
+@keyframes pm-slide-mark { from { left: 0; } }
+
+.pm-intro .pm-app main .guide-strip,
+.pm-intro .pm-app main .page-head,
+.pm-intro .pm-app main .pm-hero,
+.pm-intro .pm-app main .needs-strip,
+.pm-intro .pm-app main .pm-jump,
+.pm-intro .pm-app main .card:not(.card .card),
+.pm-intro .pm-app main .tile {
+  animation: pm-rise 520ms cubic-bezier(.2,.7,.2,1) both;
+}
+.pm-intro .pm-app main .page-head, .pm-intro .pm-app main .pm-hero { animation-delay: 40ms; }
+.pm-intro .pm-app main .needs-strip { animation-delay: 110ms; }
+.pm-intro .pm-app main .tile { animation-name: pm-pop; animation-delay: 160ms; }
+.pm-intro .pm-app main .tile:nth-child(2) { animation-delay: 220ms; }
+.pm-intro .pm-app main .tile:nth-child(3) { animation-delay: 280ms; }
+.pm-intro .pm-app main .tile:nth-child(4) { animation-delay: 340ms; }
+.pm-intro .pm-app main .tile:nth-child(5) { animation-delay: 400ms; }
+.pm-intro .pm-app main .card:not(.card .card) { animation-delay: 200ms; }
+
+/* Below the fold: held back until scrolled to, then let go. */
+.pm-app .pm-wait { opacity: 0; transform: translateY(18px); animation: none !important; }
+.pm-app .card, .pm-app .tile {
+  transition: opacity 520ms cubic-bezier(.2,.7,.2,1), transform 520ms cubic-bezier(.2,.7,.2,1),
+              box-shadow 180ms ease-out;
+}
+
+/* The hero fills in: rings sweep round, the time bar runs out, markers slide. */
+.pm-intro .pm-ring .fill { animation: pm-ring 1100ms cubic-bezier(.2,.7,.2,1) 250ms both; }
+.pm-intro .pm-time-fill { transform-origin: left; animation: pm-grow-x 1000ms cubic-bezier(.2,.7,.2,1) 250ms both; }
+.pm-intro .pm-time-mark { animation: pm-slide-mark 1000ms cubic-bezier(.2,.7,.2,1) 350ms both; }
+.pm-intro .pm-hero-stats > div { animation: pm-rise 480ms cubic-bezier(.2,.7,.2,1) both; }
+.pm-intro .pm-hero-stats > div:nth-child(1) { animation-delay: 300ms; }
+.pm-intro .pm-hero-stats > div:nth-child(2) { animation-delay: 380ms; }
+.pm-intro .pm-hero-stats > div:nth-child(3) { animation-delay: 460ms; }
+
+/* Progress bars and chart bars grow from the left; washes fade up. */
+.pm-intro .pm-app .bar-fill { transform-origin: left; animation: pm-grow-x 800ms cubic-bezier(.2,.7,.2,1) 350ms both; }
+.pm-app .chart.pm-drawn rect.mark {
+  transform-box: fill-box; transform-origin: left center;
+  animation: pm-grow-x 600ms cubic-bezier(.2,.7,.2,1) both;
+}
+.pm-app .chart.pm-drawn .area { animation: pm-fade 900ms ease-out 500ms both; }
+
+/* Small answers to the hand. */
+.pm-app .tile:hover { transform: translateY(-2px); }
+.pm-app .needs-go { display: inline-block; transition: transform 180ms ease-out; }
+.pm-app .needs-strip:hover .needs-go { transform: translateX(4px); }
+.pm-app .tabs a .tab-icon { transition: transform 180ms ease-out, opacity 180ms; }
+.pm-app .tabs a:hover .tab-icon { transform: translateY(-1px) scale(1.12); opacity: 1; }
+.pm-app .pm-jump a { transition: background-color 160ms ease-out, color 160ms ease-out; }
+.pm-app .carmen-button { animation: pm-bob 5s ease-in-out infinite; }
+.pm-app .carmen-button:hover { animation-play-state: paused; }
+@keyframes pm-bob { 50% { transform: translateY(-4px); } }
+
+@media print {
+  .pm-app .pm-wait { opacity: 1; transform: none; }
+  .pm-app * { animation: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  .pm-app .pm-wait { opacity: 1; transform: none; }
+  .pm-app .tile:hover { transform: none; }
+}

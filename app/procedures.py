@@ -200,11 +200,39 @@ def blank_state(project) -> dict[str, Any]:
         "created": _now_ms(), "updated": _now_ms(),
         "answers": {"num": project["code"], "title": project["name"]},
         "status": {}, "notes": {}, "due": {}, "skipped": {}, "doneAt": {}, "visited": {},
+        "stationOrder": _station_order(),
     }
 
 
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+# The station order the first journeys were saved against. "visited" is kept by
+# station position, so a journey saved under an older order is moved across.
+FIRST_ORDER = ("start", "init", "contract", "quality", "plan", "bimset", "sustset", "exec",
+               "check", "change", "supply", "review", "submit", "close", "aide")
+
+
+def _station_order() -> list[str]:
+    return [p["id"] for p in library()["phases"]]
+
+
+def _reorder_visited(state: dict) -> None:
+    order = _station_order()
+    saved = state.get("stationOrder") or list(FIRST_ORDER)
+    if saved == order:
+        return
+    visited = {}
+    for k, v in (state.get("visited") or {}).items():
+        try:
+            sid = saved[int(k)]
+        except (ValueError, IndexError):
+            continue
+        if sid in order:
+            visited[str(order.index(sid))] = v
+    state["visited"] = visited
+    state["stationOrder"] = order
 
 
 def load_state(project) -> dict[str, Any]:
@@ -213,6 +241,7 @@ def load_state(project) -> dict[str, Any]:
         state = json.loads(row["state"])
         for key in MAPS:
             state.setdefault(key, {})
+        _reorder_visited(state)
         state["id"] = f"project-{project['id']}"
         return state
     return blank_state(project)

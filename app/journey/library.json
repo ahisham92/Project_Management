@@ -53,6 +53,12 @@
    "s": "Planning"
   },
   {
+   "id": "supply",
+   "t": "Suppliers & sub-consultants",
+   "d": "Selecting, controlling and paying suppliers under PRC-PM-10.",
+   "s": "Suppliers"
+  },
+  {
    "id": "bimset",
    "t": "BIM set-up & BIM Execution Plan",
    "d": "Roles, CDE, training and the BEP signing chain, before production starts.",
@@ -65,16 +71,16 @@
    "s": "Sustainability & DRD"
   },
   {
+   "id": "aide",
+   "t": "Aide-mémoire by design stage",
+   "d": "PRC-PM-02 Appendix 1. The procedure says these lists may be used as an aide-mémoire, so treat them as checks rather than mandatory steps.",
+   "s": "Stage checks"
+  },
+  {
    "id": "exec",
    "t": "Running the design",
    "d": "Weekly progress, design reviews, coordination and correspondence while the design is under way.",
    "s": "Design"
-  },
-  {
-   "id": "check",
-   "t": "Checking: SDC, IDC & DSR",
-   "d": "The checks EN-01 requires before anything goes to design and safety review or to the client.",
-   "s": "Checking"
   },
   {
    "id": "change",
@@ -83,16 +89,16 @@
    "s": "Changes"
   },
   {
-   "id": "supply",
-   "t": "Suppliers & sub-consultants",
-   "d": "Selecting, controlling and paying suppliers under PRC-PM-10.",
-   "s": "Suppliers"
-  },
-  {
    "id": "review",
    "t": "Design review workflow",
    "d": "For projects where Dar reviews designs prepared by others (PRC-PM-11). PM-02 or PM-04 still applies in full.",
    "s": "Design review"
+  },
+  {
+   "id": "check",
+   "t": "Checking: SDC, IDC & DSR",
+   "d": "The checks EN-01 requires before anything goes to design and safety review or to the client.",
+   "s": "Checking"
   },
   {
    "id": "submit",
@@ -105,12 +111,6 @@
    "t": "Project completion & archiving",
    "d": "Closing the design phase in the systems, with the client and in the archive.",
    "s": "Close-out"
-  },
-  {
-   "id": "aide",
-   "t": "Aide-mémoire by design stage",
-   "d": "PRC-PM-02 Appendix 1. The procedure says these lists may be used as an aide-mémoire, so treat them as checks rather than mandatory steps.",
-   "s": "Stage checks"
   }
  ],
  "questions": [
@@ -1667,6 +1667,100 @@
    "ref": "EN-01 CKL-09 A.2"
   },
   {
+   "id": "sp-need",
+   "ph": "supply",
+   "t": "Identify the need for each supplier and prepare its scope",
+   "d": "The originating engineer writes the full scope into the contract documents and flows requirements down to any sub-sub-contractor. Coordinate selection with the originating engineer.",
+   "who": "PD / PM / GL / OE",
+   "rec": "Contract documents",
+   "ref": "PM-10 §2.3, §3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-te",
+   "ph": "supply",
+   "t": "Get the technical evaluation (TE) completed",
+   "d": "The originating engineer completes F1 (with IDC if other disciplines' input is needed); the DD reviews it and it goes to the PD, PM and QM.",
+   "who": "OE / DD",
+   "rec": "PRC-PM-10 (F1)",
+   "ref": "PM-10 §3; PM-02 App. 4 (1.1.1)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-db",
+   "ph": "supply",
+   "t": "Check the supplier against the approved supplier database",
+   "d": "Approved: check ISO 9001 validity, that the scope matches, and previous performance reports (F3). Not approved: send the QA questionnaire (F4); the QE prepares the QA evaluation (F2), the QM reviews it, and the RO creates the supplier ID.",
+   "who": "QE / OE / QM",
+   "rec": "PRC-PM-10 (F2), (F3), (F4)",
+   "ref": "PM-10 §3 notes 2–4; PM-02 App. 4 (1.1.1)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-client",
+   "ph": "supply",
+   "t": "Apply the same controls to client-nominated suppliers",
+   "d": "If they don't return the QA questionnaire, Dar reviews their deliverables as the controlling procedure.",
+   "who": "OE / QE",
+   "ref": "PM-10 note 5",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-contract",
+   "ph": "supply",
+   "t": "Make sure each supplier contract has a full specification of work and names its quality system",
+   "d": "Notify the DD, PD, PM and QM of the selected supplier. If the QM recommends an audit, the QM and PD agree it.",
+   "who": "PD / DD / PM",
+   "rec": "Supplier contract",
+   "ref": "PM-02 §4.10; PM-10 §2.1, §3",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-iso",
+   "ph": "supply",
+   "t": "Ask for a renewed ISO 9001 certificate if it expires during the project",
+   "who": "QE / OE",
+   "ref": "PM-10 note 4",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-inv",
+   "ph": "supply",
+   "t": "Check each supplier invoice before paying",
+   "d": "Is it in line with progress, payment terms and the client agreement? If so, prepare the billing details for PD approval; the system sends them to the RO and AD.",
+   "who": "PM / PD",
+   "rec": "PMIS",
+   "ref": "PM-02 §4.5",
+   "freq": "Each invoice",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
+   "id": "sp-pmr",
+   "ph": "supply",
+   "t": "Get the supplier performance report completed when their task is finished",
+   "d": "The originating engineer completes F3, the DD reviews it, and it goes to the QM and PM to update the database.",
+   "who": "OE / DD",
+   "rec": "PRC-PM-10 (F3)",
+   "ref": "PM-10 §3 note 6; PM-02 App. 4 (2.1.3)",
+   "when": {
+    "suppliers": "yes"
+   }
+  },
+  {
    "id": "bm-mgr",
    "ph": "bimset",
    "t": "Assign the project BIM Manager",
@@ -2090,6 +2184,345 @@
    "topic": "DRD",
    "when": {
     "digital": "yes"
+   }
+  },
+  {
+   "id": "am-1",
+   "ph": "aide",
+   "t": "Data collection: formal acceptance received for the scope in the proposal",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-2",
+   "ph": "aide",
+   "t": "Data collection: site visit team nominated (with the AM)",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-3",
+   "ph": "aide",
+   "t": "Data collection: building regulations and local or accepted international codes available for every discipline",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-4",
+   "ph": "aide",
+   "t": "Data collection: sustainability scope defined",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes",
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "am-5",
+   "ph": "aide",
+   "t": "Data collection: topographic and survey maps available and matching the client's",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-6",
+   "ph": "aide",
+   "t": "Data collection: geotechnical data given to the departments; groundwater checked by GHCE and WE; seismic requirements checked",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-7",
+   "ph": "aide",
+   "t": "Data collection: climatic data, local construction practice, local materials and plot boundary conditions known",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-8",
+   "ph": "aide",
+   "t": "Data collection: specialist consultants identified, with agreements covering technical and quality scope, and their data available",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-9",
+   "ph": "aide",
+   "t": "Data collection: AM has no comments on the scope, or their comments and the time/cost impact are settled",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-10",
+   "ph": "aide",
+   "t": "Data collection: information collated and sent to all departments, and every department confirms it can start",
+   "d": "Consider a meeting with department representatives on the outcome.",
+   "ref": "PM-02 App. 1 (1)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-11",
+   "ph": "aide",
+   "t": "Pre-design: each department (and consultant) has reported on data collection and accepted the scope",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-12",
+   "ph": "aide",
+   "t": "Pre-design: scope fully defined and matching the proposal, or the time/cost impact agreed with the AM",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-13",
+   "ph": "aide",
+   "t": "Pre-design: instruction issued to the design departments to start conceptual design",
+   "ref": "PM-02 App. 1 (2)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-14",
+   "ph": "aide",
+   "t": "Concept: minuted meetings held with designers on the systems they intend to adopt",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-15",
+   "ph": "aide",
+   "t": "Concept: meetings held with local authorities for approval of the concept",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-16",
+   "ph": "aide",
+   "t": "Concept: team queries answered promptly through the AM, and replies checked",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-17",
+   "ph": "aide",
+   "t": "Concept: list of drawings received from each department, matching the proposal scope",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-18",
+   "ph": "aide",
+   "t": "Concept: specialist consultants' input received on time",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-19",
+   "ph": "aide",
+   "t": "Concept: deliverables compared with the scope and initiation requirements before sending to the AM",
+   "ref": "PM-02 App. 1 (3)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-20",
+   "ph": "aide",
+   "t": "Preliminary: AM approval of the concept received, or out-of-scope requests handled as a variation (PRC-PM-06)",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-21",
+   "ph": "aide",
+   "t": "Preliminary: written instruction issued to start design development, including AM comments",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-22",
+   "ph": "aide",
+   "t": "Preliminary: revised man-hour schedules received and accepted; project schedule updated and distributed",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-23",
+   "ph": "aide",
+   "t": "Preliminary: geotechnical investigation scoped and commissioned",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-24",
+   "ph": "aide",
+   "t": "Preliminary: regular minuted coordination meetings with at least one member per department",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-25",
+   "ph": "aide",
+   "t": "Preliminary: outline specs drafted in the TOR format and performance-spec items identified",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-26",
+   "ph": "aide",
+   "t": "Preliminary: form of client/contractor contract confirmed and schedule milestones confirmed",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-27",
+   "ph": "aide",
+   "t": "Preliminary: PMC's view on the constructability of the selected systems obtained",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-28",
+   "ph": "aide",
+   "t": "Preliminary: written confirmation that departments follow local regulations",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-29",
+   "ph": "aide",
+   "t": "Preliminary: excavation limits, slopes and foundation levels confirmed acceptable geotechnically",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-30",
+   "ph": "aide",
+   "t": "Preliminary: design coordinated across departments; EL has ME loads in writing; S&B loads match AR space use and MEP systems",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-31",
+   "ph": "aide",
+   "t": "Preliminary: external works on schedule; permit regulations known and complied with; correct number of copies prepared",
+   "ref": "PM-02 App. 1 (4)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-32",
+   "ph": "aide",
+   "t": "Final: client approval of the preliminary design received, or out-of-scope requests handled through design change control (PRC-EN-09)",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-33",
+   "ph": "aide",
+   "t": "Final: client comments circulated to departments for man-hour/schedule impact; revised figures accepted and agreed with the client",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-34",
+   "ph": "aide",
+   "t": "Final: order to proceed with variations issued after client approval; schedule updated and distributed",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-35",
+   "ph": "aide",
+   "t": "Final: coordination between designers completed (DSR, PRC-EN-07); electrical loads match mechanical requirements",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-36",
+   "ph": "aide",
+   "t": "Final: correct number of tender document copies issued per TOR",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
+   }
+  },
+  {
+   "id": "am-37",
+   "ph": "aide",
+   "t": "Final: building permit issued and local approvals secured",
+   "ref": "PM-02 App. 1 (5)",
+   "when": {
+    "aide": "yes"
    }
   },
   {
@@ -2523,6 +2956,202 @@
    "ref": "PM-02 App. 4 (2.3)"
   },
   {
+   "id": "ch-log",
+   "ph": "change",
+   "t": "Log every design change request in the change log on the PCW",
+   "d": "From any stakeholder. The PD reviews each request.",
+   "who": "PM / PD",
+   "rec": "Change log on PCW",
+   "ref": "PM-02 App. 4 (2.2)",
+   "tip": {
+    "src": "L5",
+    "text": "For every change ask three questions before you agree: what exactly does it involve, what does it do to the design schedule and fees, and is there a viable solution? Filter out unnecessary changes with the functional managers."
+   }
+  },
+  {
+   "id": "ch-impact",
+   "ph": "change",
+   "t": "Get each GL's man-hour and schedule impact for the change",
+   "d": "When you instruct a change, the GLs review its impact and inform you (PRC-EN-09). Checking of the revised design can be limited to the change and associated documents.",
+   "who": "GLs → PM",
+   "ref": "EN-01 §4.6–4.7"
+  },
+  {
+   "id": "ch-pd",
+   "ph": "change",
+   "t": "Raise anything that may change the contract scope with the PD",
+   "d": "Especially where it affects schedule, man-hours or abortive work. Follow PRC-PM-06.",
+   "who": "PM",
+   "ref": "PM-02 §4.6; PM-06"
+  },
+  {
+   "id": "ch-dcn",
+   "ph": "change",
+   "t": "Process approved changes as design change notes (DCNs) on PMIS",
+   "d": "Update the DCN details, assess the impact with the department director, have GLs fill in and submit their DCNs, and review and approve the DCNs submitted by the trades (PRC-EN-09).",
+   "who": "PM / GLs",
+   "rec": "DCN on PMIS",
+   "ref": "PM-02 App. 4 (2.2); PM-06"
+  },
+  {
+   "id": "ch-claim",
+   "ph": "change",
+   "t": "Prepare the claim when the PD and AD decide one is needed",
+   "d": "The PD assesses changes with the AD. You prepare the claim; the AD/APC reviews it and submits it for client approval. If the AD decides to proceed without a claim, record that.",
+   "who": "PD / AD / PM / APC",
+   "rec": "Claim",
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+  },
+  {
+   "id": "ch-after",
+   "ph": "change",
+   "t": "After the client approves the claim, create the DCN and update the contract terms",
+   "d": "Create the design change note on PMIS (PRC-EN-09). The PD updates contract and payment terms on PMIS and the AD approves them.",
+   "who": "PM / PD / AD",
+   "rec": "PMIS",
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+  },
+  {
+   "id": "ch-rev",
+   "ph": "change",
+   "t": "Make sure revisions follow the revision rules",
+   "d": "No revised issue without a new code; superseded items marked. Alphabetical (A, B, C) before the approved issue, numeric (0, 1, 2) from it. Clouds on drawings, margin lines on text, quote the DCN number. Keep Rev 0 and later revisions for the project duration.",
+   "who": "GLs / PE",
+   "rec": "PRC-PM-08 (F1)",
+   "ref": "PM-08 §4.2; EN-02 §4.4"
+  },
+  {
+   "id": "ch-sust",
+   "ph": "change",
+   "t": "Check changes against the sustainability targets",
+   "d": "The SLD advises you of changes affecting targets and the checklist is updated. If the client adds sustainability scope after concept, move the project to §4.2 or §4.3.",
+   "who": "SLD → PM",
+   "ref": "PM-13 §4.1–4.3",
+   "topic": "Sustainability",
+   "when": {
+    "sust": [
+     "driven",
+     "client",
+     "cert"
+    ]
+   }
+  },
+  {
+   "id": "ch-file",
+   "ph": "change",
+   "t": "Keep all contract variation correspondence in the project files",
+   "who": "PM",
+   "rec": "Project files",
+   "ref": "PM-06 §3"
+  },
+  {
+   "id": "rv-chan",
+   "ph": "review",
+   "t": "Agree the communication channels with the RE",
+   "d": "Advise the team and the QM.",
+   "who": "PM / RE",
+   "ref": "PM-11 §3.1",
+   "when": {
+    "reviewproj": "yes",
+    "re": "yes"
+   }
+  },
+  {
+   "id": "rv-chan2",
+   "ph": "review",
+   "t": "Agree the communication channels with the area office or client",
+   "d": "Advise the team and the QM.",
+   "who": "PM / AO",
+   "ref": "PM-11 §3.2",
+   "when": {
+    "reviewproj": "yes",
+    "re": "no"
+   }
+  },
+  {
+   "id": "rv-ko",
+   "ph": "review",
+   "t": "Hold the design review kick-off with the GLs",
+   "d": "Review the scope and agree the review process. The RE may be invited.",
+   "who": "PM",
+   "ref": "PM-11 §3.1–3.2",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-up",
+   "ph": "review",
+   "t": "Make sure every received submittal is uploaded to the PCW",
+   "d": "If the other party won't use the platform, upload for them and return comments by email or FTP.",
+   "who": "PM / RE",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1c, §3.2b, note 3",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-assign",
+   "ph": "review",
+   "t": "Assign each submittal to a lead trade and the involved trades, with a deadline",
+   "d": "The lead trade compiles comments (with IDC as needed) and proposes a status: Approved, Approved as noted, Revise and resubmit, Rejected.",
+   "who": "PM / lead GL",
+   "rec": "PCW tasks",
+   "ref": "PM-11 §3.1d–e, §3.2c–d",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-code",
+   "ph": "review",
+   "t": "Review the comments with the GLs and set the final code",
+   "d": "With PMC if applicable; a meeting is optional.",
+   "who": "PM",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1f–g, §3.2e–f",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-reply",
+   "ph": "review",
+   "t": "Send the final reply and repeat until all comments are cleared",
+   "d": "Through the PCW, to the contractor (via the RE) or to the client / area office.",
+   "who": "PM / RE",
+   "rec": "PCW",
+   "ref": "PM-11 §3.1h–j, §3.2g–i",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-weekly",
+   "ph": "review",
+   "t": "Review the pending submittals every week",
+   "who": "PM",
+   "rec": "PCW tracking",
+   "ref": "PM-11 §3.1i, §3.2h",
+   "freq": "Weekly",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
+   "id": "rv-manual",
+   "ph": "review",
+   "t": "If you don't use the automated review platform, keep the comments matrix by hand",
+   "d": "The PCW is then used for filing only, with manual logs and the comments matrix (action codes I/N/T, acceptance Y/N/O).",
+   "who": "PM / RE",
+   "rec": "PRC-PM-11 (F1)",
+   "ref": "PM-11 note 4",
+   "when": {
+    "reviewproj": "yes"
+   }
+  },
+  {
    "id": "ck-sdc",
    "ph": "check",
    "t": "Make sure each GL completes single departmental checking",
@@ -2735,296 +3364,6 @@
    "topic": "DRD",
    "when": {
     "drd": "yes"
-   }
-  },
-  {
-   "id": "ch-log",
-   "ph": "change",
-   "t": "Log every design change request in the change log on the PCW",
-   "d": "From any stakeholder. The PD reviews each request.",
-   "who": "PM / PD",
-   "rec": "Change log on PCW",
-   "ref": "PM-02 App. 4 (2.2)",
-   "tip": {
-    "src": "L5",
-    "text": "For every change ask three questions before you agree: what exactly does it involve, what does it do to the design schedule and fees, and is there a viable solution? Filter out unnecessary changes with the functional managers."
-   }
-  },
-  {
-   "id": "ch-impact",
-   "ph": "change",
-   "t": "Get each GL's man-hour and schedule impact for the change",
-   "d": "When you instruct a change, the GLs review its impact and inform you (PRC-EN-09). Checking of the revised design can be limited to the change and associated documents.",
-   "who": "GLs → PM",
-   "ref": "EN-01 §4.6–4.7"
-  },
-  {
-   "id": "ch-pd",
-   "ph": "change",
-   "t": "Raise anything that may change the contract scope with the PD",
-   "d": "Especially where it affects schedule, man-hours or abortive work. Follow PRC-PM-06.",
-   "who": "PM",
-   "ref": "PM-02 §4.6; PM-06"
-  },
-  {
-   "id": "ch-dcn",
-   "ph": "change",
-   "t": "Process approved changes as design change notes (DCNs) on PMIS",
-   "d": "Update the DCN details, assess the impact with the department director, have GLs fill in and submit their DCNs, and review and approve the DCNs submitted by the trades (PRC-EN-09).",
-   "who": "PM / GLs",
-   "rec": "DCN on PMIS",
-   "ref": "PM-02 App. 4 (2.2); PM-06"
-  },
-  {
-   "id": "ch-claim",
-   "ph": "change",
-   "t": "Prepare the claim when the PD and AD decide one is needed",
-   "d": "The PD assesses changes with the AD. You prepare the claim; the AD/APC reviews it and submits it for client approval. If the AD decides to proceed without a claim, record that.",
-   "who": "PD / AD / PM / APC",
-   "rec": "Claim",
-   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
-  },
-  {
-   "id": "ch-after",
-   "ph": "change",
-   "t": "After the client approves the claim, create the DCN and update the contract terms",
-   "d": "Create the design change note on PMIS (PRC-EN-09). The PD updates contract and payment terms on PMIS and the AD approves them.",
-   "who": "PM / PD / AD",
-   "rec": "PMIS",
-   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
-  },
-  {
-   "id": "ch-rev",
-   "ph": "change",
-   "t": "Make sure revisions follow the revision rules",
-   "d": "No revised issue without a new code; superseded items marked. Alphabetical (A, B, C) before the approved issue, numeric (0, 1, 2) from it. Clouds on drawings, margin lines on text, quote the DCN number. Keep Rev 0 and later revisions for the project duration.",
-   "who": "GLs / PE",
-   "rec": "PRC-PM-08 (F1)",
-   "ref": "PM-08 §4.2; EN-02 §4.4"
-  },
-  {
-   "id": "ch-sust",
-   "ph": "change",
-   "t": "Check changes against the sustainability targets",
-   "d": "The SLD advises you of changes affecting targets and the checklist is updated. If the client adds sustainability scope after concept, move the project to §4.2 or §4.3.",
-   "who": "SLD → PM",
-   "ref": "PM-13 §4.1–4.3",
-   "topic": "Sustainability",
-   "when": {
-    "sust": [
-     "driven",
-     "client",
-     "cert"
-    ]
-   }
-  },
-  {
-   "id": "ch-file",
-   "ph": "change",
-   "t": "Keep all contract variation correspondence in the project files",
-   "who": "PM",
-   "rec": "Project files",
-   "ref": "PM-06 §3"
-  },
-  {
-   "id": "sp-need",
-   "ph": "supply",
-   "t": "Identify the need for each supplier and prepare its scope",
-   "d": "The originating engineer writes the full scope into the contract documents and flows requirements down to any sub-sub-contractor. Coordinate selection with the originating engineer.",
-   "who": "PD / PM / GL / OE",
-   "rec": "Contract documents",
-   "ref": "PM-10 §2.3, §3",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-te",
-   "ph": "supply",
-   "t": "Get the technical evaluation (TE) completed",
-   "d": "The originating engineer completes F1 (with IDC if other disciplines' input is needed); the DD reviews it and it goes to the PD, PM and QM.",
-   "who": "OE / DD",
-   "rec": "PRC-PM-10 (F1)",
-   "ref": "PM-10 §3; PM-02 App. 4 (1.1.1)",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-db",
-   "ph": "supply",
-   "t": "Check the supplier against the approved supplier database",
-   "d": "Approved: check ISO 9001 validity, that the scope matches, and previous performance reports (F3). Not approved: send the QA questionnaire (F4); the QE prepares the QA evaluation (F2), the QM reviews it, and the RO creates the supplier ID.",
-   "who": "QE / OE / QM",
-   "rec": "PRC-PM-10 (F2), (F3), (F4)",
-   "ref": "PM-10 §3 notes 2–4; PM-02 App. 4 (1.1.1)",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-client",
-   "ph": "supply",
-   "t": "Apply the same controls to client-nominated suppliers",
-   "d": "If they don't return the QA questionnaire, Dar reviews their deliverables as the controlling procedure.",
-   "who": "OE / QE",
-   "ref": "PM-10 note 5",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-contract",
-   "ph": "supply",
-   "t": "Make sure each supplier contract has a full specification of work and names its quality system",
-   "d": "Notify the DD, PD, PM and QM of the selected supplier. If the QM recommends an audit, the QM and PD agree it.",
-   "who": "PD / DD / PM",
-   "rec": "Supplier contract",
-   "ref": "PM-02 §4.10; PM-10 §2.1, §3",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-iso",
-   "ph": "supply",
-   "t": "Ask for a renewed ISO 9001 certificate if it expires during the project",
-   "who": "QE / OE",
-   "ref": "PM-10 note 4",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-inv",
-   "ph": "supply",
-   "t": "Check each supplier invoice before paying",
-   "d": "Is it in line with progress, payment terms and the client agreement? If so, prepare the billing details for PD approval; the system sends them to the RO and AD.",
-   "who": "PM / PD",
-   "rec": "PMIS",
-   "ref": "PM-02 §4.5",
-   "freq": "Each invoice",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "sp-pmr",
-   "ph": "supply",
-   "t": "Get the supplier performance report completed when their task is finished",
-   "d": "The originating engineer completes F3, the DD reviews it, and it goes to the QM and PM to update the database.",
-   "who": "OE / DD",
-   "rec": "PRC-PM-10 (F3)",
-   "ref": "PM-10 §3 note 6; PM-02 App. 4 (2.1.3)",
-   "when": {
-    "suppliers": "yes"
-   }
-  },
-  {
-   "id": "rv-chan",
-   "ph": "review",
-   "t": "Agree the communication channels with the RE",
-   "d": "Advise the team and the QM.",
-   "who": "PM / RE",
-   "ref": "PM-11 §3.1",
-   "when": {
-    "reviewproj": "yes",
-    "re": "yes"
-   }
-  },
-  {
-   "id": "rv-chan2",
-   "ph": "review",
-   "t": "Agree the communication channels with the area office or client",
-   "d": "Advise the team and the QM.",
-   "who": "PM / AO",
-   "ref": "PM-11 §3.2",
-   "when": {
-    "reviewproj": "yes",
-    "re": "no"
-   }
-  },
-  {
-   "id": "rv-ko",
-   "ph": "review",
-   "t": "Hold the design review kick-off with the GLs",
-   "d": "Review the scope and agree the review process. The RE may be invited.",
-   "who": "PM",
-   "ref": "PM-11 §3.1–3.2",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-up",
-   "ph": "review",
-   "t": "Make sure every received submittal is uploaded to the PCW",
-   "d": "If the other party won't use the platform, upload for them and return comments by email or FTP.",
-   "who": "PM / RE",
-   "rec": "PCW",
-   "ref": "PM-11 §3.1c, §3.2b, note 3",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-assign",
-   "ph": "review",
-   "t": "Assign each submittal to a lead trade and the involved trades, with a deadline",
-   "d": "The lead trade compiles comments (with IDC as needed) and proposes a status: Approved, Approved as noted, Revise and resubmit, Rejected.",
-   "who": "PM / lead GL",
-   "rec": "PCW tasks",
-   "ref": "PM-11 §3.1d–e, §3.2c–d",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-code",
-   "ph": "review",
-   "t": "Review the comments with the GLs and set the final code",
-   "d": "With PMC if applicable; a meeting is optional.",
-   "who": "PM",
-   "rec": "PCW",
-   "ref": "PM-11 §3.1f–g, §3.2e–f",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-reply",
-   "ph": "review",
-   "t": "Send the final reply and repeat until all comments are cleared",
-   "d": "Through the PCW, to the contractor (via the RE) or to the client / area office.",
-   "who": "PM / RE",
-   "rec": "PCW",
-   "ref": "PM-11 §3.1h–j, §3.2g–i",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-weekly",
-   "ph": "review",
-   "t": "Review the pending submittals every week",
-   "who": "PM",
-   "rec": "PCW tracking",
-   "ref": "PM-11 §3.1i, §3.2h",
-   "freq": "Weekly",
-   "when": {
-    "reviewproj": "yes"
-   }
-  },
-  {
-   "id": "rv-manual",
-   "ph": "review",
-   "t": "If you don't use the automated review platform, keep the comments matrix by hand",
-   "d": "The PCW is then used for filing only, with manual logs and the comments matrix (action codes I/N/T, acceptance Y/N/O).",
-   "who": "PM / RE",
-   "rec": "PRC-PM-11 (F1)",
-   "ref": "PM-11 note 4",
-   "when": {
-    "reviewproj": "yes"
    }
   },
   {
@@ -3389,345 +3728,6 @@
    "ref": "PM-09 §3.2 b",
    "when": {
     "constr": "yes"
-   }
-  },
-  {
-   "id": "am-1",
-   "ph": "aide",
-   "t": "Data collection: formal acceptance received for the scope in the proposal",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-2",
-   "ph": "aide",
-   "t": "Data collection: site visit team nominated (with the AM)",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-3",
-   "ph": "aide",
-   "t": "Data collection: building regulations and local or accepted international codes available for every discipline",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-4",
-   "ph": "aide",
-   "t": "Data collection: sustainability scope defined",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes",
-    "sust": [
-     "driven",
-     "client",
-     "cert"
-    ]
-   }
-  },
-  {
-   "id": "am-5",
-   "ph": "aide",
-   "t": "Data collection: topographic and survey maps available and matching the client's",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-6",
-   "ph": "aide",
-   "t": "Data collection: geotechnical data given to the departments; groundwater checked by GHCE and WE; seismic requirements checked",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-7",
-   "ph": "aide",
-   "t": "Data collection: climatic data, local construction practice, local materials and plot boundary conditions known",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-8",
-   "ph": "aide",
-   "t": "Data collection: specialist consultants identified, with agreements covering technical and quality scope, and their data available",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-9",
-   "ph": "aide",
-   "t": "Data collection: AM has no comments on the scope, or their comments and the time/cost impact are settled",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-10",
-   "ph": "aide",
-   "t": "Data collection: information collated and sent to all departments, and every department confirms it can start",
-   "d": "Consider a meeting with department representatives on the outcome.",
-   "ref": "PM-02 App. 1 (1)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-11",
-   "ph": "aide",
-   "t": "Pre-design: each department (and consultant) has reported on data collection and accepted the scope",
-   "ref": "PM-02 App. 1 (2)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-12",
-   "ph": "aide",
-   "t": "Pre-design: scope fully defined and matching the proposal, or the time/cost impact agreed with the AM",
-   "ref": "PM-02 App. 1 (2)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-13",
-   "ph": "aide",
-   "t": "Pre-design: instruction issued to the design departments to start conceptual design",
-   "ref": "PM-02 App. 1 (2)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-14",
-   "ph": "aide",
-   "t": "Concept: minuted meetings held with designers on the systems they intend to adopt",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-15",
-   "ph": "aide",
-   "t": "Concept: meetings held with local authorities for approval of the concept",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-16",
-   "ph": "aide",
-   "t": "Concept: team queries answered promptly through the AM, and replies checked",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-17",
-   "ph": "aide",
-   "t": "Concept: list of drawings received from each department, matching the proposal scope",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-18",
-   "ph": "aide",
-   "t": "Concept: specialist consultants' input received on time",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-19",
-   "ph": "aide",
-   "t": "Concept: deliverables compared with the scope and initiation requirements before sending to the AM",
-   "ref": "PM-02 App. 1 (3)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-20",
-   "ph": "aide",
-   "t": "Preliminary: AM approval of the concept received, or out-of-scope requests handled as a variation (PRC-PM-06)",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-21",
-   "ph": "aide",
-   "t": "Preliminary: written instruction issued to start design development, including AM comments",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-22",
-   "ph": "aide",
-   "t": "Preliminary: revised man-hour schedules received and accepted; project schedule updated and distributed",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-23",
-   "ph": "aide",
-   "t": "Preliminary: geotechnical investigation scoped and commissioned",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-24",
-   "ph": "aide",
-   "t": "Preliminary: regular minuted coordination meetings with at least one member per department",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-25",
-   "ph": "aide",
-   "t": "Preliminary: outline specs drafted in the TOR format and performance-spec items identified",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-26",
-   "ph": "aide",
-   "t": "Preliminary: form of client/contractor contract confirmed and schedule milestones confirmed",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-27",
-   "ph": "aide",
-   "t": "Preliminary: PMC's view on the constructability of the selected systems obtained",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-28",
-   "ph": "aide",
-   "t": "Preliminary: written confirmation that departments follow local regulations",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-29",
-   "ph": "aide",
-   "t": "Preliminary: excavation limits, slopes and foundation levels confirmed acceptable geotechnically",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-30",
-   "ph": "aide",
-   "t": "Preliminary: design coordinated across departments; EL has ME loads in writing; S&B loads match AR space use and MEP systems",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-31",
-   "ph": "aide",
-   "t": "Preliminary: external works on schedule; permit regulations known and complied with; correct number of copies prepared",
-   "ref": "PM-02 App. 1 (4)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-32",
-   "ph": "aide",
-   "t": "Final: client approval of the preliminary design received, or out-of-scope requests handled through design change control (PRC-EN-09)",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-33",
-   "ph": "aide",
-   "t": "Final: client comments circulated to departments for man-hour/schedule impact; revised figures accepted and agreed with the client",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-34",
-   "ph": "aide",
-   "t": "Final: order to proceed with variations issued after client approval; schedule updated and distributed",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-35",
-   "ph": "aide",
-   "t": "Final: coordination between designers completed (DSR, PRC-EN-07); electrical loads match mechanical requirements",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-36",
-   "ph": "aide",
-   "t": "Final: correct number of tender document copies issued per TOR",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
-   }
-  },
-  {
-   "id": "am-37",
-   "ph": "aide",
-   "t": "Final: building permit issued and local approvals secured",
-   "ref": "PM-02 App. 1 (5)",
-   "when": {
-    "aide": "yes"
    }
   }
  ]

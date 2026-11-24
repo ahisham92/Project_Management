@@ -92,3 +92,14 @@ def test_a_journey_saved_under_the_first_order_keeps_its_visited_stations():
     procedures._reorder_visited(state)
     ids = [p["id"] for p in procedures.library()["phases"]]
     assert state["visited"] == {str(ids.index("supply")): True, str(ids.index("aide")): True}
+
+
+def test_the_journey_shows_the_project_number_and_name_as_they_are_now(signed_in, app):
+    lib = procedures.library()
+    signed_in.post("/projects/1/procedures/save", json={"patch": {"status": {lib["items"][0]["id"]: "done"}}})
+    with app.app_context():
+        from app.db import execute
+        execute("UPDATE projects SET code = 'L26100-B', name = 'Renamed' WHERE id = 1")
+    state = signed_in.get("/projects/1/procedures/state").get_json()
+    assert state["answers"]["num"] == "L26100-B" and state["answers"]["title"] == "Renamed"
+    assert state["status"][lib["items"][0]["id"]] == "done"

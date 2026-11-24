@@ -243,6 +243,10 @@ def load_state(project) -> dict[str, Any]:
             state.setdefault(key, {})
         _reorder_visited(state)
         state["id"] = f"project-{project['id']}"
+        # The project's number and name belong to its Setup; the journey shows
+        # them as they are now, not as they were when it was first opened.
+        state["answers"]["num"] = project["code"]
+        state["answers"]["title"] = project["name"]
         return state
     return blank_state(project)
 
@@ -281,6 +285,8 @@ def apply_patch(state: dict, patch: dict) -> dict:
             if v is None:
                 target.pop(k, None)
                 continue
+            if key == "answers" and k in ("num", "title"):
+                continue  # set in the project's Setup, not here
             if key == "status" and (k not in idx["items"] or v not in STATUSES):
                 raise PatchError(f"'{v}' is not a status for '{k}'.")
             if key == "answers" and k in idx["questions"]:

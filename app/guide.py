@@ -71,6 +71,10 @@ TABS: tuple[dict[str, Any], ...] = (
         "start_here": "Press Continue on the map and clear the cards at the station the project has reached.",
         "steps": (
             "Answer a question when it comes up: each answer unlocks the actions that apply and removes the ones that don't.",
+            "The cards follow the procedure's own order. A question is not a procedure step: it comes just before "
+            "the first action it decides. On a new project 91 of the 259 actions apply to every project; the other "
+            "168 depend on answers (BIM or CAD, project type, sustainability level and so on) that are asked as "
+            "you reach each station.",
             "Clear each action as Done or N/A, or set it aside for later. Every card names the procedure section it comes from.",
             "For a project already under way, switch a station to List and tick off what is already done.",
             "Give an action a target date and it shows on Needs attention once it is past.",

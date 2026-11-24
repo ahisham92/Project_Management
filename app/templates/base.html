@@ -31,6 +31,10 @@
     // Marks the page as scripted, which hides the controls that only exist
     // for people without JavaScript — the Save button beside each editable cell.
     document.documentElement.classList.add('js');
+    // The first paint of a page plays its entrance; a live refresh does not.
+    if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      document.documentElement.classList.add('pm-intro');
+    }
     try {
       var t = localStorage.getItem('pm-theme');
       if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);

@@ -78,3 +78,17 @@ def test_attention_view_lists_overdue_procedure_actions(signed_in):
 def test_dashboard_shows_the_attention_strip(signed_in):
     page = signed_in.get("/projects/1/")
     assert b"See what needs attention" in page.data
+
+
+def test_stations_follow_the_order_work_happens():
+    ids = [p["id"] for p in procedures.library()["phases"]]
+    assert ids.index("supply") < ids.index("exec")      # suppliers appointed before design
+    assert ids.index("aide") < ids.index("exec")        # stage checks start with data collection
+    assert ids.index("check") < ids.index("submit") < ids.index("close")
+
+
+def test_a_journey_saved_under_the_first_order_keeps_its_visited_stations():
+    state = {"visited": {"10": True, "14": True}}  # "supply" and "aide" in the first order
+    procedures._reorder_visited(state)
+    ids = [p["id"] for p in procedures.library()["phases"]]
+    assert state["visited"] == {str(ids.index("supply")): True, str(ids.index("aide")): True}

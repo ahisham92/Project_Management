@@ -512,6 +512,9 @@ function viewMap(p){
   const up=[]; S.vis.forEach(x=>x.its.forEach(o=>{ if(o.s==="open"&&up.length<6) up.push({i:x.i,it:o.it}); }));
   const dated=S.rows.filter(r=>r.s==="open"&&p.due[r.it.id]).map(r=>({...r,di:dueInfo(p.due[r.it.id])})).filter(r=>r.di.days<=21).sort((a,b)=>a.di.d-b.di.d).slice(0,6);
   const bq=bag(p);
+  /* Actions further on wait for questions asked when the project gets there; only
+     the ones at stations already reached count as locked now. */
+  const lockedNow=S.vis.filter(x=>p.visited[x.i]).reduce((n,x)=>n+x.locked,0);
   app.innerHTML=`
   <div class="row" style="justify-content:space-between;align-items:flex-end"><div><span class="eyebrow">${esc(p.answers.num||"")}${p.answers.pm?` · PM ${esc(p.answers.pm)}`:""}${p.answers.pd?` · PD ${esc(p.answers.pd)}`:""}</span><h1>${esc(p.answers.title||"Project journey")}</h1></div>
     ${next?`<button class="btn pri" type="button" data-st="${next.i}">Continue: ${esc(ST[next.i].s)} ${I("chev")}</button>`:""}</div>
@@ -519,9 +522,9 @@ function viewMap(p){
     <div class="ring">${ringSVG(S.pct)}<div class="lbl"><div><b>${S.pct}%</b><br><span>cleared</span></div></div></div>
     <div class="kpis">
       <div class="kpi g"><span class="v">${I("star")}${S.stars}<span class="muted" style="font-size:13px;font-weight:500">/ ${S.vis.length}</span></span><span class="k">Stations cleared</span></div>
-      <div class="kpi"><span class="v">${S.n.open}</span><span class="k">Open cards</span></div>
+      <div class="kpi"><span class="v">${S.n.open}</span><span class="k">Actions to do</span></div>
       <div class="kpi"><span class="v" style="color:var(--ok)">${S.n.done}</span><span class="k">Done${S.n.na?` · ${S.n.na} N/A`:""}</span></div>
-      <div class="kpi l"><span class="v">${I("lock")}${S.n.locked}</span><span class="k">Locked by questions</span></div>
+      <div class="kpi l" title="Actions that apply only to some projects. Each one opens or drops away when you answer the question it depends on, which is asked when you reach its station."><span class="v">${I("lock")}${S.n.locked}</span><span class="k">Depend on answers to come${lockedNow?` · ${lockedNow} here now`:""}</span></div>
       <button class="kpi q" type="button" data-a="bag"><span class="v">${I("q")}${S.bagN}</span><span class="k">Questions waiting</span></button>
       <div class="kpi ${S.overdue.length?"b":""}"><span class="v">${I("clock")}${S.overdue.length}</span><span class="k">Overdue</span></div>
     </div>
@@ -554,7 +557,7 @@ function drawMap(p,vis,next){
     const isCur=next&&next.i===x.i;
     const qn=p.visited[x.i]?x.qs.length:0;
     const sub= x.cleared?"Cleared":(x.total?`${x.done+x.na} of ${x.total} cleared`:"Questions only")+(x.locked?` · ${x.locked} locked`:"");
-    html+=`<button class="node ${x.cleared?"cleared":""} ${isCur?"cur":""}" style="left:${cx-28}px;top:${cy-28}px;--p:${pct}" data-st="${x.i}" type="button" aria-label="${esc(s.s)}: ${esc(sub)}"><span class="in">${x.cleared?I("star"):k+1}</span>${qn?`<span class="qdot">?${qn}</span>`:""}${x.locked&&!x.cleared?`<span class="ldot">${I("lock")}</span>`:""}</button>`;
+    html+=`<button class="node ${x.cleared?"cleared":""} ${isCur?"cur":""}" style="left:${cx-28}px;top:${cy-28}px;--p:${pct}" data-st="${x.i}" type="button" aria-label="${esc(s.s)}: ${esc(sub)}"><span class="in">${x.cleared?I("star"):k+1}</span>${qn?`<span class="qdot">?${qn}</span>`:""}${x.locked&&!x.cleared&&p.visited[x.i]?`<span class="ldot">${I("lock")}</span>`:""}</button>`;
     const right=cx<W/2; const room=right?W-cx-46:cx-46;
     html+=`<button class="nlabel ${right?"":"l"}" style="${right?`left:${cx+36}px`:`right:${W-cx+36}px`};top:${cy-21}px;max-width:${Math.max(104,room)}px" data-st="${x.i}" type="button" tabindex="-1"><span class="t">${esc(s.s)}</span><span class="s">${esc(sub)}</span></button>`;
     if(isCur) html+=`<span class="here" style="left:${cx-38}px;top:${cy-52}px">YOU ARE HERE</span>`;
@@ -583,8 +586,15 @@ function drawStage(p,i){
   $("#pT").textContent=`${x.done+x.na} / ${x.total} cleared`;
   if(UI.mode==="list") return drawList(p,i,x);
   const qs=x.qs.filter(q=>!p.skipped[q.id]);
-  const tasks=x.its.filter(o=>o.s==="open"&&!UI.later.has(o.it.id)).map(o=>o.it);
-  const queue=[...qs.map(q=>({q})),...tasks.map(it=>({it}))];
+  /* The actions keep the procedure's own order. A question is not a step of the
+     procedure: it sits just before the first action it decides, so the station
+     reads in the order the procedure does things. */
+  const queue=[], placed=new Set(), qset=new Set(qs.map(q=>q.id));
+  x.its.forEach(o=>{
+    if(o.s==="locked") unknownKeys(o.it.when,p.answers).forEach(k=>{ if(qset.has(k)&&!placed.has(k)){ placed.add(k); queue.push({q:QS[k]}); } });
+    else if(o.s==="open"&&!UI.later.has(o.it.id)) queue.push({it:o.it});
+  });
+  qs.forEach(q=>{ if(!placed.has(q.id)) queue.push({q}); });
   if(!queue.length) return drawEnd(p,i,x);
   const c=queue[0];
   $("#stage").innerHTML=c.q?qCard(p,c.q,queue.length):tCard(p,c.it,queue.length);

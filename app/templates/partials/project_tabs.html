@@ -27,19 +27,40 @@
     [('projects.setup', 'Setup', none),
      ('projects.guide', 'How to use', none)],
   ] %}
+  {# A small line icon before each tab's name: the eye finds a tab by its
+     shape long before it reads the word. Paths on a 24-unit grid. #}
+  {% set icon = {
+    'Dashboard': 'M3 13h8V3H3zM13 21h8v-8h-8zM3 21h8v-6H3zM13 11h8V3h-8z',
+    'Needs attention': 'M12 3l9.5 17h-19zM12 10v4M12 17.5v.5',
+    'Progress': 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+    'Schedule': 'M3 6h10M7 12h12M5 18h8M3 3v18',
+    'Submittals': 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h6',
+    'Procedures': 'M5 4a2 2 0 1 0 0 .01M19 20a2 2 0 1 0 0 .01M5 6v4a4 4 0 0 0 4 4h6a4 4 0 0 1 4 4',
+    'Finance': 'M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+    'Resources': 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+    'Summarized Progress': 'M3 3v18h18M7 15l4-4 3 3 6-6',
+    'Minutes': 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 9h8M8 13h5',
+    'Task List': 'M9 6h12M9 12h12M9 18h12M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2',
+    'Carmen': 'M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z',
+    'Setup': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+    'How to use': 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
+  } %}
+  {% macro glyph(name) -%}
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icon[name] }}"/></svg>
+  {%- endmacro %}
   {% for tabs in groups %}
   {% if not loop.first %}<span class="tab-sep" aria-hidden="true"></span>{% endif %}
   {% for endpoint, label, register in tabs %}
     {% if register %}
       <a href="{{ url_for(endpoint, project_id=project['id'], kind=register) }}"
-         class="{{ 'active' if request.endpoint == endpoint and here == register }}">{{ label }}</a>
+         class="{{ 'active' if request.endpoint == endpoint and here == register }}">{{ glyph(label) }}{{ label }}</a>
       {# The internal week sits beside the client register, where the eye
          expects the pair. #}
       <a href="{{ url_for('meetings.week', project_id=project['id']) }}"
-         class="{{ 'active' if internal }}">Task List</a>
+         class="{{ 'active' if internal }}">{{ glyph('Task List') }}Task List</a>
     {% else %}
       <a href="{{ url_for(endpoint, project_id=project['id']) }}"
-         class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+         class="{{ 'active' if request.endpoint == endpoint }}">{{ glyph(label) }}{{ label }}</a>
     {% endif %}
   {% endfor %}
   {% endfor %}

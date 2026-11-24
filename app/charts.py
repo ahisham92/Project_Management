@@ -169,6 +169,21 @@ def s_curve(points: Sequence[Mapping[str, Any]], data_date: str) -> Markup:
             return ""
         return f'<polyline points="{" ".join(coords)}" fill="none" stroke="{color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
 
+    def area(key: str, color: str, name: str) -> str:
+        kept = [(i, p) for i, p in enumerate(points) if p.get(key) is not None]
+        if len(kept) < 2:
+            return ""
+        base = y_of(0)
+        coords = " ".join(f"{x_of(i):.1f},{y_of(max(0.0, min(1.0, p[key]))):.1f}" for i, p in kept)
+        return (f'<linearGradient id="{name}" x1="0" y1="0" x2="0" y2="1">'
+                f'<stop offset="0" style="stop-color:{color};stop-opacity:0.18"/>'
+                f'<stop offset="1" style="stop-color:{color};stop-opacity:0"/></linearGradient>'
+                f'<polygon class="area" points="{x_of(kept[0][0]):.1f},{base:.1f} {coords} '
+                f'{x_of(kept[-1][0]):.1f},{base:.1f}" fill="url(#{name})"/>')
+
+    # A soft wash under each curve, so the gap between them reads as an area.
+    parts.append(area("planned", PLANNED, "scurve-planned"))
+    parts.append(area("earned", EARNED, "scurve-earned"))
     parts.append(polyline("planned", PLANNED))
     parts.append(polyline("earned", EARNED))
 
@@ -283,6 +298,14 @@ def hours_curve(weeks: Sequence[Mapping[str, Any]]) -> Markup:
     # the bottom of the rest of the programme, which would read as "we spent
     # nothing for six months".
     worked = [i for i, p in enumerate(points) if p["spent_week"] > 0]
+    planned_coords = " ".join(f"{x_of(i):.1f},{y_of(p['planned']):.1f}" for i, p in enumerate(points))
+    base = top + plot_h
+    parts.append(
+        '<linearGradient id="hours-planned" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" style="stop-color:{PLANNED};stop-opacity:0.14"/>'
+        f'<stop offset="1" style="stop-color:{PLANNED};stop-opacity:0"/></linearGradient>'
+        f'<polygon class="area" points="{x_of(0):.1f},{base:.1f} {planned_coords} '
+        f'{x_of(n - 1):.1f},{base:.1f}" fill="url(#hours-planned)"/>')
     parts.append(line("planned", PLANNED))
     parts.append(line("spent", EARNED, (worked[-1] + 1) if worked else 0))
 

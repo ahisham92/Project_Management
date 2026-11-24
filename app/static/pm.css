@@ -420,3 +420,153 @@ body.pm-app { accent-color: var(--pm-accent); }
   .pm-jump-label { display: none; }
   .pm-app [data-jump-target] { scroll-margin-top: 72px; }
 }
+
+/* ============================================================================
+   Second pass: the details that make it feel like a product.
+   ========================================================================== */
+
+/* --- tab icons --------------------------------------------------------------- */
+
+.pm-app .tabs a { display: inline-flex; align-items: center; gap: 6px; }
+.pm-app .tab-icon {
+  width: 15px; height: 15px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0.75;
+}
+.pm-app .tabs a.active .tab-icon { opacity: 1; }
+@media (max-width: 1100px) { .pm-app .tabs .tab-icon { display: none; } }
+
+/* --- every tab's own header: a band, not loose text ---------------------------- */
+
+.pm-app main .page-head {
+  position: relative; overflow: hidden;
+  padding: 20px 24px; border-radius: 18px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--pm-accent) 10%, transparent) 0%, transparent 55%),
+    var(--surface);
+  border: 1px solid var(--border); box-shadow: var(--pm-shadow);
+}
+.pm-app main .page-head h1 { font-size: 1.75rem; }
+
+/* --- the dashboard's project hero ---------------------------------------------- */
+
+.pm-hero {
+  position: relative; overflow: hidden; margin-bottom: 18px;
+  border-radius: 20px; color: #eaf4f5;
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(77, 179, 187, 0.35) 0%, transparent 60%),
+    radial-gradient(60% 90% at 0% 100%, rgba(15, 122, 133, 0.45) 0%, transparent 70%),
+    linear-gradient(135deg, #0a4f59 0%, #0b5f6b 45%, #0d3f4a 100%);
+  box-shadow: 0 2px 4px rgba(11, 95, 107, 0.18), 0 18px 40px rgba(11, 95, 107, 0.22);
+}
+.pm-hero::after {               /* a faint drawing grid, like a sheet's border */
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.08;
+  background-image: linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(90deg, transparent 30%, #000 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 30%, #000 100%);
+}
+.pm-hero > * { position: relative; z-index: 1; }
+.pm-hero-top { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-start; padding: 24px 28px 8px; }
+.pm-eyebrow { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #9fd6db; }
+.pm-app .pm-hero h1 { color: #fff; font-size: 2rem; margin-top: 4px; letter-spacing: -0.025em; }
+.pm-hero-meta { margin-top: 6px; color: #bcd9dc; font-size: 0.875rem; }
+.pm-hero-form .field-label { color: #bcd9dc; }
+.pm-app .pm-hero-form input { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.22); color: #fff; color-scheme: dark; }
+.pm-app .pm-hero-form .btn-ghost { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.25); color: #fff; box-shadow: none; }
+.pm-app .pm-hero-form .btn-ghost:hover { background: rgba(255,255,255,.2); color: #fff; border-color: rgba(255,255,255,.4); }
+.pm-hero-body {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 28px; align-items: center;
+  padding: 14px 28px 24px;
+}
+.pm-rings { display: flex; gap: 14px; }
+.pm-ring { position: relative; width: 96px; height: 96px; }
+.pm-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.pm-ring circle { fill: none; stroke-width: 6; }
+.pm-ring .track { stroke: rgba(255,255,255,.14); }
+.pm-ring .fill { stroke-linecap: round; transition: stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1); }
+.pm-ring.plan .fill { stroke: #9fd6db; }
+.pm-ring.earn .fill { stroke: #ffb37a; }
+.pm-ring-text { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.1; }
+.pm-ring-text b { font-size: 1.05rem; color: #fff; font-variant-numeric: tabular-nums; }
+.pm-ring-text small { font-size: 0.68rem; color: #9fc4c8; text-transform: uppercase; letter-spacing: .08em; margin-top: 3px; }
+.pm-time-labels { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.8rem; color: #bcd9dc; margin-bottom: 8px; }
+.pm-time-labels b { font-size: 1.1rem; color: #fff; font-variant-numeric: tabular-nums; }
+.pm-time-track { position: relative; height: 12px; border-radius: 999px; background: rgba(255,255,255,.12); }
+.pm-time-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,.35), rgba(255,255,255,.7)); }
+.pm-time-mark { position: absolute; top: -5px; width: 4px; height: 22px; margin-left: -2px; border-radius: 2px; box-shadow: 0 0 0 2px rgba(10, 79, 89, .7); }
+.pm-time-mark.plan { background: #9fd6db; }
+.pm-time-mark.earn { background: #ffb37a; }
+.pm-time-ends { display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.75rem; color: #9fc4c8; font-variant-numeric: tabular-nums; }
+.pm-time-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: 0; }
+.pm-time-key i.plan { background: #9fd6db; } .pm-time-key i.earn { background: #ffb37a; }
+.pm-hero-stats { display: grid; gap: 10px; min-width: 150px; }
+.pm-hero-stats > div {
+  display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+  padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1);
+}
+.pm-hero-stats span { font-size: 0.75rem; color: #bcd9dc; }
+.pm-hero-stats b { font-size: 1rem; color: #fff; font-variant-numeric: tabular-nums; }
+.pm-hero-stats b.good-text { color: #8ee0a8; }
+.pm-hero-stats b.bad-text { color: #ff9c8f; }
+@media (max-width: 1000px) {
+  .pm-hero-body { grid-template-columns: 1fr; gap: 18px; }
+  .pm-hero-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pm-hero-stats > div { flex-direction: column; gap: 2px; }
+}
+@media (max-width: 720px) {
+  .pm-hero-top, .pm-hero-body { padding-left: 18px; padding-right: 18px; }
+  .pm-app .pm-hero h1 { font-size: 1.4rem; }
+  .pm-ring { width: 80px; height: 80px; }
+}
+@media print {
+  .pm-hero { background: #fff; color: var(--ink); box-shadow: none; border: 1px solid var(--border); }
+  .pm-hero::after { display: none; }
+}
+
+/* --- headline figures carry their state on a line across the top --------------- */
+
+.pm-app .tile { overflow: hidden; }
+.pm-app .tile::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--tile-tone, transparent);
+}
+.pm-app .tile:has(.tile-foot .state-good)     { --tile-tone: var(--good); }
+.pm-app .tile:has(.tile-foot .state-warning)  { --tile-tone: var(--warning); }
+.pm-app .tile:has(.tile-foot .state-serious)  { --tile-tone: var(--serious); }
+.pm-app .tile:has(.tile-foot .state-critical) { --tile-tone: var(--critical); }
+.pm-app .tile:has(.tile-foot .state-neutral)  { --tile-tone: var(--axis); }
+.pm-app .tile-foot [class^="state-"] {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
+  background: color-mix(in srgb, currentColor 11%, transparent);
+}
+
+/* --- empty states read as a designed moment, not a gap --------------------------- */
+
+.pm-app .empty { padding: 40px 16px 44px; }
+.pm-app .empty::before {
+  content: ''; display: block; width: 44px; height: 44px; margin: 0 auto 12px; border-radius: 14px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b5f6b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7l9-4 9 4-9 4-9-4z'/%3E%3Cpath d='M3 12l9 4 9-4M3 17l9 4 9-4'/%3E%3C/svg%3E") center / 22px no-repeat,
+    var(--pm-accent-soft);
+}
+.pm-app .empty-title { font-size: 0.95rem; font-weight: 650; color: var(--ink); }
+
+/* --- cards lift a touch when they hold something to press ------------------------ */
+
+.pm-app .card { transition: box-shadow 180ms ease-out; }
+.pm-app .card:hover:has(a, button) { box-shadow: var(--pm-shadow-lift); }
+
+/* --- charts: soft area under the curves ------------------------------------------ */
+
+.pm-app .chart .area { pointer-events: none; }
+.pm-time-ends .pm-late { color: #ffb3a8; font-weight: 600; }
+.pm-app .tabs a { font-size: 0.8125rem; padding: 10px 7px 9px; gap: 5px; }
+.pm-app .tab-icon { width: 14px; height: 14px; }
+.pm-app .tabs { gap: 0; }
+.pm-app .tabs a { padding: 10px 6px 9px; gap: 4px; }
+.pm-app .tab-sep { margin: 0 3px; }
+@media (max-width: 1399px) { .pm-app .tabs .tab-icon { display: none; } .pm-app .tabs a { padding: 10px 8px 9px; } }
+@media (min-width: 1400px) { .pm-app .tabs a { padding: 10px 5px 9px; } }
+@media (max-width: 720px) { .pm-time-key { display: none; } .pm-time-ends { flex-wrap: wrap; gap: 4px 12px; } }

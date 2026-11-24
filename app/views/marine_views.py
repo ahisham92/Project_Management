@@ -22,7 +22,7 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_plan, marine_risk, marine_sim,
+    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_piles, marine_plan, marine_risk, marine_sim,
     marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
@@ -53,6 +53,8 @@ CHANGES = {
     "add_element": "Added an element", "delete_element": "Removed an element", "delete_elements": "Removed all elements",
     "edit_element": "Changed an element", "add_sensor": "Added a sensor", "record_inspection": "Recorded an inspection",
     "delete_sensor": "Removed a sensor", "calibrate_sensor": "Calibrated a sensor",
+    "import_piles": "Imported the as-built piles", "pile_tolerance": "Set the pile position tolerance",
+    "demo_piles": "Filled in a made-up pile record", "clear_piles": "Cleared the as-built piles",
     "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
 
@@ -1658,3 +1660,121 @@ def feed_readings(asset_id: int):
     db.commit()
     return jsonify(ok=not result["problems"], written=result["written"], sensors=result["sensors"],
                    problems=result["problems"]), 200 if result["written"] or not result["problems"] else 422
+
+
+# --- the site record: construction to operations --------------------------------------------
+
+def _pile_design(asset_id: int) -> list[dict]:
+    return marine_piles.design_piles(_model_found(asset_id),
+                                     query("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,)))
+
+
+def _pile_result(asset):
+    design = _pile_design(asset["id"])
+    built = query("SELECT * FROM marine_piles WHERE asset_id = ? ORDER BY installed, name", (asset["id"],))
+    return design, marine_piles.assess(design, built, asset["pile_tolerance"])
+
+
+@bp.get("/assets/<int:asset_id>/piles")
+@login_required
+def piles(asset_id: int):
+    """The piles as built against the design: which are in, how far off, how fast, and when the last."""
+    asset = _asset_or_404(asset_id)
+    design, result = _pile_result(asset)
+    points = marine_piles.map_points(asset, result) if asset["latitude"] is not None else []
+    site_map = {"assets": [], "elements": points, "focus": None} if points else None
+    found = _model_found(asset_id) or {}
+    return render_template("marine/piles.html", asset=asset, r=result, site_map=site_map, from_model=bool(found.get("elements")),
+                           has_grid=(found.get("site") or {}).get("eastings") is not None, **_context())
+
+
+@bp.post("/assets/<int:asset_id>/piles/import")
+@login_required
+def import_piles(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        flash("Pick the as-built CSV.", "error")
+        return redirect(url_for("marine.piles", asset_id=asset_id, _anchor="import"))
+    text_ = upload.read(8_000_000).decode("utf-8-sig", errors="replace")
+    rows, bad = marine_piles.read_csv(text_, asset, (_model_found(asset_id) or {}).get("site"))
+    if not rows:
+        flash("No piles read. " + " ".join(bad[:3]), "error")
+        return redirect(url_for("marine.piles", asset_id=asset_id, _anchor="import"))
+    said = marine_piles.save(get_db(), asset_id, rows, _pile_design(asset_id), upload.filename[:120], bool(request.form.get("replace")))
+    get_db().commit()
+    message = (f"{len(rows):,} piles read from {upload.filename}: {said['new']:,} new, {said['updated']:,} updated,"
+               f" {said['matched']:,} matched to the design.")
+    if bad:
+        message += f" {len(bad)} rows skipped: " + " ".join(bad[:2])
+    flash(message, "success" if not bad else "warning")
+    return redirect(url_for("marine.piles", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/piles/tolerance")
+@login_required
+def pile_tolerance(asset_id: int):
+    _asset_or_404(asset_id)
+    value = _number("tolerance")
+    if value is None or not 1 <= value <= 2000:
+        flash("Give the tolerance in millimetres, between 1 and 2000.", "error")
+        return redirect(url_for("marine.piles", asset_id=asset_id))
+    get_db().execute("UPDATE marine_assets SET pile_tolerance = ? WHERE id = ?", (value, asset_id))
+    get_db().commit()
+    flash(f"Piles are now checked against ±{value:g} mm.", "success")
+    return redirect(url_for("marine.piles", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/piles/demo")
+@login_required
+def demo_piles(asset_id: int):
+    _asset_or_404(asset_id)
+    design = _pile_design(asset_id)
+    if not design:
+        flash("There are no piles in the model or the elements to make a record for.", "error")
+        return redirect(url_for("marine.piles", asset_id=asset_id))
+    rows = marine_piles.demo_record(design)
+    marine_piles.save(get_db(), asset_id, rows, design, "made-up record", replace=True)
+    get_db().commit()
+    flash(f"A made-up record of {len(rows):,} piles, to see how the tracker reads. Import the contractor's own to replace it.", "success")
+    return redirect(url_for("marine.piles", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/piles/clear")
+@login_required
+def clear_piles(asset_id: int):
+    _asset_or_404(asset_id)
+    get_db().execute("DELETE FROM marine_piles WHERE asset_id = ?", (asset_id,))
+    get_db().commit()
+    flash("The as-built record is cleared.", "success")
+    return redirect(url_for("marine.piles", asset_id=asset_id))
+
+
+@bp.get("/assets/<int:asset_id>/piles/template.csv")
+@login_required
+def piles_template(asset_id: int):
+    _asset_or_404(asset_id)
+    return Response(marine_piles.template_csv(_pile_design(asset_id)), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="piles-to-record-{asset_id}.csv"'})
+
+
+@bp.get("/assets/<int:asset_id>/piles.csv")
+@login_required
+def piles_csv(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    _, r = _pile_result(asset)
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["design pile", "group", "design x", "design y", "as built", "x", "y", "off by mm", "dx mm", "dy mm",
+                "within tolerance", "cut-off mCD", "toe mCD", "installed", "note"])
+    for p in r["piles"]:
+        b = p["built"] or {}
+        w.writerow([p["name"], p["group"], f"{p['x']:.3f}", f"{p['y']:.3f}", b.get("name", ""),
+                    f"{b['x']:.3f}" if b else "", f"{b['y']:.3f}" if b else "", p["dev_mm"] if b else "", p["dx_mm"] if b else "",
+                    p["dy_mm"] if b else "", ("yes" if p["state"] == "good" else "no") if b else "", b.get("level") or "",
+                    b.get("toe") or "", b.get("installed") or "", b.get("note") or ""])
+    for b in r["extra"]:
+        w.writerow(["", "", "", "", b["name"], f"{b['x']:.3f}", f"{b['y']:.3f}", "", "", "", "not in the design",
+                    b["level"] or "", b["toe"] or "", b["installed"] or "", b["note"]])
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="piles-as-built-{asset_id}.csv"'})

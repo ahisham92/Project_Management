@@ -224,6 +224,59 @@ def _axes(model, placement_ent):
     return (x, y, z)
 
 
+def _body_offset(model, shape_ref, depth: int = 0) -> tuple[float, float, float]:
+    """Where an element's body sits in its own placement's frame, in model units.
+
+    Revit's "detached" exports often leave a column's placement at the project origin and put
+    where it really is in the shape: the extrusion's position, or the origin of the mapped
+    representation it is an instance of. The first body item of the 'Body' representation tells.
+    """
+    if depth > 6:
+        return (0.0, 0.0, 0.0)
+    ent = _deref(model, shape_ref)
+    if not ent:
+        return (0.0, 0.0, 0.0)
+    kind, args = ent
+    if kind == "IFCPRODUCTDEFINITIONSHAPE":
+        reps = [model.get(r[1]) for r in (args[2] if len(args) > 2 and isinstance(args[2], list) else [])
+                if isinstance(r, tuple)]
+        reps = [r for r in reps if r and r[0] == "IFCSHAPEREPRESENTATION"]
+        body = next((r for r in reps if str(r[1][1] or "").lower() == "body"), reps[0] if reps else None)
+        if not body or not isinstance(body[1][3], list) or not body[1][3]:
+            return (0.0, 0.0, 0.0)
+        return _body_offset(model, body[1][3][0], depth + 1)
+    if kind == "IFCMAPPEDITEM":
+        rmap = _deref(model, args[0])
+        target = _deref(model, args[1])
+        o = (0.0, 0.0, 0.0)
+        if target and target[0].startswith("IFCCARTESIANTRANSFORMATIONOPERATOR"):
+            o = _point(model, target[1][2])
+        inner = (0.0, 0.0, 0.0)
+        if rmap and rmap[0] == "IFCREPRESENTATIONMAP":
+            origin = _deref(model, rmap[1][0])
+            m = _point(model, origin[1][0]) if origin and origin[0].startswith("IFCAXIS2PLACEMENT") else (0.0, 0.0, 0.0)
+            rep = _deref(model, rmap[1][1])
+            if rep and rep[0] == "IFCSHAPEREPRESENTATION" and isinstance(rep[1][3], list) and rep[1][3]:
+                inner = _body_offset(model, rep[1][3][0], depth + 1)
+            inner = (inner[0] - m[0], inner[1] - m[1], inner[2] - m[2])
+        return (o[0] + inner[0], o[1] + inner[1], o[2] + inner[2])
+    if kind in ("IFCEXTRUDEDAREASOLID", "IFCREVOLVEDAREASOLID", "IFCSWEPTDISKSOLID") and args:
+        pos = _deref(model, args[1]) if kind != "IFCSWEPTDISKSOLID" else None
+        if pos and pos[0].startswith("IFCAXIS2PLACEMENT"):
+            return _point(model, pos[1][0])
+    if kind in ("IFCPOLYGONALFACESET", "IFCTRIANGULATEDFACESET") and args:
+        pts = _deref(model, args[0])
+        if pts and pts[0] == "IFCCARTESIANPOINTLIST3D" and isinstance(pts[1][0], list) and pts[1][0]:
+            coords = [c for c in pts[1][0] if isinstance(c, list) and len(c) >= 3]
+            if coords:
+                n = len(coords)
+                return (sum(float(c[0]) for c in coords) / n, sum(float(c[1]) for c in coords) / n,
+                        max(float(c[2]) for c in coords))
+    if kind == "IFCBOOLEANCLIPPINGRESULT" or kind == "IFCBOOLEANRESULT":
+        return _body_offset(model, args[1], depth + 1)
+    return (0.0, 0.0, 0.0)
+
+
 def _angle(compound) -> float | None:
     """IfcCompoundPlaneAngleMeasure: degrees, minutes, seconds, millionths of a second."""
     if not isinstance(compound, list) or not compound:
@@ -502,6 +555,14 @@ def read(text: str | bytes | mmap.mmap) -> dict[str, Any]:
             continue                                  # untracked detail: no MarineTwin kind and no guide name
         element_kind = mt_kind or by_name or CLASS_KIND.get(kind, "other")
         x, y, z = (c * scale - o for c, o in zip(_placement(model, placement), site_origin))
+        # Where its body is: the placement plus the shape's own offset, turned by the placement's axes.
+        try:
+            bx, by, bz = _body_offset(model, args[6]) if len(args) > 6 else (0.0, 0.0, 0.0)
+        except (TypeError, IndexError, ValueError):
+            bx = by = bz = 0.0
+        (ax, ay, az), (yx_, yy_, yz_), (zx_, zy_, zz_) = _axes(model, model.get(placement[1]))
+        body = (x + (bx * ax + by * yx_ + bz * zx_) * scale, y + (bx * ay + by * yy_ + bz * zy_) * scale,
+                z + (bx * az + by * yz_ + bz * zz_) * scale)
 
         def num(value):
             try:
@@ -523,6 +584,7 @@ def read(text: str | bytes | mmap.mmap) -> dict[str, Any]:
             "rated_reaction": num(furniture.get("MT_RatedReaction")), "rated_energy": num(furniture.get("MT_RatedEnergy")),
             "bollard_capacity": num(furniture.get("MT_BollardCapacity")),
             "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
+            "body": [round(body[0], 3), round(body[1], 3), round(body[2], 3)],
         })
     # Several elements often share one name: every pile of a design section is MP1-DS03. Each
     # becomes its own element, numbered along the berth (MP1-DS03-01, -02, ...).

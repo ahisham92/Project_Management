@@ -402,6 +402,7 @@ CREATE TABLE IF NOT EXISTS marine_assets (
   epsg            TEXT NOT NULL DEFAULT '',         -- the project's map grid, from the model
   feed_key        TEXT NOT NULL DEFAULT '',         -- the key a logger sends readings with; blank: none can
   berth_uses      TEXT NOT NULL DEFAULT '{}',       -- JSON, berth number -> BERTH_USES key, for berths without crane stoppers
+  pile_tolerance  REAL NOT NULL DEFAULT 150,        -- mm, a pile's position at cut-off against the design (marine_piles)
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -564,6 +565,7 @@ LATER_COLUMNS = [
     ("marine_sensors", "zero", "REAL NOT NULL DEFAULT 0"),
     ("marine_sensors", "factor", "REAL NOT NULL DEFAULT 1"),
     ("marine_readings", "raw", "REAL"),
+    ("marine_assets", "pile_tolerance", "REAL NOT NULL DEFAULT 150"),
 ]
 
 
@@ -573,6 +575,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    # The site record's own tables (construction to operations), kept with their own code.
+    from . import marine_piles
+    marine_piles.ensure_schema(conn)
 
 
 # --- dates -------------------------------------------------------------------------

@@ -65,7 +65,7 @@
 .mt-step-t small { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-step.s1 { --step: var(--series-7); } .mt-step.s2 { --step: var(--series-1); } .mt-step.s3 { --step: var(--series-3); }
 .mt-step.s4 { --step: var(--series-4); } .mt-step.s5 { --step: var(--series-2); } .mt-step.s6 { --step: var(--series-5); }
-.mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); } .mt-step.s9 { --step: var(--series-1); } .mt-step.s10 { --step: var(--series-3); }
+.mt-step.s7 { --step: var(--series-6); } .mt-step.s8 { --step: var(--series-8); } .mt-step.s9 { --step: var(--series-1); } .mt-step.s10 { --step: var(--series-3); } .mt-step.s11 { --step: var(--series-4); }
 /* What MarineTwin is worth at this berth (under the steps). */
 .mt-value { margin: 0 0 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--good) 35%, var(--border));
   background: color-mix(in srgb, var(--good) 7%, var(--raised)); font-size: 0.875rem; }
@@ -376,3 +376,15 @@
 .mt-heat canvas { animation: mt-heat 0.9s ease-in-out infinite alternate; }
 @keyframes mt-heat { from { filter: saturate(1.25) sepia(.18) blur(0px); } to { filter: saturate(1.3) sepia(.22) blur(.7px); } }
 @media (max-width: 720px) { .mt-event-banner { top: auto; bottom: 150px; font-size: .8rem; } }
+
+/* The site record: the pile tracker. */
+.mt-key { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
+.mt-key::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--c, #8a8a80); border: 1px solid rgba(0,0,0,.35); }
+.mt-key-ring::before { background: transparent; border: 1.5px solid var(--muted); }
+.mt-pileplan { width: 100%; height: 420px; background: color-mix(in srgb, var(--series-1) 6%, var(--raised)); border-radius: 8px; }
+.mt-pileplan circle { stroke: rgba(0,0,0,.45); stroke-width: 1px; }
+.mt-pileplan .pp-good { fill: #0ca30c; } .mt-pileplan .pp-warning { fill: #fab219; } .mt-pileplan .pp-critical { fill: #d03b3b; }
+.mt-pileplan .pp-todo { fill: none; stroke: var(--muted); } .mt-pileplan .pp-extra { fill: #2a7de1; }
+.mt-pileweeks { width: 100%; height: 160px; }
+.mt-pileweeks .pw-bar { fill: var(--series-4); }
+.mt-pileweeks .pw-goal { stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1px; }

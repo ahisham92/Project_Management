@@ -17,6 +17,8 @@
 .marine-hud-controls { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
 .marine-hud-controls label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .marine-hud-controls input[type=range] { width: 120px; }
+.marine-hud-measured { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.25); }
+.marine-hud-measured strong { color: #ffd23f; }
 .marine-pick { border-left: 1px solid var(--border); padding-left: 16px; font-size: 0.875rem; }
 .marine-pick h3 { margin: 0 0 4px; font-size: 1.05rem; }
 .marine-pick ul { margin: 8px 0; padding: 0; list-style: none; }

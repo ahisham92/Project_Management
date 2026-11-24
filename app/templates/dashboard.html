@@ -8,19 +8,64 @@
 {% set t = snapshot['totals'] %}
 {% set b = snapshot['budget'] %}
 
-<div class="page-head">
-  <div>
-    <h1>{{ project['name'] }}</h1>
-    <p class="small muted" style="margin-top:2px">
-      {{ project['client'] or 'No client set' }} · NTP {{ short_date(project['ntp_date']) }} ·
-      {{ num(snapshot['elapsed_months']) }} months elapsed of {{ num(project['duration_months'], 0) }}
-    </p>
+{# The project at a glance, before anything is broken down: what it is, how
+   much of its time has gone, and how far the work has got against the plan. #}
+{% set elapsed = [[(snapshot['elapsed_months'] or 0) / (project['duration_months'] or 1), 0] | max, 1] | min %}
+{% set planned_f = [[overview['planned'] or 0, 0] | max, 1] | min %}
+{% set earned_f = [[overview['earned'] or 0, 0] | max, 1] | min %}
+<section class="pm-hero">
+  <div class="pm-hero-top">
+    <div class="pm-hero-title">
+      <p class="pm-eyebrow">{{ project['code'] }}{% if project['client'] %} · {{ project['client'] }}{% endif %}</p>
+      <h1>{{ project['name'] }}</h1>
+      <p class="pm-hero-meta">
+        NTP {{ short_date(project['ntp_date']) }} · contract date {{ short_date(overview['contract_end']) }} ·
+        {{ num(snapshot['elapsed_months']) }} of {{ num(project['duration_months'], 0) }} months gone
+      </p>
+    </div>
+    <form method="get" class="inline-form pm-hero-form">
+      {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
+      <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
   </div>
-  <form method="get" class="inline-form">
-    {{ date_field('data_date', data_date, 'Data date', 'w-md') }}
-    <button type="submit" class="btn btn-ghost">Apply</button>
-  </form>
-</div>
+  <div class="pm-hero-body">
+    <div class="pm-rings">
+      {% for label, value, cls in [('Planned', planned_f, 'plan'), ('Earned', earned_f, 'earn')] %}
+        <div class="pm-ring {{ cls }}">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="32" cy="32" r="27" class="track"/>
+            <circle cx="32" cy="32" r="27" class="fill" pathLength="100"
+                    stroke-dasharray="{{ '%.2f' % (value * 100) }} 100"/>
+          </svg>
+          <span class="pm-ring-text"><b>{{ pct(value, 1) }}</b><small>{{ label }}</small></span>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="pm-hero-time">
+      <div class="pm-time-labels">
+        <span>Time used</span>
+        <b>{{ pct(elapsed, 0) }}</b>
+      </div>
+      <div class="pm-time-track" role="img"
+           aria-label="{{ pct(elapsed, 0) }} of the time used, {{ pct(planned_f, 1) }} planned, {{ pct(earned_f, 1) }} earned">
+        <span class="pm-time-fill" style="width:{{ '%.1f' % (elapsed * 100) }}%"></span>
+        <span class="pm-time-mark plan" style="left:{{ '%.1f' % (planned_f * 100) }}%" title="Planned {{ pct(planned_f, 1) }}"></span>
+        <span class="pm-time-mark earn" style="left:{{ '%.1f' % (earned_f * 100) }}%" title="Earned {{ pct(earned_f, 1) }}"></span>
+      </div>
+      <div class="pm-time-ends">
+        <span>{{ short_date(project['ntp_date']) }}</span>
+        <span class="pm-time-key"><i class="plan"></i>planned <i class="earn"></i>earned</span>
+        <span>{{ short_date(overview['contract_end']) }}{% if overview['finish'] and overview['finish'] > overview['contract_end'] %}
+          · <b class="pm-late">programme ends {{ short_date(overview['finish']) }}</b>{% endif %}</span>
+      </div>
+    </div>
+    <div class="pm-hero-stats">
+      <div><span>Variance</span><b class="{{ 'good-text' if overview['variance'] >= 0 else 'bad-text' }}">{{ signed_pct(overview['variance'], 1) }}</b></div>
+      <div><span>Float</span><b class="{{ 'good-text' if overview['on_time'] else 'bad-text' }}">{{ overview['float_days'] }}d</b></div>
+      <div><span>Earned hours</span><b>{{ hours(overview['earned_hours']) }}</b></div>
+    </div>
+  </div>
+</section>
 
 {% if needs %}
   {% set n_now = needs[0]['items'] | length %}
@@ -53,6 +98,11 @@
       </p>
     </div>
   </div>
+  <details class="panel" data-panel="dash-overview">
+    <summary class="panel-summary">
+      <span class="panel-open">Show the figures</span><span class="panel-shut">Hide the figures</span>
+      <span class="small muted">starts, finishes, contract date, float, planned, earned, hours</span>
+    </summary>
   <div class="card-body flush table-scroll">
     <table>
       <thead>
@@ -98,6 +148,7 @@
       measured here rather than added up from the rows.
     </p>
   </div>
+  </details>
 </div>
 
 <div class="grid grid-4">

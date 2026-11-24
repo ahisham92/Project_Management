@@ -702,7 +702,7 @@ function drawDlg(){
   let body="";
   if(DTAB==="wait"){ body = b.length? `<p class="muted" style="margin:0">Answer what you can. Each answer unlocks the cards that need it, or removes the ones that don't apply.</p>${b.map(qblock).join("")}` : `<p class="muted">Nothing waiting. Every question so far is answered.</p>`; }
   else {
-    body=`<div class="dsec">Project</div><div class="form" style="max-width:none;padding:0">${TEXTQ.map(q=>`<label for="d-${q.id}">${esc(q.label)}<input id="d-${q.id}" data-txt="${q.id}" value="${esc(p.answers[q.id]||"")}"></label>`).join("")}</div>`;
+    body=`<div class="dsec">Project</div><div class="form" style="max-width:none;padding:0">${TEXTQ.map(q=>`<label for="d-${q.id}">${esc(q.label)}<input id="d-${q.id}" data-txt="${q.id}" value="${esc(p.answers[q.id]||"")}"${SRV&&(q.id==="num"||q.id==="title")?" readonly title=\"Change it in the project's Setup\"":""}></label>`).join("")}</div>${SRV?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">The project number and title come from the project's Setup.</p>`:""}`;
     ST.forEach((s,i)=>{ const qs=CHOICE.filter(q=>QST[q.id]===i&&shown(p,q)&&(!unanswered(p,q)||p.visited[i]||p.skipped[q.id])); if(qs.length) body+=`<div class="dsec">${esc(s.s)}</div>${qs.map(qblock).join("")}`; });
     body+=`<label class="row muted" style="font-size:13.5px"><input type="checkbox" id="tipT" ${UI.tips?"checked":""}> Show good-practice tips from the PM workshop</label>`;
   }

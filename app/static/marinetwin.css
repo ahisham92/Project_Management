@@ -389,3 +389,10 @@
 .mt-pileweeks .pw-bar { fill: var(--series-4); }
 .mt-pileweeks .pw-goal { stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1px; }
 .mt-seabed { display: block; max-width: 100%; max-height: 560px; margin: 0 auto 8px; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--border); }
+.mt-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.mt-photo { margin: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--raised); }
+.mt-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #0001; }
+.mt-photo figcaption { padding: 6px 8px; font-size: 0.8125rem; line-height: 1.4; }
+.mt-photo-tools { display: flex; gap: 10px; margin-top: 4px; font-size: 0.75rem; }
+.mt-photo-tools form { display: inline; }
+.mt-photo-tools .linkish { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; }

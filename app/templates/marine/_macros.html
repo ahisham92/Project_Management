@@ -26,7 +26,7 @@
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
                      ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
   {% set setup_tabs = [('marine.setup', 'Model and place'), ('marine.sensors', 'Sensors'), ('marine.inputs', 'Inputs')] %}
-  {% set record_tabs = [('marine.piles', 'Piles'), ('marine.seabed', 'Seabed surveys')] %}
+  {% set record_tabs = [('marine.piles', 'Piles'), ('marine.seabed', 'Seabed surveys'), ('marine.photos', 'Photos')] %}
   {% set port_tabs = [('marine.live', 'Live port'), ('marine.berthplan', 'Berth plan'), ('marine.ships', 'Ships')] %}
   {% set here = request.endpoint %}
   {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}

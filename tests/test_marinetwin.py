@@ -828,7 +828,7 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles"):
+    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles", "/seabed", "/photos"):
         page = text(signed_in.get(demo + path))
         assert page.count('class="mt-step ') == 11 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
@@ -1600,3 +1600,55 @@ def test_a_survey_file_is_read_in_any_frame_and_as_depths_or_levels(app, signed_
         marine_surveys.to_model(np.array([[500000.0, 700000.0, 10.0]] * 12), "auto", asset, None, 2.5)
     # Levels on mean sea level move onto chart datum.
     assert marine_surveys.to_levels(np.array([-15.0]), "level", "msl", 0.9)[0] == pytest.approx(-14.1)
+
+
+# --- the site record: photos -------------------------------------------------------------
+
+def _jpeg(lat=None, lon=None, when="2026:05:04 10:20:30", size=(800, 600)):
+    from PIL import Image
+    img = Image.new("RGB", size, (120, 140, 160))
+    exif = Image.Exif()
+    exif[306] = when
+    if lat is not None:
+        def dms(v):
+            v = abs(v)
+            d = int(v)
+            m = int((v - d) * 60)
+            return (float(d), float(m), round(((v - d) * 60 - m) * 60, 4))
+        exif[0x8825] = {1: "N" if lat >= 0 else "S", 2: dms(lat), 3: "E" if lon >= 0 else "W", 4: dms(lon)}
+    out = io.BytesIO()
+    img.save(out, "JPEG", exif=exif)
+    return out.getvalue()
+
+
+def test_photos_are_kept_on_their_element_with_the_cameras_date_and_place(app, signed_in, demo):
+    page = text(signed_in.get(demo + "/photos"))
+    assert "Photos" in page and "No photos" in page
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        asset = conn.execute("SELECT * FROM marine_assets WHERE id = 1").fetchone()
+        f2 = conn.execute("SELECT * FROM marine_elements WHERE asset_id = 1 AND name = 'F2'").fetchone()
+    # On the element's page, with a grade: kept on it and recorded as an inspection.
+    answer = signed_in.post(demo + "/photos", data={"photos": [(io.BytesIO(_jpeg()), "f2.jpg")], "element_id": str(f2["id"]),
+                                                    "kind": "photo", "caption": "Cone torn", "grade": "4", "back": "element"},
+                            content_type="multipart/form-data")
+    assert answer.status_code == 302 and answer.headers["Location"].endswith(f"/elements/{f2['id']}#photos")
+    element_page = text(signed_in.get(demo + f"/elements/{f2['id']}"))
+    assert "Cone torn" in element_page and "04/05/2026" in element_page and "Cone torn (1 photo)" in element_page
+    # A drone photo with GPS over BOL2 and no element picked: pinned to it.
+    with app.app_context():
+        bol2 = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_elements WHERE asset_id = 1 AND name = 'BOL2'").fetchone()
+    lat, lon = marine.geolocate(asset, bol2["x"] + 1.0, bol2["y"])
+    signed_in.post(demo + "/photos", data={"photos": [(io.BytesIO(_jpeg(lat, lon)), "drone.jpg"), (io.BytesIO(b"not a picture"), "x.jpg")],
+                                           "kind": "drone"}, content_type="multipart/form-data")
+    page = text(signed_in.get(demo + "/photos"))
+    assert "BOL2" in page and "(GPS)" in page
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_photos WHERE asset_id = 1 ORDER BY id").fetchall()
+    assert len(rows) == 2 and rows[1]["element_id"] == bol2["id"] and rows[1]["pinned"] == "gps"
+    thumb = signed_in.get(demo + f"/photos/{rows[0]['id']}.jpg?thumb=1")
+    assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"
+    assert signed_in.get(demo + f"/photos/{rows[0]['id']}/original").data[:2] == b"\xff\xd8"
+    assert "Drone" in text(signed_in.get(demo + "/photos?kind=drone"))
+    signed_in.post(demo + f"/photos/{rows[1]['id']}/delete")
+    assert signed_in.get(demo + f"/photos/{rows[1]['id']}.jpg").status_code == 404

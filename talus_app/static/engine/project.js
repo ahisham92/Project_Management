@@ -78,6 +78,8 @@ export const DEFAULTS = {
     waves: { Hs: 2, Tp: 8, hours: 6, seabed: 0.01, section: "trunk" },
     armour: { type: "rock", rhoR: 2650, rhoC: 2400, rhoW: 1025, P: 0.4, S: null, governing: "max", toeRatio: 0.8 },
     load: { q: 10, setback: 2, width: 8 },
+    grids: { on: false, n: 4, bottom: 0.5, spacing: 0.6, T: 60, Ci: 0.8, length: 8 },
+    piles: { on: false, x: 16, length: 12, Vp: 300, spacing: 2 },
     seismic: { on: true, ag: 0.15, ground: "C" },
     design: { basis: "fos", method: "mp", targets: null },
     advanced: { slices: 40, noncircular: false, crack: 0 },
@@ -173,11 +175,45 @@ function factorsOf(p) {
   return { ...(BASES[p.design?.basis] || BASES.fos).factors };
 }
 
+/** Seismic design situation (EN 1990 6.4.3.4, EN 1998-5 3.1): materials factored, actions not. */
+function seismicFactors(p) {
+  return { ...factorsOf(p), variable: 1 };
+}
+
 /** A row of piles (or a sheet-pile wall) at x: its shear capacity per metre run. */
 function pileRow(p, x, ground) {
   if (!p.piles?.on) return [];
   const V = Math.max(0, num(p.piles.Vp, 0)) / Math.max(0.1, num(p.piles.spacing, 1));
   return V > 0 ? [{ kind: "pile", x, y: yAt(ground, x), length: Math.max(0.5, num(p.piles.length, 10)), V }] : [];
+}
+
+
+/**
+ * The extra loads of the Loads list: strip loads (kPa over a width) and line loads
+ * (kN/m, vertical and horizontal) at a distance from a reference x (the crest edge;
+ * x itself on a drawn section). Permanent ones keep their value in every case and are
+ * not factored by EC7's variable-load factor; variable ones take ψ2 = 0.3 in the
+ * seismic case. A horizontal force is taken towards the face being checked (adverse).
+ */
+export function loadsOf(p, ref, xmin, xmax) {
+  const list = Array.isArray(p.loads) ? p.loads : [];
+  const clampX = (x) => Math.max(xmin, Math.min(xmax, x));
+  return (psi = 1, face = null) => {
+    const strips = [], lines = [];
+    const dir = face ? Math.sign(face.toe[0] - face.crest[0]) || 1 : 1;
+    for (const L of list) {
+      const k = L.permanent ? 1 : psi;
+      const x = clampX(ref + num(L.at, 0));
+      if (L.kind === "line") {
+        const V = num(L.V, 0), Hh = num(L.H, 0);
+        if (V || Hh) lines.push({ x, fx: Hh * k * dir, fy: -V * k, variable: !L.permanent, V: V * k, H: Hh * k });
+      } else {
+        const q = num(L.q, 0), x2 = clampX(ref + num(L.at, 0) + Math.max(0, num(L.width, 1)));
+        if (q && x2 > x) strips.push({ x1: x, x2, q: q * k, variable: !L.permanent });
+      }
+    }
+    return { strips, lines };
+  };
 }
 
 // ---------------------------------------------------------------- cut slope
@@ -213,6 +249,8 @@ function cutCases(p) {
   }
   const q = num(p.load?.q, 0);
   const strip = (psi = 1) => q > 0 ? [{ x1: xc + num(p.load.setback, 1), x2: Math.min(xr, xc + num(p.load.setback, 1) + num(p.load.width, 10)), q: q * psi, variable: true }] : [];
+  const extra = loadsOf(p, xc, 0, xr), cutFace = { toe: [xt, 0], crest: [xc, H] };
+  const loads = (psi = 1, f = cutFace) => { const e = extra(psi, f); return { strips: [...strip(psi), ...e.strips], lines: e.lines }; };
   // soil nails / anchors: rows spread evenly up the face, each pointing into the slope
   const reinforcement = [];
   if (p.nails?.on) {
@@ -228,15 +266,15 @@ function cutCases(p) {
   const T = targetsOf(p);
   const clayey = soil.clay || lowerSoil?.clay;
   const cases = [
-    { key: "long", name: "Long term (drained)", target: T.static, model: { ...base, layers: layers(false), piezo, strips: strip() },
+    { key: "long", name: "Long term (drained)", target: T.static, model: { ...base, layers: layers(false), piezo, ...loads() },
       note: `Effective strength c', φ' with ${flow ? `pore pressures from the flow net (seepage ${flowText(flow)})` : "the groundwater line"}; surcharge on the crest.` },
   ];
   if (clayey) cases.push({ key: "short", name: "Short term (undrained)", target: T.short,
-    model: { ...base, layers: layers(true), piezo, strips: strip() },
+    model: { ...base, layers: layers(true), piezo, ...loads() },
     note: "Right after excavation: clays at their undrained strength su (total stress)." });
   const eq = seismicCoefficients(p, H, Math.atan(1 / cot) * 180 / Math.PI);
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
-    model: { ...base, layers: layers(true), piezo, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    model: { ...base, layers: layers(true), piezo, ...loads(0.3), seismic: { kh: eq.kh, kv: eq.kv }, factors: seismicFactors(p) },
     note: "Earthquake as a steady push kh·W towards the face and ±kv·W vertically; clays undrained; 30% of the surcharge (ψ2)." });
   return { cases, geometry: { ground, H, xt, xc, xr, bottom: -D, layers: layers(false), piezo, flow, lowerY: lowerSoil ? yLower : null, reinforcement, faceDir: -1, benches: face.benches }, extras: {} };
 }
@@ -278,6 +316,8 @@ function embankmentCases(p) {
   const q = num(p.load?.q, 0);
   const strip = (psi = 1) => q > 0 ? [{ x1: x2 + num(p.load.setback, 0.5), x2: Math.min(x3, x2 + num(p.load.setback, 0.5) + num(p.load.width, B)), q: q * psi, variable: true }] : [];
   const land = { toe: [x4, 0], crest: [x3, H] }, waterFace = { toe: [x1, 0], crest: [x2, H] };
+  const extra = loadsOf(p, x2, 0, xr);
+  const loads = (psi = 1, f = land) => { const e = extra(psi, f); return { strips: [...strip(psi), ...e.strips], lines: e.lines }; };
   // geogrids across the fill, face to face, from near the base up
   const reinforcement = [];
   if (p.grids?.on) {
@@ -296,20 +336,20 @@ function embankmentCases(p) {
   const T = targetsOf(p);
   const cases = [];
   if (found.clay || fill.clay) cases.push({ key: "eoc", name: "End of construction", target: T.short,
-    model: { ...base, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: flat(0, 0, xr), strips: strip() },
+    model: { ...base, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: flat(0, 0, xr), ...loads() },
     note: "Just built: clays at undrained strength su, groundwater at original ground." });
   cases.push({ key: "long", name: hw > 0 ? "Long term, steady seepage" : "Long term (drained)", target: T.static,
-    model: { ...wet, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(false), piezo: seep, strips: strip() },
+    model: { ...wet, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(false), piezo: seep, ...loads() },
     note: hw > 0 ? (flow ? `Water held on the left at full level; pore pressures from the flow net (seepage ${flowText(flow)}); land-side slope.` : "Water held on the left at full level; seepage line straight to the right toe; land-side slope.") : "Effective strength c', φ'." });
   if (hw > 0) cases.push({ key: "drawdown", name: "Rapid drawdown", target: T.transient,
-    model: { ...wet, flowCap: !!flow, face: waterFace, reinforcement: [...reinforcement, ...waterPiles], layers: layers(false), piezo: drawn, strips: strip() },
-    ...(staged ? { staged: { before: { ...wet, face: waterFace, reinforcement: [...reinforcement, ...waterPiles], layers: layers(false), piezo: seep, strips: strip() } } } : {}),
+    model: { ...wet, flowCap: !!flow, face: waterFace, reinforcement: [...reinforcement, ...waterPiles], layers: layers(false), piezo: drawn, ...loads(1, waterFace) },
+    ...(staged ? { staged: { before: { ...wet, face: waterFace, reinforcement: [...reinforcement, ...waterPiles], layers: layers(false), piezo: seep, ...loads(1, waterFace) } } } : {}),
     note: staged
       ? `Water outside drops from ${hw.toFixed(1)} m to ${lowW.toFixed(1)} m. Three-stage method (Duncan, Wright and Wong 1990; USACE EM 1110-2-1902 App. G): consolidation stresses from full-water steady seepage, undrained strengths in the soils that do not drain freely (k below 1e-5 m/s) from the R envelope, drained where that is lower.`
       : `Water outside drops from ${hw.toFixed(1)} m to ${lowW.toFixed(1)} m faster than the fill drains (pore pressures stay at the steady-state ${flow ? "flow net" : "line"}); water-side slope.` });
   const eq = seismicCoefficients(p, H, Math.atan(1 / cot) * 180 / Math.PI);
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
-    model: { ...wet, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: seep, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    model: { ...wet, face: land, reinforcement: [...reinforcement, ...landPiles], layers: layers(true, fill.clay), piezo: seep, ...loads(0.3), seismic: { kh: eq.kh, kv: eq.kv }, factors: seismicFactors(p) },
     note: "Earthquake as kh·W towards the land-side face and ±kv·W; clays undrained; 30% of the surcharge (ψ2)." });
   return { cases, geometry: { ground, H, xr, bottom: -D, layers: layers(false), piezo: seep, flow, x1, x2, x3, x4, faceDir: 1, benches: face.benches, reinforcement: [...reinforcement, ...landPiles] }, extras: {} };
 }
@@ -370,7 +410,23 @@ function revetmentCases(p) {
   const lag = (zi, zo) => upper(flat(zo, 0, xr), lower(still(zi), ground, 0, xr), 0, xr);
   const q = num(p.load?.q, 0);
   const strip = (psi = 1) => q > 0 ? [{ x1: xc + num(p.load.setback, 2), x2: Math.min(xr, xc + num(p.load.setback, 2) + num(p.load.width, 8)), q: q * psi, variable: true }] : [];
-  const base = { ground, bottom: Zt - D, gw, face: { toe: [xt, Zt], crest: [xc, Zc] }, factors: factorsOf(p), crack: { depth: 0, water: 0 } };
+  const extra = loadsOf(p, xc, 0, xr), revFace = { toe: [xt, Zt], crest: [xc, Zc] };
+  const loads = (psi = 1, f = revFace) => { const e = extra(psi, f); return { strips: [...strip(psi), ...e.strips], lines: e.lines }; };
+  // geogrids in the backfill, from the core behind the armour inland; a pile row from the toe
+  const reinforcement = [];
+  if (p.grids?.on) {
+    const n = Math.max(1, Math.min(40, Math.round(num(p.grids.n, 1))));
+    const skin = (ta + tu) * sec * cot;
+    for (let i = 0; i < n; i++) {
+      const y = Zt + num(p.grids.bottom, 0.5) + i * Math.max(0.1, num(p.grids.spacing, 0.6));
+      if (y >= Zc - 0.05) break;
+      const x0 = xt + (y - Zt) * cot + skin;
+      reinforcement.push({ kind: "grid", y, x0, x1: Math.min(xr, x0 + Math.max(0.5, num(p.grids.length, 8))), x: x0,
+        T: Math.max(0, num(p.grids.T, 60)), Ci: Math.max(0, num(p.grids.Ci, 0.8)) });
+    }
+  }
+  reinforcement.push(...pileRow(p, xt + num(p.piles?.x, 0), ground));
+  const base = { ground, bottom: Zt - D, gw, face: { toe: [xt, Zt], crest: [xc, Zc] }, factors: factorsOf(p), crack: { depth: 0, water: 0 }, reinforcement };
   const T = targetsOf(p);
   const trough = Math.max(Zt + 0.01, LWL - 0.5 * Hs);
   // How far the water inside lags behind a falling sea depends on how freely the core drains.
@@ -382,21 +438,21 @@ function revetmentCases(p) {
   // look at surfaces that go through the armour and underlayer into the core.
   const minDepth = 1.05 * (ta + tu) * sec;
   const cases = [
-    { key: "high", name: "High water, steady", target: T.static, minDepth, model: { ...base, layers: layers(false), piezo: still(HWL), strips: strip() },
+    { key: "high", name: "High water, steady", target: T.static, minDepth, model: { ...base, layers: layers(false), piezo: still(HWL), ...loads() },
       note: `Water at HWL ${HWL.toFixed(2)} m inside and out.` },
-    { key: "low", name: "Low water, steady", target: T.static, minDepth, model: { ...base, layers: layers(false), piezo: still(LWL), strips: strip() },
+    { key: "low", name: "Low water, steady", target: T.static, minDepth, model: { ...base, layers: layers(false), piezo: still(LWL), ...loads() },
       note: `Water at LWL ${LWL.toFixed(2)} m inside and out.` },
-    { key: "drawdown", name: "Drawdown under wave trough", target: T.transient, minDepth, model: { ...base, layers: layers(false), piezo: lag(Math.max(inside, trough), trough), strips: strip() },
+    { key: "drawdown", name: "Drawdown under wave trough", target: T.transient, minDepth, model: { ...base, layers: layers(false), piezo: lag(Math.max(inside, trough), trough), ...loads() },
       note: `Sea at LWL − Hs/2 = ${trough.toFixed(2)} m (low tide plus wave run-down) while the water inside the ${core.name.toLowerCase()} lags at ${Math.max(inside, trough).toFixed(2)} m${lagFrac === null ? " (as entered)" : lagFrac === 1 ? " (does not drain: stays at HWL)" : ""}.` },
   ];
   const eq = seismicCoefficients(p, H, Math.atan(1 / cot) * 180 / Math.PI);
   const mid = (HWL + LWL) / 2;
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, minDepth, seismic: eq,
-    model: { ...base, layers: layers(true), piezo: still(mid), strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    model: { ...base, layers: layers(true), piezo: still(mid), ...loads(0.3), seismic: { kh: eq.kh, kv: eq.kv }, factors: seismicFactors(p) },
     note: `Earthquake at mean water ${mid.toFixed(2)} m; kh·W towards the sea, ±kv·W; clays undrained; 30% of the surcharge.` });
   return {
     cases,
-    geometry: { ground, H, xt, xc, xr, bottom: Zt - D, layers: layers(false), piezo: still(HWL), topU, topC, Zt, Zc, ta, tu, water: { HWL, LWL }, faceDir: -1,
+    geometry: { ground, H, xt, xc, xr, bottom: Zt - D, layers: layers(false), piezo: still(HWL), topU, topC, Zt, Zc, ta, tu, water: { HWL, LWL }, faceDir: -1, reinforcement,
       armour: { kind: design.unit.kind === "rock" ? "rock" : "unit", Dn: design.unit.DnDesign, thickness: ta, toe: [xt, Zt], crest: [xc, Zc] } },
     extras: { armour: design },
   };
@@ -469,18 +525,20 @@ function sectionCases(p) {
   const q = num(p.load?.q, 0);
   const a = num(p.load?.x1, x0), b = num(p.load?.x2, x0);
   const strip = (psi = 1) => (q > 0 && Math.abs(b - a) > 0 ? [{ x1: Math.min(a, b), x2: Math.max(a, b), q: q * psi, variable: true }] : []);
+  const extra = loadsOf(p, 0, x0, x1);
+  const loads = (psi = 1, f = face) => { const e = extra(psi, f); return { strips: [...strip(psi), ...e.strips], lines: e.lines }; };
   const reinforcement = pileRow(p, num(p.piles?.x, (face.crest[0] + face.toe[0]) / 2), ground);
   const base = { ground, bottom, face, gw: 9.81, factors: factorsOf(p), crack: { depth: num(p.advanced?.crack, 0), water: 0 }, ru, reinforcement, flow };
   const T = targetsOf(p);
   const clayey = specs.some((L) => L.soil.clay && L.soil.su > 0);
   const water = flow ? `pore pressures from the flow net (seepage ${flowText(flow)})` : piezo ? "the water line" : ru ? `ru = ${ru}` : "no water";
-  const cases = [{ key: "long", name: "Long term (drained)", target: T.static, model: { ...base, layers: layers(false), piezo, strips: strip() },
+  const cases = [{ key: "long", name: "Long term (drained)", target: T.static, model: { ...base, layers: layers(false), piezo, ...loads() },
     note: `Effective strength c', φ' with ${water}.` }];
-  if (clayey) cases.push({ key: "short", name: "Short term (undrained)", target: T.short, model: { ...base, layers: layers(true), piezo, strips: strip() },
+  if (clayey) cases.push({ key: "short", name: "Short term (undrained)", target: T.short, model: { ...base, layers: layers(true), piezo, ...loads() },
     note: "Layers with an undrained strength at su (with its increase with depth and cap); the others drained." });
   const eq = seismicCoefficients(p, H, slopeDeg);
   if (eq) cases.push({ key: "seismic", name: "Seismic (pseudo-static)", target: T.seismic, seismic: eq,
-    model: { ...base, layers: layers(true), piezo, strips: strip(0.3), seismic: { kh: eq.kh, kv: eq.kv } },
+    model: { ...base, layers: layers(true), piezo, ...loads(0.3), seismic: { kh: eq.kh, kv: eq.kv }, factors: seismicFactors(p) },
     note: "kh·W towards the face and ±kv·W; layers with su undrained; 30% of the surcharge (ψ2)." });
   const faceDir = face.crest[0] < face.toe[0] ? 1 : -1;
   return { cases, geometry: { ground, H, xr: x1, bottom, layers: layers(false), piezo, flow, faceDir, reinforcement }, extras: {} };

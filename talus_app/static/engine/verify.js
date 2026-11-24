@@ -94,6 +94,19 @@ export const CHECKS = [
       return { expected: exact, rows: [["Janbu simplified", r.janbu]], tol: 1e-9 };
     },
   },
+  {
+    id: "wedge-line-load", group: "Closed form",
+    title: "Planar wedge with a line load, vertical and horizontal",
+    source: "Block equilibrium with V = 80 kN/m down and H = 30 kN/m towards the face at x = 15 on the crest: F = (c L + ((W+V) cos θ − H sin θ) tan φ) / ((W+V) sin θ + H cos θ)",
+    run() {
+      const V = 80, H = 30;
+      const P = prepare(wedgeModel({ lines: [{ x: 15, fx: -H, fy: -V }] }));
+      const r = factors(P, buildSlices(P, WEDGE, { n: 30 }), null);
+      const W = WW + V;
+      const exact = (5 * LL + (W * Math.cos(TH) - H * Math.sin(TH)) * Math.tan(30 * D)) / (W * Math.sin(TH) + H * Math.cos(TH));
+      return { expected: exact, rows: [["Janbu simplified", r.janbu], ["Spencer", valueOf(r, "spencer")], ["Morgenstern-Price", valueOf(r, "mp")]], tol: 1e-9 };
+    },
+  },
   ...[
     { id: "wedge-pile", title: "Planar wedge with a row of piles",
       source: "Block equilibrium with a 60 kN/m horizontal shear (piles of 120 kN at 2 m) where the plane cuts the piles",

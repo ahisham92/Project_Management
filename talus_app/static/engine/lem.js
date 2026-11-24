@@ -212,11 +212,15 @@ export function buildSlices(P, slip, opts = {}) {
         let P_ = 0;
         const n = 12, d = (b - a) / n;
         for (let k = 0; k < n; k++) {
-          const xm = a + (k + 0.5) * d, cover = Math.max(0, yAt(P.ground, xm) - r.y);
+          const xm = a + (k + 0.5) * d;
           const m = P.layers[layerAt(P, xm, r.y + 1e-6).layer].mat;
-          const g = m.gamma || 18;
-          // both faces of the grid: 2 Ci (c + sigma_v tan phi), or 2 Ci su for an undrained fill
-          const shear = m.kind === "undrained" ? m.su : (m.c || 0) + g * cover * Math.tan((m.phi || 0) * DEG);
+          // effective vertical stress at the grid: the column above it (gamma above the water,
+          // gsat below, plus any water standing on the ground) less the pore pressure there
+          const g = yAt(P.ground, xm), hw = P.piezo && P.ru <= 0 ? yAt(P.piezo, xm) : -Infinity;
+          const sv = g > r.y ? column(P, xm, r.y).w + P.gw * Math.max(0, hw - g) : 0;
+          const u = P.ru > 0 ? P.ru * sv : P.pw ? P.pw(xm, r.y) : P.gw * Math.max(0, hw - r.y);
+          // both faces of the grid: 2 Ci (c + sigma_v' tan phi), or 2 Ci su for an undrained fill
+          const shear = m.kind === "undrained" ? m.su : (m.c || 0) + Math.max(0, sv - u) * Math.tan((m.phi || 0) * DEG);
           P_ += 2 * (r.Ci ?? 0.8) * shear * d;
         }
         return P_;

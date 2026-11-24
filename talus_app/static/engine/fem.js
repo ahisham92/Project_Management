@@ -221,6 +221,15 @@ export function femModel(P, opt = {}) {
       });
     }
   }
+  // line loads: on the surface node nearest to them
+  for (const L of P.lines || []) {
+    let best = -1, bd = Infinity;
+    for (const edge of M.top) for (const k of edge) { const d = Math.abs(X[k] - L.x); if (d < bd) { bd = d; best = k; } }
+    if (best < 0) continue;
+    const ix = eq[2 * best], iy = eq[2 * best + 1];
+    if (ix >= 0) loads[ix] += L.fx;
+    if (iy >= 0) loads[iy] += L.fy;
+  }
   if (!bandFactor(K, neq, w)) return null;
   return { P, M, eq, neq, w, K, loads, B, wdet, gx, gy, u0, gmat, D, ngp };
 }

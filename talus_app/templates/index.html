@@ -31,6 +31,10 @@
         <a class="app-name" href="{{ url_for('home') }}">Talus<small>slope stability</small></a>
         <input class="project-name" id="projectName" aria-label="Project name" value="" maxlength="120">
         <span class="save-state" id="saveState"></span>
+        <div class="undo" role="group" aria-label="Undo and redo">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3L2 6l3 3"/><path d="M2 6h7a4 4 0 010 8H7"/></svg></button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l3 3-3 3"/><path d="M14 6H7a4 4 0 000 8h2"/></svg></button>
+        </div>
         <div class="spacer"></div>
         <button type="button" class="btn btn-ghost btn-sm" id="btnProjects">Projects</button>
         <div class="menu-wrap">

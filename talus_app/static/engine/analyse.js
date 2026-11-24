@@ -91,7 +91,7 @@ export function analyseCase(c, opt = {}) {
     F, ratio: F / c.target, pass: F >= c.target - 5e-4,
     results, lambda: -lambdaOf(r.results, used),
     surface: toUser(P, r), slices: slicesToUser(P, slices), trials,
-    weight: W, piezo: c.model.piezo, strips: c.model.strips || [],
+    weight: W, piezo: c.model.piezo, strips: c.model.strips || [], lines: c.model.lines || [],
     seismic: c.seismic ? { ...c.seismic, kvUsed } : null,
     fromCircle: r.fromCircle, hb: r.hb || null, staged: r.staged || null,
     _P: P, _r: r,
@@ -220,6 +220,79 @@ export function steepestSafe(project, opt = {}) {
   // round up to a buildable ratio (nearest 0.05 flatter)
   const cot = Math.ceil(best.cot * 20 - 1e-9) / 20;
   return { cot, angle: Math.atan(1 / cot) / DEG, worst: best.worst };
+}
+
+/**
+ * What it takes: the variables a person can ask Talus to solve for, by kind of slope.
+ * want "min": the smallest value that meets every target (more is safer);
+ * want "max": the largest value that still meets every target (less is safer).
+ */
+export const GOALS = [
+  { k: "geom.cot", l: "Steepest slope", u: "H/V", want: "min", kinds: ["cut", "embankment", "revetment"], fmt: (v) => `1:${v}`, step: 0.05 },
+  { k: "geom.H", l: "Highest slope", u: "m", want: "max", kinds: ["cut", "embankment"], range: [0.5, 40], step: 0.25, when: (p) => !p.geom?.berms?.on },
+  { k: "load.q", l: "Largest surcharge", u: "kPa", want: "max", kinds: ["cut", "embankment", "revetment", "section"], range: [0, 500], step: 1 },
+  { k: "water.back", l: "Groundwater drawn down to", u: "m below the crest", want: "min", kinds: ["cut"], range: [0, 40], step: 0.25, when: (p) => p.water?.on },
+  { k: "nails.length", l: "Shortest nails", u: "m", want: "min", kinds: ["cut"], range: [1, 30], step: 0.5, when: (p) => p.nails?.on },
+  { k: "nails.T", l: "Smallest nail capacity", u: "kN/m", want: "min", kinds: ["cut"], range: [0, 1000], step: 5, when: (p) => p.nails?.on },
+  { k: "nails.rows", l: "Fewest rows of nails", u: "rows", want: "min", kinds: ["cut"], range: [1, 12], step: 1, int: true, when: (p) => p.nails?.on },
+  { k: "grids.n", l: "Fewest geogrid layers", u: "layers", want: "min", kinds: ["embankment", "revetment"], range: [1, 40], step: 1, int: true, when: (p) => p.grids?.on },
+  { k: "grids.T", l: "Weakest geogrid", u: "kN/m", want: "min", kinds: ["embankment", "revetment"], range: [0, 2000], step: 5, when: (p) => p.grids?.on },
+  { k: "piles.Vp", l: "Smallest pile shear capacity", u: "kN", want: "min", kinds: ["cut", "embankment", "revetment", "section"], range: [0, 20000], step: 10, when: (p) => p.piles?.on },
+  { k: "piles.spacing", l: "Widest pile spacing", u: "m", want: "max", kinds: ["cut", "embankment", "revetment", "section"], range: [0.1, 20], step: 0.1, when: (p) => p.piles?.on },
+  { k: "seismic.ag", l: "Strongest earthquake", u: "g", want: "max", kinds: ["cut", "embankment", "revetment", "section"], range: [0, 0.8], step: 0.01, when: (p) => p.seismic?.on },
+];
+
+export function goalsFor(project) {
+  const p = complete(project);
+  return GOALS.filter((g) => g.kinds.includes(p.type) && (!g.when || g.when(p)));
+}
+
+const getPath = (o, path) => path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
+const setPath = (o, path, v) => { const ks = path.split("."); let a = o; for (let i = 0; i < ks.length - 1; i++) a = a[ks[i]] = a[ks[i]] ?? {}; a[ks[ks.length - 1]] = v; };
+
+/**
+ * Solve for one input: the least (or most) of it that meets every target in every
+ * load case, everything else as it is. Bisection on full fast searches; the answer is
+ * rounded to a buildable step on the safe side and checked again.
+ * Returns { k, value, worst, atLimit } or { value: null, message }.
+ */
+export function solveFor(project, key, opt = {}) {
+  if (key === "geom.cot") {
+    const r = steepestSafe(project, { onStep: (cot, worst) => opt.onStep?.(cot, worst) });
+    return { k: key, value: r.cot, worst: r.worst, atLimit: r.atLimit, message: r.message };
+  }
+  const p = complete(project);
+  const g = GOALS.find((x) => x.k === key);
+  if (!g) return { k: key, value: null, message: "Talus cannot solve for that input." };
+  const [lo0, hi0] = g.range;
+  const check = (v) => {
+    const q = JSON.parse(JSON.stringify(p));
+    setPath(q, key, v);
+    const a = analyse(q, { fast: true });
+    opt.onStep?.(v, a.worst);
+    return a;
+  };
+  const safeEnd = g.want === "min" ? hi0 : lo0, riskEnd = g.want === "min" ? lo0 : hi0;
+  const a0 = check(safeEnd);
+  if (!a0.pass) return { k: key, value: null, worst: a0.worst, message: `Even at ${safeEnd} ${g.u} a load case is short of its target: change something else as well.` };
+  const a1 = check(riskEnd);
+  if (a1.pass) return { k: key, value: riskEnd, worst: a1.worst, atLimit: true };
+  let pass = safeEnd, fail = riskEnd;
+  const steps = opt.steps || (g.int ? 6 : 9);
+  for (let i = 0; i < steps; i++) {
+    if (Math.abs(pass - fail) <= (g.int ? 1 : g.step / 2)) break;
+    let mid = (pass + fail) / 2;
+    if (g.int) mid = Math.round(mid);
+    if (mid === pass || mid === fail) break;
+    if (check(mid).pass) pass = mid; else fail = mid;
+  }
+  // round on the safe side, to the step
+  const k = 1 / g.step;
+  let v = g.want === "min" ? Math.ceil(pass * k - 1e-9) / k : Math.floor(pass * k + 1e-9) / k;
+  v = +v.toFixed(6);
+  const af = check(v);
+  if (!af.pass) v = pass;   // rounding never makes it unsafe; keep the bisection value if it did
+  return { k: key, value: v, worst: (af.pass ? af : check(v)).worst, before: getPath(p, key) };
 }
 
 export { circleSlip };

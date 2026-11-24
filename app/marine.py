@@ -578,9 +578,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     # The site record's own tables (construction to operations), kept with their own code.
-    from . import marine_piles, marine_surveys
+    from . import marine_photos, marine_piles, marine_surveys
     marine_piles.ensure_schema(conn)
     marine_surveys.ensure_schema(conn)
+    marine_photos.ensure_schema(conn)
 
 
 # --- dates -------------------------------------------------------------------------

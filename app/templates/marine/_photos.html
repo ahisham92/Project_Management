@@ -1,0 +1,22 @@
+{# A grid of photos, each opening full size, with its date, kind, element and caption. #}
+{% macro gallery(asset, rows, kinds, back='', show_element=True) %}
+  {% set kind_name = dict(kinds) %}
+  <div class="mt-photos">
+    {% for p in rows %}
+      <figure class="mt-photo">
+        <a href="{{ url_for('marine.photo_file', asset_id=asset['id'], photo_id=p['id']) }}" target="_blank" rel="noopener">
+          <img loading="lazy" src="{{ url_for('marine.photo_file', asset_id=asset['id'], photo_id=p['id'], thumb=1) }}" alt="{{ p['caption'] or p['name'] }}"></a>
+        <figcaption>
+          <span class="badge neutral">{{ kind_name.get(p['kind'], p['kind']) }}</span>
+          <span class="tabular">{{ p['taken'][8:10] }}/{{ p['taken'][5:7] }}/{{ p['taken'][:4] }}</span>
+          {% if show_element %}{% if p['element_name'] %}· <a href="{{ url_for('marine.element', asset_id=asset['id'], element_id=p['element_id']) }}">{{ p['element_name'] }}</a>{% if p['pinned'] == 'gps' %} <span class="muted small" title="Pinned by the camera's GPS">(GPS)</span>{% endif %}{% else %}· <span class="muted">the site</span>{% endif %}{% endif %}
+          {% if p['caption'] %}<br>{{ p['caption'] }}{% endif %}
+          <span class="mt-photo-tools">
+            <a href="{{ url_for('marine.photo_original', asset_id=asset['id'], photo_id=p['id']) }}" title="The file as taken (a thermal image keeps its temperatures here)">Original</a>
+            <form method="post" action="{{ url_for('marine.delete_photo', asset_id=asset['id'], photo_id=p['id']) }}"><input type="hidden" name="back" value="{{ back }}"><button class="linkish">Remove</button></form>
+          </span>
+        </figcaption>
+      </figure>
+    {% endfor %}
+  </div>
+{% endmacro %}

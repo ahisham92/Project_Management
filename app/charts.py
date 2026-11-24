@@ -548,7 +548,8 @@ def budget_hours(trades: Sequence[Mapping[str, Any]]) -> Markup:
 # --- the plan --------------------------------------------------------------
 
 GANTT_ROW = 26                      # the height one deliverable takes
-GANTT_LEFT = 96                     # room for the WBS down the side
+GANTT_LEFT = 300                    # room for the WBS and the name down the side
+GANTT_NAME = 44                     # characters of a name before it is cut short
 GANTT_HEAD = 46                     # the month band and the day ticks above it
 REWORK = "var(--warning)"
 PATH_END = "var(--series-1)"   # a line nothing waits on: the end of a route
@@ -662,6 +663,20 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
             parts.append(f'<text x="{x:.1f}" y="{top - 6}" text-anchor="middle"'
                          f' font-size="8" fill="{MUTED}">{escape(_axis_label(tick, True))}</text>')
 
+    # Each section is a band of its own, alternately shaded, with a hairline
+    # where the next one starts, so fifty lines read as five groups.
+    section, shade = object(), False
+    for index, task in enumerate(tasks):
+        y = top + index * GANTT_ROW
+        if task.get("section_name") != section:
+            if index:
+                parts.append(f'<line x1="0" y1="{y}" x2="{left + width}" y2="{y}"'
+                             f' stroke="{AXIS}" stroke-width="1"/>')
+            section, shade = task.get("section_name"), not shade
+        if shade:
+            parts.append(f'<rect x="0" y="{y}" width="{left + width}" height="{GANTT_ROW}"'
+                         f' fill="var(--series-1)" opacity="0.035"/>')
+
     for index, task in enumerate(tasks):
         y = top + index * GANTT_ROW
         start, finish = task.get("start_date"), task.get("submission_date")
@@ -672,9 +687,14 @@ def gantt(tasks: Sequence[Mapping[str, Any]], first: str, last: str, data_date: 
         colour = CRITICAL if critical else PLANNED
         x1, x2 = x_of(start), x_of(finish)
         bar_y = y + 6
+        # The WBS, then the name: a line reads as what it is without hovering.
+        name = str(task.get("name") or "")
+        if len(name) > GANTT_NAME:
+            name = name[:GANTT_NAME - 1].rstrip(" ,;–-") + "…"
         parts.append(
-            f'<text x="{left - 8}" y="{bar_y + 8}" text-anchor="end" font-size="9"'
+            f'<text x="6" y="{bar_y + 8}" font-size="9" font-weight="600"'
             f' fill="{INK2}">{escape(str(task.get("wbs") or ""))}</text>'
+            f'<text x="38" y="{bar_y + 8}" font-size="9" fill="var(--ink)">{escape(name)}</text>'
         )
         parts.append(
             f'<rect class="mark" x="{x1:.1f}" y="{bar_y}" width="{max(2.0, x2 - x1):.1f}" height="10"'

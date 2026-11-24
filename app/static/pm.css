@@ -190,3 +190,233 @@ body.pm-app { accent-color: var(--series-1); }
   70%, 100% { box-shadow: 0 0 0 9px transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .pm-app .needs-strip.has-now .needs-dot { animation: none; } }
+
+/* ============================================================================
+   The house look, shared with the Procedures journey.
+
+   The journey map set the tone the rest of the door now follows: a cool,
+   quiet page, white cards that sit slightly above it, one deep teal for the
+   things you press and the place you are, and the chart colours kept for the
+   data alone. Nothing here changes what a page shows, only how it reads.
+   ========================================================================== */
+
+body.pm-app {
+  --plane: #f2f4f6;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --sunk: #f5f7f9;
+  --ink: #14202a;
+  --ink-2: #46555f;
+  --muted: #6b7a84;
+  --grid: #e7ecef;
+  --axis: #c6d0d6;
+  --border: #dde3e8;
+  --pm-accent: #0b5f6b;
+  --pm-accent-2: #0f7a85;
+  --pm-accent-soft: #e1eff1;
+  --pm-tint: color-mix(in srgb, var(--pm-accent) 7%, transparent);
+  --pm-ring: 0 0 0 3px color-mix(in srgb, var(--pm-accent) 24%, transparent);
+  --pm-shadow: 0 1px 2px rgba(16, 32, 44, 0.05), 0 4px 14px rgba(16, 32, 44, 0.05);
+  --pm-shadow-lift: 0 2px 4px rgba(16, 32, 44, 0.06), 0 10px 28px rgba(16, 32, 44, 0.09);
+  --pm-radius: 14px;
+  --surface-2: var(--sunk);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.pm-app {
+    --plane: #0e1519; --surface: #151f24; --raised: #18232a; --sunk: #1b262c;
+    --ink: #e4ebee; --ink-2: #b4c1c8; --muted: #8b9aa3;
+    --grid: #223038; --axis: #33444d; --border: #28363d;
+    --pm-accent: #4db3bb; --pm-accent-2: #6cc7ce; --pm-accent-soft: #133337;
+    --pm-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); --pm-shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+}
+:root[data-theme="dark"] body.pm-app {
+  --plane: #0e1519; --surface: #151f24; --raised: #18232a; --sunk: #1b262c;
+  --ink: #e4ebee; --ink-2: #b4c1c8; --muted: #8b9aa3;
+  --grid: #223038; --axis: #33444d; --border: #28363d;
+  --pm-accent: #4db3bb; --pm-accent-2: #6cc7ce; --pm-accent-soft: #133337;
+  --pm-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); --pm-shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+body.pm-app { accent-color: var(--pm-accent); }
+.pm-app main a:not(.btn):not(.needs-strip):not(.pm-jump a) { color: var(--pm-accent); }
+.pm-app main a:not(.btn):hover { color: var(--pm-accent-2); }
+.pm-app main thead th a, .pm-app main thead th a:hover { color: inherit; text-decoration: none; }
+.pm-app main thead th a:hover { color: var(--ink); }
+/* A row's progress reads on one line, its status beside the figure. */
+.pm-app .prog-cell-head { min-width: 190px; white-space: nowrap; }
+.pm-app h1, .pm-app h2, .pm-app h3, .pm-app .tile-value {
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+
+/* --- header and tabs --------------------------------------------------------- */
+
+.pm-app .topbar {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px); -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(16, 32, 44, 0.04);
+  border-bottom: 0;
+}
+.pm-app .brand-mark { background: var(--pm-accent); }
+.pm-app .tabs { gap: 2px; padding-bottom: 0; }
+.pm-app .tabs a {
+  color: var(--muted); font-weight: 500; padding: 10px 9px 9px;
+  border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0;
+}
+.pm-app .tabs a:hover { color: var(--ink); background: var(--pm-tint); }
+.pm-app .tabs a.active { color: var(--pm-accent); border-bottom-color: var(--pm-accent); font-weight: 600; background: none; }
+.pm-app .tab-sep { height: 16px; background: var(--axis); opacity: 0.7; margin: 0 4px; }
+
+/* --- page head --------------------------------------------------------------- */
+
+.pm-app main { padding-top: 22px; }
+.pm-app .page-head { margin-bottom: 18px; gap: 16px; align-items: flex-end; }
+.pm-app main h1 { font-size: 1.625rem; font-weight: 650; letter-spacing: -0.02em; }
+.pm-app .page-head > div:first-child > p,
+.pm-app .page-head > div:first-child > .muted { margin-top: 4px; color: var(--muted); font-size: 0.875rem; }
+.pm-app .page-head .inline-form, .pm-app .page-head form {
+  gap: 8px;
+}
+
+/* --- cards ------------------------------------------------------------------- */
+
+.pm-app .card, .pm-app .tile {
+  background: var(--surface); border-color: var(--border);
+  border-radius: var(--pm-radius); box-shadow: var(--pm-shadow);
+}
+.pm-app .stack > * + * { margin-top: 18px; }
+.pm-app .grid { gap: 14px; }
+.pm-app .card-head { padding: 16px 20px 14px; align-items: center; }
+.pm-app .card-head h2 { font-size: 1rem; font-weight: 650; letter-spacing: -0.005em; color: var(--ink); }
+.pm-app .card-head p { margin-top: 3px; color: var(--muted); font-size: 0.8125rem; line-height: 1.45; }
+.pm-app .card-body { padding: 18px 20px; }
+.pm-app .card-body.flush { padding: 0; }
+.pm-app .card-foot { padding: 12px 20px; background: var(--sunk); border-radius: 0 0 var(--pm-radius) var(--pm-radius); }
+.pm-app .panel-summary { padding: 12px 20px; color: var(--pm-accent); font-weight: 600; }
+.pm-app .panel-summary:hover { background: var(--pm-tint); }
+
+/* --- headline figures -------------------------------------------------------- */
+
+.pm-app .tile {
+  position: relative; padding: 16px 18px 15px;
+  transition: box-shadow 160ms ease-out, transform 160ms ease-out;
+}
+.pm-app .tile:hover { box-shadow: var(--pm-shadow-lift); }
+.pm-app .tile-label { font-size: 0.8125rem; color: var(--muted); font-weight: 550; }
+.pm-app .tile-value { font-size: 1.875rem; font-weight: 650; letter-spacing: -0.025em; margin-top: 6px; color: var(--ink); }
+.pm-app .tile-foot { font-size: 0.75rem; color: var(--muted); margin-top: 8px; }
+
+/* --- tables ------------------------------------------------------------------ */
+
+.pm-app table { font-size: 0.85rem; }
+.pm-app thead th {
+  background: var(--sunk); color: var(--muted);
+  font-size: 0.6875rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.pm-app tbody td { padding: 10px 14px; border-top-color: var(--grid); }
+.pm-app tfoot td { background: var(--sunk); padding: 11px 14px; font-weight: 650; }
+.pm-app tbody tr:hover > td { background: color-mix(in srgb, var(--pm-accent) 3.5%, transparent); }
+.pm-app .card > .table-scroll:last-child table tbody tr:last-child td:first-child,
+.pm-app .card > table:last-child tbody tr:last-child td:first-child { border-bottom-left-radius: var(--pm-radius); }
+
+/* --- status, bars, chips ----------------------------------------------------- */
+
+.pm-app .badge { border-radius: 999px; padding: 2px 9px; font-weight: 600; font-size: 0.72rem; }
+.pm-app .badge:not(.good):not(.warning):not(.serious):not(.critical) { background: var(--sunk); border: 1px solid var(--border); }
+.pm-app .bar { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.pm-app .chips {
+  background: var(--sunk); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px;
+}
+.pm-app .chips a { color: var(--ink-2); padding: 5px 11px; border-radius: 7px; font-weight: 550; }
+.pm-app .chips a.active {
+  background: var(--surface); color: var(--pm-accent);
+  box-shadow: 0 1px 2px rgba(16, 32, 44, 0.1), 0 0 0 1px var(--border);
+}
+
+/* --- buttons and fields ------------------------------------------------------ */
+
+.pm-app .btn { border-radius: 9px; font-weight: 600; padding: 8px 15px; }
+.pm-app .btn-sm { padding: 5px 10px; border-radius: 8px; }
+.pm-app .btn-primary {
+  background: var(--pm-accent); color: #fff;
+  box-shadow: 0 1px 2px rgba(11, 95, 107, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.pm-app .btn-primary:hover { background: var(--pm-accent-2); filter: none; }
+:root[data-theme="dark"] .pm-app .btn-primary { color: #0a181a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pm-app .btn-primary { color: #0a181a; } }
+.pm-app .btn-ghost { background: var(--surface); color: var(--ink-2); border-color: var(--border); box-shadow: 0 1px 1px rgba(16, 32, 44, 0.04); }
+.pm-app .btn-ghost:hover { border-color: color-mix(in srgb, var(--pm-accent) 45%, var(--border)); color: var(--pm-accent); background: var(--surface); }
+.pm-app input, .pm-app select, .pm-app textarea { background: var(--surface); border-color: var(--border); border-radius: 9px; }
+.pm-app input:hover:not(:focus), .pm-app select:hover:not(:focus), .pm-app textarea:hover:not(:focus) {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--border));
+}
+.pm-app input:focus, .pm-app select:focus, .pm-app textarea:focus { border-color: var(--pm-accent); box-shadow: var(--pm-ring); }
+.pm-app :focus-visible { outline-color: var(--pm-accent); }
+.pm-app .field-label { font-weight: 600; color: var(--ink-2); }
+.pm-app .flash { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border); }
+
+/* --- the "how to use" strip -------------------------------------------------- */
+
+.pm-app .guide-strip {
+  border: 1px solid color-mix(in srgb, var(--pm-accent) 20%, var(--border));
+  background: color-mix(in srgb, var(--pm-accent) 4%, var(--surface));
+  border-radius: 12px; margin-bottom: 18px;
+}
+.pm-app .guide-strip > .panel-summary { padding: 9px 16px; font-weight: 600; color: var(--pm-accent); align-items: center; }
+.pm-app .guide-strip > .panel-summary::before {
+  content: '?'; transform: none !important; display: inline-grid; place-items: center;
+  width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700;
+  background: var(--pm-accent); color: var(--surface);
+}
+.pm-app .guide-strip > .panel-summary > .small.muted:last-child { font-weight: 400; }
+.pm-app .guide-word { background: var(--surface); }
+
+/* --- dashboard strip ---------------------------------------------------------- */
+
+.pm-app .needs-strip { border-radius: var(--pm-radius); box-shadow: var(--pm-shadow); padding: 14px 18px; }
+.pm-app .needs-strip:hover { border-color: var(--pm-accent); box-shadow: var(--pm-ring); }
+.pm-app .needs-go { color: var(--pm-accent); }
+
+/* --- jump to a section, on the long pages ------------------------------------ */
+
+.pm-jump {
+  position: sticky; z-index: 15; top: var(--pm-head, 92px);
+  display: flex; gap: 4px; align-items: center; overflow-x: auto; scrollbar-width: none;
+  margin: 18px 0; padding: 6px; border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border); box-shadow: var(--pm-shadow);
+}
+.pm-jump::-webkit-scrollbar { display: none; }
+.pm-jump-label {
+  flex: none; padding: 0 8px 0 6px; font-size: 0.6875rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.pm-jump a {
+  flex: none; padding: 5px 11px; border-radius: 8px; white-space: nowrap;
+  font-size: 0.8125rem; font-weight: 550; color: var(--ink-2); text-decoration: none;
+}
+.pm-jump a:hover { background: var(--pm-tint); color: var(--ink); }
+.pm-jump a.on { background: var(--pm-accent-soft); color: var(--pm-accent); }
+.pm-app [data-jump-target] { scroll-margin-top: calc(var(--pm-head, 92px) + 64px); }
+@media print { .pm-jump { display: none; } }
+
+/* The Carmen launcher keeps to the house colours. */
+.pm-app .carmen-button:hover { border-color: var(--pm-accent); }
+.pm-app .chat-composer:focus-within { border-color: var(--pm-accent); }
+.pm-app .chat-thread.active { box-shadow: inset 3px 0 0 var(--pm-accent); }
+
+@media print {
+  body.pm-app { --plane: #fff; }
+  .pm-app .card, .pm-app .tile { box-shadow: none; }
+}
+
+/* On a phone the header scrolls away with the page rather than holding a
+   third of the screen, and the section bar takes its place at the top. */
+@media (max-width: 720px) {
+  .pm-app .topbar { position: static; }
+  .pm-jump { top: 8px; margin: 12px 0; }
+  .pm-jump-label { display: none; }
+  .pm-app [data-jump-target] { scroll-margin-top: 72px; }
+}

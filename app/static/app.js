@@ -2200,6 +2200,67 @@
     });
   })();
 
+  // --- jump to a section ----------------------------------------------------
+  // The long project pages (Setup, How to use, the Progress register, the
+  // Schedule, Finance, Resources) get a bar of their sections under the page
+  // head, which stays in view as the page scrolls and lights the section you
+  // are in. Built from the cards' own headings, so a new card joins it free.
+  (function () {
+    if (!document.body.classList.contains('pm-app')) return;
+    if (!/\/projects\/\d+\/(setup|help|tasks|schedule|budget|resources)\/?$/.test(location.pathname)) return;
+    var main = document.querySelector('main');
+    if (!main) return;
+    var cards = Array.prototype.filter.call(main.querySelectorAll('.card'), function (card) {
+      return !card.parentElement.closest('.card') && card.querySelector('.card-head h2, .card-head h3')
+        && card.offsetParent !== null;
+    });
+    if (cards.length < 4) return;
+    var bar = document.createElement('nav');
+    bar.className = 'pm-jump no-print';
+    bar.setAttribute('aria-label', 'Sections on this page');
+    var label = document.createElement('span');
+    label.className = 'pm-jump-label';
+    label.textContent = 'On this page';
+    bar.appendChild(label);
+    var links = cards.map(function (card, i) {
+      var head = card.querySelector('.card-head h2, .card-head h3');
+      var text = head.textContent.replace(/\s+/g, ' ').trim();
+      if (text.length > 34) text = text.slice(0, 32).replace(/[\s,;–-]+$/, '') + '…';
+      if (!card.id) card.id = 'section-' + (i + 1);
+      card.setAttribute('data-jump-target', '');
+      var a = document.createElement('a');
+      a.href = '#' + card.id;
+      a.textContent = text;
+      a.title = head.textContent.replace(/\s+/g, ' ').trim();
+      bar.appendChild(a);
+      return a;
+    });
+    var first = cards[0];
+    first.parentNode.insertBefore(bar, first);
+    var header = document.querySelector('.topbar');
+    function measure() {
+      if (header && getComputedStyle(header).position === 'sticky') {
+        document.body.style.setProperty('--pm-head', (header.offsetHeight + 8) + 'px');
+      } else {
+        document.body.style.removeProperty('--pm-head');
+      }
+    }
+    measure();
+    window.addEventListener('resize', measure);
+    if (!('IntersectionObserver' in window)) return;
+    var seen = new Map();
+    var watch = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { seen.set(e.target, e.isIntersecting); });
+      var lit = -1;
+      cards.forEach(function (card, i) { if (lit < 0 && seen.get(card)) lit = i; });
+      links.forEach(function (a, i) { a.classList.toggle('on', i === lit); });
+      if (lit >= 0 && links[lit].scrollIntoView && bar.scrollWidth > bar.clientWidth) {
+        bar.scrollLeft = links[lit].offsetLeft - bar.clientWidth / 3;
+      }
+    }, { rootMargin: '-140px 0px -55% 0px' });
+    cards.forEach(function (card) { watch.observe(card); });
+  })();
+
   // --- confirmations -------------------------------------------------------
   // Destructive buttons ask once before submitting.
 

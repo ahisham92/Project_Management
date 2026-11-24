@@ -3,7 +3,7 @@
 {% from "partials/bits.html" import badge, progress, task_color, task_status, revision_badge %}
 
 {% macro progress_cell(task, limit=10) -%}
-  <div class="small" style="display:flex;justify-content:space-between;margin-bottom:4px">
+  <div class="small prog-cell-head" style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
     <span class="tabular" style="font-weight:500">
       {{ pct(task['actual_pct'], 0) }}
       {%- if task['status_name'] %}<span class="muted"> · {{ task['status_name'] }}</span>{% endif %}

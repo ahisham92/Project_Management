@@ -244,6 +244,29 @@ export class View3D {
         this.world.add(a);
       }
     }
+    // line loads: a footing beam along the slope with a heavy arrow on it
+    for (const L of c?.lines || []) {
+      const lm = new THREE.MeshStandardMaterial({ color: 0xc2410c, transparent: true, opacity: 0.85 });
+      const y = yAt(ground, L.x), r0 = 0.012 * span;
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(3 * r0, 2 * r0, D * 0.96), lm);
+      beam.position.set(L.x, y + r0, 0);
+      this.world.add(beam);
+      const arrow = (dx, dy, z) => {
+        const len = 0.09 * span, dir = new THREE.Vector3(dx, dy, 0).normalize();
+        const tip = new THREE.Vector3(L.x, y + 2 * r0, z), tail = tip.clone().addScaledVector(dir, -len);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r0 * 0.45, r0 * 0.45, len * 0.7, 8), lm);
+        shaft.position.copy(tail.clone().addScaledVector(dir, len * 0.35));
+        shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        const head = new THREE.Mesh(new THREE.ConeGeometry(r0 * 1.3, len * 0.3, 10), lm);
+        head.position.copy(tip.clone().addScaledVector(dir, -len * 0.15));
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        this.world.add(shaft, head);
+      };
+      for (const z of [-D * 0.3, 0, D * 0.3]) {
+        if (L.fy) arrow(0, Math.sign(L.fy), z);
+        if (L.fx) arrow(Math.sign(L.fx), 0, z);
+      }
+    }
     // reinforcement
     for (const r of opt.reinforcement || []) {
       if (r.kind === "grid") {

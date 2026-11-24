@@ -3,6 +3,7 @@
 import { DEFAULTS, complete, BASES, GROUND_S, armourDesign, parsePoints } from "../engine/project.js";
 import { PRESETS, PRESET_KEYS, soilFrom } from "../engine/materials.js";
 import { METHOD_NAMES } from "../engine/lem.js";
+import { goalsFor } from "../engine/analyse.js";
 import { rockArmour, accropode, damageLevels, COEFFS } from "../engine/armour.js";
 import { sectionSVG, esc } from "./section.js";
 import { fosColour } from "./shapes.js";
@@ -101,6 +102,7 @@ function loadItems() {
     { k: "load.q", l: "Surcharge on the crest", sub: "traffic, storage, cranes", u: "kPa", min: 0, max: 100, step: 1, slider: true, picks: [0, 5, 10, 20, 50] },
     { k: "load.setback", l: "Set back from the crest edge", u: "m", min: 0, max: 30, step: 0.5, show: (p) => +p.load.q > 0 },
     { k: "load.width", l: "Loaded width", u: "m", min: 0.5, max: 60, step: 0.5, show: (p) => +p.load.q > 0 },
+    { kind: "loads" },
   ];
   return items;
 }
@@ -120,6 +122,14 @@ const GRID_ITEMS = [
     { k: "grids.T", l: "Design tensile strength", sub: "long-term, after reduction factors", u: "kN/m", min: 0, max: 2000, step: 5, show: (p) => p.grids.on },
     { k: "grids.Ci", l: "Interaction coefficient Ci", sub: "pull-out: 2 Ci (c + σv tan φ) per metre of grid", u: "", min: 0, max: 1.2, step: 0.05, show: (p) => p.grids.on },
 ];
+const REV_GRID_ITEMS = [
+    { kind: "toggle", k: "grids.on", l: "Geogrid layers in the backfill", sub: "from behind the underlayer, inland" },
+    { k: "grids.n", l: "Layers", u: "", min: 1, max: 40, step: 1, show: (p) => p.grids.on },
+    { k: "grids.bottom", l: "Lowest layer above the toe level", u: "m", min: 0, max: 20, step: 0.05, show: (p) => p.grids.on },
+    { k: "grids.spacing", l: "Vertical spacing", u: "m", min: 0.1, max: 3, step: 0.05, show: (p) => p.grids.on && +p.grids.n > 1 },
+    { k: "grids.length", l: "Length of each layer", u: "m", min: 0.5, max: 60, step: 0.5, show: (p) => p.grids.on },
+    ...GRID_ITEMS.slice(4),
+];
 const pileItems = (where) => [
     { kind: "toggle", k: "piles.on", l: "Row of piles or sheet piles", sub: "a shear force where the slip cuts them" },
     { k: "piles.x", l: where.l, sub: where.sub, u: "m", step: 0.5, show: (p) => p.piles.on },
@@ -127,6 +137,7 @@ const pileItems = (where) => [
     { k: "piles.Vp", l: "Shear capacity of one pile", sub: "design lateral resistance (or per metre of wall with spacing 1)", u: "kN", min: 0, max: 10000, step: 10, show: (p) => p.piles.on },
     { k: "piles.spacing", l: "Spacing along the slope", u: "m", min: 0.1, max: 20, step: 0.1, show: (p) => p.piles.on },
 ];
+const loadSum = (p) => `${p.load.q} kPa${(p.loads || []).length ? ` + ${p.loads.length} more` : ""}`;
 const reinfSum = (p) => [p.nails?.on && "nails", p.grids?.on && `${p.grids.n} geogrid${+p.grids.n > 1 ? "s" : ""}`, p.piles?.on && "piles"].filter(Boolean).join(" · ") || "none";
 
 function designItems() {
@@ -192,7 +203,7 @@ const SPEC = {
       { k: "water.front", l: "Depth below the toe level", u: "m", min: 0, max: 20, step: 0.25, show: (p) => p.water.on },
       { kind: "toggle", k: "water.flow", l: "Flow net (finite elements)", sub: "pore pressures from steady seepage through each soil's permeability k, between these two levels", show: (p) => p.water.on },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
+    { g: "Loads", icon: "load", sum: loadSum, items: loadItems() },
     { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...NAIL_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "horizontal distance into the slope" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS") + " · " + (METHOD_NAMES[p.design.method] || "").split(" ")[0], items: designItems() },
@@ -215,7 +226,7 @@ const SPEC = {
       { kind: "toggle", k: "water.flow", l: "Flow net (finite elements)", sub: "seepage through the fill and foundation by their permeabilities k, instead of a straight line to the toe", show: (p) => p.water.on },
       { kind: "toggle", k: "water.staged", l: "Staged drawdown (three-stage method)", sub: "Duncan, Wright and Wong (1990), USACE EM 1110-2-1902: undrained strengths from the consolidation before drawdown in soils that do not drain freely", show: (p) => p.water.on },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
+    { g: "Loads", icon: "load", sum: loadSum, items: loadItems() },
     { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "into the slope being checked (land side, or water side for drawdown)" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS"), items: designItems() },
@@ -237,10 +248,11 @@ const SPEC = {
       { kind: "html", show: (p) => p.water.mode === "line", html: () => `<button type="button" class="linkish" data-copy-ground>Put the water at the ground surface</button>` },
       { k: "water.ru", l: "Pore pressure ratio ru", u: "", min: 0, max: 1, step: 0.05, show: (p) => p.water.mode === "ru" },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: [
+    { g: "Loads", icon: "load", sum: loadSum, items: [
       { k: "load.q", l: "Surcharge", u: "kPa", min: 0, max: 200, step: 1, slider: true, picks: [0, 5, 10, 20, 50] },
       { k: "load.x1", l: "From x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
       { k: "load.x2", l: "To x", u: "m", step: 0.5, show: (p) => +p.load.q > 0 },
+      { kind: "loads" },
     ] },
     { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: pileItems({ l: "Pile row at x", sub: "in the section's own coordinates" }) },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
@@ -277,8 +289,8 @@ const SPEC = {
       { kind: "soil", k: "core", l: "Core / backfill" },
       { kind: "soil", k: "soil", l: "Seabed soil" },
     ] },
-    { g: "Loads", icon: "load", sum: (p) => `${p.load.q} kPa`, items: loadItems() },
-    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "into the slope being checked (land side, or water side for drawdown)" })] },
+    { g: "Loads", icon: "load", sum: loadSum, items: loadItems() },
+    { g: "Reinforcement", icon: "reinf", sum: reinfSum, items: [...REV_GRID_ITEMS, ...pileItems({ l: "Pile row, from the toe", sub: "horizontal distance inland, e.g. a sheet-pile wall at the crest" })] },
     { g: "Earthquake", icon: "quake", sum: (p) => (p.seismic.on ? `ag ${p.seismic.ag} g` : "off"), items: earthquakeItems() },
     { g: "Design", icon: "design", sum: (p) => (p.design.basis === "ec7" ? "EC7" : "FoS"), items: designItems() },
     { g: "Advanced", icon: "gear", items: advancedItems(false) },
@@ -325,6 +337,7 @@ function item(it, p) {
   if (kind === "soil") return soilWidget(it, p);
   if (kind === "targets") return targetsWidget(p);
   if (kind === "benches") return benchesWidget(p);
+  if (kind === "loads") return loadsWidget(p);
   if (kind === "points") {
     const v = get(p, it.k) ?? "";
     const n = parsePoints(v).length;
@@ -440,6 +453,28 @@ function benchesWidget(p) {
     <button type="button" class="btn btn-ghost btn-sm" data-bench-add>Add a bench</button></div>`;
 }
 
+const LOAD_WHERE = {
+  cut: ["From the crest edge", "into the ground behind; negative is on the slope"],
+  embankment: ["From the left crest edge", "across the crest; negative is on the left slope"],
+  revetment: ["From the crest edge", "inland; negative is on the armour"],
+  section: ["At x", "in the section's own coordinates"],
+};
+/** More loads: strips and line loads (footings, walls, crane outriggers, bollards). */
+function loadsWidget(p) {
+  const L = p.loads || [];
+  const [whereL, whereS] = LOAD_WHERE[p.type] || LOAD_WHERE.cut;
+  const fld = (i, k, l, u, step, sub) => `<div class="f"><span class="lab">${l}${sub ? `<small>${sub}</small>` : ""}</span><span class="num"><input type="number" inputmode="decimal" step="${step}" data-k="loads.${i}.${k}" value="${L[i][k] ?? ""}"><span class="unit">${u}</span></span></div>`;
+  const cards = L.map((d, i) => `<div class="bench">
+      <div class="bench-head"><div class="seg" role="group" aria-label="Kind of load">${[["strip", "Strip load"], ["line", "Line load"]].map(([v, n]) => `<button type="button" data-seg="loads.${i}.kind" data-v="${v}" aria-pressed="${(d.kind || "strip") === v}">${n}</button>`).join("")}</div><button type="button" class="linkish" data-load-del="${i}">Remove</button></div>
+      ${fld(i, "at", whereL, "m", 0.5, whereS)}
+      ${d.kind === "line" ? `${fld(i, "V", "Vertical, downwards", "kN/m", 5, "per metre run of slope")}${fld(i, "H", "Horizontal, towards the face", "kN/m", 5, "bollard pull, wind or earth pressure on a wall")}`
+        : `${fld(i, "width", "Width", "m", 0.5)}${fld(i, "q", "Pressure", "kPa", 1)}`}
+      <label class="toggle"><span>Permanent<small class="tsub">dead load: kept whole in the earthquake case, not factored as variable</small></span><input type="checkbox" data-k="loads.${i}.permanent" ${d.permanent ? "checked" : ""}></label>
+    </div>`).join("");
+  return `<div class="f wide"><span class="lab">More loads<small>footings, walls, stockpiles, crane outriggers, bollards</small></span>${cards}
+    <div class="row"><button type="button" class="btn btn-ghost btn-sm" data-load-add="strip">Add a strip load</button><button type="button" class="btn btn-ghost btn-sm" data-load-add="line">Add a line load</button></div></div>`;
+}
+
 function targetsWidget(p) {
   const base = BASES[p.design.basis] || BASES.fos;
   const t = { ...base.targets, ...(p.design.targets || {}) };
@@ -499,6 +534,13 @@ function onClick(ev) {
     L.push({ soil: { preset: "stiffClay", name: `Layer ${L.length + 1}` }, top: `${x0}, ${y}\n${x1}, ${y}` });
     changed(true); return;
   }
+  if (b.dataset.loadAdd) {
+    const L = p.loads || (p.loads = []);
+    const at = p.type === "section" ? (parsePoints(p.ground)[0]?.[0] ?? 0) + 2 : 2;
+    L.push(b.dataset.loadAdd === "line" ? { kind: "line", at, V: 50, H: 0, permanent: true } : { kind: "strip", at, width: 3, q: 20, permanent: false });
+    changed(true); return;
+  }
+  if (b.dataset.loadDel !== undefined) { p.loads.splice(+b.dataset.loadDel, 1); changed(true); return; }
   if (b.dataset.layerDel !== undefined) { p.layers.splice(+b.dataset.layerDel, 1); changed(true); return; }
   if (b.dataset.dxfcancel !== undefined) { dxf = null; renderInputs(); return; }
   if (b.dataset.dxfscale) { dxf.scale = +b.dataset.dxfscale; renderInputs(); return; }
@@ -529,25 +571,71 @@ function switchKind(kind) {
 
 // ------------------------------------------------------------------ calculating
 
-let worker = null, busyId = 0, jobRunning = false;
-function newWorker() {
-  if (worker) worker.terminate();
-  worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-  worker.onmessage = onWorker;
-  worker.onerror = (e) => { setBusy(false); toast("Calculation failed: " + (e.message || "error"), true); };
+// Two workers: "calc" redoes the answer on every change; "jobs" runs the long tasks
+// (finite elements, Monte Carlo, optimising, verification) so typing never stops them
+// half way without saying so.
+const workers = { calc: null, jobs: null }, ids = { calc: 0, jobs: 0 }, running = { calc: null, jobs: null };
+const laneOf = (kind) => (kind === "analyse" ? "calc" : "jobs");
+const JOB_STATE = { fem: "fem", prob: "prob", optimise: "optimise", verify: "verify" };
+function newWorker(L) {
+  if (workers[L]) workers[L].terminate();
+  if (L === "jobs" && running.jobs) state[JOB_STATE[running.jobs]] = null;   // a stopped job leaves nothing half done
+  running[L] = null;
+  const w = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  w.onmessage = (ev) => onWorker(L, ev);
+  w.onerror = (e) => { running[L] = null; setBusy(false); toast("Calculation failed: " + (e.message || "error"), true); };
+  workers[L] = w;
 }
 function run(kind, extra = {}) {
-  if (jobRunning || !worker) newWorker();
-  busyId++;
-  jobRunning = true;
-  worker.postMessage({ id: busyId, kind, project: strip(state.project), ...extra });
-  return busyId;
+  const L = laneOf(kind);
+  if (running[L] || !workers[L]) newWorker(L);
+  ids[L]++;
+  running[L] = kind;
+  workers[L].postMessage({ id: ids[L], kind, project: strip(state.project), ...extra });
+  return ids[L];
+}
+/** Inputs changed: a finite element, Monte Carlo or optimising run on the old inputs is stopped. */
+function stopStaleJob() {
+  const k = running.jobs;
+  if (!k || k === "verify") return;
+  newWorker("jobs");
+  toast({ fem: "Finite elements stopped: the inputs changed. Run it again.", prob: "Monte Carlo stopped: the inputs changed. Run it again.", optimise: "Optimising stopped: the inputs changed. Run it again." }[k]);
+  if (["fem", "prob", "optimise"].includes(state.tab)) renderPanel();
 }
 function strip(p) { return JSON.parse(JSON.stringify(p, (k, v) => (k === "_edit" ? undefined : v))); }
 
+// undo / redo: one step per burst of typing
+const undo = [], redo = [];
+let burst = null;
+const snapNow = () => JSON.stringify(strip(state.project));
+function remember() {
+  if (!burst) { if (state.snap && state.snap !== snapNow()) { undo.push(state.snap); if (undo.length > 60) undo.shift(); redo.length = 0; } }
+  clearTimeout(burst);
+  burst = setTimeout(() => { burst = null; state.snap = snapNow(); undoButtons(); }, 700);
+  undoButtons();
+}
+function undoButtons() {
+  const u = $("#btnUndo"), r = $("#btnRedo");
+  if (u) u.disabled = !undo.length && !(burst && state.snap !== snapNow());
+  if (r) r.disabled = !redo.length;
+}
+function stepHistory(back) {
+  if (burst) { clearTimeout(burst); burst = null; const now = snapNow(); if (now !== state.snap) { undo.push(state.snap); redo.length = 0; } state.snap = now; }
+  const from = back ? undo : redo, to = back ? redo : undo;
+  if (!from.length) return;
+  to.push(state.snap);
+  state.snap = from.pop();
+  state.project = complete(JSON.parse(state.snap));
+  $("#projectName").value = state.project.name;
+  renderInputs(); analyse(); scheduleSave(); undoButtons();
+}
+function resetHistory() { undo.length = 0; redo.length = 0; clearTimeout(burst); burst = null; state.snap = snapNow(); undoButtons(); }
+
 let calcTimer;
 function changed(structural) {
+  remember();
   if (structural) renderInputs(); else refreshSums();
+  stopStaleJob();
   clearTimeout(calcTimer);
   calcTimer = setTimeout(analyse, structural ? 30 : 220);
   scheduleSave();
@@ -569,6 +657,7 @@ function refreshSums() {
 }
 
 function analyse() {
+  stopStaleJob();
   state.partial = [];
   if (state.prob && !state.prob.running) state.prob = null;
   if (state.fem && !state.fem.running) state.fem = null;
@@ -578,13 +667,17 @@ function analyse() {
 }
 
 function setBusy(on, text) {
+  if (!on && (running.calc || running.jobs)) return;   // the other worker is still going
   $("#busy").classList.toggle("hidden", !on);
   if (text) $("#busyText").textContent = text;
 }
 
-function onWorker(ev) {
+const DONE = new Set(["seismic", "optimised", "probDone", "femDone", "verified", "error"]);
+function onWorker(L, ev) {
   const m = ev.data;
-  if (m.id !== busyId) return;
+  if (m.id !== ids[L]) return;
+  const was = running[L];
+  if (DONE.has(m.kind)) running[L] = null;
   if (m.kind === "case") {
     state.partial[m.i] = m.case;
     setBusy(true, `Case ${m.i + 1} of ${m.n}…`);
@@ -598,22 +691,21 @@ function onWorker(ev) {
     renderAll();
   } else if (m.kind === "seismic") {
     state.seismic = m.data;
-    jobRunning = false;
     setBusy(false);
     if (state.tab === "seismic") renderPanel();
   } else if (m.kind === "step") {
-    state.optimise = { ...(state.optimise || {}), steps: [...(state.optimise?.steps || []), { cot: m.cot, worst: m.worst }] };
+    state.optimise = { ...(state.optimise || {}), steps: [...(state.optimise?.steps || []), { value: m.value, worst: m.worst }] };
     renderPanel();
   } else if (m.kind === "optimised") {
-    jobRunning = false; setBusy(false);
-    state.optimise = { ...(state.optimise || {}), done: m.result, running: false };
+    setBusy(false);
+    state.optimise = { ...(state.optimise || {}), done: m.result, running: false, goal: m.result.k };
     state.tab = "optimise"; renderTabs(); renderPanel();
   } else if (m.kind === "probStep") {
     state.prob = { ...(state.prob || {}), running: true, done: m.done, n: m.n };
     setBusy(true, `Sample ${m.done} of ${m.n}…`);
     if (state.tab === "prob") renderPanel();
   } else if (m.kind === "probDone") {
-    jobRunning = false; setBusy(false);
+    setBusy(false);
     state.prob = { result: m.result, running: false };
     if (m.result.error) toast(m.result.error, true);
     if (state.tab === "prob") renderPanel();
@@ -622,7 +714,7 @@ function onWorker(ev) {
     setBusy(true, `Strength reduction ${f2(m.srf)}…`);
     if (state.tab === "fem") renderPanel();
   } else if (m.kind === "femDone") {
-    jobRunning = false; setBusy(false);
+    setBusy(false);
     state.fem = { result: m.result, running: false };
     if (m.result.error) toast(m.result.error, true);
     if (state.tab === "fem") renderPanel();
@@ -630,10 +722,11 @@ function onWorker(ev) {
     state.verify.rows[m.i] = m;
     renderPanel();
   } else if (m.kind === "verified") {
-    jobRunning = false; setBusy(false);
+    setBusy(false);
     state.verify.done = true; renderPanel();
   } else if (m.kind === "error") {
-    jobRunning = false; setBusy(false);
+    if (L === "jobs" && was) { state[JOB_STATE[was]] = null; renderPanel(); }
+    setBusy(false);
     console.error(m.stack);
     toast("Calculation error: " + m.message, true);
   }
@@ -746,7 +839,7 @@ const TABS = [
   ["optimise", "Optimise"], ["prob", "Probability"], ["fem", "Finite elements"], ["verify", "Verification"], ["about", "How it works"],
 ];
 function renderTabs() {
-  const tabs = TABS.filter(([k]) => (k !== "armour" || state.project.type === "revetment") && (k !== "optimise" || state.project.type !== "section"));
+  const tabs = TABS.filter(([k]) => (k !== "armour" || state.project.type === "revetment") && true);
   if (!tabs.find(([k]) => k === state.tab)) state.tab = "methods";
   $("#dtabs").innerHTML = tabs.map(([k, n]) => `<button role="tab" data-tab="${k}" aria-selected="${k === state.tab}">${n}</button>`).join("");
 }
@@ -981,13 +1074,22 @@ function seismicPanel() {
 function optimisePanel() {
   const o = state.optimise;
   const p = state.project;
-  let body = `<p class="explain">Finds the steepest slope (smallest n in 1:n) that meets every target in every load case, keeping everything else as it is. Each try is a full search of all cases.</p>
-    <div class="row mt-sm"><button class="btn btn-primary" data-optimise ${o?.running ? "disabled" : ""}>${o?.running ? "Optimising…" : "Find the steepest safe slope"}</button><span class="note">Now: ${bermsOn(p) ? bermRows(p).map((r) => `1:${r.cot}`).join(" / ") + " (benches; the search sets every bench to the same slope and keeps the berms)" : `1:${p.geom.cot} (${f1(deg(+p.geom.cot))}°)`}</span></div>`;
-  if (o?.steps?.length) body += `<div class="table-scroll mt-sm"><table class="tight"><thead><tr><th>Try</th><th>Slope</th><th>Worst case</th><th class="num">F / target</th></tr></thead><tbody>${o.steps.map((s, i) => `<tr><td>${i + 1}</td><td>1:${f2(s.cot)}</td><td>${esc(s.worst?.name || "–")}</td><td class="num"><span class="pill ${s.worst?.pass ? "good" : "bad"}">${f3(s.worst?.ratio)}</span></td></tr>`).join("")}</tbody></table></div>`;
-  if (o?.done) {
+  const goals = goalsFor(p);
+  if (!goals.length) return `<p class="explain">Nothing to solve for here yet: turn on a load, reinforcement or the earthquake check.</p>`;
+  const key = goals.find((g) => g.k === state.goal)?.k || goals[0].k;
+  const g = goals.find((x) => x.k === key);
+  const show = (v) => (g.fmt ? g.fmt(v) : `${+(+v).toFixed(3)} ${g.u}`);
+  const now = get(p, key);
+  let body = `<p class="explain">Pick what to solve for. Talus finds the ${g.want === "min" ? "least" : "most"} of it that still meets every target in every load case, keeping everything else as it is. Each try is a full search of all the cases, so it takes a few seconds.</p>
+    <div class="row mt-sm"><select data-goal aria-label="Solve for" ${o?.running ? "disabled" : ""}>${goals.map((x) => `<option value="${x.k}" ${x.k === key ? "selected" : ""}>${esc(x.l)}</option>`).join("")}</select>
+    <button class="btn btn-primary" data-optimise ${o?.running ? "disabled" : ""}>${o?.running ? "Solving…" : "Find it"}</button>
+    <span class="note">Now: ${key === "geom.cot" && bermsOn(p) ? bermRows(p).map((r) => `1:${r.cot}`).join(" / ") + " (benches: every bench gets the same slope, berms kept)" : key === "geom.cot" ? `1:${p.geom.cot} (${f1(deg(+p.geom.cot))}°)` : esc(show(now ?? 0))}</span></div>`;
+  if (o?.steps?.length) body += `<div class="table-scroll mt-sm"><table class="tight"><thead><tr><th>Try</th><th>${esc(g.l.split(" ").slice(1).join(" ") || g.l)}</th><th>Worst case</th><th class="num">F / target</th></tr></thead><tbody>${o.steps.map((s, i) => `<tr><td>${i + 1}</td><td>${esc(show(+(+s.value).toFixed(3)))}</td><td>${esc(s.worst?.name || "–")}</td><td class="num"><span class="pill ${s.worst?.pass ? "good" : "bad"}">${f3(s.worst?.ratio)}</span></td></tr>`).join("")}</tbody></table></div>`;
+  if (o?.done && o.goal === key) {
     const d = o.done;
-    body += d.cot ? `<div class="ok mt-sm"><b>Steepest safe slope: 1:${d.cot} (${f1(d.angle)}°).</b> Worst case ${esc(d.worst.name)} at F = ${f3(d.worst.F)}. <button class="btn btn-primary btn-sm" data-apply="${d.cot}">Use 1:${d.cot}${bermsOn(p) ? " on every bench" : ""}</button></div>`
-      : `<div class="warn mt-sm">${esc(d.message)}</div>`;
+    body += d.value !== null && d.value !== undefined
+      ? `<div class="ok mt-sm"><b>${esc(g.l)}: ${esc(show(d.value))}${key === "geom.cot" ? ` (${f1(deg(d.value))}°)` : ""}.</b> ${d.atLimit ? "That is the end of the range Talus tries. " : ""}Worst case ${esc(d.worst?.name || "")} at F/target = ${f3(d.worst?.ratio)}. <button class="btn btn-primary btn-sm" data-apply="${d.value}" data-apply-k="${key}">Use ${esc(show(d.value))}${key === "geom.cot" && bermsOn(p) ? " on every bench" : ""}</button></div>`
+      : `<div class="warn mt-sm">${esc(d.message || "No value meets every target.")}</div>`;
   }
   return body;
 }
@@ -1022,7 +1124,7 @@ function aboutPanel() {
   <p><b>Rock.</b> Rock masses follow the generalised Hoek-Brown criterion (Hoek, Carranza-Torres and Corkum 2002) from GSI, mi, σci and D. Each slice takes the tangent to the envelope at the effective normal stress on its base (Balmer 1952); the solution is repeated with the new normal stresses until every slice carries the envelope strength. The equivalent c', φ' of Hoek et al. (2002) is in the verification set for comparison.</p>
   <p><b>Reinforcement.</b> Nails and anchors pull along their axis, limited by their strength and their bond beyond the slip. Geogrids pull horizontally where the slip cuts them, limited by their design strength and by pull-out of the shorter end, 2 Ci (c + σv tan φ) per metre. A row of piles or a sheet-pile wall adds its shear capacity per metre run (pile capacity / spacing) where the slip cuts it, against the movement. Every force enters the slices at its own point, in all methods.</p>
   <p><b>Probability.</b> Each soil or rock property is lognormal around the value entered with its coefficient of variation; one variable per material and property. Latin hypercube samples from a fixed seed are solved on the critical surface of the load case by the governing method. The probability of failure is the share with F &lt; 1; β is given for a lognormal F, with the USACE (1997) performance levels. Properties are taken as independent, which is on the safe side for c' and φ'.</p>
-  <p><b>Limits.</b> Typical soil values are starting points: use site data. Seepage lines are simplified (straight lines), not a flow net. Talus is a design aid; the engineer of record remains responsible.</p></div>`;
+  <p><b>Limits.</b> Typical soil values are starting points: use site data. Without the flow net, seepage lines are straight lines between the water levels. The analysis is two-dimensional per metre run. Talus is a design aid; the engineer of record remains responsible.</p></div>`;
 }
 
 function renderAll() {
@@ -1058,13 +1160,22 @@ document.addEventListener("click", (ev) => {
   }
   if (b.dataset.femShow) { state.femShow = b.dataset.femShow; renderPanel(); return; }
   if (b.dataset.optimise !== undefined) {
-    state.optimise = { running: true, steps: [] };
-    run("optimise"); setBusy(true, "Optimising…"); renderPanel(); return;
+    const goals = goalsFor(state.project);
+    const goal = goals.find((g) => g.k === state.goal)?.k || goals[0]?.k;
+    state.optimise = { running: true, steps: [], goal };
+    run("optimise", { goal }); setBusy(true, "Solving…"); renderPanel(); return;
   }
-  if (b.dataset.apply) { state.project.geom.cot = +b.dataset.apply; if (bermsOn(state.project)) for (const r of bermRows(state.project)) r.cot = +b.dataset.apply; state.optimise = null; changed(true); toast(`Slope set to 1:${b.dataset.apply}`); return; }
+  if (b.dataset.apply) {
+    const k = b.dataset.applyK || "geom.cot", v = +b.dataset.apply;
+    set(state.project, k, v);
+    if (k === "geom.cot" && bermsOn(state.project)) for (const r of bermRows(state.project)) r.cot = v;
+    state.optimise = null; changed(true); toast(k === "geom.cot" ? `Slope set to 1:${v}` : `Set to ${v}`); return;
+  }
   if (b.dataset.verify !== undefined) { startVerify(); return; }
   if (b.dataset.csv !== undefined) { downloadCSV(); return; }
   if (b.id === "btnProjects") { openDrawer(); return; }
+  if (b.id === "btnUndo") { stepHistory(true); return; }
+  if (b.id === "btnRedo") { stepHistory(false); return; }
   if (b.id === "btnReport") { $("#reportMenu").classList.toggle("hidden"); return; }
   if (b.dataset.report) { $("#reportMenu").classList.add("hidden"); b.dataset.report === "word" ? wordReport() : printReport(); return; }
   if (b.dataset.close !== undefined) { $("#drawer").classList.add("hidden"); return; }
@@ -1126,14 +1237,29 @@ async function openDrawer() {
   list.innerHTML = `<div class="note">Loading…</div>`;
   try {
     const { projects } = await api("/projects");
-    list.innerHTML = projects.length ? projects.map((p) => `<div class="proj ${p.id === state.id ? "current" : ""}" data-open="${p.id}"><span class="pn">${esc(p.name)}</span><span class="pm">${{ cut: "Cut slope", embankment: "Embankment", revetment: "Revetment" }[p.kind]}</span><span class="pm">${new Date(p.updated * 1000).toLocaleString()}</span><span><button class="btn btn-ghost btn-sm" data-dup="${p.id}">Copy</button> <button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></span></div>`).join("")
+    list.innerHTML = projects.length ? projects.map((p) => `<div class="proj ${p.id === state.id ? "current" : ""}" data-open="${p.id}"><span class="pn">${esc(p.name)}</span><span class="pm">${(KINDS.find((k) => k[0] === p.kind)?.[1] || p.kind)}</span><span class="pm">${new Date(p.updated * 1000).toLocaleString()}</span><span><button class="btn btn-ghost btn-sm" data-hist="${p.id}">History</button> <button class="btn btn-ghost btn-sm" data-dup="${p.id}">Copy</button> <button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></span></div>`).join("")
       : `<div class="note">No projects yet.</div>`;
   } catch (e) { list.innerHTML = `<div class="note">Projects are kept on this device only here (${esc(e.message)}).</div>`; }
 }
 $("#drawer").addEventListener("click", async (ev) => {
   if (ev.target === $("#drawer")) { $("#drawer").classList.add("hidden"); return; }
   const del = ev.target.closest("[data-del]"), dup = ev.target.closest("[data-dup]"), open = ev.target.closest("[data-open]");
+  const hist = ev.target.closest("[data-hist]"), back = ev.target.closest("[data-restore]");
   try {
+    if (hist) {
+      ev.stopPropagation();
+      const row = hist.closest(".proj"), old = row.nextElementSibling;
+      if (old?.classList.contains("versions")) { old.remove(); return; }
+      const { versions } = await api(`/projects/${hist.dataset.hist}/versions`);
+      row.insertAdjacentHTML("afterend", `<div class="versions">${versions.length ? versions.map((v) => `<div class="ver"><span>Version ${v.version}</span><span class="pm">${new Date(v.saved * 1000).toLocaleString()}</span><button class="btn btn-ghost btn-sm" data-restore="${hist.dataset.hist}:${v.id}">Bring back</button></div>`).join("") : `<div class="note">No earlier versions yet: each save keeps the one before it (up to 30).</div>`}</div>`);
+      return;
+    }
+    if (back) {
+      ev.stopPropagation();
+      const [pid, vid] = back.dataset.restore.split(":");
+      const r = await api(`/projects/${pid}/versions/${vid}/restore`, { method: "POST", body: "{}" });
+      loadProject(r); $("#drawer").classList.add("hidden"); toast("Earlier version brought back. The one before is in History too."); return;
+    }
     if (del) {
       ev.stopPropagation();
       if (!confirm("Delete this project? Its earlier versions go with it.")) return;
@@ -1153,7 +1279,7 @@ function loadProject(r) {
   $("#projectName").value = state.project.name;
   history.replaceState(null, "", `${T.base}p/${r.id}`);
   $("#saveState").textContent = "Saved"; $("#saveState").className = "save-state saved";
-  renderInputs(); analyse();
+  renderInputs(); analyse(); resetHistory();
 }
 
 function newProject(kind) {
@@ -1162,7 +1288,7 @@ function newProject(kind) {
   state.selected = null; state.result = null; state.optimise = null;
   $("#projectName").value = state.project.name;
   $("#drawer").classList.add("hidden");
-  renderInputs(); analyse(); save();
+  renderInputs(); analyse(); save(); resetHistory();
 }
 
 $("#projectName").addEventListener("input", (ev) => { state.project.name = ev.target.value; scheduleSave(); });
@@ -1191,6 +1317,7 @@ function reportInputs(p) {
       if (it.kind === "soil") rows.push([it.l, soilText(soilFrom(get(p, it.k)))]);
       else if (it.kind === "points") rows.push([it.l, ptsText(get(p, it.k))]);
       else if (it.kind === "layers") (p.layers || []).forEach((L, i) => rows.push([`Layer ${i + 1}${i ? `, top ${ptsText(L.top)}` : ", top is the ground"}`, soilText(soilFrom(L.soil))]));
+      else if (it.kind === "loads") (p.loads || []).forEach((d, i) => rows.push([`Load ${i + 1}: ${d.kind === "line" ? "line" : "strip"}${d.permanent ? ", permanent" : ", variable"}`, d.kind === "line" ? `${d.V || 0} kN/m down, ${d.H || 0} kN/m towards the face, at ${d.at} m` : `${d.q || 0} kPa over ${d.width || 0} m from ${d.at} m`]));
       else if (it.kind === "benches") { if (bermsOn(p)) rows.push(["Benches, from the crest down", bermRows(p).map((r, i, R) => `${r.h} m at 1:${r.cot}${i < R.length - 1 ? `, berm ${r.berm} m` : ""}`).join("; ")]); }
       else if (it.k && it.kind !== "html") rows.push([it.l, reportValue(it, get(p, it.k))]);
     }
@@ -1341,6 +1468,7 @@ async function wordReport() {
 inputsEl().addEventListener("input", onInput);
 // the probability inputs live in the answer panel; they change the next run, not the answer
 $("#dpanel").addEventListener("change", (ev) => {
+  if (ev.target.dataset?.goal !== undefined) { state.goal = ev.target.value; if (!state.optimise?.running) state.optimise = null; renderPanel(); return; }
   const k = ev.target.dataset?.pk;
   if (!k) return;
   const p = state.project;
@@ -1369,12 +1497,15 @@ async function start() {
   try { last = JSON.parse(localStorage.getItem("talus-last") || "null"); } catch (e) { /* none */ }
   state.project = complete(last?.data || { type: "cut" });
   $("#projectName").value = state.project.name;
-  renderInputs(); analyse();
+  renderInputs(); analyse(); resetHistory();
   if (!state.offline) save();
 }
 start();
 
 document.addEventListener("keydown", (ev) => {
+  const typing = ev.target.closest?.("input, textarea, select");
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); stepHistory(!ev.shiftKey); return; }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y" && !typing) { ev.preventDefault(); stepHistory(false); return; }
   if (ev.key === "Escape") $("#reportMenu").classList.add("hidden");
   if (ev.key === "Escape" && !$("#drawer").classList.contains("hidden")) $("#drawer").classList.add("hidden");
 });

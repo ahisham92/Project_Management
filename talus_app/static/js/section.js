@@ -21,7 +21,7 @@ export function sectionSVG(result, c, opt = {}) {
   const out = [];
   out.push(`<svg xmlns="${NS}" viewBox="0 0 ${W} ${H}" class="section" role="img" aria-label="Cross-section">`);
   out.push(`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="rgba(0,0,0,.18)" stroke-width="1"/></pattern>
-    <marker id="arr" viewBox="0 0 8 8" refX="4" refY="7" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,0 L4,8z" fill="#eb6834"/></marker></defs>`);
+    <marker id="arr" viewBox="0 0 8 8" refX="4" refY="7" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,0 L4,8z" fill="#eb6834"/></marker><marker id="arrL" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#c2410c"/></marker></defs>`);
   // grid
   const step = niceStep((e.x1 - e.x0) / 8);
   for (let x = Math.ceil(e.x0 / step) * step; x <= e.x1; x += step)
@@ -91,6 +91,14 @@ export function sectionSVG(result, c, opt = {}) {
       out.push(`<line x1="${X(x)}" y1="${Y(y) - 22}" x2="${X(x)}" y2="${Y(y) - 3}" stroke="#eb6834" stroke-width="1.4" marker-end="url(#arr)"/>`);
     }
     out.push(`<text x="${X((st.x1 + st.x2) / 2)}" y="${Y(yAt(g.ground, st.x1)) - 26}" text-anchor="middle" font-size="11" fill="#eb6834">${round(st.q)} kPa</text>`);
+  }
+  // line loads: a heavy arrow down (and across when there is a horizontal force)
+  for (const L of c?.lines || []) {
+    const y = yAt(g.ground, L.x), gx = X(L.x), gy = Y(y) - 2;
+    if (L.fy) out.push(`<line x1="${gx}" y1="${gy + (L.fy < 0 ? -40 : 40)}" x2="${gx}" y2="${gy + (L.fy < 0 ? -4 : 4)}" stroke="#c2410c" stroke-width="3" marker-end="url(#arrL)"/>`);
+    if (L.fx) { const d = Math.sign(L.fx); out.push(`<line x1="${gx - d * 40}" y1="${gy - 8}" x2="${gx - d * 5}" y2="${gy - 8}" stroke="#c2410c" stroke-width="3" marker-end="url(#arrL)"/>`); }
+    const lab = [L.V ? `${round(L.V)} kN/m` : "", L.H ? `H ${round(L.H)}` : ""].filter(Boolean).join(" · ");
+    out.push(`<text x="${gx}" y="${gy - 46}" text-anchor="middle" font-size="11" font-weight="600" fill="#c2410c">${lab}</text>`);
   }
   // reinforcement
   for (const r of opt.reinforcement || []) {

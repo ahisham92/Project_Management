@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Seabed surveys · MarineTwin{% endblock %}
+
+{% macro day(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[:4] }}{% endif %}{% endmacro %}
+{% macro m3(v) %}{{ '{:,.0f}'.format(v) }} m³{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The seabed in front of the quay, survey by survey. Each multibeam survey is checked against the pocket's design level: where it is shoaling and how much there is to dredge. Two surveys give the silt that came in between them, and the siltation rate the Lifecycle can run on instead of a typical figure.") }}
+{{ asset_tabs(asset) }}
+
+{% set s = latest['s'] if latest else none %}
+<div class="grid grid-4">
+  {{ tile('Surveys', kept | length, ('latest ' ~ day(latest['row']['surveyed'])) if latest else 'none yet', 'neutral', '') }}
+  {{ tile('Design level', '%+.2f mCD' | format(design), 'set below' if asset['dredge_level'] is not none else 'the deepest berth\'s depth', 'neutral', '') }}
+  {{ tile('Above it now', m3(s['shoal_m3']) if s and s.get('cells') else '—', ('over ' ~ '{:,.0f}'.format(s['shoal_area']) ~ ' m², up to ' ~ '%.2f' | format(s['worst_above']) ~ ' m') if s and s.get('cells') else '', 'critical' if s and s.get('shoal_m3', 0) > 0 else 'good' if s else 'neutral', 'to dredge' if s and s.get('shoal_m3', 0) > 0 else ('clear' if s else '')) }}
+  {{ tile('Siltation', ('%.2f m a year' | format(change['rate'])) if change and change.get('rate') is not none else '—', ('measured, ' ~ day(change['a']['surveyed']) ~ ' to ' ~ day(change['b']['surveyed'])) if change and change.get('rate') is not none else 'needs two surveys', 'neutral', '') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+  {% if latest %}
+  <section class="mt-panel" data-tab="The latest" data-slug="latest" data-open="1">
+    <div class="card">
+      <div class="card-head"><div><h2>{{ latest['row']['name'] }}, {{ day(latest['row']['surveyed']) }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          <span class="mt-key" style="--c:#08306b">much deeper than the design</span>
+          <span class="mt-key" style="--c:#bdd7e7">just below it</span>
+          <span class="mt-key" style="--c:#fd8d3c">above it: a shoal</span>
+          <span class="mt-key" style="--c:#bd0026">2 m or more above</span>
+          <span class="mt-key" style="--c:#141414">the structure</span></p></div>
+        <div class="row" style="gap:8px"><a class="btn" href="{{ url_for('marine.survey_csv', asset_id=asset['id'], survey_id=latest['row']['id']) }}">Download the grid</a></div></div>
+      <div class="card-body">
+        <img class="mt-seabed" src="{{ url_for('marine.survey_png', asset_id=asset['id'], survey_id=latest['row']['id']) }}" alt="The seabed's levels against the design level">
+        {% if s and s.get('cells') %}
+        <p class="small muted">{{ '{:,}'.format(latest['row']['points']) }} soundings in {{ '{:,}'.format(s['cells']) }} cells of {{ '%g' | format(latest['row']['cell']) }} m over {{ '{:,.0f}'.format(s['area']) }} m²;
+          levels {{ '%+.2f' | format(s['deepest']) }} to {{ '%+.2f' | format(s['shallowest']) }} mCD, mean {{ '%+.2f' | format(s['mean']) }}. Drawn on the model's frame, its y up.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if change %}
+  <section class="mt-panel" data-tab="What changed" data-slug="change">
+    <div class="card">
+      <div class="card-head"><div><h2>From {{ day(change['a']['surveyed']) }} to {{ day(change['b']['surveyed']) }}</h2>
+        <p class="small muted" style="margin-top:2px">
+          <span class="mt-key" style="--c:#8c510a">silt came in</span>
+          <span class="mt-key" style="--c:#2166ac">deeper: dredged or scoured</span></p></div>
+        {% if kept | length > 2 %}
+        <form method="get" class="row" style="gap:6px;align-items:end">
+          <label class="field"><span>From</span><select name="a">{% for k in kept %}<option value="{{ k['row']['id'] }}" {% if k['row']['id'] == change['a']['id'] %}selected{% endif %}>{{ k['row']['name'] }} ({{ day(k['row']['surveyed']) }})</option>{% endfor %}</select></label>
+          <label class="field"><span>To</span><select name="b">{% for k in kept %}<option value="{{ k['row']['id'] }}" {% if k['row']['id'] == change['b']['id'] %}selected{% endif %}>{{ k['row']['name'] }} ({{ day(k['row']['surveyed']) }})</option>{% endfor %}</select></label>
+          <button class="btn">Compare</button>
+        </form>{% endif %}</div>
+      <div class="card-body">
+        {% if change['common'] %}
+        <div class="grid grid-4" style="margin-bottom:12px">
+          {{ tile('Silt in', m3(change['in_m3']), 'over ' ~ '{:,.0f}'.format(change['area']) ~ ' m² surveyed both times', 'neutral', '') }}
+          {{ tile('Taken out', m3(change['out_m3']), ('{:,.0f}'.format(change['dredged_area']) ~ ' m² more than ' ~ '%g' | format(0.3) ~ ' m deeper') if change['dredged_area'] else 'nothing dredged', 'neutral', '') }}
+          {{ tile('Mean change', '%+.2f m' | format(change['mean']), 'over %.1f years' | format(change['years']), 'neutral', '') }}
+          {{ tile('Siltation rate', ('%.2f m/yr' | format(change['rate'])) if change['rate'] is not none else '—', 'typical figure ' ~ ('%.2f' | format(typical_silt)), 'warning' if change['rate'] and change['rate'] > typical_silt else 'neutral', '') }}
+        </div>
+        <img class="mt-seabed" src="{{ url_for('marine.survey_change_png', asset_id=asset['id'], a=change['a']['id'], b=change['b']['id']) }}" alt="What changed between the two surveys">
+        <p class="small muted">The rate is the mean rise of the bed over the cells surveyed both times, leaving out cells more than 0.3 m deeper (dredged or scoured between the surveys), divided by the years between.</p>
+        {% if change['rate'] %}
+        <form method="post" action="{{ url_for('marine.use_silt_rate', asset_id=asset['id']) }}" class="row" style="gap:8px;align-items:center;margin-top:8px">
+          <input type="hidden" name="rate" value="{{ '%.4f' | format(change['rate']) }}">
+          <button class="btn primary">Run the Lifecycle on {{ '%.2f' | format(change['rate']) }} m a year</button>
+          <span class="small muted">The pages run on {{ silt_now ~ ' m a year now' if silt_now else 'the typical %.2f m a year now' | format(typical_silt) }}. This keeps an input set, "Measured siltation", and puts it in use.</span>
+        </form>
+        {% endif %}
+        {% else %}<p class="muted">The two surveys do not overlap: were they read in the same frame?</p>{% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="mt-panel" data-tab="Surveys" data-slug="list" {% if not latest %}data-open="1"{% endif %}>
+    <div class="card">
+      <div class="card-head"><div><h2>The surveys</h2></div></div>
+      <div class="card-body table-scroll">
+        {% if kept %}
+        <table class="table">
+          <thead><tr><th>Survey</th><th>Date</th><th class="right">Soundings</th><th class="right">Area</th><th class="right">Shallowest</th><th class="right">Above design</th><th>From</th><th></th></tr></thead>
+          <tbody>
+          {% for k in kept | reverse %}{% set r, x = k['row'], k['s'] %}
+            <tr><td><a href="{{ url_for('marine.survey_png', asset_id=asset['id'], survey_id=r['id']) }}" target="_blank">{{ r['name'] }}</a></td><td class="tabular">{{ day(r['surveyed']) }}</td>
+              <td class="right tabular">{{ '{:,}'.format(r['points']) }}</td>
+              <td class="right tabular">{{ '{:,.0f}'.format(x['area']) ~ ' m²' if x and x.get('cells') }}</td>
+              <td class="right tabular">{{ '%+.2f' | format(x['shallowest']) if x and x.get('cells') }}</td>
+              <td class="right tabular {{ 'state-critical' if x and x.get('shoal_m3') }}">{{ m3(x['shoal_m3']) if x and x.get('cells') }}</td>
+              <td class="small muted">{{ r['source'] }}</td>
+              <td><form method="post" action="{{ url_for('marine.delete_survey', asset_id=asset['id'], survey_id=r['id']) }}"><button class="btn">Remove</button></form></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="muted">No surveys yet. Bring one in, or try two made-up ones.</p>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Bring in a survey" data-slug="bring">
+    <div class="grid grid-2">
+      <div class="card" id="bring">
+        <div class="card-head"><div><h2>A survey's XYZ file</h2>
+          <p class="small muted" style="margin-top:2px">From the survey contractor: a sounding per line, position then depth (x y z), comma, tab or space separated. Up to 120 MB; a 1 m grid export is plenty.</p></div></div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('marine.import_survey', asset_id=asset['id']) }}" data-voyage="Reading the survey">
+            <input type="file" name="file" accept=".xyz,.txt,.csv,.pts,.asc" required>
+            <div class="grid grid-2" style="margin-top:8px">
+              <label class="field"><span>Name</span><input name="name" placeholder="Monthly survey, berth pocket"></label>
+              <label class="field"><span>Surveyed on</span><input type="date" name="surveyed" value="{{ today }}" required></label>
+              <label class="field"><span>Positions are</span><select name="frame">{% for k, l in frames %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+              <label class="field"><span>The third column is</span><select name="z">{% for k, l in zs %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+              <label class="field"><span>Relative to</span><select name="datum">{% for k, l in datums %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+              <label class="field"><span>Grid cell, m</span><input type="number" name="cell" value="2.5" min="0.5" max="25" step="0.5"></label>
+            </div>
+            <button class="btn primary" style="margin-top:8px">Read the survey</button>
+          </form>
+          <p class="small muted" style="margin-top:8px">Easting and northing are read on the model's map grid{% if asset['epsg'] %} ({{ asset['epsg'] }}){% endif %}. Keep the cell the same for surveys you want to compare.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>The design level</h2></div></div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('marine.survey_design', asset_id=asset['id']) }}" class="row" style="gap:8px;align-items:end">
+            <label class="field"><span>Pocket design level, mCD</span><input type="number" name="level" step="0.1" value="{{ '%.2f' | format(asset['dredge_level']) if asset['dredge_level'] is not none }}" placeholder="{{ '%.2f' | format(design) }}"></label>
+            <button class="btn">Save</button>
+          </form>
+          <p class="small muted">The declared depth alongside, as a level (a 16 m pocket is -16). Left empty, the deepest berth's depth on the Berth plan is used.</p>
+          <form method="post" action="{{ url_for('marine.demo_surveys', asset_id=asset['id']) }}" data-voyage="Making up two surveys" style="margin-top:12px"><button class="btn">Try with two made-up surveys</button></form>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

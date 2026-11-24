@@ -390,3 +390,4 @@
 .mt-pileweeks { width: 100%; height: 160px; }
 .mt-pileweeks .pw-bar { fill: var(--series-4); }
 .mt-pileweeks .pw-goal { stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1px; }
+.mt-seabed { display: block; max-width: 100%; max-height: 560px; margin: 0 auto 8px; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--border); }

@@ -195,11 +195,25 @@ CATALOGUE: dict[str, dict[str, Any]] = {
         "hosts": ("slab", "beam"), "reads": None, "events": ("thermal_camera",),
         "tells": "A fire caught while it is small, on the apron or on a ship alongside.",
     },
+    "drone_dock": {
+        "name": "Drone dock with a thermal drone", "group": "Survey",
+        "product": "DJI Dock 3 with a Matrice 4TD (wide, zoom and thermal cameras, laser range finder)",
+        "url": "https://enterprise.dji.com/dock-3",
+        "buy": "https://www.dronefly.com/products/dji-dock-3-matrice-4td-standalone-unit-bundle",
+        "buy_note": "Dronefly, Dock 3 + Matrice 4TD bundle $28,437 (November 2026); the fleet software (DJI FlightHub 2) is extra",
+        "price": 28437, "low": 22000, "high": 40000, "install": 6000,
+        "how": "On a level plinth or a roof on the quay with mains power and a 4G or fibre link, open sky above, within about 7 km "
+               "of all it flies over. Automated flights out of sight need the civil aviation authority's permit.",
+        "life": 5, "visit_months": 6, "visit": 800, "rule": ("per_km", 0.5, 0.1),
+        "hosts": ("slab",), "reads": None, "events": ("drone",),
+        "tells": "Scheduled flights over the berth: a dated site image and 3D model every week, thermal pictures of the deck "
+                 "and roofs, and the damage seen within minutes of a storm, a fire or a strike.",
+    },
 }
 
 # What the plan's sensors need to work: one cabinet per 64 logger channels, a total station for the
 # prisms, a gateway for the wireless thickness monitors. Read by the logger: everything but these.
-OWN_LINK = {"corrosion", "settlement", "berthing_aid", "wave_buoy", "thermal_camera", "mooring_load", "accelerometer"}
+OWN_LINK = {"corrosion", "settlement", "berthing_aid", "wave_buoy", "thermal_camera", "mooring_load", "accelerometer", "drone_dock"}
 SUPPORT = {
     "logger": {"name": "Logger cabinet", "product": "Campbell Scientific CR1000X + AM16/32B multiplexer + AVW200 interface, Teltonika RUT241 router, solar kit in an IP66 enclosure",
                "url": "https://www.campbellsci.com/cr1000x",

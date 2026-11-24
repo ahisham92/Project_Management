@@ -1483,3 +1483,19 @@ def test_bulk_hoppers_terminal_has_no_shore_cranes():
     assert berths[0]["crane_kind"] == "none" and berths[0]["use"] == "bulk"
     assert marine_facility.FLEET_BY_TERMINAL["bulk_hoppers"][0][0] == "HOP"
     assert marine_sim.TERMINAL["bulk_hoppers"]["labels"]["sts"] == "Mobile hoppers"
+
+
+def test_the_sensors_plan_has_a_drone_dock_that_warns_of_damage(app, signed_in, demo):
+    from app import marine_plan, marine_risk
+    page = text(signed_in.get(demo + "/plan"))
+    assert "Drone dock with a thermal drone" in page and "Survey" in page
+    dock = marine_plan.CATALOGUE["drone_dock"]
+    assert dock["price"] > 0 and "drone_dock" in marine_plan.OWN_LINK
+    # One dock flies a quay of a few kilometres; a long waterfront gets more.
+    assert marine_plan._count(dock["rule"], 300, 1, 1.0) == 1
+    assert marine_plan._count(dock["rule"], 2700, 9, 1.0) == 1
+    assert marine_plan._count(dock["rule"], 12000, 40, 1.0) == 2
+    # The events it gives warning of name it, and the words say what it is.
+    covered = [e["key"] for e in marine_risk.EVENTS if "drone" in e["sensors"]]
+    assert {"great_storm", "fire_apron", "oil_spill"} <= set(covered)
+    assert marine_risk.SENSOR_WORDS["drone"]

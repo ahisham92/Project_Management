@@ -2478,7 +2478,9 @@ async function main() {
       <label><input type="checkbox" class="marine-hud-condition" checked> Colour by condition</label>
       <label><input type="checkbox" class="marine-hud-xray"> See under the water</label>
       <label><input type="checkbox" class="marine-hud-move" checked> Operations moving</label>
-    </div>`;
+      <label title="Click points on the model or the water to measure the distance between them and the area they close"><input type="checkbox" class="marine-hud-measure"> Measure</label>
+    </div>
+    <div class="marine-hud-measured" aria-live="polite" hidden></div>`;
   view.appendChild(hud);
   if (LIVE || LIFE) hud.hidden = true;   // the players have their own
   const read = hud.querySelector('.marine-hud-read');
@@ -2762,12 +2764,85 @@ async function main() {
     link: { href: e.href, text: 'Condition, maintenance and history' },
   });
   const notScenery = new Set([sky, water, stars]);
+
+  // Measuring: with Measure ticked, each click drops a point on whatever it hits (the model, the
+  // ground, the water); the line between them gives the length, each leg and the rise, and three
+  // points or more the area they close on plan. Backspace takes the last point back, Esc clears.
+  const measure = { on: false, points: [], group: new THREE.Group() };
+  measure.group.renderOrder = 10;
+  scene.add(measure.group);
+  const measured = hud.querySelector('.marine-hud-measured');
+  const measureMat = new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true });
+  const measureDot = new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true });
+  const fmtM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(m < 10 ? 2 : 1)} m`);
+  const fmtM2 = (a) => (a >= 1e6 ? `${(a / 1e6).toFixed(2)} km²` : `${Math.round(a).toLocaleString()} m²`);
+  function measureAnswer(points) {
+    let length = 0;
+    for (let i = 1; i < points.length; i++) length += points[i].distanceTo(points[i - 1]);
+    const last = points.length > 1 ? points[points.length - 1].distanceTo(points[points.length - 2]) : 0;
+    let area = 0;
+    if (points.length > 2) {
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        area += a.x * b.z - b.x * a.z;
+      }
+      area = Math.abs(area) / 2;
+    }
+    const rise = points.length > 1 ? points[points.length - 1].y - points[0].y : 0;
+    return { length, last, area, rise };
+  }
+  function drawMeasure() {
+    for (const c of [...measure.group.children]) { measure.group.remove(c); c.geometry?.dispose(); }
+    const pts = measure.points;
+    const size = Math.max(0.3, camera.position.distanceTo(controls.target) / 250);
+    for (const p of pts) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8), measureDot);
+      dot.position.copy(p);
+      dot.renderOrder = 10;
+      measure.group.add(dot);
+    }
+    if (pts.length > 1) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.length > 2 ? [...pts, pts[0]] : pts), measureMat);
+      line.renderOrder = 10;
+      measure.group.add(line);
+    }
+    measured.hidden = !measure.on;
+    if (!measure.on) return;
+    if (!pts.length) { measured.innerHTML = 'Click two points or more. <span class="muted">Backspace undoes the last, Esc clears.</span>'; return; }
+    const m = measureAnswer(pts);
+    const bits = [`<strong>${pts.length} point${pts.length > 1 ? 's' : ''}</strong>`];
+    if (pts.length > 1) bits.push(`length ${fmtM(m.length)}`, `last leg ${fmtM(m.last)}`, `rise ${m.rise >= 0 ? '+' : '−'}${Math.abs(m.rise).toFixed(2)} m`);
+    if (pts.length > 2) bits.push(`area on plan ${fmtM2(m.area)}`);
+    const p = pts[pts.length - 1];
+    bits.push(`<span class="muted">last at +${p.y.toFixed(2)} mCD</span>`);
+    measured.innerHTML = bits.join(' · ');
+  }
+  hud.querySelector('.marine-hud-measure').addEventListener('change', (ev) => {
+    measure.on = ev.target.checked;
+    if (!measure.on) measure.points = [];
+    renderer.domElement.style.cursor = measure.on ? 'crosshair' : '';
+    drawMeasure();
+  });
+  window.addEventListener('keydown', (ev) => {
+    if (!measure.on || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    if (ev.key === 'Escape') { measure.points = []; drawMeasure(); }
+    if (ev.key === 'Backspace' && measure.points.length) { ev.preventDefault(); measure.points.pop(); drawMeasure(); }
+  });
+  window.MarineMeasure = { answer: (pts) => measureAnswer(pts.map((p) => new THREE.Vector3(...p))) };
+
   renderer.domElement.addEventListener('pointerdown', (ev) => { downAt = [ev.clientX, ev.clientY]; });
   renderer.domElement.addEventListener('pointerup', (ev) => {
     if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
     const rect = renderer.domElement.getBoundingClientRect();
     const at = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(at, camera);
+    if (measure.on) {
+      const skip = new Set([sky, stars, measure.group]);
+      const hit = ray.intersectObjects(scene.children.filter((o) => !skip.has(o) && o.visible), true)[0];
+      if (hit) { measure.points.push(hit.point.clone()); drawMeasure(); }
+      return;
+    }
     // The nearest thing hit that has a card, looking up from the mesh to whatever it belongs to.
     let found = null;
     for (const hit of ray.intersectObjects(scene.children.filter((o) => !notScenery.has(o) && o.visible), true)) {

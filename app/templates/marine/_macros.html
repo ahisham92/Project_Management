@@ -26,7 +26,7 @@
   {% set facility = [('marine.equipment', 'Equipment & maintenance'), ('marine.environment', 'Comfort & air'),
                      ('marine.carbon', 'Carbon & compliance'), ('marine.safety', 'Safety & security')] %}
   {% set setup_tabs = [('marine.setup', 'Model and place'), ('marine.sensors', 'Sensors'), ('marine.inputs', 'Inputs')] %}
-  {% set record_tabs = [('marine.piles', 'Piles'), ('marine.seabed', 'Seabed surveys'), ('marine.photos', 'Photos')] %}
+  {% set record_tabs = [('marine.piles', 'Piles'), ('marine.seabed', 'Seabed surveys'), ('marine.photos', 'Photos'), ('marine.site_images', 'Site images')] %}
   {% set port_tabs = [('marine.live', 'Live port'), ('marine.berthplan', 'Berth plan'), ('marine.ships', 'Ships')] %}
   {% set here = request.endpoint %}
   {% set ready = asset and (asset['model_file'] or asset['latitude'] is not none) %}
@@ -34,7 +34,7 @@
       ('marine.index', 'Assets', asset['name'] if asset else 'pick or add one', ['marine.index']),
       ('marine.setup', 'Set up', 'model, place, sensors, inputs', setup_tabs | map('first') | list),
       ('marine.asset', 'Structure', 'condition, what to do', ['marine.asset', 'marine.element']),
-      ('marine.piles', 'Site record', 'as built, surveys, photos', record_tabs | map('first') | list),
+      ('marine.piles', 'Site record', 'as built, surveys, photos, drone', record_tabs | map('first') | list),
       ('marine.live', 'Live port', 'ships, berth plan, cranes', port_tabs | map('first') | list),
       ('marine.lifecycle', 'Lifecycle', '50 years, fix or wait', ['marine.lifecycle']),
       ('marine.risks', 'Risks', 'extreme events, cost, recovery', ['marine.risks']),

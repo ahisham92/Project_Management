@@ -828,7 +828,7 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles", "/seabed", "/photos"):
+    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles", "/seabed", "/photos", "/images"):
         page = text(signed_in.get(demo + path))
         assert page.count('class="mt-step ') == 11 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
@@ -1668,3 +1668,75 @@ def test_photos_are_kept_on_their_element_with_the_cameras_date_and_place(app, s
     assert "Drone" in text(signed_in.get(demo + "/photos?kind=drone"))
     signed_in.post(demo + f"/photos/{rows[1]['id']}/delete")
     assert signed_in.get(demo + f"/photos/{rows[1]['id']}.jpg").status_code == 404
+
+
+# --- the site record: drone site images ----------------------------------------------------------
+
+def _geotiff(e0, n0, px=0.5, size=(400, 300), epsg=32631):
+    """A GeoTIFF on a UTM grid: its top-left corner at (e0, n0), px metres a pixel."""
+    from PIL import Image, TiffImagePlugin
+    img = Image.new("RGB", size, (90, 120, 140))
+    info = TiffImagePlugin.ImageFileDirectory_v2()
+    info[33550] = (px, px, 0.0)
+    info[33922] = (0.0, 0.0, 0.0, e0, n0, 0.0)
+    info[34735] = (1, 1, 0, 2, 1024, 0, 1, 1, 3072, 0, 1, epsg)
+    out = io.BytesIO()
+    img.save(out, "TIFF", tiffinfo=info)
+    return out.getvalue()
+
+
+def test_site_images_are_laid_on_the_map_from_their_geotiff_or_world_file(app, signed_in, demo):
+    from app import marine_images
+    page = text(signed_in.get(demo + "/images"))
+    assert "Site images" in page and "No flights yet" in page
+    # A GeoTIFF on UTM 31N, 200 m by 150 m: its corners turn into degrees.
+    answer = signed_in.post(demo + "/images", data={"file": (io.BytesIO(_geotiff(500000.0, 700000.0)), "flight-may.tif"),
+                                                     "taken": "2026-05-04", "kind": "ortho"}, content_type="multipart/form-data")
+    assert answer.status_code == 302
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_images WHERE asset_id = 1 ORDER BY id").fetchall()
+    first = rows[0]
+    lat, lon = marine_ifc.utm_to_latlon(500000.0, 700000.0, 31, True)
+    assert first["placed"] == "geotiff" and abs(first["north"] - lat) < 1e-6 and abs(first["west"] - lon) < 1e-6
+    assert abs(marine_images.covers(first) - 200 * 150) < 300 and abs(first["gsd"] - 0.5) < 1e-9
+    # A PNG with a world file in degrees, picked as such.
+    from PIL import Image
+    png = io.BytesIO()
+    Image.new("RGBA", (100, 50), (10, 20, 30, 255)).save(png, "PNG")
+    world = "0.0001\n0\n0\n-0.0001\n3.00005\n6.99995\n"
+    signed_in.post(demo + "/images", data={"file": (io.BytesIO(png.getvalue()), "flight-june.png"), "world": (io.BytesIO(world.encode()), "flight-june.pgw"),
+                                           "crs": "4326", "taken": "2026-06-04"}, content_type="multipart/form-data")
+    # A picture that does not say where it is, and one with typed corners.
+    plain = io.BytesIO()
+    Image.new("RGB", (60, 40)).save(plain, "JPEG")
+    bad = signed_in.post(demo + "/images", data={"file": (io.BytesIO(plain.getvalue()), "x.jpg")}, content_type="multipart/form-data",
+                         follow_redirects=True)
+    assert "does not say where it is" in text(bad)
+    signed_in.post(demo + "/images", data={"file": (io.BytesIO(plain.getvalue()), "typed.jpg"), "taken": "2026-07-01",
+                                           "south": "6.4", "west": "3.3", "north": "6.401", "east": "3.302"}, content_type="multipart/form-data")
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_images WHERE asset_id = 1 ORDER BY id").fetchall()
+    assert [r["placed"] for r in rows] == ["geotiff", "world file", "typed"]
+    assert abs(rows[1]["west"] - 3.0) < 1e-9 and abs(rows[1]["north"] - 7.0) < 1e-9 and abs(rows[1]["east"] - 3.01) < 1e-9
+    page = signed_in.get(demo + "/images").get_data(as_text=True)
+    assert "data-images=" in page and "mt-images-swipe" in page and "flight-may" in page
+    shown = signed_in.get(demo + f"/images/{rows[0]['id']}.webp")
+    assert shown.status_code == 200 and shown.mimetype == "image/webp"
+    for r in rows:
+        signed_in.post(demo + f"/images/{r['id']}/delete")
+    assert signed_in.get(demo + f"/images/{rows[0]['id']}.webp").status_code == 404
+
+
+def test_site_images_have_two_made_up_flights_to_compare(app, signed_in, demo):
+    with app.app_context():
+        asset = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_assets WHERE id = 1").fetchone()
+    assert asset["latitude"] is not None
+    signed_in.post(demo + "/images/demo")
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_images WHERE asset_id = 1 ORDER BY taken").fetchall()
+    assert len(rows) == 2 and rows[0]["taken"] < rows[1]["taken"]
+    assert rows[0]["south"] < asset["latitude"] < rows[0]["north"] and rows[0]["west"] < asset["longitude"] < rows[0]["east"]
+    page = text(signed_in.get(demo + "/images"))
+    assert "Compare with" in page and "Drone flight, a year on" in page
+    for r in rows:
+        signed_in.post(demo + f"/images/{r['id']}/delete")

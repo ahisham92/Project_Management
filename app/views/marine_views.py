@@ -24,7 +24,7 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_photos, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
+    marine, marine_facility, marine_feed, marine_ifc, marine_images, marine_inputs, marine_life, marine_ops, marine_photos, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
     marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
@@ -61,6 +61,7 @@ CHANGES = {
     "survey_design": "Set the pocket's design level", "demo_surveys": "Made up two seabed surveys",
     "use_silt_rate": "Ran the Lifecycle on the measured siltation",
     "add_photos": "Added photos", "delete_photo": "Removed a photo",
+    "add_site_image": "Added a site image", "delete_site_image": "Removed a site image", "demo_site_images": "Made up two drone flights",
     "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
 
@@ -2119,3 +2120,121 @@ def delete_photo(asset_id: int, photo_id: int):
     if request.form.get("back") == "element" and row["element_id"]:
         return redirect(url_for("marine.element", asset_id=asset_id, element_id=row["element_id"], _anchor="photos"))
     return redirect(url_for("marine.photos", asset_id=asset_id))
+
+
+# --- site images: drone orthophotos on the map --------------------------------------------------
+
+def images_dir() -> Path:
+    folder = data_dir() / "marinetwin" / "images"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _image_or_404(asset_id: int, image_id: int):
+    row = query_one("SELECT * FROM marine_images WHERE id = ? AND asset_id = ?", (image_id, asset_id))
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.get("/assets/<int:asset_id>/images")
+@login_required
+def site_images(asset_id: int):
+    """The site from the air, flight by flight: on the map, on a date, or two dates side by side."""
+    asset = _asset_or_404(asset_id)
+    rows = query("SELECT i.*, u.name AS who FROM marine_images i LEFT JOIN users u ON u.id = i.created_by"
+                 " WHERE i.asset_id = ? ORDER BY i.taken, i.id", (asset_id,))
+    elements = query("SELECT x, y, name, kind FROM marine_elements WHERE asset_id = ?", (asset_id,))
+    outline = []
+    if asset["latitude"] is not None:
+        step = max(1, len(elements) // 1500)
+        for e in elements[::step]:
+            at = marine.geolocate(asset, e["x"], e["y"])
+            if at:
+                outline.append([round(at[0], 7), round(at[1], 7)])
+    data = {"images": marine_images.layers(rows, lambda r: url_for("marine.site_image_file", asset_id=asset_id, image_id=r["id"])),
+            "outline": outline, "focus": [asset["latitude"], asset["longitude"]] if asset["latitude"] is not None else None}
+    return render_template("marine/images.html", asset=asset, rows=rows, data=data, area={r["id"]: marine_images.covers(r) for r in rows},
+                           image_kinds=marine_images.KINDS, crs=marine_images.CRS, utm=marine_images.utm_code(asset),
+                           today=date.today().isoformat(), **_context())
+
+
+@bp.post("/assets/<int:asset_id>/images")
+@login_required
+def add_site_image(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    back = url_for("marine.site_images", asset_id=asset_id)
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        flash("Pick the image to bring in.", "error")
+        return redirect(back + "#bring")
+    if Path(upload.filename).suffix.lower() not in marine_images.TYPES:
+        flash("Bring a GeoTIFF, JPEG, PNG or WebP.", "error")
+        return redirect(back + "#bring")
+    data = upload.read(marine_images.IMAGE_LIMIT + 1)
+    if len(data) > marine_images.IMAGE_LIMIT:
+        flash(f"{upload.filename} is over {marine_images.IMAGE_LIMIT // 1024 // 1024} MB: export it at a coarser resolution.", "error")
+        return redirect(back + "#bring")
+    world = None
+    side = request.files.get("world")
+    if side and side.filename:
+        world = side.read(4096).decode("utf-8", "replace")
+    choice = request.form.get("crs") or ""
+    epsg = 4326 if choice == "4326" else 3857 if choice == "3857" else marine_images.utm_code(asset) if choice == "utm" else None
+    if choice == "utm" and not epsg:
+        flash("Place the asset on the map first: its zone comes from there.", "error")
+        return redirect(back + "#bring")
+    bounds = None
+    corners = [_number(k) for k in ("south", "west", "north", "east")]
+    if all(c is not None for c in corners):
+        bounds = dict(zip(("south", "west", "north", "east"), corners))
+    taken = _day_field("taken", date.today().isoformat())
+    try:
+        done = marine_images.store(get_db(), images_dir(), asset, data, upload.filename, _choice("kind", marine_images.KINDS, "ortho"),
+                                   taken, world, epsg, bounds, g_user_id())
+    except ValueError as err:
+        flash(str(err), "error")
+        return redirect(back + "#bring")
+    get_db().commit()
+    gsd = f", {done['gsd'] * 100:.0f} cm a pixel" if done.get("gsd") else ""
+    flash(f"{upload.filename} is on the map for {taken} (placed from its {done['placed']}{gsd}).", "success")
+    return redirect(back)
+
+
+@bp.post("/assets/<int:asset_id>/images/demo")
+@login_required
+def demo_site_images(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    if asset["latitude"] is None:
+        flash("Place the asset on the map first (Set up, or the model's location).", "error")
+        return redirect(url_for("marine.site_images", asset_id=asset_id))
+    elements = query("SELECT x, y FROM marine_elements WHERE asset_id = ?", (asset_id,))
+    today = date.today()
+    for n, (label, img, box) in enumerate(marine_images.demo_pair(asset, elements)):
+        when = today.replace(year=today.year - 1 + n).isoformat() if not (today.month == 2 and today.day == 29) else today.isoformat()
+        marine_images.keep(get_db(), images_dir(), asset, img, label + ".png", "ortho", when, box, "made up", None, g_user_id())
+    get_db().commit()
+    flash("Two made-up drone flights a year apart. Bring in your own orthophotos to replace them.", "success")
+    return redirect(url_for("marine.site_images", asset_id=asset_id))
+
+
+@bp.get("/assets/<int:asset_id>/images/<int:image_id>.webp")
+@login_required
+def site_image_file(asset_id: int, image_id: int):
+    row = _image_or_404(asset_id, image_id)
+    size = "-thumb" if request.args.get("thumb") else ""
+    path = images_dir() / f"asset-{asset_id}" / f"{row['id']}{size}.webp"
+    if not path.exists():
+        abort(404)
+    return send_file(path, mimetype="image/webp", max_age=3600)
+
+
+@bp.post("/assets/<int:asset_id>/images/<int:image_id>/delete")
+@login_required
+def delete_site_image(asset_id: int, image_id: int):
+    row = _image_or_404(asset_id, image_id)
+    marine_images.remove(images_dir(), row)
+    get_db().execute("DELETE FROM marine_images WHERE id = ?", (image_id,))
+    get_db().commit()
+    flash("Site image removed.", "success")
+    return redirect(url_for("marine.site_images", asset_id=asset_id))

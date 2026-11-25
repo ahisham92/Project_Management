@@ -10,16 +10,19 @@
   {% if request.blueprint == 'specs' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themis.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='cdt/cdt.js') }}" defer></script>
   {% endif %}
   {% if pm_door %}
   <link rel="stylesheet" href="{{ url_for('static', filename='pm.css') }}">
   {% endif %}
   {% if request.blueprint == 'marine' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
-  {# CDT for the web: the CDT-SDK's Dar theme and controls, carried over from its WPF library. #}
-  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">
-  <script src="{{ url_for('static', filename='cdt/cdt.js') }}" defer></script>
+  {# CDT for the web: the CDT-SDK's Dar theme and controls, carried over from its WPF library
+     (MarineTwin's own port; THEMIS's is cdt/cdt.css). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/marinetwin-cdt.css') }}">
+  <script src="{{ url_for('static', filename='cdt/marinetwin-cdt.js') }}" defer></script>
   {% endif %}
   {% if request.blueprint == 'specs' %}
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themis/icon.svg') }}">
@@ -41,6 +44,9 @@
     try {
       var t = localStorage.getItem('pm-theme');
       if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);
+      {% if request.blueprint == 'specs' %}// THEMIS's brand in the CDT theme: Dar unless CDT was chosen.
+      var b = localStorage.getItem('cdt-brand');
+      if (b) document.documentElement.setAttribute('data-cdt-brand', b);{% endif %}
     } catch (e) {}
   </script>
 </head>

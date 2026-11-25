@@ -121,9 +121,11 @@ def test_signed_in_here_is_signed_in_there(site, tmp_path):
     assert body.index('href="sheet.css') < body.index('href="video.css')
     # The look pass: polish.css loads last, pick.js after pocket.js.
     assert body.index('href="video.css') < body.index('href="polish.css')
-    assert body.index('src="pocket.js') < body.index('src="pick.js')
+    # The shared kit: kit.css between video.css and polish.css, kit.js between pocket.js and pick.js.
+    assert body.index('href="video.css') < body.index('href="kit.css') < body.index('href="polish.css')
+    assert body.index('src="pocket.js') < body.index('src="kit.js') < body.index('src="pick.js')
     for name in ("dates.js", "sheet.js", "subs.js", "sheet.css", "focus.js", "focus.css", "office3d.js",
-                 "video.js", "video.css", "pick.js", "polish.css"):
+                 "video.js", "video.css", "pick.js", "polish.css", "kit.js", "kit.css"):
         assert site.get(f"/workload/{name}").status_code == 200
     # The logo is served from under the mount too.
     assert site.get("/workload/logo.svg").status_code == 200
@@ -202,7 +204,11 @@ def test_access_is_given_to_somebody_who_signs_in_here(app, site, mounted):
     mine = osama.get("/workload/api/me")
     assert mine.status_code == 200, text(mine)
     assert mine.json["unit"]["name"] == "Marine Structures"
-    assert "member.js" in text(osama.get("/workload/"))
+    page = text(osama.get("/workload/"))
+    assert "member.js" in page
+    # The member page carries the shared kit too: kit.css after sheet.css, kit.js after pocket.js.
+    assert page.index('href="sheet.css') < page.index('href="kit.css')
+    assert page.index('src="pocket.js') < page.index('src="kit.js')
     # Their own figures and nothing else: the unit itself stays shut.
     assert osama.get("/workload/api/projects").status_code == 403
     assert osama.get("/workload/api/units").json["read_only"] is True

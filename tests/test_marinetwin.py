@@ -1794,8 +1794,8 @@ def test_marinetwin_wears_the_cdt_kit_and_the_rest_of_the_site_does_not(signed_i
     """The CDT-SDK's Dar theme and controls, carried over to the web, are on every MarineTwin page only."""
     for path in ("", "/setup", "/operations", "/elements/1", "/plan"):
         page = text(signed_in.get(demo + path))
-        assert 'class="cdt"' in page and "cdt/cdt.css" in page and "cdt/cdt.js" in page
-    assert "cdt/cdt.css" not in text(signed_in.get("/"))
+        assert 'class="cdt"' in page and "cdt/marinetwin-cdt.css" in page and "cdt/marinetwin-cdt.js" in page
+    assert "cdt/marinetwin-cdt.css" not in text(signed_in.get("/"))
     # every "are you sure?" goes through the kit's dialog, not the browser's confirm()
     for path in ("/setup", "/elements/1", "/inputs", "/sensors", "/ships", "/simulation"):
         page = text(signed_in.get(demo + path))

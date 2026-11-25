@@ -94,7 +94,7 @@
         <button class="btn primary" style="margin-top:8px">Read the file</button>
       </form>
       {% if own %}
-      <form method="post" action="{{ url_for('marine.reset_ships', asset_id=asset['id']) }}" style="margin-top:16px" onsubmit="return confirm('Remove your ship list and go back to a typical week?')">
+      <form method="post" action="{{ url_for('marine.reset_ships', asset_id=asset['id']) }}" style="margin-top:16px" data-confirm="Remove your ship list and go back to a typical week?">
         <button class="btn">Back to a typical week</button>
       </form>
       {% endif %}

@@ -1788,3 +1788,35 @@ def test_the_baseline_shows_the_asset_on_a_date_and_what_changed_since_handover(
         assert [r["handover"] for r in conn.execute("SELECT handover FROM marine_snapshots WHERE asset_id = 1 ORDER BY id")] == [0, 1]
     for r in rows:
         signed_in.post(demo + f"/baseline/{r['id']}/delete")
+
+
+def test_marinetwin_wears_the_cdt_kit_and_the_rest_of_the_site_does_not(signed_in, demo):
+    """The CDT-SDK's Dar theme and controls, carried over to the web, are on every MarineTwin page only."""
+    for path in ("", "/setup", "/operations", "/elements/1", "/plan"):
+        page = text(signed_in.get(demo + path))
+        assert 'class="cdt"' in page and "cdt/marinetwin-cdt.css" in page and "cdt/marinetwin-cdt.js" in page
+    assert "cdt/marinetwin-cdt.css" not in text(signed_in.get("/"))
+    # every "are you sure?" goes through the kit's dialog, not the browser's confirm()
+    for path in ("/setup", "/elements/1", "/inputs", "/sensors", "/ships", "/simulation"):
+        page = text(signed_in.get(demo + path))
+        assert "confirm(" not in page
+    # design ratios read as UtilizationBars, conditions as OutcomeLabels
+    structure = text(signed_in.get(demo + "#elements"))
+    assert 'class="cdt-util ' in structure and 'role="meter"' in structure and 'class="badge ' in structure
+
+
+def test_the_controls_page_shows_every_carried_over_control(signed_in):
+    page = text(signed_in.get("/marinetwin/controls"))
+    for control in ("NumberBox", "SearchableComboBox", "CheckComboBox", "TokenBox", "PathBox", "UtilizationBar", "InfoBar",
+                    "OutcomeLabel", "StatusDot", "BusyDots", "DropDownButton", "DialogHost", "EmptyState", "PropertyList",
+                    "InfoTip", "DataGridFilter", "ToggleSwitch"):
+        assert control in page, control
+    assert 'href="/marinetwin/controls"' in text(signed_in.get("/marinetwin/"))
+
+
+def test_the_utilization_bar_colours_by_its_limit(app):
+    with app.test_request_context():
+        from flask import render_template_string
+        bar = lambda r: render_template_string('{% from "cdt/_kit.html" import utilization %}{{ utilization(r) }}', r=r)
+        assert "cdt-util good" in bar(0.5) and "cdt-util warning" in bar(0.95) and "cdt-util critical" in bar(1.2)
+        assert "none left" in bar(2e9) and "cdt-util none" in bar(None)

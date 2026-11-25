@@ -190,6 +190,13 @@ def index():
                            today=date.today().isoformat(), **_context())
 
 
+@bp.get("/controls")
+@login_required
+def controls():
+    """Every CDT-SDK control as MarineTwin uses it, live: the web counterpart of the SDK's gallery."""
+    return render_template("marine/controls.html", **_context())
+
+
 @bp.post("/assets")
 @login_required
 def new_asset():

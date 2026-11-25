@@ -22,6 +22,10 @@
   {% endif %}
   {% if request.blueprint == 'marine' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
+  {# CDT for the web: the CDT-SDK's Dar theme and controls, carried over from its WPF library
+     (MarineTwin's own port; THEMIS's is cdt/cdt.css). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/marinetwin-cdt.css') }}">
+  <script src="{{ url_for('static', filename='cdt/marinetwin-cdt.js') }}" defer></script>
   {% endif %}
   {# The CDT SDK's theme and controls, ported to the web (static/cdt). Last,
      so the palette and the control states are the same in every door. #}
@@ -51,7 +55,7 @@
     } catch (e) {}
   </script>
 </head>
-<body{% if request.blueprint == 'specs' %} class="themis-app"{% elif pm_door %} class="pm-app"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
+<body{% if request.blueprint == 'specs' %} class="themis-app"{% elif pm_door %} class="pm-app"{% elif request.blueprint == 'marine' %} class="cdt"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
       data-pulse-url="{{ url_for('projects.pulse', project_id=pulse_project_id) }}"{% endif %}>
 {% block chrome %}
   <header class="topbar">

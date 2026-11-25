@@ -112,7 +112,7 @@
   <div class="card-head"><div><h2>Where a logger sends readings</h2>
     <p class="small muted" style="margin-top:2px">HTTPS POST to this address with the key. The key lets a logger in without a password; anyone holding it can send readings to this asset, so give it only to the installer.</p></div>
     <form method="post" action="{{ url_for('marine.renew_feed_key', asset_id=asset['id']) }}"
-          onsubmit="return confirm('Make a new key? Loggers using the old one stop being accepted.')">
+          data-confirm="Make a new key? Loggers using the old one stop being accepted.">
       <button class="btn btn-ghost btn-sm">Make a new key</button></form>
   </div>
   <div class="card-body">

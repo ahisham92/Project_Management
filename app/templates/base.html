@@ -10,7 +10,9 @@
   {% if request.blueprint == 'specs' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themis.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='cdt/cdt.js') }}" defer></script>
   {% endif %}
   {% if pm_door %}
   <link rel="stylesheet" href="{{ url_for('static', filename='pm.css') }}">
@@ -38,6 +40,9 @@
     try {
       var t = localStorage.getItem('pm-theme');
       if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);
+      {% if request.blueprint == 'specs' %}// THEMIS's brand in the CDT theme: Dar unless CDT was chosen.
+      var b = localStorage.getItem('cdt-brand');
+      if (b) document.documentElement.setAttribute('data-cdt-brand', b);{% endif %}
     } catch (e) {}
   </script>
 </head>

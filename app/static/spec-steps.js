@@ -130,6 +130,14 @@
           said = "Take " + n + " section" + (n === 1 ? "" : "s") + " out of this project? Any amendments made to " +
                  (n === 1 ? "it" : "them") + " here go with " + (n === 1 ? "it" : "them") + ".";
         }
+        // In THEMIS's CDT theme the question is a dialog in the page.
+        if (window.CDT && window.CDT.confirm) {
+          if (remove._cdtOk) return;
+          e.preventDefault();
+          var by = e.submitter;
+          window.CDT.confirm(said, { danger: true }).then(function (ok) { if (ok) window.CDT.resubmit(remove, by); });
+          return;
+        }
         if (!window.confirm(said)) e.preventDefault();
       });
     }

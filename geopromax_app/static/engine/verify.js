@@ -2,6 +2,7 @@
 // The Verification tab runs these in the browser and CI runs them in Node.
 
 import { boussinesqCorner, westergaardCorner, buildRects, deltaSigma, equivalentRaft } from "./stress.js";
+import { factors, netUltimate, bearingCheck } from "./bearing.js";
 import { degreeOfConsolidation, computePoint, computeConverged, settlementAt, radialDegree, layerDegree, foundationSummary } from "./settlement.js";
 
 // Numerical integration of a point-load solution over a rectangle (midpoint rule).
@@ -156,6 +157,20 @@ export function runChecks() {
       loads: [{ type: "rect", x: 0, y: 0, B: 4, L: 4, q: 100, rigid: true }] };
     const f = foundationSummary(p, 1, { subLayers: 200 })[0];
     add("Foundations", "Rigid square footing against its flexible centre", "rigid ≈ 0.80 × centre (0.82/1.12, Bowles)", 0.8, f.rigid / f.centre, 0.05);
+  }
+  {
+    // bearing capacity
+    const f = factors(30);
+    add("Bearing", "Nq at φ = 30°", "e^(π·tanφ)·tan²(45° + φ/2): 18.40", 18.40, f.Nq, 0.01);
+    add("Bearing", "Nc at φ = 30°", "(Nq − 1)·cotφ: 30.14", 30.14, f.Nc, 0.01);
+    add("Bearing", "Nγ at φ = 30°", "2·(Nq + 1)·tanφ, Vesic (1973): 22.40", 22.40, f.Ng, 0.01);
+    add("Bearing", "Long strip on clay at the surface, su = 50 kPa", "(π + 2)·su, Prandtl", 257.08, netUltimate({ su: 50 }, 1, 1e6, 0, 0, 8).qnet, 0.01, "kPa");
+    // 2 m square footing 1 m deep on dry sand, φ = 30°, γ = 18: q·Nq·sq·dq + ½·γ·B·Nγ·sγ − q
+    const hand = 18 * 18.4011 * 1.57735 * 1.14434 + 0.5 * 18 * 2 * 22.4025 * 0.6 - 18;
+    const p = { waterTable: 50, layers: [{ name: "Sand", thickness: 20, gamma: 18, gammaSat: 20, E: 30000, nu: 0.3, consolidating: false, phi: 30, c: 0 }] };
+    const b = bearingCheck(p, { type: "pad", x: 0, y: 0, B: 2, L: 2, P: 1200, Df: 1 });
+    add("Bearing", "Square footing on sand: net ultimate pressure", "q·Nq·sq·dq + ½·γ·B·Nγ·sγ − q by hand", hand, b.qult, 0.5, "kPa");
+    add("Bearing", "The same footing: safety factor under 1200 kN", "net ultimate / (P/B² − γ·D)", hand / (300 - 18), b.fos, 0.005);
   }
   return out;
 }

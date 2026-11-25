@@ -99,12 +99,17 @@ export function equivalentRaft(l) {
 }
 
 /** The total vertical force of a load, kN (embankments: on the crest and slopes). */
+/** The cells of a pressure field (a raft's soil pressures from a structural model): [[x, y, p], ...]. */
+export const fieldCells = (l) => (Array.isArray(l.cells) ? l.cells.filter((c) => Array.isArray(c) && c.length >= 3 && c.every(Number.isFinite)) : []);
+
 export function loadForce(l) {
   if (l.type === "pilegroup") return num(l.Q);
+  if (l.type === "field") return fieldCells(l).reduce((a, c) => a + c[2], 0) * num(l.size) ** 2;
   return grossPressure(l) * footprintArea(l);
 }
 
 export function footprintArea(l) {
+  if (l.type === "field") return fieldCells(l).length * num(l.size) ** 2;
   if (l.type === "circle") return Math.PI * num(l.R) ** 2;
   if (l.type === "ring") return Math.PI * Math.max(0, num(l.R) ** 2 - num(l.Ri) ** 2);
   if (l.type === "polygon") return polygonArea(parsePoints(l.pts));
@@ -116,6 +121,7 @@ export function footprintArea(l) {
 /** The pressure a load puts on the ground at its founding level, kPa, before
  *  anything is taken off for excavation. */
 export function grossPressure(l) {
+  if (l.type === "field") { const c = fieldCells(l); return c.length ? c.reduce((a, x) => a + x[2], 0) / c.length : 0; }
   if (l.type === "embankment") return num(l.gamma) * num(l.H);
   if (l.type === "building") return num(l.storeys) * num(l.perStorey) + num(l.extra);
   if (l.type === "pilegroup") { const a = footprintArea(l); return a > 0 ? num(l.Q) / a : 0; }
@@ -154,6 +160,13 @@ export function outline(l) {
   if (l.type === "circle") return [circle(num(l.R))];
   if (l.type === "ring") return [circle(num(l.R)), circle(Math.min(num(l.Ri), num(l.R)))];
   if (l.type === "polygon") { const p = parsePoints(l.pts); return p.length >= 3 ? [p] : []; }
+  if (l.type === "field") {
+    const c = fieldCells(l), h = num(l.size) / 2;
+    if (!c.length) return [];
+    const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
+    const x1 = Math.min(...xs) - h, x2 = Math.max(...xs) + h, y1 = Math.min(...ys) - h, y2 = Math.max(...ys) + h;
+    return [[[x1, y1], [x2, y1], [x2, y2], [x1, y2]]];
+  }
   if (l.type === "embankment") {
     const c = num(l.crest) / 2, t = c + num(l.slope), h = num(l.L) / 2;
     const b = (w) => (l.axis === "x" ? [place(l, -h, -w), place(l, h, -w), place(l, h, w), place(l, -h, w)] : box(w, h));
@@ -165,6 +178,14 @@ export function outline(l) {
 
 /** Where the load's centre is, for labels and "go to" buttons. */
 export function loadCentre(l) {
+  if (l.type === "field") {
+    // the cell nearest the middle of the field, so the centre is always on the raft
+    const c = fieldCells(l);
+    if (!c.length) return [0, 0];
+    const mx = c.reduce((a, p) => a + p[0], 0) / c.length, my = c.reduce((a, p) => a + p[1], 0) / c.length;
+    const best = c.reduce((a, p) => (Math.hypot(p[0] - mx, p[1] - my) < Math.hypot(a[0] - mx, a[1] - my) ? p : a));
+    return [best[0], best[1]];
+  }
   if (l.type === "polygon") { const p = parsePoints(l.pts); return p.length >= 3 ? centroid(p) : [0, 0]; }
   return [num(l.x), num(l.y)];
 }
@@ -208,7 +229,11 @@ function circleRects(x, y, R, q, zf, out) {
 export function loadToRects(l, overburden) {
   const out = [];
   const q = appliedPressure(l, overburden), zf = foundingDepth(l);
-  if (l.type === "circle") circleRects(num(l.x), num(l.y), num(l.R), q, zf, out);
+  if (l.type === "field") {
+    // every cell carries its own pressure; net pressure takes the same soil off each
+    const h = num(l.size) / 2, off = l.net && overburden ? overburden(zf) : 0;
+    for (const [x, y, p] of fieldCells(l)) if (h > 0 && p - off) out.push({ x1: x - h, x2: x + h, y1: y - h, y2: y + h, q: p - off, zf });
+  } else if (l.type === "circle") circleRects(num(l.x), num(l.y), num(l.R), q, zf, out);
   else if (l.type === "ring") {
     circleRects(num(l.x), num(l.y), num(l.R), q, zf, out);
     circleRects(num(l.x), num(l.y), Math.min(num(l.Ri), num(l.R)), -q, zf, out);
@@ -274,6 +299,16 @@ export function checkPoints(l) {
     const rr = l.type === "ring" ? (R + num(l.Ri)) / 2 : 0.845 * R;
     out.rigid = [0, 1, 2, 3].map((i) => [cx + rr * Math.cos((i * Math.PI) / 2), cy + rr * Math.sin((i * Math.PI) / 2)]);
     if (l.type === "ring") out.centre = [cx + rr, cy];
+  } else if (l.type === "field") {
+    // the cells furthest out in sixteen directions
+    const c = fieldCells(l);
+    const seen = new Set();
+    for (let i = 0; i < 16 && c.length > 1; i++) {
+      const ux = Math.cos((i * Math.PI) / 8), uy = Math.sin((i * Math.PI) / 8);
+      const far = c.reduce((a, p) => ((p[0] - cx) * ux + (p[1] - cy) * uy > (a[0] - cx) * ux + (a[1] - cy) * uy ? p : a));
+      const key = `${far[0]},${far[1]}`;
+      if (!seen.has(key) && (far[0] !== cx || far[1] !== cy)) { seen.add(key); out.edge.push([far[0], far[1]]); }
+    }
   } else if (l.type === "polygon") {
     out.edge = parsePoints(l.pts);
   } else if (l.type === "embankment") {

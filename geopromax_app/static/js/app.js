@@ -3,10 +3,13 @@
 // worked out in the browser: the query point on this thread (it is quick), the
 // plan grid and the section in a worker.
 
-import { PRESETS, PRESET_GROUPS, LOAD_TYPES, LOAD_NAMES, STRUCTURES, structureOf, layerFrom, loadFrom, padGrid, complete, checks, resultChecks, depthOf, describeLoad, TEMPLATES } from "../engine/project.js";
+import { PRESETS, PRESET_GROUPS, LOAD_TYPES, LOAD_NAMES, STRUCTURES, structureOf, bearingLimit, layerFrom, loadFrom, padGrid, complete, checks, resultChecks, depthOf, describeLoad, TEMPLATES } from "../engine/project.js";
 import { solvePoint, settlementAt, timeCurve, timeTo, initialStress, foundationResults, summarize, betweenFoundations, gridSubLayers, prepare } from "../engine/settlement.js";
 import { extents, grossPressure, appliedPressure, foundingDepth, loadForce, loadCentre, equivalentRaft, parsePoints } from "../engine/stress.js";
 import { runChecks } from "../engine/verify.js";
+import { bearingAll } from "../engine/bearing.js";
+import { readSafe, toCells, round as safeRound, springs, zonesOf, exportTables, parseDelimited, UNIT_SYSTEMS, unitSystem } from "../engine/ssi.js";
+import { readXlsx } from "../engine/xlsx.js";
 import { drawPlan, sample, rampCSS } from "./plan.js";
 import { timeChart, depthChart, sectionView, soilColour, esc } from "./charts.js";
 
@@ -70,6 +73,7 @@ const ICONS = {
   load: '<path d="M4 4h12M6 4v7M10 4v7M14 4v7M4 11l2 3 2-3M8 11l2 3 2-3M12 11l2 3 2-3M2 16h16" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   calc: '<path d="M3 16 L8 9 L12 12 L17 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   limit: '<path d="M3 5h14M3 15h14M10 5v10M7 8l3-3 3 3M7 12l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  link: '<path d="M8 12l4-4M6.5 9.5l-2 2a2.8 2.8 0 004 4l2-2M13.5 10.5l2-2a2.8 2.8 0 00-4-4l-2 2" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
   point: '<circle cx="10" cy="9" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M10 12v6" stroke="currentColor" stroke-width="1.6"/>',
 };
 const icon = (k) => `<svg class="icon" viewBox="0 0 20 20" aria-hidden="true">${ICONS[k] || ""}</svg>`;
@@ -136,6 +140,9 @@ function layersWidget(p) {
         ${num(`${k}.gammaSat`, "Saturated γsat", "kN/m³", { min: 0, step: 0.5, sub: "below water" })}
         ${num(`${k}.nu`, "Poisson's ratio ν", "", { min: 0, max: 0.49, step: 0.05 })}
         ${num(`${k}.Einc`, "E grows by", "kPa/m", { step: 100, sub: "with depth" })}
+        ${num(`${k}.phi`, "Friction angle φ'", "°", { min: 0, max: 50, step: 1, sub: "for bearing" })}
+        ${num(`${k}.c`, "Cohesion c'", "kPa", { min: 0, step: 1 })}
+        ${l.consolidating ? num(`${k}.su`, "Undrained strength su", "kPa", { min: 0, step: 5, sub: "0: not checked" }) : ""}
       </div>
       ${toggle(`${k}.consolidating`, "Consolidates", "clay, silt or organic soil: settles slowly as water drains")}
       ${clay}
@@ -177,6 +184,13 @@ function loadsWidget(p) {
   const cards = p.loads.map((l, i) => {
     const k = `loads.${i}`;
     const isPoly = l.type === "polygon", emb = l.type === "embankment";
+    if (l.type === "field") return `<div class="item ${l.on === false ? "off" : ""}" data-load="${i}">
+      <div class="item-head"><input class="lname" data-k="${k}.name" value="${esc(l.name)}" aria-label="Name">${tools("load", i, p.loads.length, true)}</div>
+      <div class="note">Soil pressures brought in from SAFE: ${esc(describeLoad(l))}. Bring new ones in under CSI SAFE link.</div>
+      <div class="two">${num(`${k}.Df`, "Founded at", "m", { min: 0, step: 0.25, sub: "below ground" })}${num(`${k}.t0`, "Applied at", "yr", { min: 0, step: 0.25, sub: "0 = start" })}</div>
+      ${+l.Df > 0 ? toggle(`${k}.net`, "Take off the soil dug out", "net pressure: only the load beyond the excavated soil's weight settles the ground") : ""}
+      ${toggle(`${k}.on`, "Switched on")}
+    </div>`;
     // with many foundations, each is one line until it is opened
     if (p.loads.length > 4 && state.openLoad !== i) return `<div class="item compact ${l.on === false ? "off" : ""}" data-load="${i}">
       <div class="item-head"><button type="button" class="lopen" data-act="load-open" data-i="${i}" aria-expanded="false"><b>${esc(l.name || `Load ${i + 1}`)}</b><span>${esc(LOAD_NAMES[l.type] || l.type)} at (${fmt(loadCentre(l)[0], 1)}, ${fmt(loadCentre(l)[1], 1)}) · ${esc(describeLoad(l))}</span></button>${tools("load", i, p.loads.length, true)}</div>
@@ -216,18 +230,105 @@ function loadsWidget(p) {
       <button type="button" class="btn btn-ghost btn-sm" data-act="grid-replace">Replace all loads with them</button></div>
     </details>`;
 }
+// ---- the loop with CSI SAFE
+const fieldIndex = () => state.project.loads.findIndex((l) => l.type === "field");
+function safeList() {
+  const i = fieldIndex();
+  if (i < 0) return [];
+  if (!state.safeList) state.safeList = springs(state.project, state.project.loads[i], life());
+  return state.safeList;
+}
+function zoneMap(list, size, zoning) {
+  if (!list.length) return "";
+  const xs = list.map((s) => s.x), ys = list.map((s) => s.y), x1 = Math.min(...xs) - size / 2, y2 = Math.max(...ys) + size / 2;
+  const w = Math.max(...xs) + size / 2 - x1, h = y2 - (Math.min(...ys) - size / 2), n = zoning.zones.length;
+  const col = (z) => `color-mix(in srgb, var(--series-1) ${n > 1 ? Math.round(18 + (72 * z) / (n - 1)) : 60}%, var(--surface))`;
+  return `<svg class="zonemap" viewBox="0 0 ${w} ${h}" role="img" aria-label="Where each soil property goes">${list.map((s, i) => `<rect x="${(s.x - size / 2 - x1).toFixed(3)}" y="${(y2 - s.y - size / 2).toFixed(3)}" width="${size.toFixed(3)}" height="${size.toFixed(3)}" fill="${col(zoning.of[i])}"><title>${zoning.zones[zoning.of[i]]?.name || ""} at (${fmt(s.x, 1)}, ${fmt(s.y, 1)}): ${mm(s.s, 1)} mm</title></rect>`).join("")}</svg>
+    <div class="zonekey">${zoning.zones.map((z, i) => `<span><i style="background:${col(i)}"></i>${z.name}</span>`).join("")}<span class="muted">soft to stiff</span></div>`;
+}
+function safeWidget(p) {
+  const s = p.safe, u = unitSystem(s.units), d = state.safeDraft, K = 1 / u[6];
+  const kf = (k) => fmt(k * K, k * K >= 100 ? 0 : k * K >= 1 ? 2 : 5);
+  const opt = (list, sel) => list.map((c) => `<option value="${esc(c)}" ${c === sel ? "selected" : ""}>${esc(c)}</option>`).join("");
+  const draft = d ? (d.error ? `<div class="warn bad-text">✕ ${esc(d.error)}</div>` : `<div class="ok">✓ ${esc(d.name)}: ${d.info.kind === "pressure" ? "soil pressures" : "vertical reactions"} at ${fmt(d.info.points.length, 0)} points${d.info.table && d.info.table !== "pasted" ? ` from the sheet "${esc(d.info.table)}"` : ""}, units ${esc(d.info.units)}.</div>
+      ${d.info.notes.map((n) => `<div class="note">${esc(n)}</div>`).join("")}
+      ${d.info.cases.length > 1 ? `<div class="f wide"><span class="lab">Load case or combination<small>use the long-term service one</small></span><select data-safe="kase">${opt(d.info.cases, d.info.kase)}</select></div>` : ""}
+      ${d.info.steps.length > 1 ? `<div class="f wide"><span class="lab">Step</span><select data-safe="step">${opt(d.info.steps, d.info.step)}</select></div>` : ""}
+      <button type="button" class="btn btn-primary btn-sm" data-act="safe-run">Bring it in and work out the springs</button>`) : "";
+  const rounds = s.rounds.length ? `<div class="table-scroll"><table class="tight"><thead><tr><th>Round</th><th class="num">Settlement (mm)</th><th class="num">Springs (${u[5]})</th><th class="num">Change</th></tr></thead><tbody>
+      ${s.rounds.map((r, i) => `<tr><td><b>${i + 1}</b><div class="note">${r.kase ? `${esc(r.kase)}, ` : ""}${fmt(r.force / 1000, 1)} MN</div></td><td class="num">${mm(r.sMin)}<div class="note">to ${mm(r.sMax)}</div></td><td class="num">${kf(r.kMin)}<div class="note">to ${kf(r.kMax)}</div></td><td class="num">${r.mean === null ? "first" : `${fmt(r.mean * 100, 1)}%<div class="note">most ${fmt(r.max * 100, 1)}%</div>`}</td></tr>`).join("")}
+      </tbody></table></div>` : "";
+  const last = s.rounds.at(-1), i = fieldIndex();
+  let out = "";
+  if (last && i >= 0) {
+    const list = safeList(), zoning = zonesOf(list, +s.zones || 5);
+    out = `${last.converged ? `<div class="ok">✓ Converged: the springs moved by ${fmt(last.mean * 100, 1)}% on average since the round before, under the ${fmt(+s.tol, 0)}% asked for. SAFE and the ground agree.</div>`
+      : `<div class="warn">▲ ${last.mean === null ? "First round." : `The springs moved by ${fmt(last.mean * 100, 1)}% on average (most ${fmt(last.max * 100, 1)}%).`} Put these springs into SAFE, run it again, and bring the new soil pressures in.</div>`}
+      ${zoneMap(list, +p.loads[i].size, zoning)}
+      <div class="table-scroll"><table class="tight"><thead><tr><th>Soil property</th><th class="num">Subgrade modulus (${u[5]})</th><th class="num">Cells</th></tr></thead><tbody>${zoning.zones.map((z) => `<tr><td>${z.name}</td><td class="num"><b>${kf(z.k)}</b></td><td class="num">${z.n}</td></tr>`).join("")}</tbody></table></div>
+      <div class="addrow"><button type="button" class="btn btn-primary btn-sm" data-act="safe-props">Download the soil properties</button><button type="button" class="btn btn-ghost btn-sm" data-act="safe-cells">Download where each one goes</button></div>
+      <div class="note">Springs are pressure over settlement at the design life (${yrs(life())}). In SAFE: Define, Soil Subgrade Properties for the values; Assign, Support Data, Soil Properties to put each one on its part of the raft, following the map.</div>`;
+  }
+  return `<div class="note">SAFE solves the raft on springs; GeoProMax works out the springs the ground really gives. Pass the results back and forth until they stop changing.<br><b>1.</b> In SAFE, run the analysis and export the <b>Soil Pressures</b> table to Excel. <b>2.</b> Open it here. <b>3.</b> Put the springs below into SAFE and run it again. Repeat.</div>
+    <div class="addrow"><label class="btn btn-ghost btn-sm filebtn">Open SAFE's Excel or CSV file<input type="file" id="safeFile" accept=".xlsx,.csv,.txt,.tsv" hidden></label></div>
+    <textarea class="pts" id="safePaste" rows="3" spellcheck="false" placeholder="or paste the table here from Excel, with its headings" aria-label="Paste the table from SAFE"></textarea>
+    <div class="addrow"><button type="button" class="btn btn-ghost btn-sm" data-act="safe-paste">Read the pasted table</button></div>
+    ${draft}
+    <div class="f wide"><span class="lab">Units<small>for the springs, and for a table that does not say its own</small></span><select data-safe="units" aria-label="Units">${UNIT_SYSTEMS.map(([k, n]) => `<option value="${k}" ${k === s.units ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+    <div class="two">
+      ${num("safe.tol", "Converged under", "%", { min: 0.5, step: 0.5, sub: "mean change" })}
+      ${num("safe.zones", "Soil properties", "", { min: 1, max: 12, step: 1, sub: "bands of springs" })}
+    </div>
+    ${rounds}${out}
+    ${s.rounds.length ? `<div class="addrow"><button type="button" class="btn btn-ghost btn-sm" data-act="safe-reset">Start the rounds again</button></div>` : ""}`;
+}
+function safeRead(name, tables) {
+  const s = state.project.safe;
+  try { state.safeDraft = { name, tables, info: readSafe(tables, { units: s.units, kase: s.kase, step: s.step }) }; }
+  catch (e) { state.safeDraft = { name, tables: null, error: e.message }; }
+  renderInputs();
+}
+function safeRun() {
+  const d = state.safeDraft, p = state.project;
+  if (!d || !d.info) return;
+  const c = toCells(d.info.points, d.info.kind);
+  let i = fieldIndex();
+  const first = i < 0;
+  if (first) { p.loads.push(loadFrom("field")); i = p.loads.length - 1; }
+  p.loads[i].cells = c.cells.map((r) => r.map((v) => +v.toFixed(4)));
+  p.loads[i].size = +c.size.toFixed(4);
+  let r;
+  try { r = safeRound(p, p.loads[i], life(), p.safe.k, { tol: (+p.safe.tol || 5) / 100 }); }
+  catch (e) { toast("The springs could not be worked out: " + e.message, true); return; }
+  p.safe.rounds.push({ ...r.summary, kase: d.info.kase, file: d.name });
+  p.safe.k = r.list.map((x) => [x.x, x.y, x.k === null ? 0 : +x.k.toPrecision(6)]);
+  p.safe.kase = d.info.kase; p.safe.step = d.info.step;
+  state.safeDraft = null;
+  const others = p.loads.filter((l, n) => n !== i && l.on !== false).length;
+  changed(true);
+  state.safeList = r.list;
+  toast(r.summary.converged ? "Converged: SAFE and the ground agree." : first && others ? `Round 1 done. ${others} other load${others === 1 ? " is" : "s are"} still switched on: switch off any that SAFE's raft replaces.` : `Round ${p.safe.rounds.length} done. Put the springs into SAFE and run it again.`);
+}
+function safeDownload(which) {
+  const p = state.project, i = fieldIndex();
+  if (i < 0) return;
+  const list = safeList(), t = exportTables(list, +p.loads[i].size, zonesOf(list, +p.safe.zones || 5), p.safe.units);
+  download(`${safeName()} springs round ${p.safe.rounds.length} ${which === "props" ? "properties" : "cells"}.csv`, which === "props" ? t.props : t.cells, "text/csv");
+}
+
 const gf = (k, label, unit, step) => `<div class="f"><span class="lab">${label}</span><span class="num"><input type="number" inputmode="decimal" data-grid="${k}" value="${state.gridForm[k]}" min="${k === "nx" || k === "ny" ? 1 : 0}" step="${step}" aria-label="${label}"><span class="unit">${unit}</span></span></div>`;
 
 const limitText = (p) => `${fmt(+p.limits.total, 0)} mm${+p.limits.tilt > 0 ? ` · 1/${fmt(+p.limits.tilt, 0)}` : ""}`;
 const GROUPS = [
   { g: "Structure and limits", icon: "limit", open: true, sum: limitText,
     body: (p) => `<div class="f wide"><span class="lab">What is being built<small>sets the usual limits; type your own over them</small></span><select data-structure aria-label="Kind of structure">${STRUCTURES.map(([k, n]) => `<option value="${k}" ${k === p.limits.preset ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
-      <div class="two">${num("limits.total", "Settlement limit", "mm", { min: 0, step: 5 })}${num("limits.tilt", "Tilt limit, 1 in", "", { min: 0, step: 50, sub: "0: not checked" })}</div>
+      <div class="two">${num("limits.total", "Settlement limit", "mm", { min: 0, step: 5 })}${num("limits.tilt", "Tilt limit, 1 in", "", { min: 0, step: 50, sub: "0: not checked" })}${num("limits.fos", "Bearing safety factor", "", { min: 0, step: 0.1, sub: "at least" })}</div>
       <div class="note">${esc(structureOf(p.limits.preset)[4] || "Your own limits.")}</div>` },
   { g: "Soil profile", icon: "layers", open: true, sum: (p) => `${p.layers.length} layer${p.layers.length === 1 ? "" : "s"} · ${fmt(depthOf(p), 1)} m`, body: layersWidget },
   { g: "Groundwater", icon: "water", open: false, sum: (p) => `${fmt(+p.waterTable, 2)} m deep`,
     body: () => num("waterTable", "Water table depth", "m", { min: 0, step: 0.25, sub: "below ground; hydrostatic below it" }) },
   { g: "Foundations and loads", icon: "load", open: true, sum: (p) => `${p.loads.filter((l) => l.on !== false).length} on`, body: loadsWidget },
+  { g: "CSI SAFE link", icon: "link", open: false, sum: (p) => { const r = p.safe.rounds; return !r.length ? "not used" : r.at(-1).converged ? `converged, round ${r.length}` : `round ${r.length}`; }, body: safeWidget },
   { g: "Analysis", icon: "calc", open: false, sum: (p) => `${p.method === "westergaard" ? "Westergaard" : "Boussinesq"} · ${fmt(+p.life, 0)} yr`,
     body: (p) => seg("method", "Stress distribution", [["boussinesq", "Boussinesq"], ["westergaard", "Westergaard"]])
       + `<div class="note">${p.method === "westergaard" ? "Westergaard: a soil reinforced by thin stiff layers (varved clays). It spreads the load more, so stresses under the centre are lower." : "Boussinesq: a uniform elastic half-space. The usual choice."}</div>`
@@ -286,7 +387,7 @@ function onInput(ev) {
   }
   if (el.dataset.structure !== undefined) {
     const st = structureOf(el.value);
-    p.limits = el.value === "custom" ? { ...p.limits, preset: "custom" } : { preset: st[0], total: st[2], tilt: st[3] };
+    p.limits = el.value === "custom" ? { ...p.limits, preset: "custom" } : { preset: st[0], total: st[2], tilt: st[3], fos: bearingLimit(st[0]) };
     changed(true);
     return;
   }
@@ -296,6 +397,23 @@ function onInput(ev) {
     const b = $('[data-act="grid-add"]'); if (b) b.textContent = `Add ${state.gridForm.nx * state.gridForm.ny} footings`;
     return;
   }
+  if (el.id === "safeFile") {
+    const f = el.files?.[0];
+    if (!f) return;
+    (async () => {
+      if (/\.xls$/i.test(f.name)) { state.safeDraft = { name: f.name, error: "this is an old .xls workbook. Save it as .xlsx (or CSV) in Excel and open that." }; renderInputs(); return; }
+      try { safeRead(f.name, /\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : [{ name: "pasted", rows: parseDelimited(await f.text()) }]); }
+      catch (e) { state.safeDraft = { name: f.name, error: e.message }; renderInputs(); }
+    })();
+    return;
+  }
+  if (el.dataset.safe) {
+    p.safe[el.dataset.safe] = el.value;
+    if (state.safeDraft?.tables) safeRead(state.safeDraft.name, state.safeDraft.tables); else renderInputs();
+    scheduleSave();
+    return;
+  }
+  if (el.id === "safePaste") return;
   if (!el.dataset.k) return;
   let v;
   if (el.type === "checkbox") v = el.checked;
@@ -344,6 +462,10 @@ function onClick(ev) {
     }
     toast(`${pads.length} footings added. Undo takes them back.`);
   }
+  else if (act === "safe-paste") { const t = $("#safePaste").value; if (t.trim()) safeRead("Pasted table", [{ name: "pasted", rows: parseDelimited(t) }]); return; }
+  else if (act === "safe-run") { safeRun(); return; }
+  else if (act === "safe-props" || act === "safe-cells") { safeDownload(act === "safe-props" ? "props" : "cells"); return; }
+  else if (act === "safe-reset") { p.safe.rounds = []; p.safe.k = null; }
   else if (act === "load-open") { state.openLoad = i; renderInputs(); return; }
   else if (act === "load-del") { p.loads.splice(i, 1); state.openLoad = null; }
   else if (act === "load-dup") {
@@ -514,7 +636,8 @@ function analyse() {
     toast("Could not work out the settlement: " + e.message, true);
   }
   state.curve = state.res ? timeCurve(state.res, life()) : null;
-  state.found = null;
+  state.found = null; state.safeList = null;
+  try { state.bearing = bearingAll(p); } catch (e) { state.bearing = []; }
   syncTimebar();
   renderVerdict(); renderKpis(); renderTabs(); renderPanel();
   askGrid();
@@ -538,13 +661,16 @@ function judge() {
   const between = f.betweenLife;
   const tilt = Math.max(within.tilt, between.tilt);
   const limS = +lim.total > 0 ? +lim.total / 1000 : Infinity, limT = +lim.tilt > 0 ? 1 / +lim.tilt : Infinity;
+  const names = state.project.loads, limB = +lim.fos > 0 ? +lim.fos : 0;
+  const bear = (state.bearing || []).map((b, i) => b && b.checked ? { ...b, name: names[i]?.name || `Load ${i + 1}` } : null).filter(Boolean).reduce((a, b) => (!a || b.fos < a.fos ? b : a), null);
   return {
-    worst, within, between, tilt, limS, limT,
+    worst, within, between, tilt, limS, limT, bear, limB, okB: !bear || !limB || bear.fos >= limB - 1e-9,
     okS: worst.governing <= limS + 1e-9, okT: tilt <= limT + 1e-12,
     tiltWhere: between.tilt > within.tilt ? `between ${between.a} and ${between.b}` : `across ${within.name}`,
   };
 }
 const tiltLimit = () => (+state.project.limits.tilt > 0 ? `1/${fmt(+state.project.limits.tilt, 0)}` : "not checked");
+const fosText = (f) => (!Number.isFinite(f) ? "no net load" : f >= 20 ? "over 20" : fmt(f, f < 10 ? 2 : 1));
 const oneIn = (t) => (t > 1e-7 ? `1/${fmt(1 / t, 0)}` : "none");
 
 function renderVerdict() {
@@ -560,10 +686,10 @@ function renderVerdict() {
     pill.innerHTML = `<b>${mm(now.total)} mm</b><span>after ${yrs(nowT())}</span>`;
     return;
   }
-  const ok = j.okS && j.okT;
+  const ok = j.okS && j.okT && j.okB;
   host.innerHTML = `<div class="glass verdict ${ok ? "pass" : "fail"}"><div class="fos">${mm(j.worst.governing)}<span class="unit">mm</span></div>
     <div class="lines"><b>${ok ? "✓ Within the limits" : "✕ Over the limits"}</b> at ${yrs(life())}<br>
-    ${esc(j.worst.name)} settles most (limit ${fmt(+lim.total, 0)} mm) · steepest tilt ${oneIn(j.tilt)} (${+lim.tilt > 0 ? `limit ${tiltLimit()}` : "not checked"})</div></div>`;
+    ${esc(j.worst.name)} settles most (limit ${fmt(+lim.total, 0)} mm) · steepest tilt ${oneIn(j.tilt)} (${+lim.tilt > 0 ? `limit ${tiltLimit()}` : "not checked"})${j.bear ? ` · bearing safety ${fosText(j.bear.fos)}${j.limB ? ` (at least ${fmt(j.limB, 1)})` : ""}` : ""}</div></div>`;
   pill.className = `fpill ${ok ? "pass" : "fail"}` + (pill.classList.contains("on") ? " on" : "");
   pill.innerHTML = `<b>${mm(j.worst.governing)} mm</b><span>${ok ? "✓ within" : "✕ over"} the limits at ${yrs(life())}</span>`;
 }
@@ -579,6 +705,7 @@ function renderKpis() {
   host.innerHTML = [
     [`Largest settlement`, j ? `${mm(j.worst.governing)} mm` : "…", j ? `${esc(j.worst.name)} at ${yrs(life())} ${verdictBadge(j.okS, `within ${fmt(+lim.total, 0)} mm`, `over ${fmt(+lim.total, 0)} mm`)}` : "working it out", j ? (j.okS ? "main" : "main bad") : ""],
     [`Steepest tilt`, j ? oneIn(j.tilt) : "…", j ? `${esc(j.tiltWhere)} ${+lim.tilt > 0 ? verdictBadge(j.okT, `flatter than ${tiltLimit()}`, `steeper than ${tiltLimit()}`) : `<span class="badge">no limit set</span>`}` : "working it out", j ? (j.okT ? "main" : "main bad") : ""],
+    [`Bearing safety`, j ? (j.bear ? fosText(j.bear.fos) : "–") : "…", j ? (j.bear ? `${esc(j.bear.name)}${j.bear.layer ? `, ${j.bear.mode} in ${esc(j.bear.layer)}` : ""} ${j.limB ? verdictBadge(j.okB, `at least ${fmt(j.limB, 1)}`, `under ${fmt(j.limB, 1)}`) : ""}` : "not checked: see Checks") : "working it out", j ? (j.okB ? "main" : "main bad") : ""],
     [`At the query point`, `${mm(now.total)} mm`, `after ${yrs(nowT())} · ${mm(fin.total)} mm at ${yrs(life())}`],
     [`Immediate`, `${mm(r.immediate)} mm`, `elastic, as the loads go on`],
     [`Primary consolidation`, `${mm(r.primary)} mm`, Math.abs(r.primary) > 1e-9 ? `${fmt(now.U * 100, 0)}% done now · 90% ${t90 > 0 ? `after ${yrs(t90 + (r.stages.at(-1)?.t || 0))}` : "straight away"}` : "no consolidating layer under load"],
@@ -612,12 +739,22 @@ const TABS = [
   ["found", "Foundations"], ["time", "Time"], ["depth", "With depth"], ["layers", "Layers"], ["rows", "Sub-layers"], ["checks", "Checks"], ["verify", "Verification"], ["about", "Methods"],
 ];
 function renderTabs() {
-  const n = allChecks().length;
+  const n = allChecks().filter((x) => x.level !== "info").length;
   $("#dtabs").innerHTML = TABS.map(([k, name]) => `<button role="tab" data-tab="${k}" aria-selected="${state.tab === k}">${name}${k === "checks" && n ? ` <span class="pill warn">${n}</span>` : ""}</button>`).join("");
 }
 
 function renderPanel() { $("#dpanel").innerHTML = panelHTML(state.tab); }
-const allChecks = () => [...checks(state.project), ...resultChecks(state.project, state.res)];
+const bearingNotes = () => (state.bearing || []).flatMap((b, i) => {
+  const n = state.project.loads[i]?.name || `Load ${i + 1}`, lim = +state.project.limits.fos;
+  if (!b) return [];
+  if (!b.checked) return [{ level: "warning", text: `${n}: bearing is not checked, because ${b.why}.` }];
+  const out = [];
+  if (lim > 0 && b.fos < lim) out.push({ level: b.fos < 1 ? "critical" : "warning", text: `${n}: the bearing safety factor is ${fosText(b.fos)}, under the ${fmt(lim, 1)} asked for (${b.mode} in ${b.layer}: the ground can carry ${fmt(b.qult, 0)} kPa net and ${fmt(b.qnet, 0)} kPa is applied). ${b.fos < 1 ? "The ground fails before it settles: the settlement shown means nothing." : "Widen or deepen the foundation, or lighten it."}` });
+  if (b.stacked && b.gain > 0) out.push({ level: "info", text: `${n}: it stands on an earlier load, so bearing is checked with both on the ground, and the clay is given the ${fmt(b.gain, 0)} kPa of strength it has gained by the time it goes on.` });
+  if (b.partial) out.push({ level: "warning", text: `${n}: a layer under it has no strength given, so it was left out of the bearing check.` });
+  return out;
+});
+const allChecks = () => [...checks(state.project), ...bearingNotes(), ...resultChecks(state.project, state.res)];
 
 function foundationsHTML(which = "life") {
   const f = state.found, p = state.project, lim = p.limits;
@@ -626,18 +763,19 @@ function foundationsHTML(which = "life") {
   const limS = +lim.total > 0 ? +lim.total / 1000 : Infinity, limT = +lim.tilt > 0 ? 1 / +lim.tilt : Infinity;
   const body = rows.map((x) => {
     const l = p.loads[x.index];
-    if (x.off) return `<tr class="muted"><td>${esc(x.name)}</td><td colspan="8">switched off</td></tr>`;
+    if (x.off) return `<tr class="muted"><td>${esc(x.name)}</td><td colspan="9">switched off</td></tr>`;
     const okS = x.governing <= limS + 1e-9, okT = x.tilt <= limT + 1e-12;
+    const b = (state.bearing || [])[x.index], okB = !b || !b.checked || !(+lim.fos > 0) || b.fos >= +lim.fos - 1e-9;
     return `<tr><td><b>${esc(x.name)}</b><div class="note">${esc(LOAD_NAMES[l.type] || l.type)}${l.rigid && x.rigid !== null ? ", rigid" : ""}</div></td>
       <td class="num">${fmt(foundingDepth(l), 2)}</td><td class="num">${fmt(appliedPressure(l, overburden), 0)}</td>
       <td class="num">${x.rigid !== null ? mm(x.rigid, 1) : mm(x.centre, 1)}</td><td class="num">${mm(x.max, 1)}</td><td class="num">${mm(x.min, 1)}</td><td class="num">${mm(x.diff, 1)}</td>
-      <td class="num">${oneIn(x.tilt)}</td><td>${okS && okT ? `<span class="pill good">✓ within</span>` : `<span class="pill bad">✕ ${!okS ? "settlement" : "tilt"}</span>`}</td></tr>`;
+      <td class="num">${oneIn(x.tilt)}</td><td class="num">${b && b.checked ? `${fosText(b.fos)}${b.layer ? `<div class="note">${b.mode}, ${esc(b.layer)}</div>` : ""}` : "–"}</td><td>${okS && okT && okB ? `<span class="pill good">✓ within</span>` : `<span class="pill bad">✕ ${!okB ? "bearing" : !okS ? "settlement" : "tilt"}</span>`}</td></tr>`;
   }).join("");
   const live = rows.filter((x) => !x.off);
   const bt = live.length > 1 ? `<p class="explain" style="margin-top:10px">Between foundations, the steepest slope is <b>${oneIn(between.tilt)}</b>${between.a ? `, from ${esc(between.a)} to ${esc(between.b)} (${mm(between.diff, 1)} mm over ${fmt(between.d, 1)} m)` : ""}. ${!(+lim.tilt > 0) ? "" : between.tilt <= limT + 1e-12 ? `<span class="pill good">✓ flatter than ${tiltLimit()}</span>` : `<span class="pill bad">✕ steeper than ${tiltLimit()}</span>`}</p>` : "";
-  return `<div class="table-scroll"><table class="tight"><thead><tr><th>Foundation</th><th class="num">Founded at (m)</th><th class="num">Pressure (kPa)</th><th class="num">Settlement (mm)</th><th class="num">Most (mm)</th><th class="num">Least (mm)</th><th class="num">Differential (mm)</th><th class="num">Tilt</th><th>Against ${fmt(+lim.total, 0)} mm${+lim.tilt > 0 ? `, ${tiltLimit()}` : ""}</th></tr></thead><tbody>${body}</tbody></table></div>
+  return `<div class="table-scroll"><table class="tight"><thead><tr><th>Foundation</th><th class="num">Founded at (m)</th><th class="num">Pressure (kPa)</th><th class="num">Settlement (mm)</th><th class="num">Most (mm)</th><th class="num">Least (mm)</th><th class="num">Differential (mm)</th><th class="num">Tilt</th><th class="num">Bearing safety</th><th>Against ${fmt(+lim.total, 0)} mm${+lim.tilt > 0 ? `, ${tiltLimit()}` : ""}${+lim.fos > 0 ? `, ${fmt(+lim.fos, 1)}` : ""}</th></tr></thead><tbody>${body}</tbody></table></div>
     ${bt}
-    <p class="note" style="margin-top:8px">After ${yrs(t)}. Settlement is at the centre of a flexible foundation and the even settlement of a rigid one. Tilt is the steepest slope from the centre to an edge, or the lean of a rigid foundation. The plan and the section show the ground as it would settle under flexible loads.</p>`;
+    <p class="note" style="margin-top:8px">After ${yrs(t)}. Settlement is at the centre of a flexible foundation and the even settlement of a rigid one. Tilt is the steepest slope from the centre to an edge, or the lean of a rigid foundation. Bearing safety is the net pressure the ground can carry over the net pressure applied. The plan and the section show the ground as it would settle under flexible loads.</p>`;
 }
 
 function panelHTML(tab) {
@@ -673,7 +811,7 @@ function panelHTML(tab) {
     const c = allChecks();
     const conv = r.converged === null ? `<div class="note">Using ${r.subLayers} sub-layers per layer, as set in Analysis.</div>`
       : r.converged ? `<div class="ok">✓ Converged: with ${r.subLayers} sub-layers per layer the settlement changes by ${(r.change * 100).toFixed(2)}% on refining, under the 0.5% asked for.</div>` : "";
-    return `<div class="checks">${conv}${c.length ? c.map((x) => `<div class="${x.level === "critical" ? "warn bad-text" : "warn"}">${x.level === "critical" ? "✕" : "▲"} ${esc(x.text)}</div>`).join("")
+    return `<div class="checks">${conv}${c.length ? c.map((x) => `<div class="${x.level === "critical" ? "warn bad-text" : x.level === "info" ? "note" : "warn"}">${x.level === "critical" ? "✕" : x.level === "info" ? "ⓘ" : "▲"} ${esc(x.text)}</div>`).join("")
       : `<div class="ok">✓ Nothing to flag in the inputs.</div>`}</div>`;
   } else if (tab === "verify") {
     if (!state.verify) state.verify = runChecks();
@@ -700,8 +838,10 @@ const METHODS = `<div class="explain" style="display:grid;gap:10px;max-width:820
   <p><b>Rate.</b> Terzaghi's one-dimensional theory for each layer: <code>Tv = cv·t / Hdr²</code>, with Hdr half the layer for drainage through both faces and the whole layer for one. With <b>wick drains</b>, water also flows sideways to the drains (Hansbo 1981) and the two add by Carrillo's rule: <code>U = 1 − (1−Uv)(1−Ur)</code>. Loads that go on later (Applied at) are stages: each stage's extra settlement consolidates from its own time.</p>
   <p><b>Creep.</b> Once a layer is 95% consolidated under the last stage (at t95), it keeps settling by <code>Cα·h/(1+ep)·log(t/t95)</code>. Where the soil stays overconsolidated it creeps less, by Cα·Cr/Cc, because Cα/Cc is a constant of the soil (Mesri and Castro 1987).</p>
   <p><b>Convergence.</b> With sub-layers on automatic, each layer is cut finer and finer until the settlement changes by less than 0.5% from one refinement to the next. The Checks tab says how many it took, or warns if it did not get there.</p>
+  <p><b>CSI SAFE link.</b> SAFE solves a raft on springs, and the right springs depend on how the ground settles under the raft's own pressures. So the two are solved in turn: SAFE's soil pressures become the load here (gathered into square cells that keep the total load), the settlement under each cell at the design life gives its spring, <code>k = pressure / settlement</code>, and SAFE runs again on those springs. The rounds stop when the springs change by less than the tolerance on average, and by less than three times it anywhere. Springs are banded into a few soil properties, because SAFE takes one subgrade modulus per property.</p>
+  <p><b>Bearing capacity.</b> Before settlement, each foundation is checked against the ground failing under it, with the general bearing capacity equation: <code>q = c'·Nc·sc·dc + q'·Nq·sq·dq + ½·γ'·B·Nγ·sγ</code> drained, and <code>(π+2)·su·sc·dc</code> undrained for clays, the lower of the two governing (factors of Prandtl, Reissner and Vesic; depth factors of Hansen). The water table comes in through the effective stresses. Weaker layers within one footing width below the base are checked with the load spread at 2 to 1. The safety factor is the net pressure the ground can carry over the net pressure applied; 3 is usual for buildings and 1.5 for embankments. A load placed on top of an earlier one, such as a second stage of fill, is checked with both on the ground, and the clay below is given the strength it has gained by then: <code>Δsu = 0.22·U·Δσ</code> (Ladd 1991). Loads are taken as vertical and central, on level ground; the capacity of piles is not checked.</p>
   <p><b>Limits.</b> Each kind of structure comes with a usual limit on total settlement and on tilt (angular distortion), after Skempton and MacDonald (1956), Bjerrum (1963), Eurocode 7 Annex H and API 653 for tanks. They are starting points: set your own under Structure and limits. Tilt is checked across each foundation and between neighbouring ones.</p>
-  <p class="note">Results are for design and checking by an engineer. One-dimensional strain is assumed; bearing capacity is not checked here. Units: m, kN, kPa, years; settlement in mm.</p>
+  <p class="note">Results are for design and checking by an engineer. One-dimensional strain is assumed; loads are vertical and central. Units: m, kN, kPa, years; settlement in mm.</p>
 </div>`;
 
 // ------------------------------------------------------------------ events on the answer
@@ -832,7 +972,7 @@ $("#fileOpen").addEventListener("change", async (ev) => {
 });
 
 function startOver() {
-  state.grid = null; state.verify = null; state.openLoad = null;
+  state.grid = null; state.verify = null; state.openLoad = null; state.safeDraft = null;
   $("#projectName").value = state.project.name;
   renderInputs(); analyse(); resetHistory();
 }
@@ -895,7 +1035,7 @@ function printReport() {
   const kv = (k, v) => `<div>${k}<b>${v}</b></div>`;
   const layerRows = p.layers.map((l) => {
     const cons = !l.consolidating ? "–" : `${l.model === "mv" ? `mv ${l.mv} m²/MN` : `Cc ${l.Cc}, Cr ${l.Cr}, e0 ${l.e0}, OCR ${l.OCR}${+l.POP ? `, POP ${l.POP} kPa` : ""}`}, cv ${l.cv} m²/yr, Cα ${l.Ca}, ${l.drainage === "single" ? "one face" : "both faces"}${l.drains?.on ? `, wick drains at ${l.drains.spacing} m (${l.drains.pattern === "square" ? "square" : "triangular"}), ch ${l.drains.ch} m²/yr` : ""}`;
-    return `<tr><td>${esc(l.name)}</td><td>${fmt(+l.thickness, 2)}</td><td>${l.gamma} / ${l.gammaSat}</td><td>${l.E}${+l.Einc ? ` + ${l.Einc}/m` : ""}</td><td>${l.nu}</td><td>${cons}</td></tr>`;
+    return `<tr><td>${esc(l.name)}</td><td>${fmt(+l.thickness, 2)}</td><td>${l.gamma} / ${l.gammaSat}</td><td>${l.E}${+l.Einc ? ` + ${l.Einc}/m` : ""}</td><td>${l.nu}</td><td>φ' ${+l.phi || 0}°, c' ${+l.c || 0} kPa${l.consolidating && +l.su > 0 ? `, su ${l.su} kPa` : ""}</td><td>${cons}</td></tr>`;
   }).join("");
   const loadRows = p.loads.map((l) => { const [cx, cy] = loadCentre(l); return `<tr><td>${esc(l.name)}${l.on === false ? " (off)" : ""}</td><td>${esc(LOAD_NAMES[l.type] || l.type)}${l.rigid ? ", rigid" : ""}</td><td>(${fmt(cx, 2)}, ${fmt(cy, 2)})</td><td>${esc(describeLoad(l))}</td><td>${fmt(foundingDepth(l), 2)}</td><td>${fmt(grossPressure(l), 1)}${l.net ? ` (net ${fmt(appliedPressure(l, overburden), 1)})` : ""}</td><td>${fmt(+l.t0 || 0, 2)}</td></tr>`; }).join("");
   const c2 = allChecks();
@@ -906,8 +1046,8 @@ function printReport() {
     <h1>${esc(p.name)}</h1>
     <p class="rnote">GeoProMax ${esc(G.version || "")} · settlement analysis · ${new Date().toLocaleDateString()}${G.me?.name ? ` · ${esc(G.me.name)}` : ""}</p>
     ${j ? `<h2>Against the limits at ${yrs(life())}</h2>
-    <p class="rverdict ${j.okS && j.okT ? "pass" : "fail"}"><b>${j.okS && j.okT ? "✓ Within the limits" : "✕ Over the limits"}</b> · ${esc(st[1])}: ${fmt(+lim.total, 0)} mm${+lim.tilt > 0 ? ` and ${tiltLimit()}` : ", tilt not checked"}</p>
-    <div class="kv">${kv("Largest settlement", `${mm(j.worst.governing)} mm`)}${kv("Where", esc(j.worst.name))}${kv("Steepest tilt", oneIn(j.tilt))}${kv("Where", esc(j.tiltWhere))}</div>
+    <p class="rverdict ${j.okS && j.okT && j.okB ? "pass" : "fail"}"><b>${j.okS && j.okT && j.okB ? "✓ Within the limits" : "✕ Over the limits"}</b> · ${esc(st[1])}: ${fmt(+lim.total, 0)} mm${+lim.tilt > 0 ? ` and ${tiltLimit()}` : ", tilt not checked"}${+lim.fos > 0 ? `, bearing safety at least ${fmt(+lim.fos, 1)}` : ""}</p>
+    <div class="kv">${kv("Largest settlement", `${mm(j.worst.governing)} mm`)}${kv("Where", esc(j.worst.name))}${kv("Steepest tilt", oneIn(j.tilt))}${kv("Where", esc(j.tiltWhere))}${j.bear ? kv("Lowest bearing safety", fosText(j.bear.fos)) + kv("Where", esc(j.bear.name)) : ""}</div>
     <h2>Foundations at ${yrs(life())}</h2>${foundationsHTML("life")}` : ""}
     <h2>At the query point (${fmt(+p.query.x, 2)}, ${fmt(+p.query.y, 2)})</h2>
     <div class="kv">${kv(`After ${yrs(nowT())}`, `${mm(now.total)} mm`)}${kv(`At design life (${yrs(life())})`, `${mm(fin.total)} mm`)}${kv("Immediate", `${mm(r.immediate)} mm`)}${kv("Primary consolidation", `${mm(r.primary)} mm`)}${kv(`Creep by ${yrs(life())}`, `${mm(fin.secondary)} mm`)}${kv("Largest on the plan now", state.grid ? `${mm(state.grid.max)} mm` : "–")}</div>
@@ -919,7 +1059,7 @@ function printReport() {
     <div class="page"></div>
     <h2>Inputs</h2>
     <p class="rnote">Water table ${fmt(+p.waterTable, 2)} m below ground · ${p.method === "westergaard" ? "Westergaard" : "Boussinesq"} stresses · ${conv} · design life ${yrs(life())}</p>
-    <table><thead><tr><th>Layer</th><th>Thickness (m)</th><th>γ / γsat (kN/m³)</th><th>E (kPa)</th><th>ν</th><th>Consolidation</th></tr></thead><tbody>${layerRows}</tbody></table>
+    <table><thead><tr><th>Layer</th><th>Thickness (m)</th><th>γ / γsat (kN/m³)</th><th>E (kPa)</th><th>ν</th><th>Strength</th><th>Consolidation</th></tr></thead><tbody>${layerRows}</tbody></table>
     <table style="margin-top:8pt"><thead><tr><th>Foundation or load</th><th>Kind</th><th>Centre (m)</th><th>Size</th><th>Founded at (m)</th><th>Pressure (kPa)</th><th>Applied at (yr)</th></tr></thead><tbody>${loadRows}</tbody></table>
     <h2>Results by layer</h2>${panelHTML("layers")}
     <h2>Checks</h2>${c2.length ? `<ul>${c2.map((x) => `<li>${esc(x.text)}</li>`).join("")}</ul>` : `<p>Nothing to flag in the inputs.</p>`}

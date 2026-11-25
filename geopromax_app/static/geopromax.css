@@ -588,3 +588,11 @@ tr.muted td { color: var(--muted); }
   .report .pill { padding: 0; background: none !important; }
   .report .explain, .report p.note { font-size: 8.5pt; color: #52514e; }
 }
+
+/* the SAFE link */
+.zonemap { width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.zonekey { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.6875rem; color: var(--ink-2); }
+.zonekey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--border); }
+.group-body .ok, .group-body .warn { font-size: 0.8125rem; }
+.group-body table.tight { font-size: 0.75rem; }
+.group-body table.tight th, .group-body table.tight td { padding: 4px 5px; }

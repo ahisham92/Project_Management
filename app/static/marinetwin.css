@@ -398,3 +398,17 @@
 .mt-photo-tools { display: flex; gap: 10px; margin-top: 4px; font-size: 0.75rem; }
 .mt-photo-tools form { display: inline; }
 .mt-photo-tools .linkish { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* Site images: drone orthophotos on the map, a date slider, a swipe between two flights */
+.mt-images-bar { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; margin-bottom: 10px; }
+.mt-images-when { flex: 1 1 280px; }
+.mt-images-when input { width: 100%; }
+.mt-images-map { height: 520px; position: relative; }
+.mt-images-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px solid #fff; z-index: 500;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35); cursor: ew-resize; touch-action: none; }
+.mt-images-line span { position: absolute; top: 50%; left: -14px; width: 26px; height: 26px; margin-top: -13px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.mt-images-line span::before { content: "⇆"; display: block; text-align: center; line-height: 26px; font-size: 14px; color: #222; }
+.mt-images-line::after { content: ""; position: absolute; top: 0; bottom: 0; left: -12px; width: 24px; }
+.mt-images-thumb { width: 72px; height: 48px; object-fit: cover; border-radius: 4px; display: block; }
+@media (max-width: 640px) { .mt-images-map { height: 380px; } }

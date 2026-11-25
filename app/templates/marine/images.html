@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Site images · MarineTwin{% endblock %}
+
+{% macro day(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[:4] }}{% endif %}{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The site from the air, flight by flight. Each drone orthophoto is laid on the map where it was taken: slide through the dates, or swipe between two flights to see what changed.") }}
+{{ asset_tabs(asset) }}
+
+{% set last = rows[-1] if rows else none %}
+<div class="grid grid-4">
+  {{ tile('Flights', rows | length, ('latest ' ~ day(last['taken'])) if last else 'none yet', 'neutral', '') }}
+  {{ tile('First', day(rows[0]['taken']) if rows else '—', rows[0]['name'] if rows else 'bring one in below', 'neutral', '') }}
+  {{ tile('Covers', ('{:,.0f}'.format(area[last['id']] / 10000) ~ ' ha') if last else '—', 'the latest image', 'neutral', '') }}
+  {{ tile('Sharpest', ('%.0f cm a pixel' | format((rows | selectattr('gsd') | map(attribute='gsd') | min) * 100)) if rows | selectattr('gsd') | list else '—', 'of the originals', 'neutral', '') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+  <section class="mt-panel" data-tab="On the map" data-slug="map" data-open="1">
+    <div class="card">
+      <div class="card-head"><div><h2>The site on a date</h2>
+        <p class="small muted" style="margin-top:2px">{% if rows | length > 1 %}Slide the date, or pick two flights and drag the line across to compare.{% elif rows %}Bring in a second flight to compare.{% else %}No flights yet: the map shows the satellite picture.{% endif %}</p></div></div>
+      <div class="card-body">
+        {% if asset['latitude'] is not none or rows %}
+        <div class="mt-images" data-images='{{ data | tojson }}'>
+          <div class="mt-images-bar">
+            {% if rows %}
+            <label class="field mt-images-when"><span>On</span>
+              <input type="range" class="mt-images-date" min="0" max="{{ rows | length - 1 }}" value="{{ rows | length - 1 }}" step="1">
+              <strong class="mt-images-label"></strong></label>
+            <label class="field"><span>Opacity</span><input type="range" class="mt-images-opacity" min="0" max="100" value="100"></label>
+            {% endif %}
+            {% if rows | length > 1 %}
+            <label class="field"><span><input type="checkbox" class="mt-images-swipe"> Compare with</span>
+              <select class="mt-images-other">{% for r in rows %}<option value="{{ loop.index0 }}" {% if loop.index0 == 0 %}selected{% endif %}>{{ day(r['taken']) }} · {{ r['name'] }}</option>{% endfor %}</select></label>
+            {% endif %}
+          </div>
+          <div class="marine-map mt-images-map"></div>
+          <p class="small muted mt-images-note" hidden>Left of the line: <strong class="mt-images-left"></strong>. Right of it: <strong class="mt-images-right"></strong>.</p>
+        </div>
+        {% else %}
+        <p class="muted">Place the asset on the map first, in Set up or from the model's location, then bring in its drone flights.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Flights" data-slug="list">
+    <div class="card">
+      <div class="card-head"><div><h2>The flights</h2></div></div>
+      <div class="card-body table-scroll">
+        {% if rows %}
+        <table class="table">
+          <thead><tr><th></th><th>Image</th><th>Date</th><th>Kind</th><th class="right">Covers</th><th class="right">Pixel</th><th>Placed from</th><th></th></tr></thead>
+          <tbody>
+          {% for r in rows | reverse %}
+            <tr><td><a href="{{ url_for('marine.site_image_file', asset_id=asset['id'], image_id=r['id']) }}" target="_blank"><img class="mt-images-thumb" src="{{ url_for('marine.site_image_file', asset_id=asset['id'], image_id=r['id'], thumb=1) }}" alt=""></a></td>
+              <td>{{ r['name'] }}<div class="small muted">{{ r['who'] or '' }}</div></td>
+              <td class="tabular">{{ day(r['taken']) }}</td>
+              <td>{{ dict(image_kinds)[r['kind']] }}</td>
+              <td class="right tabular">{{ '{:,.1f}'.format(area[r['id']] / 10000) }} ha</td>
+              <td class="right tabular">{{ ('%.0f cm' | format(r['gsd'] * 100)) if r['gsd'] }}</td>
+              <td class="small muted">{{ r['placed'] }}</td>
+              <td><form method="post" action="{{ url_for('marine.delete_site_image', asset_id=asset['id'], image_id=r['id']) }}"><button class="btn">Remove</button></form></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="muted">No flights yet. Bring one in, or try two made-up ones.</p>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Bring in a flight" data-slug="bring">
+    <div class="card" id="bring">
+      <div class="card-head"><div><h2>A drone orthophoto</h2>
+        <p class="small muted" style="margin-top:2px">From the drone's processing software (DJI Terra, Pix4D, Metashape, WebODM): a GeoTIFF, or a JPEG or PNG with its world file. Up to {{ 150 }} MB; it is kept at up to 4,096 pixels a side.</p></div></div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('marine.add_site_image', asset_id=asset['id']) }}" data-voyage="Laying the image on the map">
+          <div class="grid grid-2">
+            <label class="field"><span>The image</span><input type="file" name="file" accept=".tif,.tiff,.jpg,.jpeg,.png,.webp" required></label>
+            <label class="field"><span>Its world file, if it has one</span><input type="file" name="world" accept=".jgw,.pgw,.tfw,.wld,.j2w,.tifw,.jpgw,.pngw"></label>
+            <label class="field"><span>Flown on</span><input type="date" name="taken" value="{{ today }}" required></label>
+            <label class="field"><span>Kind</span><select name="kind">{% for k, l in image_kinds %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+            <label class="field"><span>Positions are in</span><select name="crs">{% for k, l in crs %}<option value="{{ k }}">{{ l }}{% if k == 'utm' and utm %} (EPSG:{{ utm }}){% endif %}</option>{% endfor %}</select></label>
+          </div>
+          <details style="margin-top:8px"><summary class="small">No GeoTIFF or world file? Type its corners</summary>
+            <div class="grid grid-4" style="margin-top:6px">
+              <label class="field"><span>South, °</span><input type="number" name="south" step="any"></label>
+              <label class="field"><span>West, °</span><input type="number" name="west" step="any"></label>
+              <label class="field"><span>North, °</span><input type="number" name="north" step="any"></label>
+              <label class="field"><span>East, °</span><input type="number" name="east" step="any"></label>
+            </div>
+          </details>
+          <button class="btn primary" style="margin-top:8px">Lay it on the map</button>
+        </form>
+        <form method="post" action="{{ url_for('marine.demo_site_images', asset_id=asset['id']) }}" data-voyage="Making up two flights" style="margin-top:12px">
+          <button class="btn" {% if asset['latitude'] is none %}disabled title="Place the asset on the map first"{% endif %}>Try with two made-up flights</button></form>
+      </div>
+    </div>
+  </section>
+</div>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='marinetwin-images.js') }}" defer></script>
+{% endblock %}

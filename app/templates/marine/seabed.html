@@ -49,7 +49,7 @@
           <span class="mt-key" style="--c:#8c510a">silt came in</span>
           <span class="mt-key" style="--c:#2166ac">deeper: dredged or scoured</span></p></div>
         {% if kept | length > 2 %}
-        <form method="get" class="row" style="gap:6px;align-items:end">
+        <form method="get" class="inline-form" style="gap:6px;align-items:flex-end;flex-wrap:wrap">
           <label class="field"><span>From</span><select name="a">{% for k in kept %}<option value="{{ k['row']['id'] }}" {% if k['row']['id'] == change['a']['id'] %}selected{% endif %}>{{ k['row']['name'] }} ({{ day(k['row']['surveyed']) }})</option>{% endfor %}</select></label>
           <label class="field"><span>To</span><select name="b">{% for k in kept %}<option value="{{ k['row']['id'] }}" {% if k['row']['id'] == change['b']['id'] %}selected{% endif %}>{{ k['row']['name'] }} ({{ day(k['row']['surveyed']) }})</option>{% endfor %}</select></label>
           <button class="btn">Compare</button>

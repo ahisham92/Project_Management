@@ -24,7 +24,7 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
+    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_photos, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
     marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
@@ -60,6 +60,7 @@ CHANGES = {
     "import_survey": "Brought in a seabed survey", "delete_survey": "Removed a seabed survey",
     "survey_design": "Set the pocket's design level", "demo_surveys": "Made up two seabed surveys",
     "use_silt_rate": "Ran the Lifecycle on the measured siltation",
+    "add_photos": "Added photos", "delete_photo": "Removed a photo",
     "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
 
@@ -1469,8 +1470,11 @@ def element(asset_id: int, element_id: int):
     charts = {s["id"]: sensor_trend(s, readings[s["id"]], asset, life) for s in mine["sensors"]}
     history = {s["id"]: [r for r in readings[s["id"]] if not s["simulated"] or r["note"]]
                for s in mine["sensors"] if s["kind"] == "inspection"}
+    photos = query("SELECT * FROM marine_photos WHERE asset_id = ? AND element_id = ? ORDER BY taken DESC, id DESC",
+                   (asset_id, element_id))
     return render_template("marine/element.html", asset=asset, element=element, twin=twin, mine=mine,
-                           charts=charts, life=life, history=history, grade_name=dict(marine.GRADES), **_context())
+                           charts=charts, life=life, history=history, grade_name=dict(marine.GRADES), photos=photos,
+                           photo_kinds=marine_photos.KINDS, **_context())
 
 
 @bp.post("/assets/<int:asset_id>/elements/<int:element_id>/edit")
@@ -1994,3 +1998,124 @@ def survey_csv(asset_id: int, survey_id: int):
         out.write(f"{g_['x0'] + (i + 0.5) * g_['cell']:.2f},{g_['y0'] + (j + 0.5) * g_['cell']:.2f},{v:.3f},{max(0.0, v - design):.3f}\n")
     return Response(out.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="seabed-{asset_id}-{row["surveyed"]}.csv"'})
+
+
+# --- photos -------------------------------------------------------------------------------------
+
+def photos_dir() -> Path:
+    folder = data_dir() / "marinetwin" / "photos"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _photo_or_404(asset_id: int, photo_id: int):
+    row = query_one("SELECT * FROM marine_photos WHERE id = ? AND asset_id = ?", (photo_id, asset_id))
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.get("/assets/<int:asset_id>/photos")
+@login_required
+def photos(asset_id: int):
+    """Every photo of the asset, newest first, by element and kind."""
+    asset = _asset_or_404(asset_id)
+    kind = request.args.get("kind") or ""
+    element_id = request.args.get("element", type=int)
+    sql = ("SELECT p.*, e.name AS element_name, e.kind AS element_kind, u.name AS who FROM marine_photos p"
+           " LEFT JOIN marine_elements e ON e.id = p.element_id LEFT JOIN users u ON u.id = p.created_by WHERE p.asset_id = ?")
+    args: list = [asset_id]
+    if kind in dict(marine_photos.KINDS):
+        sql += " AND p.kind = ?"
+        args.append(kind)
+    if element_id:
+        sql += " AND p.element_id = ?"
+        args.append(element_id)
+    rows = query(sql + " ORDER BY p.taken DESC, p.id DESC LIMIT 400", tuple(args))
+    counts = query("SELECT kind, COUNT(*) AS n FROM marine_photos WHERE asset_id = ? GROUP BY kind", (asset_id,))
+    elements = query("SELECT id, name, kind FROM marine_elements WHERE asset_id = ? ORDER BY name", (asset_id,))
+    pinned = query("SELECT e.id, e.name, COUNT(*) AS n FROM marine_photos p JOIN marine_elements e ON e.id = p.element_id"
+                   " WHERE p.asset_id = ? GROUP BY e.id ORDER BY n DESC, e.name LIMIT 40", (asset_id,))
+    return render_template("marine/photos.html", asset=asset, rows=rows, kind=kind, element_id=element_id,
+                           by={r["kind"]: r["n"] for r in counts},
+                           elements=elements, pinned=pinned, photo_kinds=marine_photos.KINDS,
+                           today=date.today().isoformat(), **_context())
+
+
+@bp.post("/assets/<int:asset_id>/photos")
+@login_required
+def add_photos(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    element_id = request.form.get("element_id", type=int)
+    element = _element_or_404(asset_id, element_id) if element_id else None
+    back = (url_for("marine.element", asset_id=asset_id, element_id=element_id, _anchor="photos") if request.form.get("back") == "element" and element
+            else url_for("marine.photos", asset_id=asset_id))
+    files = [f for f in request.files.getlist("photos") if f and f.filename][:20]
+    if not files:
+        flash("Pick one photo or more.", "error")
+        return redirect(back)
+    kind = _choice("kind", marine_photos.KINDS, "photo")
+    caption = (request.form.get("caption") or "").strip()
+    taken = _day_field("taken", "") or None
+    elements = query("SELECT id, x, y FROM marine_elements WHERE asset_id = ?", (asset_id,))
+    kept, gps, problems = 0, 0, []
+    for f in files:
+        data = f.read(marine_photos.PHOTO_LIMIT + 1)
+        if len(data) > marine_photos.PHOTO_LIMIT:
+            problems.append(f"{f.filename} is over 30 MB")
+            continue
+        try:
+            done = marine_photos.store(get_db(), photos_dir(), asset, data, f.filename, kind, caption, element_id, taken,
+                                       g_user_id(), elements)
+        except ValueError as err:
+            problems.append(str(err))
+            continue
+        kept += 1
+        gps += done["pinned"] == "gps"
+    grade = request.form.get("grade", type=int)
+    if element is not None and grade in dict(marine.GRADES) and kept:
+        marine.record_inspection(get_db(), element, taken or date.today().isoformat(), grade,
+                                 (caption or "See the photos") + f" ({kept} photo{'s' if kept > 1 else ''})")
+    get_db().commit()
+    message = f"{kept} photo{'s' if kept != 1 else ''} kept" + (f" on {element['name']}" if element else "")
+    if gps:
+        message += f"; {gps} pinned to the nearest element by the camera's GPS"
+    if element is not None and grade in dict(marine.GRADES) and kept:
+        message += f"; inspection recorded, grade {grade}"
+    flash(message + "." + (" Not kept: " + "; ".join(problems[:3]) + "." if problems else ""),
+          "success" if not problems else "warning" if kept else "error")
+    return redirect(back)
+
+
+@bp.get("/assets/<int:asset_id>/photos/<int:photo_id>.jpg")
+@login_required
+def photo_file(asset_id: int, photo_id: int):
+    row = _photo_or_404(asset_id, photo_id)
+    size = "-thumb" if request.args.get("thumb") else ""
+    path = photos_dir() / f"asset-{asset_id}" / f"{row['id']}{size}.jpg"
+    if not path.exists():
+        abort(404)
+    return send_file(path, mimetype="image/jpeg", max_age=3600)
+
+
+@bp.get("/assets/<int:asset_id>/photos/<int:photo_id>/original")
+@login_required
+def photo_original(asset_id: int, photo_id: int):
+    row = _photo_or_404(asset_id, photo_id)
+    path = photos_dir() / f"asset-{asset_id}" / row["original"]
+    if not row["original"] or not path.exists():
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=row["name"] or path.name)
+
+
+@bp.post("/assets/<int:asset_id>/photos/<int:photo_id>/delete")
+@login_required
+def delete_photo(asset_id: int, photo_id: int):
+    row = _photo_or_404(asset_id, photo_id)
+    marine_photos.remove(photos_dir(), row)
+    get_db().execute("DELETE FROM marine_photos WHERE id = ?", (photo_id,))
+    get_db().commit()
+    flash("Photo removed.", "success")
+    if request.form.get("back") == "element" and row["element_id"]:
+        return redirect(url_for("marine.element", asset_id=asset_id, element_id=row["element_id"], _anchor="photos"))
+    return redirect(url_for("marine.photos", asset_id=asset_id))

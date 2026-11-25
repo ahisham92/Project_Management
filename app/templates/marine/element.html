@@ -2,6 +2,7 @@
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty %}
 {% from "marine/_macros.html" import state_badge, health, ur, asset_tabs %}
+{% from "marine/_photos.html" import gallery %}
 {% block title %}{{ element['name'] }} · {{ asset['name'] }} · MarineTwin{% endblock %}
 
 {% block content %}
@@ -111,6 +112,25 @@
 </div></div>
 {% endfor %}
 
+</section>
+
+<section class="mt-panel" data-tab="Photos{{ ' (%d)' % (photos | length) if photos }}" data-slug="photos">
+<div class="card" id="photos">
+  <div class="card-head"><div><h2>Photos of {{ element['name'] }}</h2>
+    <p class="small muted" style="margin-top:2px">What the inspector, the diver or the drone saw, newest first. With a grade, they are also recorded as an inspection.</p></div></div>
+  <div class="card-body">
+    {% if photos %}{{ gallery(asset, photos, photo_kinds, 'element', False) }}{% else %}<p class="muted">No photos of it yet.</p>{% endif %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('marine.add_photos', asset_id=asset['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end;margin-top:12px" data-voyage="Keeping the photos">
+      <input type="hidden" name="element_id" value="{{ element['id'] }}"><input type="hidden" name="back" value="element">
+      <label class="field flex1"><span class="field-label">Photos</span><input type="file" name="photos" accept="image/*,.tif,.tiff" multiple required></label>
+      <label class="field"><span class="field-label">Kind</span><select name="kind">{% for k, l in photo_kinds %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="field-label">Taken on</span><input type="date" name="taken"></label>
+      <label class="field flex1"><span class="field-label">What they show</span><input name="caption" placeholder="e.g. cone torn at the lower flange"></label>
+      <label class="field"><span class="field-label">Grade (optional)</span><select name="grade"><option value="">No inspection</option>{% for g, w in grades %}<option value="{{ g }}">{{ g }}: {{ w }}</option>{% endfor %}</select></label>
+      <button class="btn btn-primary">Keep them</button>
+    </form>
+  </div>
+</div>
 </section>
 
 <section class="mt-panel" data-tab="Record an inspection" data-slug="inspection">

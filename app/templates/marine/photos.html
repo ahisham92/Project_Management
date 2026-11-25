@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% from "marine/_photos.html" import gallery %}
+{% block title %}{{ asset['name'] }} · Photos · MarineTwin{% endblock %}
+
+{% block content %}
+{{ page_head(asset, "What inspectors, divers and drones saw, each photo pinned to the element it shows. A photo with the camera's GPS and no element picked goes to the nearest element of the structure. Add them here or on an element's own page, where they sit beside its inspections.") }}
+{{ asset_tabs(asset) }}
+
+<div class="grid grid-4">
+  {{ tile('Photos', by.values() | sum, 'of the asset', 'neutral', '') }}
+  {{ tile('Thermal', by.get('thermal', 0), 'roofs, deck, electrics', 'neutral', '') }}
+  {{ tile('Drone', by.get('drone', 0), 'from the air', 'neutral', '') }}
+  {{ tile('Elements with photos', pinned | length, (pinned[:3] | map(attribute='name') | join(', ')) if pinned else 'none yet', 'neutral', '') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+  <section class="mt-panel" data-tab="The photos" data-slug="photos" data-open="1">
+    <div class="card">
+      <div class="card-head"><div><h2>{{ 'All the photos' if not kind and not element_id else 'Photos' }}</h2></div>
+        <form method="get" class="inline-form" style="gap:6px;align-items:flex-end;flex-wrap:wrap">
+          <label class="field"><span>Kind</span><select name="kind"><option value="">All</option>{% for k, l in photo_kinds %}<option value="{{ k }}" {% if k == kind %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+          <label class="field"><span>Element</span><select name="element"><option value="">All</option>{% for e in pinned %}<option value="{{ e['id'] }}" {% if e['id'] == element_id %}selected{% endif %}>{{ e['name'] }} ({{ e['n'] }})</option>{% endfor %}</select></label>
+          <button class="btn">Show</button>
+        </form></div>
+      <div class="card-body">
+        {% if rows %}{{ gallery(asset, rows, photo_kinds) }}{% else %}<p class="muted">No photos{{ ' of that kind' if kind else '' }} yet.</p>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Add photos" data-slug="add">
+    <div class="card">
+      <div class="card-head"><div><h2>Add photos</h2><p class="small muted" style="margin-top:2px">Up to 20 at a time, 30 MB each: JPEG, PNG, WebP or TIFF.</p></div></div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('marine.add_photos', asset_id=asset['id']) }}" data-voyage="Keeping the photos">
+          <input type="file" name="photos" accept="image/*,.tif,.tiff" multiple required>
+          <div class="grid grid-2" style="margin-top:8px">
+            <label class="field"><span>Of</span><select name="element_id"><option value="">The site, or the nearest element by GPS</option>{% for e in elements %}<option value="{{ e['id'] }}">{{ e['name'] }}</option>{% endfor %}</select></label>
+            <label class="field"><span>Kind</span><select name="kind">{% for k, l in photo_kinds %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+            <label class="field"><span>Taken on</span><input type="date" name="taken" title="Left empty, the camera's date is used"></label>
+            <label class="field"><span>What it shows</span><input name="caption" placeholder="e.g. spalling on the cope at bay 14"></label>
+          </div>
+          <button class="btn primary" style="margin-top:8px">Keep the photos</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

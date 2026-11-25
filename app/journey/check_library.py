@@ -39,8 +39,11 @@ def check(lib):
                 if v not in allowed:
                     problems.append(f"{where}: '{key}' has no answer '{v}' (allowed: {sorted(allowed)})")
 
+    cadences = {c[0] for c in lib.get("cadences", [])}
     seen = set()
     for it in lib["items"]:
+        if it.get("cad") not in cadences:
+            problems.append(f"{it['id']}: unknown frequency '{it.get('cad')}' (allowed: {sorted(cadences)})")
         if it["id"] in seen:
             problems.append(f"duplicate action id '{it['id']}'")
         seen.add(it["id"])

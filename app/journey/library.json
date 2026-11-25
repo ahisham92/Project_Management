@@ -791,7 +791,8 @@
    "d": "After award the RO, with the AD, creates the project number and title and circulates them by memo to the RD, SL, PD, PM, M&C and APC.",
    "who": "RO / AD",
    "rec": "Memo",
-   "ref": "PM-02 §4.1"
+   "ref": "PM-02 §4.1",
+   "cad": "once"
   },
   {
    "id": "st-prop",
@@ -800,7 +801,8 @@
    "d": "The APC provides the final submitted or negotiated technical proposal and commercial budget, with the AD's consent. SL and PD are informed.",
    "who": "APC",
    "rec": "Proposal / budget",
-   "ref": "PM-02 §4.2"
+   "ref": "PM-02 §4.2",
+   "cad": "once"
   },
   {
    "id": "st-auth",
@@ -808,7 +810,8 @@
    "t": "Identify statutory and authority requirements",
    "d": "The APC does this with the PM and the discipline GLs. Confirm the local codes with the GLs at the same time.",
    "who": "APC / PM / GLs",
-   "ref": "PM-02 §4.2; PM-04 §3.2"
+   "ref": "PM-02 §4.2; PM-04 §3.2",
+   "cad": "once"
   },
   {
    "id": "st-files",
@@ -817,7 +820,8 @@
    "d": "Open the P: drive folder and sub-folders and have IT create the PCW and its design deliverables QM module. The PCW is the basis of filing; give the PMIS team Edit rights per the permission matrix. Ask for any PCW customisation the project needs.",
    "who": "PM / IT",
    "rec": "PCW / P: drive",
-   "ref": "PM-02 App. 4 (1.5); PM-07 §2.1, §3.1"
+   "ref": "PM-02 App. 4 (1.5); PM-07 §2.1, §3.1",
+   "cad": "once"
   },
   {
    "id": "st-reg",
@@ -826,7 +830,8 @@
    "d": "At start-up, to control every deliverable. The department assistant keeps the document register; allocated staff keep the drawing register. Keep both current.",
    "who": "PM / assistant",
    "rec": "Document & drawing registers",
-   "ref": "PM-07 §3.3"
+   "ref": "PM-07 §3.3",
+   "cad": "once"
   },
   {
    "id": "st-hc",
@@ -838,7 +843,8 @@
    "ref": "PM-07 §3.1",
    "when": {
     "hardcopy": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "st-cprop",
@@ -847,7 +853,9 @@
    "d": "Keep them on the PCW under Project References and Procedures / Other. Report any loss, damage or unsuitability to the client and keep the records.",
    "who": "PM",
    "rec": "PCW",
-   "ref": "PM-07 §3.2"
+   "ref": "PM-07 §3.2",
+   "cad": "daily",
+   "cadBy": "judgement"
   },
   {
    "id": "in-review",
@@ -855,7 +863,8 @@
    "t": "Review the proposal-stage information and the contract",
    "d": "Do this before filling in project initiation on PMIS and D365.",
    "who": "PM",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-gen",
@@ -864,7 +873,8 @@
    "d": "Project description and components/scope, design office(s), client, director, location, estimated construction cost, date contract signed, work type, man-months contracted, and an image illustrating the project.",
    "who": "PM",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-class",
@@ -873,7 +883,8 @@
    "d": "Category, subcategory and metrics. These also decide whether Digital Ready Design is triggered.",
    "who": "PM",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1; PM-19 §4.1"
+   "ref": "PM-02 §4.2.1; PM-19 §4.1",
+   "cad": "once"
   },
   {
    "id": "in-bg",
@@ -882,7 +893,8 @@
    "d": "Groundwater table checking and seismic design requirements (as applicable), items needing special attention, lessons learned from previous projects, source of technical documents, and construction contract information coordinated with PMC.",
    "who": "PM",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-seis",
@@ -891,7 +903,8 @@
    "d": "The S&B GL coordinates any site-specific requirements with the GHCE GL. Give this special attention at start-up.",
    "who": "PM / S&B GL / GHCE GL",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.8"
+   "ref": "PM-02 §4.8",
+   "cad": "once"
   },
   {
    "id": "in-proc",
@@ -900,7 +913,8 @@
    "d": "Software to be adopted (CADD / BIM / other), selection of the BIM team, and whether DRD applies.",
    "who": "PM",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-derog",
@@ -919,7 +933,8 @@
      "transport",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-pay",
@@ -928,7 +943,8 @@
    "d": "Contract value, contract type (phase/deliverable, deployment), deliverable fees and payment terms per deliverable are entered by the PD. The billing schedule drives the invoices.",
    "who": "PD",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-sust",
@@ -945,7 +961,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-firms",
@@ -957,7 +974,8 @@
    "ref": "PM-02 §4.2.1; PM-10 §2.3",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-sub",
@@ -970,7 +988,8 @@
    "when": {
     "subprojects": "yes",
     "suppliers": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-other",
@@ -978,7 +997,8 @@
    "t": "PMIS step 1: enter other parties (firm and role)",
    "who": "PM",
    "rec": "PMIS step 1",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-conf",
@@ -990,7 +1010,8 @@
    "ref": "PM-02 §4.2.1; PM-07 §3.1",
    "when": {
     "confidential": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-d365",
@@ -999,7 +1020,8 @@
    "d": "Lead department, projected and actual start dates, projected end date, total planned effort in hours, scheduling calendar.",
    "who": "PM",
    "rec": "D365",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-wbs",
@@ -1012,7 +1034,8 @@
    "tip": {
     "src": "L2 · L9",
     "text": "Plan in levels: a Level 1 summary for the whole job, Level 2–3 detail only for the stage you can see. Keeping man-hours per task also gives you the baseline for earned value later."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-effort",
@@ -1020,7 +1043,8 @@
    "t": "D365: distribute budgeted man-hours by department, office and grade",
    "who": "PM",
    "rec": "D365 effort distribution",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-glmain",
@@ -1029,7 +1053,8 @@
    "d": "GLs Main set up their teams on D365 and re-distribute man-hours by office and grade if needed. Other GLs in the same department get read access.",
    "who": "PM / GLs Main",
    "rec": "PMIS step 3 / D365",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "in-step3",
@@ -1038,7 +1063,8 @@
    "d": "General information (description, design criteria and concept, items needing special attention, lessons learned), the documents and drawings list (expected drawing count at final, tentative list, minimum and proposed IDC requirements), and contract review. Base budget per phase, grade and office plus the team on D365.",
    "who": "GLs → PM",
    "rec": "PMIS step 3 / D365",
-   "ref": "EN-01 §4.1–4.2"
+   "ref": "EN-01 §4.1–4.2",
+   "cad": "once"
   },
   {
    "id": "in-champ-bim",
@@ -1051,7 +1077,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-champ-drd",
@@ -1064,7 +1091,8 @@
    "topic": "DRD",
    "when": {
     "drd": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-multigl",
@@ -1075,7 +1103,8 @@
    "ref": "PM-02 §4.2.1",
    "when": {
     "multigl": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "in-approve",
@@ -1084,7 +1113,8 @@
    "d": "Once all departments have completed step 3. Settle the clarification register at the same time.",
    "who": "PM",
    "rec": "PMIS step 3",
-   "ref": "PM-02 §4.2.1, App. 4 (1.3)"
+   "ref": "PM-02 §4.2.1, App. 4 (1.3)",
+   "cad": "once"
   },
   {
    "id": "in-budget",
@@ -1093,7 +1123,8 @@
    "d": "Include the ODC budget. Once the PD approves on D365, set the project to Active. The system sends the initiation report to the SL, AD and APC and makes the budget available to the RO. Only the team assigned on D365 can then charge hours.",
    "who": "PM / PD",
    "rec": "D365",
-   "ref": "PM-02 §4.2.1; PM-04 §3.2.1"
+   "ref": "PM-02 §4.2.1; PM-04 §3.2.1",
+   "cad": "once"
   },
   {
    "id": "in-gis",
@@ -1102,7 +1133,8 @@
    "d": "For the GW@DAR database. If it isn't known yet, the system sends monthly reminders; it must be provided before project completion.",
    "who": "PM",
    "rec": "PMIS",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "cr-dist",
@@ -1111,7 +1143,8 @@
    "d": "The PD passes the contract information to the PM; GLs are allocated review responsibilities where the scope is outside the PM's expertise.",
    "who": "PM / PD / GLs",
    "rec": "Memo / PMIS",
-   "ref": "PM-03"
+   "ref": "PM-03",
+   "cad": "once"
   },
   {
    "id": "cr-review",
@@ -1125,7 +1158,8 @@
    "tip": {
     "src": "L6 · L7",
     "text": "Terms worth pulling out for the team: basis of fees, advance payment, reimbursables, monthly vs progress payments, settlement period, retention, set-off, client review periods, suspension and force majeure, termination, professional liability limit, indemnities, and liability for the cost estimate."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cr-nocon",
@@ -1137,7 +1171,8 @@
    "ref": "PM-02 §4.2.2; PM-03",
    "when": {
     "contract": "none"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cr-clar",
@@ -1146,7 +1181,8 @@
    "d": "Monitor the register of outstanding items until every one is closed.",
    "who": "PM",
    "rec": "Clarification register on PMIS",
-   "ref": "PM-02 §4.2.2; PM-03"
+   "ref": "PM-02 §4.2.2; PM-03",
+   "cad": "once"
   },
   {
    "id": "cr-hold",
@@ -1155,7 +1191,8 @@
    "d": "Advise the team of interim actions and notify them of the actions arising from each clarification point.",
    "who": "PM",
    "rec": "PMIS / e-mail",
-   "ref": "PM-03"
+   "ref": "PM-03",
+   "cad": "once"
   },
   {
    "id": "cr-qr",
@@ -1165,7 +1202,8 @@
    "ref": "PM-02 §4.2.2",
    "when": {
     "clientqr": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cr-file",
@@ -1173,7 +1211,8 @@
    "t": "File the contract review documents",
    "who": "PM",
    "rec": "Project file / website",
-   "ref": "PM-03"
+   "ref": "PM-03",
+   "cad": "once"
   },
   {
    "id": "qa-scope",
@@ -1183,7 +1222,8 @@
    "ref": "PM-05",
    "when": {
     "route": "full"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-qp",
@@ -1195,7 +1235,8 @@
    "ref": "PM-02 §4.2.3; PM-05; PM-08 §4.1.1.1",
    "when": {
     "route": "full"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-qpapp",
@@ -1207,7 +1248,8 @@
    "ref": "PM-05 (F1) appendices",
    "when": {
     "route": "full"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-qpsign",
@@ -1219,7 +1261,8 @@
    "ref": "PM-05; PM-02 App. 4 (1.4.2)",
    "when": {
     "route": "full"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-minor",
@@ -1231,7 +1274,8 @@
    "ref": "PM-02 §4.2.3; PM-04 §1",
    "when": {
     "route": "minor"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-minor2",
@@ -1243,7 +1287,8 @@
    "ref": "PM-04 §3.2.3, §3.5, §4",
    "when": {
     "route": "minor"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-minor3",
@@ -1254,7 +1299,8 @@
    "ref": "PM-04 §3.10",
    "when": {
     "route": "minor"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-wionly",
@@ -1266,7 +1312,8 @@
    "ref": "PM-02 §4.2.3",
    "when": {
     "route": "wi"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "qa-post",
@@ -1275,7 +1322,8 @@
    "d": "Post under Project References & Procedures > Manuals and procedures. Distribute to the PD, QM, APC and project GLs. Register it as a PM document in the lead department's document registry.",
    "who": "PM",
    "rec": "PCW / document registry",
-   "ref": "PM-02 §4.2.3; PM-05; PM-04 §3.2.3; PM-07 §3.1"
+   "ref": "PM-02 §4.2.3; PM-05; PM-04 §3.2.3; PM-07 §3.1",
+   "cad": "once"
   },
   {
    "id": "qa-dep",
@@ -1287,7 +1335,9 @@
    "ref": "PM-02 §4.2.3",
    "when": {
     "departure": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "qa-wi",
@@ -1299,7 +1349,9 @@
    "ref": "PM-02 §4.2.3, App. 4 (1.4.4)",
    "when": {
     "departure": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "qa-psp",
@@ -1311,7 +1363,9 @@
    "ref": "PM-02 §4.2.3",
    "when": {
     "departure": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "qa-train",
@@ -1319,7 +1373,8 @@
    "t": "Request extra QMS training for the team if needed",
    "d": "Quality management runs training under PRC-QA-03.",
    "who": "PM / QM",
-   "ref": "PM-02 §4.2.3"
+   "ref": "PM-02 §4.2.3",
+   "cad": "once"
   },
   {
    "id": "oc-prep",
@@ -1332,7 +1387,8 @@
    "tip": {
     "src": "L4",
     "text": "Use the chart to settle the PM / functional manager split early: the PM controls project time and cost, each GL controls time, cost and quality of their own sub-tasks, and trade-offs are agreed jointly."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-pub",
@@ -1341,7 +1397,8 @@
    "d": "The team is notified automatically. If the chart isn't generated from PMIS, sign it, include revision and date, post it on the PCW and notify the team.",
    "who": "PM",
    "rec": "PMIS / PCW",
-   "ref": "PM-02 §4.2.4, App. 4 (1.4.5)"
+   "ref": "PM-02 §4.2.4, App. 4 (1.4.5)",
+   "cad": "once"
   },
   {
    "id": "oc-2pm",
@@ -1352,7 +1409,8 @@
    "ref": "PM-02 §4.2.4",
    "when": {
     "twopm": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-spec",
@@ -1368,7 +1426,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-sust",
@@ -1385,7 +1444,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-bim",
@@ -1398,7 +1458,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-sup",
@@ -1409,14 +1470,16 @@
    "ref": "PM-10 §2.3",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-aware",
    "ph": "quality",
    "t": "Make sure every team member knows their project obligations",
    "who": "PM",
-   "ref": "PM-02 §4.2.4"
+   "ref": "PM-02 §4.2.4",
+   "cad": "once"
   },
   {
    "id": "oc-iface",
@@ -1428,7 +1491,8 @@
    "ref": "PM-02 §4.2.4",
    "when": {
     "interfaces": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-lead",
@@ -1442,7 +1506,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "oc-special",
@@ -1453,7 +1518,8 @@
    "ref": "PM-02 §3",
    "when": {
     "special": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-ko",
@@ -1466,7 +1532,8 @@
    "tip": {
     "src": "L4",
     "text": "Use the kick-off to fix the communication channels: who issues instructions, how reviews and approvals flow between disciplines, and how sub-consultants are coordinated."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-gw",
@@ -1477,7 +1544,8 @@
    "ref": "PM-02 §4.8, App. 2",
    "when": {
     "basement": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-sched",
@@ -1490,7 +1558,8 @@
    "tip": {
     "src": "L9",
     "text": "Rolling-wave planning: detail only a few weeks ahead and refine as the brief firms up. Build in client review periods and authority approval time so the dates are realistic."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-sched-bim",
@@ -1502,7 +1571,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-sched-pmc",
@@ -1514,7 +1584,8 @@
    "ref": "PM-02 §4.2.5",
    "when": {
     "tender": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-sched-sust",
@@ -1527,7 +1598,8 @@
    "topic": "Sustainability",
    "when": {
     "sust": "cert"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-sched-post",
@@ -1536,7 +1608,8 @@
    "d": "Show the revision code and date. Notify the AD, PD, GLs, APC and QM.",
    "who": "PM",
    "rec": "PCW",
-   "ref": "PM-02 §4.2.5"
+   "ref": "PM-02 §4.2.5",
+   "cad": "once"
   },
   {
    "id": "pl-planner",
@@ -1547,7 +1620,8 @@
    "ref": "PM-02 §4.2.5",
    "when": {
     "mega": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-noschd",
@@ -1557,7 +1631,8 @@
    "ref": "PM-11 §2.2",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-num",
@@ -1566,7 +1641,8 @@
    "d": "Documents: PRJNUM-PH-BBB-CC-DD REV Z (PH = CD/PD/DD/FD/TD; BBB = document type such as SPC, BOQ, RPT, MOM; CC = department). Drawings: PRJNUM-PH-C-XNN, or PRJNUM-PH-C-NNN without a sheet type. Client contractual numbering takes precedence. Record it in the quality plan §11.",
    "who": "PM / QM",
    "rec": "Quality plan §11",
-   "ref": "PM-08 §1, §4.1"
+   "ref": "PM-08 §1, §4.1",
+   "cad": "once"
   },
   {
    "id": "pl-numwi",
@@ -1578,7 +1654,8 @@
    "ref": "PM-08 §3; EN-02 §4.4; EN-01 CKL-03",
    "when": {
     "departure": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-codes",
@@ -1591,14 +1668,16 @@
    "tip": {
     "src": "L6",
     "text": "Include the authority and permit codes, not just design codes: the consultant is expected to design to the requirements of every authority having jurisdiction."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-codes-lib",
    "ph": "plan",
    "t": "Send codes missing from the country codes database to the library unit",
    "who": "GLs / PM",
-   "ref": "PM-02 §4.2.7"
+   "ref": "PM-02 §4.2.7",
+   "cad": "once"
   },
   {
    "id": "pl-risk",
@@ -1607,7 +1686,8 @@
    "d": "At start-up. Categories: technical, organisational, project management, HSSE, information security, other.",
    "who": "GLs",
    "rec": "PCW risk tool",
-   "ref": "PM-02 §4.9; PM-14 §3"
+   "ref": "PM-02 §4.9; PM-14 §3",
+   "cad": "once"
   },
   {
    "id": "pl-risk2",
@@ -1616,7 +1696,8 @@
    "d": "Each risk: cause, consequence, probability and impact (1–5), rating, owner, mitigation and residual rating.",
    "who": "PM",
    "rec": "PCW risk tool",
-   "ref": "PM-14 §2, §3.1–3.3"
+   "ref": "PM-14 §2, §3.1–3.3",
+   "cad": "once"
   },
   {
    "id": "pl-risk3",
@@ -1625,7 +1706,8 @@
    "d": "Generate it under the \"published register\" tab. Send to the PD, AD, APC and GLs and attach it to the quality plan or PM-04.",
    "who": "PM",
    "rec": "Published risk register",
-   "ref": "PM-14 §3"
+   "ref": "PM-14 §3",
+   "cad": "once"
   },
   {
    "id": "pl-risk4",
@@ -1633,7 +1715,8 @@
    "t": "Get the PD or the client to accept any residual risk that stays high",
    "who": "PD / client",
    "rec": "Risk register",
-   "ref": "PM-14 §2, §3.4"
+   "ref": "PM-14 §2, §3.4",
+   "cad": "once"
   },
   {
    "id": "pl-ll-search",
@@ -1646,7 +1729,8 @@
    "tip": {
     "src": "L10",
     "text": "Knowledge leaves with people. Pull the lessons into actions the team will actually see (risk register lines, checklist items) rather than leaving them in a list."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "pl-ll-reg",
@@ -1655,7 +1739,8 @@
    "d": "Revision control is alphabetical (A, B, C) for internal issues and numerical (0, 1, 2) for external issues.",
    "who": "PM",
    "rec": "PRC-PM-16 (F1)",
-   "ref": "PM-02 §4.2; PM-16 §3"
+   "ref": "PM-02 §4.2; PM-16 §3",
+   "cad": "once"
   },
   {
    "id": "pl-me",
@@ -1664,7 +1749,8 @@
    "d": "Where there are no local codes, agree the codes and employer guidelines with the ME GL, the area office and fire & life safety.",
    "who": "PM → ME GL",
    "rec": "PRC-EN-01 (CKL-09)",
-   "ref": "EN-01 CKL-09 A.2"
+   "ref": "EN-01 CKL-09 A.2",
+   "cad": "once"
   },
   {
    "id": "sp-need",
@@ -1676,7 +1762,9 @@
    "ref": "PM-10 §2.3, §3",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-te",
@@ -1688,7 +1776,9 @@
    "ref": "PM-10 §3; PM-02 App. 4 (1.1.1)",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-db",
@@ -1700,7 +1790,9 @@
    "ref": "PM-10 §3 notes 2–4; PM-02 App. 4 (1.1.1)",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-client",
@@ -1711,7 +1803,9 @@
    "ref": "PM-10 note 5",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-contract",
@@ -1723,7 +1817,9 @@
    "ref": "PM-02 §4.10; PM-10 §2.1, §3",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-iso",
@@ -1733,7 +1829,9 @@
    "ref": "PM-10 note 4",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "sp-inv",
@@ -1746,7 +1844,8 @@
    "freq": "Each invoice",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event"
   },
   {
    "id": "sp-pmr",
@@ -1758,7 +1857,9 @@
    "ref": "PM-10 §3 note 6; PM-02 App. 4 (2.1.3)",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "bm-mgr",
@@ -1771,7 +1872,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-dpu",
@@ -1789,7 +1891,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-prod",
@@ -1802,7 +1905,8 @@
    "when": {
     "process": "bim",
     "bimlarge": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-ar",
@@ -1815,7 +1919,8 @@
    "when": {
     "process": "bim",
     "type": "transport_bld"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-dpu2",
@@ -1832,7 +1937,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-ko",
@@ -1845,7 +1951,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-noeir",
@@ -1857,7 +1964,8 @@
    "when": {
     "process": "bim",
     "eir": "no"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-comp",
@@ -1870,7 +1978,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-cde",
@@ -1883,7 +1992,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-train",
@@ -1896,7 +2006,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-input",
@@ -1909,7 +2020,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-bep",
@@ -1922,7 +2034,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-sign",
@@ -1935,7 +2048,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-issue",
@@ -1948,7 +2062,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-infra",
@@ -1961,7 +2076,8 @@
    "when": {
     "process": "bim",
     "type": "infra"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "bm-sup",
@@ -1975,7 +2091,8 @@
    "when": {
     "process": "bim",
     "suppliers": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-level",
@@ -1992,7 +2109,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-waiver",
@@ -2005,7 +2123,8 @@
    "when": {
     "sust": "waiver"
    },
-   "rec": "Waiver request / SD decision"
+   "rec": "Waiver request / SD decision",
+   "cad": "once"
   },
   {
    "id": "su-sld",
@@ -2021,7 +2140,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-brief",
@@ -2037,7 +2157,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-kpi",
@@ -2053,7 +2174,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-champ",
@@ -2069,7 +2191,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-char",
@@ -2084,7 +2207,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-kpipcw",
@@ -2099,7 +2223,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-ckl",
@@ -2112,7 +2237,8 @@
    "topic": "Sustainability",
    "when": {
     "sust": "cert"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-cost",
@@ -2124,7 +2250,8 @@
    "topic": "Sustainability",
    "when": {
     "sust": "cert"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "su-tr",
@@ -2144,7 +2271,8 @@
      "transport",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "dr-app",
@@ -2160,7 +2288,8 @@
      "yes",
      "waiver"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "dr-waiver",
@@ -2173,7 +2302,8 @@
    "topic": "DRD",
    "when": {
     "drd": "waiver"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "dr-dss",
@@ -2184,7 +2314,8 @@
    "topic": "DRD",
    "when": {
     "digital": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-1",
@@ -2193,7 +2324,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-2",
@@ -2202,7 +2334,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-3",
@@ -2211,7 +2344,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-4",
@@ -2225,7 +2359,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-5",
@@ -2234,7 +2369,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-6",
@@ -2243,7 +2379,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-7",
@@ -2252,7 +2389,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-8",
@@ -2261,7 +2399,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-9",
@@ -2270,7 +2409,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-10",
@@ -2280,7 +2420,8 @@
    "ref": "PM-02 App. 1 (1)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-11",
@@ -2289,7 +2430,8 @@
    "ref": "PM-02 App. 1 (2)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-12",
@@ -2298,7 +2440,8 @@
    "ref": "PM-02 App. 1 (2)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-13",
@@ -2307,7 +2450,8 @@
    "ref": "PM-02 App. 1 (2)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-14",
@@ -2316,7 +2460,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-15",
@@ -2325,7 +2470,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-16",
@@ -2334,7 +2480,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-17",
@@ -2343,7 +2490,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-18",
@@ -2352,7 +2500,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-19",
@@ -2361,7 +2510,8 @@
    "ref": "PM-02 App. 1 (3)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-20",
@@ -2370,7 +2520,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-21",
@@ -2379,7 +2530,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-22",
@@ -2388,7 +2540,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-23",
@@ -2397,7 +2550,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-24",
@@ -2406,7 +2560,9 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "weekly",
+   "cadBy": "judgement"
   },
   {
    "id": "am-25",
@@ -2415,7 +2571,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-26",
@@ -2424,7 +2581,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-27",
@@ -2433,7 +2591,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-28",
@@ -2442,7 +2601,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-29",
@@ -2451,7 +2611,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-30",
@@ -2460,7 +2621,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-31",
@@ -2469,7 +2631,8 @@
    "ref": "PM-02 App. 1 (4)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-32",
@@ -2478,7 +2641,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-33",
@@ -2487,7 +2651,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-34",
@@ -2496,7 +2661,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-35",
@@ -2505,7 +2671,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-36",
@@ -2514,7 +2681,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "am-37",
@@ -2523,7 +2691,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "aide": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-prog",
@@ -2537,7 +2706,8 @@
    "tip": {
     "src": "L1 · L2",
     "text": "Read CPI and SPI together: earned value compares the budget of work actually done against both the plan and the hours spent, so you see a slip before it shows in the dates."
-   }
+   },
+   "cad": "weekly"
   },
   {
    "id": "ex-status",
@@ -2547,7 +2717,8 @@
    "who": "PM",
    "rec": "D365 WBS",
    "ref": "PM-02 §4.3",
-   "freq": "Weekly"
+   "freq": "Weekly",
+   "cad": "weekly"
   },
   {
    "id": "ex-dash",
@@ -2555,7 +2726,9 @@
    "t": "Review the PMIS dashboard: CPI, SPI and EAC",
    "who": "PM / PD / AD / APC",
    "rec": "PMIS",
-   "ref": "PM-02 §4.3"
+   "ref": "PM-02 §4.3",
+   "cad": "weekly",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-supprog",
@@ -2567,7 +2740,9 @@
    "ref": "PM-02 §4.3",
    "when": {
     "suppliers": "yes"
-   }
+   },
+   "cad": "weekly",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-time",
@@ -2577,7 +2752,8 @@
    "who": "GLs / PM",
    "rec": "PMIS / D365",
    "ref": "PM-02 §4.2.1",
-   "freq": "Weekly"
+   "freq": "Weekly",
+   "cad": "weekly"
   },
   {
    "id": "ex-ddr",
@@ -2589,7 +2765,9 @@
    "ref": "PM-02 §4.8",
    "when": {
     "process": "cadd"
-   }
+   },
+   "cad": "phase",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-ddr-bimb",
@@ -2607,7 +2785,8 @@
      "building",
      "building_ext"
     ]
-   }
+   },
+   "cad": "weekly"
   },
   {
    "id": "ex-ddr-bimt",
@@ -2625,7 +2804,8 @@
      "transport",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "weekly"
   },
   {
    "id": "ex-freeze",
@@ -2638,7 +2818,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "submission"
   },
   {
    "id": "ex-clash",
@@ -2651,7 +2832,9 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "weekly",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-bimqa",
@@ -2664,7 +2847,9 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "submission",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-bimcomp",
@@ -2683,7 +2868,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "monthly"
   },
   {
    "id": "ex-bimrisk",
@@ -2696,7 +2882,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-park",
@@ -2707,7 +2894,8 @@
    "ref": "PM-02 §4.8, App. 3",
    "when": {
     "parking": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-tis",
@@ -2721,7 +2909,8 @@
      "building",
      "building_ext"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-ped",
@@ -2731,7 +2920,8 @@
    "ref": "PM-02 App. 3 item 6",
    "when": {
     "pedestrian": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-comp",
@@ -2746,7 +2936,8 @@
      "transport",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-sumeet",
@@ -2758,7 +2949,8 @@
    "topic": "Sustainability",
    "when": {
     "sust": "driven"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-sumeet2",
@@ -2774,7 +2966,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "phase"
   },
   {
    "id": "ex-suan",
@@ -2796,7 +2989,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-sukpi",
@@ -2813,7 +3007,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "phase"
   },
   {
    "id": "ex-sucert",
@@ -2825,7 +3020,9 @@
    "topic": "Sustainability",
    "when": {
     "sust": "cert"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-drd",
@@ -2838,7 +3035,8 @@
    "topic": "DRD",
    "when": {
     "drd": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ex-delay",
@@ -2846,7 +3044,9 @@
    "t": "Investigate every schedule delay and agree mitigation with the PD",
    "d": "Inform the SL, AD and APC.",
    "who": "PM / PD",
-   "ref": "PM-02 §4.2.5"
+   "ref": "PM-02 §4.2.5",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-rebase",
@@ -2855,7 +3055,9 @@
    "d": "Only for a change to the contracted scope, or when actual progress has drifted so far that the baseline is no longer meaningful. Upload each new revision to the PCW, copying the AD, PD, APC and QM.",
    "who": "PM",
    "rec": "PCW",
-   "ref": "PM-02 §4.2.5"
+   "ref": "PM-02 §4.2.5",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-update",
@@ -2863,7 +3065,9 @@
    "t": "Keep the control documents current",
    "d": "Update when needed: organisation chart, work instructions, project schedule, quality plan (numbering section included), risk register, lessons learned register.",
    "who": "PM",
-   "ref": "PM-02 App. 4 (2.1.2); PM-05 (F1) §2, §11"
+   "ref": "PM-02 App. 4 (2.1.2); PM-05 (F1) §2, §11",
+   "cad": "weekly",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-codes",
@@ -2871,7 +3075,9 @@
    "t": "Keep the design codes list reviewed and updated",
    "who": "PM / GLs",
    "rec": "PCW codes tool",
-   "ref": "PM-02 §4.2.7"
+   "ref": "PM-02 §4.2.7",
+   "cad": "phase",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-risk",
@@ -2881,7 +3087,8 @@
    "who": "PM",
    "rec": "PCW risk register",
    "ref": "PM-02 §4.9; PM-14 §3",
-   "freq": "Each phase"
+   "freq": "Each phase",
+   "cad": "phase"
   },
   {
    "id": "ex-ll",
@@ -2891,7 +3098,8 @@
    "who": "PM / GLs",
    "rec": "PRC-PM-16 (F1)",
    "ref": "PM-16 §2.2, §3",
-   "freq": "Each phase"
+   "freq": "Each phase",
+   "cad": "phase"
   },
   {
    "id": "ex-corr",
@@ -2900,7 +3108,9 @@
    "d": "Every outgoing item carries the project number and a reference. Contractual and schedule communications are copied to you.",
    "who": "PM",
    "rec": "PRC-PM-07 (F1e), (F2e)",
-   "ref": "PM-07 §3.4–3.5"
+   "ref": "PM-07 §3.4–3.5",
+   "cad": "daily",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-mom",
@@ -2909,7 +3119,9 @@
    "d": "Minutes go to all attendees promptly and become final if there are no comments. Transmittals are used for information, approval, comment or IDC.",
    "who": "PM / originator",
    "rec": "PRC-PM-07 (F6), (F7)",
-   "ref": "PM-07 §3.4"
+   "ref": "PM-07 §3.4",
+   "cad": "daily",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-efs",
@@ -2917,7 +3129,9 @@
    "t": "Make sure the team files email through EFS and submits deliverables through the PCW",
    "who": "PM / GLs",
    "rec": "EFS / PCW",
-   "ref": "PM-07 §2.1, §2.4, §3.4"
+   "ref": "PM-07 §2.1, §2.4, §3.4",
+   "cad": "daily",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-car",
@@ -2929,7 +3143,9 @@
    "ref": "PM-05 (F1) §14",
    "when": {
     "route": "full"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-qprob",
@@ -2937,14 +3153,18 @@
    "t": "Copy the QM on quality problems",
    "d": "For example lack of response from other departments or inadequate checking.",
    "who": "PM",
-   "ref": "PM-02 §4.12"
+   "ref": "PM-02 §4.12",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-compl",
    "ph": "exec",
    "t": "Bring anything that may be a customer complaint to the AD/AM",
    "who": "PM",
-   "ref": "PM-02 §4.11"
+   "ref": "PM-02 §4.11",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ex-pend",
@@ -2953,7 +3173,9 @@
    "d": "Pending for short or review periods; On Hold when long inactivity is expected.",
    "who": "PM",
    "rec": "D365",
-   "ref": "PM-02 App. 4 (2.3)"
+   "ref": "PM-02 App. 4 (2.3)",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-log",
@@ -2966,7 +3188,8 @@
    "tip": {
     "src": "L5",
     "text": "For every change ask three questions before you agree: what exactly does it involve, what does it do to the design schedule and fees, and is there a viable solution? Filter out unnecessary changes with the functional managers."
-   }
+   },
+   "cad": "event"
   },
   {
    "id": "ch-impact",
@@ -2974,7 +3197,9 @@
    "t": "Get each GL's man-hour and schedule impact for the change",
    "d": "When you instruct a change, the GLs review its impact and inform you (PRC-EN-09). Checking of the revised design can be limited to the change and associated documents.",
    "who": "GLs → PM",
-   "ref": "EN-01 §4.6–4.7"
+   "ref": "EN-01 §4.6–4.7",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-pd",
@@ -2982,7 +3207,9 @@
    "t": "Raise anything that may change the contract scope with the PD",
    "d": "Especially where it affects schedule, man-hours or abortive work. Follow PRC-PM-06.",
    "who": "PM",
-   "ref": "PM-02 §4.6; PM-06"
+   "ref": "PM-02 §4.6; PM-06",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-dcn",
@@ -2991,7 +3218,9 @@
    "d": "Update the DCN details, assess the impact with the department director, have GLs fill in and submit their DCNs, and review and approve the DCNs submitted by the trades (PRC-EN-09).",
    "who": "PM / GLs",
    "rec": "DCN on PMIS",
-   "ref": "PM-02 App. 4 (2.2); PM-06"
+   "ref": "PM-02 App. 4 (2.2); PM-06",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-claim",
@@ -3000,7 +3229,9 @@
    "d": "The PD assesses changes with the AD. You prepare the claim; the AD/APC reviews it and submits it for client approval. If the AD decides to proceed without a claim, record that.",
    "who": "PD / AD / PM / APC",
    "rec": "Claim",
-   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-after",
@@ -3009,7 +3240,9 @@
    "d": "Create the design change note on PMIS (PRC-EN-09). The PD updates contract and payment terms on PMIS and the AD approves them.",
    "who": "PM / PD / AD",
    "rec": "PMIS",
-   "ref": "PM-06 §3; PM-02 App. 4 (2.2)"
+   "ref": "PM-06 §3; PM-02 App. 4 (2.2)",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-rev",
@@ -3018,7 +3251,9 @@
    "d": "No revised issue without a new code; superseded items marked. Alphabetical (A, B, C) before the approved issue, numeric (0, 1, 2) from it. Clouds on drawings, margin lines on text, quote the DCN number. Keep Rev 0 and later revisions for the project duration.",
    "who": "GLs / PE",
    "rec": "PRC-PM-08 (F1)",
-   "ref": "PM-08 §4.2; EN-02 §4.4"
+   "ref": "PM-08 §4.2; EN-02 §4.4",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-sust",
@@ -3034,7 +3269,9 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "ch-file",
@@ -3042,7 +3279,9 @@
    "t": "Keep all contract variation correspondence in the project files",
    "who": "PM",
    "rec": "Project files",
-   "ref": "PM-06 §3"
+   "ref": "PM-06 §3",
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "rv-chan",
@@ -3054,7 +3293,8 @@
    "when": {
     "reviewproj": "yes",
     "re": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "rv-chan2",
@@ -3066,7 +3306,8 @@
    "when": {
     "reviewproj": "yes",
     "re": "no"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "rv-ko",
@@ -3077,7 +3318,8 @@
    "ref": "PM-11 §3.1–3.2",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "rv-up",
@@ -3089,7 +3331,8 @@
    "ref": "PM-11 §3.1c, §3.2b, note 3",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "daily"
   },
   {
    "id": "rv-assign",
@@ -3101,7 +3344,9 @@
    "ref": "PM-11 §3.1d–e, §3.2c–d",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "rv-code",
@@ -3113,7 +3358,9 @@
    "ref": "PM-11 §3.1f–g, §3.2e–f",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "rv-reply",
@@ -3125,7 +3372,9 @@
    "ref": "PM-11 §3.1h–j, §3.2g–i",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "event",
+   "cadBy": "judgement"
   },
   {
    "id": "rv-weekly",
@@ -3137,7 +3386,8 @@
    "freq": "Weekly",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "weekly"
   },
   {
    "id": "rv-manual",
@@ -3149,7 +3399,8 @@
    "ref": "PM-11 note 4",
    "when": {
     "reviewproj": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-sdc",
@@ -3158,7 +3409,8 @@
    "d": "The originating department's GL checks work definition, methods, accuracy, document quality and conflicts. Where a department has only one specialist engineer, the DD, HOD or a nominee checks.",
    "who": "GLs",
    "ref": "EN-01 §4.4.1",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "ck-ckl",
@@ -3168,7 +3420,8 @@
    "who": "GLs / PE → PM",
    "rec": "PRC-EN-01 (CKL-01, 03–14)",
    "ref": "EN-01 §4.4.1; PM-05 (F1) §15.1",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "ck-moist",
@@ -3180,7 +3433,8 @@
    "ref": "EN-01 §4.4.1",
    "when": {
     "moisture": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-idc",
@@ -3189,7 +3443,9 @@
    "d": "To the minimum IDC requirements declared at initiation. IDC is held at least once before the final design submission. Specs, BOQs, MoM and manuals use the IDC table of contents and signature cover page; drawings are marked up and re-issued at a new revision.",
    "who": "PE/A / GLs",
    "rec": "IDC TOC / PCW / registers",
-   "ref": "EN-01 §4.4.2"
+   "ref": "EN-01 §4.4.2",
+   "cad": "submission",
+   "cadBy": "judgement"
   },
   {
    "id": "ck-idcb",
@@ -3203,7 +3459,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-idcc",
@@ -3212,7 +3469,9 @@
    "d": "Each comment is marked implemented or discarded; the GL initials discarded ones with the reason. The PCW holds the email to reviewers and their reply. Keep originals until project completion.",
    "who": "PE/A / GLs",
    "rec": "PCW",
-   "ref": "EN-01 §4.4.2 notes 2–8; PM-05 (F1) §15.2"
+   "ref": "EN-01 §4.4.2 notes 2–8; PM-05 (F1) §15.2",
+   "cad": "submission",
+   "cadBy": "judgement"
   },
   {
    "id": "ck-bimidc",
@@ -3225,7 +3484,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "phase"
   },
   {
    "id": "ck-bimqc",
@@ -3243,7 +3503,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "submission"
   },
   {
    "id": "ck-bimqc2",
@@ -3261,7 +3522,9 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "submission",
+   "cadBy": "judgement"
   },
   {
    "id": "ck-dsrscope",
@@ -3270,7 +3533,8 @@
    "d": "Send the full set of drawings and documents with the document list. The PD/PM assigns the review team leader, who assigns reviewers from the related departments. Schedule it with the team leader.",
    "who": "PM / PD / RTL",
    "rec": "PRC-EN-07",
-   "ref": "EN-01 App. 1; PM-05 (F1) §15.3"
+   "ref": "EN-01 App. 1; PM-05 (F1) §15.3",
+   "cad": "once"
   },
   {
    "id": "ck-predsr",
@@ -3278,7 +3542,8 @@
    "t": "Make sure everything is checked and IDC'd before the DSR starts",
    "d": "The checker verifies IDC comments were incorporated. EL/TL and ME single departmental checklists must be with the DSR reviewers before it starts.",
    "who": "GLs / checkers",
-   "ref": "EN-01 §4.4.1, §4.5"
+   "ref": "EN-01 §4.4.1, §4.5",
+   "cad": "once"
   },
   {
    "id": "ck-dsrx",
@@ -3303,7 +3568,8 @@
       ]
      }
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-dsr",
@@ -3316,7 +3582,8 @@
    "tip": {
     "src": "L8",
     "text": "Synthesise the review the way the client's reviewer will: complete against the contract list, compliant with regulations, consistent with the client's criteria, at the right level of detail for the stage, and coordinated across disciplines."
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-sustckl",
@@ -3330,7 +3597,8 @@
    "topic": "Sustainability",
    "when": {
     "sust": "cert"
-   }
+   },
+   "cad": "phase"
   },
   {
    "id": "ck-sustsdc",
@@ -3351,7 +3619,8 @@
      "building_ext",
      "transport_bld"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "ck-drddsr",
@@ -3364,7 +3633,8 @@
    "topic": "DRD",
    "when": {
     "drd": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-gate",
@@ -3379,7 +3649,8 @@
      "building",
      "building_ext"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-gate-m",
@@ -3394,7 +3665,8 @@
      "building_ext"
     ],
     "moisture": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-gate-ind",
@@ -3406,7 +3678,8 @@
    "ref": "PM-02 (F14) item 10",
    "when": {
     "industrial": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-sign",
@@ -3415,7 +3688,8 @@
    "d": "Checked before leaving the department and signed \"By\". Alphabetical revisions to the client: originator and checker. Rev 0 or any numeric revision: approved by the DD or HOD. The GL signs the revision approval box before any external submission.",
    "who": "PE/A / GL / DD",
    "ref": "EN-01 §4.5; EN-02 §4.4",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "sb-stamp",
@@ -3424,7 +3698,8 @@
    "d": "For Construction, For Tender or For Information (other stamps on your request). For Information: designed by PE/A and checked by GL. For Tender or Construction: also approved by the DD/HOD. Tender to Construction with no change keeps the revision and changes only the stamp.",
    "who": "GL / PM",
    "ref": "EN-02 §4.2–4.4",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "sb-boq",
@@ -3436,7 +3711,8 @@
    "ref": "EN-01 CKL-11a, CKL-11b",
    "when": {
     "tender": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-pmc",
@@ -3446,7 +3722,8 @@
    "ref": "PM-02 App. 1 (5)",
    "when": {
     "tender": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-elec",
@@ -3456,7 +3733,8 @@
    "who": "PM / GLs",
    "rec": "Project file / website",
    "ref": "PM-12 §3",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "sb-elec-keep",
@@ -3466,7 +3744,8 @@
    "who": "PM",
    "rec": "W: drive",
    "ref": "PM-12 §3",
-   "freq": "Each submission"
+   "freq": "Each submission",
+   "cad": "submission"
   },
   {
    "id": "sb-hard",
@@ -3477,7 +3756,9 @@
    "ref": "EN-02 §4.3",
    "when": {
     "hardcopy": "yes"
-   }
+   },
+   "cad": "submission",
+   "cadBy": "judgement"
   },
   {
    "id": "sb-bim",
@@ -3491,7 +3772,8 @@
    "topic": "BIM",
    "when": {
     "process": "bim"
-   }
+   },
+   "cad": "submission"
   },
   {
    "id": "sb-riskfinal",
@@ -3500,7 +3782,8 @@
    "d": "With the GLs if needed. F11 asks whether all risks are mitigated and closed.",
    "who": "PM / GLs",
    "rec": "Risk register",
-   "ref": "PM-14 §3; PM-02 (F11) item 4"
+   "ref": "PM-14 §3; PM-02 (F11) item 4",
+   "cad": "once"
   },
   {
    "id": "sb-f11",
@@ -3514,7 +3797,8 @@
    "tip": {
     "src": "L8",
     "text": "Before release, check it the way the client's reviewer will: complete against the contract list, compliant with regulations, consistent with the client's criteria, at the right level of detail for the stage, and coordinated across disciplines."
-   }
+   },
+   "cad": "submission"
   },
   {
    "id": "sb-f11m",
@@ -3525,7 +3809,8 @@
    "ref": "EN-01 §4.4.1; PM-02 (F11) item 6",
    "when": {
     "moisture": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-sur",
@@ -3542,7 +3827,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "sb-phcr",
@@ -3552,7 +3838,8 @@
    "who": "GLs / PM",
    "rec": "PhCR on PMIS",
    "ref": "PM-02 §4.4.2",
-   "freq": "Each phase"
+   "freq": "Each phase",
+   "cad": "phase"
   },
   {
    "id": "sb-bill",
@@ -3562,7 +3849,8 @@
    "who": "PM",
    "rec": "PMIS",
    "ref": "PM-02 §4.5",
-   "freq": "Each payment"
+   "freq": "Each payment",
+   "cad": "event"
   },
   {
    "id": "cl-d365",
@@ -3570,7 +3858,8 @@
    "t": "Set the project as Completed on D365",
    "who": "PM",
    "rec": "D365",
-   "ref": "PM-02 App. 4 (2.4.1)"
+   "ref": "PM-02 App. 4 (2.4.1)",
+   "cad": "once"
   },
   {
    "id": "cl-pcr",
@@ -3579,7 +3868,8 @@
    "d": "Design and quality problems, budget deviation, lessons learned (sent to departmental reviewers for validation), final drawing count against the register. Approve each one.",
    "who": "GLs Main / PM",
    "rec": "PCR on PMIS",
-   "ref": "PM-02 §4.12.2"
+   "ref": "PM-02 §4.12.2",
+   "cad": "once"
   },
   {
    "id": "cl-ll",
@@ -3588,7 +3878,8 @@
    "d": "Your own lessons are filled once all departmental lessons are validated, including those collected with the area manager/coordinator.",
    "who": "GLs / checkers / PM",
    "rec": "PMIS",
-   "ref": "PM-16 §3"
+   "ref": "PM-16 §3",
+   "cad": "once"
   },
   {
    "id": "cl-pmpcr",
@@ -3597,7 +3888,8 @@
    "d": "Design and quality problems, complaints, budget deviation, lessons learned. The system then sends the PCR and the lessons learned report, and creates the archive repository.",
    "who": "PM",
    "rec": "PM PCR on PMIS",
-   "ref": "PM-02 §4.12.2; PM-09 §5.2.1"
+   "ref": "PM-02 §4.12.2; PM-09 §5.2.1",
+   "cad": "once"
   },
   {
    "id": "cl-sust",
@@ -3614,7 +3906,8 @@
      "client",
      "cert"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-drd",
@@ -3627,7 +3920,8 @@
    "topic": "DRD",
    "when": {
     "drd": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-csq",
@@ -3636,7 +3930,8 @@
    "d": "Copy the AD and PD. The AD validates the feedback and the APC distributes it.",
    "who": "PM / APC / AD",
    "rec": "PRC-QA-04 (F2)",
-   "ref": "PM-02 §4.11"
+   "ref": "PM-02 §4.11",
+   "cad": "once"
   },
   {
    "id": "cl-cert",
@@ -3645,7 +3940,8 @@
    "d": "The AD approves it before the APC submits it to the client.",
    "who": "M&C / PM / APC / AD",
    "rec": "PRC-QA-04 (F5)",
-   "ref": "PM-02 §4.11"
+   "ref": "PM-02 §4.11",
+   "cad": "once"
   },
   {
    "id": "cl-gis",
@@ -3653,7 +3949,8 @@
    "t": "Confirm the GIS team has the project site location",
    "who": "PM",
    "rec": "PMIS",
-   "ref": "PM-02 §4.2.1"
+   "ref": "PM-02 §4.2.1",
+   "cad": "once"
   },
   {
    "id": "cl-arch",
@@ -3668,7 +3965,8 @@
      "std",
      "other"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-arch2",
@@ -3683,7 +3981,8 @@
      "std",
      "other"
     ]
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-cairo",
@@ -3695,7 +3994,8 @@
    "ref": "PM-09 §7.1, App. A",
    "when": {
     "office": "cairo"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-multi",
@@ -3706,7 +4006,8 @@
    "ref": "PM-09 §5.1",
    "when": {
     "multioffice": "yes"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-hard",
@@ -3717,7 +4018,8 @@
    "ref": "PM-09 §3.2 a",
    "when": {
     "constr": "no"
-   }
+   },
+   "cad": "once"
   },
   {
    "id": "cl-constr",
@@ -3728,7 +4030,45 @@
    "ref": "PM-09 §3.2 b",
    "when": {
     "constr": "yes"
-   }
+   },
+   "cad": "once"
   }
+ ],
+ "cadences": [
+  [
+   "daily",
+   "Daily",
+   "Every working day"
+  ],
+  [
+   "weekly",
+   "Weekly",
+   "Every week (or every two weeks where the procedure says so)"
+  ],
+  [
+   "monthly",
+   "Monthly",
+   "Once a month"
+  ],
+  [
+   "submission",
+   "Each submission",
+   "Every time a package is issued"
+  ],
+  [
+   "phase",
+   "Each phase",
+   "At every design phase or stage"
+  ],
+  [
+   "event",
+   "As it happens",
+   "Whenever the event comes up: a change, an invoice, a submittal, a supplier"
+  ],
+  [
+   "once",
+   "One time",
+   "Done once in the project"
+  ]
  ]
 }

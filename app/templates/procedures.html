@@ -8,16 +8,24 @@
     <h1>Company procedures</h1>
     <p class="small muted" style="margin-top:2px">
       This project's journey through PRC-PM-02 and the {{ library['sources'] | length - 1 }} procedures around it,
-      from award to close-out. Answer a question when it comes up and the actions that apply appear;
-      clear each one as Done or N/A. Everyone on the project sees the same copy, and it saves as you go.
+      from award to close-out. Answer each question beside the map, then confirm the actions your answer
+      requires once they are actually done. <b>By frequency</b> lists what comes round daily, weekly or monthly,
+      and what is done once. Everyone on the project sees the same copy, and it saves as you go.
     </p>
   </div>
-  <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.attention', project_id=project['id']) }}">What needs attention</a>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    {% if view == 'freq' %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.procedures', project_id=project['id']) }}">Journey map</a>
+    {% else %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.procedures', project_id=project['id'], view='freq') }}">Daily, weekly &amp; one-time</a>
+    {% endif %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('projects.attention', project_id=project['id']) }}">What needs attention</a>
+  </div>
 </div>
 
 <div class="card journey-card">
   <iframe class="journey-frame" title="Procedure journey"
-          src="{{ url_for('projects.procedures_app', project_id=project['id']) }}"></iframe>
+          src="{{ url_for('projects.procedures_app', project_id=project['id']) }}{{ '#freq' if view == 'freq' else '' }}"></iframe>
 </div>
 <p class="small muted" style="margin-top:8px">
   {{ library['version'] }}. Each action cites the procedure section it comes from; confirm the current revision on the QMS.

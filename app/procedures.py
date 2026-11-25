@@ -20,6 +20,7 @@ question it depends on has not been answered.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -33,8 +34,13 @@ PAGE_FILE = HERE / "journey.html"
 
 # The parts of a project's state that are maps of id -> value, and so can be
 # changed one key at a time.
-MAPS = ("answers", "status", "notes", "due", "skipped", "doneAt", "visited")
+MAPS = ("answers", "status", "notes", "due", "skipped", "doneAt", "visited", "ticks")
 STATUSES = {"done", "na"}
+# How often an action comes round (library "cadences"). The repeating ones are
+# ticked once per day, week or month in "ticks", keyed "<action id>|<period>":
+# a day is 2026-11-25, a week 2026-W48 (a two-week cycle 2026-F24), a month 2026-11.
+REPEATING = {"daily", "weekly", "monthly"}
+TICK_PERIOD = re.compile(r"^\d{4}-(\d{2}-\d{2}|W\d{2}|F\d{2}|\d{2})$")
 
 
 @lru_cache(maxsize=1)
@@ -199,7 +205,7 @@ def blank_state(project) -> dict[str, Any]:
         "id": f"project-{project['id']}",
         "created": _now_ms(), "updated": _now_ms(),
         "answers": {"num": project["code"], "title": project["name"]},
-        "status": {}, "notes": {}, "due": {}, "skipped": {}, "doneAt": {}, "visited": {},
+        "status": {}, "notes": {}, "due": {}, "skipped": {}, "doneAt": {}, "visited": {}, "ticks": {},
         "stationOrder": _station_order(),
     }
 
@@ -293,6 +299,11 @@ def apply_patch(state: dict, patch: dict) -> dict:
                 q = idx["questions"][k]
                 if q.get("opts") and v not in {o[0] for o in q["opts"]}:
                     raise PatchError(f"'{v}' is not an answer to '{k}'.")
+            if key == "ticks":
+                item_id, _, period = k.partition("|")
+                it = idx["items"].get(item_id)
+                if not it or it.get("cad") not in REPEATING or not TICK_PERIOD.match(period):
+                    raise PatchError(f"'{k}' is not a repeating action and period.")
             if key == "due" and v and _due(v) is None:
                 raise PatchError(f"'{v}' is not a date.")
             if isinstance(v, str):

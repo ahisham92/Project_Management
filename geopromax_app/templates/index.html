@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a78d6">
+  <title>GeoProMax · Settlement</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='geopromax.css') }}?v={{ version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><rect x='9' y='7' width='14' height='5' fill='white'/><path d='M4 15 Q16 24 28 15' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round'/><path d='M6 21 Q16 28 26 21' stroke='%23ffb4b4' stroke-width='2' fill='none' stroke-linecap='round'/></svg>">
+  <script>
+    document.documentElement.classList.replace('no-js', 'js');
+    try { var t = localStorage.getItem('pm-theme'); if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    window.__GEOPROMAX = {
+      api: "{{ url_for('home') }}api",
+      base: "{{ url_for('home') }}",
+      static: "{{ url_for('static', filename='') }}",
+      version: "{{ version }}",
+      openId: {{ open_id | tojson }},
+      me: {{ (who or {}) | tojson }}
+    };
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="topbar-inner">
+        <a class="brand" href="{{ (site_root or '') ~ '/' }}" title="All applications" aria-label="AHM, all applications">
+          <span class="brand-mark brand-mark-word">AHM</span>
+        </a>
+        <a class="app-name" href="{{ url_for('home') }}">GeoProMax<small>settlement</small></a>
+        <input class="project-name" id="projectName" aria-label="Project name" value="" maxlength="120">
+        <span class="save-state" id="saveState"></span>
+        <div class="undo" role="group" aria-label="Undo and redo">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3L2 6l3 3"/><path d="M2 6h7a4 4 0 010 8H7"/></svg></button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l3 3-3 3"/><path d="M14 6H7a4 4 0 000 8h2"/></svg></button>
+        </div>
+        <div class="spacer"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnProjects">Projects</button>
+        <div class="menu-wrap">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnReport" aria-haspopup="menu" aria-expanded="false">Report</button>
+          <div class="menu hidden" id="reportMenu" role="menu">
+            <button type="button" role="menuitem" data-report="pdf">PDF or print<small>inputs, results, plan, section and charts; choose "Save as PDF"</small></button>
+            <button type="button" role="menuitem" data-report="csv">Results table (.csv)<small>every sub-layer at the query point, and settlement with time</small></button>
+            <button type="button" role="menuitem" data-report="json">Project file (.json)<small>to keep or send; open it again from Projects</small></button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
+        {% if who %}<div class="whoami small"><div>{{ who['name'] }}</div></div>{% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="work">
+        <aside class="inputs" id="inputs" aria-label="Inputs"></aside>
+        <section class="stage" aria-label="Results">
+          <div class="view" id="view">
+            <canvas id="plan" aria-label="Plan of settlement. Click to move the query point."></canvas>
+            <div class="sectionhost hidden" id="sectionHost"></div>
+            <div class="view-msg hidden" id="viewMsg"></div>
+            <div class="overlay ov-tl" id="ovVerdict"></div>
+            <div class="overlay ov-tr">
+              <div class="glass row" style="gap:0" role="group" aria-label="View">
+                <button class="vbtn" data-view="plan" aria-pressed="true" title="Settlement in plan">Plan</button>
+                <button class="vbtn" data-view="section" aria-pressed="false" title="Cross-section A–A′ through the query point">Section</button>
+              </div>
+            </div>
+            <div class="overlay ov-bl"><div class="glass legend" id="legend"></div></div>
+            <div class="overlay ov-br">
+              <div class="glass busy hidden" id="busy"><span class="spin"></span><span id="busyText">Calculating…</span></div>
+              <div class="glass hover hidden" id="hover"></div>
+            </div>
+          </div>
+
+          <div class="timebar card" id="timebar">
+            <button type="button" class="btn btn-ghost btn-sm play" id="btnPlay" aria-label="Play settlement with time" title="Play settlement with time">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M4 3l9 5-9 5z"/></svg>
+            </button>
+            <label class="tlabel" for="tSlider">Time</label>
+            <input type="range" id="tSlider" min="0" max="1000" step="1" aria-describedby="tValue">
+            <span class="tvalue" id="tValue"></span>
+          </div>
+
+          <div class="kpis" id="kpis"></div>
+
+          <div>
+            <div class="dtabs" role="tablist" id="dtabs"></div>
+            <div class="dpanel" id="dpanel"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="drawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="Projects">
+    <div class="drawer-panel">
+      <div class="drawer-head"><b>Projects</b><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+      <div class="drawer-body">
+        <div class="note">Start from an example, then change anything.</div>
+        <div class="templates">
+          <button class="tpl" data-new="embankment"><b>Embankment</b><span>on soft clay, built in one stage</span></button>
+          <button class="tpl" data-new="foundation"><b>Raft and footing</b><span>two foundations side by side</span></button>
+          <button class="tpl" data-new="tank"><b>Storage tank</b><span>a circular load on clay</span></button>
+          <button class="tpl" data-new="blank"><b>Blank</b><span>two layers and one footing</span></button>
+        </div>
+        <label class="btn btn-ghost btn-sm filebtn">Open a project file (.json)<input type="file" id="fileOpen" accept=".json,application/json" hidden></label>
+        <div class="field-label" style="margin-top:8px">Your projects</div>
+        <div id="projList" style="display:grid;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="fpill" id="fpill" aria-label="Back to the results"></button>
+  <div class="report" id="report"></div>
+  <div class="toast hidden" role="status" aria-live="polite"></div>
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}?v={{ version }}"></script>
+</body>
+</html>

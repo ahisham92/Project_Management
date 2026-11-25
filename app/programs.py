@@ -3,7 +3,7 @@
 The site holds the programs — Project Management, the Comment Response Sheet,
 Triton, the Specs Writer, MarineTwin, Selecao+ (the workload app), Iris
 (AI tools on your phone), TritoMoor (static mooring analysis) and SiteTwin
-(construction sequence), Talus (slope stability), Pontoon (floating pontoons
+(construction sequence), Talus (slope stability), GeoProMax (settlement), Pontoon (floating pontoons
 and piles) and JEDSA (structural analysis and design). The administrator ticks which of them each account sees. A program
 an account is not given is left off its front page and refused by address too,
 so knowing the URL does not get anybody in.
@@ -28,6 +28,7 @@ PROGRAMS: list[tuple[str, str]] = [
     ("tritomoor", "TritoMoor (mooring analysis)"),
     ("sitetwin", "SiteTwin (construction sequence)"),
     ("talus", "Talus (slope stability)"),
+    ("geopromax", "GeoProMax (settlement)"),
     ("pontoon", "Pontoon (floating pontoons and piles)"),
     ("jedsa", "JEDSA (structural analysis and design)"),
 ]

@@ -25,6 +25,7 @@ from ..workload_door import describe as describe_workload
 from ..iris_door import describe as describe_iris
 from ..sitetwin_door import describe as describe_sitetwin
 from ..talus_door import describe as describe_talus
+from ..geopromax_door import describe as describe_geopromax
 from ..pontoon_door import describe as describe_pontoon
 from ..jedsa_door import describe as describe_jedsa
 from .tritomoor_views import describe as describe_tritomoor
@@ -68,7 +69,7 @@ def chooser():
     return render_template("chooser.html", classic=describe_crs(), triton=describe_triton(),
                            workload=describe_workload(), iris=describe_iris(),
                            tritomoor=describe_tritomoor(), sitetwin=describe_sitetwin(),
-                           talus=describe_talus(), pontoon=describe_pontoon(),
+                           talus=describe_talus(), geopromax=describe_geopromax(), pontoon=describe_pontoon(),
                            jedsa=describe_jedsa())
 
 
@@ -105,6 +106,13 @@ def sitetwin_missing():
 def talus_missing():
     """Only reached when Talus is not mounted in front of this address: say why."""
     return render_template("talus_missing.html", talus=describe_talus())
+
+
+@bp.get("/geopromax/")
+@login_required
+def geopromax_missing():
+    """Only reached when GeoProMax is not mounted in front of this address: say why."""
+    return render_template("geopromax_missing.html", geopromax=describe_geopromax())
 
 
 @bp.get("/pontoon/")

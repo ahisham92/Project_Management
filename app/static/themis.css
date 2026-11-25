@@ -15,58 +15,10 @@
  *   - no box is taller than what it holds, and on a phone the menu is one row.
  */
 
-body.themis-app {
-  --series-1: #274b82;            /* THEMIS blue: links, primary actions, focus */
-  --themis-on-primary: #ffffff;
-  --themis-primary-hover: #1f3d6c;
-  --ink: #161b26;                 /* off-black, a touch of the navy in it */
-  --ink-2: #4a4f5c;
-  --muted: #747986;               /* 4.5:1 on the page, so small print stays legible */
-  --plane: #f7f6f2;
-  --surface: #fcfbf8;
-  --raised: #ffffff;
-  --border: rgba(22, 27, 38, 0.11);
-  --themis-tint: rgba(39, 75, 130, 0.07);
-  --themis-gold-tint: rgba(166, 124, 58, 0.10);
-  --themis-ring: 0 0 0 3px rgba(39, 75, 130, 0.28);
-  --themis-shadow: 0 1px 2px rgba(22, 27, 38, 0.05);
-  --themis-radius: 10px;
-  --themis-fast: 120ms;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) body.themis-app {
-    --series-1: #8eb1ea;
-    --themis-on-primary: #0f1522;
-    --themis-primary-hover: #a8c3f0;
-    --ink: #eef0f4;
-    --ink-2: #c2c6cf;
-    --muted: #979ca8;
-    --plane: #0f1218;
-    --surface: #161a22;
-    --raised: #1d222c;
-    --border: rgba(238, 240, 244, 0.11);
-    --themis-tint: rgba(142, 177, 234, 0.10);
-    --themis-gold-tint: rgba(192, 149, 80, 0.13);
-    --themis-ring: 0 0 0 3px rgba(142, 177, 234, 0.35);
-    --themis-shadow: none;
-  }
-}
-:root[data-theme="dark"] body.themis-app {
-  --series-1: #8eb1ea;
-  --themis-on-primary: #0f1522;
-  --themis-primary-hover: #a8c3f0;
-  --ink: #eef0f4;
-  --ink-2: #c2c6cf;
-  --muted: #979ca8;
-  --plane: #0f1218;
-  --surface: #161a22;
-  --raised: #1d222c;
-  --border: rgba(238, 240, 244, 0.11);
-  --themis-tint: rgba(142, 177, 234, 0.10);
-  --themis-gold-tint: rgba(192, 149, 80, 0.13);
-  --themis-ring: 0 0 0 3px rgba(142, 177, 234, 0.35);
-  --themis-shadow: none;
-}
+/* THEMIS's colours come from the CDT theme now (static/cdt/cdt.css, the web
+   port of the CDT SDK's palettes): the site's colour names used here
+   (--series-1, --ink, --plane, --themis-tint …) are answered there, for light
+   and dark and for the Dar and CDT brands. */
 
 /* --- type ------------------------------------------------------------------ */
 

@@ -5,7 +5,7 @@
   </span>
 {% endmacro %}
 
-{% macro progress(value, planned=None, color='var(--series-1)', slim=False) %}
+{% macro progress(value, planned=None, color='var(--cdt-accent, var(--series-1))', slim=False) %}
   <div class="bar {{ 'slim' if slim }}">
     <div class="bar-fill" style="width:{{ bar_width(value) }};background:{{ color }}"></div>
     {% if planned is not none %}
@@ -15,7 +15,7 @@
 {% endmacro %}
 
 {# The colour a deliverable's progress bar takes, by how it is tracking. #}
-{% macro task_color(task) %}{% if task['is_late'] %}var(--critical){% elif task['is_behind'] %}var(--warning){% else %}var(--series-1){% endif %}{% endmacro %}
+{% macro task_color(task) %}{% if task['is_late'] %}var(--critical){% elif task['is_behind'] %}var(--warning){% else %}var(--cdt-accent, var(--series-1)){% endif %}{% endmacro %}
 
 {# Where a deliverable stands, in one badge.
 

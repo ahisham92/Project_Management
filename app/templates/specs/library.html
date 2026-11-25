@@ -166,7 +166,7 @@
     <div class="card-body">{{ empty('The library is empty', 'Load the library file, or the master sections from Word, to begin.' if is_admin else 'An administrator loads the master sections first.') }}</div>
   {% else %}
   <div class="card-body flush table-scroll">
-    <table>
+    <table data-cdt-filter>
       <thead><tr>{% if is_admin %}<th class="spec-tick"><input type="checkbox" aria-label="Tick all" onclick="document.querySelectorAll('input[form=library-delete][name=section_id]').forEach(b => b.checked = this.checked)"></th>{% endif %}<th>Section</th><th>Title</th><th class="right">Paragraphs</th><th>In a project when</th><th>Switched by</th><th>Version</th><th>Last saved</th></tr></thead>
       <tbody>
         {% for s in sections %}

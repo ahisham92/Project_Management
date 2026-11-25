@@ -33,7 +33,7 @@
   {{ empty('Nothing needs a look', 'Every cited standard is up to date as last checked.') }}
 {% else %}
 <div class="card"><div class="card-body flush table-scroll">
-  <table>
+  <table data-cdt-filter>
     <thead><tr><th>Standard</th><th>Cited as</th><th>Current edition</th><th>State</th><th>Checked</th><th class="right">Places</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for r in rows %}

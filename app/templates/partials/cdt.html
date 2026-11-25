@@ -1,0 +1,74 @@
+{# The CDT SDK's custom controls as Jinja macros (the look is static/cdt/cdt.css,
+   the behaviour static/cdt/cdt.js). Import with:
+     {% import "partials/cdt.html" as cdt %} #}
+
+{# InfoBar: a message in the page. severity: info | success | warning | error. #}
+{% macro info_bar(message, title=none, severity='info', closable=true) -%}
+  <div class="cdt-infobar {{ severity }}" role="{{ 'alert' if severity == 'error' else 'status' }}">
+    <div class="cdt-infobar-body">
+      {% if title %}<span class="cdt-infobar-title">{{ title }}</span>{% endif %}
+      {{ message }}{% if caller %} {{ caller() }}{% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{# EmptyState: what a list shows when it is empty. Pass an action with call. #}
+{% macro empty_state(title, message=none) -%}
+  <div class="cdt-empty">
+    <div class="cdt-empty-title">{{ title }}</div>
+    {% if message %}<p>{{ message }}</p>{% endif %}
+    {% if caller %}{{ caller() }}{% endif %}
+  </div>
+{%- endmacro %}
+
+{# StepIndicator: steps as numbered circles joined by lines, done ones ticked.
+   steps: list of labels, or of (label, note, href) tuples; current: 0-based
+   index (-1 none started, len(steps) all done). #}
+{% macro step_indicator(steps, current=-1, label='Steps') -%}
+  <nav class="cdt-steps" aria-label="{{ label }}">
+    {% for step in steps %}
+      {% set name = step if step is string else step[0] %}
+      {% set note = none if step is string else step[1] %}
+      {% set href = none if step is string or step | length < 3 else step[2] %}
+      {% set state = 'done' if loop.index0 < current else 'here' if loop.index0 == current else '' %}
+      <{{ 'a' if href else 'span' }} class="cdt-step {{ state }}"{% if href %} href="{{ href }}"{% endif %}{% if state == 'here' %} aria-current="step"{% endif %}>
+        <span class="cdt-step-n">{{ '✓' if state == 'done' else loop.index }}</span>
+        <span class="cdt-step-t"><b>{{ name }}</b>{% if note %}<small>{{ note }}</small>{% endif %}</span>
+      </{{ 'a' if href else 'span' }}>
+    {% endfor %}
+  </nav>
+{%- endmacro %}
+
+{# UtilizationBar: demand / capacity against a limit (default 1.0). Green
+   below warning (0.9 of the limit), amber up to the limit, red over it.
+   The bar is drawn to 1.25x the limit so an overrun shows. #}
+{% macro utilization(ratio, label=none, limit=1.0, warning=0.9, text=none, compact=false) -%}
+  {% set r = ratio or 0 %}
+  {% set state = 'over' if r > limit else 'warn' if r >= warning * limit else 'ok' %}
+  {% set span = [limit * 1.25, r] | max %}
+  <div class="cdt-util {{ state }}{{ ' compact' if compact or not label }}" role="meter" aria-valuemin="0"
+       aria-valuemax="{{ limit }}" aria-valuenow="{{ '%.3f' % r }}"{% if label %} aria-label="{{ label }}"{% endif %}>
+    {% if label %}<span class="cdt-util-label" title="{{ label }}">{{ label }}</span>{% endif %}
+    <span class="cdt-util-track">
+      <span class="cdt-util-fill" style="width: {{ '%.1f' % (100 * r / span) }}%"></span>
+      <span class="cdt-util-limit" style="left: {{ '%.1f' % (100 * limit / span) }}%" title="Limit {{ '%g' % (limit * 100) }}%"></span>
+    </span>
+    <span class="cdt-util-value">{{ text if text is not none else '%.0f%%' % (r * 100) }}</span>
+  </div>
+{%- endmacro %}
+
+{# StatusDot + a word: never colour alone. state: ok | warn | error | available | (muted) #}
+{% macro status(word, state='') -%}
+  <span class="nowrap"><span class="cdt-dot {{ state }}" aria-hidden="true"></span> {{ word }}</span>
+{%- endmacro %}
+
+{# OutcomeLabel: glyph + word + colour. outcome: ok | warn | fail | skip #}
+{% macro outcome(word, kind='ok') -%}<span class="cdt-outcome {{ kind }}">{{ word }}</span>{%- endmacro %}
+
+{# InfoTip: an "i" in a circle that explains on hover or focus. #}
+{% macro info_tip(text) -%}
+  <button type="button" class="cdt-infotip" title="{{ text }}" aria-label="{{ text }}">i</button>
+{%- endmacro %}
+
+{# BusyDots, for a bar that is working. #}
+{% macro busy() -%}<span class="cdt-busy" aria-label="Working"><i></i><i></i><i></i></span>{%- endmacro %}

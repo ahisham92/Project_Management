@@ -30,7 +30,7 @@
   {{ empty('Nothing issued yet', 'A specification issued from its project\'s Issued revisions page is recorded here.') }}
 {% else %}
 <div class="card"><div class="card-body flush table-scroll">
-  <table>
+  <table data-cdt-filter>
     <thead><tr><th>Project</th><th>Location</th><th>Kind</th><th>Client</th><th>Rev</th><th>Date</th><th>Purpose</th><th class="right">Sections</th><th class="right">Amendments to the MTD</th><th></th></tr></thead>
     <tbody>
     {% for r in rows %}

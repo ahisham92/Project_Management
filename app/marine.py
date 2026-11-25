@@ -578,11 +578,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     # The site record's own tables (construction to operations), kept with their own code.
-    from . import marine_images, marine_photos, marine_piles, marine_surveys
+    from . import marine_baseline, marine_images, marine_photos, marine_piles, marine_surveys
     marine_piles.ensure_schema(conn)
     marine_surveys.ensure_schema(conn)
     marine_photos.ensure_schema(conn)
     marine_images.ensure_schema(conn)
+    marine_baseline.ensure_schema(conn)
 
 
 # --- dates -------------------------------------------------------------------------
@@ -1231,20 +1232,26 @@ def recommendations(element: Any, condition: dict[str, Any], sensors: list[dict[
     return out
 
 
-def readings_for(conn: sqlite3.Connection, sensor_ids: Iterable[int]) -> dict[int, list[Any]]:
+def readings_for(conn: sqlite3.Connection, sensor_ids: Iterable[int], until: date | None = None) -> dict[int, list[Any]]:
+    """Each sensor's readings, oldest first; with until, only those taken on that day or before."""
     ids = list(sensor_ids)
     found: dict[int, list[Any]] = {i: [] for i in ids}
     if not ids:
         return found
     marks = ",".join("?" * len(ids))
-    for row in conn.execute(f"SELECT sensor_id, at, value, note FROM marine_readings WHERE sensor_id IN ({marks})"
-                            " ORDER BY sensor_id, at", ids):
+    cut = " AND at < ?" if until else ""
+    args = ids + ([(until + timedelta(days=1)).isoformat()] if until else [])
+    for row in conn.execute(f"SELECT sensor_id, at, value, note FROM marine_readings WHERE sensor_id IN ({marks}){cut}"
+                            " ORDER BY sensor_id, at", args):
         found[row["sensor_id"]].append(row)
     return found
 
 
-def assess_asset(conn: sqlite3.Connection, asset: Any, today: date | None = None) -> dict[str, Any]:
-    """Everything the asset's page shows: each element, its sensors, the asset's health."""
+def assess_asset(conn: sqlite3.Connection, asset: Any, today: date | None = None, past: bool = False) -> dict[str, Any]:
+    """Everything the asset's page shows: each element, its sensors, the asset's health.
+
+    With past, it is the asset as it stood on today: only the readings taken by then count.
+    """
     today = today or date.today()
     durability = marine_triton.durability(asset)
     ratings = marine_triton.ratings(asset)
@@ -1255,7 +1262,7 @@ def assess_asset(conn: sqlite3.Connection, asset: Any, today: date | None = None
     sensors = conn.execute(
         "SELECT s.* FROM marine_sensors s JOIN marine_elements e ON e.id = s.element_id"
         " WHERE e.asset_id = ? ORDER BY s.label", (asset["id"],)).fetchall()
-    readings = readings_for(conn, [s["id"] for s in sensors])
+    readings = readings_for(conn, [s["id"] for s in sensors], today if past else None)
     by_element: dict[int, list[Any]] = {}
     for s in sensors:
         by_element.setdefault(s["element_id"], []).append(s)

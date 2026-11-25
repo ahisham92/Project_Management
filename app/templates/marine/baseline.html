@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head %}
+{% block title %}{{ asset['name'] }} · Baseline · MarineTwin{% endblock %}
+
+{% macro day(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[:4] }}{% endif %}{% endmacro %}
+{% macro state(s) %}<span class="badge {{ s if s != 'neutral' else '' }}">{{ word.get(s, s) }}</span>{% endmacro %}
+{% macro num(v) %}{% if v is none %}—{% else %}{{ '{:,.2f}'.format(v) if v | abs < 100 else '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% macro side(name, token, dname) %}
+  <label class="field"><span>{{ name }}</span><select name="{{ token[0] }}">
+    <option value="">On the date →</option>
+    {% for sn in snaps %}<option value="s{{ sn['id'] }}" {% if token[1] == 's' ~ sn['id'] %}selected{% endif %}>{{ sn['name'] }}{{ ' (handover)' if sn['handover'] }}, {{ day(sn['day']) }}</option>{% endfor %}
+  </select></label>
+  <label class="field"><span>Date</span><input type="date" name="{{ token[0] }}d" max="{{ today }}" value="{{ token[2] }}"></label>
+{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The asset as it stood on any date, from the readings, inspections, piles, surveys, photos and flights on record by then. Keep the state at handover as the baseline, and see what has changed since: which elements got worse, by how much, and what was recorded.") }}
+{{ asset_tabs(asset) }}
+
+{% set worst = change['worse'] | selectattr('now', 'equalto', 'critical') | list %}
+<div class="grid grid-4">
+  {{ tile('Handover baseline', day(handover['day']) if handover else 'not set', handover['name'] if handover else 'keep one below', 'good' if handover else 'neutral', '') }}
+  {{ tile('Health', (b['health'] ~ '%') if b['health'] is not none else '—', ('was ' ~ a['health'] ~ '% on ' ~ day(a['day'])) if a['health'] is not none else 'nothing measured then', 'warning' if change['health'] is not none and change['health'] < -5 else 'neutral', '') }}
+  {{ tile('Got worse', change['worse'] | length, (worst | length ~ ' now to act on') if worst else 'since ' ~ day(a['day']), 'critical' if worst else 'warning' if change['worse'] else 'good', '') }}
+  {{ tile('Got better', change['better'] | length, 'repaired, or readings eased', 'neutral', '') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+  <section class="mt-panel" data-tab="What changed" data-slug="change" data-open="1">
+    <div class="card">
+      <div class="card-head"><div><h2>From {{ a_name }} to {{ b_name }}</h2>
+        <p class="small muted" style="margin-top:2px">{{ day(a['day']) }} to {{ day(b['day']) }}. A snapshot reads as it was kept; a date is worked out from the record as it is now.</p></div>
+        <div class="row" style="gap:8px"><a class="btn" href="{{ url_for('marine.baseline_csv', asset_id=asset['id'], a=a_token, b=b_token) }}">Download the changes</a></div></div>
+      <div class="card-body">
+        <form method="get" class="inline-form" style="gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+          {{ side('From', ('a', a_token, a['day'] if not a_token.startswith('s') else '')) }}
+          {{ side('To', ('b', b_token, b['day'] if not b_token.startswith('s') else '')) }}
+          <button class="btn">Compare</button>
+        </form>
+
+        <div class="grid grid-4" style="margin-bottom:12px">
+          {{ tile('Piles in', '%+d' | format(change['piles']), b['piles_in'] ~ ' by ' ~ day(b['day']), 'neutral', '') }}
+          {{ tile('Inspections', '%+d' | format(change['inspections']), 'grades recorded between', 'neutral', '') }}
+          {{ tile('Photos', '%+d' | format(change['photos']), 'taken between', 'neutral', '') }}
+          {{ tile('Shoal to dredge', ('%+.0f m³' | format(change['seabed'])) if change['seabed'] is not none else '—',
+                  (b['seabed']['name'] ~ ', ' ~ day(b['seabed']['surveyed'])) if b['seabed'] else 'no survey by then', 'warning' if change['seabed'] and change['seabed'] > 0 else 'neutral', '') }}
+        </div>
+
+        {% if not (change['worse'] or change['better'] or change['moved'] or change['new'] or change['gone']) %}
+        <p class="muted">Nothing on record changed between the two.</p>
+        {% endif %}
+
+        {% for title, rows, note in [('Got worse', change['worse'], 'its condition stepped up'), ('Got better', change['better'], 'repaired, or readings eased'), ('Readings moved', change['moved'], 'the same condition, new readings')] if rows %}
+        <h3 style="margin:14px 0 6px">{{ title }} <span class="small muted">· {{ rows | length }}, {{ note }}</span></h3>
+        <div class="table-scroll"><table class="table">
+          <thead><tr><th>Element</th><th>Then</th><th>Now</th><th class="right">Health</th><th>Readings</th></tr></thead>
+          <tbody>
+          {% for r in rows %}
+            <tr><td><strong>{{ r['name'] }}</strong><div class="small muted">{{ dict(element_kinds).get(r['kind'], r['kind']) }}</div></td>
+              <td>{{ state(r['was']) }}</td><td>{{ state(r['now']) }}</td>
+              <td class="right tabular">{{ r['health_was'] if r['health_was'] is not none else '—' }} → {{ r['health_now'] if r['health_now'] is not none else '—' }}</td>
+              <td class="small">{% for x in r['readings'][:4] %}<div class="{{ 'state-critical' if x['worse'] }}">{{ x['label'] }}: {{ num(x['was']) }} → {{ num(x['now']) }} {{ x['unit'] }}</div>{% endfor %}
+                {% if r['readings'] | length > 4 %}<div class="muted">and {{ r['readings'] | length - 4 }} more</div>{% endif %}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+        {% endfor %}
+
+        {% if change['new'] or change['gone'] %}
+        <p class="small muted" style="margin-top:10px">
+          {% if change['new'] %}In the model now and not then: {{ change['new'][:12] | map(attribute='name') | join(', ') }}{{ '…' if change['new'] | length > 12 }}.{% endif %}
+          {% if change['gone'] %}Then and not now: {{ change['gone'][:12] | map(attribute='name') | join(', ') }}{{ '…' if change['gone'] | length > 12 }}.{% endif %}</p>
+        {% endif %}
+        {% if a['image'] or b['image'] %}
+        <p class="small muted">From the air: {{ (a['image']['name'] ~ ', ' ~ day(a['image']['taken'])) if a['image'] else 'no flight then' }} and {{ (b['image']['name'] ~ ', ' ~ day(b['image']['taken'])) if b['image'] else 'no flight by then' }}.
+          <a href="{{ url_for('marine.site_images', asset_id=asset['id']) }}">Swipe between them →</a></p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Snapshots" data-slug="snapshots">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head"><div><h2>Kept snapshots</h2></div></div>
+        <div class="card-body table-scroll">
+          {% if snaps %}
+          <table class="table">
+            <thead><tr><th>Snapshot</th><th>Of</th><th>Kept</th><th></th></tr></thead>
+            <tbody>
+            {% for sn in snaps %}
+              <tr><td>{{ sn['name'] }} {% if sn['handover'] %}<span class="badge good">handover</span>{% endif %}</td>
+                <td class="tabular">{{ day(sn['day']) }}</td>
+                <td class="small muted">{{ day(sn['created_at'][:10]) }}{{ ', ' ~ sn['who'] if sn['who'] }}</td>
+                <td class="row" style="gap:6px;justify-content:flex-end">
+                  <a class="btn" href="{{ url_for('marine.baseline', asset_id=asset['id'], a='s' ~ sn['id']) }}">Since</a>
+                  {% if not sn['handover'] %}<form method="post" action="{{ url_for('marine.handover_snapshot', asset_id=asset['id'], snapshot_id=sn['id']) }}"><button class="btn">Make it the baseline</button></form>{% endif %}
+                  <form method="post" action="{{ url_for('marine.delete_snapshot', asset_id=asset['id'], snapshot_id=sn['id']) }}"><button class="btn">Remove</button></form></td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}<p class="muted">None kept yet. Any date can still be compared from the record.</p>{% endif %}
+        </div>
+      </div>
+      <div class="card" id="keep">
+        <div class="card-head"><div><h2>Keep a snapshot</h2>
+          <p class="small muted" style="margin-top:2px">It freezes the asset as the record has it on the date, so it reads the same later, whatever is corrected or removed.</p></div></div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('marine.keep_snapshot', asset_id=asset['id']) }}" data-voyage="Keeping the snapshot">
+            <div class="grid grid-2">
+              <label class="field"><span>Name</span><input name="name" placeholder="Handover from the contractor"></label>
+              <label class="field"><span>The asset on</span><input type="date" name="day" value="{{ today }}" max="{{ today }}" required></label>
+            </div>
+            <label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="handover" value="1" {% if not handover %}checked{% endif %}> This is the handover baseline: measure everything after against it</label>
+            <button class="btn primary" style="margin-top:8px">Keep it</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

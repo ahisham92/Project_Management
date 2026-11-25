@@ -10,7 +10,8 @@ beside it when they are installed: the older comment sheet in front of
 Workload, the unit's workload and profit plan, in front of ``/workload``, and
 Iris, AI tools on your phone, in front of ``/iris``, SiteTwin, the
 construction sequence program, in front of ``/sitetwin``, Talus, slope
-stability, in front of ``/talus``, Pontoon, floating pontoons and piles, in
+stability, in front of ``/talus``, GeoProMax, settlement, in front of
+``/geopromax``, Pontoon, floating pontoons and piles, in
 front of ``/pontoon``, and JEDSA, structural analysis and design, in front of
 ``/jedsa`` —
 all behind project control's sign-in. They are joined at the WSGI layer
@@ -33,6 +34,7 @@ from app.workload_door import mounts as workload_mounts
 from app.iris_door import mounts as iris_mounts
 from app.sitetwin_door import mounts as sitetwin_mounts
 from app.talus_door import mounts as talus_mounts
+from app.geopromax_door import mounts as geopromax_mounts
 from app.pontoon_door import mounts as pontoon_mounts
 from app.jedsa_door import mounts as jedsa_mounts
 
@@ -49,6 +51,7 @@ mounted.update(workload_mounts(control))
 mounted.update(iris_mounts(control))
 mounted.update(sitetwin_mounts(control))
 mounted.update(talus_mounts(control))
+mounted.update(geopromax_mounts(control))
 mounted.update(pontoon_mounts(control))
 mounted.update(jedsa_mounts(control))
 application = DispatcherMiddleware(control, mounted) if mounted else control

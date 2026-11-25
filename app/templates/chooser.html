@@ -24,6 +24,9 @@
 {% if request.args.get('not') == 'talus' %}
   <div class="flashes"><div class="flash error">Your account has not been given Talus. Ask the administrator.</div></div>
 {% endif %}
+{% if request.args.get('not') == 'geopromax' %}
+  <div class="flashes"><div class="flash error">Your account has not been given GeoProMax. Ask the administrator.</div></div>
+{% endif %}
 {% if request.args.get('not') == 'pontoon' %}
   <div class="flashes"><div class="flash error">Your account has not been given Pontoon. Ask the administrator.</div></div>
 {% endif %}
@@ -156,6 +159,19 @@
       view of how it would fail. Checked against published benchmarks.
     </span>
     <span class="door-go">Open Talus →</span>
+  </a>
+  {% endif %}
+  {% if 'geopromax' in my_programs %}
+  <a class="door{% if not geopromax['ready'] %} door-shut{% endif %}" href="{{ geopromax['href'] }}">
+    <span class="door-mark door-mark-geopromax" aria-hidden="true"><svg viewBox="0 0 64 64" width="42" height="42" focusable="false"><rect width="64" height="64" rx="14" fill="#2a78d6"/><rect x="20" y="12" width="24" height="10" rx="1.5" fill="#fff"/><path d="M8 30 Q32 46 56 30" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M12 42 Q32 54 52 42" stroke="#bfe0ff" stroke-width="2.5" fill="none" stroke-linecap="round"/><path d="M16 52 Q32 60 48 52" stroke="#ffb4b4" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="3 3"/></svg></span>
+    <span class="door-name">GeoProMax<span class="door-tagline">Settlement</span>{% if not geopromax['ready'] %}<span class="door-tag">not installed</span>{% endif %}</span>
+    <span class="door-what">
+      How much the ground settles under footings, rafts, buildings, tanks, pile groups and
+      embankments, how fast, and whether that is within the limits for what is being built:
+      layered soils, consolidation and creep, a contour plan you can play through time, and a
+      section with the stress bulbs.
+    </span>
+    <span class="door-go">Open GeoProMax →</span>
   </a>
   {% endif %}
   {% if 'pontoon' in my_programs %}

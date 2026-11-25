@@ -1,0 +1,89 @@
+{# CDT for the web: markup for the CDT-SDK controls (CDT.Wpf/Controls), styled by static/cdt/cdt.css and
+   brought to life by static/cdt/cdt.js. Each macro is named after the SDK control it stands for. #}
+
+{# UtilizationBar: a demand / capacity ratio against its limit. Green below `warn` (0.9), amber to the
+   limit, red over it. `none` shows a dash; a ratio over 1e9 means no section is left. #}
+{% macro utilization(ratio, limit=1.0, warn=0.9, label='', title='') %}
+  {% if ratio is none %}<span class="cdt-util none"{% if title %} title="{{ title }}"{% endif %}>{% if label %}<span class="cdt-util-label">{{ label }}</span>{% endif %}<span class="cdt-util-track"></span><span class="cdt-util-value">—</span></span>
+  {% else %}
+  {% set gone = ratio > 1e9 %}
+  {% set state = 'critical' if gone or ratio > limit else 'warning' if ratio >= warn * limit else 'good' %}
+  {% set scale = [limit * 1.25, ratio if not gone else 0] | max %}
+  <span class="cdt-util {{ state }}" role="meter" aria-valuemin="0" aria-valuemax="{{ scale }}" aria-valuenow="{{ scale if gone else ratio }}"
+        aria-label="{{ label or 'Utilisation' }}: {{ 'no section left' if gone else '%.2f' | format(ratio) }} of {{ limit }}"{% if title %} title="{{ title }}"{% endif %}>
+    {% if label %}<span class="cdt-util-label">{{ label }}</span>{% endif %}
+    <span class="cdt-util-track"><span class="cdt-util-fill" style="width:{{ 100 if gone else (ratio / scale * 100) | round(1) }}%"></span>
+      <span class="cdt-util-limit" style="left:calc({{ (limit / scale * 100) | round(1) }}% - 1px)"></span></span>
+    <span class="cdt-util-value">{{ 'none left' if gone else '%.2f' | format(ratio) }}</span>
+  </span>
+  {% endif %}
+{% endmacro %}
+
+{# InfoBar: a message in the page. severity: info | success | warning | error. #}
+{% macro info_bar(severity, title, message='', auto_close=0) %}
+  <div class="cdt-infobar {{ severity }}" data-severity="{{ severity }}" data-title="{{ title }}"{% if auto_close %} data-auto-close="{{ auto_close }}"{% endif %}
+       role="{{ 'alert' if severity == 'error' else 'status' }}">{{ message }}{{ caller() if caller }}</div>
+{% endmacro %}
+
+{# EmptyState: what a list shows when there is nothing in it, with the way to fill it. #}
+{% macro empty_state(title, message='', glyph='list') %}
+  {% set glyphs = {
+  'list': '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  'sensor': '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
+  'photo': '<path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  'check': '<path d="M5 12.5 10 17 19 7"/>',
+  'model': '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9zM4 7.5 12 12l8-4.5M12 12v9"/>',
+  'ship': '<path d="M3 15h18l-3 5H6zM6 15V9h6v6M8 9V5h2v4M14 15v-4h4v4"/>',
+  'chart': '<path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/>',
+  'search': '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>'} %}
+  <div class="cdt-empty">
+    <span class="cdt-empty-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ glyphs.get(glyph, glyphs['list']) | safe }}</svg></span>
+    <p class="cdt-empty-title">{{ title }}</p>
+    {% if message %}<p class="cdt-empty-msg">{{ message }}</p>{% endif %}
+    {% if caller %}<div class="cdt-empty-action">{{ caller() }}</div>{% endif %}
+  </div>
+{% endmacro %}
+
+{# OutcomeLabel: a state as glyph + word + colour, never colour alone. #}
+{% macro outcome(state, word, title='') %}
+  {% set icons = {'good': '✓', 'warning': '▲', 'serious': '▲', 'critical': '■', 'neutral': '○'} %}
+  <span class="badge {{ state }}"{% if title %} title="{{ title }}"{% endif %}><span aria-hidden="true">{{ icons.get(state, '○') }}</span> {{ word }}</span>
+{% endmacro %}
+
+{# StatusDot: ok | warn (pulses) | error | available | off, with its word. #}
+{% macro status_dot(state, word='') %}<span class="nowrap"><span class="cdt-dot {{ state }}" aria-hidden="true"></span>{{ word }}</span>{% endmacro %}
+
+{# InfoTip: an "i" whose tip shows a caption and, optionally, a picture. #}
+{% macro info_tip(caption, image='') %}<button type="button" class="cdt-infotip" aria-label="{{ caption }}" data-tip="{{ caption }}"{% if image %} data-img="{{ image }}"{% endif %}>i</button>{% endmacro %}
+
+{# DropDownButton: `items` are (label, href) pairs, or (label, href, glyph). #}
+{% macro dropdown(label, items, klass='') %}
+  <span class="cdt-dropdown" style="position:relative;display:inline-block">
+    <button type="button" class="cdt-btn {{ klass }}" data-cdt-menu>{{ label }} <span class="cdt-caret" aria-hidden="true"></span></button>
+    <div class="cdt-popup" hidden>
+      {% for it in items %}{% if it == '-' %}<div class="cdt-menu-sep"></div>
+      {% else %}<a class="cdt-menu-row" role="menuitem" href="{{ it[1] }}"{% if it[1].endswith(('.csv', '.json', '.py', '.xlsx', '.ifc', '.zip', '.png')) or '/sensors.' in it[1] %} download{% endif %}>{% if it | length > 2 %}<span class="cdt-glyph" aria-hidden="true">{{ it[2] }}</span>{% endif %}{{ it[0] }}</a>{% endif %}
+      {% endfor %}
+    </div>
+  </span>
+{% endmacro %}
+
+{# PropertyList: name / value rows. `rows` are (name, value) pairs; a value of none shows a dash. #}
+{% macro properties(rows) %}
+  <dl class="cdt-props">{% for k, v in rows %}<dt>{{ k }}</dt><dd>{{ '—' if v is none or v == '' else v }}</dd>{% endfor %}</dl>
+{% endmacro %}
+
+{# BusyDots and Skeleton. #}
+{% macro busy(label='Working') %}<span class="cdt-busy" role="status" aria-label="{{ label }}"><i></i><i></i><i></i></span>{% endmacro %}
+{% macro skeleton(height=12, width='100%') %}<span class="cdt-skeleton" style="height:{{ height }}px;width:{{ width }}" aria-hidden="true"></span>{% endmacro %}
+
+{# Kbd: a key, as on the keyboard. #}
+{% macro kbd(key) %}<kbd class="cdt-kbd">{{ key }}</kbd>{% endmacro %}
+
+{# FilterChips: one-of chips that show only the items (anything with data-chip="value ...") under `target`. #}
+{% macro filter_chips(target, chips, all='All') %}
+  <div class="cdt-filter-chips" data-cdt-filters="{{ target }}" role="group" aria-label="Show">
+    <button type="button" class="cdt-filter-chip" data-value="" aria-pressed="true">{{ all }}</button>
+    {% for value, label in chips %}<button type="button" class="cdt-filter-chip" data-value="{{ value }}" aria-pressed="false">{{ label }}</button>{% endfor %}
+  </div>
+{% endmacro %}

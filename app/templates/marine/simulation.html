@@ -138,7 +138,7 @@
               <a href="{{ url_for('marine.simulation', asset_id=asset['id'], show=r['id'], copy=r['id']) }}#scenario-form">Copy</a>
               {% if not loop.first %}·
                 <form method="post" action="{{ url_for('marine.delete_scenario', asset_id=asset['id'], scenario_id=r['id']) }}" style="display:inline">
-                  <button type="submit" class="link-button small" onclick="return confirm('Delete {{ r['name'] }}?')">Delete</button></form>
+                  <button type="submit" class="link-button small" data-confirm="Delete {{ r['name'] }}?">Delete</button></form>
               {% endif %}
             </div>
           </th>

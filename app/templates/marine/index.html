@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty %}
+{% from "cdt/_kit.html" import empty_state, utilization, info_tip, dropdown, properties, status_dot, outcome %}
 {% from "marine/_macros.html" import state_badge, health, asset_tabs %}
 {% block title %}MarineTwin{% endblock %}
 
@@ -10,6 +11,7 @@
     <h1>MarineTwin</h1>
     <p class="small muted" style="margin-top:2px">Our structures after handover: how each is standing up against its Triton design, and what to do. Pick one to start.</p>
   </div>
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('marine.controls') }}" title="Every CDT-SDK control MarineTwin uses, working">Controls</a>
 </div>
 
 {{ asset_tabs() }}
@@ -29,7 +31,9 @@
   <div class="card-head"><div><h2>Assets</h2></div></div>
   <div class="card-body">
     {% if not assets %}
-      {{ empty('No assets yet', 'Add one under Add an asset, or start with the demonstration berth to see the twin working.') }}
+      {% call empty_state('No assets yet', 'Add a quay, a jetty or a breakwater, or start with the demonstration berth to see the twin working.', 'ship') %}
+        <form method="post" action="{{ url_for('marine.demo') }}"><button type="submit" class="btn btn-primary">Set up the demonstration berth</button></form>
+      {% endcall %}
     {% else %}
     <div class="table-scroll">
       <table class="table">

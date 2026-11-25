@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "cdt/_kit.html" import utilization, info_bar, empty_state, outcome, status_dot, info_tip, dropdown, properties, busy, skeleton, kbd, filter_chips %}
+{% from "marine/_macros.html" import asset_tabs %}
+{% block title %}Controls · MarineTwin — AHM{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="{{ url_for('marine.index') }}">MarineTwin</a> /</p>
+    <h1>Controls</h1>
+    <p class="small muted" style="margin-top:2px">Every CDT-SDK control MarineTwin uses, working, in the Dar palette. Switch the theme at the top to see it dark.
+      Each card names the SDK control it carries over.</p>
+  </div>
+</div>
+
+{{ asset_tabs() }}
+
+{{ filter_chips('#kit', [('input', 'Inputs'), ('status', 'Status'), ('action', 'Actions'), ('layout', 'Layout')]) }}
+
+<div class="cdt-kit" id="kit" style="margin-top:12px">
+
+  <div class="card" data-chip="input"><div class="card-head"><div><h2>NumberBox</h2><p class="cdt-kit-name">cdt:NumberBox · Unit, Minimum, Step</p></div></div>
+    <div class="card-body">
+      <label class="field"><span class="field-label">Pile wall (mm)</span><input type="number" step="0.1" min="0" max="100" value="16"></label>
+      <label class="field"><span class="field-label">Wind limit (m/s)</span><input type="number" step="1" value="20"></label>
+      <p class="small muted">Type a sum or another unit: <code>6000/4 + 25</code>, <code>0.25 in</code>, <code>40 kn</code>. {{ kbd('↑') }} {{ kbd('↓') }} step it, {{ kbd('PgUp') }} by ten, {{ kbd('Esc') }} puts it back.</p>
+    </div></div>
+
+  <div class="card" data-chip="input"><div class="card-head"><div><h2>SearchableComboBox</h2><p class="cdt-kit-name">cdt:SearchableComboBox</p></div></div>
+    <div class="card-body">
+      <label class="field"><span class="field-label">Element type</span>
+        <select>{% for k, n in element_kinds %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="field-label">Sensor</span>
+        <select data-cdt="search">{% for k, v in sensor_kinds.items() %}<option value="{{ k }}">{{ v['name'] }} ({{ v['unit'] }})</option>{% endfor %}</select></label>
+      <p class="small muted">Words in any order, spaces and case ignored; the matched letters light up.</p>
+    </div></div>
+
+  <div class="card" data-chip="input"><div class="card-head"><div><h2>CheckComboBox and TokenBox</h2><p class="cdt-kit-name">cdt:CheckComboBox · cdt:TokenBox</p></div></div>
+    <div class="card-body">
+      <label class="field"><span class="field-label">Zones</span>
+        <select multiple data-placeholder="No zone">{% for k, n in zones %}<option value="{{ k }}" {{ 'selected' if loop.index < 3 }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="field-label">Materials</span>
+        <select multiple data-cdt="tokens" data-placeholder="Add a material">{% for k, n in materials %}<option value="{{ k }}" {{ 'selected' if loop.first }}>{{ n }}</option>{% endfor %}</select></label>
+    </div></div>
+
+  <div class="card" data-chip="input"><div class="card-head"><div><h2>PathBox</h2><p class="cdt-kit-name">cdt:PathBox · Filter</p></div></div>
+    <div class="card-body">
+      <input type="file" accept=".ifc,.glb,.gltf">
+      <p class="small muted">Click to browse or drop a file on it. A file of the wrong kind is refused with the reason, before anything is sent.</p>
+    </div></div>
+
+  <div class="card" data-chip="input"><div class="card-head"><div><h2>Toggles</h2><p class="cdt-kit-name">CDT.ToggleSwitch · CDT.CheckBox · CDT.RadioButton</p></div></div>
+    <div class="card-body">
+      <label class="small"><input type="checkbox" class="cdt-switch" checked> Simulate the sensor</label>
+      <label class="small"><input type="checkbox" checked> Fenders</label>
+      <div class="cdt-row small"><label><input type="radio" name="kit-r" checked> BS 6349</label><label><input type="radio" name="kit-r"> EN 1993-5</label></div>
+    </div></div>
+
+  <div class="card" data-chip="status"><div class="card-head"><div><h2>UtilizationBar</h2><p class="cdt-kit-name">cdt:UtilizationBar · Ratio, Limit, WarningRatio</p></div></div>
+    <div class="card-body">
+      {{ utilization(0.62, label='MP1-DS03-01, design') }}
+      {{ utilization(0.94, label='MP1-DS03-01, end of life') }}
+      {{ utilization(1.08, label='RP2-DS01-04, end of life') }}
+      {{ utilization(none, label='F2, no rating') }}
+    </div></div>
+
+  <div class="card" data-chip="status"><div class="card-head"><div><h2>InfoBar</h2><p class="cdt-kit-name">cdt:InfoBar · Severity, Title, AutoCloseAfter</p></div></div>
+    <div class="card-body">
+      {{ info_bar('info', 'Simulated', 'These sensors are simulated until real readings arrive.') }}
+      {{ info_bar('success', 'Saved', 'The calibration is in; the readings were worked out again.') }}
+      {{ info_bar('warning', 'Silent', 'MP1-SG2 has sent nothing for 3 days.') }}
+      {{ info_bar('error', 'Over capacity', 'F2 took 103% of its rated reaction.') }}
+      <button type="button" class="cdt-btn sm" onclick="CDT.toast('success', 'Done', 'A toast closes itself; hover to keep it.')">Show a toast</button>
+    </div></div>
+
+  <div class="card" data-chip="status"><div class="card-head"><div><h2>OutcomeLabel, StatusDot, Badge</h2><p class="cdt-kit-name">CDT.OutcomeLabel · CDT.StatusDot · CDT.Chip</p></div></div>
+    <div class="card-body">
+      <div class="cdt-row">{{ outcome('good', 'Good') }} {{ outcome('warning', 'Watch') }} {{ outcome('critical', 'Act') }} {{ outcome('neutral', 'No data') }}</div>
+      <div class="cdt-row small">{{ status_dot('ok', 'Logger online') }} {{ status_dot('warn', 'Connecting') }} {{ status_dot('error', 'Offline') }} {{ status_dot('available', 'Spare') }}</div>
+      <div class="cdt-row"><span class="cdt-chip plain">Quay 1</span><span class="cdt-pill">New</span><span class="cdt-pill">Beta</span></div>
+    </div></div>
+
+  <div class="card" data-chip="status"><div class="card-head"><div><h2>BusyDots, Skeleton, ProgressBar</h2><p class="cdt-kit-name">cdt:BusyDots · CDT.Skeleton · CDT.ProgressBar</p></div></div>
+    <div class="card-body">
+      <div class="cdt-row small">{{ busy() }} Reading the model</div>
+      {{ skeleton(14, '70%') }}{{ skeleton(14, '45%') }}
+      <div class="cdt-progress"><i style="width:64%"></i></div>
+    </div></div>
+
+  <div class="card" data-chip="action"><div class="card-head"><div><h2>Buttons</h2><p class="cdt-kit-name">CDT.PrimaryButton · Secondary · Ghost · Soft · Muted · Link · Danger</p></div></div>
+    <div class="card-body">
+      <div class="cdt-row"><button class="btn btn-primary" type="button">Primary</button><button class="btn" type="button">Secondary</button><button class="btn btn-ghost" type="button">Ghost</button></div>
+      <div class="cdt-row"><button class="cdt-btn soft" type="button">Soft</button><button class="cdt-btn muted" type="button">Muted</button><button class="cdt-btn success" type="button">Success</button><button class="cdt-btn warning" type="button">Warning</button></div>
+      <div class="cdt-row"><button class="btn btn-danger" type="button">Remove</button><button class="cdt-btn danger" type="button">Delete</button><button class="cdt-btn link" type="button">A link</button><button class="btn" type="button" disabled>Disabled</button></div>
+    </div></div>
+
+  <div class="card" data-chip="action"><div class="card-head"><div><h2>DropDownButton and DialogHost</h2><p class="cdt-kit-name">cdt:DropDownButton · cdt:DialogHost</p></div></div>
+    <div class="card-body">
+      <div class="cdt-row">
+        {{ dropdown('Export', [('Sensors as CSV', '#', '⇩'), ('Sensors as Excel', '#', '⇩'), '-', ('Print this page', 'javascript:print()', '⎙')]) }}
+        <button type="button" class="btn btn-danger" onclick="CDT.confirm({title: 'Remove this sensor and its readings?', ok: 'Remove', danger: true}).then(y => y && CDT.toast('info', 'Kept', 'This page only shows the dialog; nothing was removed.'))">Remove a sensor</button>
+      </div>
+      <p class="small muted">Every “are you sure?” in MarineTwin now asks in this dialog: {{ kbd('Esc') }} or a click outside says no.</p>
+    </div></div>
+
+  <div class="card" data-chip="layout"><div class="card-head"><div><h2>EmptyState</h2><p class="cdt-kit-name">cdt:EmptyState · Glyph, Title, Message</p></div></div>
+    <div class="card-body">
+      {% call empty_state('No sensors on this element', 'Add one under Sensors and details; a simulated one starts with a history up to today.', 'sensor') %}
+        <button type="button" class="btn btn-primary btn-sm">Add a sensor</button>
+      {% endcall %}
+    </div></div>
+
+  <div class="card" data-chip="layout"><div class="card-head"><div><h2>PropertyList and InfoTip</h2><p class="cdt-kit-name">CDT.PropertyList · cdt:InfoTip</p></div></div>
+    <div class="card-body">
+      {{ properties([('Type', 'Steel tube pile'), ('Wall', '16.0 mm'), ('Zone', 'Splash'), ('Corrosion allowance', '3.40 mm per face'), ('Model reference', none)]) }}
+      <p class="small">Thin-wall rescaling {{ info_tip('UR at end of life = design UR × t / (t − 2·loss): the wall thins from both faces.') }}</p>
+    </div></div>
+
+  <div class="card" data-chip="layout" style="grid-column:1 / -1"><div class="card-head"><div><h2>DataGrid with DataGridFilter</h2><p class="cdt-kit-name">CDT.DataGrid · DataGridFilter.IsEnabled</p></div></div>
+    <div class="card-body">
+      <div class="table-scroll"><table class="table">
+        <thead><tr><th>Element</th><th>Type</th><th>Zone</th><th class="right">Design UR</th><th>Condition</th></tr></thead>
+        <tbody>
+          {% for name, kind, zone, u, st in [('MP1-DS03-01', 'Pile', 'Splash', 0.71, 'good'), ('MP1-DS03-02', 'Pile', 'Splash', 0.93, 'warning'),
+              ('RP1-DS01-01', 'Pile', 'Tidal', 0.66, 'good'), ('RP1-DS01-02', 'Pile', 'Tidal', 1.04, 'critical'), ('FKS-DS02-01', 'King pile', 'Submerged', 0.58, 'good'),
+              ('SPW-01', 'Sheet pile wall', 'Buried', 0.49, 'good'), ('F1', 'Fender', 'Splash', 0.88, 'good'), ('F2', 'Fender', 'Splash', 1.03, 'critical')] %}
+          <tr><td>{{ name }}</td><td>{{ kind }}</td><td>{{ zone }}</td><td class="right" data-sort="{{ u }}">{{ utilization(u) }}</td>
+            <td>{{ outcome(st, {'good': 'Good', 'warning': 'Watch', 'critical': 'Act'}[st]) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <p class="small muted" style="margin-top:8px">Click a heading to sort; its funnel filters on the column's values. Every MarineTwin table with six rows or more does this.</p>
+    </div></div>
+</div>
+{% endblock %}

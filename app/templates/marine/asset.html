@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty, badge %}
+{% from "cdt/_kit.html" import empty_state, utilization, info_tip, dropdown, properties, status_dot, outcome %}
 {% from "marine/_macros.html" import state_badge, health, ur, asset_tabs %}
 {% block title %}{{ asset['name'] }} · MarineTwin{% endblock %}
 
@@ -123,8 +124,9 @@
   <div class="card-head"><div><h2>Elements</h2></div></div>
   <div class="card-body">
     {% if not twin['elements'] %}
-      {{ empty('No elements yet', 'Import them from the Revit model, or add them one by one, in Set up.') }}
-      <p><a class="btn btn-primary" href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Go to Set up</a></p>
+      {% call empty_state('No elements yet', 'Import them from the Revit model, or add them one by one, in Set up.', 'model') %}
+        <a class="btn btn-primary" href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Go to Set up</a>
+      {% endcall %}
     {% else %}
     {% set quiet = twin['elements'] | rejectattr('sensors') | selectattr('state', 'equalto', 'neutral') | list | length %}
     {% set many = twin['elements'] | length > 300 and quiet and not request.args.get('all') %}

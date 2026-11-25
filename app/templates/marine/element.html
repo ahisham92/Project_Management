@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty %}
+{% from "cdt/_kit.html" import empty_state, utilization, info_tip, dropdown, properties, status_dot, outcome %}
 {% from "marine/_macros.html" import state_badge, health, ur, asset_tabs %}
 {% from "marine/_photos.html" import gallery %}
 {% block title %}{{ element['name'] }} · {{ asset['name'] }} · MarineTwin{% endblock %}
@@ -36,13 +37,14 @@
             short_date(inspection[0]['latest_at']) if inspection and inspection[0]['latest_at'] else 'none recorded') }}
     {{ tile('Sensors', mine['sensors'] | length, 'readings and inspections') }}
   {% else %}
-  {{ tile('Design UR', '%.2f' | format(mine['design_ur']) if mine['design_ur'] is not none else '—',
-          'from Triton' if mine['design_from'] == 'Triton' else ('typed in' if mine['design_from'] else 'not known yet')) }}
-  {{ tile('UR at end of life',
+  {% call tile('Design UR', '%.2f' | format(mine['design_ur']) if mine['design_ur'] is not none else '—',
+          'from Triton' if mine['design_from'] == 'Triton' else ('typed in' if mine['design_from'] else 'not known yet')) %}{{ ur(mine['design_ur']) }}{% endcall %}
+  {% call tile('UR at end of life',
           ('no section left' if mine['ur_at_life'] > 1e9 else '%.2f' | format(mine['ur_at_life'])) if mine['ur_at_life'] is not none else '—',
           'design UR with the projected section loss',
           'critical' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else 'neutral',
-          'over capacity' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else '') }}
+          'over capacity' if mine['ur_at_life'] is not none and mine['ur_at_life'] > 1 else '') %}{{ ur(mine['ur_at_life']) }}
+          {{ info_tip('The design UR rescaled for the corrosion projected at the end of the design life: the wall thins from both faces (thin-wall approximation).') }}{% endcall %}
   {{ tile('Corrosion allowance', ('%.2f mm' | format(mine['allowance'])) if mine['allowance'] else '—',
           ('per face over ' ~ life ~ ' years') if mine['allowance'] else 'not steel, or not exposed') }}
   {% endif %}
@@ -74,7 +76,7 @@
       {% endif %}
     </div>
     <form method="post" action="{{ url_for('marine.delete_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"
-          onsubmit="return confirm('Remove this sensor and its readings?')">
+          data-confirm="Remove this sensor and its readings?">
       <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
     </form>
   </div>
@@ -87,9 +89,9 @@
     {% if s['kind'] != 'inspection' %}
     <form method="post" action="{{ url_for('marine.calibrate_sensor', asset_id=asset['id'], sensor_id=s['id']) }}"
           class="inline-form" style="flex-wrap:wrap;align-items:flex-end;margin-top:8px">
-      <label class="field w-md"><span class="field-label" title="The raw reading at installation, taken off every reading">Zero</span>
+      <label class="field w-md"><span class="field-label">Zero {{ info_tip('The raw reading at installation, taken off every reading.') }}</span>
         <input type="number" name="zero" step="any" value="{{ '%g' | format(s['zero']) }}"></label>
-      <label class="field w-md"><span class="field-label" title="The gauge factor from its calibration certificate, multiplied in after the zero">Factor</span>
+      <label class="field w-md"><span class="field-label">Factor {{ info_tip('The gauge factor from its calibration certificate, multiplied in after the zero.') }}</span>
         <input type="number" name="factor" step="any" value="{{ '%g' | format(s['factor']) }}"></label>
       <button type="submit" class="btn btn-ghost btn-sm">Save calibration</button>
       <span class="small muted">Reading = (what the logger sends − zero) × factor.{% if not s['simulated'] %} Saving works out its real readings again.{% endif %}</span>
@@ -108,7 +110,7 @@
 </div>
 {% else %}
 <div class="card" style="margin-top:16px"><div class="card-body">
-  {{ empty('No sensors on this element', 'Add one under Sensors and details; a simulated one starts with a history up to today.') }}
+  {{ empty_state('No sensors on this element', 'Add one under Sensors and details; a simulated one starts with a history up to today.', 'sensor') }}
 </div></div>
 {% endfor %}
 
@@ -173,6 +175,11 @@
   <div class="card">
     <div class="card-head"><div><h2>The element</h2></div></div>
     <div class="card-body">
+      {{ properties([('Type', element_kind_name.get(element['kind'])), ('Material', element['material']), ('Zone', zone_name.get(element['zone'])),
+                     ('Steel wall', ('%g mm' | format(element['wall_mm'])) if element['wall_mm'] else none),
+                     ('Design UR', ('%.2f' | format(element['design_ur'])) if element['design_ur'] is not none else 'from Triton'),
+                     ('Model reference', element['model_ref']), ('Position', '%g, %g, %g m' | format(element['x'] or 0, element['y'] or 0, element['z'] or 0))]) }}
+      <details class="mt-more" style="margin-top:10px"><summary>Change it</summary>
       <form method="post" action="{{ url_for('marine.edit_element', asset_id=asset['id'], element_id=element['id']) }}" class="inline-form" style="flex-wrap:wrap;align-items:flex-end">
         <label class="field w-lg"><span class="field-label">Type</span>
           <select name="kind">{% for k, n in element_kinds %}<option value="{{ k }}" {{ 'selected' if k == element['kind'] }}>{{ n }}</option>{% endfor %}</select></label>
@@ -189,8 +196,9 @@
         <label class="field w-sm"><span class="field-label">z</span><input type="number" step="0.1" name="z" value="{{ element['z'] }}"></label>
         <button type="submit" class="btn btn-primary">Save</button>
       </form>
+      </details>
       <form method="post" action="{{ url_for('marine.delete_element', asset_id=asset['id'], element_id=element['id']) }}" style="margin-top:12px"
-            onsubmit="return confirm('Remove this element, its sensors and their readings?')">
+            data-confirm="Remove this element, its sensors and their readings?">
         <button type="submit" class="btn btn-danger btn-sm">Remove this element</button>
       </form>
     </div>

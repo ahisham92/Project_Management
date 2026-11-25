@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
+{% from "cdt/_kit.html" import dropdown, info_tip, utilization %}
 {% from "marine/_macros.html" import asset_tabs, page_head %}
 {% block title %}{{ asset['name'] }} · Sensors plan · MarineTwin{% endblock %}
 
@@ -185,8 +186,8 @@
   <div class="card-head"><div><h2>The sensors on their own</h2>
     <p class="small muted" style="margin-top:2px">A small file with only the planned sensors instead of the whole model: each at its host element's position, with its tag, kind, product, host and how it is installed.</p></div></div>
   <div class="card-body">
-    <p><a class="btn" href="{{ url_for('marine.plan_export', asset_id=asset['id'], fmt='ifc') }}">Sensors as IFC</a>
-       <a class="btn btn-ghost" href="{{ url_for('marine.plan_export', asset_id=asset['id'], fmt='csv') }}">Sensors as CSV</a></p>
+    <p>{{ dropdown('Download the sensors', [('Sensors as IFC, to link in Revit', url_for('marine.plan_export', asset_id=asset['id'], fmt='ifc'), '⬡'),
+                                            ('Sensors as CSV, for a schedule', url_for('marine.plan_export', asset_id=asset['id'], fmt='csv'), '▤')], 'primary') }}</p>
     <ul class="small" style="margin-top:8px">
       <li><strong>IFC</strong>: every sensor an IfcSensor with an MT_Sensor property set, in the same coordinates as the model it came from. In Revit, Insert, Link IFC, and it sits on the model; in Navisworks or any IFC viewer, append it.</li>
       <li><strong>CSV</strong>: one line per sensor with its tag, host element and GlobalId and position, for a schedule, a logger's channel list, or readings: put the tag in the first column of a readings file and import it under Set up, Sensor readings.</li>

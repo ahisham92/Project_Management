@@ -1,0 +1,480 @@
+/* CDT for the web: the CDT-SDK's look and controls (github.com/Dar-Structural-Computational-Design/CDT-SDK,
+ * CDT.Wpf) carried over to HTML, for MarineTwin.
+ *
+ * The SDK is WPF, so it cannot run in a browser. This file ports what a page needs from it:
+ *   - the Dar palettes (Palette.Dar.Light.xaml / Palette.Dar.Dark.xaml), as CSS custom properties with the
+ *     same role names (surface 0-3, stroke, accent ladder, semantic ladder, text 0-3), following the site's
+ *     light / dark / auto switch;
+ *   - the style catalog (Styles.xaml): buttons (primary, secondary, ghost, soft, muted, link, icon), inputs,
+ *     cards, notice and error cards, chips, badges as OutcomeLabels, segmented tracks, tabs, data grid,
+ *     status dots, progress, skeleton, kbd, property list, toggle switch;
+ *   - the controls (Controls/*.cs): StepIndicator, InfoBar, EmptyState, UtilizationBar, NumberBox,
+ *     SearchableComboBox, CheckComboBox, TokenBox, DropDownButton, InfoTip, DialogHost, PathBox, BusyDots and
+ *     DataGridFilter. Their behaviour is in cdt.js; their markup helpers in templates/cdt/_kit.html.
+ *
+ * Everything is scoped to body.cdt, so the other apps on the site keep their own look.
+ * Every state (rest, hover, pressed, disabled, focus) uses palette colours, never opacity, as in the SDK. */
+
+/* --- tokens: Dar light ---------------------------------------------------- */
+body.cdt {
+  --cdt-s0: #f2f0e8; --cdt-s1: #fbfaf6; --cdt-s2: #ffffff; --cdt-s3: #e7e4da; --cdt-sidebar: #edeae1;
+  --cdt-stroke: #ded9cc; --cdt-stroke-strong: #bfb9a9;
+  --cdt-accent: #147165; --cdt-accent-hover: #115e54; --cdt-accent-pressed: #0d4a42;
+  --cdt-accent-subtle: rgba(20, 113, 101, .2); --cdt-accent-bright: #1fae9b; --cdt-focus: #147165;
+  --cdt-accent-soft: #e3eeed; --cdt-accent-soft-pressed: #d5e5e3; --cdt-accent-wash: #f3f8f7; --cdt-accent-strong: #0c463e;
+  --cdt-on-accent: #ffffff;
+  --cdt-success: #207410; --cdt-success-hover: #1a600d; --cdt-success-soft: #e9f1e7; --cdt-success-soft-pressed: #d7e6d4; --cdt-success-strong: #14470a;
+  --cdt-warning: #8d5918; --cdt-warning-hover: #794d15; --cdt-warning-soft: #f4eee8; --cdt-warning-soft-pressed: #eae1d5; --cdt-warning-strong: #613d11;
+  --cdt-danger: #c42020; --cdt-danger-hover: #b01d1d; --cdt-danger-soft: #fdf3f3; --cdt-danger-soft-border: #f0d5d5; --cdt-danger-soft-pressed: #f4d7d7; --cdt-danger-strong: #981919;
+  --cdt-text0: #1e1d1a; --cdt-text1: #3c3b36; --cdt-text2: #67645c; --cdt-text3: #98948a;
+  --cdt-row-selected: rgba(20, 113, 101, .25); --cdt-selection: rgba(31, 174, 155, .2);
+  --cdt-scrim: rgba(30, 29, 26, .44);
+  --cdt-glow: 0 4px 14px rgba(30, 29, 26, .18);
+  --cdt-shadow-popup: 0 10px 30px rgba(30, 29, 26, .18), 0 2px 6px rgba(30, 29, 26, .08);
+  --cdt-logo: #32dac4;
+  /* fills that must read as a light (a dot, a bar) take the brighter step */
+  --cdt-fill-good: #2f9a1c; --cdt-fill-warning: #e08a1e; --cdt-fill-danger: #d63a3a;
+
+  --cdt-font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --cdt-display: "Segoe UI Variable Display", Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --cdt-mono: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace;
+  --cdt-r: 6px; --cdt-r-card: 10px;
+}
+
+/* --- tokens: Dar dark (the site's dark switch, or the system's when on Auto) --- */
+:root[data-theme="dark"] body.cdt {
+  --cdt-s0: #1b1b19; --cdt-s1: #232321; --cdt-s2: #2a2a27; --cdt-s3: #323230; --cdt-sidebar: #1f1f1d;
+  --cdt-stroke: #353532; --cdt-stroke-strong: #4a4a46;
+  --cdt-accent: #32dac4; --cdt-accent-hover: #24c9b4; --cdt-accent-pressed: #20af9c;
+  --cdt-accent-subtle: rgba(50, 218, 196, .2); --cdt-accent-bright: #6ee5d5; --cdt-focus: #6ee5d5;
+  --cdt-accent-soft: #243531; --cdt-accent-soft-pressed: #264b45; --cdt-accent-wash: #1d2825; --cdt-accent-strong: #5de2d0;
+  --cdt-on-accent: #1b1b19;
+  --cdt-success: #6bde4a; --cdt-success-hover: #5fdb3b; --cdt-success-soft: #2c3926; --cdt-success-soft-pressed: #334c2a; --cdt-success-strong: #8ee675;
+  --cdt-warning: #fb9b24; --cdt-warning-hover: #fb9312; --cdt-warning-soft: #3d3121; --cdt-warning-soft-pressed: #533d22; --cdt-warning-strong: #fcb256;
+  --cdt-danger: #f87171; --cdt-danger-hover: #f76060; --cdt-danger-soft: #332321; --cdt-danger-soft-border: #5e3735; --cdt-danger-soft-pressed: #523433; --cdt-danger-strong: #faa2a2;
+  --cdt-text0: #f2efe9; --cdt-text1: #d6d2ca; --cdt-text2: #9f9b92; --cdt-text3: #6e6a62;
+  --cdt-row-selected: rgba(50, 218, 196, .25); --cdt-selection: rgba(180, 241, 233, .2);
+  --cdt-scrim: rgba(12, 12, 11, .72);
+  --cdt-glow: 0 0 0 1px rgba(50, 218, 196, .25), 0 0 18px rgba(50, 218, 196, .35);
+  --cdt-shadow-popup: 0 12px 34px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  --cdt-fill-good: #6bde4a; --cdt-fill-warning: #fb9b24; --cdt-fill-danger: #f87171;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.cdt {
+    --cdt-s0: #1b1b19; --cdt-s1: #232321; --cdt-s2: #2a2a27; --cdt-s3: #323230; --cdt-sidebar: #1f1f1d;
+    --cdt-stroke: #353532; --cdt-stroke-strong: #4a4a46;
+    --cdt-accent: #32dac4; --cdt-accent-hover: #24c9b4; --cdt-accent-pressed: #20af9c;
+    --cdt-accent-subtle: rgba(50, 218, 196, .2); --cdt-accent-bright: #6ee5d5; --cdt-focus: #6ee5d5;
+    --cdt-accent-soft: #243531; --cdt-accent-soft-pressed: #264b45; --cdt-accent-wash: #1d2825; --cdt-accent-strong: #5de2d0;
+    --cdt-on-accent: #1b1b19;
+    --cdt-success: #6bde4a; --cdt-success-hover: #5fdb3b; --cdt-success-soft: #2c3926; --cdt-success-soft-pressed: #334c2a; --cdt-success-strong: #8ee675;
+    --cdt-warning: #fb9b24; --cdt-warning-hover: #fb9312; --cdt-warning-soft: #3d3121; --cdt-warning-soft-pressed: #533d22; --cdt-warning-strong: #fcb256;
+    --cdt-danger: #f87171; --cdt-danger-hover: #f76060; --cdt-danger-soft: #332321; --cdt-danger-soft-border: #5e3735; --cdt-danger-soft-pressed: #523433; --cdt-danger-strong: #faa2a2;
+    --cdt-text0: #f2efe9; --cdt-text1: #d6d2ca; --cdt-text2: #9f9b92; --cdt-text3: #6e6a62;
+    --cdt-row-selected: rgba(50, 218, 196, .25); --cdt-selection: rgba(180, 241, 233, .2);
+    --cdt-scrim: rgba(12, 12, 11, .72);
+    --cdt-glow: 0 0 0 1px rgba(50, 218, 196, .25), 0 0 18px rgba(50, 218, 196, .35);
+    --cdt-shadow-popup: 0 12px 34px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+    --cdt-fill-good: #6bde4a; --cdt-fill-warning: #fb9b24; --cdt-fill-danger: #f87171;
+  }
+}
+
+/* --- the site's own tokens, pointed at the Dar roles ------------------------
+   Every MarineTwin stylesheet and the server-drawn charts read these, so the whole tab takes the palette. */
+body.cdt {
+  --plane: var(--cdt-s0); --surface: var(--cdt-s1); --raised: var(--cdt-s2); --surface-2: var(--cdt-s3);
+  --ink: var(--cdt-text0); --ink-2: var(--cdt-text1); --muted: var(--cdt-text2);
+  --grid: var(--cdt-stroke); --axis: var(--cdt-stroke-strong); --border: var(--cdt-stroke);
+  --series-1: var(--cdt-accent);
+  --good: var(--cdt-fill-good); --good-ink: var(--cdt-success); --warning: var(--cdt-fill-warning);
+  --serious: var(--cdt-fill-warning); --critical: var(--cdt-danger);
+  --tint-good: var(--cdt-success-soft); --tint-warning: var(--cdt-warning-soft);
+  --tint-serious: var(--cdt-warning-soft); --tint-critical: var(--cdt-danger-soft);
+  --accent: var(--cdt-accent); --accent-soft: var(--cdt-accent-soft);
+  background: var(--cdt-s0); color: var(--cdt-text1);
+  font-family: var(--cdt-font); font-size: 13px;
+}
+body.cdt ::selection { background: var(--cdt-selection); }
+body.cdt a { color: var(--cdt-accent); text-underline-offset: 2px; }
+body.cdt a:hover { color: var(--cdt-accent-hover); }
+body.cdt h1 { font-family: var(--cdt-display); font-size: 22px; font-weight: 600; color: var(--cdt-text0); letter-spacing: -.01em; }
+body.cdt h2 { font-family: var(--cdt-display); font-size: 14px; font-weight: 600; color: var(--cdt-text0); }
+body.cdt h3 { color: var(--cdt-text0); }
+body.cdt .muted { color: var(--cdt-text2); }
+body.cdt .state-good { color: var(--cdt-success); }
+body.cdt .state-warning, body.cdt .state-serious { color: var(--cdt-warning); }
+body.cdt .state-critical { color: var(--cdt-danger); }
+body.cdt .state-neutral { color: var(--cdt-text2); }
+
+/* the top bar: the Dar sidebar tone, the AHM mark in Dar teal */
+body.cdt .topbar { background: var(--cdt-sidebar); border-bottom-color: var(--cdt-stroke); }
+body.cdt .brand-mark { background: var(--cdt-accent); color: var(--cdt-on-accent); }
+
+/* focus: CDT.FocusVisual, keyboard only */
+body.cdt :focus { outline: none; }
+body.cdt :focus-visible { outline: 2px solid var(--cdt-focus); outline-offset: 2px; border-radius: 4px; }
+
+/* slim scrollbars */
+body.cdt * { scrollbar-width: thin; scrollbar-color: var(--cdt-stroke-strong) transparent; }
+
+/* --- text styles: CDT.SectionLabel, CDT.StatLabel / StatNumber, CDT.Kbd ---- */
+.cdt-section-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--cdt-text2); }
+.cdt-kbd { display: inline-block; min-width: 18px; padding: 1px 5px; font: 11px/16px var(--cdt-mono); text-align: center;
+  color: var(--cdt-text1); background: var(--cdt-s2); border: 1px solid var(--cdt-stroke-strong); border-bottom-width: 2px; border-radius: 4px; }
+body.cdt code, .cdt-code { font-family: var(--cdt-mono); font-size: 12px; background: var(--cdt-s3); border-radius: 4px; padding: 1px 4px; }
+
+/* --- cards: CDT.Card, CDT.InnerCard, CDT.NoticeCard, CDT.ErrorCard ---------- */
+body.cdt .card { background: var(--cdt-s1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r-card); }
+body.cdt .card-head { border-bottom-color: var(--cdt-stroke); padding: 12px 16px; }
+body.cdt .card-foot { border-top-color: var(--cdt-stroke); }
+.cdt-inner { background: var(--cdt-s2); border: 1px solid var(--cdt-stroke); border-radius: 8px; padding: 12px; }
+.cdt-notice { background: var(--cdt-accent-wash); border: 1px solid var(--cdt-accent); border-radius: 8px; padding: 10px 12px; color: var(--cdt-text1); }
+.cdt-error-card { background: var(--cdt-danger-soft); border: 1px solid var(--cdt-danger-soft-border); border-radius: 8px; padding: 10px 12px; color: var(--cdt-danger); }
+
+/* the headline tiles: CDT.StatLabel over CDT.StatNumber */
+body.cdt .tile { background: var(--cdt-s1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r-card); position: relative; overflow: hidden; }
+body.cdt .tile-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--cdt-text2); }
+body.cdt .tile-value { font-family: var(--cdt-display); font-weight: 600; color: var(--cdt-text0); font-variant-numeric: tabular-nums; }
+body.cdt .tile:has(.state-critical)::before, body.cdt .tile:has(.state-warning)::before, body.cdt .tile:has(.state-good)::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--cdt-fill-good); }
+body.cdt .tile:has(.state-warning)::before { background: var(--cdt-fill-warning); }
+body.cdt .tile:has(.state-critical)::before { background: var(--cdt-fill-danger); }
+
+/* --- buttons --------------------------------------------------------------- */
+body.cdt .btn, .cdt-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px;
+  padding: 6px 14px; font: 500 13px/1.2 var(--cdt-font); border-radius: var(--cdt-r);
+  border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-s2); color: var(--cdt-text0);
+  cursor: pointer; text-decoration: none; transition: background .12s, border-color .12s, box-shadow .15s, color .12s;
+}
+/* CDT.SecondaryButton (outlined) is the default; hover Surface3, pressed AccentSoft */
+body.cdt .btn:hover, .cdt-btn:hover { background: var(--cdt-s3); color: var(--cdt-text0); }
+body.cdt .btn:active, .cdt-btn:active { background: var(--cdt-accent-soft); }
+/* CDT.PrimaryButton: accent fill, a halo on hover */
+body.cdt .btn-primary, .cdt-btn.primary { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
+body.cdt .btn-primary:hover, .cdt-btn.primary:hover { background: var(--cdt-accent-hover); border-color: var(--cdt-accent-hover); color: var(--cdt-on-accent); box-shadow: var(--cdt-glow); filter: none; }
+body.cdt .btn-primary:active, .cdt-btn.primary:active { background: var(--cdt-accent-pressed); border-color: var(--cdt-accent-pressed); }
+/* CDT.GhostButton: borderless */
+body.cdt .btn-ghost, .cdt-btn.ghost { background: transparent; border-color: var(--cdt-stroke); color: var(--cdt-text1); }
+body.cdt .btn-ghost:hover, .cdt-btn.ghost:hover { background: var(--cdt-s3); color: var(--cdt-text0); }
+body.cdt .btn-ghost:active, .cdt-btn.ghost:active { background: var(--cdt-accent-soft); }
+.cdt-btn.borderless { border-color: transparent; background: transparent; }
+/* CDT.SoftDangerButton: outlined, tinted on hover */
+body.cdt .btn-danger, .cdt-btn.soft-danger { background: transparent; border-color: var(--cdt-danger); color: var(--cdt-danger); }
+body.cdt .btn-danger:hover, .cdt-btn.soft-danger:hover { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+body.cdt .btn-danger:active, .cdt-btn.soft-danger:active { background: var(--cdt-danger-soft-pressed); }
+.cdt-btn.soft { background: transparent; border-color: var(--cdt-accent); color: var(--cdt-accent); }
+.cdt-btn.soft:hover { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+.cdt-btn.soft:active { background: var(--cdt-accent-soft-pressed); }
+.cdt-btn.muted { background: var(--cdt-s2); border-color: var(--cdt-stroke); color: var(--cdt-accent); }
+.cdt-btn.muted:hover { background: var(--cdt-s3); border-color: var(--cdt-stroke-strong); color: var(--cdt-accent); }
+.cdt-btn.success { background: var(--cdt-success); border-color: var(--cdt-success); color: var(--cdt-on-accent); }
+.cdt-btn.success:hover { background: var(--cdt-success-hover); color: var(--cdt-on-accent); }
+.cdt-btn.warning { background: var(--cdt-warning); border-color: var(--cdt-warning); color: var(--cdt-on-accent); }
+.cdt-btn.warning:hover { background: var(--cdt-warning-hover); color: var(--cdt-on-accent); }
+.cdt-btn.danger { background: var(--cdt-danger); border-color: var(--cdt-danger); color: #fff; }
+.cdt-btn.danger:hover { background: var(--cdt-danger-hover); color: #fff; }
+/* CDT.LinkButton */
+body.cdt .link-button, .cdt-btn.link { background: none; border: 0; padding: 0; min-height: 0; color: var(--cdt-accent); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+body.cdt .link-button:hover { color: var(--cdt-accent-hover); }
+/* CDT.IconButton: square, borderless; its name comes from aria-label */
+.cdt-btn.icon { min-width: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--cdt-text2); }
+.cdt-btn.icon:hover { background: var(--cdt-s3); color: var(--cdt-text0); }
+body.cdt .btn-sm, .cdt-btn.sm { min-height: 26px; padding: 3px 10px; font-size: 12px; }
+body.cdt .btn:disabled, .cdt-btn:disabled { background: var(--cdt-s3); border-color: var(--cdt-stroke); color: var(--cdt-text3); box-shadow: none; cursor: not-allowed; opacity: 1; }
+
+/* --- inputs: Stroke → StrokeStrong (hover) → Accent (focus) → Danger (error) --- */
+body.cdt input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), body.cdt select, body.cdt textarea {
+  background: var(--cdt-s2); color: var(--cdt-text0); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r);
+  min-height: 32px; padding: 6px 10px; font: 13px/1.3 var(--cdt-font); transition: border-color .12s, box-shadow .12s;
+}
+body.cdt input:not([type=checkbox]):not([type=radio]):not([type=file]):hover, body.cdt select:hover, body.cdt textarea:hover { border-color: var(--cdt-stroke-strong); }
+body.cdt input:not([type=checkbox]):not([type=radio]):not([type=file]):focus, body.cdt select:focus, body.cdt textarea:focus {
+  outline: none; border-color: var(--cdt-accent); box-shadow: 0 0 0 1px var(--cdt-accent); }
+body.cdt input::placeholder, body.cdt textarea::placeholder { color: var(--cdt-text2); opacity: .85; }
+body.cdt input:disabled, body.cdt select:disabled, body.cdt textarea:disabled { opacity: .55; }
+body.cdt .cdt-invalid, body.cdt input.cdt-invalid:focus { border-color: var(--cdt-danger) !important; box-shadow: 0 0 0 1px var(--cdt-danger) !important; }
+.cdt-error-line { display: block; margin-top: 3px; font-size: 11px; color: var(--cdt-danger); }
+body.cdt .field-label { font-size: 12px; font-weight: 500; color: var(--cdt-text2); margin-bottom: 4px; }
+body.cdt select { appearance: none; -webkit-appearance: none; padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--cdt-text2) 50%), linear-gradient(135deg, var(--cdt-text2) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
+body.cdt select[multiple] { background-image: none; padding-right: 10px; }
+/* CDT.CheckBox / CDT.RadioButton: the accent fill when ticked */
+body.cdt input[type=checkbox], body.cdt input[type=radio] { accent-color: var(--cdt-accent); width: 15px; height: 15px; vertical-align: -2px; }
+/* CDT.ToggleSwitch, on a checkbox: for settings that apply at once */
+body.cdt input[type=checkbox].cdt-switch { appearance: none; -webkit-appearance: none; width: 34px; height: 18px; border-radius: 999px;
+  background: var(--cdt-s3); border: 1px solid var(--cdt-stroke-strong); position: relative; cursor: pointer; transition: background .15s; vertical-align: -4px; }
+body.cdt input[type=checkbox].cdt-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--cdt-text2); transition: transform .15s, background .15s; }
+body.cdt input[type=checkbox].cdt-switch:checked { background: var(--cdt-accent); border-color: var(--cdt-accent); }
+body.cdt input[type=checkbox].cdt-switch:checked::after { transform: translateX(16px); background: var(--cdt-on-accent); }
+body.cdt input[type=range] { accent-color: var(--cdt-accent); }
+
+/* --- tabs: CDT.TabItem (page sub-tabs) and CDT.SegmentTrack (section tabs) --- */
+body.cdt .tabs { gap: 2px; border-bottom: 1px solid var(--cdt-stroke); }
+body.cdt .tabs a { color: var(--cdt-text2); padding: 8px 14px; border-bottom-width: 2px; margin-bottom: -1px; border-radius: 6px 6px 0 0; }
+body.cdt .tabs a:hover { color: var(--cdt-text0); background: var(--cdt-s3); }
+body.cdt .tabs a.active { color: var(--cdt-text0); font-weight: 600; border-bottom-color: var(--cdt-accent); }
+body.cdt .mt-subtabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin: 0 0 14px; background: var(--cdt-s3);
+  border: 1px solid var(--cdt-stroke); border-radius: 8px; border-bottom: 1px solid var(--cdt-stroke); max-width: 100%; }
+body.cdt .mt-subtabs [role=tab] { border: 0; border-radius: 6px; padding: 5px 12px; background: transparent; color: var(--cdt-text1);
+  font: 500 13px var(--cdt-font); cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+body.cdt .mt-subtabs [role=tab]:hover { background: var(--cdt-s2); color: var(--cdt-text0); }
+body.cdt .mt-subtabs [role=tab][aria-selected=true] { background: var(--cdt-s2); color: var(--cdt-text0); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), inset 0 0 0 1px var(--cdt-stroke); }
+body.cdt .mt-subtabs [role=tab][aria-selected=true]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cdt-accent); }
+body.cdt .mt-count { background: var(--cdt-s1); color: var(--cdt-text1); border: 1px solid var(--cdt-stroke); border-radius: 999px; padding: 0 6px; font-size: 11px; line-height: 16px; }
+body.cdt .mt-tab-critical .mt-count { background: var(--cdt-danger); border-color: var(--cdt-danger); color: #fff; }
+body.cdt .mt-tab-warning .mt-count { background: var(--cdt-warning-soft); border-color: var(--cdt-warning); color: var(--cdt-warning-strong); }
+
+/* --- StepIndicator: numbered circles joined by a line, done ones ticked ------- */
+body.cdt .mt-flow { position: relative; display: flex; flex-wrap: nowrap; gap: 0; margin: 4px 0 14px; padding: 10px 6px 8px;
+  background: var(--cdt-s1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r-card); overflow-x: auto; }
+body.cdt .mt-step { --step: var(--cdt-accent); flex: 1 1 0; min-width: 92px; max-width: none; position: relative; display: flex; flex-direction: column;
+  align-items: center; gap: 5px; padding: 4px 2px 2px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; text-align: center; text-decoration: none; }
+body.cdt .mt-step::before { content: ""; position: absolute; top: 17px; left: calc(-50% + 16px); right: calc(50% + 16px); height: 2px; background: var(--cdt-stroke-strong); }
+body.cdt .mt-step:first-child::before { display: none; }
+body.cdt .mt-step.done::before, body.cdt .mt-step.done + .mt-step.here::before { background: var(--cdt-accent); }
+body.cdt .mt-step:hover { background: var(--cdt-s3); }
+body.cdt .mt-step-n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--cdt-font);
+  border: 2px solid var(--cdt-stroke-strong); background: var(--cdt-s1); color: var(--cdt-text2); position: relative; z-index: 1; }
+body.cdt .mt-step.done .mt-step-n { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
+body.cdt .mt-step.here .mt-step-n { border-color: var(--cdt-accent); color: var(--cdt-accent); background: var(--cdt-accent-soft); box-shadow: 0 0 0 4px var(--cdt-accent-subtle); }
+body.cdt .mt-step.here { background: transparent; box-shadow: none; }
+body.cdt .mt-step.off { opacity: 1; }
+body.cdt .mt-step.off .mt-step-n, body.cdt .mt-step.off .mt-step-t b { color: var(--cdt-text3); }
+body.cdt .mt-step-t { align-items: center; }
+body.cdt .mt-step-t b { font-size: 12px; font-weight: 500; color: var(--cdt-text1); line-height: 1.2; }
+body.cdt .mt-step.here .mt-step-t b { color: var(--cdt-text0); font-weight: 700; }
+body.cdt .mt-step-t small { font-size: 11px; color: var(--cdt-text2); max-width: 118px; }
+@media (max-width: 760px) { body.cdt .mt-step { flex: 0 0 86px; } }
+
+/* the value strip */
+body.cdt .mt-value { background: var(--cdt-success-soft); border-color: color-mix(in srgb, var(--cdt-success) 35%, var(--cdt-stroke)); border-radius: var(--cdt-r-card); }
+body.cdt .mt-value-tag { color: var(--cdt-success); }
+
+/* --- OutcomeLabel: glyph + word + colour on a soft tint (badges) ------------- */
+body.cdt .badge, .cdt-outcome { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: 999px;
+  font: 600 11px/18px var(--cdt-font); border: 1px solid var(--cdt-stroke); background: var(--cdt-s2); color: var(--cdt-text1); white-space: nowrap; }
+body.cdt .badge.good, .cdt-outcome.good { background: var(--cdt-success-soft); border-color: color-mix(in srgb, var(--cdt-success) 30%, transparent); color: var(--cdt-success-strong); }
+body.cdt .badge.warning, body.cdt .badge.serious, .cdt-outcome.warning { background: var(--cdt-warning-soft); border-color: color-mix(in srgb, var(--cdt-warning) 35%, transparent); color: var(--cdt-warning-strong); }
+body.cdt .badge.critical, .cdt-outcome.critical { background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); color: var(--cdt-danger-strong); }
+body.cdt .badge.neutral, .cdt-outcome.neutral { color: var(--cdt-text2); }
+/* CDT.Chip (accent capsule) and CDT.Badge (neutral pill) */
+.cdt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--cdt-accent-soft);
+  color: var(--cdt-accent-strong); font-size: 12px; font-weight: 500; border: 1px solid color-mix(in srgb, var(--cdt-accent) 30%, transparent); }
+.cdt-chip.plain { padding-right: 10px; }
+.cdt-chip button { border: 0; background: transparent; color: inherit; width: 18px; height: 18px; border-radius: 50%; cursor: pointer; padding: 0; line-height: 18px; }
+.cdt-chip button:hover { background: var(--cdt-accent-soft-pressed); }
+.cdt-pill { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); line-height: 16px; }
+/* CDT.FilterChip: a one-of filter capsule */
+.cdt-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cdt-filter-chip { border: 1px solid var(--cdt-stroke); background: var(--cdt-s2); color: var(--cdt-text1); border-radius: 999px; padding: 3px 12px;
+  font: 500 12px var(--cdt-font); cursor: pointer; }
+.cdt-filter-chip:hover { background: var(--cdt-accent-soft); }
+.cdt-filter-chip[aria-pressed=true] { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
+
+/* CDT.StatusDot: ok / warn (pulses) / error / available, always with a word beside it */
+.cdt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cdt-text3); vertical-align: 1px; margin-right: 4px; flex: none; }
+.cdt-dot.ok { background: var(--cdt-fill-good); box-shadow: 0 0 6px color-mix(in srgb, var(--cdt-fill-good) 60%, transparent); }
+.cdt-dot.warn { background: var(--cdt-fill-warning); animation: cdt-pulse 1.4s ease-in-out infinite; }
+.cdt-dot.error { background: var(--cdt-fill-danger); box-shadow: 0 0 6px color-mix(in srgb, var(--cdt-fill-danger) 60%, transparent); }
+.cdt-dot.available { background: var(--cdt-accent); }
+@keyframes cdt-pulse { 50% { opacity: .35; } }
+
+/* --- tables: CDT.DataGrid ----------------------------------------------------- */
+body.cdt table { font-size: 13px; }
+body.cdt .table thead th, body.cdt table.table th[scope=col] { background: var(--cdt-s1); color: var(--cdt-text2); font-weight: 600; font-size: 11px;
+  letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid var(--cdt-stroke-strong); position: sticky; top: 0; z-index: 1; }
+body.cdt .table tbody td { border-top-color: var(--cdt-stroke); }
+body.cdt .table tbody tr:hover > td { background: var(--cdt-s3); }
+body.cdt .table-scroll { max-height: 75vh; overflow: auto; }
+.cdt-sortable { cursor: pointer; user-select: none; }
+.cdt-sortable:hover { color: var(--cdt-text0) !important; background: var(--cdt-s3) !important; }
+.cdt-sort-arrow { color: var(--cdt-accent); margin-left: 3px; font-size: 10px; }
+
+/* DataGridFilter: an Excel-style funnel in each header */
+.cdt-funnel { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 4px; border: 0; border-radius: 4px; background: transparent;
+  color: var(--cdt-text3); cursor: pointer; padding: 0; vertical-align: -4px; }
+.cdt-funnel svg { width: 11px; height: 11px; }
+th:hover .cdt-funnel { color: var(--cdt-text2); }
+.cdt-funnel:hover { background: var(--cdt-s3); color: var(--cdt-text0); }
+.cdt-funnel.on { color: var(--cdt-on-accent); background: var(--cdt-accent); }
+.cdt-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; color: var(--cdt-text2); }
+.cdt-filter-bar[hidden] { display: none; }
+
+/* --- popups: menus, dropdown lists, filter panels ---------------------------- */
+.cdt-popup { position: fixed; z-index: 1000; min-width: 180px; max-width: min(380px, calc(100vw - 16px)); max-height: 360px; overflow: auto;
+  background: var(--cdt-s2); border: 1px solid var(--cdt-stroke-strong); border-radius: 8px; box-shadow: var(--cdt-shadow-popup); padding: 4px;
+  font: 13px var(--cdt-font); color: var(--cdt-text1); }
+.cdt-popup[hidden] { display: none; }
+.cdt-popup .cdt-search { width: 100%; margin: 2px 0 4px; }
+.cdt-option, .cdt-menu-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 0; border-radius: 5px; background: transparent;
+  color: var(--cdt-text1); font: inherit; text-align: left; cursor: pointer; text-decoration: none; }
+.cdt-option:hover, .cdt-option.active, .cdt-menu-row:hover { background: var(--cdt-accent-soft); color: var(--cdt-text0); }
+.cdt-option[aria-selected=true] { font-weight: 600; color: var(--cdt-accent-strong); }
+.cdt-option[aria-selected=true]::after { content: "✓"; margin-left: auto; color: var(--cdt-accent); }
+.cdt-option mark { background: transparent; color: var(--cdt-accent); font-weight: 700; padding: 0; }
+.cdt-option .cdt-count { margin-left: auto; color: var(--cdt-text2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cdt-option-group { padding: 6px 10px 2px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cdt-text2); }
+.cdt-menu-sep { height: 1px; margin: 4px 6px; background: var(--cdt-stroke); }
+.cdt-menu-row.danger { color: var(--cdt-danger); }
+.cdt-menu-row .cdt-glyph { width: 16px; text-align: center; color: var(--cdt-text2); }
+.cdt-popup-foot { display: flex; justify-content: flex-end; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--cdt-stroke); margin-top: 4px; }
+.cdt-empty-list { padding: 10px; color: var(--cdt-text2); font-size: 12px; }
+
+/* SearchableComboBox / CheckComboBox face: looks like a CDT.ComboBox */
+.cdt-combo { position: relative; display: block; }
+.cdt-combo-face { width: 100%; display: flex; align-items: center; min-height: 32px; padding: 6px 28px 6px 10px; text-align: left; cursor: pointer;
+  background: var(--cdt-s2); color: var(--cdt-text0); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r); font: 13px/1.3 var(--cdt-font);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.cdt-combo-face::after { content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; margin-top: -5px;
+  border-right: 1.5px solid var(--cdt-text2); border-bottom: 1.5px solid var(--cdt-text2); transform: rotate(45deg); }
+.cdt-combo-face:hover { border-color: var(--cdt-stroke-strong); }
+.cdt-combo-face[aria-expanded=true] { border-color: var(--cdt-accent); box-shadow: 0 0 0 1px var(--cdt-accent); }
+.cdt-combo-face .cdt-placeholder { color: var(--cdt-text2); }
+.cdt-combo select { position: absolute !important; opacity: 0 !important; pointer-events: none; inset: 0; width: 100% !important; height: 100% !important; }
+
+/* TokenBox: removable chips plus a typing field */
+.cdt-tokens { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 32px; padding: 3px 6px; background: var(--cdt-s2);
+  border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-r); cursor: text; }
+.cdt-tokens:hover { border-color: var(--cdt-stroke-strong); }
+.cdt-tokens:focus-within { border-color: var(--cdt-accent); box-shadow: 0 0 0 1px var(--cdt-accent); }
+body.cdt .cdt-tokens input.cdt-token-input { flex: 1; min-width: 90px; border: 0 !important; box-shadow: none !important; padding: 3px 2px; min-height: 24px; background: transparent; }
+
+/* NumberBox: unit, spin buttons and a read-out of what the typed sum came to */
+.cdt-number { position: relative; display: flex; align-items: stretch; }
+body.cdt .cdt-number input { flex: 1; min-width: 0; padding-right: 24px; font-variant-numeric: tabular-nums; }
+body.cdt .cdt-number.has-unit input { padding-right: calc(28px + var(--unit-w, 2ch)); }
+.cdt-number-unit { position: absolute; right: 24px; top: 0; bottom: 0; display: flex; align-items: center; color: var(--cdt-text2); font-size: 12px; pointer-events: none; }
+.cdt-spin { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 20px; display: flex; flex-direction: column; border-left: 1px solid var(--cdt-stroke); }
+.cdt-spin button { flex: 1; border: 0; padding: 0; background: transparent; color: var(--cdt-text2); cursor: pointer; font-size: 8px; line-height: 1; }
+.cdt-spin button:first-child { border-top-right-radius: 5px; } .cdt-spin button:last-child { border-bottom-right-radius: 5px; }
+.cdt-spin button:hover { background: var(--cdt-s3); color: var(--cdt-accent); }
+.cdt-number-says { display: block; margin-top: 3px; font-size: 11px; color: var(--cdt-accent); font-variant-numeric: tabular-nums; min-height: 0; }
+.cdt-number-says:empty { display: none; }
+
+/* PathBox: a file field you can also drop onto */
+.cdt-path { min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 6px 6px 12px; border: 1px dashed var(--cdt-stroke-strong);
+  border-radius: 8px; background: var(--cdt-s2); cursor: pointer; transition: background .12s, border-color .12s; position: relative; }
+.cdt-path:hover { border-color: var(--cdt-accent-bright); background: var(--cdt-accent-wash); }
+.cdt-path.drag { border-color: var(--cdt-accent); border-style: solid; background: var(--cdt-accent-soft); }
+.cdt-path.bad { border-color: var(--cdt-danger); border-style: solid; }
+.cdt-path-glyph { color: var(--cdt-accent); flex: none; display: grid; place-items: center; }
+.cdt-path-text { flex: 1; min-width: 0; color: var(--cdt-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cdt-path-text b { color: var(--cdt-text0); font-weight: 600; }
+.cdt-path input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* DropDownButton / SplitButton */
+.cdt-split { display: inline-flex; }
+.cdt-split > .cdt-btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cdt-split > .cdt-btn + .cdt-btn { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding: 0 8px; min-width: 0; }
+.cdt-caret { display: inline-block; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: -3px 0 0 2px; }
+
+/* --- InfoBar: glyph + word + colour, title, message, an action ---------------- */
+.cdt-infobar, body.cdt .flash { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px 9px 12px; border-radius: 8px; font-size: 13px;
+  border: 1px solid var(--cdt-stroke); border-left: 3px solid var(--cdt-accent); background: var(--cdt-accent-wash); color: var(--cdt-text1); }
+.cdt-infobar .cdt-ib-glyph, body.cdt .flash .cdt-ib-glyph { flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 11px var(--cdt-font); color: var(--cdt-on-accent); background: var(--cdt-accent); margin-top: 1px; }
+.cdt-ib-body { flex: 1; min-width: 0; }
+.cdt-ib-title { font-weight: 700; color: var(--cdt-text0); margin-right: 6px; }
+.cdt-ib-close { flex: none; border: 0; background: transparent; color: var(--cdt-text2); width: 22px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 15px; line-height: 1; }
+.cdt-ib-close:hover { background: var(--cdt-s3); color: var(--cdt-text0); }
+.cdt-infobar.success, body.cdt .flash.success { border-left-color: var(--cdt-success); background: var(--cdt-success-soft); color: var(--cdt-text1); }
+.cdt-infobar.success .cdt-ib-glyph, body.cdt .flash.success .cdt-ib-glyph { background: var(--cdt-success); }
+.cdt-infobar.warning, body.cdt .flash.notice { border-left-color: var(--cdt-warning); background: var(--cdt-warning-soft); color: var(--cdt-text1); }
+.cdt-infobar.warning .cdt-ib-glyph, body.cdt .flash.notice .cdt-ib-glyph { background: var(--cdt-warning); border-radius: 3px; }
+.cdt-infobar.error, body.cdt .flash.error { border-left-color: var(--cdt-danger); background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); color: var(--cdt-text1); }
+.cdt-infobar.error .cdt-ib-glyph, body.cdt .flash.error .cdt-ib-glyph { background: var(--cdt-danger); color: #fff; }
+.cdt-infobar.closing, body.cdt .flash.closing { opacity: 0; transform: translateY(-4px); transition: opacity .2s, transform .2s; }
+.cdt-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1100; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); }
+.cdt-toasts .cdt-infobar { box-shadow: var(--cdt-shadow-popup); background-color: var(--cdt-s2); }
+
+/* --- EmptyState --------------------------------------------------------------- */
+.cdt-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 26px 16px; }
+.cdt-empty-glyph { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--cdt-accent-soft); color: var(--cdt-accent); margin-bottom: 4px; }
+.cdt-empty-glyph svg { width: 22px; height: 22px; }
+.cdt-empty-title { font: 600 14px var(--cdt-display); color: var(--cdt-text0); }
+.cdt-empty-msg { color: var(--cdt-text2); max-width: 460px; font-size: 12.5px; }
+.cdt-empty-action { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+body.cdt .empty { text-align: center; padding: 18px 8px; }
+body.cdt .empty-title { font: 600 14px var(--cdt-display); color: var(--cdt-text0); }
+
+/* --- UtilizationBar: demand / capacity against its limit -------------------- */
+.cdt-util { display: inline-grid; grid-template-columns: minmax(44px, 1fr) auto; align-items: center; gap: 2px 8px; width: 100%; min-width: 110px; vertical-align: middle; }
+.cdt-util-label { grid-column: 1 / -1; font-size: 11px; color: var(--cdt-text2); }
+.cdt-util-track { position: relative; height: 6px; border-radius: 999px; background: var(--cdt-s3); box-shadow: inset 0 0 0 1px var(--cdt-stroke); }
+.cdt-util-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--cdt-fill-good); max-width: 100%; }
+.cdt-util-limit { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--cdt-text1); border-radius: 1px; }
+.cdt-util-value { font: 600 12px var(--cdt-font); font-variant-numeric: tabular-nums; color: var(--cdt-success); min-width: 3.4ch; text-align: right; }
+.cdt-util.warning .cdt-util-fill { background: var(--cdt-fill-warning); } .cdt-util.warning .cdt-util-value { color: var(--cdt-warning); }
+.cdt-util.critical .cdt-util-fill { background: var(--cdt-fill-danger); } .cdt-util.critical .cdt-util-value { color: var(--cdt-danger); }
+.cdt-util.critical .cdt-util-track { box-shadow: inset 0 0 0 1px var(--cdt-danger-soft-border); }
+.cdt-util.none .cdt-util-value { color: var(--cdt-text2); font-weight: 400; }
+td.right .cdt-util { max-width: 170px; }
+
+/* --- InfoTip: an "i" whose tip carries a picture and a caption ------------------ */
+.cdt-infotip { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--cdt-accent); color: var(--cdt-accent);
+  font: italic 700 10px/1 Georgia, serif; cursor: help; vertical-align: -2px; margin-left: 4px; background: transparent; padding: 0; position: relative; }
+.cdt-infotip:hover, .cdt-infotip:focus-visible { border-color: var(--cdt-warning); color: var(--cdt-warning); }
+.cdt-tip { position: fixed; z-index: 1200; max-width: 420px; padding: 8px 10px; background: var(--cdt-s2); color: var(--cdt-text1); border: 1px solid var(--cdt-stroke-strong);
+  border-radius: 8px; box-shadow: var(--cdt-shadow-popup); font: 12.5px/1.45 var(--cdt-font); pointer-events: none; }
+.cdt-tip img { display: block; max-width: 400px; max-height: 300px; border-radius: 4px; margin-bottom: 6px; }
+
+/* --- DialogHost: the page dims, the sheet floats -------------------------------- */
+.cdt-scrim { position: fixed; inset: 0; z-index: 1300; background: var(--cdt-scrim); display: grid; place-items: center; padding: 16px; animation: cdt-fade .15s ease-out; }
+.cdt-sheet { width: min(460px, 100%); background: var(--cdt-s1); border: 1px solid var(--cdt-stroke-strong); border-radius: 12px; box-shadow: var(--cdt-shadow-popup);
+  padding: 18px 20px 16px; animation: cdt-rise .18s ease-out; }
+.cdt-sheet-head { display: flex; gap: 12px; align-items: flex-start; }
+.cdt-sheet-glyph { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--cdt-accent-soft); color: var(--cdt-accent); font-weight: 700; }
+.cdt-sheet.danger .cdt-sheet-glyph { background: var(--cdt-danger-soft); color: var(--cdt-danger); }
+.cdt-sheet-title { font: 600 16px var(--cdt-display); color: var(--cdt-text0); margin: 4px 0 4px; }
+.cdt-sheet-msg { color: var(--cdt-text1); }
+.cdt-sheet-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+@keyframes cdt-fade { from { opacity: 0; } }
+@keyframes cdt-rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+/* --- BusyDots, Skeleton, ProgressBar ------------------------------------------- */
+.cdt-busy { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
+.cdt-busy i { width: 6px; height: 6px; border-radius: 50%; background: var(--cdt-accent); animation: cdt-bounce 1s infinite ease-in-out; }
+.cdt-busy i:nth-child(2) { animation-delay: .15s; } .cdt-busy i:nth-child(3) { animation-delay: .3s; }
+@keyframes cdt-bounce { 0%, 80%, 100% { transform: scale(.55); opacity: .45; } 40% { transform: scale(1); opacity: 1; } }
+.cdt-skeleton { display: block; border-radius: 6px; min-height: 12px; background: linear-gradient(90deg, var(--cdt-s3) 25%, var(--cdt-s2) 50%, var(--cdt-s3) 75%);
+  background-size: 200% 100%; animation: cdt-shimmer 1.3s linear infinite; }
+@keyframes cdt-shimmer { to { background-position: -200% 0; } }
+.cdt-progress { height: 4px; border-radius: 999px; background: var(--cdt-s3); overflow: hidden; }
+.cdt-progress > i { display: block; height: 100%; background: var(--cdt-accent); border-radius: 999px; }
+body.cdt .bar { background: var(--cdt-s3); }
+@media (prefers-reduced-motion: reduce) { .cdt-busy i, .cdt-skeleton, .cdt-dot.warn { animation: none; } }
+
+/* --- PropertyList: name / value rows ------------------------------------------- */
+.cdt-props { display: grid; grid-template-columns: max-content 1fr; gap: 0; margin: 0; font-size: 13px; }
+.cdt-props dt { color: var(--cdt-text2); padding: 6px 16px 6px 0; border-top: 1px solid var(--cdt-stroke); }
+.cdt-props dd { margin: 0; color: var(--cdt-text0); padding: 6px 0; border-top: 1px solid var(--cdt-stroke); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.cdt-props dt:first-of-type, .cdt-props dd:first-of-type { border-top: 0; }
+
+/* the advice lists read as rows */
+body.cdt .marine-advice li { border-color: var(--cdt-stroke); }
+
+/* the ship loader in the Dar palette */
+body.cdt .mt-voyage-box { background: var(--cdt-s1); border-color: var(--cdt-stroke-strong); box-shadow: var(--cdt-shadow-popup); }
+body.cdt .mt-voyage-pct { color: var(--cdt-accent); }
+
+/* --- the controls page ------------------------------------------------------------ */
+.cdt-kit { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.cdt-kit .card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
+.cdt-kit-name { font-family: var(--cdt-mono); font-size: 11px; color: var(--cdt-text2); }
+.cdt-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* MarineTwin's own meters take the UtilizationBar track, and its "show more" the Expander look */
+body.cdt .marine-meter { background: var(--cdt-s3); border-radius: 999px; box-shadow: inset 0 0 0 1px var(--cdt-stroke); }
+body.cdt .marine-bar { height: 8px; border-radius: 999px; background: var(--cdt-accent); }
+body.cdt .marine-bar-warning { background: var(--cdt-fill-warning); }
+body.cdt .marine-bar-critical { background: var(--cdt-fill-danger); }
+body.cdt .mt-more > summary { color: var(--cdt-accent); font-weight: 500; font-size: 13px; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+body.cdt .mt-more > summary::-webkit-details-marker { display: none; }
+body.cdt .mt-more > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+body.cdt .mt-more[open] > summary::before { transform: rotate(45deg); }
+body.cdt .tile .cdt-util { min-width: 0; }

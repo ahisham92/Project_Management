@@ -52,7 +52,7 @@
       {% if tracked %}
       <form method="post" action="{{ url_for('marine.delete_elements', asset_id=asset['id']) }}" style="margin-top:12px"
             data-voyage="Removing the elements"
-            onsubmit="return confirm('Remove all {{ tracked }} elements, their sensors and readings? The model stays, so you can import them again.')">
+            data-confirm="Remove all {{ tracked }} elements, their sensors and readings? The model stays, so you can import them again.">
         <button type="submit" class="btn btn-ghost btn-sm">Remove all {{ '{:,}'.format(tracked) }} elements</button>
         <span class="small muted">to import them again from the model</span>
       </form>
@@ -89,7 +89,7 @@
         {% if real %}{{ real | length }} of them carr{{ 'y' if real | length > 1 else 'ies' }} real readings and stay{{ '' if real | length > 1 else 's' }}.{% endif %}</p>
       {% if orphans | length > real | length %}
       <form method="post" action="{{ url_for('marine.remove_orphans', asset_id=asset['id']) }}" style="margin-top:6px"
-            onsubmit="return confirm('Remove the elements the model no longer has, with their simulated sensors?')">
+            data-confirm="Remove the elements the model no longer has, with their simulated sensors?">
         <button type="submit" class="btn btn-ghost btn-sm">Remove the {{ '{:,}'.format(orphans | length - real | length) }} without real readings</button>
       </form>
       {% endif %}
@@ -176,7 +176,7 @@
     </form>
     {% if may_remove %}
     <form method="post" action="{{ url_for('marine.delete_asset', asset_id=asset['id']) }}" style="margin-top:12px"
-          onsubmit="return confirm('Delete this asset, its elements, sensors and every reading?')">
+          data-confirm="Delete this asset, its elements, sensors and every reading?">
       <button type="submit" class="btn btn-danger btn-sm">Delete this asset</button>
     </form>
     {% endif %}

@@ -17,6 +17,9 @@
   {% endif %}
   {% if request.blueprint == 'marine' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
+  {# CDT for the web: the CDT-SDK's Dar theme and controls, carried over from its WPF library. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">
+  <script src="{{ url_for('static', filename='cdt/cdt.js') }}" defer></script>
   {% endif %}
   {% if request.blueprint == 'specs' %}
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themis/icon.svg') }}">
@@ -41,7 +44,7 @@
     } catch (e) {}
   </script>
 </head>
-<body{% if request.blueprint == 'specs' %} class="themis-app"{% elif pm_door %} class="pm-app"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
+<body{% if request.blueprint == 'specs' %} class="themis-app"{% elif pm_door %} class="pm-app"{% elif request.blueprint == 'marine' %} class="cdt"{% endif %}{% if pulse_project_id %} data-pulse="{{ page_pulse }}"
       data-pulse-url="{{ url_for('projects.pulse', project_id=pulse_project_id) }}"{% endif %}>
 {% block chrome %}
   <header class="topbar">

@@ -44,7 +44,7 @@
             <a class="btn btn-ghost btn-sm" href="{{ url_for('marine.inputs', asset_id=asset['id'], copy=s['id'], _anchor='form') }}">Duplicate</a>
             {% if s['id'] %}
               <form method="post" action="{{ url_for('marine.delete_inputs', asset_id=asset['id'], set_id=s['id']) }}" style="display:inline">
-                <button type="submit" class="link-button small" onclick="return confirm('Delete {{ s['name'] }}?')">Delete</button></form>
+                <button type="submit" class="link-button small" data-confirm="Delete {{ s['name'] }}?">Delete</button></form>
             {% endif %}
           </td>
         </tr>

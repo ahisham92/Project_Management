@@ -15,5 +15,6 @@
         {% if hint %}<span class="muted">{{ hint }}</span>{% endif %}
       </p>
     {% endif %}
+    {% if caller %}<div class="tile-extra" style="margin-top:8px">{{ caller() }}</div>{% endif %}
   </div>
 {% endmacro %}

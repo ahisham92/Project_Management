@@ -1,7 +1,7 @@
 // The plan view: settlement as a coloured map with contour lines, the loads'
 // outlines, the query point and the section line. Drawn on a canvas.
 
-import { outline } from "../engine/stress.js";
+import { outline, loadCentre } from "../engine/stress.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const dark = () => matchMedia("(prefers-color-scheme: dark)").matches
@@ -149,10 +149,10 @@ export function drawPlan(canvas, project, grid, opts = {}) {
       ctx.setLineDash([]);
     });
     // the name just above the load's outline
-    if (l.name && polys[0]) {
+    if (l.name && polys[0] && (project.loads.length <= 8 || idx === opts.selectedLoad)) {
       const top = Math.min(...polys[0].map(([, y]) => F.Y(y)));
       ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      const w = ctx.measureText(l.name).width + 8, cx = F.X(+l.x || 0);
+      const w = ctx.measureText(l.name).width + 8, cx = F.X(loadCentre(l)[0]);
       ctx.fillStyle = css("--surface"); ctx.globalAlpha = 0.85; ctx.fillRect(cx - w / 2, top - 18, w, 15); ctx.globalAlpha = 1;
       ctx.fillStyle = css("--ink"); ctx.fillText(l.name, cx, top - 4);
     }

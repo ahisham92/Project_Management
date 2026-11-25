@@ -504,6 +504,8 @@ svg.chart.tall { max-width: 640px; }
 
 .verdict .unit { font-size: 0.875rem; font-weight: 600; margin-left: 2px; color: var(--ink-2); }
 .verdict .fos { color: var(--ink); }
+.verdict.pass .fos { color: var(--good-ink); }
+.verdict.fail .fos { color: var(--critical); }
 
 /* the time bar under the view */
 .timebar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
@@ -556,3 +558,33 @@ svg.chart.tall { max-width: 640px; }
 }
 
 .toggle .tsub { display: block; color: var(--muted); font-size: 0.6875rem; }
+
+/* v0.2: limits, the column-grid form, the report's verdict */
+.kpi.main.bad { border-color: var(--critical); box-shadow: 0 0 0 1px var(--critical) inset; }
+.gridform { border: 1px dashed var(--border); border-radius: 10px; padding: 6px 10px; background: var(--raised); }
+.gridform > summary { cursor: pointer; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); padding: 2px 0; }
+.gridform[open] { display: grid; gap: 8px; padding-bottom: 10px; }
+.gridform .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: end; }
+.gridform .two .f { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.checks .bad-text { color: var(--critical); font-weight: 600; }
+.rverdict { font-size: 11pt; margin: 4pt 0 6pt; }
+.rverdict.pass b { color: var(--good-ink); } .rverdict.fail b { color: var(--critical); }
+tr.muted td { color: var(--muted); }
+.group-body > .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: end; }
+.group-body > .two .f { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.item.compact { padding: 6px 10px; }
+.lopen { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 2px 0; font: inherit; color: var(--ink); cursor: pointer; display: grid; gap: 1px; }
+.lopen b { font-size: 0.8125rem; font-weight: 600; }
+.lopen span { font-size: 0.6875rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lopen:hover b { color: var(--series-1); }
+@media print {
+  .report table { page-break-inside: auto; width: 100%; }
+  .report tr { page-break-inside: avoid; }
+  .report thead { display: table-header-group; }
+  .report .table-scroll { overflow: visible; }
+  .report table.tight { font-size: 8pt; }
+  .report table.tight td, .report table.tight th { padding: 2pt 4pt; }
+  .report table.tight td .note { display: inline; margin-left: 4pt; font-size: 7pt; color: #52514e; }
+  .report .pill { padding: 0; background: none !important; }
+  .report .explain, .report p.note { font-size: 8.5pt; color: #52514e; }
+}

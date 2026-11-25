@@ -2,10 +2,9 @@
 // the section. Each grid point's result is kept, so moving the time slider only
 // re-reads them (fast) instead of solving the stresses again.
 
-import { computePoint, settlementAt, stagesOf, stressSection } from "../engine/settlement.js";
-import { buildRects } from "../engine/stress.js";
+import { computePoint, settlementAt, prepare, stressSection, foundationResults, summarize, betweenFoundations } from "../engine/settlement.js";
 
-let kept = null; // { id, g, points: [result], line: {xs, results} }
+let kept = null; // { id, g, project, found, points: [result], line: {xs, results} }
 
 function values(t) {
   const { g, points } = kept;
@@ -27,14 +26,25 @@ function values(t) {
   return { values: v, min, max, tilt, line };
 }
 
+function foundations(t, life) {
+  const now = summarize(kept.found, t), end = summarize(kept.found, life);
+  return { now, life: end, betweenNow: betweenFoundations(kept.project, now), betweenLife: betweenFoundations(kept.project, end) };
+}
+
 self.onmessage = (ev) => {
   const m = ev.data;
   try {
     if (m.kind === "grid") {
       const { project: p, g, section } = m;
-      const stages = stagesOf(p.loads).map((s) => ({ ...s, rects: buildRects(s.loads) }));
-      // the same sub-layers as the query point, so the plan and the cards agree
-      const subLayers = Math.max(2, Math.min(+p.subLayers || 10, 12));
+      const stages = prepare(p);
+      // the same sub-layers as the query point (within reason), so the plan and the headline agree
+      const subLayers = m.sub || 10;
+      kept = { id: m.id, g, project: p, points: null, line: null, life: m.life };
+      // the foundations first: the verdict comes from them
+      kept.found = foundationResults(p, { stages, subLayers }).map((f) => (f.off ? f : {
+        ...f, centre: strip(f.centre), edges: f.edges.map((e) => ({ ...e, res: strip(e.res) })), rigid: f.rigid && f.rigid.map((r) => ({ ...r, res: strip(r.res) })),
+      }));
+      self.postMessage({ id: m.id, kind: "found", ...foundations(m.t, m.life) });
       const points = new Array(g.nx * g.ny);
       for (let j = 0; j < g.ny; j++) {
         const y = g.y1 + ((g.y2 - g.y1) * j) / (g.ny - 1);
@@ -52,12 +62,11 @@ self.onmessage = (ev) => {
         xs.push(u);
         results.push(strip(computePoint(p, x, y, { stages, subLayers })));
       }
-      const sp = section.along === "x" ? p : { ...p, loads: p.loads.map(swapXY) };
-      const bulbs = stressSection(sp, section.at, section.a1, section.a2, section.depth, 61, 41);
-      kept = { id: m.id, g, points, line: { xs, results } };
+      const bulbs = stressSection(p, section.along, section.at, section.a1, section.a2, section.depth, 61, 41);
+      kept.points = points; kept.line = { xs, results };
       self.postMessage({ id: m.id, kind: "grid", g, xs, bulbs, ...values(m.t) });
-    } else if (m.kind === "time" && kept) {
-      self.postMessage({ id: m.id, kind: "time", g: kept.g, xs: kept.line.xs, ...values(m.t) });
+    } else if (m.kind === "time" && kept && kept.points) {
+      self.postMessage({ id: m.id, kind: "time", g: kept.g, xs: kept.line.xs, ...values(m.t), found: foundations(m.t, kept.life) });
     }
   } catch (e) {
     self.postMessage({ id: m.id, kind: "error", message: String(e && e.message || e) });
@@ -67,12 +76,4 @@ self.onmessage = (ev) => {
 // Keep only what settlementAt needs.
 function strip(r) {
   return { stages: r.stages, layers: r.layers.map((l) => ({ layer: l.layer, stage: l.stage, primary: l.primary, creep: l.creep, t95: l.t95 })) };
-}
-
-// A section along y is the same as one along x with the plan turned over.
-function swapXY(l) {
-  const o = { ...l, x: l.y, y: l.x };
-  if (l.type === "rect") { o.B = l.L; o.L = l.B; }
-  if (l.type === "embankment") o.axis = l.axis === "x" ? "y" : "x";
-  return o;
 }

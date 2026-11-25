@@ -4,7 +4,7 @@
 
 import { layerTops } from "../engine/settlement.js";
 import { contour, levels } from "./plan.js";
-import { loadPressure } from "../engine/stress.js";
+import { grossPressure, outline, foundingDepth, equivalentRaft } from "../engine/stress.js";
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const n = (v, d = 1) => (Number.isFinite(v) ? (+v.toFixed(d)).toString() : "–");
@@ -21,8 +21,11 @@ const ticks = (a, b, target = 6) => {
 };
 
 export const SOIL_COLOURS = {
-  softClay: "#9aa7b3", firmClay: "#8f9aa5", stiffClay: "#77828c", organic: "#6b5a49", silt: "#c2b49a",
-  looseSand: "#e6d3a3", sand: "#dcc58e", denseSand: "#cdb06d", fill: "#b9a27e", rock: "#8c8578",
+  peat: "#5a4a3c", organic: "#6b5a49", marineClay: "#a3b0bb", softClay: "#9aa7b3", firmClay: "#8f9aa5", stiffClay: "#77828c", hardClay: "#646e77",
+  softSilt: "#cbbfa8", silt: "#c2b49a", loess: "#d8c9a0",
+  looseSand: "#e6d3a3", siltySand: "#decb9c", clayeySand: "#cfbb8f", sand: "#dcc58e", denseSand: "#cdb06d", gravel: "#bfa46a",
+  fill: "#b9a27e", looseFill: "#c4b08f", rockfill: "#a39a8a", residual: "#b58f6b",
+  rock: "#8c8578", mudstone: "#8a8f86", chalk: "#d9d8cf", soundRock: "#6f6a60",
 };
 export const soilColour = (l, i) => SOIL_COLOURS[l.preset] || ["#d9c79a", "#9aa7b3", "#c9b183", "#808b95"][i % 4];
 
@@ -143,7 +146,7 @@ export function sectionView(project, sec, data, box, opts = {}) {
   if (wt <= D) s += `<line x1="${L}" x2="${W - R}" y1="${Z(wt)}" y2="${Z(wt)}" stroke="var(--water)" stroke-width="1.5" stroke-dasharray="7 4"/><text x="${W - R - 4}" y="${Z(wt) - 4}" text-anchor="end" style="fill:var(--water)">▽ water table</text>`;
   // stress bulbs: contours of Δσ as a share of the largest surface pressure
   if (data?.bulbs) {
-    const b = data.bulbs, qmax = Math.max(1e-6, ...project.loads.filter((l) => l.on !== false).map(loadPressure));
+    const b = data.bulbs, qmax = Math.max(1e-6, ...b.values);
     const bx = (i) => X(b.x1 + ((b.x2 - b.x1) * i) / (b.nx - 1)), bz = (k) => Z((b.depth * k) / (b.nz - 1));
     for (const f of [0.1, 0.2, 0.3, 0.5, 0.7, 0.9]) {
       const segs = contour(b.values, b.nx, b.nz, f * qmax);
@@ -154,27 +157,57 @@ export function sectionView(project, sec, data, box, opts = {}) {
       s += `<text x="${bx((seg[0][0] + seg[1][0]) / 2) + 4}" y="${bz(Math.max(seg[0][1], seg[1][1])) + 10}" style="fill:var(--series-2)">${Math.round(f * 100)}%</text>`;
     }
   }
-  // the loads cut by the section, drawn to scale above the ground
+  // the loads cut by the section: the pressure above the ground, the foundation down to where it is founded
   const ground = T;
-  const qmax = Math.max(1e-6, ...project.loads.filter((l) => l.on !== false).map(loadPressure));
-  const hq = (q) => (q / qmax) * 46;
-  for (const l of project.loads) {
-    if (l.on === false) continue;
-    const cut = cutLoad(l, sec);
-    if (!cut) continue;
-    if (cut.kind === "trap") {
-      const [u1, u2, u3, u4] = cut.u, h = hq(loadPressure(l));
-      s += `<path d="M${X(u1)},${ground} L${X(u2)},${ground - h} L${X(u3)},${ground - h} L${X(u4)},${ground} Z" fill="#c9b183" stroke="var(--ink-2)" opacity="0.9"/>`;
-      s += `<text x="${X((u2 + u3) / 2)}" y="${ground - h - 6}" text-anchor="middle" style="fill:var(--ink);font-weight:600">${esc(l.name)} · ${n(+l.H, 1)} m, ${n(loadPressure(l), 0)} kPa</text>`;
-    } else {
-      const q = loadPressure(l), h = hq(q);
-      s += `<rect x="${X(cut.u[0])}" y="${ground - h}" width="${Math.max(1, X(cut.u[1]) - X(cut.u[0]))}" height="${h}" fill="var(--series-1)" opacity="0.22" stroke="var(--series-1)"/>`;
-      for (let k = 0; k <= 6; k++) {
-        const u = cut.u[0] + ((cut.u[1] - cut.u[0]) * k) / 6;
+  const live = project.loads.filter((l) => l.on !== false);
+  const qmax = Math.max(1e-6, ...live.filter((l) => l.type !== "pilegroup").map(grossPressure), ...(live.some((l) => l.type !== "pilegroup") ? [] : live.map(grossPressure)));
+  const hq = (q) => Math.max(8, Math.min(1, q / qmax) * 46);
+  const label = (u, y, text) => `<text x="${X(u)}" y="${y}" text-anchor="middle" style="fill:var(--ink);font-weight:600">${text}</text>`;
+  const many = live.length > 6;
+  for (const l of live) {
+    const polys = outline(l).map((poly) => cutPoly(poly, sec));
+    const main = polys[0];
+    if (!main) continue;
+    const q = grossPressure(l), h = hq(q), mid = (main[0] + main[1]) / 2;
+    const name = many ? esc(l.name) : `${esc(l.name)} · ${n(q, 0)} kPa`;
+    if (l.type === "embankment") {
+      const crest = polys[1] || [mid, mid], he = polys[1] ? h : h / 2;
+      s += `<path d="M${X(main[0])},${ground} L${X(crest[0])},${ground - he} L${X(crest[1])},${ground - he} L${X(main[1])},${ground} Z" fill="#c9b183" stroke="var(--ink-2)" opacity="0.9"/>`;
+      s += label(mid, ground - he - 6, `${esc(l.name)} · ${n(+l.H, 1)} m, ${n(q, 0)} kPa`);
+      continue;
+    }
+    if (l.type === "pilegroup") {
+      const e = equivalentRaft(l), cap = polys[1] || main, Df = Math.max(0, +l.Df || 0), toe = Df + Math.max(0, +l.Lp || 0);
+      const capH = Math.max(6, Math.min(14, 0.8 * sz));
+      s += `<rect x="${X(cap[0])}" y="${Z(Df) - capH}" width="${Math.max(2, X(cap[1]) - X(cap[0]))}" height="${capH}" fill="var(--ink-2)" opacity="0.85"/>`;
+      const np = Math.max(2, Math.min(9, Math.round((cap[1] - cap[0]) / 1.5) + 1));
+      for (let k = 0; k < np; k++) {
+        const u = cap[0] + ((cap[1] - cap[0]) * (k + 0.5)) / np;
+        s += `<line x1="${X(u)}" x2="${X(u)}" y1="${Z(Df)}" y2="${Z(Math.min(D, toe))}" stroke="var(--ink-2)" stroke-width="2.5"/>`;
+      }
+      if (e.zf <= D) {
+        s += `<path d="M${X(cap[0])},${Z(Df)} L${X(main[0])},${Z(e.zf)} M${X(cap[1])},${Z(Df)} L${X(main[1])},${Z(e.zf)}" stroke="var(--series-1)" stroke-dasharray="3 3" fill="none"/>`;
+        s += `<line x1="${X(main[0])}" x2="${X(main[1])}" y1="${Z(e.zf)}" y2="${Z(e.zf)}" stroke="var(--series-1)" stroke-width="2" stroke-dasharray="6 3"/>`;
+        s += `<text x="${X(main[1]) + 5}" y="${Z(e.zf) + 3}" style="fill:var(--series-1)">equivalent raft · ${n(q, 0)} kPa</text>`;
+      }
+      s += label(mid, ground - 6, esc(l.name));
+      continue;
+    }
+    // a ring is cut into its two walls; everything else is one piece
+    const hole = l.type === "ring" ? polys[1] : null;
+    const pieces = hole ? [[main[0], hole[0]], [hole[1], main[1]]] : [main];
+    const Df = foundingDepth(l);
+    for (const [u1, u2] of pieces) {
+      const w = Math.max(1, X(u2) - X(u1));
+      if (Df > 0) s += `<rect x="${X(u1)}" y="${ground}" width="${w}" height="${Math.max(2, Z(Math.min(D, Df)) - ground)}" fill="var(--ink-2)" opacity="0.8"/>`;
+      s += `<rect x="${X(u1)}" y="${ground - h}" width="${w}" height="${h}" fill="var(--series-1)" opacity="0.22" stroke="var(--series-1)"/>`;
+      const na = Math.max(1, Math.min(6, Math.floor(w / 12)));
+      for (let k = 0; k <= na; k++) {
+        const u = u1 + ((u2 - u1) * k) / na;
         s += `<path d="M${X(u)},${ground - h} V${ground - 3} m-3,-4 l3,4 l3,-4" stroke="var(--series-1)" fill="none"/>`;
       }
-      s += `<text x="${X((cut.u[0] + cut.u[1]) / 2)}" y="${ground - h - 6}" text-anchor="middle" style="fill:var(--ink);font-weight:600">${esc(l.name)} · ${n(q, 0)} kPa</text>`;
     }
+    if (!many || l === live[0]) s += label(mid, ground - h - 6, name);
   }
   s += `<line x1="${L}" x2="${W - R}" y1="${ground}" y2="${ground}" stroke="var(--ink)" stroke-width="1.5"/>`;
   // settled ground surface, exaggerated
@@ -193,39 +226,26 @@ export function sectionView(project, sec, data, box, opts = {}) {
   for (const z of ticks(0, D, 6)) s += `<text x="${L - 6}" y="${Z(z) + 3}" text-anchor="end">${n(z, 1)}</text>`;
   if (opts.titles) {
     s += `<text x="${L}" y="${18}" style="fill:var(--ink);font-weight:600">Section A–A′ ${sec.along === "x" ? `along x at y = ${n(sec.at, 1)} m` : `along y at x = ${n(sec.at, 1)} m`}</text>`;
-    s += `<text x="${L}" y="${34}" style="fill:var(--series-2)">Orange lines: Δσ as a share of the largest load pressure</text>`;
+    s += `<text x="${L}" y="${34}" style="fill:var(--series-2)">Orange lines: Δσ as a share of the largest stress increase on the section</text>`;
   }
   return `<svg class="section" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cross-section">${s}</svg>`;
 }
 
-// Where a load crosses the section line, in section coordinates.
-function cutLoad(l, sec) {
-  const along = sec.along, at = sec.at;
-  const x = +l.x || 0, y = +l.y || 0;
-  const [c, o] = along === "x" ? [x, y] : [y, x];   // c: along the section, o: across it
-  if (l.type === "rect") {
-    const [w, d] = along === "x" ? [+l.B, +l.L] : [+l.L, +l.B];
-    if (Math.abs(at - o) > d / 2) return null;
-    return { kind: "box", u: [c - w / 2, c + w / 2] };
-  }
-  if (l.type === "circle") {
-    const R = +l.R, dd = Math.abs(at - o);
-    if (dd > R) return null;
-    const hw = Math.sqrt(R * R - dd * dd);
-    return { kind: "box", u: [c - hw, c + hw] };
-  }
-  if (l.type === "embankment") {
-    const cr = (+l.crest || 0) / 2, t = cr + (+l.slope || 0), half = (+l.L || 0) / 2;
-    const crossing = (l.axis === "x") !== (along === "x"); // section runs across the embankment
-    if (crossing) {
-      if (Math.abs(at - o) > half) return null;
-      return { kind: "trap", u: [c - t, c - cr, c + cr, c + t] };
+// Where a plan outline crosses the section line: [from, to] along the section, or null.
+function cutPoly(poly, sec) {
+  if (!poly || poly.length < 3) return null;
+  const k = sec.along === "x" ? 0 : 1, at = sec.at;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const oa = a[1 - k] - at, ob = b[1 - k] - at;
+    if (oa === 0) { lo = Math.min(lo, a[k]); hi = Math.max(hi, a[k]); }
+    if ((oa < 0) !== (ob < 0) && oa !== ob) {
+      const u = a[k] + ((b[k] - a[k]) * oa) / (oa - ob);
+      lo = Math.min(lo, u); hi = Math.max(hi, u);
     }
-    const dd = Math.abs(at - o);
-    if (dd > t) return null;
-    return { kind: "box", u: [c - half, c + half] };
   }
-  return null;
+  return hi > lo ? [lo, hi] : null;
 }
 
 export { levels };

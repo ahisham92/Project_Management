@@ -1,8 +1,8 @@
 // Verification: GeoProMax against closed-form solutions and hand calculations.
 // The Verification tab runs these in the browser and CI runs them in Node.
 
-import { boussinesqCorner, westergaardCorner, buildRects, deltaSigma } from "./stress.js";
-import { degreeOfConsolidation, computePoint, settlementAt } from "./settlement.js";
+import { boussinesqCorner, westergaardCorner, buildRects, deltaSigma, equivalentRaft } from "./stress.js";
+import { degreeOfConsolidation, computePoint, computeConverged, settlementAt, radialDegree, layerDegree, foundationSummary } from "./settlement.js";
 
 // Numerical integration of a point-load solution over a rectangle (midpoint rule).
 function integrate(x1, x2, y1, y2, n, kernel) {
@@ -49,6 +49,41 @@ export function runChecks() {
     const e = buildRects([{ type: "embankment", x: 0, y: 0, crest: 10, slope: 6, H: 4, gamma: 20, L: 4000, axis: "y" }]);
     add("Stress", "Centre of a long embankment at 5 m", "Osterberg (1957)", 2 * osterbergHalf(6, 5, 5, 80), deltaSigma(e, 0, 0, 5), 0.4, "kPa");
   }
+  {
+    // a footing turned 30°, against the point-load solution integrated in its own axes
+    const a = Math.PI / 6, px = 3, py = 2, z = 2.5;
+    const u0 = px * Math.cos(a) + py * Math.sin(a), v0 = -px * Math.sin(a) + py * Math.cos(a);
+    const ref = integrate(-2, 2, -3, 3, 400, (x, y) => (100 * 3 * z ** 3) / (2 * Math.PI * ((x - u0) ** 2 + (y - v0) ** 2 + z * z) ** 2.5));
+    add("Stress", "Footing turned 30°, point off its centre", "Boussinesq point load, integrated", ref, deltaSigma(buildRects([{ type: "rect", x: 0, y: 0, B: 4, L: 6, q: 100, angle: 30 }]), px, py, z), 0.25, "kPa");
+  }
+  {
+    const ring = buildRects([{ type: "ring", x: 0, y: 0, R: 5, Ri: 3, q: 100 }]);
+    const axis = (R, z) => 1 - (1 + (R / z) ** 2) ** -1.5;
+    add("Stress", "Centre of a ring, radii 3 and 5 m, at 4 m", "outer circle less inner circle", 100 * (axis(5, 4) - axis(3, 4)), deltaSigma(ring, 0, 0, 4), 0.3, "kPa");
+    const L = buildRects([{ type: "polygon", q: 100, pts: "0,0\n4,0\n4,2\n2,2\n2,4\n0,4" }]);
+    const parts = buildRects([{ type: "rect", x: 2, y: 1, B: 4, L: 2, q: 100 }, { type: "rect", x: 1, y: 3, B: 2, L: 2, q: 100 }]);
+    add("Stress", "L-shaped polygon", "the two rectangles it is made of", deltaSigma(parts, 3, 3, 2), deltaSigma(L, 3, 3, 2), 0.05, "kPa");
+  }
+  {
+    // a footing founded 2 m down acts on the soil below it as a surface load does
+    const deep = buildRects([{ type: "rect", x: 0, y: 0, B: 2, L: 2, q: 100, Df: 2 }]);
+    add("Stress", "Footing founded at 2 m, stress 2 m below it", "4 × 0.0840 × 100", 33.61, deltaSigma(deep, 0, 0, 4), 0.05, "kPa");
+    add("Stress", "No stress above the founding level", "0", 0, deltaSigma(deep, 0, 0, 1.5), 1e-9, "kPa");
+    const net = buildRects([{ type: "rect", x: 0, y: 0, B: 2, L: 2, q: 100, Df: 2, net: true }], (zz) => 18 * zz);
+    add("Stress", "Net pressure takes off the soil dug out", "100 − 18 × 2 = 64 kPa", 0.3361 * 64, deltaSigma(net, 0, 0, 4), 0.05, "kPa");
+    const pad = buildRects([{ type: "pad", x: 0, y: 0, B: 2, L: 2, P: 400 }]);
+    add("Stress", "Pad footing: 400 kN on 2 × 2 m", "q = P / (B·L) = 100 kPa", 33.61, deltaSigma(pad, 0, 0, 2), 0.05, "kPa");
+    const strip = buildRects([{ type: "strip", x: 0, y: 0, B: 2, L: 2000, w: 200 }]);
+    add("Stress", "Strip footing, 200 kN/m on 2 m, at 2 m", "q/π·(α + sin α), α = 2·atan(B/2z)", (100 / Math.PI) * (2 * Math.atan(0.5) + Math.sin(2 * Math.atan(0.5))), deltaSigma(strip, 0, 0, 2), 0.05, "kPa");
+  }
+  {
+    const g = { type: "pilegroup", B: 6, L: 9, Lp: 15, pileType: "friction", Q: 18000, Df: 1.5 };
+    const e = equivalentRaft(g);
+    add("Piles", "Equivalent raft depth, friction piles", "Df + 2/3 of the pile length", 11.5, e.zf, 1e-9, "m");
+    add("Piles", "Equivalent raft width, spread at 1 in 4", "B + 2 × (10 / 4)", 11, e.B, 1e-9, "m");
+    add("Piles", "Pressure on the equivalent raft", "Q / (B'·L') = 18000 / (11 × 14)", 18000 / 154, buildRects([g])[0].q, 1e-6, "kPa");
+    add("Piles", "End-bearing piles: raft at the toe, no spread", "Df + Lp", 16.5, equivalentRaft({ ...g, pileType: "end" }).zf, 1e-9, "m");
+  }
   for (const nu of [0, 0.3]) {
     const eta2 = (1 - 2 * nu) / (2 - 2 * nu), eta = Math.sqrt(eta2);
     const ref = integrate(0, 1, 0, 1, 500, (x, y) => eta / (2 * Math.PI * (eta2 + x * x + y * y) ** 1.5));
@@ -88,6 +123,39 @@ export function runChecks() {
     const one = { waterTable: 0, subLayers: 4, layers: [clay()], loads: [wide(60)] };
     const two = { ...one, loads: [{ ...wide(30), t0: 0 }, { ...wide(30), t0: 2 }] };
     add("Settlement", "Two stages end where one load of their sum does", "same final σ'", computePoint(one, 0, 0).primary, settlementAt(computePoint(two, 0, 0), 500).primary, 1e-6, "m");
+  }
+  {
+    // mv method: s = mv·Δσ·H
+    const p = { waterTable: 0, subLayers: 4, layers: [clay({ model: "mv", mv: 0.5 })], loads: [wide(80)] };
+    add("Settlement", "mv method: 0.5 m²/MN, 80 kPa, 4 m", "mv·Δσ·H", 0.5e-3 * 80 * 4, computePoint(p, 0, 0).primary, 1e-6, "m");
+    // stiffness growing with depth: s = (q/k)·ln(1 + k·H/E0)
+    const q = { waterTable: 20, subLayers: 64, layers: [{ name: "Sand", thickness: 10, gamma: 18, gammaSat: 20, E: 10000, Einc: 4000, nu: 0, consolidating: false }], loads: [wide(100)] };
+    add("Settlement", "Stiffness growing with depth", "(q/k)·ln(1 + k·H/E0)", (100 / 4000) * Math.log(5), computePoint(q, 0, 0).immediate, 1e-5, "m");
+    // heave on unloading follows Cr
+    const u = { waterTable: 0, subLayers: 1, layers: [clay({ thickness: 4 }), clay({ thickness: 4 })], loads: [wide(-10)] };
+    const s0 = 2 * (18 - 9.81);
+    add("Settlement", "Heave of the top layer when 10 kPa is taken off", "Cr·H/(1+e0)·log(σ'f/σ'0)", 0.05 * 2 * Math.log10((s0 - 10) / s0), computePoint(u, 0, 0).layers[0].primary, 1e-6, "m");
+  }
+  {
+    const d = { on: true, spacing: 1.5, pattern: "tri", dw: 0.066, ch: 3 };
+    const de = 1.05 * 1.5, F = Math.log(de / 0.066) - 0.75;
+    add("Consolidation", "Wick drains at 1.5 m, triangular, after 0.5 yr", "1 − exp(−8·ch·t / (de²·F)), Hansbo", 1 - Math.exp((-8 * 3 * 0.5) / (de * de * F)), radialDegree(d, 0.5), 1e-9);
+    const l = clay({ thickness: 10, cv: 1, drains: d });
+    const Uv = degreeOfConsolidation((1 * 0.5) / 25);
+    add("Consolidation", "Drains and vertical flow together", "1 − (1 − Uv)(1 − Ur), Carrillo", 1 - (1 - Uv) * (1 - radialDegree(d, 0.5)), layerDegree(l, 0.5), 1e-9);
+  }
+  {
+    // refining the sub-layers converges on the fine answer
+    const p = { waterTable: 1, layers: [clay({ thickness: 12 })], loads: [{ type: "rect", x: 0, y: 0, B: 6, L: 6, q: 120 }] };
+    const fine = computePoint(p, 0, 0, { subLayers: 400 }), auto = computeConverged(p, 0, 0);
+    add("Convergence", `Sub-layers refined automatically (stopped at ${auto.subLayers})`, "the same layer cut into 400", fine.primary, auto.primary, 0.01 * fine.primary, "m");
+  }
+  {
+    // a rigid square footing: 0.74 of the half-width is where it settles as a flexible one does
+    const p = { waterTable: 20, subLayers: 40, layers: [{ name: "Deep elastic soil", thickness: 200, gamma: 18, gammaSat: 20, E: 20000, nu: 0.3, consolidating: false }],
+      loads: [{ type: "rect", x: 0, y: 0, B: 4, L: 4, q: 100, rigid: true }] };
+    const f = foundationSummary(p, 1, { subLayers: 200 })[0];
+    add("Foundations", "Rigid square footing against its flexible centre", "rigid ≈ 0.80 × centre (0.82/1.12, Bowles)", 0.8, f.rigid / f.centre, 0.05);
   }
   return out;
 }

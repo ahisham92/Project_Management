@@ -1,14 +1,20 @@
-// Vertical stress increase under flexible surface loads on an elastic half-space.
+// Vertical stress increase under flexible loads on an elastic half-space.
 //
 // Every load is turned into axis-aligned rectangles that each carry a uniform
-// pressure. A rectangle is solved exactly by the corner method (superposing four
-// signed rectangles that share a corner above the field point), so a point
-// outside a load is as exact as one inside it. Circles and embankment side
-// slopes are split into strips; the tests hold them to the closed forms.
+// pressure at a founding depth. A rectangle is solved exactly by the corner
+// method (superposing four signed rectangles that share a corner above the
+// field point), so a point outside a load is as exact as one inside it.
+// Circles, rings, rotated footings, polygons and embankment side slopes are
+// split into strips; the tests hold them to the closed forms.
 //
-// Units: m, kPa.
+// A load founded at depth Df acts on the soil below Df as a surface load would
+// (the usual, slightly conservative, simplification). Net pressure takes off
+// the weight of the soil dug out.
+//
+// Units: m, kPa, kN.
 
 const EPS = 1e-9;
+const STRIPS = 40;
 
 /** Boussinesq (1885), integrated over a rectangle B x L with the field point
  *  below one corner at depth z (Newmark 1935). Returns Δσz / q. */
@@ -43,7 +49,7 @@ function signedCorner(method, a, b, z, nu) {
   return Math.sign(a) * Math.sign(b) * f;
 }
 
-/** Influence factor of the rectangle [x1,x2] x [y1,y2] at (px, py, z). */
+/** Influence factor of the rectangle [x1,x2] x [y1,y2] at (px, py), z below it. */
 export function rectInfluence(method, r, px, py, z, nu) {
   const a1 = r.x1 - px, a2 = r.x2 - px, b1 = r.y1 - py, b2 = r.y2 - py;
   return signedCorner(method, a2, b2, z, nu) - signedCorner(method, a1, b2, z, nu)
@@ -56,83 +62,228 @@ function segArea(R, t) {
   return t * Math.sqrt(R * R - t * t) + R * R * Math.asin(t / R) + (Math.PI * R * R) / 2;
 }
 
-/** The pressure a load puts on the ground, in kPa. */
-export function loadPressure(l) {
-  return l.type === "embankment" ? (+l.gamma || 0) * (+l.H || 0) : +l.q || 0;
+const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+const rad = (l) => (num(l.angle) * Math.PI) / 180;
+
+/** Points like "0, 0\n10, 0\n10 5" as [[x, y], ...]. */
+export function parsePoints(text) {
+  if (Array.isArray(text)) return text;
+  return String(text || "").split(/[\n;]+/).map((line) => line.trim().split(/[\s,]+/).map(Number))
+    .filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])).map((p) => [p[0], p[1]]);
 }
 
-/** The load as uniformly loaded rectangles: [{x1, x2, y1, y2, q}]. */
-export function loadToRects(l) {
-  const out = [];
-  const x = +l.x || 0, y = +l.y || 0;
-  if (l.type === "rect") {
-    const B = +l.B, L = +l.L;
-    if (B > 0 && L > 0) out.push({ x1: x - B / 2, x2: x + B / 2, y1: y - L / 2, y2: y + L / 2, q: +l.q || 0 });
-  } else if (l.type === "circle") {
-    const R = +l.R, N = 40;
-    if (!(R > 0)) return out;
-    // Strips along y whose areas equal the circular segments they stand for.
-    for (let i = 0; i < N; i++) {
-      const ya = -R + (2 * R * i) / N, yb = -R + (2 * R * (i + 1)) / N;
-      const hw = (segArea(R, yb) - segArea(R, ya)) / (2 * (yb - ya));
-      out.push({ x1: x - hw, x2: x + hw, y1: y + ya, y2: y + yb, q: +l.q || 0 });
+export function polygonArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a) / 2;
+}
+
+function centroid(pts) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length], k = x1 * y2 - x2 * y1;
+    a += k; cx += (x1 + x2) * k; cy += (y1 + y2) * k;
+  }
+  if (Math.abs(a) < EPS) return pts[0] || [0, 0];
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
+/** The pile group's equivalent raft (Tomlinson): where it acts and how big it is. */
+export function equivalentRaft(l) {
+  const B = num(l.B), L = num(l.L), Lp = Math.max(0, num(l.Lp)), Df = Math.max(0, num(l.Df));
+  const friction = l.pileType !== "end";
+  // Friction piles: the raft sits at two thirds of the pile length, with the load
+  // spread at 1 in 4 down to it. End-bearing piles: at the toe, the size of the group.
+  const down = friction ? (2 * Lp) / 3 : Lp, spread = friction ? down / 4 : 0;
+  return { B: B + 2 * spread, L: L + 2 * spread, zf: Df + down };
+}
+
+/** The total vertical force of a load, kN (embankments: on the crest and slopes). */
+export function loadForce(l) {
+  if (l.type === "pilegroup") return num(l.Q);
+  return grossPressure(l) * footprintArea(l);
+}
+
+export function footprintArea(l) {
+  if (l.type === "circle") return Math.PI * num(l.R) ** 2;
+  if (l.type === "ring") return Math.PI * Math.max(0, num(l.R) ** 2 - num(l.Ri) ** 2);
+  if (l.type === "polygon") return polygonArea(parsePoints(l.pts));
+  if (l.type === "embankment") return (num(l.crest) + num(l.slope)) * num(l.L);
+  if (l.type === "pilegroup") { const e = equivalentRaft(l); return e.B * e.L; }
+  return num(l.B) * num(l.L);
+}
+
+/** The pressure a load puts on the ground at its founding level, kPa, before
+ *  anything is taken off for excavation. */
+export function grossPressure(l) {
+  if (l.type === "embankment") return num(l.gamma) * num(l.H);
+  if (l.type === "building") return num(l.storeys) * num(l.perStorey) + num(l.extra);
+  if (l.type === "pilegroup") { const a = footprintArea(l); return a > 0 ? num(l.Q) / a : 0; }
+  if (l.type === "strip") return num(l.B) > 0 ? num(l.w) / num(l.B) : 0;
+  if (l.type === "pad") { const a = num(l.B) * num(l.L); return a > 0 ? num(l.P) / a : 0; }
+  return num(l.q);
+}
+export const loadPressure = grossPressure;
+
+/** Founding depth of the load below ground, m. */
+export function foundingDepth(l) {
+  if (l.type === "embankment") return 0;
+  if (l.type === "pilegroup") return equivalentRaft(l).zf;
+  return Math.max(0, num(l.Df));
+}
+
+/** The pressure that reaches the soil: gross, or net of the soil dug out
+ *  (`overburden(z)` is the total vertical stress at depth z). */
+export function appliedPressure(l, overburden) {
+  const q = grossPressure(l);
+  if (l.net && overburden && l.type !== "embankment" && l.type !== "pilegroup") return q - overburden(foundingDepth(l));
+  return q;
+}
+
+// Rotate a point about the load's centre and move it there.
+function place(l, u, v) {
+  const a = rad(l), c = Math.cos(a), s = Math.sin(a);
+  return [num(l.x) + u * c - v * s, num(l.y) + u * s + v * c];
+}
+
+/** The plan outline of a load, for drawing and for cutting: closed polygons.
+ *  The first is the loaded footprint; a ring's second is its hole. */
+export function outline(l) {
+  const box = (b, h) => [place(l, -b, -h), place(l, b, -h), place(l, b, h), place(l, -b, h)];
+  const circle = (R) => Array.from({ length: 64 }, (_, i) => [num(l.x) + R * Math.cos((i / 64) * 2 * Math.PI), num(l.y) + R * Math.sin((i / 64) * 2 * Math.PI)]);
+  if (l.type === "circle") return [circle(num(l.R))];
+  if (l.type === "ring") return [circle(num(l.R)), circle(Math.min(num(l.Ri), num(l.R)))];
+  if (l.type === "polygon") { const p = parsePoints(l.pts); return p.length >= 3 ? [p] : []; }
+  if (l.type === "embankment") {
+    const c = num(l.crest) / 2, t = c + num(l.slope), h = num(l.L) / 2;
+    const b = (w) => (l.axis === "x" ? [place(l, -h, -w), place(l, h, -w), place(l, h, w), place(l, -h, w)] : box(w, h));
+    return c > 0 && t > c ? [b(t), b(c)] : [b(t)];
+  }
+  if (l.type === "pilegroup") { const e = equivalentRaft(l); return [box(e.B / 2, e.L / 2), box(num(l.B) / 2, num(l.L) / 2)]; }
+  return [box(num(l.B) / 2, num(l.L) / 2)];
+}
+
+/** Where the load's centre is, for labels and "go to" buttons. */
+export function loadCentre(l) {
+  if (l.type === "polygon") { const p = parsePoints(l.pts); return p.length >= 3 ? centroid(p) : [0, 0]; }
+  return [num(l.x), num(l.y)];
+}
+
+// A polygon as strips along x: scan lines through the middle of each strip.
+function polygonRects(pts, q, zf, out) {
+  if (pts.length < 3 || !q) return;
+  const ys = pts.map((p) => p[1]), y1 = Math.min(...ys), y2 = Math.max(...ys);
+  if (!(y2 > y1)) return;
+  // an axis-aligned rectangle needs no strips
+  if (pts.length === 4) {
+    const xs = pts.map((p) => p[0]), x1 = Math.min(...xs), x2 = Math.max(...xs);
+    if (pts.every(([x, y]) => (Math.abs(x - x1) < 1e-9 || Math.abs(x - x2) < 1e-9) && (Math.abs(y - y1) < 1e-9 || Math.abs(y - y2) < 1e-9))) {
+      out.push({ x1, x2, y1, y2, q, zf });
+      return;
     }
+  }
+  const dy = (y2 - y1) / STRIPS;
+  for (let i = 0; i < STRIPS; i++) {
+    const ya = y1 + dy * i, ym = ya + dy / 2, xs = [];
+    for (let k = 0; k < pts.length; k++) {
+      const [xa, yA] = pts[k], [xb, yB] = pts[(k + 1) % pts.length];
+      if ((yA <= ym) !== (yB <= ym)) xs.push(xa + ((ym - yA) / (yB - yA)) * (xb - xa));
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) if (xs[k + 1] - xs[k] > EPS) out.push({ x1: xs[k], x2: xs[k + 1], y1: ya, y2: ya + dy, q, zf });
+  }
+}
+
+// A circle as strips whose areas equal the circular segments they stand for.
+function circleRects(x, y, R, q, zf, out) {
+  if (!(R > 0) || !q) return;
+  for (let i = 0; i < STRIPS; i++) {
+    const ya = -R + (2 * R * i) / STRIPS, yb = -R + (2 * R * (i + 1)) / STRIPS;
+    const hw = (segArea(R, yb) - segArea(R, ya)) / (2 * (yb - ya));
+    out.push({ x1: x - hw, x2: x + hw, y1: y + ya, y2: y + yb, q, zf });
+  }
+}
+
+/** The load as uniformly loaded rectangles: [{x1, x2, y1, y2, q, zf}]. */
+export function loadToRects(l, overburden) {
+  const out = [];
+  const q = appliedPressure(l, overburden), zf = foundingDepth(l);
+  if (l.type === "circle") circleRects(num(l.x), num(l.y), num(l.R), q, zf, out);
+  else if (l.type === "ring") {
+    circleRects(num(l.x), num(l.y), num(l.R), q, zf, out);
+    circleRects(num(l.x), num(l.y), Math.min(num(l.Ri), num(l.R)), -q, zf, out);
   } else if (l.type === "embankment") {
     // Trapezoidal cross-section: crest width, horizontal run of each side
     // slope, height H and fill unit weight; L long along its axis.
-    const Bc = Math.max(0, +l.crest || 0), S = Math.max(0, +l.slope || 0), L = +l.L, q = loadPressure(l), NS = 20;
+    const Bc = Math.max(0, num(l.crest)), S = Math.max(0, num(l.slope)), L = num(l.L), NS = 20;
     if (!(L > 0) || (Bc <= 0 && S <= 0)) return out;
     const pieces = Bc > 0 ? [[-Bc / 2, Bc / 2, q]] : [];
     for (let k = 0; S > 0 && k < NS; k++) {
       const o1 = Bc / 2 + (S * k) / NS, o2 = Bc / 2 + (S * (k + 1)) / NS, qk = q * (1 - (k + 0.5) / NS);
       pieces.push([o1, o2, qk], [-o2, -o1, qk]);
     }
+    const x = num(l.x), y = num(l.y);
     for (const [c1, c2, qk] of pieces) {
-      if (l.axis === "x") out.push({ x1: x - L / 2, x2: x + L / 2, y1: y + c1, y2: y + c2, q: qk });
-      else out.push({ x1: x + c1, x2: x + c2, y1: y - L / 2, y2: y + L / 2, q: qk });
+      if (l.axis === "x") out.push({ x1: x - L / 2, x2: x + L / 2, y1: y + c1, y2: y + c2, q: qk, zf: 0 });
+      else out.push({ x1: x + c1, x2: x + c2, y1: y - L / 2, y2: y + L / 2, q: qk, zf: 0 });
     }
+  } else {
+    // rectangles (footings, rafts, buildings, the equivalent raft of a pile group) and polygons
+    const o = outline(l);
+    if (o.length) polygonRects(o[0], q, zf, out);
   }
   return out;
 }
 
-export function buildRects(loads) {
-  return (loads || []).filter((l) => l.on !== false).flatMap(loadToRects);
+export function buildRects(loads, overburden) {
+  return (loads || []).filter((l) => l.on !== false).flatMap((l) => loadToRects(l, overburden));
 }
 
-/** Δσz at (px, py, z) from the rectangles of every load. */
+/** Δσz at (px, py, z) from the rectangles of every load founded above z. */
 export function deltaSigma(rects, px, py, z, method = "boussinesq", nu = 0.3) {
   let s = 0;
-  for (const r of rects) if (r.q) s += r.q * rectInfluence(method, r, px, py, z, nu);
+  for (const r of rects) {
+    const zz = z - (r.zf || 0);
+    if (r.q && zz > 0) s += r.q * rectInfluence(method, r, px, py, zz, nu);
+  }
   return s;
-}
-
-/** The plan outline of a load, for drawing: a list of closed polygons. */
-export function outline(l) {
-  const x = +l.x || 0, y = +l.y || 0;
-  if (l.type === "rect") {
-    const b = (+l.B || 0) / 2, h = (+l.L || 0) / 2;
-    return [[[x - b, y - h], [x + b, y - h], [x + b, y + h], [x - b, y + h]]];
-  }
-  if (l.type === "circle") {
-    const R = +l.R || 0;
-    return [Array.from({ length: 48 }, (_, i) => [x + R * Math.cos((i / 48) * 2 * Math.PI), y + R * Math.sin((i / 48) * 2 * Math.PI)])];
-  }
-  if (l.type === "embankment") {
-    const c = (+l.crest || 0) / 2, t = c + (+l.slope || 0), h = (+l.L || 0) / 2;
-    const box = (w) => (l.axis === "x"
-      ? [[x - h, y - w], [x + h, y - w], [x + h, y + w], [x - h, y + w]]
-      : [[x - w, y - h], [x + w, y - h], [x + w, y + h], [x - w, y + h]]);
-    return c > 0 && t > c ? [box(t), box(c)] : [box(t)];
-  }
-  return [];
 }
 
 /** Plan extents of every load, with a margin around them. */
 export function extents(loads, margin) {
-  const rects = buildRects(loads);
-  if (!rects.length) return { x1: -10, x2: 10, y1: -10, y2: 10 };
+  const polys = (loads || []).filter((l) => l.on !== false).flatMap(outline);
+  if (!polys.length) return { x1: -10, x2: 10, y1: -10, y2: 10 };
   let x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
-  for (const r of rects) { x1 = Math.min(x1, r.x1); x2 = Math.max(x2, r.x2); y1 = Math.min(y1, r.y1); y2 = Math.max(y2, r.y2); }
+  for (const p of polys) for (const [x, y] of p) { x1 = Math.min(x1, x); x2 = Math.max(x2, x); y1 = Math.min(y1, y); y2 = Math.max(y2, y); }
   const m = Number.isFinite(+margin) && margin !== null && margin !== "" ? +margin : 0.5 * Math.max(x2 - x1, y2 - y1) + 2;
   return { x1: x1 - m, x2: x2 + m, y1: y1 - m, y2: y2 + m };
+}
+
+/**
+ * The points a foundation is judged at: its centre, points on its edge, and
+ * the characteristic points, where a rigid foundation settles as much as a
+ * flexible one does (0.74 of the half-width from the centre for a rectangle,
+ * 0.845 R for a circle; Kany 1974). Four of them give a rigid body's tilt.
+ */
+export function checkPoints(l) {
+  const [cx, cy] = loadCentre(l);
+  const out = { centre: [cx, cy], edge: [], rigid: null };
+  if (l.type === "circle" || l.type === "ring") {
+    const R = num(l.R);
+    for (let i = 0; i < 4; i++) out.edge.push([cx + R * Math.cos((i * Math.PI) / 2), cy + R * Math.sin((i * Math.PI) / 2)]);
+    const rr = l.type === "ring" ? (R + num(l.Ri)) / 2 : 0.845 * R;
+    out.rigid = [0, 1, 2, 3].map((i) => [cx + rr * Math.cos((i * Math.PI) / 2), cy + rr * Math.sin((i * Math.PI) / 2)]);
+    if (l.type === "ring") out.centre = [cx + rr, cy];
+  } else if (l.type === "polygon") {
+    out.edge = parsePoints(l.pts);
+  } else if (l.type === "embankment") {
+    const c = num(l.crest) / 2, t = c + num(l.slope);
+    const p = (w) => (l.axis === "x" ? place(l, 0, w) : place(l, w, 0));
+    out.edge = [p(c), p(-c), p(t), p(-t)];
+  } else {
+    const b = num(l.B) / 2, h = num(l.L) / 2;
+    out.edge = [place(l, -b, -h), place(l, b, -h), place(l, b, h), place(l, -b, h), place(l, b, 0), place(l, -b, 0), place(l, 0, h), place(l, 0, -h)];
+    out.rigid = [place(l, 0.74 * b, 0.74 * h), place(l, -0.74 * b, 0.74 * h), place(l, -0.74 * b, -0.74 * h), place(l, 0.74 * b, -0.74 * h)];
+  }
+  return out;
 }

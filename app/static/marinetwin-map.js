@@ -9,8 +9,8 @@
 
 (function () {
   if (!window.L) return;
-  const COLOUR = { good: '#0ca30c', warning: '#fab219', critical: '#d03b3b', neutral: '#8a8a80' };
-  const WORD = { good: 'Good', warning: 'Watch', critical: 'Act', neutral: 'No data' };
+  const COLOUR = { good: '#0ca30c', warning: '#fab219', critical: '#d03b3b', neutral: '#8a8a80', todo: '#ffffff', extra: '#2a7de1' };
+  const WORD = { good: 'Good', warning: 'Watch', critical: 'Act', neutral: 'No data', todo: 'Not in yet', extra: 'Not in the design' };
   const escape = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function draw(el) {
@@ -22,7 +22,8 @@
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
     });
-    const map = L.map(el, { layers: [data.elements && data.elements.length ? satellite : streets], scrollWheelZoom: false, worldCopyJump: true });
+    const map = L.map(el, { layers: [data.elements && data.elements.length ? satellite : streets], scrollWheelZoom: false, worldCopyJump: true,
+      preferCanvas: (data.elements || []).length > 800 });   // thousands of piles draw fast on a canvas
     L.control.layers({ Map: streets, Satellite: satellite }, null, { position: 'topright' }).addTo(map);
     L.control.scale({ imperial: false }).addTo(map);
     const bounds = [];
@@ -36,9 +37,11 @@
       bounds.push([a.lat, a.lon]);
     }
     for (const e of data.elements || []) {
+      const todo = e.state === 'todo';
       L.circleMarker([e.lat, e.lon], {
-        radius: e.kind === 'pile' ? 3 : 5, color: '#000', weight: 1, fillColor: COLOUR[e.state] || COLOUR.neutral, fillOpacity: 0.95,
-      }).addTo(map).bindTooltip(`${escape(e.name)} · ${WORD[e.state] || ''}`);
+        radius: e.kind === 'pile' ? 3 : 5, color: todo ? '#ffffff' : '#000', weight: 1, fillColor: COLOUR[e.state] || COLOUR.neutral,
+        fillOpacity: todo ? 0 : 0.95,
+      }).addTo(map).bindTooltip(`${escape(e.name)} · ${WORD[e.state] || ''}` + (e.dev != null ? ` · ${e.dev} mm off` : ''));
       bounds.push([e.lat, e.lon]);
     }
     if (data.focus) map.setView(data.focus, data.zoom || 17);

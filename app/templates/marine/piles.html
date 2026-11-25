@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% from "partials/tile.html" import tile %}
+{% from "marine/_macros.html" import asset_tabs, page_head, bar %}
+{% block title %}{{ asset['name'] }} · Piles · MarineTwin{% endblock %}
+
+{% macro day(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[:4] }}{% endif %}{% endmacro %}
+
+{% block content %}
+{{ page_head(asset, "The site record starts while the quay is built. Bring in the piling contractor's as-built record and every pile is checked against where the design puts it: which are in, how far off, how fast they are going in, and when the last will be.") }}
+{{ asset_tabs(asset) }}
+
+{% if not r['total'] %}
+<div class="card"><div class="card-body">
+  <p><strong>No piles in the design yet.</strong> Upload the Revit model on <a href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Set up</a>:
+  every pile in it (structural columns named by the legend, MP1-DS03 and so on) becomes a design pile here, numbered along the berth.</p>
+</div></div>
+{% else %}
+
+<div class="grid grid-4">
+  {{ tile('Piles in', '{:,} of {:,}'.format(r['done'], r['total']), '%.1f' | format(r['pct']) ~ '% of the design', 'good' if r['done'] == r['total'] else 'neutral', 'all in' if r['done'] == r['total'] else '') }}
+  {{ tile('Within ±' ~ ('%g' | format(r['tolerance'])) ~ ' mm', '{:,}'.format(r['within']), 'mean off ' ~ r['mean'] ~ ' mm' if r['mean'] is not none else 'none in yet', 'good' if r['done'] and not r['over'] else 'neutral', '') }}
+  {{ tile('Out of position', '{:,}'.format(r['over']), 'worst ' ~ r['worst'] ~ ' mm' if r['worst'] is not none else '', 'critical' if r['over'] else 'good', 'to check with the designer' if r['over'] else ('none' if r['done'] else '')) }}
+  {{ tile('Going in', ('%.1f' | format(r['per_week']) ~ ' a week') if r['per_week'] else '—', ('last one about ' ~ day(r['finish'])) if r['finish'] else ('done' if r['done'] == r['total'] else 'no dates in the record'), 'neutral', '') }}
+</div>
+
+<div class="mt-panels" style="margin-top:16px">
+  <section class="mt-panel" data-tab="Where they are" data-slug="where" data-open="1">
+    <div class="card">
+      <div class="card-head"><div><h2>Where they are</h2>
+        <p class="small muted" style="margin-top:2px">
+          <span class="mt-key" style="--c:#0ca30c">within tolerance</span>
+          <span class="mt-key" style="--c:#fab219">up to twice it</span>
+          <span class="mt-key" style="--c:#d03b3b">more</span>
+          <span class="mt-key mt-key-ring">not in yet</span>
+          <span class="mt-key" style="--c:#2a7de1">not in the design</span></p></div>
+        <div class="row" style="gap:8px"><a class="btn" href="{{ url_for('marine.piles_csv', asset_id=asset['id']) }}">Download the check</a></div></div>
+      <div class="card-body">
+        {% if site_map %}<div class="marine-map" data-map='{{ site_map | tojson }}'></div>
+        {% else %}
+          {% set xs = r['piles'] | map(attribute='x') | list %}{% set ys = r['piles'] | map(attribute='y') | list %}
+          {% set x0, x1, y0, y1 = xs | min, xs | max, ys | min, ys | max %}
+          {% set w = [x1 - x0, 1] | max %}{% set h = [y1 - y0, 1] | max %}
+          {% set pad = [w, h] | max * 0.04 + 2 %}
+          <svg class="mt-pileplan" viewBox="{{ x0 - pad }} {{ -(y1 + pad) }} {{ w + 2 * pad }} {{ h + 2 * pad }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="The piles on plan">
+            {% set rad = ([w, h] | max) / 300 + 0.15 %}
+            {% for p in r['piles'] %}
+              {% set b = p['built'] %}
+              <circle cx="{{ (b['x'] if b else p['x']) }}" cy="{{ -(b['y'] if b else p['y']) }}" r="{{ rad }}" class="pp-{{ p['state'] }}" vector-effect="non-scaling-stroke"><title>{{ p['name'] }}{% if b %} · {{ p['dev_mm'] }} mm off{% else %} · not in yet{% endif %}</title></circle>
+            {% endfor %}
+            {% for b in r['extra'] %}<circle cx="{{ b['x'] }}" cy="{{ -b['y'] }}" r="{{ rad }}" class="pp-extra" vector-effect="non-scaling-stroke"><title>{{ b['name'] }} · not in the design</title></circle>{% endfor %}
+          </svg>
+          <p class="small muted">Drawn in the model's frame. Set the asset's location on <a href="{{ url_for('marine.setup', asset_id=asset['id']) }}">Set up</a> to see them on the satellite picture.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="By design" data-slug="groups">
+    <div class="card">
+      <div class="card-head"><div><h2>By design</h2><p class="small muted" style="margin-top:2px">Each design section of the model, as its legend names it.</p></div></div>
+      <div class="card-body table-scroll">
+        <table class="table">
+          <thead><tr><th>Design</th><th class="right">In</th><th class="right">Of</th><th style="width:40%">Progress</th><th class="right">Out of position</th></tr></thead>
+          <tbody>
+          {% for g in r['groups'] %}
+            <tr><td>{{ g['name'] }}</td><td class="right tabular">{{ g['done'] }}</td><td class="right tabular">{{ g['total'] }}</td>
+              <td>{{ bar(100 * g['done'] / g['total'], 'good' if g['done'] == g['total'] else '') }}</td>
+              <td class="right tabular {{ 'state-critical' if g['over'] }}">{{ g['over'] or '' }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if r['weeks'] %}
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><div><h2>Piles in, week by week</h2><p class="small muted" style="margin-top:2px">From {{ day(r['first']) }} to {{ day(r['last']) }}; the line is the design's {{ '{:,}'.format(r['total']) }}.</p></div></div>
+      <div class="card-body">
+        {% set n = r['weeks'] | length %}{% set top = [r['total'], 1] | max %}
+        <svg class="mt-pileweeks" viewBox="0 0 {{ n * 10 }} 100" preserveAspectRatio="none" role="img" aria-label="Piles in by week">
+          <line x1="0" x2="{{ n * 10 }}" y1="2" y2="2" class="pw-goal" vector-effect="non-scaling-stroke"/>
+          {% for start, count in r['weeks'] %}
+            {% set hgt = 98 * count / top %}
+            <rect x="{{ loop.index0 * 10 + 1 }}" y="{{ 100 - hgt }}" width="8" height="{{ hgt }}" class="pw-bar"><title>{{ count }} in by the end of the week of {{ day(start) }}</title></rect>
+          {% endfor %}
+        </svg>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="mt-panel" data-tab="Out of position" data-slug="off">
+    <div class="card">
+      <div class="card-head"><div><h2>Out of position</h2><p class="small muted" style="margin-top:2px">Worst first. dx is along the model's x (along the berth for most quays), dy across it. Send these to the designer to check the pile caps and the bending in the deck.</p></div></div>
+      <div class="card-body table-scroll">
+        {% set off = r['piles'] | selectattr('state', 'in', ['warning', 'critical']) | sort(attribute='dev_mm', reverse=True) | list %}
+        {% if off %}
+        <table class="table">
+          <thead><tr><th>Pile</th><th>As built</th><th class="right">Off by</th><th class="right">dx</th><th class="right">dy</th><th class="right">Cut-off</th><th class="right">Toe</th><th>In</th><th>Note</th></tr></thead>
+          <tbody>
+          {% for p in off[:200] %}
+            <tr><td>{{ p['name'] }}</td><td>{{ p['built']['name'] }}</td>
+              <td class="right tabular state-{{ p['state'] }}">{{ p['dev_mm'] }} mm</td><td class="right tabular">{{ p['dx_mm'] }}</td><td class="right tabular">{{ p['dy_mm'] }}</td>
+              <td class="right tabular">{{ '%+.2f' | format(p['built']['level']) if p['built']['level'] is not none }}</td>
+              <td class="right tabular">{{ '%+.2f' | format(p['built']['toe']) if p['built']['toe'] is not none }}</td>
+              <td class="tabular">{{ day(p['built']['installed']) }}</td><td class="small">{{ p['built']['note'] }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if off | length > 200 %}<p class="small muted">And {{ off | length - 200 }} more in the download.</p>{% endif %}
+        {% else %}<p class="muted">{{ 'None: every pile in is within ±%g mm.' | format(r['tolerance']) if r['done'] else 'No piles in yet.' }}</p>{% endif %}
+        {% if r['extra'] %}
+        <h3 style="margin-top:16px">Not in the design ({{ r['extra'] | length }})</h3>
+        <p class="small muted">Named in the record but not in the model, and more than {{ '%g' | format(3) }} m from any design pile still free: a pile added on site, or a name typed differently.</p>
+        <p class="small">{{ r['extra'][:30] | map(attribute='name') | join(', ') }}{% if r['extra'] | length > 30 %}, …{% endif %}</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-panel" data-tab="Bring in the record" data-slug="import">
+    <div class="grid grid-2">
+      <div class="card" id="import">
+        <div class="card-head"><div><h2>The contractor's as-built record</h2>
+          <p class="small muted" style="margin-top:2px">A CSV with a row per pile. The header names the columns; any order.</p></div></div>
+        <div class="card-body">
+          <ul class="small" style="margin:0 0 12px 18px">
+            <li><b>name</b> (or pile, mark): the pile as the design names it, MP1-DS03-07. Another name is matched to the nearest design pile within 3 m.</li>
+            <li>Where its head is: <b>x, y</b> in the model's frame; {% if has_grid %}or <b>easting, northing</b> on the model's map grid{% if asset['epsg'] %} ({{ asset['epsg'] }}){% endif %}; {% endif %}or <b>latitude, longitude</b>.</li>
+            <li>If you have them: <b>level</b> (cut-off, mCD), <b>toe</b> (mCD), <b>installed</b> (the date), <b>note</b>.</li>
+          </ul>
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('marine.import_piles', asset_id=asset['id']) }}" data-voyage="Reading the as-built piles">
+            <input type="file" name="file" accept=".csv,text/csv" required>
+            <label class="small" style="display:block;margin:8px 0"><input type="checkbox" name="replace" value="1"> Replace the record (otherwise these are added, and a pile already there is updated)</label>
+            <button class="btn primary">Read the record</button>
+            <a class="btn" href="{{ url_for('marine.piles_template', asset_id=asset['id']) }}">Download the pile list to fill in</a>
+          </form>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>The check</h2></div></div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('marine.pile_tolerance', asset_id=asset['id']) }}" class="row" style="gap:8px;align-items:end">
+            <label class="field"><span>Position tolerance at cut-off, mm</span><input type="number" name="tolerance" min="1" max="2000" step="any" value="{{ '%g' | format(r['tolerance']) }}"></label>
+            <button class="btn">Save</button>
+          </form>
+          <p class="small muted">75 mm is usual on land; 100 to 150 mm for piles driven over water. Use the project specification's figure.</p>
+          <p class="small muted">The design is {% if from_model %}every pile in the Revit model ({{ '{:,}'.format(r['total']) }}){% else %}the piles MarineTwin tracks ({{ '{:,}'.format(r['total']) }}); upload the model to check all of them{% endif %}.</p>
+          <div class="row" style="gap:8px;margin-top:12px">
+            <form method="post" action="{{ url_for('marine.demo_piles', asset_id=asset['id']) }}" data-voyage="Making up a record"><button class="btn">Try with a made-up record</button></form>
+            {% if r['done'] or r['extra'] %}<form method="post" action="{{ url_for('marine.clear_piles', asset_id=asset['id']) }}"><button class="btn">Clear the record</button></form>{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endif %}
+
+{% if site_map %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='marinetwin-map.js') }}" defer></script>
+{% endif %}
+{% endblock %}

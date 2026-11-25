@@ -827,11 +827,11 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety"):
+    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles"):
         page = text(signed_in.get(demo + path))
-        assert page.count('class="mt-step ') == 10 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
+        assert page.count('class="mt-step ') == 11 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
-    assert front.count('class="mt-step ') == 10 and front.count("mt-step s") - front.count(" off") == 1
+    assert front.count('class="mt-step ') == 11 and front.count("mt-step s") - front.count(" off") == 1
 
 
 def test_setting_up_lands_on_the_setup_step(signed_in):
@@ -1499,3 +1499,64 @@ def test_the_sensors_plan_has_a_drone_dock_that_warns_of_damage(app, signed_in, 
     covered = [e["key"] for e in marine_risk.EVENTS if "drone" in e["sensors"]]
     assert {"great_storm", "fire_apron", "oil_spill"} <= set(covered)
     assert marine_risk.SENSOR_WORDS["drone"]
+
+
+# --- the site record: piles as built ------------------------------------------------------
+
+def test_the_pile_tracker_checks_the_as_built_record_against_the_design(app, signed_in, demo):
+    from app import marine_piles
+    from app.views import marine_views
+    with app.app_context():                           # a model read for another test's asset 1 is not this one's
+        marine_views._found_path(1).unlink(missing_ok=True)
+    page = text(signed_in.get(demo + "/piles"))
+    assert "Site record" in page and "Piles in" in page and "0 of 9" in page
+    # P01 is at (0, 0) and P02 at (8, 0) in the demo; CW1 at (4, -6).
+    csv_text = ("pile,x,y,level,toe,installed,note\n"
+                "P01,0.05,0.02,0.01,-25.2,2026-10-01,\n"          # 54 mm off: within 150
+                "P02,8.0,0.40,,,2026-10-08,hit an obstruction\n"   # 400 mm off: more than twice
+                "as-built 3,4.1,-6.0,,,2026-10-15,\n"              # another name, 100 mm from CW1: taken as it
+                "X9,60,60,,,2026-10-15,\n")                         # nowhere near: not in the design
+    answer = signed_in.post(demo + "/piles/import", data={"file": (io.BytesIO(csv_text.encode()), "asbuilt.csv")},
+                            content_type="multipart/form-data")
+    assert answer.status_code == 302
+    page = text(signed_in.get(demo + "/piles"))
+    assert "3 of 9" in page and "400 mm" in page and "hit an obstruction" in page and "X9" in page
+    check = signed_in.get(demo + "/piles.csv").get_data(as_text=True)
+    assert "P01,," in check.replace('"', "") or "P01" in check
+    row = next(line for line in check.splitlines() if line.startswith("CW1,"))
+    assert ",as-built 3," in row and ",100," in row
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        asset = conn.execute("SELECT * FROM marine_assets WHERE id = 1").fetchone()
+        design = marine_piles.design_piles(None, conn.execute("SELECT * FROM marine_elements WHERE asset_id = 1").fetchall())
+        r = marine_piles.assess(design, conn.execute("SELECT * FROM marine_piles WHERE asset_id = 1").fetchall(), 150)
+    assert r["done"] == 3 and r["within"] == 2 and r["over"] == 1 and r["worst"] == 400 and len(r["extra"]) == 1
+    assert {p["name"]: p["state"] for p in r["piles"]}["P02"] == "critical"
+    assert r["per_week"] and r["finish"]
+    # A tighter tolerance turns CW1 (100 mm) out of position.
+    signed_in.post(demo + "/piles/tolerance", data={"tolerance": "75"})
+    assert "Within ±75 mm" in text(signed_in.get(demo + "/piles"))
+    # Positions as latitude and longitude land where x and y would.
+    at = marine.geolocate(asset, 12.0, 3.0)
+    rows, bad = marine_piles.read_csv(f"name,latitude,longitude\nZ1,{at[0]},{at[1]}\n", asset, None)
+    assert not bad and abs(rows[0]["x"] - 12.0) < 0.01 and abs(rows[0]["y"] - 3.0) < 0.01
+    rows, bad = marine_piles.read_csv("name,level\nZ2,3.1\n", asset, None)
+    assert not rows and "no position" in bad[0]
+    # The list to fill in, the made-up record and clearing it.
+    assert "P06" in signed_in.get(demo + "/piles/template.csv").get_data(as_text=True)
+    signed_in.post(demo + "/piles/demo")
+    assert "6 of 9" in text(signed_in.get(demo + "/piles"))
+    signed_in.post(demo + "/piles/clear")
+    assert "0 of 9" in text(signed_in.get(demo + "/piles"))
+
+
+def test_the_pile_tracker_turns_grid_positions_into_the_model_frame():
+    from app import marine_piles
+    asset = {"rotation": 30.0, "latitude": 6.4, "longitude": 3.4}
+    site = {"eastings": 500000.0, "northings": 700000.0}
+    theta = math.radians(30)
+    x, y = 20.0, 5.0
+    east = 500000 + x * math.cos(theta) - y * math.sin(theta)
+    north = 700000 + x * math.sin(theta) + y * math.cos(theta)
+    back = marine_piles.to_model(asset, site, {"e": east, "n": north})
+    assert abs(back[0] - x) < 1e-6 and abs(back[1] - y) < 1e-6

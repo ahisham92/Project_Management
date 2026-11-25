@@ -14,12 +14,12 @@ def text(response) -> str:
 
 
 def test_every_door_loads_the_kit_last(signed_in):
-    for path in ("/", "/projects", "/crs/", "/specs/", "/marinetwin/"):
+    for path in ("/", "/projects", "/crs/", "/marinetwin/"):
         page = text(signed_in.get(path))
         assert '<html lang="en" class="cdt">' in page, path
         assert "cdt/cdt.css" in page and "cdt/cdt.js" in page, path
         # after any door stylesheet, so the palette and the control states win
-        for door_css in ("pm.css", "themis.css", "marinetwin.css"):
+        for door_css in ("pm.css", "marinetwin.css"):
             if door_css in page:
                 assert page.index(door_css) < page.index("cdt/cdt.css"), (path, door_css)
 

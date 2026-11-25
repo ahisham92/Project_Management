@@ -49,7 +49,7 @@
   }
   function setBrand(brand) {
     store('cdt-brand', brand);
-    if (brand === 'cdt') root.setAttribute('data-brand', 'cdt'); else root.removeAttribute('data-brand');
+    if (brand === 'cdt') root.setAttribute('data-cdt-brand', 'cdt'); else root.removeAttribute('data-cdt-brand');
     syncPickers();
   }
   function syncPickers() {
@@ -944,7 +944,7 @@
 
   enhance(document);
   syncPickers();
-  if (store('cdt-brand') === 'cdt') root.setAttribute('data-brand', 'cdt');
+  if (store('cdt-brand') === 'cdt') root.setAttribute('data-cdt-brand', 'cdt');
 
   window.CDT = { ask: ask, toast: toast, setTheme: setTheme, setBrand: setBrand, evaluate: evaluate, enhance: enhance };
 })();

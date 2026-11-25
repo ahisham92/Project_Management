@@ -105,14 +105,14 @@
 }
 
 /* The CDT brand: identical to Dar except the accent family (CDT blue). */
-:root.cdt[data-brand="cdt"] {
+:root.cdt[data-cdt-brand="cdt"] {
   --cdt-accent: #1C63BC; --cdt-accent-hover: #1958A8; --cdt-accent-pressed: #164E94;
   --cdt-accent-subtle: #1C63BC33; --cdt-accent-bright: #3D86E2; --cdt-focus: #1C63BC;
   --cdt-accent-soft: #E4ECF7; --cdt-accent-wash: #F4F7FC; --cdt-accent-soft-pressed: #D6E3F3;
   --cdt-accent-strong: #154C90; --cdt-row-selected: #1C63BC40; --cdt-selection: #3D86E233;
 }
 @media (prefers-color-scheme: dark) {
-  :root.cdt[data-brand="cdt"]:not([data-theme="light"]) {
+  :root.cdt[data-cdt-brand="cdt"]:not([data-theme="light"]) {
     --cdt-accent: #4B9FF3; --cdt-accent-hover: #3A96F2; --cdt-accent-pressed: #2A8DF1;
     --cdt-accent-subtle: #4B9FF333; --cdt-accent-bright: #84BEF7; --cdt-focus: #84BEF7;
     --cdt-accent-soft: #28323A; --cdt-accent-wash: #1F262A; --cdt-accent-soft-pressed: #2C3E4F;
@@ -120,7 +120,7 @@
     --cdt-glow: 0 0 14px rgba(75, 159, 243, 0.55);
   }
 }
-:root.cdt[data-brand="cdt"][data-theme="dark"] {
+:root.cdt[data-cdt-brand="cdt"][data-theme="dark"] {
   --cdt-accent: #4B9FF3; --cdt-accent-hover: #3A96F2; --cdt-accent-pressed: #2A8DF1;
   --cdt-accent-subtle: #4B9FF333; --cdt-accent-bright: #84BEF7; --cdt-focus: #84BEF7;
   --cdt-accent-soft: #28323A; --cdt-accent-wash: #1F262A; --cdt-accent-soft-pressed: #2C3E4F;

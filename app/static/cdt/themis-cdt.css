@@ -1,0 +1,851 @@
+/* THEMIS in the CDT theme: the web port of the CDT SDK's WPF theme
+ * (CDT.Wpf/Themes, Dar Structural Computational Design).
+ *
+ * Loaded after themis.css on THEMIS pages only (body.themis-app), so the
+ * other apps on the site keep their own look. Like the SDK it is a swappable
+ * palette under a fixed style sheet:
+ *
+ *   - four palettes with the same token keys, copied value for value from
+ *     Palette.Dar.Light / Palette.Light / Palette.Dar.Dark / Palette.Dark.xaml:
+ *     Dar (teal) is the default brand, CDT (blue) the other; light and dark
+ *     each follow the site's theme switch;
+ *   - the site's own colour names (--ink, --plane, --series-1 …) answered by
+ *     those tokens, so every THEMIS page turns over at once;
+ *   - the SDK's style catalogue as CSS (buttons, inputs, cards, badges, chips,
+ *     segmented lists, the data grid, InfoBar, DialogHost, EmptyState,
+ *     StepIndicator, BusyDots, Kbd, ToggleSwitch, SearchableComboBox …), whose
+ *     behaviour lives in cdt.js.
+ *
+ * Accent and status colours keep the SDK's contrast: every text pair 4.5:1,
+ * every UI part and focus ring 3:1; Text3 is for disabled content only.
+ */
+
+/* Dar brand, light (the default) — Palette.Dar.Light.xaml */
+body.themis-app {
+  --cdt-surface-0: #f2f0e8;
+  --cdt-surface-1: #fbfaf6;
+  --cdt-surface-2: #ffffff;
+  --cdt-surface-3: #e7e4da;
+  --cdt-sidebar: #edeae1;
+  --cdt-stroke: #ded9cc;
+  --cdt-stroke-strong: #bfb9a9;
+  --cdt-accent: #147165;
+  --cdt-accent-hover: #115e54;
+  --cdt-accent-pressed: #0d4a42;
+  --cdt-accent-subtle: rgb(20 113 101 / 0.20);
+  --cdt-accent-bright: #1fae9b;
+  --cdt-focus-ring: #147165;
+  --cdt-accent-soft: #e3eeed;
+  --cdt-accent-wash: #f3f8f7;
+  --cdt-on-accent: #ffffff;
+  --cdt-success: #207410;
+  --cdt-warning: #8d5918;
+  --cdt-danger: #c42020;
+  --cdt-danger-soft: #fdf3f3;
+  --cdt-danger-soft-border: #f0d5d5;
+  --cdt-text-0: #1e1d1a;
+  --cdt-text-1: #3c3b36;
+  --cdt-text-2: #67645c;
+  --cdt-text-3: #98948a;
+  --cdt-selection-light: rgb(31 174 155 / 0.20);
+  --cdt-selection-light-border: #1fae9b;
+  --cdt-row-selected: rgb(20 113 101 / 0.25);
+  --cdt-success-hover: #1a600d;
+  --cdt-success-pressed: #154c0a;
+  --cdt-warning-hover: #794d15;
+  --cdt-warning-pressed: #664011;
+  --cdt-danger-hover: #b01d1d;
+  --cdt-danger-pressed: #9d1a1a;
+  --cdt-accent-soft-pressed: #d5e5e3;
+  --cdt-success-soft: #e9f1e7;
+  --cdt-success-soft-pressed: #d7e6d4;
+  --cdt-warning-soft: #f4eee8;
+  --cdt-warning-soft-pressed: #eae1d5;
+  --cdt-danger-soft-pressed: #f4d7d7;
+  --cdt-accent-strong: #0c463e;
+  --cdt-success-strong: #14470a;
+  --cdt-warning-strong: #613d11;
+  --cdt-danger-strong: #981919;
+  --cdt-glow: #1e1d1a;
+  --cdt-scrim: rgb(30 29 26 / 0.44);
+  --cdt-glow-opacity: 0.18;
+  --cdt-glow-tint-opacity: 0;
+}
+
+/* CDT brand, light — Palette.Light.xaml */
+:root[data-cdt-brand="cdt"] body.themis-app {
+  --cdt-surface-0: #f2f0e8;
+  --cdt-surface-1: #fbfaf6;
+  --cdt-surface-2: #ffffff;
+  --cdt-surface-3: #e7e4da;
+  --cdt-sidebar: #edeae1;
+  --cdt-stroke: #ded9cc;
+  --cdt-stroke-strong: #bfb9a9;
+  --cdt-accent: #1c63bc;
+  --cdt-accent-hover: #1958a8;
+  --cdt-accent-pressed: #164e94;
+  --cdt-accent-subtle: rgb(28 99 188 / 0.20);
+  --cdt-accent-bright: #3d86e2;
+  --cdt-focus-ring: #1c63bc;
+  --cdt-accent-soft: #e4ecf7;
+  --cdt-accent-wash: #f4f7fc;
+  --cdt-on-accent: #ffffff;
+  --cdt-success: #207410;
+  --cdt-warning: #8d5918;
+  --cdt-danger: #c42020;
+  --cdt-danger-soft: #fdf3f3;
+  --cdt-danger-soft-border: #f0d5d5;
+  --cdt-text-0: #1e1d1a;
+  --cdt-text-1: #3c3b36;
+  --cdt-text-2: #67645c;
+  --cdt-text-3: #98948a;
+  --cdt-selection-light: rgb(61 134 226 / 0.20);
+  --cdt-selection-light-border: #5897e6;
+  --cdt-row-selected: rgb(28 99 188 / 0.25);
+  --cdt-success-hover: #1a600d;
+  --cdt-success-pressed: #154c0a;
+  --cdt-warning-hover: #794d15;
+  --cdt-warning-pressed: #664011;
+  --cdt-danger-hover: #b01d1d;
+  --cdt-danger-pressed: #9d1a1a;
+  --cdt-accent-soft-pressed: #d6e3f3;
+  --cdt-success-soft: #e9f1e7;
+  --cdt-success-soft-pressed: #d7e6d4;
+  --cdt-warning-soft: #f4eee8;
+  --cdt-warning-soft-pressed: #eae1d5;
+  --cdt-danger-soft-pressed: #f4d7d7;
+  --cdt-accent-strong: #154c90;
+  --cdt-success-strong: #14470a;
+  --cdt-warning-strong: #613d11;
+  --cdt-danger-strong: #981919;
+  --cdt-glow: #1e1d1a;
+  --cdt-scrim: rgb(30 29 26 / 0.44);
+  --cdt-glow-opacity: 0.18;
+  --cdt-glow-tint-opacity: 0;
+}
+
+/* Dar brand, dark — Palette.Dar.Dark.xaml */
+@media (prefers-color-scheme: dark) {
+:root:not([data-theme="light"]) body.themis-app {
+  --cdt-surface-0: #1b1b19;
+  --cdt-surface-1: #232321;
+  --cdt-surface-2: #2a2a27;
+  --cdt-surface-3: #323230;
+  --cdt-sidebar: #1f1f1d;
+  --cdt-stroke: #353532;
+  --cdt-stroke-strong: #4a4a46;
+  --cdt-accent: #32dac4;
+  --cdt-accent-hover: #24c9b4;
+  --cdt-accent-pressed: #20af9c;
+  --cdt-accent-subtle: rgb(50 218 196 / 0.20);
+  --cdt-accent-bright: #6ee5d5;
+  --cdt-focus-ring: #6ee5d5;
+  --cdt-accent-soft: #243531;
+  --cdt-accent-wash: #1d2825;
+  --cdt-on-accent: #1b1b19;
+  --cdt-success: #6bde4a;
+  --cdt-warning: #fb9b24;
+  --cdt-danger: #f87171;
+  --cdt-danger-soft: #332321;
+  --cdt-danger-soft-border: #5e3735;
+  --cdt-text-0: #f2efe9;
+  --cdt-text-1: #d6d2ca;
+  --cdt-text-2: #9f9b92;
+  --cdt-text-3: #6e6a62;
+  --cdt-selection-light: rgb(180 241 233 / 0.20);
+  --cdt-selection-light-border: #b4f1e9;
+  --cdt-row-selected: rgb(50 218 196 / 0.25);
+  --cdt-success-hover: #5fdb3b;
+  --cdt-success-pressed: #52d82c;
+  --cdt-warning-hover: #fb9312;
+  --cdt-warning-pressed: #f78b05;
+  --cdt-danger-hover: #f76060;
+  --cdt-danger-pressed: #f64f4f;
+  --cdt-accent-soft-pressed: #264b45;
+  --cdt-success-soft: #2c3926;
+  --cdt-success-soft-pressed: #334c2a;
+  --cdt-warning-soft: #3d3121;
+  --cdt-warning-soft-pressed: #533d22;
+  --cdt-danger-soft-pressed: #523433;
+  --cdt-accent-strong: #5de2d0;
+  --cdt-success-strong: #8ee675;
+  --cdt-warning-strong: #fcb256;
+  --cdt-danger-strong: #faa2a2;
+  --cdt-glow: #32dac4;
+  --cdt-scrim: rgb(12 12 11 / 0.72);
+  --cdt-glow-opacity: 0.55;
+  --cdt-glow-tint-opacity: 0.7;
+}
+}
+:root[data-theme="dark"] body.themis-app {
+  --cdt-surface-0: #1b1b19;
+  --cdt-surface-1: #232321;
+  --cdt-surface-2: #2a2a27;
+  --cdt-surface-3: #323230;
+  --cdt-sidebar: #1f1f1d;
+  --cdt-stroke: #353532;
+  --cdt-stroke-strong: #4a4a46;
+  --cdt-accent: #32dac4;
+  --cdt-accent-hover: #24c9b4;
+  --cdt-accent-pressed: #20af9c;
+  --cdt-accent-subtle: rgb(50 218 196 / 0.20);
+  --cdt-accent-bright: #6ee5d5;
+  --cdt-focus-ring: #6ee5d5;
+  --cdt-accent-soft: #243531;
+  --cdt-accent-wash: #1d2825;
+  --cdt-on-accent: #1b1b19;
+  --cdt-success: #6bde4a;
+  --cdt-warning: #fb9b24;
+  --cdt-danger: #f87171;
+  --cdt-danger-soft: #332321;
+  --cdt-danger-soft-border: #5e3735;
+  --cdt-text-0: #f2efe9;
+  --cdt-text-1: #d6d2ca;
+  --cdt-text-2: #9f9b92;
+  --cdt-text-3: #6e6a62;
+  --cdt-selection-light: rgb(180 241 233 / 0.20);
+  --cdt-selection-light-border: #b4f1e9;
+  --cdt-row-selected: rgb(50 218 196 / 0.25);
+  --cdt-success-hover: #5fdb3b;
+  --cdt-success-pressed: #52d82c;
+  --cdt-warning-hover: #fb9312;
+  --cdt-warning-pressed: #f78b05;
+  --cdt-danger-hover: #f76060;
+  --cdt-danger-pressed: #f64f4f;
+  --cdt-accent-soft-pressed: #264b45;
+  --cdt-success-soft: #2c3926;
+  --cdt-success-soft-pressed: #334c2a;
+  --cdt-warning-soft: #3d3121;
+  --cdt-warning-soft-pressed: #533d22;
+  --cdt-danger-soft-pressed: #523433;
+  --cdt-accent-strong: #5de2d0;
+  --cdt-success-strong: #8ee675;
+  --cdt-warning-strong: #fcb256;
+  --cdt-danger-strong: #faa2a2;
+  --cdt-glow: #32dac4;
+  --cdt-scrim: rgb(12 12 11 / 0.72);
+  --cdt-glow-opacity: 0.55;
+  --cdt-glow-tint-opacity: 0.7;
+}
+
+/* CDT brand, dark — Palette.Dark.xaml */
+@media (prefers-color-scheme: dark) {
+:root[data-cdt-brand="cdt"]:not([data-theme="light"]) body.themis-app {
+  --cdt-surface-0: #1b1b19;
+  --cdt-surface-1: #232321;
+  --cdt-surface-2: #2a2a27;
+  --cdt-surface-3: #323230;
+  --cdt-sidebar: #1f1f1d;
+  --cdt-stroke: #353532;
+  --cdt-stroke-strong: #4a4a46;
+  --cdt-accent: #4b9ff3;
+  --cdt-accent-hover: #3a96f2;
+  --cdt-accent-pressed: #2a8df1;
+  --cdt-accent-subtle: rgb(75 159 243 / 0.20);
+  --cdt-accent-bright: #84bef7;
+  --cdt-focus-ring: #84bef7;
+  --cdt-accent-soft: #28323a;
+  --cdt-accent-wash: #1f262a;
+  --cdt-on-accent: #1b1b19;
+  --cdt-success: #6bde4a;
+  --cdt-warning: #fb9b24;
+  --cdt-danger: #f87171;
+  --cdt-danger-soft: #332321;
+  --cdt-danger-soft-border: #5e3735;
+  --cdt-text-0: #f2efe9;
+  --cdt-text-1: #d6d2ca;
+  --cdt-text-2: #9f9b92;
+  --cdt-text-3: #6e6a62;
+  --cdt-selection-light: rgb(190 220 251 / 0.20);
+  --cdt-selection-light-border: #bedcfb;
+  --cdt-row-selected: rgb(75 159 243 / 0.25);
+  --cdt-success-hover: #5fdb3b;
+  --cdt-success-pressed: #52d82c;
+  --cdt-warning-hover: #fb9312;
+  --cdt-warning-pressed: #f78b05;
+  --cdt-danger-hover: #f76060;
+  --cdt-danger-pressed: #f64f4f;
+  --cdt-accent-soft-pressed: #2c3e4f;
+  --cdt-success-soft: #2c3926;
+  --cdt-success-soft-pressed: #334c2a;
+  --cdt-warning-soft: #3d3121;
+  --cdt-warning-soft-pressed: #533d22;
+  --cdt-danger-soft-pressed: #523433;
+  --cdt-accent-strong: #7bb8f6;
+  --cdt-success-strong: #8ee675;
+  --cdt-warning-strong: #fcb256;
+  --cdt-danger-strong: #faa2a2;
+  --cdt-glow: #4b9ff3;
+  --cdt-scrim: rgb(12 12 11 / 0.72);
+  --cdt-glow-opacity: 0.55;
+  --cdt-glow-tint-opacity: 0.7;
+}
+}
+:root[data-cdt-brand="cdt"][data-theme="dark"] body.themis-app {
+  --cdt-surface-0: #1b1b19;
+  --cdt-surface-1: #232321;
+  --cdt-surface-2: #2a2a27;
+  --cdt-surface-3: #323230;
+  --cdt-sidebar: #1f1f1d;
+  --cdt-stroke: #353532;
+  --cdt-stroke-strong: #4a4a46;
+  --cdt-accent: #4b9ff3;
+  --cdt-accent-hover: #3a96f2;
+  --cdt-accent-pressed: #2a8df1;
+  --cdt-accent-subtle: rgb(75 159 243 / 0.20);
+  --cdt-accent-bright: #84bef7;
+  --cdt-focus-ring: #84bef7;
+  --cdt-accent-soft: #28323a;
+  --cdt-accent-wash: #1f262a;
+  --cdt-on-accent: #1b1b19;
+  --cdt-success: #6bde4a;
+  --cdt-warning: #fb9b24;
+  --cdt-danger: #f87171;
+  --cdt-danger-soft: #332321;
+  --cdt-danger-soft-border: #5e3735;
+  --cdt-text-0: #f2efe9;
+  --cdt-text-1: #d6d2ca;
+  --cdt-text-2: #9f9b92;
+  --cdt-text-3: #6e6a62;
+  --cdt-selection-light: rgb(190 220 251 / 0.20);
+  --cdt-selection-light-border: #bedcfb;
+  --cdt-row-selected: rgb(75 159 243 / 0.25);
+  --cdt-success-hover: #5fdb3b;
+  --cdt-success-pressed: #52d82c;
+  --cdt-warning-hover: #fb9312;
+  --cdt-warning-pressed: #f78b05;
+  --cdt-danger-hover: #f76060;
+  --cdt-danger-pressed: #f64f4f;
+  --cdt-accent-soft-pressed: #2c3e4f;
+  --cdt-success-soft: #2c3926;
+  --cdt-success-soft-pressed: #334c2a;
+  --cdt-warning-soft: #3d3121;
+  --cdt-warning-soft-pressed: #533d22;
+  --cdt-danger-soft-pressed: #523433;
+  --cdt-accent-strong: #7bb8f6;
+  --cdt-success-strong: #8ee675;
+  --cdt-warning-strong: #fcb256;
+  --cdt-danger-strong: #faa2a2;
+  --cdt-glow: #4b9ff3;
+  --cdt-scrim: rgb(12 12 11 / 0.72);
+  --cdt-glow-opacity: 0.55;
+  --cdt-glow-tint-opacity: 0.7;
+}
+
+
+/* --- the type, spacing and shape tokens (Styles.xaml) ---------------------- */
+
+body.themis-app {
+  --cdt-ui-font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  --cdt-display-font: "Segoe UI Variable Display", Inter, "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+  --cdt-mono-font: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --cdt-font-caption: 11px;
+  --cdt-font-small: 12px;
+  --cdt-font-body: 13.5px;
+  --cdt-font-subhead: 14px;
+  --cdt-font-title: 17px;
+  --cdt-font-hero: 22px;
+  --cdt-space: 10px;
+  --cdt-space-tight: 5px;
+  --cdt-button-min-height: 32px;
+  --cdt-radius-card: 10px;
+  --cdt-radius-control: 8px;
+  --cdt-radius-sheet: 16px;
+  --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.30);
+  --cdt-soft-shadow: 0 3px 16px rgb(0 0 0 / 0.10);
+  --cdt-glow-shadow: 0 0 14px rgb(30 29 26 / 0.18);
+  --cdt-fast: 120ms;
+}
+:root[data-theme="dark"] body.themis-app { --cdt-glow-shadow: 0 0 14px color-mix(in srgb, var(--cdt-accent) 55%, transparent); --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.55); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.themis-app { --cdt-glow-shadow: 0 0 14px color-mix(in srgb, var(--cdt-accent) 55%, transparent); --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.55); }
+}
+
+/* --- the site's own names for colours, answered by the CDT palette ---------
+   Every THEMIS page and script already paints with these; pointing them at
+   the CDT tokens is what turns the whole app over at once, light and dark,
+   Dar and CDT, without touching the other apps on the site. */
+
+body.themis-app {
+  color-scheme: light;
+  --plane: var(--cdt-surface-0);
+  --surface: var(--cdt-surface-1);
+  --raised: var(--cdt-surface-2);
+  --ink: var(--cdt-text-0);
+  --ink-2: var(--cdt-text-1);
+  --muted: var(--cdt-text-2);
+  --grid: var(--cdt-stroke);
+  --axis: var(--cdt-stroke-strong);
+  --border: var(--cdt-stroke);
+  --series-1: var(--cdt-accent);
+  --good: var(--cdt-success);
+  --good-ink: var(--cdt-success-strong);
+  --warning: var(--cdt-warning);
+  --serious: var(--cdt-warning);
+  --critical: var(--cdt-danger);
+  --tint-good: var(--cdt-success-soft);
+  --tint-warning: var(--cdt-warning-soft);
+  --tint-serious: var(--cdt-warning-soft);
+  --tint-critical: var(--cdt-danger-soft);
+  --themis-on-primary: var(--cdt-on-accent);
+  --themis-primary-hover: var(--cdt-accent-hover);
+  --themis-tint: var(--cdt-accent-wash);
+  --themis-gold-tint: var(--cdt-warning-soft);
+  --themis-ring: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 30%, transparent);
+  --themis-shadow: none;
+  --themis-radius: var(--cdt-radius-card);
+  --in-answered: var(--cdt-success);
+  --in-suggested: var(--cdt-warning);
+  --in-needed: var(--cdt-danger);
+  --in-suggested-ink: var(--cdt-warning-strong);
+  background: var(--cdt-surface-0);
+  color: var(--cdt-text-1);
+  font-family: var(--cdt-ui-font);
+  font-feature-settings: "cv11", "ss01";
+}
+:root[data-theme="dark"] body.themis-app { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body.themis-app { color-scheme: dark; } }
+body.themis-app ::selection { background: var(--cdt-accent-subtle); }
+body.themis-app { accent-color: var(--cdt-accent); }
+
+/* --- text: CDT.Hero / Title / Body / Muted / SectionLabel ------------------ */
+
+.themis-app main h1:not(.themis-hero h1), .cdt-hero { font-family: var(--cdt-display-font); font-weight: 600; color: var(--cdt-text-0); letter-spacing: -0.01em; }
+.themis-app main h2, .themis-app main h3, .cdt-title { color: var(--cdt-text-0); font-weight: 600; }
+.themis-app .muted { color: var(--cdt-text-2); }
+.themis-app .card-head h2 { font-size: var(--cdt-font-subhead); }
+.cdt-section-label, .themis-app .spec-toolbox h2, .themis-app .spec-story-eyebrow, .themis-app .spec-station-level {
+  font-size: var(--cdt-font-caption); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cdt-text-2);
+}
+.cdt-stat-label { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-2); }
+.cdt-stat-number { font-family: var(--cdt-display-font); font-size: 24px; font-weight: 700; color: var(--cdt-text-0); font-variant-numeric: tabular-nums; }
+.themis-app code, .themis-app .mono { font-family: var(--cdt-mono-font); }
+.themis-app a { color: var(--cdt-accent); text-underline-offset: 2px; }
+.themis-app a:hover { color: var(--cdt-accent-hover); }
+
+/* --- focus: CDT.FocusVisual ----------------------------------------------- */
+
+.themis-app :focus-visible { outline: 2px solid var(--cdt-focus-ring); outline-offset: 2px; border-radius: 4px; }
+
+/* --- buttons: CDT.PrimaryButton / SecondaryButton / GhostButton / LinkButton,
+   the filled, soft and muted semantic families -------------------------------- */
+
+.themis-app .btn, .cdt-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--cdt-button-min-height); padding: 6px 14px; border-radius: var(--cdt-radius-control);
+  border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); color: var(--cdt-text-0);
+  font: 500 var(--cdt-font-body)/1.2 var(--cdt-ui-font); text-decoration: none; cursor: pointer; position: relative;
+  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out, color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
+}
+.themis-app .btn-sm { min-height: 28px; padding: 3px 10px; font-size: var(--cdt-font-small); }
+/* neutral — Secondary: rest → Surface3 → AccentSoft */
+.themis-app .btn:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.themis-app .btn:active:not(:disabled) { background: var(--cdt-accent-soft); transform: none; }
+/* Ghost: borderless until hovered */
+.themis-app .btn-ghost { background: var(--cdt-surface-2); border-color: var(--cdt-stroke); color: var(--cdt-text-0); }
+.themis-app .btn-ghost:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
+.themis-app .cdt-btn-ghost { background: transparent; border-color: transparent; }
+.themis-app .cdt-btn-ghost:hover { background: var(--cdt-surface-3); }
+/* Primary: Accent → AccentHover → AccentPressed, with the halo on hover */
+.themis-app .btn-primary, .themis-app .cdt-btn-primary { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); font-weight: 600; }
+.themis-app .btn-primary:hover, .themis-app .cdt-btn-primary:hover { background: var(--cdt-accent-hover); border-color: var(--cdt-accent-hover); color: var(--cdt-on-accent); box-shadow: var(--cdt-glow-shadow); filter: none; }
+.themis-app .btn-primary:active:not(:disabled), .themis-app .cdt-btn-primary:active { background: var(--cdt-accent-pressed); border-color: var(--cdt-accent-pressed); box-shadow: none; }
+/* Danger as CDT.SoftDangerButton: outlined, tinted on hover */
+.themis-app .btn-danger, .themis-app .cdt-btn-soft-danger { background: transparent; border-color: var(--cdt-danger); color: var(--cdt-danger); }
+.themis-app .btn-danger:hover, .themis-app .cdt-btn-soft-danger:hover { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); border-color: var(--cdt-danger); }
+.themis-app .btn-danger:active:not(:disabled) { background: var(--cdt-danger-soft-pressed); }
+.themis-app .cdt-btn-danger { background: var(--cdt-danger); border-color: var(--cdt-danger); color: var(--cdt-on-accent); font-weight: 600; }
+.themis-app .cdt-btn-danger:hover { background: var(--cdt-danger-hover); border-color: var(--cdt-danger-hover); color: var(--cdt-on-accent); }
+.themis-app .cdt-btn-success { background: var(--cdt-success); border-color: var(--cdt-success); color: var(--cdt-on-accent); font-weight: 600; }
+.themis-app .cdt-btn-success:hover { background: var(--cdt-success-hover); border-color: var(--cdt-success-hover); color: var(--cdt-on-accent); }
+.themis-app .cdt-btn-soft-primary { background: transparent; border-color: var(--cdt-accent); color: var(--cdt-accent); }
+.themis-app .cdt-btn-soft-primary:hover { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+.themis-app .cdt-btn-link { background: none; border: 0; min-height: 0; padding: 0; color: var(--cdt-accent); text-decoration: underline; }
+/* Disabled: Surface3 + Text3; an outline kept on the soft ones */
+.themis-app .btn:disabled, .themis-app .btn[aria-disabled="true"] {
+  background: var(--cdt-surface-3); border-color: var(--cdt-stroke); color: var(--cdt-text-3); cursor: not-allowed; box-shadow: none; opacity: 1;
+}
+.themis-app .btn-danger:disabled { background: transparent; }
+/* CDT.IconButton / CDT.CircleButton */
+.cdt-icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--cdt-radius-control); border: 0; background: transparent; color: var(--cdt-text-1); cursor: pointer; }
+.cdt-icon-btn:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.cdt-icon-btn:active { background: var(--cdt-accent-soft); }
+
+/* --- inputs: CDT.TextBox / ComboBox — Stroke → StrokeStrong → Accent → Danger */
+
+.themis-app input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+.themis-app select, .themis-app textarea {
+  background-color: var(--cdt-surface-2); color: var(--cdt-text-0); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-control);
+  font-family: var(--cdt-ui-font); min-height: 34px;
+  transition: border-color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
+}
+.themis-app textarea { min-height: 0; }
+.themis-app input:not([type=checkbox]):not([type=radio]):hover, .themis-app select:hover, .themis-app textarea:hover { border-color: var(--cdt-stroke-strong); }
+.themis-app input:focus, .themis-app select:focus, .themis-app textarea:focus {
+  outline: none; border-color: var(--cdt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 22%, transparent);
+}
+.themis-app input::placeholder, .themis-app textarea::placeholder { color: var(--cdt-text-2); opacity: 1; }
+.themis-app input:disabled, .themis-app select:disabled, .themis-app textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+.themis-app input[aria-invalid="true"], .themis-app .is-invalid { border-color: var(--cdt-danger) !important; }
+.themis-app select:not([multiple]) {
+  appearance: none; -webkit-appearance: none; padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2367645c' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.themis-app .field-label { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-1); }
+.themis-app .field-hint { color: var(--cdt-text-2); }
+.themis-app .themis-req { color: var(--cdt-accent-strong); background: var(--cdt-accent-soft); border-radius: 10px; padding: 0 6px; font-size: var(--cdt-font-caption); font-weight: 600; }
+/* CDT.SearchTextBox: the magnifier inside the field */
+.themis-app input[type=search] {
+  padding-left: 32px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367645c' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 11px center;
+}
+
+/* CDT.CheckBox / RadioButton: Accent when checked; the label row takes the hover */
+.themis-app input[type=checkbox], .themis-app input[type=radio] { accent-color: var(--cdt-accent); width: 16px; height: 16px; }
+
+/* CDT.ToggleSwitch, on a checkbox: for settings that apply at once */
+.cdt-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.cdt-switch input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; width: 36px !important; height: 20px !important; flex: none; margin: 0;
+  border-radius: 10px; border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); position: relative; cursor: pointer;
+  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out;
+}
+.cdt-switch input[type=checkbox]::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--cdt-text-2);
+  transition: transform var(--cdt-fast) ease-out, background-color var(--cdt-fast) ease-out;
+}
+.cdt-switch input[type=checkbox]:checked { background: var(--cdt-accent); border-color: var(--cdt-accent); }
+.cdt-switch input[type=checkbox]:checked::after { transform: translateX(16px); background: var(--cdt-on-accent); }
+.cdt-switch input[type=checkbox]:hover { border-color: var(--cdt-accent-bright); }
+
+/* --- containers: CDT.Card / InnerCard / NoticeCard / ErrorCard --------------- */
+
+.themis-app .card, .cdt-card {
+  background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); box-shadow: none;
+}
+.themis-app .card-head { border-bottom: 1px solid var(--cdt-stroke); }
+.themis-app .card-foot { border-top-color: var(--cdt-stroke); }
+.cdt-inner-card { background: var(--cdt-surface-2); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-control); padding: 14px; }
+.cdt-notice-card, .themis-app .spec-engineer-note {
+  background: var(--cdt-accent-wash); border: 1px solid var(--cdt-accent); border-radius: var(--cdt-radius-card); padding: 10px 12px; color: var(--cdt-text-1);
+}
+.themis-app .spec-engineer-note { border-color: color-mix(in srgb, var(--cdt-warning) 55%, var(--cdt-stroke)); background: var(--cdt-warning-soft); }
+.cdt-error-card { background: var(--cdt-danger-soft); border: 1px solid var(--cdt-danger-soft-border); border-radius: var(--cdt-radius-card); padding: 8px 11px; color: var(--cdt-danger-strong); }
+
+/* --- status vocabulary: CDT.Badge / Chip / StatusDot / OutcomeLabel ---------- */
+
+.themis-app .badge, .cdt-badge {
+  display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; padding: 2px 8px; border: 0;
+  background: var(--cdt-surface-3); color: var(--cdt-text-1); font-size: var(--cdt-font-small); font-weight: 500; line-height: 1.5;
+}
+.cdt-badge[data-dot]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cdt-text-2); flex: none; }
+.themis-app .badge.good, .themis-app .badge.ok { background: var(--cdt-success-soft); color: var(--cdt-success-strong); }
+.themis-app .badge.warning, .themis-app .badge.serious { background: var(--cdt-warning-soft); color: var(--cdt-warning-strong); }
+.themis-app .badge.critical, .themis-app .badge.bad { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+.cdt-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 10px; background: var(--cdt-accent-soft); border: 1px solid var(--cdt-stroke); color: var(--cdt-accent-strong); font-size: var(--cdt-font-small); }
+.cdt-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cdt-text-3); vertical-align: middle; }
+.cdt-status-dot[data-state=ok] { background: var(--cdt-success); box-shadow: 0 0 6px color-mix(in srgb, var(--cdt-success) 60%, transparent); }
+.cdt-status-dot[data-state=warn] { background: var(--cdt-warning); animation: cdt-pulse 1.4s ease-in-out infinite; }
+.cdt-status-dot[data-state=error] { background: var(--cdt-danger); }
+@keyframes cdt-pulse { 50% { opacity: 0.35; } }
+
+/* The in-story answer chips (answered / suggested / needs your answer) as
+   CDT.OutcomeLabel: glyph + word + colour, never colour alone. */
+.themis-app .spec-in-chip { border-radius: 10px; padding: 1px 8px 1px 6px; font-weight: 600; font-size: var(--cdt-font-small); border: 0; display: inline-flex; align-items: center; gap: 4px; }
+.themis-app .spec-in-chip::before { font-weight: 700; }
+.themis-app .spec-in-chip.spec-in-answered { background: var(--cdt-success-soft); color: var(--cdt-success-strong); }
+.themis-app .spec-in-chip.spec-in-answered::before { content: "✓"; }
+.themis-app .spec-in-chip.spec-in-suggested { background: var(--cdt-warning-soft); color: var(--cdt-warning-strong); }
+.themis-app .spec-in-chip.spec-in-suggested::before { content: "•"; }
+.themis-app .spec-in-chip.spec-in-needed { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+.themis-app .spec-in-chip.spec-in-needed::before { content: "!"; }
+
+/* --- CDT.SegmentedList / SegmentTrack + SegmentButton, CDT.FilterChip -------- */
+
+.cdt-segmented, .themis-app .chips {
+  display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 9px; background: var(--cdt-surface-3); border: 0;
+}
+.cdt-segmented > button, .cdt-segmented > a, .themis-app .chips a {
+  border: 0; background: transparent; color: var(--cdt-text-2); font: 500 var(--cdt-font-small)/1.2 var(--cdt-ui-font);
+  padding: 5px 12px; border-radius: 7px; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.cdt-segmented > button:hover, .cdt-segmented > a:hover, .themis-app .chips a:hover { color: var(--cdt-text-0); background: color-mix(in srgb, var(--cdt-surface-2) 55%, transparent); }
+.cdt-segmented > [aria-pressed="true"], .cdt-segmented > [aria-current], .themis-app .chips a.active {
+  background: var(--cdt-surface-2); color: var(--cdt-text-0); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
+}
+.cdt-filter-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); color: var(--cdt-text-1); font-size: var(--cdt-font-small); cursor: pointer; }
+.cdt-filter-chip:hover { background: var(--cdt-accent-soft); }
+.cdt-filter-chip[aria-pressed="true"] { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
+
+/* --- CDT.Kbd ------------------------------------------------------------- */
+
+.cdt-kbd {
+  display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--cdt-stroke); border-bottom-width: 2px;
+  background: var(--cdt-surface-2); color: var(--cdt-text-2); font: 600 10.5px/16px var(--cdt-ui-font); text-align: center; vertical-align: 1px;
+}
+
+/* --- CDT.ProgressBar and the UtilizationBar ------------------------------ */
+
+.cdt-progress { height: 4px; border-radius: 2px; background: var(--cdt-surface-3); overflow: hidden; }
+.cdt-progress > i { display: block; height: 100%; border-radius: 2px; background: var(--cdt-accent); transition: width 300ms ease-out; }
+.cdt-progress.is-indeterminate > i { width: 30% !important; animation: cdt-sweep 1.2s ease-in-out infinite; }
+@keyframes cdt-sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.cdt-util { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: var(--cdt-font-small); }
+.cdt-util-track { height: 8px; border-radius: 4px; background: var(--cdt-surface-3); position: relative; overflow: hidden; }
+.cdt-util-track > i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--cdt-success); transition: width 300ms ease-out; }
+.cdt-util[data-band=warn] .cdt-util-track > i { background: var(--cdt-warning); }
+.cdt-util[data-band=over] .cdt-util-track > i { background: var(--cdt-danger); }
+.cdt-util-label { color: var(--cdt-text-2); font-weight: 600; }
+.cdt-util-value { color: var(--cdt-text-0); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* --- CDT BusyDots ------------------------------------------------------- */
+
+.cdt-busy { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
+.cdt-busy > i { width: 5px; height: 5px; border-radius: 50%; background: var(--cdt-accent); animation: cdt-busy 1s ease-in-out infinite; }
+.cdt-busy > i:nth-child(2) { animation-delay: 0.15s; }
+.cdt-busy > i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cdt-busy { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* --- the activity pill in the header: BusyDots while answers save, then a
+   StatusDot with the word for how it went ---------------------------------- */
+
+.cdt-activity { display: inline-flex; align-items: center; gap: 7px; font-size: var(--cdt-font-small); color: var(--cdt-text-2); padding: 3px 10px; border-radius: 12px; min-height: 26px; }
+.cdt-activity[hidden] { display: none; }
+.cdt-activity.is-busy { background: var(--cdt-accent-wash); color: var(--cdt-accent-strong); }
+.cdt-activity.is-bad { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+
+/* --- CDT InfoBar (flash messages) and its toast form ---------------------- */
+
+.themis-app .flashes { gap: 8px; }
+.themis-app .flash, .cdt-infobar {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: start;
+  padding: 10px 12px; border-radius: var(--cdt-radius-card); border: 1px solid var(--cdt-stroke);
+  background: var(--cdt-surface-1); color: var(--cdt-text-1); font-size: var(--cdt-font-body);
+}
+.cdt-infobar-glyph { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font: 700 11px/1 var(--cdt-ui-font); color: var(--cdt-on-accent); background: var(--cdt-accent); margin-top: 1px; }
+.cdt-infobar-title { font-weight: 700; color: var(--cdt-text-0); margin-right: 6px; }
+.cdt-infobar-close { border: 0; background: transparent; color: var(--cdt-text-2); cursor: pointer; width: 24px; height: 24px; border-radius: 6px; font-size: 16px; line-height: 1; margin: -2px -4px 0 0; }
+.cdt-infobar-close:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.themis-app .flash.success, .cdt-infobar[data-severity=success] { background: var(--cdt-success-soft); border-color: color-mix(in srgb, var(--cdt-success) 35%, var(--cdt-stroke)); color: var(--cdt-text-1); }
+.themis-app .flash.success .cdt-infobar-glyph, .cdt-infobar[data-severity=success] .cdt-infobar-glyph { background: var(--cdt-success); }
+.themis-app .flash.error, .cdt-infobar[data-severity=error] { background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); color: var(--cdt-text-1); }
+.themis-app .flash.error .cdt-infobar-glyph, .cdt-infobar[data-severity=error] .cdt-infobar-glyph { background: var(--cdt-danger); }
+.themis-app .flash.notice, .themis-app .flash.warning, .cdt-infobar[data-severity=warning] { background: var(--cdt-warning-soft); border-color: color-mix(in srgb, var(--cdt-warning) 35%, var(--cdt-stroke)); }
+.themis-app .flash.notice .cdt-infobar-glyph, .themis-app .flash.warning .cdt-infobar-glyph, .cdt-infobar[data-severity=warning] .cdt-infobar-glyph { background: var(--cdt-warning); }
+.themis-app .flash.info, .cdt-infobar[data-severity=info] { background: var(--cdt-accent-wash); border-color: color-mix(in srgb, var(--cdt-accent) 30%, var(--cdt-stroke)); }
+.themis-app .flash:not(.cdt-infobar) { display: block; }   /* until the script turns it into an InfoBar */
+.cdt-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1200; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); }
+.cdt-toasts .cdt-infobar { box-shadow: var(--cdt-popup-shadow); animation: cdt-in 160ms ease-out; }
+@keyframes cdt-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* --- CDT EmptyState ------------------------------------------------------ */
+
+.themis-app .empty { display: grid; justify-items: center; gap: 4px; padding: 32px 16px; text-align: center; }
+.themis-app .empty::before {
+  content: ""; width: 22px; height: 22px; margin: 11px 11px 17px; border-radius: 0; background: var(--cdt-accent);
+  box-shadow: 0 0 0 11px var(--cdt-accent-soft);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h18M3 12h18M3 17h11'/%3E%3C/svg%3E") center/22px no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h18M3 12h18M3 17h11'/%3E%3C/svg%3E") center/22px no-repeat;
+}
+.themis-app .empty-title { font-family: var(--cdt-display-font); font-size: var(--cdt-font-subhead); font-weight: 600; color: var(--cdt-text-0); }
+.themis-app .empty .small, .themis-app .empty p { color: var(--cdt-text-2); max-width: 52ch; }
+
+/* --- CDT DialogHost: the scrim and the SheetCard -------------------------- */
+
+.cdt-scrim { position: fixed; inset: 0; z-index: 1300; background: var(--cdt-scrim); display: grid; place-items: center; padding: 16px; animation: cdt-fade 140ms ease-out; }
+@keyframes cdt-fade { from { opacity: 0; } }
+.cdt-sheet {
+  width: min(460px, 100%); background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke-strong); border-radius: var(--cdt-radius-sheet);
+  box-shadow: var(--cdt-popup-shadow); padding: 20px; color: var(--cdt-text-1); animation: cdt-in 160ms ease-out;
+}
+.cdt-sheet-head { display: flex; gap: 12px; align-items: flex-start; }
+.cdt-sheet-glyph { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 700 16px/1 var(--cdt-ui-font); background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+.cdt-sheet[data-kind=danger] .cdt-sheet-glyph { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+.cdt-sheet h2 { font-family: var(--cdt-display-font); font-size: var(--cdt-font-title); color: var(--cdt-text-0); margin: 4px 0 6px; }
+.cdt-sheet p { margin: 0; font-size: var(--cdt-font-body); line-height: 1.55; }
+.cdt-sheet-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* --- CDT.ToolTip (the implicit tooltip) ---------------------------------- */
+
+.cdt-tip {
+  position: fixed; z-index: 1400; max-width: 420px; padding: 6px 10px; border-radius: 8px; pointer-events: none;
+  background: var(--cdt-surface-2); color: var(--cdt-text-1); border: 1px solid var(--cdt-stroke-strong);
+  box-shadow: var(--cdt-soft-shadow); font-size: var(--cdt-font-small); line-height: 1.45; animation: cdt-fade 100ms ease-out;
+}
+
+/* --- CDT.DataGrid with DataGridFilter: header, sort chevron, funnel ------- */
+
+.themis-app table thead th {
+  background: var(--cdt-surface-1); color: var(--cdt-text-2); font-size: var(--cdt-font-small); font-weight: 600;
+  border-bottom: 1px solid var(--cdt-stroke-strong); letter-spacing: 0.01em; text-transform: none;
+}
+.themis-app table tbody td { border-bottom-color: var(--cdt-stroke); }
+.themis-app table tbody tr:hover td { background: var(--cdt-accent-wash); }
+.cdt-grid th.cdt-th { white-space: nowrap; user-select: none; }
+.cdt-th-in { display: inline-flex; align-items: center; gap: 4px; }
+.cdt-th-sort { border: 0; background: none; color: inherit; font: inherit; padding: 2px 4px; margin: -2px -4px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.cdt-th-sort:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.cdt-th-sort::after { content: ""; width: 8px; height: 8px; opacity: 0; transition: opacity var(--cdt-fast); background: currentColor;
+  clip-path: polygon(50% 0, 100% 60%, 0 60%); }
+.cdt-th-sort:hover::after { opacity: 0.35; }
+.cdt-th[aria-sort=ascending] .cdt-th-sort, .cdt-th[aria-sort=descending] .cdt-th-sort { color: var(--cdt-text-0); }
+.cdt-th[aria-sort=ascending] .cdt-th-sort::after { opacity: 1; background: var(--cdt-accent); }
+.cdt-th[aria-sort=descending] .cdt-th-sort::after { opacity: 1; background: var(--cdt-accent); clip-path: polygon(0 20%, 100% 20%, 50% 80%); }
+.cdt-funnel { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--cdt-text-3); cursor: pointer; padding: 0; }
+.cdt-funnel:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.cdt-funnel.is-on { color: var(--cdt-on-accent); background: var(--cdt-accent); }
+.cdt-funnel svg { width: 12px; height: 12px; }
+.cdt-pop {
+  position: absolute; z-index: 1250; min-width: 230px; max-width: 320px; background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke-strong);
+  border-radius: 12px; box-shadow: var(--cdt-popup-shadow); padding: 8px; font-size: var(--cdt-font-body); color: var(--cdt-text-1);
+  animation: cdt-in 120ms ease-out;
+}
+.cdt-pop input[type=search] { width: 100%; margin-bottom: 6px; }
+.cdt-pop-list { max-height: 260px; overflow: auto; display: grid; gap: 1px; }
+.cdt-pop-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+.cdt-pop-row:hover { background: var(--cdt-surface-3); }
+.cdt-pop-row .cdt-count { margin-left: auto; color: var(--cdt-text-2); font-size: var(--cdt-font-small); font-variant-numeric: tabular-nums; }
+.cdt-pop-all { border-bottom: 1px solid var(--cdt-stroke); margin-bottom: 4px; padding-bottom: 6px; font-weight: 600; }
+.cdt-pop-foot { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--cdt-stroke); }
+.cdt-grid-status { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: var(--cdt-font-small); color: var(--cdt-text-2); border-top: 1px solid var(--cdt-stroke); }
+.cdt-grid-status[hidden] { display: none; }
+
+/* --- CDT SearchableComboBox ---------------------------------------------- */
+
+.cdt-combo { position: relative; display: block; }
+.cdt-combo-face {
+  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 6px 30px 6px 10px; border-radius: var(--cdt-radius-control);
+  border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); color: var(--cdt-text-0); font: inherit; cursor: pointer; position: relative;
+}
+.cdt-combo-face::after { content: ""; position: absolute; right: 11px; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--cdt-text-2); border-bottom: 2px solid var(--cdt-text-2); transform: translateY(-70%) rotate(45deg); }
+.cdt-combo-face:hover { border-color: var(--cdt-stroke-strong); }
+.cdt-combo-face:focus-visible, .cdt-combo.is-open .cdt-combo-face { outline: none; border-color: var(--cdt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 22%, transparent); }
+.cdt-combo-face[disabled] { opacity: 0.55; cursor: not-allowed; }
+.cdt-combo-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdt-combo .cdt-pop { left: 0; right: 0; top: calc(100% + 4px); max-width: none; }
+.cdt-combo-group { padding: 8px 8px 3px; font-size: var(--cdt-font-caption); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cdt-text-2); }
+.cdt-combo-opt { display: flex; gap: 10px; align-items: baseline; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.cdt-combo-opt[aria-selected=true] { background: var(--cdt-row-selected); color: var(--cdt-text-0); }
+.cdt-combo-opt.is-active { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.cdt-combo-opt mark { background: none; color: var(--cdt-accent-strong); font-weight: 700; }
+.cdt-combo-opt .cdt-detail { margin-left: auto; color: var(--cdt-text-2); font-size: var(--cdt-font-small); }
+.cdt-combo-none { padding: 10px 8px; color: var(--cdt-text-2); font-size: var(--cdt-font-small); }
+select.cdt-combo-native { position: absolute !important; opacity: 0; pointer-events: none; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; bottom: 0; left: 12px; }
+
+/* --- CDT StepIndicator ----------------------------------------------------- */
+
+.cdt-steps { display: flex; align-items: flex-start; gap: 0; list-style: none; margin: 0; padding: 0; counter-reset: cdt-step; }
+.cdt-steps li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; text-align: center; font-size: var(--cdt-font-small); color: var(--cdt-text-2); min-width: 0; }
+.cdt-steps li::before {
+  counter-increment: cdt-step; content: counter(cdt-step); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
+  background: var(--cdt-surface-2); border: 2px solid var(--cdt-stroke-strong); color: var(--cdt-text-2); font-weight: 700; font-size: 12px;
+}
+.cdt-steps li + li::after { content: ""; position: absolute; top: 13px; right: 50%; width: 100%; height: 2px; background: var(--cdt-stroke-strong); z-index: 0; }
+.cdt-steps li.is-done::before { content: "✓"; background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
+.cdt-steps li.is-done + li::after, .cdt-steps li.is-done::after { background: var(--cdt-accent); }
+.cdt-steps li.is-now::before { border-color: var(--cdt-accent); color: var(--cdt-accent-strong); box-shadow: 0 0 0 4px var(--cdt-accent-soft); }
+.cdt-steps li.is-now { color: var(--cdt-text-0); font-weight: 600; }
+.cdt-steps a { color: inherit; text-decoration: none; }
+.cdt-steps-bar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--cdt-surface-0) 92%, transparent); backdrop-filter: blur(6px); padding: 12px 0 10px; margin-bottom: 12px; border-bottom: 1px solid var(--cdt-stroke); }
+
+/* --- CDT.Avatar --------------------------------------------------------- */
+
+.cdt-avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); font: 700 12px/1 var(--cdt-ui-font); letter-spacing: 0.02em; }
+
+/* --- the header: CDT.NavItem rows and the theme + brand SegmentedLists ---- */
+
+body.themis-app .topbar { background: var(--cdt-surface-1); border-bottom: 1px solid var(--cdt-stroke); }
+.themis-app .brand-mark { background: var(--cdt-accent); color: var(--cdt-on-accent); }
+.themis-app .themis-nav { gap: 2px; }
+.themis-app .themis-nav > a {
+  position: relative; color: var(--cdt-text-1); font-weight: 500; border-radius: var(--cdt-radius-control); padding: 6px 10px; text-decoration: none; box-shadow: none;
+}
+.themis-app .themis-nav > a:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
+.themis-app .themis-nav > a[aria-current="page"] { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); font-weight: 600; box-shadow: none; }
+.themis-app .themis-nav > a[aria-current="page"]::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -7px; height: 3px; border-radius: 2px; background: var(--cdt-accent);
+  box-shadow: var(--cdt-glow-shadow);
+}
+.cdt-themebar { display: inline-flex; gap: 6px; align-items: center; }
+.cdt-themebar .cdt-segmented > button { padding: 4px 9px; font-size: var(--cdt-font-caption); }
+.themis-app .whoami { display: flex; align-items: center; gap: 8px; }
+.themis-app .themis-back { border-radius: var(--cdt-radius-control); border-color: var(--cdt-stroke); background: var(--cdt-surface-2); }
+.themis-app .themis-back:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); color: var(--cdt-text-0); }
+.themis-app .themis-project-bar { border-color: var(--cdt-stroke); }
+
+/* --- the dashboard's stats as CDT stat cards ------------------------------ */
+
+.themis-app .themis-stat { background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); padding: 14px 16px; position: relative; overflow: hidden; }
+.themis-app .themis-stat::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--cdt-accent); opacity: 0.85; }
+.themis-app .themis-stat-n { font-family: var(--cdt-display-font); font-size: 28px; font-weight: 700; color: var(--cdt-text-0); letter-spacing: -0.02em; }
+.themis-app .themis-stat-l { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-2); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* --- the project page's tools as ribbon panels (CDT Ribbon) --------------- */
+
+.themis-app .spec-toolbox section { background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); }
+.themis-app .spec-tool { border-radius: var(--cdt-radius-control); }
+.themis-app .spec-tool:hover, .themis-app .spec-tool[open] { background: var(--cdt-surface-3); }
+
+/* --- the story's question card: CardButtons for the choices, Kbd hints ---- */
+
+.themis-app .spec-pill, .themis-app .spec-decide-choice {
+  border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); border-radius: var(--cdt-radius-card); color: var(--cdt-text-0);
+  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
+  position: relative;
+}
+.themis-app .spec-pill:hover, .themis-app .spec-decide-choice:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
+.themis-app .spec-pill:has(input:checked), .themis-app .spec-decide-choice:has(input:checked) {
+  background: var(--cdt-accent-soft); border-color: var(--cdt-accent); color: var(--cdt-accent-strong); font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--cdt-accent);
+}
+.themis-app .spec-pill:has(input:focus-visible), .themis-app .spec-decide-choice:has(input:focus-visible) { outline: 2px solid var(--cdt-focus-ring); outline-offset: 2px; }
+.cdt-choice-key { position: absolute; top: 6px; right: 6px; pointer-events: none; }
+.themis-app .spec-card, .themis-app .spec-scene-panel { color: var(--cdt-text-1); }
+.themis-app .spec-card-nav .cdt-kbd { margin-left: 6px; background: color-mix(in srgb, var(--cdt-on-accent) 18%, transparent); border-color: color-mix(in srgb, var(--cdt-on-accent) 40%, transparent); color: inherit; }
+.themis-app .spec-card-nav .btn-ghost .cdt-kbd { background: var(--cdt-surface-2); border-color: var(--cdt-stroke); color: var(--cdt-text-2); }
+.cdt-keys-hint { font-size: var(--cdt-font-caption); color: var(--cdt-text-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+@media (hover: none), (max-width: 900px) { .cdt-choice-key, .cdt-keys-hint, .spec-card-nav .cdt-kbd { display: none !important; } }
+
+.themis-app .spec-story-bar { height: 4px; border-radius: 2px; background: var(--cdt-surface-3); overflow: hidden; }
+.themis-app .spec-story-bar > span { background: var(--cdt-accent); border-radius: 2px; }
+
+/* The story's level path as a StepIndicator: done ticked in the accent,
+   the current one ringed. */
+.themis-app .spec-path-here { background: var(--cdt-accent) !important; color: var(--cdt-on-accent) !important; }
+
+/* --- the new project page: kinds of specification as CardButtons --------- */
+
+.themis-app .spec-family {
+  border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); background: var(--cdt-surface-2);
+  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out;
+}
+.themis-app .spec-family:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
+.themis-app .spec-family:has(input:checked) { background: var(--cdt-accent-wash); border-color: var(--cdt-accent); box-shadow: inset 0 0 0 1px var(--cdt-accent); }
+.themis-app .spec-n { background: var(--cdt-accent); color: var(--cdt-on-accent); }
+
+/* File fields: the chooser as a CDT.SecondaryButton */
+.themis-app input[type=file] { font-size: var(--cdt-font-body); color: var(--cdt-text-1); }
+.themis-app input[type=file]::file-selector-button {
+  margin-right: 10px; min-height: 28px; padding: 3px 12px; border-radius: var(--cdt-radius-control); cursor: pointer;
+  border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); color: var(--cdt-text-0); font: 500 var(--cdt-font-small) var(--cdt-ui-font);
+}
+.themis-app input[type=file]::file-selector-button:hover { background: var(--cdt-surface-3); }
+
+/* --- scrollbars, slim (the implicit ScrollBar style) ---------------------- */
+
+.themis-app * { scrollbar-width: thin; scrollbar-color: var(--cdt-stroke-strong) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cdt-busy > i, .cdt-status-dot, .cdt-progress.is-indeterminate > i { animation: none !important; }
+  .cdt-scrim, .cdt-sheet, .cdt-pop, .cdt-toasts .cdt-infobar { animation: none !important; }
+}
+@media print {
+  .cdt-toasts, .cdt-activity, .cdt-themebar, .cdt-funnel, .cdt-steps-bar, .cdt-choice-key, .cdt-keys-hint { display: none !important; }
+  body.themis-app { background: #fff; }
+}
+@media (max-width: 720px) {
+  .cdt-themebar .cdt-brand-seg { display: none; }
+  .themis-app .whoami > div:not(.cdt-avatar) { display: none; }
+}

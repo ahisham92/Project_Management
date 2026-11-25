@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% import "partials/cdt.html" as cdt %}
+{% block title %}Controls and colours · AHM{% endblock %}
+{% block content %}
+<div class="page-head" style="display:block;margin:20px 0 16px">
+  <h1>Controls and colours</h1>
+  <p class="muted" style="max-width:90ch;margin-top:4px">
+    Every control on this site comes from the CDT SDK's theme, ported to the web: the same palette, the same
+    states on every control (rest, hover, pressed, disabled, keyboard focus) and the same custom controls.
+    Switch theme and accent from your account menu at the top right and this page follows. Each one is labelled
+    with the class or macro that makes it.
+  </p>
+</div>
+
+<div class="kit-grid">
+
+  <section class="card">
+    <div class="card-head"><div><h2>Palette</h2><p class="small muted">Surfaces, strokes, text and the accent's state ladder</p></div></div>
+    <div class="card-body">
+      <div class="kit-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        {% for key in ['surface0','surface1','surface2','surface3','stroke','stroke-strong','text2','text0',
+                       'accent','accent-hover','accent-pressed','accent-soft','success','warning','danger','accent-wash'] %}
+          <div class="kit-swatch"><i style="background:var(--cdt-{{ key }})"></i><span class="kit-key">{{ key }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Buttons</h2><p class="small muted">32px high, glow on the primary, palette states</p></div></div>
+    <div class="card-body">
+      <div class="kit-row">
+        <button class="btn btn-primary" type="button">Primary</button>
+        <button class="btn btn-ghost" type="button">Secondary</button>
+        <button class="btn btn-plain" type="button">Ghost</button>
+        <button class="btn btn-link" type="button">Link</button>
+        <button class="btn btn-icon" type="button" title="Icon button: settings" aria-label="Settings">⚙</button>
+      </div>
+      <div class="kit-row">
+        <button class="btn btn-success" type="button">Success</button>
+        <button class="btn btn-warning" type="button">Warning</button>
+        <button class="btn btn-danger-fill" type="button">Danger</button>
+        <button class="btn btn-soft" type="button">Soft</button>
+        <button class="btn btn-danger" type="button">Soft danger</button>
+        <button class="btn btn-muted" type="button">Muted</button>
+      </div>
+      <div class="kit-row">
+        <button class="btn btn-primary btn-sm" type="button">Small</button>
+        <button class="btn btn-primary btn-lg" type="button">Large</button>
+        <button class="btn btn-primary" type="button" disabled>Disabled</button>
+        <button class="btn btn-ghost" type="button" disabled>Disabled</button>
+        <button class="btn btn-primary is-busy" type="button">Working {{ cdt.busy() }}</button>
+      </div>
+      <p class="kit-key" style="margin-top:12px">.btn .btn-primary | -ghost | -plain | -link | -icon | -success | -warning | -danger-fill | -soft | -danger | -muted · -sm | -lg</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Inputs</h2><p class="small muted">Stroke, hover, accent focus, danger when wrong</p></div></div>
+    <div class="card-body">
+      <div class="grid grid-2" style="gap:12px">
+        <label class="field"><span class="field-label">Text</span><input type="text" placeholder="Placeholder"></label>
+        <label class="field"><span class="field-label">Date</span><input type="text" placeholder="dd/mm/yyyy"></label>
+        <label class="field"><span class="field-label">Wrong value</span><input type="text" value="12x" aria-invalid="true"></label>
+        <label class="field"><span class="field-label">Disabled</span><input type="text" value="Locked" disabled></label>
+        <label class="field"><span class="field-label">Short list</span>
+          <select><option>Quay wall</option><option>Jetty</option><option>Dolphin</option></select></label>
+        <label class="field"><span class="field-label">File</span><input type="file"></label>
+      </div>
+      <div class="kit-row" style="margin-top:14px">
+        <label class="check"><input type="checkbox" checked> Check box</label>
+        <label class="check"><input type="radio" name="kit-r" checked> Radio</label>
+        <label class="check"><input type="radio" name="kit-r"> Radio</label>
+        <label class="check"><input type="checkbox" class="cdt-switch" checked> Toggle switch</label>
+        <label class="check"><input type="checkbox" role="switch"> Off</label>
+      </div>
+      <label class="field" style="margin-top:12px"><span class="field-label">Notes</span><textarea rows="2" placeholder="A text area"></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>NumberBox</h2><p class="small muted">Type 6000/4 + 25 · ↑/↓, Page Up/Down, the wheel · Shift for a tenth · Esc goes back</p></div></div>
+    <div class="card-body">
+      <div class="grid grid-2" style="gap:12px">
+        <label class="field"><span class="field-label">Leader length</span>
+          <input type="number" name="kit_len" value="250" min="0" max="5000" step="25" data-unit="mm"></label>
+        <label class="field"><span class="field-label">Design life</span>
+          <input type="number" name="kit_life" value="50" min="1" max="120" data-unit="years"></label>
+        <label class="field"><span class="field-label">Utilisation</span>
+          <input type="number" name="kit_ratio" value="0.85" step="0.01" min="0"></label>
+        <label class="field"><span class="field-label">Load</span>
+          <input type="number" name="kit_load" step="any" data-unit="kN"></label>
+      </div>
+      <p class="kit-key" style="margin-top:12px">&lt;input type="number" min max step data-unit&gt;</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>SearchableComboBox and CheckComboBox</h2><p class="small muted">Type “ipe 3”: word by word, spaces and case ignored, matches highlighted, groups, recent first</p></div></div>
+    <div class="card-body">
+      <div class="grid grid-2" style="gap:12px">
+        <label class="field"><span class="field-label">Section</span>
+          <select name="kit_section">
+            <option value="">No section</option>
+            {% for fam, sizes in [('IPE', [200, 240, 270, 300, 330, 360, 400]), ('HEA', [200, 240, 300, 360]), ('HEB', [200, 300, 400]), ('UB', ['305x165x40', '356x171x51', '457x191x67'])] %}
+              <optgroup label="{{ fam }}">{% for s in sizes %}<option value="{{ fam }} {{ s }}"{% if fam == 'IPE' and s == 300 %} selected{% endif %}>{{ fam }} {{ s }}</option>{% endfor %}</optgroup>
+            {% endfor %}
+          </select></label>
+        <div class="field"><span class="field-label">Disciplines</span>
+          <fieldset class="trade-picker"><legend class="sr-only" style="display:none">Disciplines</legend>
+            <div class="checks">
+              {% for t in ['Civil', 'Marine', 'Structural', 'Geotechnical', 'MEP', 'Architecture'] %}
+                <label class="check"><input type="checkbox" name="kit_trade" value="{{ t }}"{% if loop.index < 3 %} checked{% endif %}> {{ t }}</label>
+              {% endfor %}
+            </div>
+          </fieldset></div>
+      </div>
+      <p class="kit-key" style="margin-top:12px">any &lt;select&gt; with 8+ options · &lt;fieldset class="trade-picker"&gt; or [data-cdt-checkcombo]</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>InfoBar, toast and dialog</h2><p class="small muted">Glyph, word and colour; a success closes itself</p></div></div>
+    <div class="card-body" style="display:grid;gap:8px">
+      {{ cdt.info_bar('The model was read in 3.2 s.', title='Model loaded') }}
+      {{ cdt.info_bar('42 deliverables updated.', title='Saved', severity='success') }}
+      {{ cdt.info_bar('They are locked by another user.', title='3 views skipped', severity='warning') }}
+      {{ cdt.info_bar('The workbook has no Programme sheet.', title='Could not import', severity='error') }}
+      <div class="kit-row">
+        <button class="btn btn-ghost" type="button" onclick="CDT.toast('Saved. This toast closes itself in 6 seconds.')">Show a toast</button>
+        <form onsubmit="return confirm('Delete this account? This cannot be undone.')" style="display:inline"><button class="btn btn-danger" type="submit">Ask before deleting</button></form>
+        <form onsubmit="return confirm('Issue revision B of every section to the client?')" style="display:inline"><button class="btn btn-ghost" type="submit">Ask a question</button></form>
+      </div>
+      <p class="kit-key">.flash · cdt.info_bar() · CDT.toast() · onsubmit="return confirm(…)" · CDT.ask()</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Steps, utilisation and progress</h2><p class="small muted">StepIndicator, UtilizationBar, ProgressBar, BusyDots, Skeleton</p></div></div>
+    <div class="card-body">
+      {{ cdt.step_indicator([('Project', 'name, client'), ('Elements', 'what it builds'), ('Questions', '12 answered'), ('Sections', 'pick the clauses'), ('Issue', 'Word, to the client')], current=2) }}
+      <div style="margin:10px 0 14px">
+        {{ cdt.utilization(0.62, 'Pile P12 bending') }}
+        {{ cdt.utilization(0.94, 'Deck slab shear') }}
+        {{ cdt.utilization(1.08, 'Tie rod tension') }}
+        {{ cdt.utilization(0.40, 'Hours booked', text='1,056 h') }}
+      </div>
+      <div class="cdt-progress" style="margin-bottom:10px"><span style="width:64%"></span></div>
+      <div class="cdt-progress indeterminate" style="margin-bottom:14px"><span></span></div>
+      <div class="kit-row" style="color:var(--cdt-accent)">{{ cdt.busy() }} <span class="small muted">BusyDots</span></div>
+      <div style="margin-top:12px;max-width:320px"><span class="cdt-skeleton" style="width:70%"></span><span class="cdt-skeleton"></span><span class="cdt-skeleton" style="width:40%"></span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Status</h2><p class="small muted">Never colour alone</p></div></div>
+    <div class="card-body">
+      <div class="kit-row">
+        <span class="badge">Neutral</span><span class="badge good">● On track</span><span class="badge warning">▲ At risk</span>
+        <span class="badge critical">■ Late</span><span class="badge accent">New</span>
+      </div>
+      <div class="kit-row">
+        {{ cdt.outcome('Passed', 'ok') }} {{ cdt.outcome('Warning', 'warn') }} {{ cdt.outcome('Failed', 'fail') }} {{ cdt.outcome('Skipped', 'skip') }}
+      </div>
+      <div class="kit-row">
+        {{ cdt.status('Connected', 'ok') }} {{ cdt.status('Connecting', 'warn') }} {{ cdt.status('Offline', 'error') }} {{ cdt.status('Available', 'available') }}
+      </div>
+      <div class="kit-row">
+        <nav class="chips"><a href="#" class="active" onclick="return false">Model</a><a href="#" onclick="return false">Output</a><a href="#" onclick="return false">Report</a></nav>
+        <span class="cdt-chip active">All 12</span><span class="cdt-chip">Failed 2</span><span class="cdt-chip">Passed 10</span>
+      </div>
+      <div class="kit-row">
+        <span class="cdt-avatar">AH</span> <kbd>Ctrl</kbd> <kbd>K</kbd>
+        <span class="small">An info tip {{ cdt.info_tip('Fig. R17.5.2.1a: anchor reinforcement for tension') }}</span>
+        <span class="small" title="A themed tooltip: it wraps at 420 pixels rather than running across the screen, and it follows the theme.">Hover for a tooltip</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>EmptyState</h2><p class="small muted">What a list shows when it is empty</p></div></div>
+    {% call cdt.empty_state('No sheets yet', 'Upload a review response form and its comments come with it.') %}
+      <a class="btn btn-primary btn-sm" href="#" onclick="return false">Upload a form</a>
+    {% endcall %}
+  </section>
+
+  <section class="card" style="grid-column:1/-1">
+    <div class="card-head"><div><h2>Data grid with column filters</h2><p class="small muted">The funnel in each header: values with counts, search, Select all; filters combine</p></div></div>
+    <div class="card-body flush">
+      <div class="table-scroll">
+        <table data-cdt-filter>
+          <thead><tr><th>Member</th><th>Section</th><th>Check</th><th class="right">Ratio</th><th>Outcome</th></tr></thead>
+          <tbody>
+            {% for m, s, c, r in [('B1', 'IPE 300', 'Bending', 0.62), ('B2', 'IPE 300', 'Shear', 0.41), ('B3', 'IPE 360', 'Bending', 0.94),
+                                  ('C1', 'HEB 300', 'Buckling', 1.08), ('C2', 'HEB 300', 'Buckling', 0.77), ('T1', 'Tie rod', 'Tension', 0.88),
+                                  ('P12', 'Tube 1220', 'Bending', 0.71), ('P13', 'Tube 1220', 'Bending', 0.69)] %}
+              <tr><td>{{ m }}</td><td>{{ s }}</td><td>{{ c }}</td><td class="right tabular">{{ '%.2f' % r }}</td>
+                <td>{{ cdt.outcome('Fails', 'fail') if r > 1 else cdt.outcome('Close', 'warn') if r > 0.9 else cdt.outcome('Passes', 'ok') }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

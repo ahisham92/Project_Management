@@ -47,7 +47,7 @@
     <input type="hidden" name="data_date" value="{{ date_input(data_date) }}">
     <input type="hidden" name="sort" value="{{ sort }}">
     <input type="hidden" name="dir" value="{{ direction }}">
-    <input name="q" value="{{ search }}" placeholder="Search deliverables…" class="w-lg">
+    <input type="search" name="q" value="{{ search }}" placeholder="Search deliverables…" class="w-lg">
     <button type="submit" class="btn btn-ghost">Search</button>
     {% if search %}
       <a class="btn btn-ghost" href="{{ url_for('projects.tasks', project_id=project['id'], office=office or none, filter=active_filter, data_date=date_input(data_date), sort=sort, dir=direction) }}">Clear</a>

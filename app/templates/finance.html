@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import badge, empty, progress, date_field, print_header, print_button %}
+{% import "partials/cdt.html" as cdt %}
 {% block title %}Finance — {{ project['name'] }}{% endblock %}
 {% block tabs %}{% include "partials/project_tabs.html" %}{% endblock %}
 
@@ -137,13 +138,7 @@
             <td class="right tabular ink2">{{ hours(tr['budget_hours']) }}</td>
             <td class="right tabular muted">{{ num(tr['budget_months'], 1) }}</td>
             <td class="right tabular ink2">{{ hours(tr['spent_hours']) }}</td>
-            <td>
-              <div class="right small tabular muted" style="margin-bottom:4px">{{ pct(tr['hours_used_pct'], 0) }}</div>
-              {{ progress(tr['hours_used_pct'],
-                          none,
-                          'var(--critical)' if tr['hours_used_pct'] > 1 else tr['color'],
-                          slim=True) }}
-            </td>
+            <td>{{ cdt.utilization(tr['hours_used_pct'], text=pct(tr['hours_used_pct'], 0), compact=True) }}</td>
             <td class="right tabular ink2">{{ hours(tr['earned_hours'], 1) }}</td>
             <td class="right tabular {{ 'bad-text' if tr['hours_over_under'] > 0 else 'good-text' }}">
               {% if tr['hours_over_under'] > 0 %}{{ hours(tr['hours_over_under'], 1) }}
@@ -162,7 +157,7 @@
           <td class="right tabular">{{ hours(b['budget_hours']) }}</td>
           <td class="right tabular ink2">{{ num(b['budget_hours'] / per_month, 1) }}</td>
           <td class="right tabular">{{ hours(b['spent_hours']) }}</td>
-          <td class="right tabular ink2">{{ pct(b['hours_used_pct'], 0) }}</td>
+          <td>{{ cdt.utilization(b['hours_used_pct'], text=pct(b['hours_used_pct'], 0), compact=True) }}</td>
           <td class="right tabular">{{ hours(b['earned_hours'], 1) }}</td>
           <td class="right tabular {{ 'bad-text' if b['hours_over_under'] > 0 else 'good-text' }}">
             {% if b['hours_over_under'] > 0 %}{{ hours(b['hours_over_under'], 1) }}

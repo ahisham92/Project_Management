@@ -258,7 +258,7 @@
                'Raise the first document above. Its number comes from the convention on Setup.') }}
     {% else %}
       <div class="table-scroll">
-        <table>
+        <table data-cdt-filter>
           <thead>
             <tr>
               {{ sort_th('number', 'Number') }}
@@ -411,7 +411,7 @@
     {% endif %}
   </div>
   <div class="card-body flush table-scroll">
-    <table>
+    <table data-cdt-filter>
       <thead>
         <tr>
           <th>Kind</th>
@@ -492,7 +492,7 @@
     </summary>
     <div class="card-body flush">
       <div class="table-scroll">
-        <table>
+        <table data-cdt-filter>
           <thead>
             <tr>
               <th>WBS</th><th>Deliverable</th>

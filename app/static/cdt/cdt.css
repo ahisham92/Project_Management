@@ -1,851 +1,803 @@
-/* THEMIS in the CDT theme: the web port of the CDT SDK's WPF theme
- * (CDT.Wpf/Themes, Dar Structural Computational Design).
+/* CDT web kit: the CDT SDK's theme and controls, for the browser.
  *
- * Loaded after themis.css on THEMIS pages only (body.themis-app), so the
- * other apps on the site keep their own look. Like the SDK it is a swappable
- * palette under a fixed style sheet:
+ * The CDT SDK (Dar Structural Computational Design) is a WPF library: its
+ * theme lives in CDT.Wpf/Themes (four palettes + one style sheet) and its
+ * controls in CDT.Wpf/Controls. A browser cannot load WPF, so this file is a
+ * faithful port of the parts a web page can use:
  *
- *   - four palettes with the same token keys, copied value for value from
- *     Palette.Dar.Light / Palette.Light / Palette.Dar.Dark / Palette.Dark.xaml:
- *     Dar (teal) is the default brand, CDT (blue) the other; light and dark
- *     each follow the site's theme switch;
- *   - the site's own colour names (--ink, --plane, --series-1 …) answered by
- *     those tokens, so every THEMIS page turns over at once;
- *   - the SDK's style catalogue as CSS (buttons, inputs, cards, badges, chips,
- *     segmented lists, the data grid, InfoBar, DialogHost, EmptyState,
- *     StepIndicator, BusyDots, Kbd, ToggleSwitch, SearchableComboBox …), whose
- *     behaviour lives in cdt.js.
+ *   - the four palettes (Dar / CDT brand x light / dark) as --cdt-* tokens,
+ *     with the same values and the same role names (Surface0..3, Stroke,
+ *     Accent + its state ladder, Success / Warning / Danger, Text0..3);
+ *   - the house's own tokens (--plane, --ink, --border...) mapped onto them,
+ *     so every door picks the palette up without touching its own CSS;
+ *   - the style catalog: buttons (primary, secondary, ghost, soft, muted,
+ *     link, icon, semantic), inputs, check boxes, tabs, segmented tracks,
+ *     filter chips, badges, cards, the data grid, scrollbars and tooltips,
+ *     each with rest, hover, pressed, disabled and keyboard focus from the
+ *     palette's state ladder, never from opacity;
+ *   - the custom controls: InfoBar, EmptyState, StepIndicator,
+ *     UtilizationBar, StatusDot, BusyDots, Skeleton, ToggleSwitch,
+ *     NumberBox, SearchableComboBox, CheckComboBox, DataGridFilter,
+ *     DialogHost / CdtMessageBox, DropDownButton + menu, Avatar, Kbd, InfoTip.
+ *     Their behaviour is in cdt.js.
  *
- * Accent and status colours keep the SDK's contrast: every text pair 4.5:1,
- * every UI part and focus ring 3:1; Text3 is for disabled content only.
+ * Every rule hangs off html.cdt (set in base.html) so it carries the same
+ * weight as a door's own .pm-app / .themis-app rules and, loaded after them,
+ * wins; a door's deliberate exceptions (the teal project hero, the 3D view)
+ * are more specific and keep their look.
  */
 
-/* Dar brand, light (the default) — Palette.Dar.Light.xaml */
-body.themis-app {
-  --cdt-surface-0: #f2f0e8;
-  --cdt-surface-1: #fbfaf6;
-  --cdt-surface-2: #ffffff;
-  --cdt-surface-3: #e7e4da;
-  --cdt-sidebar: #edeae1;
-  --cdt-stroke: #ded9cc;
-  --cdt-stroke-strong: #bfb9a9;
-  --cdt-accent: #147165;
-  --cdt-accent-hover: #115e54;
-  --cdt-accent-pressed: #0d4a42;
-  --cdt-accent-subtle: rgb(20 113 101 / 0.20);
-  --cdt-accent-bright: #1fae9b;
-  --cdt-focus-ring: #147165;
-  --cdt-accent-soft: #e3eeed;
-  --cdt-accent-wash: #f3f8f7;
-  --cdt-on-accent: #ffffff;
-  --cdt-success: #207410;
-  --cdt-warning: #8d5918;
-  --cdt-danger: #c42020;
-  --cdt-danger-soft: #fdf3f3;
-  --cdt-danger-soft-border: #f0d5d5;
-  --cdt-text-0: #1e1d1a;
-  --cdt-text-1: #3c3b36;
-  --cdt-text-2: #67645c;
-  --cdt-text-3: #98948a;
-  --cdt-selection-light: rgb(31 174 155 / 0.20);
-  --cdt-selection-light-border: #1fae9b;
-  --cdt-row-selected: rgb(20 113 101 / 0.25);
-  --cdt-success-hover: #1a600d;
-  --cdt-success-pressed: #154c0a;
-  --cdt-warning-hover: #794d15;
-  --cdt-warning-pressed: #664011;
-  --cdt-danger-hover: #b01d1d;
-  --cdt-danger-pressed: #9d1a1a;
-  --cdt-accent-soft-pressed: #d5e5e3;
-  --cdt-success-soft: #e9f1e7;
-  --cdt-success-soft-pressed: #d7e6d4;
-  --cdt-warning-soft: #f4eee8;
-  --cdt-warning-soft-pressed: #eae1d5;
-  --cdt-danger-soft-pressed: #f4d7d7;
-  --cdt-accent-strong: #0c463e;
-  --cdt-success-strong: #14470a;
-  --cdt-warning-strong: #613d11;
-  --cdt-danger-strong: #981919;
-  --cdt-glow: #1e1d1a;
-  --cdt-scrim: rgb(30 29 26 / 0.44);
-  --cdt-glow-opacity: 0.18;
-  --cdt-glow-tint-opacity: 0;
-}
+/* --- palettes: Dar light (the default) ------------------------------------ */
 
-/* CDT brand, light — Palette.Light.xaml */
-:root[data-cdt-brand="cdt"] body.themis-app {
-  --cdt-surface-0: #f2f0e8;
-  --cdt-surface-1: #fbfaf6;
-  --cdt-surface-2: #ffffff;
-  --cdt-surface-3: #e7e4da;
-  --cdt-sidebar: #edeae1;
-  --cdt-stroke: #ded9cc;
-  --cdt-stroke-strong: #bfb9a9;
-  --cdt-accent: #1c63bc;
-  --cdt-accent-hover: #1958a8;
-  --cdt-accent-pressed: #164e94;
-  --cdt-accent-subtle: rgb(28 99 188 / 0.20);
-  --cdt-accent-bright: #3d86e2;
-  --cdt-focus-ring: #1c63bc;
-  --cdt-accent-soft: #e4ecf7;
-  --cdt-accent-wash: #f4f7fc;
-  --cdt-on-accent: #ffffff;
-  --cdt-success: #207410;
-  --cdt-warning: #8d5918;
-  --cdt-danger: #c42020;
-  --cdt-danger-soft: #fdf3f3;
-  --cdt-danger-soft-border: #f0d5d5;
-  --cdt-text-0: #1e1d1a;
-  --cdt-text-1: #3c3b36;
-  --cdt-text-2: #67645c;
-  --cdt-text-3: #98948a;
-  --cdt-selection-light: rgb(61 134 226 / 0.20);
-  --cdt-selection-light-border: #5897e6;
-  --cdt-row-selected: rgb(28 99 188 / 0.25);
-  --cdt-success-hover: #1a600d;
-  --cdt-success-pressed: #154c0a;
-  --cdt-warning-hover: #794d15;
-  --cdt-warning-pressed: #664011;
-  --cdt-danger-hover: #b01d1d;
-  --cdt-danger-pressed: #9d1a1a;
-  --cdt-accent-soft-pressed: #d6e3f3;
-  --cdt-success-soft: #e9f1e7;
-  --cdt-success-soft-pressed: #d7e6d4;
-  --cdt-warning-soft: #f4eee8;
-  --cdt-warning-soft-pressed: #eae1d5;
-  --cdt-danger-soft-pressed: #f4d7d7;
-  --cdt-accent-strong: #154c90;
-  --cdt-success-strong: #14470a;
-  --cdt-warning-strong: #613d11;
-  --cdt-danger-strong: #981919;
-  --cdt-glow: #1e1d1a;
-  --cdt-scrim: rgb(30 29 26 / 0.44);
-  --cdt-glow-opacity: 0.18;
-  --cdt-glow-tint-opacity: 0;
-}
-
-/* Dar brand, dark — Palette.Dar.Dark.xaml */
-@media (prefers-color-scheme: dark) {
-:root:not([data-theme="light"]) body.themis-app {
-  --cdt-surface-0: #1b1b19;
-  --cdt-surface-1: #232321;
-  --cdt-surface-2: #2a2a27;
-  --cdt-surface-3: #323230;
-  --cdt-sidebar: #1f1f1d;
-  --cdt-stroke: #353532;
-  --cdt-stroke-strong: #4a4a46;
-  --cdt-accent: #32dac4;
-  --cdt-accent-hover: #24c9b4;
-  --cdt-accent-pressed: #20af9c;
-  --cdt-accent-subtle: rgb(50 218 196 / 0.20);
-  --cdt-accent-bright: #6ee5d5;
-  --cdt-focus-ring: #6ee5d5;
-  --cdt-accent-soft: #243531;
-  --cdt-accent-wash: #1d2825;
-  --cdt-on-accent: #1b1b19;
-  --cdt-success: #6bde4a;
-  --cdt-warning: #fb9b24;
-  --cdt-danger: #f87171;
-  --cdt-danger-soft: #332321;
-  --cdt-danger-soft-border: #5e3735;
-  --cdt-text-0: #f2efe9;
-  --cdt-text-1: #d6d2ca;
-  --cdt-text-2: #9f9b92;
-  --cdt-text-3: #6e6a62;
-  --cdt-selection-light: rgb(180 241 233 / 0.20);
-  --cdt-selection-light-border: #b4f1e9;
-  --cdt-row-selected: rgb(50 218 196 / 0.25);
-  --cdt-success-hover: #5fdb3b;
-  --cdt-success-pressed: #52d82c;
-  --cdt-warning-hover: #fb9312;
-  --cdt-warning-pressed: #f78b05;
-  --cdt-danger-hover: #f76060;
-  --cdt-danger-pressed: #f64f4f;
-  --cdt-accent-soft-pressed: #264b45;
-  --cdt-success-soft: #2c3926;
-  --cdt-success-soft-pressed: #334c2a;
-  --cdt-warning-soft: #3d3121;
-  --cdt-warning-soft-pressed: #533d22;
-  --cdt-danger-soft-pressed: #523433;
-  --cdt-accent-strong: #5de2d0;
-  --cdt-success-strong: #8ee675;
-  --cdt-warning-strong: #fcb256;
-  --cdt-danger-strong: #faa2a2;
-  --cdt-glow: #32dac4;
-  --cdt-scrim: rgb(12 12 11 / 0.72);
-  --cdt-glow-opacity: 0.55;
-  --cdt-glow-tint-opacity: 0.7;
-}
-}
-:root[data-theme="dark"] body.themis-app {
-  --cdt-surface-0: #1b1b19;
-  --cdt-surface-1: #232321;
-  --cdt-surface-2: #2a2a27;
-  --cdt-surface-3: #323230;
-  --cdt-sidebar: #1f1f1d;
-  --cdt-stroke: #353532;
-  --cdt-stroke-strong: #4a4a46;
-  --cdt-accent: #32dac4;
-  --cdt-accent-hover: #24c9b4;
-  --cdt-accent-pressed: #20af9c;
-  --cdt-accent-subtle: rgb(50 218 196 / 0.20);
-  --cdt-accent-bright: #6ee5d5;
-  --cdt-focus-ring: #6ee5d5;
-  --cdt-accent-soft: #243531;
-  --cdt-accent-wash: #1d2825;
-  --cdt-on-accent: #1b1b19;
-  --cdt-success: #6bde4a;
-  --cdt-warning: #fb9b24;
-  --cdt-danger: #f87171;
-  --cdt-danger-soft: #332321;
-  --cdt-danger-soft-border: #5e3735;
-  --cdt-text-0: #f2efe9;
-  --cdt-text-1: #d6d2ca;
-  --cdt-text-2: #9f9b92;
-  --cdt-text-3: #6e6a62;
-  --cdt-selection-light: rgb(180 241 233 / 0.20);
-  --cdt-selection-light-border: #b4f1e9;
-  --cdt-row-selected: rgb(50 218 196 / 0.25);
-  --cdt-success-hover: #5fdb3b;
-  --cdt-success-pressed: #52d82c;
-  --cdt-warning-hover: #fb9312;
-  --cdt-warning-pressed: #f78b05;
-  --cdt-danger-hover: #f76060;
-  --cdt-danger-pressed: #f64f4f;
-  --cdt-accent-soft-pressed: #264b45;
-  --cdt-success-soft: #2c3926;
-  --cdt-success-soft-pressed: #334c2a;
-  --cdt-warning-soft: #3d3121;
-  --cdt-warning-soft-pressed: #533d22;
-  --cdt-danger-soft-pressed: #523433;
-  --cdt-accent-strong: #5de2d0;
-  --cdt-success-strong: #8ee675;
-  --cdt-warning-strong: #fcb256;
-  --cdt-danger-strong: #faa2a2;
-  --cdt-glow: #32dac4;
-  --cdt-scrim: rgb(12 12 11 / 0.72);
-  --cdt-glow-opacity: 0.55;
-  --cdt-glow-tint-opacity: 0.7;
-}
-
-/* CDT brand, dark — Palette.Dark.xaml */
-@media (prefers-color-scheme: dark) {
-:root[data-cdt-brand="cdt"]:not([data-theme="light"]) body.themis-app {
-  --cdt-surface-0: #1b1b19;
-  --cdt-surface-1: #232321;
-  --cdt-surface-2: #2a2a27;
-  --cdt-surface-3: #323230;
-  --cdt-sidebar: #1f1f1d;
-  --cdt-stroke: #353532;
-  --cdt-stroke-strong: #4a4a46;
-  --cdt-accent: #4b9ff3;
-  --cdt-accent-hover: #3a96f2;
-  --cdt-accent-pressed: #2a8df1;
-  --cdt-accent-subtle: rgb(75 159 243 / 0.20);
-  --cdt-accent-bright: #84bef7;
-  --cdt-focus-ring: #84bef7;
-  --cdt-accent-soft: #28323a;
-  --cdt-accent-wash: #1f262a;
-  --cdt-on-accent: #1b1b19;
-  --cdt-success: #6bde4a;
-  --cdt-warning: #fb9b24;
-  --cdt-danger: #f87171;
-  --cdt-danger-soft: #332321;
-  --cdt-danger-soft-border: #5e3735;
-  --cdt-text-0: #f2efe9;
-  --cdt-text-1: #d6d2ca;
-  --cdt-text-2: #9f9b92;
-  --cdt-text-3: #6e6a62;
-  --cdt-selection-light: rgb(190 220 251 / 0.20);
-  --cdt-selection-light-border: #bedcfb;
-  --cdt-row-selected: rgb(75 159 243 / 0.25);
-  --cdt-success-hover: #5fdb3b;
-  --cdt-success-pressed: #52d82c;
-  --cdt-warning-hover: #fb9312;
-  --cdt-warning-pressed: #f78b05;
-  --cdt-danger-hover: #f76060;
-  --cdt-danger-pressed: #f64f4f;
-  --cdt-accent-soft-pressed: #2c3e4f;
-  --cdt-success-soft: #2c3926;
-  --cdt-success-soft-pressed: #334c2a;
-  --cdt-warning-soft: #3d3121;
-  --cdt-warning-soft-pressed: #533d22;
-  --cdt-danger-soft-pressed: #523433;
-  --cdt-accent-strong: #7bb8f6;
-  --cdt-success-strong: #8ee675;
-  --cdt-warning-strong: #fcb256;
-  --cdt-danger-strong: #faa2a2;
-  --cdt-glow: #4b9ff3;
-  --cdt-scrim: rgb(12 12 11 / 0.72);
-  --cdt-glow-opacity: 0.55;
-  --cdt-glow-tint-opacity: 0.7;
-}
-}
-:root[data-cdt-brand="cdt"][data-theme="dark"] body.themis-app {
-  --cdt-surface-0: #1b1b19;
-  --cdt-surface-1: #232321;
-  --cdt-surface-2: #2a2a27;
-  --cdt-surface-3: #323230;
-  --cdt-sidebar: #1f1f1d;
-  --cdt-stroke: #353532;
-  --cdt-stroke-strong: #4a4a46;
-  --cdt-accent: #4b9ff3;
-  --cdt-accent-hover: #3a96f2;
-  --cdt-accent-pressed: #2a8df1;
-  --cdt-accent-subtle: rgb(75 159 243 / 0.20);
-  --cdt-accent-bright: #84bef7;
-  --cdt-focus-ring: #84bef7;
-  --cdt-accent-soft: #28323a;
-  --cdt-accent-wash: #1f262a;
-  --cdt-on-accent: #1b1b19;
-  --cdt-success: #6bde4a;
-  --cdt-warning: #fb9b24;
-  --cdt-danger: #f87171;
-  --cdt-danger-soft: #332321;
-  --cdt-danger-soft-border: #5e3735;
-  --cdt-text-0: #f2efe9;
-  --cdt-text-1: #d6d2ca;
-  --cdt-text-2: #9f9b92;
-  --cdt-text-3: #6e6a62;
-  --cdt-selection-light: rgb(190 220 251 / 0.20);
-  --cdt-selection-light-border: #bedcfb;
-  --cdt-row-selected: rgb(75 159 243 / 0.25);
-  --cdt-success-hover: #5fdb3b;
-  --cdt-success-pressed: #52d82c;
-  --cdt-warning-hover: #fb9312;
-  --cdt-warning-pressed: #f78b05;
-  --cdt-danger-hover: #f76060;
-  --cdt-danger-pressed: #f64f4f;
-  --cdt-accent-soft-pressed: #2c3e4f;
-  --cdt-success-soft: #2c3926;
-  --cdt-success-soft-pressed: #334c2a;
-  --cdt-warning-soft: #3d3121;
-  --cdt-warning-soft-pressed: #533d22;
-  --cdt-danger-soft-pressed: #523433;
-  --cdt-accent-strong: #7bb8f6;
-  --cdt-success-strong: #8ee675;
-  --cdt-warning-strong: #fcb256;
-  --cdt-danger-strong: #faa2a2;
-  --cdt-glow: #4b9ff3;
-  --cdt-scrim: rgb(12 12 11 / 0.72);
-  --cdt-glow-opacity: 0.55;
-  --cdt-glow-tint-opacity: 0.7;
-}
-
-
-/* --- the type, spacing and shape tokens (Styles.xaml) ---------------------- */
-
-body.themis-app {
-  --cdt-ui-font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
-  --cdt-display-font: "Segoe UI Variable Display", Inter, "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
-  --cdt-mono-font: "Cascadia Mono", Consolas, ui-monospace, monospace;
-  --cdt-font-caption: 11px;
-  --cdt-font-small: 12px;
-  --cdt-font-body: 13.5px;
-  --cdt-font-subhead: 14px;
-  --cdt-font-title: 17px;
-  --cdt-font-hero: 22px;
-  --cdt-space: 10px;
-  --cdt-space-tight: 5px;
-  --cdt-button-min-height: 32px;
-  --cdt-radius-card: 10px;
-  --cdt-radius-control: 8px;
-  --cdt-radius-sheet: 16px;
-  --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.30);
-  --cdt-soft-shadow: 0 3px 16px rgb(0 0 0 / 0.10);
-  --cdt-glow-shadow: 0 0 14px rgb(30 29 26 / 0.18);
-  --cdt-fast: 120ms;
-}
-:root[data-theme="dark"] body.themis-app { --cdt-glow-shadow: 0 0 14px color-mix(in srgb, var(--cdt-accent) 55%, transparent); --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.55); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) body.themis-app { --cdt-glow-shadow: 0 0 14px color-mix(in srgb, var(--cdt-accent) 55%, transparent); --cdt-popup-shadow: 0 10px 36px rgb(0 0 0 / 0.55); }
-}
-
-/* --- the site's own names for colours, answered by the CDT palette ---------
-   Every THEMIS page and script already paints with these; pointing them at
-   the CDT tokens is what turns the whole app over at once, light and dark,
-   Dar and CDT, without touching the other apps on the site. */
-
-body.themis-app {
+:root.cdt {
   color-scheme: light;
-  --plane: var(--cdt-surface-0);
-  --surface: var(--cdt-surface-1);
-  --raised: var(--cdt-surface-2);
-  --ink: var(--cdt-text-0);
-  --ink-2: var(--cdt-text-1);
-  --muted: var(--cdt-text-2);
+  --cdt-surface0: #F2F0E8; --cdt-surface1: #FBFAF6; --cdt-surface2: #FFFFFF; --cdt-surface3: #E7E4DA;
+  --cdt-sidebar: #EDEAE1;
+  --cdt-stroke: #DED9CC; --cdt-stroke-strong: #BFB9A9;
+  --cdt-accent: #147165; --cdt-accent-hover: #115E54; --cdt-accent-pressed: #0D4A42;
+  --cdt-accent-subtle: #14716533; --cdt-accent-bright: #1FAE9B; --cdt-focus: #147165;
+  --cdt-accent-soft: #E3EEED; --cdt-accent-wash: #F3F8F7; --cdt-accent-soft-pressed: #D5E5E3;
+  --cdt-accent-strong: #0C463E; --cdt-on-accent: #FFFFFF;
+  --cdt-success: #207410; --cdt-success-hover: #1A600D; --cdt-success-pressed: #154C0A;
+  --cdt-success-soft: #E9F1E7; --cdt-success-soft-pressed: #D7E6D4; --cdt-success-strong: #14470A;
+  --cdt-warning: #8D5918; --cdt-warning-hover: #794D15; --cdt-warning-pressed: #664011;
+  --cdt-warning-soft: #F4EEE8; --cdt-warning-soft-pressed: #EAE1D5; --cdt-warning-strong: #613D11;
+  --cdt-danger: #C42020; --cdt-danger-hover: #B01D1D; --cdt-danger-pressed: #9D1A1A;
+  --cdt-danger-soft: #FDF3F3; --cdt-danger-soft-border: #F0D5D5; --cdt-danger-soft-pressed: #F4D7D7; --cdt-danger-strong: #981919;
+  --cdt-text0: #1E1D1A; --cdt-text1: #3C3B36; --cdt-text2: #67645C; --cdt-text3: #98948A;
+  --cdt-row-selected: #14716540; --cdt-selection: #1FAE9B33;
+  --cdt-glow: 0 2px 10px rgba(30, 29, 26, 0.18);
+  --cdt-scrim: rgba(30, 29, 26, 0.44);
+  --cdt-logo: #32DAC4;
+  --cdt-popup-shadow: 0 12px 32px rgba(30, 29, 26, 0.18), 0 2px 6px rgba(30, 29, 26, 0.08);
+  --cdt-soft-shadow: 0 1px 2px rgba(30, 29, 26, 0.06);
+  --cdt-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2367645C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Dar dark */
+@media (prefers-color-scheme: dark) {
+  :root.cdt:not([data-theme="light"]) {
+    color-scheme: dark;
+    --cdt-surface0: #1B1B19; --cdt-surface1: #232321; --cdt-surface2: #2A2A27; --cdt-surface3: #323230;
+    --cdt-sidebar: #1F1F1D;
+    --cdt-stroke: #353532; --cdt-stroke-strong: #4A4A46;
+    --cdt-accent: #32DAC4; --cdt-accent-hover: #24C9B4; --cdt-accent-pressed: #20AF9C;
+    --cdt-accent-subtle: #32DAC433; --cdt-accent-bright: #6EE5D5; --cdt-focus: #6EE5D5;
+    --cdt-accent-soft: #243531; --cdt-accent-wash: #1D2825; --cdt-accent-soft-pressed: #264B45;
+    --cdt-accent-strong: #5DE2D0; --cdt-on-accent: #1B1B19;
+    --cdt-success: #6BDE4A; --cdt-success-hover: #5FDB3B; --cdt-success-pressed: #52D82C;
+    --cdt-success-soft: #2C3926; --cdt-success-soft-pressed: #334C2A; --cdt-success-strong: #8EE675;
+    --cdt-warning: #FB9B24; --cdt-warning-hover: #FB9312; --cdt-warning-pressed: #F78B05;
+    --cdt-warning-soft: #3D3121; --cdt-warning-soft-pressed: #533D22; --cdt-warning-strong: #FCB256;
+    --cdt-danger: #F87171; --cdt-danger-hover: #F76060; --cdt-danger-pressed: #F64F4F;
+    --cdt-danger-soft: #332321; --cdt-danger-soft-border: #5E3735; --cdt-danger-soft-pressed: #523433; --cdt-danger-strong: #FAA2A2;
+    --cdt-text0: #F2EFE9; --cdt-text1: #D6D2CA; --cdt-text2: #9F9B92; --cdt-text3: #6E6A62;
+    --cdt-row-selected: #32DAC440; --cdt-selection: #B4F1E933;
+    --cdt-glow: 0 0 14px rgba(50, 218, 196, 0.55);
+    --cdt-scrim: rgba(12, 12, 11, 0.72);
+    --cdt-popup-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --cdt-soft-shadow: none;
+    --cdt-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%239F9B92' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+:root.cdt[data-theme="dark"] {
+  color-scheme: dark;
+  --cdt-surface0: #1B1B19; --cdt-surface1: #232321; --cdt-surface2: #2A2A27; --cdt-surface3: #323230;
+  --cdt-sidebar: #1F1F1D;
+  --cdt-stroke: #353532; --cdt-stroke-strong: #4A4A46;
+  --cdt-accent: #32DAC4; --cdt-accent-hover: #24C9B4; --cdt-accent-pressed: #20AF9C;
+  --cdt-accent-subtle: #32DAC433; --cdt-accent-bright: #6EE5D5; --cdt-focus: #6EE5D5;
+  --cdt-accent-soft: #243531; --cdt-accent-wash: #1D2825; --cdt-accent-soft-pressed: #264B45;
+  --cdt-accent-strong: #5DE2D0; --cdt-on-accent: #1B1B19;
+  --cdt-success: #6BDE4A; --cdt-success-hover: #5FDB3B; --cdt-success-pressed: #52D82C;
+  --cdt-success-soft: #2C3926; --cdt-success-soft-pressed: #334C2A; --cdt-success-strong: #8EE675;
+  --cdt-warning: #FB9B24; --cdt-warning-hover: #FB9312; --cdt-warning-pressed: #F78B05;
+  --cdt-warning-soft: #3D3121; --cdt-warning-soft-pressed: #533D22; --cdt-warning-strong: #FCB256;
+  --cdt-danger: #F87171; --cdt-danger-hover: #F76060; --cdt-danger-pressed: #F64F4F;
+  --cdt-danger-soft: #332321; --cdt-danger-soft-border: #5E3735; --cdt-danger-soft-pressed: #523433; --cdt-danger-strong: #FAA2A2;
+  --cdt-text0: #F2EFE9; --cdt-text1: #D6D2CA; --cdt-text2: #9F9B92; --cdt-text3: #6E6A62;
+  --cdt-row-selected: #32DAC440; --cdt-selection: #B4F1E933;
+  --cdt-glow: 0 0 14px rgba(50, 218, 196, 0.55);
+  --cdt-scrim: rgba(12, 12, 11, 0.72);
+  --cdt-popup-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --cdt-soft-shadow: none;
+  --cdt-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%239F9B92' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* The CDT brand: identical to Dar except the accent family (CDT blue). */
+:root.cdt[data-cdt-brand="cdt"] {
+  --cdt-accent: #1C63BC; --cdt-accent-hover: #1958A8; --cdt-accent-pressed: #164E94;
+  --cdt-accent-subtle: #1C63BC33; --cdt-accent-bright: #3D86E2; --cdt-focus: #1C63BC;
+  --cdt-accent-soft: #E4ECF7; --cdt-accent-wash: #F4F7FC; --cdt-accent-soft-pressed: #D6E3F3;
+  --cdt-accent-strong: #154C90; --cdt-row-selected: #1C63BC40; --cdt-selection: #3D86E233;
+}
+@media (prefers-color-scheme: dark) {
+  :root.cdt[data-cdt-brand="cdt"]:not([data-theme="light"]) {
+    --cdt-accent: #4B9FF3; --cdt-accent-hover: #3A96F2; --cdt-accent-pressed: #2A8DF1;
+    --cdt-accent-subtle: #4B9FF333; --cdt-accent-bright: #84BEF7; --cdt-focus: #84BEF7;
+    --cdt-accent-soft: #28323A; --cdt-accent-wash: #1F262A; --cdt-accent-soft-pressed: #2C3E4F;
+    --cdt-accent-strong: #7BB8F6; --cdt-row-selected: #4B9FF340; --cdt-selection: #BEDCFB33;
+    --cdt-glow: 0 0 14px rgba(75, 159, 243, 0.55);
+  }
+}
+:root.cdt[data-cdt-brand="cdt"][data-theme="dark"] {
+  --cdt-accent: #4B9FF3; --cdt-accent-hover: #3A96F2; --cdt-accent-pressed: #2A8DF1;
+  --cdt-accent-subtle: #4B9FF333; --cdt-accent-bright: #84BEF7; --cdt-focus: #84BEF7;
+  --cdt-accent-soft: #28323A; --cdt-accent-wash: #1F262A; --cdt-accent-soft-pressed: #2C3E4F;
+  --cdt-accent-strong: #7BB8F6; --cdt-row-selected: #4B9FF340; --cdt-selection: #BEDCFB33;
+  --cdt-glow: 0 0 14px rgba(75, 159, 243, 0.55);
+}
+
+/* --- the house tokens, mapped onto the palette ----------------------------
+   Declared on body (html.cdt:root body beats every door's body.x-app and its
+   dark variants), as var() references, so they follow theme and brand
+   switches without being repeated per palette. Chart series keep their own
+   colours: data is not chrome. */
+
+html.cdt:root body {
+  --plane: var(--cdt-surface0);
+  --surface: var(--cdt-surface1);
+  --raised: var(--cdt-surface2);
+  --sunk: var(--cdt-surface3);
+  --surface-2: var(--cdt-surface3);
+  --ink: var(--cdt-text0);
+  --ink-2: var(--cdt-text1);
+  --muted: var(--cdt-text2);
   --grid: var(--cdt-stroke);
   --axis: var(--cdt-stroke-strong);
   --border: var(--cdt-stroke);
-  --series-1: var(--cdt-accent);
-  --good: var(--cdt-success);
-  --good-ink: var(--cdt-success-strong);
-  --warning: var(--cdt-warning);
-  --serious: var(--cdt-warning);
+  --good-ink: var(--cdt-success);
   --critical: var(--cdt-danger);
   --tint-good: var(--cdt-success-soft);
   --tint-warning: var(--cdt-warning-soft);
-  --tint-serious: var(--cdt-warning-soft);
   --tint-critical: var(--cdt-danger-soft);
-  --themis-on-primary: var(--cdt-on-accent);
-  --themis-primary-hover: var(--cdt-accent-hover);
+  /* Project Management and THEMIS chrome follows the brand accent. */
+  --pm-accent: var(--cdt-accent);
+  --pm-accent-2: var(--cdt-accent-hover);
+  --pm-accent-soft: var(--cdt-accent-soft);
+  --pm-tint: var(--cdt-accent-wash);
+  --pm-ring: 0 0 0 3px var(--cdt-accent-subtle);
+  --pm-shadow: var(--cdt-soft-shadow);
   --themis-tint: var(--cdt-accent-wash);
-  --themis-gold-tint: var(--cdt-warning-soft);
-  --themis-ring: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 30%, transparent);
-  --themis-shadow: none;
-  --themis-radius: var(--cdt-radius-card);
-  --in-answered: var(--cdt-success);
-  --in-suggested: var(--cdt-warning);
-  --in-needed: var(--cdt-danger);
-  --in-suggested-ink: var(--cdt-warning-strong);
-  background: var(--cdt-surface-0);
-  color: var(--cdt-text-1);
+  --themis-ring: 0 0 0 3px var(--cdt-accent-subtle);
+  --themis-shadow: var(--cdt-soft-shadow);
+  --themis-primary-hover: var(--cdt-accent-hover);
+  --themis-on-primary: var(--cdt-on-accent);
+
+  --cdt-ui-font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  --cdt-display-font: "Segoe UI Variable Display", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --cdt-mono-font: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
+  --cdt-fast: 120ms;
+
   font-family: var(--cdt-ui-font);
-  font-feature-settings: "cv11", "ss01";
+  background: var(--cdt-surface0);
+  color: var(--cdt-text1);
+  accent-color: var(--cdt-accent);
 }
-:root[data-theme="dark"] body.themis-app { color-scheme: dark; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body.themis-app { color-scheme: dark; } }
-body.themis-app ::selection { background: var(--cdt-accent-subtle); }
-body.themis-app { accent-color: var(--cdt-accent); }
+/* THEMIS uses series-1 as its primary (links, buttons, focus): the brand accent here. */
+html.cdt:root body.themis-app { --series-1: var(--cdt-accent); }
 
-/* --- text: CDT.Hero / Title / Body / Muted / SectionLabel ------------------ */
+html.cdt ::selection { background: var(--cdt-selection); }
+html.cdt h1, html.cdt h2, html.cdt h3 { color: var(--cdt-text0); }
+:where(html.cdt main h1) { font-family: var(--cdt-display-font); font-weight: 600; letter-spacing: -0.01em; }
+html.cdt code, html.cdt kbd, html.cdt pre, html.cdt .code-block { font-family: var(--cdt-mono-font); }
 
-.themis-app main h1:not(.themis-hero h1), .cdt-hero { font-family: var(--cdt-display-font); font-weight: 600; color: var(--cdt-text-0); letter-spacing: -0.01em; }
-.themis-app main h2, .themis-app main h3, .cdt-title { color: var(--cdt-text-0); font-weight: 600; }
-.themis-app .muted { color: var(--cdt-text-2); }
-.themis-app .card-head h2 { font-size: var(--cdt-font-subhead); }
-.cdt-section-label, .themis-app .spec-toolbox h2, .themis-app .spec-story-eyebrow, .themis-app .spec-station-level {
-  font-size: var(--cdt-font-caption); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cdt-text-2);
+/* Links: accent, brighter on hover, never on buttons. */
+html.cdt main a:not(.btn):not([class*="door"]):not(.row-link):not(.cell-open):not(.needs-strip) { color: var(--cdt-accent); }
+html.cdt main a:not(.btn):not([class*="door"]):not(.row-link):not(.cell-open):not(.needs-strip):hover { color: var(--cdt-accent-hover); }
+
+/* MarineTwin's sub-tabs and "more" folds. */
+html.cdt .mt-subtabs button[aria-selected="true"] { border-bottom-color: var(--cdt-accent); color: var(--cdt-text0); }
+html.cdt .mt-subtabs button:hover { background: var(--cdt-surface3); }
+html.cdt .mt-more > summary { color: var(--cdt-accent); }
+
+/* --- focus: one keyboard ring everywhere (CDT.FocusVisual) ----------------- */
+
+html.cdt :focus-visible { outline: 2px solid var(--cdt-focus); outline-offset: 2px; }
+html.cdt input:focus-visible, html.cdt select:focus-visible, html.cdt textarea:focus-visible { outline: none; }
+
+/* --- top bar (CDT.CaptionBar) --------------------------------------------- */
+
+html.cdt .topbar { background: var(--cdt-surface1); border-bottom: 1px solid var(--cdt-stroke); }
+html.cdt .brand-mark { background: var(--cdt-accent); color: var(--cdt-on-accent); border-radius: 7px; }
+html.cdt .brand:hover .brand-mark { box-shadow: var(--cdt-glow); }
+html.cdt .topbar .small a, html.cdt .topbar > .wrap > .topbar-inner > a.small { color: var(--cdt-text2) !important; }
+
+/* Tabs (CDT.TabItem): Text2, Surface3 under the mouse, accent underline when on. */
+html.cdt .tabs a { color: var(--cdt-text2); border-radius: 6px 6px 0 0; transition: color var(--cdt-fast), background-color var(--cdt-fast); }
+html.cdt .tabs a:hover { color: var(--cdt-text0); background: var(--cdt-surface3); }
+html.cdt .tabs a.active, html.cdt .tabs a[aria-current="page"] {
+  color: var(--cdt-text0); font-weight: 600; border-bottom-color: var(--cdt-accent); background: none;
 }
-.cdt-stat-label { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-2); }
-.cdt-stat-number { font-family: var(--cdt-display-font); font-size: 24px; font-weight: 700; color: var(--cdt-text-0); font-variant-numeric: tabular-nums; }
-.themis-app code, .themis-app .mono { font-family: var(--cdt-mono-font); }
-.themis-app a { color: var(--cdt-accent); text-underline-offset: 2px; }
-.themis-app a:hover { color: var(--cdt-accent-hover); }
 
-/* --- focus: CDT.FocusVisual ----------------------------------------------- */
+/* --- buttons (CDT.*Button) ------------------------------------------------- */
 
-.themis-app :focus-visible { outline: 2px solid var(--cdt-focus-ring); outline-offset: 2px; border-radius: 4px; }
-
-/* --- buttons: CDT.PrimaryButton / SecondaryButton / GhostButton / LinkButton,
-   the filled, soft and muted semantic families -------------------------------- */
-
-.themis-app .btn, .cdt-btn {
+html.cdt .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: var(--cdt-button-min-height); padding: 6px 14px; border-radius: var(--cdt-radius-control);
-  border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); color: var(--cdt-text-0);
-  font: 500 var(--cdt-font-body)/1.2 var(--cdt-ui-font); text-decoration: none; cursor: pointer; position: relative;
-  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out, color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
+  min-height: 32px; padding: 0 14px; border-radius: 6px;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.2;
+  border: 1px solid transparent; cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background-color var(--cdt-fast), border-color var(--cdt-fast), color var(--cdt-fast), box-shadow var(--cdt-fast);
+  filter: none; transform: none;
 }
-.themis-app .btn-sm { min-height: 28px; padding: 3px 10px; font-size: var(--cdt-font-small); }
-/* neutral — Secondary: rest → Surface3 → AccentSoft */
-.themis-app .btn:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.themis-app .btn:active:not(:disabled) { background: var(--cdt-accent-soft); transform: none; }
-/* Ghost: borderless until hovered */
-.themis-app .btn-ghost { background: var(--cdt-surface-2); border-color: var(--cdt-stroke); color: var(--cdt-text-0); }
-.themis-app .btn-ghost:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
-.themis-app .cdt-btn-ghost { background: transparent; border-color: transparent; }
-.themis-app .cdt-btn-ghost:hover { background: var(--cdt-surface-3); }
-/* Primary: Accent → AccentHover → AccentPressed, with the halo on hover */
-.themis-app .btn-primary, .themis-app .cdt-btn-primary { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); font-weight: 600; }
-.themis-app .btn-primary:hover, .themis-app .cdt-btn-primary:hover { background: var(--cdt-accent-hover); border-color: var(--cdt-accent-hover); color: var(--cdt-on-accent); box-shadow: var(--cdt-glow-shadow); filter: none; }
-.themis-app .btn-primary:active:not(:disabled), .themis-app .cdt-btn-primary:active { background: var(--cdt-accent-pressed); border-color: var(--cdt-accent-pressed); box-shadow: none; }
-/* Danger as CDT.SoftDangerButton: outlined, tinted on hover */
-.themis-app .btn-danger, .themis-app .cdt-btn-soft-danger { background: transparent; border-color: var(--cdt-danger); color: var(--cdt-danger); }
-.themis-app .btn-danger:hover, .themis-app .cdt-btn-soft-danger:hover { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); border-color: var(--cdt-danger); }
-.themis-app .btn-danger:active:not(:disabled) { background: var(--cdt-danger-soft-pressed); }
-.themis-app .cdt-btn-danger { background: var(--cdt-danger); border-color: var(--cdt-danger); color: var(--cdt-on-accent); font-weight: 600; }
-.themis-app .cdt-btn-danger:hover { background: var(--cdt-danger-hover); border-color: var(--cdt-danger-hover); color: var(--cdt-on-accent); }
-.themis-app .cdt-btn-success { background: var(--cdt-success); border-color: var(--cdt-success); color: var(--cdt-on-accent); font-weight: 600; }
-.themis-app .cdt-btn-success:hover { background: var(--cdt-success-hover); border-color: var(--cdt-success-hover); color: var(--cdt-on-accent); }
-.themis-app .cdt-btn-soft-primary { background: transparent; border-color: var(--cdt-accent); color: var(--cdt-accent); }
-.themis-app .cdt-btn-soft-primary:hover { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
-.themis-app .cdt-btn-link { background: none; border: 0; min-height: 0; padding: 0; color: var(--cdt-accent); text-decoration: underline; }
-/* Disabled: Surface3 + Text3; an outline kept on the soft ones */
-.themis-app .btn:disabled, .themis-app .btn[aria-disabled="true"] {
-  background: var(--cdt-surface-3); border-color: var(--cdt-stroke); color: var(--cdt-text-3); cursor: not-allowed; box-shadow: none; opacity: 1;
+html.cdt .btn-sm { min-height: 26px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
+html.cdt .btn-lg { min-height: 40px; padding: 0 20px; font-size: 14px; border-radius: 8px; }
+html.cdt .btn:active:not(:disabled) { transform: none; }
+
+/* Primary: filled accent, glow on hover. */
+html.cdt .btn-primary { background: var(--cdt-accent); color: var(--cdt-on-accent); border-color: var(--cdt-accent); box-shadow: none; }
+html.cdt .btn-primary:hover { background: var(--cdt-accent-hover); border-color: var(--cdt-accent-hover); color: var(--cdt-on-accent); box-shadow: var(--cdt-glow); }
+html.cdt .btn-primary:active { background: var(--cdt-accent-pressed); border-color: var(--cdt-accent-pressed); box-shadow: none; }
+
+/* Secondary (the house's btn-ghost): outlined, Surface3 under the mouse, AccentSoft pressed. */
+html.cdt .btn-ghost, html.cdt .btn-secondary {
+  background: var(--cdt-surface2); color: var(--cdt-text1); border-color: var(--cdt-stroke-strong); box-shadow: var(--cdt-soft-shadow);
 }
-.themis-app .btn-danger:disabled { background: transparent; }
-/* CDT.IconButton / CDT.CircleButton */
-.cdt-icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--cdt-radius-control); border: 0; background: transparent; color: var(--cdt-text-1); cursor: pointer; }
-.cdt-icon-btn:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.cdt-icon-btn:active { background: var(--cdt-accent-soft); }
+html.cdt .btn-ghost:hover, html.cdt .btn-secondary:hover { background: var(--cdt-surface3); color: var(--cdt-text0); border-color: var(--cdt-stroke-strong); }
+html.cdt .btn-ghost:active, html.cdt .btn-secondary:active { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
 
-/* --- inputs: CDT.TextBox / ComboBox — Stroke → StrokeStrong → Accent → Danger */
+/* A .btn with no variant is a secondary button. */
+html.cdt .btn:not([class*="btn-"]) { background: var(--cdt-surface2); color: var(--cdt-text1); border-color: var(--cdt-stroke-strong); box-shadow: var(--cdt-soft-shadow); }
+html.cdt .btn:not([class*="btn-"]):hover { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt .btn:not([class*="btn-"]):active { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
 
-.themis-app input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
-.themis-app select, .themis-app textarea {
-  background-color: var(--cdt-surface-2); color: var(--cdt-text-0); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-control);
-  font-family: var(--cdt-ui-font); min-height: 34px;
-  transition: border-color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
+/* Borderless ghost and icon buttons. */
+html.cdt .btn-plain, html.cdt .btn-icon { background: transparent; color: var(--cdt-text1); border-color: transparent; box-shadow: none; }
+html.cdt .btn-plain:hover, html.cdt .btn-icon:hover { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt .btn-plain:active, html.cdt .btn-icon:active { background: var(--cdt-accent-soft); }
+html.cdt .btn-icon { width: 32px; padding: 0; }
+html.cdt .btn-icon.btn-sm { width: 26px; }
+
+/* Link button: an inline text action. */
+html.cdt .btn-link { background: none; border: 0; min-height: 0; padding: 0; color: var(--cdt-accent); font-weight: 600; }
+html.cdt .btn-link:hover { color: var(--cdt-accent-hover); text-decoration: underline; }
+
+/* Danger (the house's btn-danger is outlined): CDT.SoftDangerButton. */
+html.cdt .btn-danger { background: transparent; color: var(--cdt-danger); border-color: var(--cdt-danger); box-shadow: none; }
+html.cdt .btn-danger:hover { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); border-color: var(--cdt-danger); }
+html.cdt .btn-danger:active { background: var(--cdt-danger-soft-pressed); color: var(--cdt-danger-strong); }
+
+/* Filled semantic buttons. */
+html.cdt .btn-success { background: var(--cdt-success); color: var(--cdt-on-accent); border-color: var(--cdt-success); }
+html.cdt .btn-success:hover { background: var(--cdt-success-hover); border-color: var(--cdt-success-hover); }
+html.cdt .btn-success:active { background: var(--cdt-success-pressed); }
+html.cdt .btn-warning { background: var(--cdt-warning); color: var(--cdt-on-accent); border-color: var(--cdt-warning); }
+html.cdt .btn-warning:hover { background: var(--cdt-warning-hover); border-color: var(--cdt-warning-hover); }
+html.cdt .btn-danger-fill { background: var(--cdt-danger); color: var(--cdt-on-accent); border-color: var(--cdt-danger); }
+html.cdt .btn-danger-fill:hover { background: var(--cdt-danger-hover); border-color: var(--cdt-danger-hover); color: var(--cdt-on-accent); }
+html.cdt .btn-danger-fill:active { background: var(--cdt-danger-pressed); }
+
+/* Soft (outlined, tinted on hover) and muted (coloured text on a neutral surface). */
+html.cdt .btn-soft { background: transparent; color: var(--cdt-accent); border-color: var(--cdt-accent); }
+html.cdt .btn-soft:hover { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+html.cdt .btn-soft:active { background: var(--cdt-accent-soft-pressed); color: var(--cdt-accent-strong); }
+html.cdt .btn-muted { background: var(--cdt-surface2); color: var(--cdt-accent); border-color: var(--cdt-stroke); }
+html.cdt .btn-muted:hover { background: var(--cdt-surface3); border-color: var(--cdt-stroke-strong); }
+html.cdt .btn-muted:active { background: var(--cdt-accent-soft); border-color: var(--cdt-accent); color: var(--cdt-accent-strong); }
+
+/* Disabled: Surface3 + Text3 from the palette, not a fade. */
+html.cdt .btn:disabled, html.cdt .btn[aria-disabled="true"] {
+  background: var(--cdt-surface3); color: var(--cdt-text3); border-color: var(--cdt-surface3);
+  box-shadow: none; cursor: not-allowed; opacity: 1;
 }
-.themis-app textarea { min-height: 0; }
-.themis-app input:not([type=checkbox]):not([type=radio]):hover, .themis-app select:hover, .themis-app textarea:hover { border-color: var(--cdt-stroke-strong); }
-.themis-app input:focus, .themis-app select:focus, .themis-app textarea:focus {
-  outline: none; border-color: var(--cdt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 22%, transparent);
+html.cdt .btn-ghost:disabled, html.cdt .btn-danger:disabled, html.cdt .btn-soft:disabled { background: transparent; border-color: var(--cdt-stroke); }
+
+/* --- inputs (CDT.TextBox / ComboBox / CheckBox) ----------------------------
+   Stroke -> StrokeStrong (hover) -> Accent (focus) -> Danger (error). */
+
+html.cdt :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"])),
+html.cdt select, html.cdt textarea {
+  min-height: 32px; padding: 6px 10px; border-radius: 6px;
+  font-family: inherit; font-size: 13px; color: var(--cdt-text0);
+  background-color: var(--cdt-surface2); border: 1px solid var(--cdt-stroke);
+  box-shadow: none; outline: none;
+  transition: border-color var(--cdt-fast), box-shadow var(--cdt-fast);
 }
-.themis-app input::placeholder, .themis-app textarea::placeholder { color: var(--cdt-text-2); opacity: 1; }
-.themis-app input:disabled, .themis-app select:disabled, .themis-app textarea:disabled { opacity: 0.55; cursor: not-allowed; }
-.themis-app input[aria-invalid="true"], .themis-app .is-invalid { border-color: var(--cdt-danger) !important; }
-.themis-app select:not([multiple]) {
-  appearance: none; -webkit-appearance: none; padding-right: 30px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2367645c' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 10px center;
+html.cdt textarea { line-height: 1.45; }
+html.cdt input:hover:not(:focus):not(:disabled), html.cdt select:hover:not(:focus):not(:disabled), html.cdt textarea:hover:not(:focus):not(:disabled) {
+  border-color: var(--cdt-stroke-strong);
 }
-.themis-app .field-label { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-1); }
-.themis-app .field-hint { color: var(--cdt-text-2); }
-.themis-app .themis-req { color: var(--cdt-accent-strong); background: var(--cdt-accent-soft); border-radius: 10px; padding: 0 6px; font-size: var(--cdt-font-caption); font-weight: 600; }
-/* CDT.SearchTextBox: the magnifier inside the field */
-.themis-app input[type=search] {
-  padding-left: 32px !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367645c' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: 11px center;
+html.cdt input:focus, html.cdt select:focus, html.cdt textarea:focus {
+  border-color: var(--cdt-accent); box-shadow: 0 0 0 1px var(--cdt-accent); outline: none;
+}
+html.cdt input:user-invalid, html.cdt textarea:user-invalid, html.cdt select:user-invalid,
+html.cdt [aria-invalid="true"] { border-color: var(--cdt-danger) !important; box-shadow: 0 0 0 1px var(--cdt-danger); }
+html.cdt input:disabled, html.cdt select:disabled, html.cdt textarea:disabled {
+  background-color: var(--cdt-surface1); color: var(--cdt-text3); border-color: var(--cdt-stroke); cursor: not-allowed;
+}
+html.cdt input::placeholder, html.cdt textarea::placeholder { color: var(--cdt-text2); opacity: 1; }
+html.cdt select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  padding-right: 28px; background-image: var(--cdt-chevron); background-repeat: no-repeat;
+  background-position: right 9px center; background-size: 12px 12px;
+}
+html.cdt input[type="file"] { font-size: 12px; color: var(--cdt-text2); }
+html.cdt input[type="file"]::file-selector-button {
+  margin-right: 10px; min-height: 28px; padding: 0 12px; border-radius: 6px; cursor: pointer;
+  font: 600 12px/1 var(--cdt-ui-font); color: var(--cdt-text1);
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke-strong);
+}
+html.cdt input[type="file"]::file-selector-button:hover { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt input[type="checkbox"], html.cdt input[type="radio"] { accent-color: var(--cdt-accent); width: 15px; height: 15px; }
+html.cdt input[type="range"] { accent-color: var(--cdt-accent); }
+
+html.cdt :where(.field-label) { color: var(--cdt-text1); font-size: 12px; font-weight: 600; }
+html.cdt :where(.field-hint) { color: var(--cdt-text2); }
+
+/* ToggleSwitch: <input type="checkbox" class="cdt-switch"> or role="switch". */
+html.cdt input.cdt-switch, html.cdt input[role="switch"] {
+  -webkit-appearance: none; appearance: none; flex: none;
+  width: 36px; height: 20px; margin: 0; border-radius: 999px; cursor: pointer; position: relative;
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke-strong);
+  transition: background-color var(--cdt-fast), border-color var(--cdt-fast);
+}
+html.cdt input.cdt-switch::after, html.cdt input[role="switch"]::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--cdt-text2); transition: transform var(--cdt-fast), background-color var(--cdt-fast);
+}
+html.cdt input.cdt-switch:hover, html.cdt input[role="switch"]:hover { border-color: var(--cdt-text2); }
+html.cdt input.cdt-switch:checked, html.cdt input[role="switch"]:checked { background: var(--cdt-accent); border-color: var(--cdt-accent); }
+html.cdt input.cdt-switch:checked:hover, html.cdt input[role="switch"]:checked:hover { background: var(--cdt-accent-hover); }
+html.cdt input.cdt-switch:checked::after, html.cdt input[role="switch"]:checked::after { transform: translateX(16px); background: var(--cdt-on-accent); }
+html.cdt input.cdt-switch:disabled, html.cdt input[role="switch"]:disabled { opacity: .5; cursor: not-allowed; }
+
+/* --- cards, tiles, panels (CDT.Card / InnerCard / Expander) --------------- */
+
+html.cdt .card, html.cdt .tile {
+  background: var(--cdt-surface1); border: 1px solid var(--cdt-stroke); border-radius: 10px; box-shadow: var(--cdt-soft-shadow);
+}
+html.cdt .card-head { border-bottom-color: var(--cdt-stroke); }
+html.cdt .card-foot { border-top-color: var(--cdt-stroke); background: var(--cdt-surface1); border-radius: 0 0 10px 10px; }
+html.cdt .tile-label { color: var(--cdt-text2); }
+html.cdt .tile-value { color: var(--cdt-text0); font-family: var(--cdt-display-font); }
+html.cdt .panel-summary { color: var(--cdt-accent); }
+html.cdt .panel-summary:hover { background: var(--cdt-surface3); }
+html.cdt .panel-summary::before { color: var(--cdt-text2); }
+
+/* NoticeCard: an accent-outlined callout. ErrorCard: the danger one. */
+html.cdt .cdt-notice { border: 1px solid var(--cdt-accent); background: var(--cdt-accent-wash); border-radius: 10px; padding: 12px 14px; color: var(--cdt-text1); }
+html.cdt .cdt-error-card { border: 1px solid var(--cdt-danger-soft-border); background: var(--cdt-danger-soft); border-radius: 10px; padding: 12px 14px; color: var(--cdt-text1); }
+
+/* --- data grid (CDT.DataGrid) --------------------------------------------- */
+
+html.cdt thead th {
+  color: var(--cdt-text2); font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface1);
+}
+html.cdt thead th a { color: inherit !important; text-decoration: none; }
+html.cdt thead th a:hover { color: var(--cdt-text0) !important; }
+html.cdt thead th[aria-sort] { color: var(--cdt-text0); }
+html.cdt thead th[aria-sort="ascending"]::after { content: " \25B4"; color: var(--cdt-accent); }
+html.cdt thead th[aria-sort="descending"]::after { content: " \25BE"; color: var(--cdt-accent); }
+html.cdt tbody td { border-top-color: var(--cdt-stroke); }
+html.cdt tbody tr:hover > td { background: var(--cdt-accent-wash); }
+html.cdt tbody tr[aria-selected="true"] > td, html.cdt tbody tr.is-selected > td { background: var(--cdt-row-selected); }
+html.cdt tfoot td { border-top: 1px solid var(--cdt-stroke-strong); color: var(--cdt-text0); }
+
+/* --- status: badges, outcome labels, filter chips, segmented tracks ------- */
+
+html.cdt .badge {
+  border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 600;
+  background: var(--cdt-surface3); color: var(--cdt-text1); border: 1px solid transparent;
+}
+html.cdt .badge.good     { background: var(--cdt-success-soft); color: var(--cdt-success-strong); }
+html.cdt .badge.warning  { background: var(--cdt-warning-soft); color: var(--cdt-warning-strong); }
+html.cdt .badge.serious  { background: var(--cdt-warning-soft-pressed); color: var(--cdt-warning-strong); }
+html.cdt .badge.critical { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
+html.cdt .badge.accent   { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+html.cdt :where(.state-good) { color: var(--cdt-success); }
+html.cdt :where(.state-warning, .state-serious) { color: var(--cdt-warning); }
+html.cdt :where(.state-critical) { color: var(--cdt-danger); }
+html.cdt :where(.good-text) { color: var(--cdt-success); }
+html.cdt :where(.bad-text) { color: var(--cdt-danger); }
+
+/* OutcomeLabel: glyph + word + colour. */
+html.cdt .cdt-outcome { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+html.cdt .cdt-outcome::before { font-size: 11px; }
+html.cdt .cdt-outcome.ok { color: var(--cdt-success); } html.cdt .cdt-outcome.ok::before { content: "\2713"; }
+html.cdt .cdt-outcome.warn { color: var(--cdt-warning); } html.cdt .cdt-outcome.warn::before { content: "\25B2"; }
+html.cdt .cdt-outcome.fail { color: var(--cdt-danger); } html.cdt .cdt-outcome.fail::before { content: "\2715"; }
+html.cdt .cdt-outcome.skip { color: var(--cdt-text2); } html.cdt .cdt-outcome.skip::before { content: "\2013"; }
+
+/* SegmentTrack (the house's .chips). */
+html.cdt .chips {
+  display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 8px;
+  background: var(--cdt-surface3); border: 1px solid var(--cdt-stroke);
+}
+html.cdt .chips a {
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--cdt-text1);
+  transition: background-color var(--cdt-fast), color var(--cdt-fast);
+}
+html.cdt .chips a:hover:not(.active) { background: var(--cdt-surface2); color: var(--cdt-text0); }
+html.cdt .chips a.active { background: var(--cdt-surface2); color: var(--cdt-accent-strong); box-shadow: 0 1px 2px rgba(0,0,0,.12); border: 0; }
+
+/* FilterChip: one-of filter capsule. */
+html.cdt .cdt-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: var(--cdt-text1); text-decoration: none;
+  background: transparent; border: 1px solid var(--cdt-stroke-strong); cursor: pointer;
+}
+html.cdt .cdt-chip:hover { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); border-color: var(--cdt-accent); }
+html.cdt .cdt-chip.active, html.cdt .cdt-chip[aria-pressed="true"] { background: var(--cdt-accent); color: var(--cdt-on-accent); border-color: var(--cdt-accent); }
+html.cdt .cdt-chip .cdt-chip-x { border: 0; background: none; color: inherit; cursor: pointer; padding: 0; font-size: 13px; line-height: 1; opacity: .75; }
+html.cdt .cdt-chip .cdt-chip-x:hover { opacity: 1; }
+
+/* StatusDot: state light, glows in its own colour on dark. */
+html.cdt .cdt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cdt-text3); vertical-align: middle; flex: none; }
+html.cdt .cdt-dot.ok { background: var(--cdt-success); }
+html.cdt .cdt-dot.warn { background: var(--cdt-warning); animation: cdt-pulse 1.6s ease-in-out infinite; }
+html.cdt .cdt-dot.error { background: var(--cdt-danger); }
+html.cdt .cdt-dot.available { background: var(--cdt-accent); }
+@media (prefers-color-scheme: dark) {
+  :root.cdt:not([data-theme="light"]) .cdt-dot.ok { box-shadow: 0 0 8px var(--cdt-success); }
+  :root.cdt:not([data-theme="light"]) .cdt-dot.warn { box-shadow: 0 0 8px var(--cdt-warning); }
+  :root.cdt:not([data-theme="light"]) .cdt-dot.error { box-shadow: 0 0 8px var(--cdt-danger); }
+}
+:root.cdt[data-theme="dark"] .cdt-dot.ok { box-shadow: 0 0 8px var(--cdt-success); }
+:root.cdt[data-theme="dark"] .cdt-dot.warn { box-shadow: 0 0 8px var(--cdt-warning); }
+:root.cdt[data-theme="dark"] .cdt-dot.error { box-shadow: 0 0 8px var(--cdt-danger); }
+@keyframes cdt-pulse { 50% { opacity: .45; } }
+
+/* Kbd and Avatar. */
+html.cdt .cdt-kbd, html.cdt kbd {
+  display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 4px; text-align: center;
+  font: 600 11px/1.4 var(--cdt-ui-font); color: var(--cdt-text1);
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke-strong); border-bottom-width: 2px;
+}
+html.cdt .cdt-avatar {
+  display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%;
+  font: 700 12px/1 var(--cdt-ui-font); letter-spacing: .02em;
+  background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); border: 1px solid var(--cdt-stroke);
 }
 
-/* CDT.CheckBox / RadioButton: Accent when checked; the label row takes the hover */
-.themis-app input[type=checkbox], .themis-app input[type=radio] { accent-color: var(--cdt-accent); width: 16px; height: 16px; }
+/* --- progress: bars, UtilizationBar, ProgressBar --------------------------- */
 
-/* CDT.ToggleSwitch, on a checkbox: for settings that apply at once */
-.cdt-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
-.cdt-switch input[type=checkbox] {
-  appearance: none; -webkit-appearance: none; width: 36px !important; height: 20px !important; flex: none; margin: 0;
-  border-radius: 10px; border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); position: relative; cursor: pointer;
-  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out;
+html.cdt .bar { background: var(--cdt-surface3); }
+html.cdt .cdt-progress { position: relative; height: 4px; border-radius: 999px; background: var(--cdt-surface3); overflow: hidden; }
+html.cdt .cdt-progress > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--cdt-accent); }
+html.cdt .cdt-progress.indeterminate > span { width: 35%; animation: cdt-sweep 1.3s ease-in-out infinite; }
+@keyframes cdt-sweep { from { left: -35%; } to { left: 100%; } }
+
+/* UtilizationBar: demand / capacity against a limit. Green below the warning
+   ratio, amber up to the limit, red over it; the limit is a tick. */
+html.cdt .cdt-util { display: grid; grid-template-columns: minmax(90px, max-content) minmax(80px, 1fr) 4.5em; align-items: center; gap: 4px 10px; font-size: 12px; }
+html.cdt .cdt-util + .cdt-util { margin-top: 6px; }
+html.cdt .cdt-util-label { color: var(--cdt-text1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.cdt .cdt-util-track { position: relative; height: 8px; border-radius: 999px; background: var(--cdt-surface3); }
+html.cdt .cdt-util-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--cdt-success); max-width: 100%; transition: width .4s ease; }
+html.cdt .cdt-util-limit { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--cdt-text1); }
+html.cdt .cdt-util-value { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cdt-success); }
+html.cdt .cdt-util.warn .cdt-util-fill { background: var(--cdt-warning); }
+html.cdt .cdt-util.warn .cdt-util-value { color: var(--cdt-warning); }
+html.cdt .cdt-util.over .cdt-util-fill { background: var(--cdt-danger); }
+html.cdt .cdt-util.over .cdt-util-value { color: var(--cdt-danger); }
+html.cdt .cdt-util.compact { grid-template-columns: minmax(60px, 1fr) 3.6em; }
+
+/* BusyDots: three dots pulsing on a staggered loop. */
+html.cdt .cdt-busy { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
+html.cdt .cdt-busy i { display: block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: cdt-dots 1s ease-in-out infinite; }
+html.cdt .cdt-busy i:nth-child(2) { animation-delay: .15s; }
+html.cdt .cdt-busy i:nth-child(3) { animation-delay: .3s; }
+@keyframes cdt-dots { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+html.cdt .btn.is-busy { pointer-events: none; }
+html.cdt .btn.is-busy .cdt-busy { margin-left: 2px; }
+
+/* Skeleton: a loading placeholder sized like what it stands in for. */
+html.cdt .cdt-skeleton {
+  display: block; border-radius: 6px; min-height: 12px;
+  background: linear-gradient(90deg, var(--cdt-surface3) 0%, var(--cdt-surface2) 50%, var(--cdt-surface3) 100%);
+  background-size: 200% 100%; animation: cdt-shimmer 1.4s ease-in-out infinite;
 }
-.cdt-switch input[type=checkbox]::after {
-  content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--cdt-text-2);
-  transition: transform var(--cdt-fast) ease-out, background-color var(--cdt-fast) ease-out;
+html.cdt .cdt-skeleton + .cdt-skeleton { margin-top: 8px; }
+@keyframes cdt-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* --- InfoBar (the house's flash messages and .cdt-infobar) ---------------- */
+
+html.cdt .flashes { gap: 8px; }
+html.cdt .flash, html.cdt .cdt-infobar {
+  position: relative; display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+  color: var(--cdt-text1); background: var(--cdt-accent-wash); border: 1px solid var(--cdt-accent);
 }
-.cdt-switch input[type=checkbox]:checked { background: var(--cdt-accent); border-color: var(--cdt-accent); }
-.cdt-switch input[type=checkbox]:checked::after { transform: translateX(16px); background: var(--cdt-on-accent); }
-.cdt-switch input[type=checkbox]:hover { border-color: var(--cdt-accent-bright); }
-
-/* --- containers: CDT.Card / InnerCard / NoticeCard / ErrorCard --------------- */
-
-.themis-app .card, .cdt-card {
-  background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); box-shadow: none;
+html.cdt .flash::before, html.cdt .cdt-infobar::before {
+  content: ""; flex: none; width: 16px; height: 16px; margin-top: 1px; background: var(--cdt-accent);
+  -webkit-mask: var(--cdt-glyph-info) center / contain no-repeat; mask: var(--cdt-glyph-info) center / contain no-repeat;
 }
-.themis-app .card-head { border-bottom: 1px solid var(--cdt-stroke); }
-.themis-app .card-foot { border-top-color: var(--cdt-stroke); }
-.cdt-inner-card { background: var(--cdt-surface-2); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-control); padding: 14px; }
-.cdt-notice-card, .themis-app .spec-engineer-note {
-  background: var(--cdt-accent-wash); border: 1px solid var(--cdt-accent); border-radius: var(--cdt-radius-card); padding: 10px 12px; color: var(--cdt-text-1);
+html.cdt .flash.success, html.cdt .cdt-infobar.success { background: var(--cdt-success-soft); border-color: var(--cdt-success); color: var(--cdt-text1); }
+html.cdt .flash.success::before, html.cdt .cdt-infobar.success::before { background: var(--cdt-success); -webkit-mask-image: var(--cdt-glyph-ok); mask-image: var(--cdt-glyph-ok); }
+html.cdt .flash.notice, html.cdt .flash.warning, html.cdt .cdt-infobar.warning { background: var(--cdt-warning-soft); border-color: var(--cdt-warning); color: var(--cdt-text1); }
+html.cdt .flash.notice::before, html.cdt .flash.warning::before, html.cdt .cdt-infobar.warning::before { background: var(--cdt-warning); -webkit-mask-image: var(--cdt-glyph-warn); mask-image: var(--cdt-glyph-warn); }
+html.cdt .flash.error, html.cdt .cdt-infobar.error { background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); color: var(--cdt-text1); }
+html.cdt .flash.error::before, html.cdt .cdt-infobar.error::before { background: var(--cdt-danger); -webkit-mask-image: var(--cdt-glyph-error); mask-image: var(--cdt-glyph-error); }
+html.cdt .cdt-infobar-body { flex: 1; min-width: 0; }
+html.cdt .cdt-infobar-title { display: block; font-weight: 600; color: var(--cdt-text0); }
+html.cdt .cdt-infobar-word { font-weight: 600; color: var(--cdt-text0); margin-right: 4px; }
+html.cdt .cdt-infobar-close {
+  flex: none; margin: -4px -6px -4px 4px; width: 26px; height: 26px; border-radius: 6px; border: 0; cursor: pointer;
+  background: transparent; color: var(--cdt-text2); font-size: 15px; line-height: 1;
 }
-.themis-app .spec-engineer-note { border-color: color-mix(in srgb, var(--cdt-warning) 55%, var(--cdt-stroke)); background: var(--cdt-warning-soft); }
-.cdt-error-card { background: var(--cdt-danger-soft); border: 1px solid var(--cdt-danger-soft-border); border-radius: var(--cdt-radius-card); padding: 8px 11px; color: var(--cdt-danger-strong); }
+html.cdt .cdt-infobar-close:hover { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt .flash.is-closing, html.cdt .cdt-infobar.is-closing { opacity: 0; transform: translateY(-4px); transition: opacity .2s, transform .2s; }
 
-/* --- status vocabulary: CDT.Badge / Chip / StatusDot / OutcomeLabel ---------- */
+/* Toasts: an InfoBar with AutoCloseAfter, stacked bottom left. */
+html.cdt .cdt-toasts { position: fixed; left: 16px; bottom: 16px; z-index: 70; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+html.cdt .cdt-toasts > * { pointer-events: auto; box-shadow: var(--cdt-popup-shadow); animation: cdt-rise .2s ease-out; }
+@keyframes cdt-rise { from { opacity: 0; transform: translateY(8px); } }
 
-.themis-app .badge, .cdt-badge {
-  display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; padding: 2px 8px; border: 0;
-  background: var(--cdt-surface-3); color: var(--cdt-text-1); font-size: var(--cdt-font-small); font-weight: 500; line-height: 1.5;
-}
-.cdt-badge[data-dot]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cdt-text-2); flex: none; }
-.themis-app .badge.good, .themis-app .badge.ok { background: var(--cdt-success-soft); color: var(--cdt-success-strong); }
-.themis-app .badge.warning, .themis-app .badge.serious { background: var(--cdt-warning-soft); color: var(--cdt-warning-strong); }
-.themis-app .badge.critical, .themis-app .badge.bad { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
-.cdt-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 10px; background: var(--cdt-accent-soft); border: 1px solid var(--cdt-stroke); color: var(--cdt-accent-strong); font-size: var(--cdt-font-small); }
-.cdt-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cdt-text-3); vertical-align: middle; }
-.cdt-status-dot[data-state=ok] { background: var(--cdt-success); box-shadow: 0 0 6px color-mix(in srgb, var(--cdt-success) 60%, transparent); }
-.cdt-status-dot[data-state=warn] { background: var(--cdt-warning); animation: cdt-pulse 1.4s ease-in-out infinite; }
-.cdt-status-dot[data-state=error] { background: var(--cdt-danger); }
-@keyframes cdt-pulse { 50% { opacity: 0.35; } }
-
-/* The in-story answer chips (answered / suggested / needs your answer) as
-   CDT.OutcomeLabel: glyph + word + colour, never colour alone. */
-.themis-app .spec-in-chip { border-radius: 10px; padding: 1px 8px 1px 6px; font-weight: 600; font-size: var(--cdt-font-small); border: 0; display: inline-flex; align-items: center; gap: 4px; }
-.themis-app .spec-in-chip::before { font-weight: 700; }
-.themis-app .spec-in-chip.spec-in-answered { background: var(--cdt-success-soft); color: var(--cdt-success-strong); }
-.themis-app .spec-in-chip.spec-in-answered::before { content: "✓"; }
-.themis-app .spec-in-chip.spec-in-suggested { background: var(--cdt-warning-soft); color: var(--cdt-warning-strong); }
-.themis-app .spec-in-chip.spec-in-suggested::before { content: "•"; }
-.themis-app .spec-in-chip.spec-in-needed { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
-.themis-app .spec-in-chip.spec-in-needed::before { content: "!"; }
-
-/* --- CDT.SegmentedList / SegmentTrack + SegmentButton, CDT.FilterChip -------- */
-
-.cdt-segmented, .themis-app .chips {
-  display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 9px; background: var(--cdt-surface-3); border: 0;
-}
-.cdt-segmented > button, .cdt-segmented > a, .themis-app .chips a {
-  border: 0; background: transparent; color: var(--cdt-text-2); font: 500 var(--cdt-font-small)/1.2 var(--cdt-ui-font);
-  padding: 5px 12px; border-radius: 7px; cursor: pointer; text-decoration: none; white-space: nowrap;
-}
-.cdt-segmented > button:hover, .cdt-segmented > a:hover, .themis-app .chips a:hover { color: var(--cdt-text-0); background: color-mix(in srgb, var(--cdt-surface-2) 55%, transparent); }
-.cdt-segmented > [aria-pressed="true"], .cdt-segmented > [aria-current], .themis-app .chips a.active {
-  background: var(--cdt-surface-2); color: var(--cdt-text-0); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
-}
-.cdt-filter-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); color: var(--cdt-text-1); font-size: var(--cdt-font-small); cursor: pointer; }
-.cdt-filter-chip:hover { background: var(--cdt-accent-soft); }
-.cdt-filter-chip[aria-pressed="true"] { background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
-
-/* --- CDT.Kbd ------------------------------------------------------------- */
-
-.cdt-kbd {
-  display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--cdt-stroke); border-bottom-width: 2px;
-  background: var(--cdt-surface-2); color: var(--cdt-text-2); font: 600 10.5px/16px var(--cdt-ui-font); text-align: center; vertical-align: 1px;
+/* Glyphs, as masks so they take any colour. */
+:root.cdt {
+  --cdt-glyph-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 3.2a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8ZM9 12H7V7h2v5Z'/%3E%3C/svg%3E");
+  --cdt-glyph-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm3.6 5.1-4.3 4.6a.8.8 0 0 1-1.1 0L4.4 8.9l1.1-1.1 1.2 1.2 3.8-4 1.1 1.1Z'/%3E%3C/svg%3E");
+  --cdt-glyph-warn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8.9 1.6a1 1 0 0 0-1.8 0L.6 13.4A1 1 0 0 0 1.5 15h13a1 1 0 0 0 .9-1.6L8.9 1.6ZM9 13H7v-2h2v2Zm0-3.2H7V5.5h2v4.3Z'/%3E%3C/svg%3E");
+  --cdt-glyph-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm2.9 8.8-1.1 1.1L8 9.1l-1.8 1.8-1.1-1.1L6.9 8 5.1 6.2l1.1-1.1L8 6.9l1.8-1.8 1.1 1.1L9.1 8l1.8 1.8Z'/%3E%3C/svg%3E");
+  --cdt-glyph-empty: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13.5 5.6 5.7A2 2 0 0 1 7.5 4.3h9a2 2 0 0 1 1.9 1.4L21 13.5V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4.5Z'/%3E%3Cpath d='M3 13.5h5l1.5 2.5h5l1.5-2.5h5'/%3E%3C/svg%3E");
+  --cdt-glyph-filter: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 2.5h13l-5 6v5l-3-1.5V8.5l-5-6Z'/%3E%3C/svg%3E");
+  --cdt-glyph-search: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='m10.5 10.5 4 4'/%3E%3C/svg%3E");
 }
 
-/* --- CDT.ProgressBar and the UtilizationBar ------------------------------ */
+/* --- EmptyState (the house's .empty and .cdt-empty) ------------------------ */
 
-.cdt-progress { height: 4px; border-radius: 2px; background: var(--cdt-surface-3); overflow: hidden; }
-.cdt-progress > i { display: block; height: 100%; border-radius: 2px; background: var(--cdt-accent); transition: width 300ms ease-out; }
-.cdt-progress.is-indeterminate > i { width: 30% !important; animation: cdt-sweep 1.2s ease-in-out infinite; }
-@keyframes cdt-sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-.cdt-util { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: var(--cdt-font-small); }
-.cdt-util-track { height: 8px; border-radius: 4px; background: var(--cdt-surface-3); position: relative; overflow: hidden; }
-.cdt-util-track > i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--cdt-success); transition: width 300ms ease-out; }
-.cdt-util[data-band=warn] .cdt-util-track > i { background: var(--cdt-warning); }
-.cdt-util[data-band=over] .cdt-util-track > i { background: var(--cdt-danger); }
-.cdt-util-label { color: var(--cdt-text-2); font-weight: 600; }
-.cdt-util-value { color: var(--cdt-text-0); font-variant-numeric: tabular-nums; font-weight: 600; }
-
-/* --- CDT BusyDots ------------------------------------------------------- */
-
-.cdt-busy { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
-.cdt-busy > i { width: 5px; height: 5px; border-radius: 50%; background: var(--cdt-accent); animation: cdt-busy 1s ease-in-out infinite; }
-.cdt-busy > i:nth-child(2) { animation-delay: 0.15s; }
-.cdt-busy > i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes cdt-busy { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
-
-/* --- the activity pill in the header: BusyDots while answers save, then a
-   StatusDot with the word for how it went ---------------------------------- */
-
-.cdt-activity { display: inline-flex; align-items: center; gap: 7px; font-size: var(--cdt-font-small); color: var(--cdt-text-2); padding: 3px 10px; border-radius: 12px; min-height: 26px; }
-.cdt-activity[hidden] { display: none; }
-.cdt-activity.is-busy { background: var(--cdt-accent-wash); color: var(--cdt-accent-strong); }
-.cdt-activity.is-bad { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
-
-/* --- CDT InfoBar (flash messages) and its toast form ---------------------- */
-
-.themis-app .flashes { gap: 8px; }
-.themis-app .flash, .cdt-infobar {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: start;
-  padding: 10px 12px; border-radius: var(--cdt-radius-card); border: 1px solid var(--cdt-stroke);
-  background: var(--cdt-surface-1); color: var(--cdt-text-1); font-size: var(--cdt-font-body);
+html.cdt .empty, html.cdt .cdt-empty, html.cdt .chart-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 36px 16px 40px; color: var(--cdt-text2); font-size: 12.5px;
 }
-.cdt-infobar-glyph { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font: 700 11px/1 var(--cdt-ui-font); color: var(--cdt-on-accent); background: var(--cdt-accent); margin-top: 1px; }
-.cdt-infobar-title { font-weight: 700; color: var(--cdt-text-0); margin-right: 6px; }
-.cdt-infobar-close { border: 0; background: transparent; color: var(--cdt-text-2); cursor: pointer; width: 24px; height: 24px; border-radius: 6px; font-size: 16px; line-height: 1; margin: -2px -4px 0 0; }
-.cdt-infobar-close:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.themis-app .flash.success, .cdt-infobar[data-severity=success] { background: var(--cdt-success-soft); border-color: color-mix(in srgb, var(--cdt-success) 35%, var(--cdt-stroke)); color: var(--cdt-text-1); }
-.themis-app .flash.success .cdt-infobar-glyph, .cdt-infobar[data-severity=success] .cdt-infobar-glyph { background: var(--cdt-success); }
-.themis-app .flash.error, .cdt-infobar[data-severity=error] { background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); color: var(--cdt-text-1); }
-.themis-app .flash.error .cdt-infobar-glyph, .cdt-infobar[data-severity=error] .cdt-infobar-glyph { background: var(--cdt-danger); }
-.themis-app .flash.notice, .themis-app .flash.warning, .cdt-infobar[data-severity=warning] { background: var(--cdt-warning-soft); border-color: color-mix(in srgb, var(--cdt-warning) 35%, var(--cdt-stroke)); }
-.themis-app .flash.notice .cdt-infobar-glyph, .themis-app .flash.warning .cdt-infobar-glyph, .cdt-infobar[data-severity=warning] .cdt-infobar-glyph { background: var(--cdt-warning); }
-.themis-app .flash.info, .cdt-infobar[data-severity=info] { background: var(--cdt-accent-wash); border-color: color-mix(in srgb, var(--cdt-accent) 30%, var(--cdt-stroke)); }
-.themis-app .flash:not(.cdt-infobar) { display: block; }   /* until the script turns it into an InfoBar */
-.cdt-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1200; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); }
-.cdt-toasts .cdt-infobar { box-shadow: var(--cdt-popup-shadow); animation: cdt-in 160ms ease-out; }
-@keyframes cdt-in { from { opacity: 0; transform: translateY(6px); } }
-
-/* --- CDT EmptyState ------------------------------------------------------ */
-
-.themis-app .empty { display: grid; justify-items: center; gap: 4px; padding: 32px 16px; text-align: center; }
-.themis-app .empty::before {
-  content: ""; width: 22px; height: 22px; margin: 11px 11px 17px; border-radius: 0; background: var(--cdt-accent);
-  box-shadow: 0 0 0 11px var(--cdt-accent-soft);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h18M3 12h18M3 17h11'/%3E%3C/svg%3E") center/22px no-repeat;
-          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h18M3 12h18M3 17h11'/%3E%3C/svg%3E") center/22px no-repeat;
+html.cdt .empty, html.cdt .cdt-empty { position: relative; }
+html.cdt .empty::before, html.cdt .cdt-empty::before {
+  content: ""; flex: none; width: 44px; height: 44px; margin-bottom: 12px; border-radius: 50%;
+  background: var(--cdt-accent-soft); box-shadow: inset 0 0 0 1px var(--cdt-stroke);
 }
-.themis-app .empty-title { font-family: var(--cdt-display-font); font-size: var(--cdt-font-subhead); font-weight: 600; color: var(--cdt-text-0); }
-.themis-app .empty .small, .themis-app .empty p { color: var(--cdt-text-2); max-width: 52ch; }
+html.cdt .empty::after, html.cdt .cdt-empty::after {
+  content: ""; position: absolute; top: 47px; left: 50%; width: 22px; height: 22px; margin-left: -11px;
+  background: var(--cdt-accent);
+  -webkit-mask: var(--cdt-glyph-empty) center / contain no-repeat; mask: var(--cdt-glyph-empty) center / contain no-repeat;
+}
+html.cdt .empty-title, html.cdt .cdt-empty-title { font-size: 13.5px; font-weight: 600; color: var(--cdt-text0); margin-bottom: 2px; }
+html.cdt .empty .btn, html.cdt .cdt-empty .btn { margin-top: 14px; }
+html.cdt .empty > p, html.cdt .cdt-empty > p { max-width: 46ch; }
 
-/* --- CDT DialogHost: the scrim and the SheetCard -------------------------- */
+/* --- StepIndicator: numbered circles joined by lines, done ones ticked ----
+   Used as .cdt-steps (macro) and on the MarineTwin journey and the Specs
+   Writer steps, which already mark which step is done and which is here. */
 
-.cdt-scrim { position: fixed; inset: 0; z-index: 1300; background: var(--cdt-scrim); display: grid; place-items: center; padding: 16px; animation: cdt-fade 140ms ease-out; }
+html.cdt .cdt-steps, html.cdt .mt-flow, html.cdt .spec-steps {
+  display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 0; margin: 0 0 14px; padding: 4px 0 2px;
+  overflow-x: auto; scrollbar-width: thin; counter-reset: cdt-step;
+}
+html.cdt .cdt-step, html.cdt .mt-step, html.cdt .spec-step {
+  --step: var(--cdt-accent);
+  position: relative; flex: 1 1 0; min-width: 76px; max-width: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  padding: 2px 4px 6px; border: 0; border-radius: 8px; background: none; box-shadow: none; opacity: 1;
+  color: var(--cdt-text1); text-decoration: none;
+}
+/* the joining line, behind the circles */
+html.cdt .cdt-step::before, html.cdt .mt-step::before, html.cdt .spec-step::before {
+  content: ""; position: absolute; top: 15px; left: calc(-50% + 18px); right: calc(50% + 18px); height: 2px; border-radius: 1px;
+  background: var(--cdt-stroke-strong);
+}
+html.cdt .cdt-step:first-child::before, html.cdt .mt-step:first-child::before, html.cdt .spec-step:first-child::before { display: none; }
+html.cdt .cdt-step.done::before, html.cdt .mt-step.done::before, html.cdt .spec-step-done::before,
+html.cdt .cdt-step.here::before, html.cdt .mt-step.here::before { background: var(--cdt-accent); }
+html.cdt a.cdt-step:hover, html.cdt a.mt-step:hover, html.cdt a.spec-step:hover { background: var(--cdt-surface3); }
+html.cdt .cdt-step-n, html.cdt .mt-step-n, html.cdt .spec-step-n {
+  position: relative; z-index: 1; flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font: 700 12px/1 var(--cdt-ui-font);
+  background: var(--cdt-surface2); color: var(--cdt-text2); border: 2px solid var(--cdt-stroke-strong);
+  transition: background-color var(--cdt-fast), border-color var(--cdt-fast), box-shadow var(--cdt-fast);
+}
+html.cdt .cdt-step.done .cdt-step-n, html.cdt .mt-step.done .mt-step-n, html.cdt .spec-step-done .spec-step-n {
+  background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent);
+}
+html.cdt .cdt-step.here .cdt-step-n, html.cdt .mt-step.here .mt-step-n,
+html.cdt .spec-step[aria-current="step"] .spec-step-n, html.cdt .spec-step-now .spec-step-n {
+  background: var(--cdt-surface2); border-color: var(--cdt-accent); color: var(--cdt-accent-strong);
+  box-shadow: 0 0 0 4px var(--cdt-accent-subtle);
+}
+html.cdt .spec-step-held .spec-step-n { border-color: var(--cdt-warning); color: var(--cdt-warning-strong); background: var(--cdt-warning-soft); }
+html.cdt .cdt-step-t, html.cdt .mt-step-t { display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; max-width: 100%; }
+html.cdt .cdt-step-t b, html.cdt .mt-step-t b, html.cdt .spec-step strong { font-size: 12.5px; font-weight: 600; color: var(--cdt-text1); }
+html.cdt .cdt-step-t small, html.cdt .mt-step-t small, html.cdt .spec-step .small {
+  font-size: 11px; color: var(--cdt-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+html.cdt .cdt-step.here b, html.cdt .mt-step.here b, html.cdt .spec-step[aria-current="step"] strong { color: var(--cdt-text0); }
+html.cdt .mt-step.off, html.cdt .cdt-step.off { pointer-events: none; }
+html.cdt .mt-step.off .mt-step-t, html.cdt .cdt-step.off .cdt-step-t { opacity: .55; }
+html.cdt .spec-step > span:not(.spec-step-n) { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }
+@media (max-width: 720px) {
+  html.cdt .cdt-step-t small, html.cdt .mt-step-t small, html.cdt .spec-step .small { display: none; }
+}
+
+/* --- menus, dropdown buttons, tooltips (CDT.ContextMenu / ToolTip) -------- */
+
+html.cdt .cdt-dropdown { position: relative; display: inline-flex; }
+html.cdt .cdt-menu {
+  position: absolute; z-index: 60; top: calc(100% + 6px); right: 0; min-width: 220px; padding: 6px;
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke); border-radius: 10px; box-shadow: var(--cdt-popup-shadow);
+  animation: cdt-pop .12s ease-out;
+}
+html.cdt .cdt-menu[hidden] { display: none; }
+@keyframes cdt-pop { from { opacity: 0; transform: translateY(-4px); } }
+html.cdt .cdt-menu-head { display: flex; align-items: center; gap: 10px; padding: 8px 8px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--cdt-stroke); }
+html.cdt .cdt-menu-head div b { display: block; color: var(--cdt-text0); font-size: 13px; }
+html.cdt .cdt-menu-head div span { display: block; color: var(--cdt-text2); font-size: 12px; }
+html.cdt .cdt-menu-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 0 10px; border-radius: 6px;
+  font: 500 13px/1 var(--cdt-ui-font); color: var(--cdt-text1) !important; text-decoration: none !important; text-align: left;
+  background: none; border: 0; cursor: pointer;
+}
+html.cdt .cdt-menu-row:hover, html.cdt .cdt-menu-row:focus-visible { background: var(--cdt-surface3); color: var(--cdt-text0) !important; outline: none; }
+html.cdt .cdt-menu-row .cdt-kbd { margin-left: auto; }
+html.cdt .cdt-menu-row.danger { color: var(--cdt-danger) !important; }
+html.cdt .cdt-menu-row.danger:hover { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong) !important; }
+html.cdt .cdt-menu-sep { height: 1px; margin: 5px 4px; background: var(--cdt-stroke); }
+html.cdt .cdt-menu-label { padding: 6px 10px 4px; font-size: 11px; font-weight: 600; color: var(--cdt-text2); letter-spacing: .04em; text-transform: uppercase; }
+html.cdt .cdt-menu .chips { display: flex; margin: 0 6px 6px; }
+html.cdt .cdt-menu .chips button {
+  flex: 1; min-height: 24px; padding: 0 8px; border: 0; border-radius: 6px; cursor: pointer;
+  font: 600 12px/1 var(--cdt-ui-font); color: var(--cdt-text1); background: transparent;
+}
+html.cdt .cdt-menu .chips button:hover { background: var(--cdt-surface2); }
+html.cdt .cdt-menu .chips button[aria-pressed="true"] { background: var(--cdt-surface2); color: var(--cdt-accent-strong); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+html.cdt .cdt-user-button { display: inline-flex; align-items: center; gap: 8px; padding: 2px 8px 2px 2px; border-radius: 999px; border: 1px solid transparent; background: none; cursor: pointer; color: var(--cdt-text1); font: 600 13px/1 var(--cdt-ui-font); }
+html.cdt .cdt-user-button:hover, html.cdt .cdt-user-button[aria-expanded="true"] { background: var(--cdt-surface3); }
+html.cdt .cdt-user-button::after { content: ""; width: 10px; height: 10px; background: var(--cdt-chevron) center / contain no-repeat; }
+@media (max-width: 620px) { html.cdt .cdt-user-name { display: none; } }
+
+html.cdt .cdt-tooltip {
+  position: fixed; z-index: 90; max-width: 420px; padding: 6px 9px; border-radius: 6px; pointer-events: none;
+  font: 500 12px/1.45 var(--cdt-ui-font); color: var(--cdt-text0); white-space: pre-line;
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke-strong); box-shadow: var(--cdt-popup-shadow);
+}
+
+/* InfoTip: an "i" in a circle whose tooltip explains a figure or a field. */
+html.cdt .cdt-infotip {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; margin: 0 3px; border-radius: 50%; vertical-align: -3px;
+  font: italic 700 10px/1 Georgia, serif; color: var(--cdt-accent); border: 1.5px solid currentColor; cursor: help; background: none; padding: 0;
+}
+html.cdt .cdt-infotip:hover { color: var(--cdt-warning); }
+
+/* --- DialogHost / CdtMessageBox --------------------------------------------- */
+
+html.cdt .cdt-scrim {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px;
+  background: var(--cdt-scrim); animation: cdt-fade .15s ease-out;
+}
 @keyframes cdt-fade { from { opacity: 0; } }
-.cdt-sheet {
-  width: min(460px, 100%); background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke-strong); border-radius: var(--cdt-radius-sheet);
-  box-shadow: var(--cdt-popup-shadow); padding: 20px; color: var(--cdt-text-1); animation: cdt-in 160ms ease-out;
+html.cdt .cdt-sheet {
+  width: min(460px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--cdt-surface1); border: 1px solid var(--cdt-stroke); border-radius: 12px; box-shadow: var(--cdt-popup-shadow);
+  animation: cdt-rise .18s ease-out;
 }
-.cdt-sheet-head { display: flex; gap: 12px; align-items: flex-start; }
-.cdt-sheet-glyph { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 700 16px/1 var(--cdt-ui-font); background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
-.cdt-sheet[data-kind=danger] .cdt-sheet-glyph { background: var(--cdt-danger-soft); color: var(--cdt-danger-strong); }
-.cdt-sheet h2 { font-family: var(--cdt-display-font); font-size: var(--cdt-font-title); color: var(--cdt-text-0); margin: 4px 0 6px; }
-.cdt-sheet p { margin: 0; font-size: var(--cdt-font-body); line-height: 1.55; }
-.cdt-sheet-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+html.cdt .cdt-sheet-body { display: flex; gap: 14px; padding: 20px 20px 16px; }
+html.cdt .cdt-sheet-glyph { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--cdt-accent-soft); }
+html.cdt .cdt-sheet-glyph::before { content: ""; width: 18px; height: 18px; background: var(--cdt-accent); -webkit-mask: var(--cdt-glyph-info) center / contain no-repeat; mask: var(--cdt-glyph-info) center / contain no-repeat; }
+html.cdt .cdt-sheet.danger .cdt-sheet-glyph { background: var(--cdt-danger-soft); }
+html.cdt .cdt-sheet.danger .cdt-sheet-glyph::before { background: var(--cdt-danger); -webkit-mask-image: var(--cdt-glyph-warn); mask-image: var(--cdt-glyph-warn); }
+html.cdt .cdt-sheet h2 { font: 600 16px/1.3 var(--cdt-display-font); color: var(--cdt-text0); margin: 4px 0 6px; }
+html.cdt .cdt-sheet p { color: var(--cdt-text1); font-size: 13px; line-height: 1.5; }
+html.cdt .cdt-sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--cdt-stroke); background: var(--cdt-surface0); border-radius: 0 0 12px 12px; }
 
-/* --- CDT.ToolTip (the implicit tooltip) ---------------------------------- */
+/* --- SearchableComboBox / CheckComboBox ------------------------------------ */
 
-.cdt-tip {
-  position: fixed; z-index: 1400; max-width: 420px; padding: 6px 10px; border-radius: 8px; pointer-events: none;
-  background: var(--cdt-surface-2); color: var(--cdt-text-1); border: 1px solid var(--cdt-stroke-strong);
-  box-shadow: var(--cdt-soft-shadow); font-size: var(--cdt-font-small); line-height: 1.45; animation: cdt-fade 100ms ease-out;
+html.cdt .cdt-combo { position: relative; display: inline-flex; min-width: 0; width: 100%; vertical-align: bottom; }
+html.cdt .cdt-combo-face {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 28px 6px 10px; border-radius: 6px;
+  font: 400 13px/1.3 var(--cdt-ui-font); color: var(--cdt-text0); text-align: left; cursor: pointer;
+  background: var(--cdt-surface2) var(--cdt-chevron) right 9px center / 12px 12px no-repeat; border: 1px solid var(--cdt-stroke);
 }
-
-/* --- CDT.DataGrid with DataGridFilter: header, sort chevron, funnel ------- */
-
-.themis-app table thead th {
-  background: var(--cdt-surface-1); color: var(--cdt-text-2); font-size: var(--cdt-font-small); font-weight: 600;
-  border-bottom: 1px solid var(--cdt-stroke-strong); letter-spacing: 0.01em; text-transform: none;
+html.cdt .cdt-combo-face span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.cdt .cdt-combo-face .is-placeholder { color: var(--cdt-text2); }
+html.cdt .cdt-combo-face:hover { border-color: var(--cdt-stroke-strong); }
+html.cdt .cdt-combo-face[aria-expanded="true"], html.cdt .cdt-combo-face:focus-visible { border-color: var(--cdt-accent); box-shadow: 0 0 0 1px var(--cdt-accent); outline: none; }
+html.cdt .cdt-combo-face:disabled { background-color: var(--cdt-surface1); color: var(--cdt-text3); cursor: not-allowed; }
+html.cdt .cdt-combo-pop {
+  position: absolute; z-index: 65; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: min(460px, 92vw);
+  background: var(--cdt-surface2); border: 1px solid var(--cdt-stroke); border-radius: 10px; box-shadow: var(--cdt-popup-shadow);
+  animation: cdt-pop .12s ease-out; overflow: hidden;
 }
-.themis-app table tbody td { border-bottom-color: var(--cdt-stroke); }
-.themis-app table tbody tr:hover td { background: var(--cdt-accent-wash); }
-.cdt-grid th.cdt-th { white-space: nowrap; user-select: none; }
-.cdt-th-in { display: inline-flex; align-items: center; gap: 4px; }
-.cdt-th-sort { border: 0; background: none; color: inherit; font: inherit; padding: 2px 4px; margin: -2px -4px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-.cdt-th-sort:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.cdt-th-sort::after { content: ""; width: 8px; height: 8px; opacity: 0; transition: opacity var(--cdt-fast); background: currentColor;
-  clip-path: polygon(50% 0, 100% 60%, 0 60%); }
-.cdt-th-sort:hover::after { opacity: 0.35; }
-.cdt-th[aria-sort=ascending] .cdt-th-sort, .cdt-th[aria-sort=descending] .cdt-th-sort { color: var(--cdt-text-0); }
-.cdt-th[aria-sort=ascending] .cdt-th-sort::after { opacity: 1; background: var(--cdt-accent); }
-.cdt-th[aria-sort=descending] .cdt-th-sort::after { opacity: 1; background: var(--cdt-accent); clip-path: polygon(0 20%, 100% 20%, 50% 80%); }
-.cdt-funnel { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--cdt-text-3); cursor: pointer; padding: 0; }
-.cdt-funnel:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.cdt-funnel.is-on { color: var(--cdt-on-accent); background: var(--cdt-accent); }
-.cdt-funnel svg { width: 12px; height: 12px; }
-.cdt-pop {
-  position: absolute; z-index: 1250; min-width: 230px; max-width: 320px; background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke-strong);
-  border-radius: 12px; box-shadow: var(--cdt-popup-shadow); padding: 8px; font-size: var(--cdt-font-body); color: var(--cdt-text-1);
-  animation: cdt-in 120ms ease-out;
+html.cdt .cdt-combo-pop.up { top: auto; bottom: calc(100% + 4px); }
+html.cdt .cdt-combo-search { padding: 6px; border-bottom: 1px solid var(--cdt-stroke); }
+html.cdt .cdt-combo-search input {
+  width: 100%; padding-left: 30px !important;
+  background-image: none; position: relative;
 }
-.cdt-pop input[type=search] { width: 100%; margin-bottom: 6px; }
-.cdt-pop-list { max-height: 260px; overflow: auto; display: grid; gap: 1px; }
-.cdt-pop-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
-.cdt-pop-row:hover { background: var(--cdt-surface-3); }
-.cdt-pop-row .cdt-count { margin-left: auto; color: var(--cdt-text-2); font-size: var(--cdt-font-small); font-variant-numeric: tabular-nums; }
-.cdt-pop-all { border-bottom: 1px solid var(--cdt-stroke); margin-bottom: 4px; padding-bottom: 6px; font-weight: 600; }
-.cdt-pop-foot { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--cdt-stroke); }
-.cdt-grid-status { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: var(--cdt-font-small); color: var(--cdt-text-2); border-top: 1px solid var(--cdt-stroke); }
-.cdt-grid-status[hidden] { display: none; }
-
-/* --- CDT SearchableComboBox ---------------------------------------------- */
-
-.cdt-combo { position: relative; display: block; }
-.cdt-combo-face {
-  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 6px 30px 6px 10px; border-radius: var(--cdt-radius-control);
-  border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); color: var(--cdt-text-0); font: inherit; cursor: pointer; position: relative;
+html.cdt .cdt-combo-search { position: relative; }
+html.cdt .cdt-combo-search::before {
+  content: ""; position: absolute; z-index: 1; left: 16px; top: 50%; width: 14px; height: 14px; margin-top: -7px; background: var(--cdt-text2);
+  -webkit-mask: var(--cdt-glyph-search) center / contain no-repeat; mask: var(--cdt-glyph-search) center / contain no-repeat;
 }
-.cdt-combo-face::after { content: ""; position: absolute; right: 11px; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--cdt-text-2); border-bottom: 2px solid var(--cdt-text-2); transform: translateY(-70%) rotate(45deg); }
-.cdt-combo-face:hover { border-color: var(--cdt-stroke-strong); }
-.cdt-combo-face:focus-visible, .cdt-combo.is-open .cdt-combo-face { outline: none; border-color: var(--cdt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cdt-focus-ring) 22%, transparent); }
-.cdt-combo-face[disabled] { opacity: 0.55; cursor: not-allowed; }
-.cdt-combo-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cdt-combo .cdt-pop { left: 0; right: 0; top: calc(100% + 4px); max-width: none; }
-.cdt-combo-group { padding: 8px 8px 3px; font-size: var(--cdt-font-caption); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cdt-text-2); }
-.cdt-combo-opt { display: flex; gap: 10px; align-items: baseline; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-.cdt-combo-opt[aria-selected=true] { background: var(--cdt-row-selected); color: var(--cdt-text-0); }
-.cdt-combo-opt.is-active { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.cdt-combo-opt mark { background: none; color: var(--cdt-accent-strong); font-weight: 700; }
-.cdt-combo-opt .cdt-detail { margin-left: auto; color: var(--cdt-text-2); font-size: var(--cdt-font-small); }
-.cdt-combo-none { padding: 10px 8px; color: var(--cdt-text-2); font-size: var(--cdt-font-small); }
-select.cdt-combo-native { position: absolute !important; opacity: 0; pointer-events: none; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; bottom: 0; left: 12px; }
-
-/* --- CDT StepIndicator ----------------------------------------------------- */
-
-.cdt-steps { display: flex; align-items: flex-start; gap: 0; list-style: none; margin: 0; padding: 0; counter-reset: cdt-step; }
-.cdt-steps li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; text-align: center; font-size: var(--cdt-font-small); color: var(--cdt-text-2); min-width: 0; }
-.cdt-steps li::before {
-  counter-increment: cdt-step; content: counter(cdt-step); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
-  background: var(--cdt-surface-2); border: 2px solid var(--cdt-stroke-strong); color: var(--cdt-text-2); font-weight: 700; font-size: 12px;
+html.cdt .cdt-combo-list { max-height: 300px; overflow-y: auto; padding: 4px; margin: 0; list-style: none; }
+html.cdt .cdt-combo-group { padding: 8px 8px 3px; font-size: 11px; font-weight: 600; color: var(--cdt-text2); letter-spacing: .04em; text-transform: uppercase; }
+html.cdt .cdt-combo-opt {
+  display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--cdt-text1);
 }
-.cdt-steps li + li::after { content: ""; position: absolute; top: 13px; right: 50%; width: 100%; height: 2px; background: var(--cdt-stroke-strong); z-index: 0; }
-.cdt-steps li.is-done::before { content: "✓"; background: var(--cdt-accent); border-color: var(--cdt-accent); color: var(--cdt-on-accent); }
-.cdt-steps li.is-done + li::after, .cdt-steps li.is-done::after { background: var(--cdt-accent); }
-.cdt-steps li.is-now::before { border-color: var(--cdt-accent); color: var(--cdt-accent-strong); box-shadow: 0 0 0 4px var(--cdt-accent-soft); }
-.cdt-steps li.is-now { color: var(--cdt-text-0); font-weight: 600; }
-.cdt-steps a { color: inherit; text-decoration: none; }
-.cdt-steps-bar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--cdt-surface-0) 92%, transparent); backdrop-filter: blur(6px); padding: 12px 0 10px; margin-bottom: 12px; border-bottom: 1px solid var(--cdt-stroke); }
+html.cdt .cdt-combo-opt.active { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt .cdt-combo-opt[aria-selected="true"] { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); font-weight: 600; }
+html.cdt .cdt-combo-opt[aria-disabled="true"] { color: var(--cdt-text3); cursor: default; }
+html.cdt .cdt-combo-opt mark { background: none; color: var(--cdt-accent-strong); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+html.cdt .cdt-combo-opt input[type="checkbox"] { margin: 0; pointer-events: none; }
+html.cdt .cdt-combo-none { padding: 14px 10px; color: var(--cdt-text2); font-size: 12.5px; text-align: center; }
+html.cdt .cdt-combo-foot { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-top: 1px solid var(--cdt-stroke); font-size: 12px; color: var(--cdt-text2); }
 
-/* --- CDT.Avatar --------------------------------------------------------- */
+/* --- NumberBox ------------------------------------------------------------- */
 
-.cdt-avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); font: 700 12px/1 var(--cdt-ui-font); letter-spacing: 0.02em; }
-
-/* --- the header: CDT.NavItem rows and the theme + brand SegmentedLists ---- */
-
-body.themis-app .topbar { background: var(--cdt-surface-1); border-bottom: 1px solid var(--cdt-stroke); }
-.themis-app .brand-mark { background: var(--cdt-accent); color: var(--cdt-on-accent); }
-.themis-app .themis-nav { gap: 2px; }
-.themis-app .themis-nav > a {
-  position: relative; color: var(--cdt-text-1); font-weight: 500; border-radius: var(--cdt-radius-control); padding: 6px 10px; text-decoration: none; box-shadow: none;
+html.cdt .cdt-number { position: relative; display: inline-flex; align-items: stretch; width: 100%; }
+html.cdt .cdt-number > input { flex: 1; min-width: 0; padding-right: 46px !important; font-variant-numeric: tabular-nums; }
+html.cdt .cdt-number.has-unit > input { padding-right: calc(46px + var(--cdt-unit-w, 2.2em)) !important; }
+html.cdt .cdt-number-unit { position: absolute; right: 30px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--cdt-text2); pointer-events: none; }
+html.cdt .cdt-number-spin { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 24px; display: grid; grid-template-rows: 1fr 1fr; border-left: 1px solid var(--cdt-stroke); }
+html.cdt .cdt-number-spin button {
+  border: 0; padding: 0; background: transparent; color: var(--cdt-text2); cursor: pointer; font-size: 8px; line-height: 1;
 }
-.themis-app .themis-nav > a:hover { background: var(--cdt-surface-3); color: var(--cdt-text-0); }
-.themis-app .themis-nav > a[aria-current="page"] { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); font-weight: 600; box-shadow: none; }
-.themis-app .themis-nav > a[aria-current="page"]::after {
-  content: ""; position: absolute; left: 10px; right: 10px; bottom: -7px; height: 3px; border-radius: 2px; background: var(--cdt-accent);
-  box-shadow: var(--cdt-glow-shadow);
+html.cdt .cdt-number-spin button:first-child { border-radius: 0 5px 0 0; }
+html.cdt .cdt-number-spin button:last-child { border-radius: 0 0 5px 0; }
+html.cdt .cdt-number-spin button:hover { background: var(--cdt-surface3); color: var(--cdt-text0); }
+html.cdt .cdt-number-spin button:active { background: var(--cdt-accent-soft); color: var(--cdt-accent-strong); }
+html.cdt .cdt-number-preview {
+  position: absolute; left: 0; top: calc(100% + 3px); z-index: 5; padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--cdt-accent-strong); background: var(--cdt-accent-soft); border: 1px solid var(--cdt-stroke);
 }
-.cdt-themebar { display: inline-flex; gap: 6px; align-items: center; }
-.cdt-themebar .cdt-segmented > button { padding: 4px 9px; font-size: var(--cdt-font-caption); }
-.themis-app .whoami { display: flex; align-items: center; gap: 8px; }
-.themis-app .themis-back { border-radius: var(--cdt-radius-control); border-color: var(--cdt-stroke); background: var(--cdt-surface-2); }
-.themis-app .themis-back:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); color: var(--cdt-text-0); }
-.themis-app .themis-project-bar { border-color: var(--cdt-stroke); }
+html.cdt .cdt-number-preview.bad { color: var(--cdt-danger-strong); background: var(--cdt-danger-soft); border-color: var(--cdt-danger-soft-border); }
+html.cdt .cdt-number input::-webkit-outer-spin-button, html.cdt .cdt-number input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* --- the dashboard's stats as CDT stat cards ------------------------------ */
+/* --- DataGridFilter: an Excel-style funnel in each header ------------------ */
 
-.themis-app .themis-stat { background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); padding: 14px 16px; position: relative; overflow: hidden; }
-.themis-app .themis-stat::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--cdt-accent); opacity: 0.85; }
-.themis-app .themis-stat-n { font-family: var(--cdt-display-font); font-size: 28px; font-weight: 700; color: var(--cdt-text-0); letter-spacing: -0.02em; }
-.themis-app .themis-stat-l { font-size: var(--cdt-font-small); font-weight: 600; color: var(--cdt-text-2); text-transform: uppercase; letter-spacing: 0.08em; }
-
-/* --- the project page's tools as ribbon panels (CDT Ribbon) --------------- */
-
-.themis-app .spec-toolbox section { background: var(--cdt-surface-1); border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); }
-.themis-app .spec-tool { border-radius: var(--cdt-radius-control); }
-.themis-app .spec-tool:hover, .themis-app .spec-tool[open] { background: var(--cdt-surface-3); }
-
-/* --- the story's question card: CardButtons for the choices, Kbd hints ---- */
-
-.themis-app .spec-pill, .themis-app .spec-decide-choice {
-  border: 1px solid var(--cdt-stroke); background: var(--cdt-surface-2); border-radius: var(--cdt-radius-card); color: var(--cdt-text-0);
-  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out, box-shadow var(--cdt-fast) ease-out;
-  position: relative;
+html.cdt th .cdt-funnel {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; vertical-align: middle;
+  border: 0; border-radius: 5px; padding: 0; cursor: pointer; background: transparent; opacity: .45;
 }
-.themis-app .spec-pill:hover, .themis-app .spec-decide-choice:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
-.themis-app .spec-pill:has(input:checked), .themis-app .spec-decide-choice:has(input:checked) {
-  background: var(--cdt-accent-soft); border-color: var(--cdt-accent); color: var(--cdt-accent-strong); font-weight: 600;
-  box-shadow: inset 0 0 0 1px var(--cdt-accent);
+html.cdt th:hover .cdt-funnel, html.cdt th .cdt-funnel:focus-visible { opacity: 1; }
+html.cdt th .cdt-funnel::before {
+  content: ""; width: 11px; height: 11px; background: var(--cdt-text2);
+  -webkit-mask: var(--cdt-glyph-filter) center / contain no-repeat; mask: var(--cdt-glyph-filter) center / contain no-repeat;
 }
-.themis-app .spec-pill:has(input:focus-visible), .themis-app .spec-decide-choice:has(input:focus-visible) { outline: 2px solid var(--cdt-focus-ring); outline-offset: 2px; }
-.cdt-choice-key { position: absolute; top: 6px; right: 6px; pointer-events: none; }
-.themis-app .spec-card, .themis-app .spec-scene-panel { color: var(--cdt-text-1); }
-.themis-app .spec-card-nav .cdt-kbd { margin-left: 6px; background: color-mix(in srgb, var(--cdt-on-accent) 18%, transparent); border-color: color-mix(in srgb, var(--cdt-on-accent) 40%, transparent); color: inherit; }
-.themis-app .spec-card-nav .btn-ghost .cdt-kbd { background: var(--cdt-surface-2); border-color: var(--cdt-stroke); color: var(--cdt-text-2); }
-.cdt-keys-hint { font-size: var(--cdt-font-caption); color: var(--cdt-text-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-@media (hover: none), (max-width: 900px) { .cdt-choice-key, .cdt-keys-hint, .spec-card-nav .cdt-kbd { display: none !important; } }
+html.cdt th .cdt-funnel:hover { background: var(--cdt-surface3); }
+html.cdt th .cdt-funnel.on { opacity: 1; background: var(--cdt-accent-soft); }
+html.cdt th .cdt-funnel.on::before { background: var(--cdt-accent); }
+html.cdt .cdt-filter-pop { position: fixed; width: 260px; max-width: calc(100vw - 16px); }
+html.cdt .cdt-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--cdt-stroke); background: var(--cdt-accent-wash); font-size: 12px; color: var(--cdt-text1); }
+html.cdt .cdt-filter-bar[hidden] { display: none; }
+html.cdt tr.cdt-filtered-out { display: none; }
 
-.themis-app .spec-story-bar { height: 4px; border-radius: 2px; background: var(--cdt-surface-3); overflow: hidden; }
-.themis-app .spec-story-bar > span { background: var(--cdt-accent); border-radius: 2px; }
+/* --- scrollbars (the slim implicit ScrollBar) ------------------------------ */
 
-/* The story's level path as a StepIndicator: done ticked in the accent,
-   the current one ringed. */
-.themis-app .spec-path-here { background: var(--cdt-accent) !important; color: var(--cdt-on-accent) !important; }
+html.cdt { scrollbar-color: var(--cdt-stroke-strong) transparent; }
+html.cdt ::-webkit-scrollbar { width: 10px; height: 10px; }
+html.cdt ::-webkit-scrollbar-track { background: transparent; }
+html.cdt ::-webkit-scrollbar-thumb { background: var(--cdt-stroke-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+html.cdt ::-webkit-scrollbar-thumb:hover { background-color: var(--cdt-text3); }
 
-/* --- the new project page: kinds of specification as CardButtons --------- */
+/* --- the home page doors (CDT.CardButton: the whole card is the target) --- */
 
-.themis-app .spec-family {
-  border: 1px solid var(--cdt-stroke); border-radius: var(--cdt-radius-card); background: var(--cdt-surface-2);
-  transition: background-color var(--cdt-fast) ease-out, border-color var(--cdt-fast) ease-out;
-}
-.themis-app .spec-family:hover { background: var(--cdt-surface-3); border-color: var(--cdt-stroke-strong); }
-.themis-app .spec-family:has(input:checked) { background: var(--cdt-accent-wash); border-color: var(--cdt-accent); box-shadow: inset 0 0 0 1px var(--cdt-accent); }
-.themis-app .spec-n { background: var(--cdt-accent); color: var(--cdt-on-accent); }
+html.cdt .door { background: var(--cdt-surface1); border-color: var(--cdt-stroke); border-radius: 12px; transition: border-color var(--cdt-fast), box-shadow var(--cdt-fast), background-color var(--cdt-fast); }
+html.cdt a.door:hover, html.cdt .door:hover { border-color: var(--cdt-accent); box-shadow: var(--cdt-glow); background: var(--cdt-surface2); }
+html.cdt .door-go { color: var(--cdt-accent); font-weight: 600; }
+html.cdt .door-what { color: var(--cdt-text1); }
+html.cdt .door-mark:not([class*="door-mark-"]) { background: var(--cdt-accent); color: var(--cdt-on-accent); }
 
-/* File fields: the chooser as a CDT.SecondaryButton */
-.themis-app input[type=file] { font-size: var(--cdt-font-body); color: var(--cdt-text-1); }
-.themis-app input[type=file]::file-selector-button {
-  margin-right: 10px; min-height: 28px; padding: 3px 12px; border-radius: var(--cdt-radius-control); cursor: pointer;
-  border: 1px solid var(--cdt-stroke-strong); background: var(--cdt-surface-2); color: var(--cdt-text-0); font: 500 var(--cdt-font-small) var(--cdt-ui-font);
-}
-.themis-app input[type=file]::file-selector-button:hover { background: var(--cdt-surface-3); }
+/* --- the kit page ----------------------------------------------------------- */
 
-/* --- scrollbars, slim (the implicit ScrollBar style) ---------------------- */
-
-.themis-app * { scrollbar-width: thin; scrollbar-color: var(--cdt-stroke-strong) transparent; }
+html.cdt .kit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+html.cdt .kit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+html.cdt .kit-row + .kit-row { margin-top: 12px; }
+html.cdt .kit-key { font: 500 11px/1 var(--cdt-mono-font); color: var(--cdt-text2); }
+html.cdt .kit-swatch { display: grid; gap: 4px; font-size: 11px; color: var(--cdt-text2); }
+html.cdt .kit-swatch i { display: block; height: 34px; border-radius: 6px; border: 1px solid var(--cdt-stroke); }
 
 @media (prefers-reduced-motion: reduce) {
-  .cdt-busy > i, .cdt-status-dot, .cdt-progress.is-indeterminate > i { animation: none !important; }
-  .cdt-scrim, .cdt-sheet, .cdt-pop, .cdt-toasts .cdt-infobar { animation: none !important; }
+  html.cdt *, html.cdt *::before, html.cdt *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
 @media print {
-  .cdt-toasts, .cdt-activity, .cdt-themebar, .cdt-funnel, .cdt-steps-bar, .cdt-choice-key, .cdt-keys-hint { display: none !important; }
-  body.themis-app { background: #fff; }
+  html.cdt .cdt-funnel, html.cdt .cdt-number-spin, html.cdt .cdt-infobar-close, html.cdt .cdt-toasts { display: none !important; }
 }
-@media (max-width: 720px) {
-  .cdt-themebar .cdt-brand-seg { display: none; }
-  .themis-app .whoami > div:not(.cdt-avatar) { display: none; }
+
+/* SearchTextBox: a magnifier and a placeholder. */
+html.cdt input[type="search"], html.cdt input.cdt-search {
+  padding-left: 30px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238E8A81' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='m10.5 10.5 4 4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 10px center; background-size: 14px 14px;
 }
+html.cdt .cdt-combo-search input { background-image: none; }
+html.cdt input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
+html.cdt .auth-card .chips { display: flex; }

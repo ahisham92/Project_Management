@@ -1,7 +1,10 @@
 <!doctype html>
 {% import "partials/themis.html" as themis %}
 {% set pm_door = request.blueprint in ('portfolio', 'projects', 'meetings', 'assistant') %}
-<html lang="en">
+{# THEMIS carries its own port of the CDT SDK (cdt/themis-cdt.*); every other
+   door wears the site-wide one (cdt/cdt.*), keyed on html.cdt. #}
+{% set site_cdt = request.blueprint != 'specs' %}
+<html lang="en"{% if site_cdt %} class="cdt"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,9 +13,9 @@
   {% if request.blueprint == 'specs' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='spec-progress.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themis.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cdt/themis-cdt.css') }}">
   <script src="{{ url_for('static', filename='spec-progress.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='cdt/cdt.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='cdt/themis-cdt.js') }}" defer></script>
   {% endif %}
   {% if pm_door %}
   <link rel="stylesheet" href="{{ url_for('static', filename='pm.css') }}">
@@ -20,6 +23,9 @@
   {% if request.blueprint == 'marine' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='marinetwin.css') }}">
   {% endif %}
+  {# The CDT SDK's theme and controls, ported to the web (static/cdt). Last,
+     so the palette and the control states are the same in every door. #}
+  {% if site_cdt %}<link rel="stylesheet" href="{{ url_for('static', filename='cdt/cdt.css') }}">{% endif %}
   {% if request.blueprint == 'specs' %}
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themis/icon.svg') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='themis/apple-touch-icon.png') }}">
@@ -40,9 +46,8 @@
     try {
       var t = localStorage.getItem('pm-theme');
       if (t && t !== 'system') document.documentElement.setAttribute('data-theme', t);
-      {% if request.blueprint == 'specs' %}// THEMIS's brand in the CDT theme: Dar unless CDT was chosen.
-      var b = localStorage.getItem('cdt-brand');
-      if (b) document.documentElement.setAttribute('data-cdt-brand', b);{% endif %}
+      // The CDT brand (Dar teal unless CDT blue was chosen), the same key in every door.
+      if (localStorage.getItem('cdt-brand') === 'cdt') document.documentElement.setAttribute('data-cdt-brand', 'cdt');
     } catch (e) {}
   </script>
 </head>
@@ -67,15 +72,13 @@
             {% endif %}
           </nav>
         {% endif %}
-        {% if current_user and current_user['role'] == 'admin' %}
-          <a href="{{ url_for('admin.index') }}" class="small"
-             style="text-decoration:none;color:var(--muted)">Admin</a>
-          <a href="{{ url_for('portfolio.backups') }}" class="small"
-             style="text-decoration:none;color:var(--muted)">Backups</a>
-        {% endif %}
         <div class="spacer"></div>
-        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
-        {% if current_user %}
+        {% if current_user and not site_cdt %}
+          {% if current_user['role'] == 'admin' %}
+            <a href="{{ url_for('admin.index') }}" class="small" style="text-decoration:none;color:var(--muted)">Admin</a>
+            <a href="{{ url_for('portfolio.backups') }}" class="small" style="text-decoration:none;color:var(--muted)">Backups</a>
+          {% endif %}
+          <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
           <div class="whoami small">
             <div><a href="{{ url_for('auth.account') }}" style="color:var(--ink);text-decoration:none">{{ current_user['name'] }}</a></div>
             <div class="muted">{{ current_user['username'] or current_user['email'] }}</div>
@@ -83,6 +86,47 @@
           <form method="post" action="{{ url_for('auth.logout') }}">
             <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
           </form>
+        {% elif current_user %}
+          {% set initials = (current_user['name'] or current_user['email'] or '?').split() | map('first') | join('') | upper %}
+          {# DropDownButton + Avatar: the account, the theme and the brand in one place. #}
+          <div class="cdt-dropdown">
+            <button type="button" class="cdt-user-button" data-cdt-dropdown aria-haspopup="true" aria-expanded="false"
+                    aria-controls="cdt-user-menu" title="Account, theme and settings">
+              <span class="cdt-avatar" aria-hidden="true">{{ initials[:2] }}</span>
+              <span class="cdt-user-name">{{ current_user['name'] }}</span>
+            </button>
+            <div class="cdt-menu" id="cdt-user-menu" role="menu" hidden>
+              <div class="cdt-menu-head">
+                <span class="cdt-avatar" aria-hidden="true">{{ initials[:2] }}</span>
+                <div><b>{{ current_user['name'] }}</b><span>{{ current_user['username'] or current_user['email'] }}</span></div>
+              </div>
+              <a class="cdt-menu-row" role="menuitem" href="{{ url_for('auth.account') }}">Your account</a>
+              <a class="cdt-menu-row" role="menuitem" href="{{ url_for('home.chooser') }}">Every app</a>
+              {% if current_user['role'] == 'admin' %}
+                <a class="cdt-menu-row" role="menuitem" href="{{ url_for('admin.index') }}">Admin</a>
+                <a class="cdt-menu-row" role="menuitem" href="{{ url_for('portfolio.backups') }}">Backups</a>
+              {% endif %}
+              <a class="cdt-menu-row" role="menuitem" href="{{ url_for('home.kit') }}">Controls and colours</a>
+              <div class="cdt-menu-sep"></div>
+              <div class="cdt-menu-label">Theme</div>
+              <div class="chips" role="group" aria-label="Theme">
+                <button type="button" data-cdt-theme="system" aria-pressed="false">Auto</button>
+                <button type="button" data-cdt-theme="light" aria-pressed="false">Light</button>
+                <button type="button" data-cdt-theme="dark" aria-pressed="false">Dark</button>
+              </div>
+              <div class="cdt-menu-label">Accent</div>
+              <div class="chips" role="group" aria-label="Accent">
+                <button type="button" data-cdt-brand="dar" aria-pressed="false">Dar teal</button>
+                <button type="button" data-cdt-brand="cdt" aria-pressed="false">CDT blue</button>
+              </div>
+              <div class="cdt-menu-sep"></div>
+              <form method="post" action="{{ url_for('auth.logout') }}">
+                <button type="submit" class="cdt-menu-row danger" role="menuitem">Sign out</button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle aria-label="Switch theme">Auto</button>
         {% endif %}
       </div>
       {% if request.blueprint == 'specs' %}{% include "specs/_nav.html" %}{% endif %}
@@ -109,6 +153,7 @@
 
   {% include "partials/carmen.html" %}
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% if site_cdt %}<script src="{{ url_for('static', filename='cdt/cdt.js') }}"></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

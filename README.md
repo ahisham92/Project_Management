@@ -29,6 +29,20 @@ They are **two jobs in one application and one database**. One sign-in covers bo
 on the host serves the pair, and — because it is one database — a comment is against a document
 the register numbered, owed by one of the project's own trades, and answered by a real account.
 
+### The look: the CDT SDK's theme and controls
+
+Every door wears the theme of the [CDT SDK](https://github.com/Dar-Structural-Computational-Design/CDT-SDK)
+(Dar Structural Computational Design's shared library for its desktop tools). The SDK is WPF, which
+a browser cannot load, so `app/static/cdt/` carries a port of it: the four palettes (Dar teal or
+CDT blue, light or dark, switched from the account menu at the top right), the state ladder every
+control follows (rest, hover, pressed, disabled, keyboard focus), and web versions of its custom
+controls: InfoBar, DialogHost, EmptyState, StepIndicator, UtilizationBar, NumberBox (arithmetic
+and units), SearchableComboBox, CheckComboBox, DataGridFilter, DropDownButton, BusyDots, Skeleton,
+ToggleSwitch, StatusDot, InfoTip. They are progressive enhancements over the plain HTML, so every
+page still works with JavaScript off. `/kit` (**Controls and colours** in the account menu) shows
+each one working, labelled with the class or macro that makes it; the macros are in
+`templates/partials/cdt.html`.
+
 ### About the comment response sheet
 
 A client reads a submission and sends back a register of comments. Upload their own review

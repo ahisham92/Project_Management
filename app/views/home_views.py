@@ -49,6 +49,18 @@ def favicon():
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
+@bp.get("/kit")
+@login_required
+def kit():
+    """The CDT web kit: every control and colour, live, in the current theme.
+
+    The web counterpart of the CDT SDK's Gallery window: each control is shown
+    working, labelled with the class or macro that makes it, so a page can be
+    built from it without reading the stylesheet.
+    """
+    return render_template("kit.html")
+
+
 @bp.get("/")
 @login_required
 def chooser():

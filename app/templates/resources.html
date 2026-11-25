@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/tile.html" import tile %}
 {% from "partials/bits.html" import empty, progress, date_field, print_header, print_button %}
+{% import "partials/cdt.html" as cdt %}
 
 {# Each table sorts on its own query keys, so ordering the weeks by the Marine
    column does not quietly reorder the deliverables underneath them. #}
@@ -238,7 +239,7 @@
                 </td>
                 <td class="right small ink2 nowrap tabular">{{ trade['peak_people'] }}</td>
                 <td class="right small ink2 nowrap tabular">{{ num(trade['average_people'], 1) }}</td>
-                <td style="min-width:120px">{{ progress(trade['used_pct'], slim=True) }}</td>
+                <td style="min-width:140px">{{ cdt.utilization(trade['used_pct'], compact=True) }}</td>
               </tr>
             {% endfor %}
           </tbody>

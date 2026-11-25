@@ -2,7 +2,7 @@
 // The Verification tab runs these in the browser and CI runs them in Node.
 
 import { boussinesqCorner, westergaardCorner, buildRects, deltaSigma, equivalentRaft } from "./stress.js";
-import { factors, netUltimate, bearingCheck } from "./bearing.js";
+import { factors, netUltimate, bearingCheck, pileCapacity, alphaClay } from "./bearing.js";
 import { degreeOfConsolidation, computePoint, computeConverged, settlementAt, radialDegree, layerDegree, foundationSummary } from "./settlement.js";
 
 // Numerical integration of a point-load solution over a rectangle (midpoint rule).
@@ -171,6 +171,22 @@ export function runChecks() {
     const b = bearingCheck(p, { type: "pad", x: 0, y: 0, B: 2, L: 2, P: 1200, Df: 1 });
     add("Bearing", "Square footing on sand: net ultimate pressure", "q·Nq·sq·dq + ½·γ·B·Nγ·sγ − q by hand", hand, b.qult, 0.5, "kPa");
     add("Bearing", "The same footing: safety factor under 1200 kN", "net ultimate / (P/B² − γ·D)", hand / (300 - 18), b.fos, 0.005);
+  }
+  {
+    // piles: a 0.6 m bored pile, 10 m long from the surface
+    const d = 0.6, L = 10, per = Math.PI * d, area = (Math.PI * d * d) / 4;
+    // clay with su = 80 kPa all the way, γ = 18, dry: α changes with depth as su/σ'v falls
+    const cl = { waterTable: 50, layers: [{ name: "Clay", thickness: 30, gamma: 18, gammaSat: 18, consolidating: true, su: 80, phi: 0, c: 0 }] };
+    let shaft = 0;
+    for (let i = 0; i < 2000; i++) { const z = (L * (i + 0.5)) / 2000; shaft += alphaClay(80, 18 * z) * 80 * per * (L / 2000); }
+    const a = pileCapacity(cl, 0, L, d, "bored");
+    add("Piles", "Shaft of a bored pile in clay, su = 80 kPa", "Σ α·su·π·d·Δz, α from su/σ'v (API)", shaft, a.shaft, 0.005 * shaft, "kN");
+    add("Piles", "Toe of the same pile", "9·su·π·d²/4", 9 * 80 * area, a.base, 0.01, "kN");
+    // dry sand, φ' = 35°: fs = 0.7·σ'v·tan35°, limited to 115 kPa; qb = half of min(50·σ'v, 12 MPa) for a bored pile
+    const sd = { waterTable: 50, layers: [{ name: "Sand", thickness: 30, gamma: 18, gammaSat: 20, consolidating: false, phi: 35, c: 0 }] };
+    const b = pileCapacity(sd, 0, L, d, "bored");
+    add("Piles", "Shaft of a bored pile in sand, φ' = 35°", "½·K·γ·L²·tanδ·π·d, K = 0.7", 0.5 * 0.7 * 18 * L * L * Math.tan((35 * Math.PI) / 180) * per, b.shaft, 0.005 * b.shaft, "kN");
+    add("Piles", "Toe of the same pile", "½·Nq·σ'v·π·d²/4, Nq = 50", 0.5 * 50 * 180 * area, b.base, 0.01, "kN");
   }
   return out;
 }

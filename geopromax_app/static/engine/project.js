@@ -91,7 +91,7 @@ export function loadFrom(type, at = {}) {
     ring:       { name: "Ring foundation", R: 10, Ri: 8, q: 150, Df: 1, rigid: true },
     polygon:    { name: "Area", q: 60, pts: "0, 0\n20, 0\n20, 8\n8, 8\n8, 20\n0, 20" },
     embankment: { name: "Embankment", crest: 12, slope: 6, H: 3, gamma: 20, L: 80, axis: "y" },
-    pilegroup:  { name: "Pile group", B: 6, L: 6, Lp: 15, pileType: "friction", Q: 12000, Df: 1.5, rigid: true },
+    pilegroup:  { name: "Pile group", B: 6, L: 6, Lp: 15, pileType: "friction", Q: 12000, Df: 1.5, rigid: true, nPiles: 9, pileD: 0.6, install: "bored" },
     field:      { name: "Raft from SAFE", cells: [], size: 1, Df: 1 },
   }[type] || {};
   return { type: T.name ? type : "rect", ...base, ...(T.name ? T : { name: "Raft", B: 10, L: 20, q: 80 }), ...at };
@@ -132,7 +132,7 @@ export const STRUCTURES = [
 ];
 export const bearingLimit = (key) => (key === "embankment" ? 1.5 : 3);
 export const structureOf = (key) => STRUCTURES.find((s) => s[0] === key) || STRUCTURES[0];
-const limitsFor = (key) => { const s = structureOf(key); return { preset: s[0], total: s[2], tilt: s[3], fos: bearingLimit(s[0]) }; };
+const limitsFor = (key) => { const s = structureOf(key); return { preset: s[0], total: s[2], tilt: s[3], fos: bearingLimit(s[0]), fosPile: 2.5 }; };
 
 /** Starting points for a new project. */
 export const TEMPLATES = {
@@ -154,7 +154,7 @@ export const TEMPLATES = {
   piles: {
     name: "Pile group through soft clay", waterTable: 1, limits: limitsFor("bridge"),
     layers: [layerFrom("softClay", 8), layerFrom("stiffClay", 10), layerFrom("hardClay", 10), layerFrom("denseSand", 8)],
-    loads: [loadFrom("pilegroup", { name: "Pier pile cap", B: 6, L: 9, Lp: 18, Q: 10000 })],
+    loads: [loadFrom("pilegroup", { name: "Pier pile cap", B: 6, L: 9, Lp: 18, Q: 10000, nPiles: 15, pileD: 0.6 })],
   },
   tank: {
     name: "Storage tank", waterTable: 1.5, limits: limitsFor("tank"),
@@ -168,7 +168,7 @@ export const TEMPLATES = {
   },
   drains: {
     // a preload on very soft clay: the settlement is wanted, and wanted quickly
-    name: "Staged embankment with wick drains", waterTable: 0.5, limits: { preset: "custom", total: 2000, tilt: 0, fos: 1.3 }, life: 30, t: 2,
+    name: "Staged embankment with wick drains", waterTable: 0.5, limits: { preset: "custom", total: 2000, tilt: 0, fos: 1.3, fosPile: 2.5 }, life: 30, t: 2,
     layers: [layerFrom("fill", 1), { ...layerFrom("marineClay", 10), drains: { ...DRAINS, on: true, spacing: 1.5 } }, layerFrom("denseSand", 5)],
     loads: [loadFrom("embankment", { name: "Stage 1", H: 2, crest: 20, slope: 4, L: 120 }), loadFrom("embankment", { name: "Stage 2", H: 2, crest: 12, slope: 4, L: 120, t0: 0.5 })],
   },
@@ -229,7 +229,7 @@ export function describeLoad(l) {
     case "polygon": return `${parsePoints(l.pts).length} corners`;
     case "field": return `${(l.cells || []).length} cells of ${n(l.size)} m, ${n(loadForce(l) / 1000, 1)} MN in all`;
     case "embankment": return `crest ${n(l.crest)} m, sides ${n(l.slope)} m, ${n(l.H)} m high, ${n(l.L)} m long along ${l.axis}`;
-    case "pilegroup": { const e = equivalentRaft(l); return `${n(l.B)} × ${n(l.L)} m group, ${n(l.Lp, 1)} m ${l.pileType === "end" ? "end-bearing" : "friction"} piles, ${n(l.Q, 0)} kN; equivalent raft ${n(e.B)} × ${n(e.L)} m at ${n(e.zf)} m${turn}`; }
+    case "pilegroup": { const e = equivalentRaft(l); return `${n(l.nPiles, 0)} ${l.install === "driven" ? "driven" : "bored"} piles of ${n(l.pileD)} m, ${n(l.B)} × ${n(l.L)} m group, ${n(l.Lp, 1)} m ${l.pileType === "end" ? "end-bearing" : "friction"} piles, ${n(l.Q, 0)} kN; equivalent raft ${n(e.B)} × ${n(e.L)} m at ${n(e.zf)} m${turn}`; }
     default: return `${n(l.B)} × ${n(l.L)} m${turn}`;
   }
 }

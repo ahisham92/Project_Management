@@ -8,7 +8,7 @@ import { solvePoint, settlementAt, timeCurve, timeTo, initialStress, foundationR
 import { extents, grossPressure, appliedPressure, foundingDepth, loadForce, loadCentre, equivalentRaft, parsePoints } from "../engine/stress.js";
 import { runChecks } from "../engine/verify.js";
 import { bearingAll } from "../engine/bearing.js";
-import { readSafe, toCells, round as safeRound, springs, zonesOf, exportTables, parseDelimited, UNIT_SYSTEMS, unitSystem } from "../engine/ssi.js";
+import { readSafe, toCells, round as safeRound, springs, zonesOf, exportTables, springsFile, parseDelimited, UNIT_SYSTEMS, unitSystem } from "../engine/ssi.js";
 import { readXlsx } from "../engine/xlsx.js";
 import { drawPlan, sample, rampCSS } from "./plan.js";
 import { timeChart, depthChart, sectionView, soilColour, esc } from "./charts.js";
@@ -176,7 +176,8 @@ function loadFields(l, k) {
     case "polygon": return num(`${k}.q`, "Pressure q", "kPa", { step: 5 });
     case "embankment": return num(`${k}.H`, "Height H", "m", { min: 0, step: 0.25 }) + num(`${k}.gamma`, "Fill γ", "kN/m³", { min: 0, step: 0.5 })
       + num(`${k}.crest`, "Crest width", "m", { min: 0, step: 0.5 }) + num(`${k}.slope`, "Side slope run", "m", { min: 0, step: 0.5, sub: "each side" }) + num(`${k}.L`, "Length", "m", { min: 0, step: 5 });
-    case "pilegroup": return BL("Group width", "Group length") + num(`${k}.Lp`, "Pile length", "m", { min: 0, step: 0.5, sub: "below the cap" }) + num(`${k}.Q`, "Load on the group", "kN", { step: 500 });
+    case "pilegroup": return BL("Group width", "Group length") + num(`${k}.Lp`, "Pile length", "m", { min: 0, step: 0.5, sub: "below the cap" }) + num(`${k}.Q`, "Load on the group", "kN", { step: 500 })
+      + num(`${k}.nPiles`, "Number of piles", "", { min: 1, step: 1 }) + num(`${k}.pileD`, "Pile diameter", "m", { min: 0.1, step: 0.05 });
     default: return BL() + num(`${k}.q`, "Pressure q", "kPa", { step: 5 });
   }
 }
@@ -207,7 +208,7 @@ function loadsWidget(p) {
         ${num(`${k}.t0`, "Applied at", "yr", { min: 0, step: 0.25, sub: "0 = start" })}
       </div>
       ${emb ? seg(`${k}.axis`, "Runs along", [["y", "y"], ["x", "x"]]) : ""}
-      ${l.type === "pilegroup" ? seg(`${k}.pileType`, "The piles carry their load by", [["friction", "Shaft friction"], ["end", "End bearing"]]) : ""}
+      ${l.type === "pilegroup" ? seg(`${k}.pileType`, "The piles carry their load by", [["friction", "Shaft friction"], ["end", "End bearing"]]) + seg(`${k}.install`, "The piles are", [["bored", "Bored"], ["driven", "Driven"]]) : ""}
       ${FOOTING.includes(l.type) && !isPoly ? toggle(`${k}.rigid`, "Rigid foundation", "settles evenly and tilts as one piece; off for a flexible raft or tank") : ""}
       ${FOOTING.includes(l.type) && +l.Df > 0 ? toggle(`${k}.net`, "Take off the soil dug out", "net pressure: only the load beyond the excavated soil's weight settles the ground") : ""}
       ${toggle(`${k}.on`, "Switched on")}
@@ -266,8 +267,8 @@ function safeWidget(p) {
       : `<div class="warn">▲ ${last.mean === null ? "First round." : `The springs moved by ${fmt(last.mean * 100, 1)}% on average (most ${fmt(last.max * 100, 1)}%).`} Put these springs into SAFE, run it again, and bring the new soil pressures in.</div>`}
       ${zoneMap(list, +p.loads[i].size, zoning)}
       <div class="table-scroll"><table class="tight"><thead><tr><th>Soil property</th><th class="num">Subgrade modulus (${u[5]})</th><th class="num">Cells</th></tr></thead><tbody>${zoning.zones.map((z) => `<tr><td>${z.name}</td><td class="num"><b>${kf(z.k)}</b></td><td class="num">${z.n}</td></tr>`).join("")}</tbody></table></div>
-      <div class="addrow"><button type="button" class="btn btn-primary btn-sm" data-act="safe-props">Download the soil properties</button><button type="button" class="btn btn-ghost btn-sm" data-act="safe-cells">Download where each one goes</button></div>
-      <div class="note">Springs are pressure over settlement at the design life (${yrs(life())}). In SAFE: Define, Soil Subgrade Properties for the values; Assign, Support Data, Soil Properties to put each one on its part of the raft, following the map.</div>`;
+      <div class="addrow"><button type="button" class="btn btn-primary btn-sm" data-act="safe-json">Download for CSI ProMax</button><button type="button" class="btn btn-ghost btn-sm" data-act="safe-props">Soil properties (CSV)</button><button type="button" class="btn btn-ghost btn-sm" data-act="safe-cells">Where each goes (CSV)</button></div>
+      <div class="note">Springs are pressure over settlement at the design life (${yrs(life())}). With CSI ProMax open in SAFE or ETABS, ask it to apply the downloaded springs file: it defines the soil properties and puts each one under the right part of the raft. By hand in SAFE: Define, Soil Subgrade Properties for the values; Assign, Support Data, Soil Properties, following the map.</div>`;
   }
   return `<div class="note">SAFE solves the raft on springs; GeoProMax works out the springs the ground really gives. Pass the results back and forth until they stop changing.<br><b>1.</b> In SAFE, run the analysis and export the <b>Soil Pressures</b> table to Excel. <b>2.</b> Open it here. <b>3.</b> Put the springs below into SAFE and run it again. Repeat.</div>
     <div class="addrow"><label class="btn btn-ghost btn-sm filebtn">Open SAFE's Excel or CSV file<input type="file" id="safeFile" accept=".xlsx,.csv,.txt,.tsv" hidden></label></div>
@@ -322,7 +323,7 @@ const limitText = (p) => `${fmt(+p.limits.total, 0)} mm${+p.limits.tilt > 0 ? ` 
 const GROUPS = [
   { g: "Structure and limits", icon: "limit", open: true, sum: limitText,
     body: (p) => `<div class="f wide"><span class="lab">What is being built<small>sets the usual limits; type your own over them</small></span><select data-structure aria-label="Kind of structure">${STRUCTURES.map(([k, n]) => `<option value="${k}" ${k === p.limits.preset ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
-      <div class="two">${num("limits.total", "Settlement limit", "mm", { min: 0, step: 5 })}${num("limits.tilt", "Tilt limit, 1 in", "", { min: 0, step: 50, sub: "0: not checked" })}${num("limits.fos", "Bearing safety factor", "", { min: 0, step: 0.1, sub: "at least" })}</div>
+      <div class="two">${num("limits.total", "Settlement limit", "mm", { min: 0, step: 5 })}${num("limits.tilt", "Tilt limit, 1 in", "", { min: 0, step: 50, sub: "0: not checked" })}${num("limits.fos", "Bearing safety factor", "", { min: 0, step: 0.1, sub: "at least" })}${num("limits.fosPile", "Pile safety factor", "", { min: 0, step: 0.1, sub: "at least" })}</div>
       <div class="note">${esc(structureOf(p.limits.preset)[4] || "Your own limits.")}</div>` },
   { g: "Soil profile", icon: "layers", open: true, sum: (p) => `${p.layers.length} layer${p.layers.length === 1 ? "" : "s"} · ${fmt(depthOf(p), 1)} m`, body: layersWidget },
   { g: "Groundwater", icon: "water", open: false, sum: (p) => `${fmt(+p.waterTable, 2)} m deep`,
@@ -387,7 +388,7 @@ function onInput(ev) {
   }
   if (el.dataset.structure !== undefined) {
     const st = structureOf(el.value);
-    p.limits = el.value === "custom" ? { ...p.limits, preset: "custom" } : { preset: st[0], total: st[2], tilt: st[3], fos: bearingLimit(st[0]) };
+    p.limits = el.value === "custom" ? { ...p.limits, preset: "custom" } : { preset: st[0], total: st[2], tilt: st[3], fos: bearingLimit(st[0]), fosPile: p.limits.fosPile ?? 2.5 };
     changed(true);
     return;
   }
@@ -464,6 +465,12 @@ function onClick(ev) {
   }
   else if (act === "safe-paste") { const t = $("#safePaste").value; if (t.trim()) safeRead("Pasted table", [{ name: "pasted", rows: parseDelimited(t) }]); return; }
   else if (act === "safe-run") { safeRun(); return; }
+  else if (act === "safe-json") {
+    const fi = fieldIndex(); if (fi < 0) return;
+    const list = safeList(), last = p.safe.rounds.at(-1);
+    download(`${safeName()} springs round ${p.safe.rounds.length}.gpmsprings.json`, JSON.stringify(springsFile(list, +p.loads[fi].size, zonesOf(list, +p.safe.zones || 5), { project: p.name, round: p.safe.rounds.length, converged: last?.converged, time: life(), depth: +p.loads[fi].Df || 0 }), null, 1), "application/json");
+    return;
+  }
   else if (act === "safe-props" || act === "safe-cells") { safeDownload(act === "safe-props" ? "props" : "cells"); return; }
   else if (act === "safe-reset") { p.safe.rounds = []; p.safe.k = null; }
   else if (act === "load-open") { state.openLoad = i; renderInputs(); return; }
@@ -661,8 +668,11 @@ function judge() {
   const between = f.betweenLife;
   const tilt = Math.max(within.tilt, between.tilt);
   const limS = +lim.total > 0 ? +lim.total / 1000 : Infinity, limT = +lim.tilt > 0 ? 1 / +lim.tilt : Infinity;
-  const names = state.project.loads, limB = +lim.fos > 0 ? +lim.fos : 0;
-  const bear = (state.bearing || []).map((b, i) => b && b.checked ? { ...b, name: names[i]?.name || `Load ${i + 1}` } : null).filter(Boolean).reduce((a, b) => (!a || b.fos < a.fos ? b : a), null);
+  const names = state.project.loads;
+  // the foundation closest to (or furthest under) the safety factor asked of it
+  const bear = (state.bearing || []).map((b, i) => b && b.checked ? { ...b, need: needOf(b), name: names[i]?.name || `Load ${i + 1}` } : null).filter(Boolean)
+    .reduce((a, b) => (!a || b.fos / (b.need || 1) < a.fos / (a.need || 1) ? b : a), null);
+  const limB = bear ? bear.need : 0;
   return {
     worst, within, between, tilt, limS, limT, bear, limB, okB: !bear || !limB || bear.fos >= limB - 1e-9,
     okS: worst.governing <= limS + 1e-9, okT: tilt <= limT + 1e-12,
@@ -670,6 +680,7 @@ function judge() {
   };
 }
 const tiltLimit = () => (+state.project.limits.tilt > 0 ? `1/${fmt(+state.project.limits.tilt, 0)}` : "not checked");
+const needOf = (b) => { const lim = state.project.limits, v = b && b.pile ? +lim.fosPile : +lim.fos; return v > 0 ? v : 0; };
 const fosText = (f) => (!Number.isFinite(f) ? "no net load" : f >= 20 ? "over 20" : fmt(f, f < 10 ? 2 : 1));
 const oneIn = (t) => (t > 1e-7 ? `1/${fmt(1 / t, 0)}` : "none");
 
@@ -705,7 +716,7 @@ function renderKpis() {
   host.innerHTML = [
     [`Largest settlement`, j ? `${mm(j.worst.governing)} mm` : "…", j ? `${esc(j.worst.name)} at ${yrs(life())} ${verdictBadge(j.okS, `within ${fmt(+lim.total, 0)} mm`, `over ${fmt(+lim.total, 0)} mm`)}` : "working it out", j ? (j.okS ? "main" : "main bad") : ""],
     [`Steepest tilt`, j ? oneIn(j.tilt) : "…", j ? `${esc(j.tiltWhere)} ${+lim.tilt > 0 ? verdictBadge(j.okT, `flatter than ${tiltLimit()}`, `steeper than ${tiltLimit()}`) : `<span class="badge">no limit set</span>`}` : "working it out", j ? (j.okT ? "main" : "main bad") : ""],
-    [`Bearing safety`, j ? (j.bear ? fosText(j.bear.fos) : "–") : "…", j ? (j.bear ? `${esc(j.bear.name)}${j.bear.layer ? `, ${j.bear.mode} in ${esc(j.bear.layer)}` : ""} ${j.limB ? verdictBadge(j.okB, `at least ${fmt(j.limB, 1)}`, `under ${fmt(j.limB, 1)}`) : ""}` : "not checked: see Checks") : "working it out", j ? (j.okB ? "main" : "main bad") : ""],
+    [`Bearing safety`, j ? (j.bear ? fosText(j.bear.fos) : "–") : "…", j ? (j.bear ? `${esc(j.bear.name)}${j.bear.pile ? `, ${j.bear.mode}` : j.bear.layer ? `, ${j.bear.mode} in ${esc(j.bear.layer)}` : ""} ${j.limB ? verdictBadge(j.okB, `at least ${fmt(j.limB, 1)}`, `under ${fmt(j.limB, 1)}`) : ""}` : "not checked: see Checks") : "working it out", j ? (j.okB ? "main" : "main bad") : ""],
     [`At the query point`, `${mm(now.total)} mm`, `after ${yrs(nowT())} · ${mm(fin.total)} mm at ${yrs(life())}`],
     [`Immediate`, `${mm(r.immediate)} mm`, `elastic, as the loads go on`],
     [`Primary consolidation`, `${mm(r.primary)} mm`, Math.abs(r.primary) > 1e-9 ? `${fmt(now.U * 100, 0)}% done now · 90% ${t90 > 0 ? `after ${yrs(t90 + (r.stages.at(-1)?.t || 0))}` : "straight away"}` : "no consolidating layer under load"],
@@ -745,8 +756,15 @@ function renderTabs() {
 
 function renderPanel() { $("#dpanel").innerHTML = panelHTML(state.tab); }
 const bearingNotes = () => (state.bearing || []).flatMap((b, i) => {
-  const n = state.project.loads[i]?.name || `Load ${i + 1}`, lim = +state.project.limits.fos;
+  const n = state.project.loads[i]?.name || `Load ${i + 1}`, lim = needOf(b);
   if (!b) return [];
+  if (b.checked && b.pile) {
+    const p = b.pile, out = [];
+    if (lim > 0 && b.fos < lim) out.push({ level: b.fos < 1 ? "critical" : "warning", text: `${n}: the pile safety factor is ${fosText(b.fos)}, under the ${fmt(lim, 1)} asked for. ${p.n} piles carry ${fmt(p.group / 1000, 1)} MN at most (${b.mode}; one pile ${fmt(p.one.total, 0)} kN: ${fmt(p.one.shaft, 0)} on the shaft, ${fmt(p.one.base, 0)} at the toe in ${b.layer}) against ${fmt(p.Q / 1000, 1)} MN. Add piles, lengthen them or widen them.` });
+    else out.push({ level: "info", text: `${n}: one pile carries ${fmt(p.one.total, 0)} kN at most (${fmt(p.one.shaft, 0)} on the shaft, ${fmt(p.one.base, 0)} at the toe in ${b.layer}) and takes ${fmt(p.each, 0)} kN; the group carries ${fmt(p.group / 1000, 1)} MN at most, ${b.mode}.` });
+    if (b.partial) out.push({ level: "warning", text: `${n}: a layer along the piles has no strength given, so it adds nothing to their capacity.` });
+    return out;
+  }
   if (!b.checked) return [{ level: "warning", text: `${n}: bearing is not checked, because ${b.why}.` }];
   const out = [];
   if (lim > 0 && b.fos < lim) out.push({ level: b.fos < 1 ? "critical" : "warning", text: `${n}: the bearing safety factor is ${fosText(b.fos)}, under the ${fmt(lim, 1)} asked for (${b.mode} in ${b.layer}: the ground can carry ${fmt(b.qult, 0)} kPa net and ${fmt(b.qnet, 0)} kPa is applied). ${b.fos < 1 ? "The ground fails before it settles: the settlement shown means nothing." : "Widen or deepen the foundation, or lighten it."}` });
@@ -765,11 +783,11 @@ function foundationsHTML(which = "life") {
     const l = p.loads[x.index];
     if (x.off) return `<tr class="muted"><td>${esc(x.name)}</td><td colspan="9">switched off</td></tr>`;
     const okS = x.governing <= limS + 1e-9, okT = x.tilt <= limT + 1e-12;
-    const b = (state.bearing || [])[x.index], okB = !b || !b.checked || !(+lim.fos > 0) || b.fos >= +lim.fos - 1e-9;
+    const b = (state.bearing || [])[x.index], okB = !b || !b.checked || !needOf(b) || b.fos >= needOf(b) - 1e-9;
     return `<tr><td><b>${esc(x.name)}</b><div class="note">${esc(LOAD_NAMES[l.type] || l.type)}${l.rigid && x.rigid !== null ? ", rigid" : ""}</div></td>
       <td class="num">${fmt(foundingDepth(l), 2)}</td><td class="num">${fmt(appliedPressure(l, overburden), 0)}</td>
       <td class="num">${x.rigid !== null ? mm(x.rigid, 1) : mm(x.centre, 1)}</td><td class="num">${mm(x.max, 1)}</td><td class="num">${mm(x.min, 1)}</td><td class="num">${mm(x.diff, 1)}</td>
-      <td class="num">${oneIn(x.tilt)}</td><td class="num">${b && b.checked ? `${fosText(b.fos)}${b.layer ? `<div class="note">${b.mode}, ${esc(b.layer)}</div>` : ""}` : "–"}</td><td>${okS && okT && okB ? `<span class="pill good">✓ within</span>` : `<span class="pill bad">✕ ${!okB ? "bearing" : !okS ? "settlement" : "tilt"}</span>`}</td></tr>`;
+      <td class="num">${oneIn(x.tilt)}</td><td class="num">${b && b.checked ? `${fosText(b.fos)}${b.pile ? `<div class="note">${b.mode}</div>` : b.layer ? `<div class="note">${b.mode}, ${esc(b.layer)}</div>` : ""}` : "–"}</td><td>${okS && okT && okB ? `<span class="pill good">✓ within</span>` : `<span class="pill bad">✕ ${!okB ? "bearing" : !okS ? "settlement" : "tilt"}</span>`}</td></tr>`;
   }).join("");
   const live = rows.filter((x) => !x.off);
   const bt = live.length > 1 ? `<p class="explain" style="margin-top:10px">Between foundations, the steepest slope is <b>${oneIn(between.tilt)}</b>${between.a ? `, from ${esc(between.a)} to ${esc(between.b)} (${mm(between.diff, 1)} mm over ${fmt(between.d, 1)} m)` : ""}. ${!(+lim.tilt > 0) ? "" : between.tilt <= limT + 1e-12 ? `<span class="pill good">✓ flatter than ${tiltLimit()}</span>` : `<span class="pill bad">✕ steeper than ${tiltLimit()}</span>`}</p>` : "";
@@ -839,7 +857,8 @@ const METHODS = `<div class="explain" style="display:grid;gap:10px;max-width:820
   <p><b>Creep.</b> Once a layer is 95% consolidated under the last stage (at t95), it keeps settling by <code>Cα·h/(1+ep)·log(t/t95)</code>. Where the soil stays overconsolidated it creeps less, by Cα·Cr/Cc, because Cα/Cc is a constant of the soil (Mesri and Castro 1987).</p>
   <p><b>Convergence.</b> With sub-layers on automatic, each layer is cut finer and finer until the settlement changes by less than 0.5% from one refinement to the next. The Checks tab says how many it took, or warns if it did not get there.</p>
   <p><b>CSI SAFE link.</b> SAFE solves a raft on springs, and the right springs depend on how the ground settles under the raft's own pressures. So the two are solved in turn: SAFE's soil pressures become the load here (gathered into square cells that keep the total load), the settlement under each cell at the design life gives its spring, <code>k = pressure / settlement</code>, and SAFE runs again on those springs. The rounds stop when the springs change by less than the tolerance on average, and by less than three times it anywhere. Springs are banded into a few soil properties, because SAFE takes one subgrade modulus per property.</p>
-  <p><b>Bearing capacity.</b> Before settlement, each foundation is checked against the ground failing under it, with the general bearing capacity equation: <code>q = c'·Nc·sc·dc + q'·Nq·sq·dq + ½·γ'·B·Nγ·sγ</code> drained, and <code>(π+2)·su·sc·dc</code> undrained for clays, the lower of the two governing (factors of Prandtl, Reissner and Vesic; depth factors of Hansen). The water table comes in through the effective stresses. Weaker layers within one footing width below the base are checked with the load spread at 2 to 1. The safety factor is the net pressure the ground can carry over the net pressure applied; 3 is usual for buildings and 1.5 for embankments. A load placed on top of an earlier one, such as a second stage of fill, is checked with both on the ground, and the clay below is given the strength it has gained by then: <code>Δsu = 0.22·U·Δσ</code> (Ladd 1991). Loads are taken as vertical and central, on level ground; the capacity of piles is not checked.</p>
+  <p><b>Bearing capacity.</b> Before settlement, each foundation is checked against the ground failing under it, with the general bearing capacity equation: <code>q = c'·Nc·sc·dc + q'·Nq·sq·dq + ½·γ'·B·Nγ·sγ</code> drained, and <code>(π+2)·su·sc·dc</code> undrained for clays, the lower of the two governing (factors of Prandtl, Reissner and Vesic; depth factors of Hansen). The water table comes in through the effective stresses. Weaker layers within one footing width below the base are checked with the load spread at 2 to 1. The safety factor is the net pressure the ground can carry over the net pressure applied; 3 is usual for buildings and 1.5 for embankments. A load placed on top of an earlier one, such as a second stage of fill, is checked with both on the ground, and the clay below is given the strength it has gained by then: <code>Δsu = 0.22·U·Δσ</code> (Ladd 1991). Loads are taken as vertical and central, on level ground.</p>
+  <p><b>Pile capacity.</b> One pile's capacity is its shaft friction, layer by layer, plus its end bearing. In clay <code>fs = α·su</code> with α from su/σ'v, and <code>qb = 9·su</code>; in sand <code>fs = K·σ'v·tanδ</code> and <code>qb = Nq·σ'v</code>, both with the limits of API RP 2A (1993). Driven piles use K = 1 and δ = φ' − 5°; bored piles K = 0.7, δ = φ' and half the end bearing in sand. A group carries the sum of its piles or, in clay, what the block of soil they enclose can carry as one pier, whichever is less. The safety factor is that capacity over the load on the group; 2.5 is usual. Negative skin friction, lateral load and the piles' own strength are not checked.</p>
   <p><b>Limits.</b> Each kind of structure comes with a usual limit on total settlement and on tilt (angular distortion), after Skempton and MacDonald (1956), Bjerrum (1963), Eurocode 7 Annex H and API 653 for tanks. They are starting points: set your own under Structure and limits. Tilt is checked across each foundation and between neighbouring ones.</p>
   <p class="note">Results are for design and checking by an engineer. One-dimensional strain is assumed; loads are vertical and central. Units: m, kN, kPa, years; settlement in mm.</p>
 </div>`;

@@ -289,3 +289,20 @@ export function exportTables(list, size, zoning, unitsKey = "kN-m") {
     ...list.map((s, i) => [s.x * L, s.y * L, size * L, s.p * P, s.s * 1000, s.k === null ? "" : s.k * K, zoning.zones[zoning.of[i]]?.name || ""])]);
   return { props, cells };
 }
+
+/**
+ * The same springs as one file a program can read: CSI ProMax applies it in
+ * SAFE or ETABS. Always in kN and m, whatever the page shows; the reader
+ * converts to its model's units.
+ */
+export function springsFile(list, size, zoning, meta = {}) {
+  const r = (v, d = 6) => (Number.isFinite(v) ? +v.toPrecision(d) : null);
+  return {
+    format: "geopromax-springs", version: 1,
+    project: meta.project || "", round: meta.round || 1, converged: !!meta.converged, time_years: meta.time ?? null, founding_depth: meta.depth ?? null,
+    units: { length: "m", force: "kN", pressure: "kN/m2", modulus: "kN/m3" },
+    cell_size: r(size),
+    zones: zoning.zones.map((z) => ({ name: z.name, modulus: r(z.k), from: r(z.from), to: r(z.to), cells: z.n })),
+    cells: list.map((s, i) => ({ x: r(s.x), y: r(s.y), pressure: r(s.p), settlement: r(s.s), modulus: s.k === null ? null : r(s.k), zone: zoning.zones[zoning.of[i]]?.name || null })),
+  };
+}

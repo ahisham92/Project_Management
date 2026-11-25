@@ -96,7 +96,8 @@ export function loadsBelow(project, l) {
 export function bearingCheck(project, l) {
   const layers = project.layers || [], wt = num(project.waterTable);
   const shape = bearingShape(l);
-  if (!shape) return { checked: false, why: l.type === "pilegroup" ? "pile capacity is not checked here" : "no size" };
+  if (l.type === "pilegroup") return pileCheck(project, l);
+  if (!shape) return { checked: false, why: "no size" };
   if (!(shape.B > 0)) return { checked: false, why: "no size" };
   const tops = layerTops(layers), D = tops.length ? tops[tops.length - 1] + num(layers[layers.length - 1].thickness) : 0;
   const Df = foundingDepth(l);
@@ -126,3 +127,82 @@ export function bearingCheck(project, l) {
 
 /** The check for every load, in order: one entry per load (null for a load switched off). */
 export const bearingAll = (project) => (project.loads || []).map((l) => (l.on === false ? null : bearingCheck(project, l)));
+
+// ---------------------------------------------------------------- piles
+
+// End bearing in sands by the friction angle between pile and soil (API RP 2A, 1993): [δ in degrees, Nq, limit on qb in kPa, limit on fs in kPa].
+const API_SAND = [[15, 8, 1900, 48], [20, 12, 2900, 67], [25, 20, 4800, 81], [30, 40, 9600, 96], [35, 50, 12000, 115]];
+function apiSand(delta) {
+  const t = API_SAND, d = Math.max(t[0][0], Math.min(t[t.length - 1][0], delta));
+  for (let i = 1; i < t.length; i++) if (d <= t[i][0]) {
+    const u = (d - t[i - 1][0]) / (t[i][0] - t[i - 1][0]);
+    return { Nq: t[i - 1][1] + u * (t[i][1] - t[i - 1][1]), qbMax: t[i - 1][2] + u * (t[i][2] - t[i - 1][2]), fsMax: t[i - 1][3] + u * (t[i][3] - t[i - 1][3]) };
+  }
+  return { Nq: t[0][1], qbMax: t[0][2], fsMax: t[0][3] };
+}
+
+/** Adhesion factor α for clay from ψ = su / σ'v (API RP 2A, 1993). */
+export const alphaClay = (su, sv) => { const psi = sv > 0 ? su / sv : 1e9; return Math.min(1, psi <= 1 ? 0.5 * psi ** -0.5 : 0.5 * psi ** -0.25); };
+
+/**
+ * One pile's ultimate capacity in compression, kN: shaft friction layer by
+ * layer from the cap to the toe, and end bearing at the toe.
+ *   clay   fs = α·su            qb = 9·su
+ *   sand   fs = K·σ'v·tanδ      qb = Nq·σ'v     (both limited, API RP 2A)
+ * Driven piles: K = 1 and δ = φ' − 5°. Bored piles: K = 0.7, δ = φ', and half the end bearing in sand.
+ */
+export function pileCapacity(project, top, length, diameter, install = "bored") {
+  const layers = project.layers || [], wt = num(project.waterTable), tops = layerTops(layers);
+  const D = tops.length ? tops[tops.length - 1] + num(layers[layers.length - 1].thickness) : 0;
+  const toe = top + length, bored = install !== "driven", per = Math.PI * diameter, area = (Math.PI * diameter * diameter) / 4;
+  if (!(length > 0) || !(diameter > 0)) return null;
+  if (toe > D + 1e-9) return { beyond: true };
+  const parts = [];
+  let shaft = 0, missing = false, clayShaft = 0;
+  layers.forEach((layer, i) => {
+    const a = Math.max(top, tops[i]), b = Math.min(toe, tops[i] + num(layer.thickness));
+    if (b - a <= 1e-9) return;
+    const n = Math.max(1, Math.ceil((b - a) / 0.5)), h = (b - a) / n;
+    let q = 0;
+    for (let k = 0; k < n; k++) {
+      const sv = initialStress(layers, wt, a + h * (k + 0.5)).eff;
+      if (layer.consolidating && num(layer.su) > 0) q += alphaClay(layer.su, sv) * layer.su * per * h;
+      else if (num(layer.phi) > 0) { const d = bored ? layer.phi : layer.phi - 5, lim = apiSand(d); q += Math.min((bored ? 0.7 : 1) * sv * Math.tan(rad(d)), lim.fsMax) * per * h; }
+      else missing = true;
+    }
+    if (layer.consolidating && num(layer.su) > 0) clayShaft += num(layer.su) * (b - a);
+    shaft += q;
+    parts.push({ layer: layer.name, from: a, to: b, shaft: q });
+  });
+  // the layer the toe stands in
+  let ti = tops.findIndex((t, i) => toe > t - 1e-9 && toe <= t + num(layers[i].thickness) + 1e-9);
+  if (ti < 0) ti = layers.length - 1;
+  if (ti + 1 < layers.length && Math.abs(toe - (tops[ti] + num(layers[ti].thickness))) < 1e-6) ti += 1; // a toe on a boundary bears on the layer below
+  const tl = layers[ti], svToe = initialStress(layers, wt, toe).eff;
+  let qb = 0, clayToe = false;
+  if (tl.consolidating && num(tl.su) > 0) { qb = 9 * tl.su; clayToe = true; }
+  else if (num(tl.phi) > 0) { const lim = apiSand(bored ? tl.phi : tl.phi - 5); qb = Math.min(lim.Nq * svToe, lim.qbMax) * (bored ? 0.5 : 1); }
+  else missing = true;
+  return { shaft, base: qb * area, total: shaft + qb * area, qb, parts, toeLayer: tl.name, missing, clayShaft, clayToe, suToe: clayToe ? num(tl.su) : 0 };
+}
+
+/**
+ * A pile group: all the piles together, or the block of soil they enclose
+ * failing as one pier (in clay), whichever is less, against the load on the group.
+ */
+export function pileCheck(project, l) {
+  const n = Math.max(1, Math.round(num(l.nPiles))), d = num(l.pileD), Lp = num(l.Lp), Df = Math.max(0, num(l.Df)), Q = num(l.Q);
+  if (!(d > 0) || !(Lp > 0)) return { checked: false, why: "the piles have no diameter or length" };
+  const one = pileCapacity(project, Df, Lp, d, l.install);
+  if (!one) return { checked: false, why: "the piles have no diameter or length" };
+  if (one.beyond) return { checked: false, why: "the piles go below the bottom of the soil profile" };
+  let group = n * one.total, mode = "the piles one by one", block = null;
+  if (one.clayToe && n > 1) {
+    // the block: its sides in the clays it passes through, and its base as a deep footing on the clay at the toe
+    const B = Math.min(num(l.B), num(l.L)) + d, L = Math.max(num(l.B), num(l.L)) + d;
+    block = 2 * (B + L) * one.clayShaft + Math.min(9, 5.14 * (1 + 0.2 * (B / L)) * (1 + 0.4 * Math.atan(Lp / B))) * one.suToe * B * L;
+    if (block < group) { group = block; mode = "the group as one block"; }
+  }
+  if (!(Q > 0)) return { checked: true, fos: Infinity, mode: "compensated", layer: one.toeLayer, pile: { n, d, one, group, block, Q } };
+  return { checked: true, fos: group / Q, mode, layer: one.toeLayer, level: Df + Lp, partial: one.missing, pile: { n, d, one, group, block, Q, each: Q / n } };
+}

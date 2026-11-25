@@ -8,28 +8,34 @@
 /* Layout: top bar; Map = dashboard strip + (winding station path | side panel); Station = one card at a time or list.
    Offline by design: system fonts, inline SVG icons, no network requests. */
 :root{
-  --bg:#f2f4f6; --surface:#ffffff; --raised:#fbfcfd; --sunk:#e9edf0; --fg:#14202a; --muted:#5b6a74; --faint:#8794a0; --line:#d9e0e5; --line2:#e7ecef;
-  --accent:#0b5f6b; --accent-2:#0f7a85; --accent-soft:#e1eff1; --accent-fg:#ffffff;
-  --gold:#c98b0b; --gold-soft:#fbf1d8; --ok:#25804a; --ok-soft:#e2f2e8; --na:#8a969e;
-  --lock:#8d6a2f; --lock-soft:#f5ecdb; --q:#5146a8; --q-soft:#ecebfa; --bad:#b23a2a; --bad-soft:#fbe6e2;
-  --shadow:0 1px 2px rgba(16,32,44,.05),0 6px 20px rgba(16,32,44,.06);
-  --display:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
-  --body:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  /* The CDT SDK's Dar palette (app/static/cdt/cdt.css), so the journey matches the rest of Project Control. */
+  --bg:#F2F0E8; --surface:#FFFFFF; --raised:#FBFAF6; --sunk:#E7E4DA; --fg:#1E1D1A; --muted:#67645C; --faint:#98948A; --line:#DED9CC; --line2:#EAE6DC;
+  --accent:#147165; --accent-2:#1FAE9B; --accent-soft:#E3EEED; --accent-wash:#F3F8F7; --accent-strong:#0C463E; --accent-fg:#ffffff;
+  --gold:#B07A0A; --gold-soft:#F7EED9; --ok:#207410; --ok-soft:#E9F1E7; --on-ok:#ffffff; --na:#98948A;
+  --lock:#8D5918; --lock-soft:#F4EEE8; --q:#1C63BC; --q-soft:#E4ECF7; --bad:#C42020; --bad-soft:#FDF3F3;
+  --shadow:0 1px 2px rgba(30,29,26,.06),0 4px 14px rgba(30,29,26,.05);
+  --pop:0 12px 32px rgba(30,29,26,.18),0 2px 6px rgba(30,29,26,.08);
+  --display:"Inter","Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  --body:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
   --mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0e1519; --surface:#151f24; --raised:#18232a; --sunk:#1d2930; --fg:#e4ebee; --muted:#9aa9b1; --faint:#71818a; --line:#28363d; --line2:#213038;
-  --accent:#4db3bb; --accent-2:#6cc7ce; --accent-soft:#133337; --accent-fg:#0a181a;
-  --gold:#e9b443; --gold-soft:#372c12; --ok:#62c07f; --ok-soft:#153020; --na:#6f7e86;
-  --lock:#d6b27a; --lock-soft:#30281a; --q:#a8a1f0; --q-soft:#232048; --bad:#f08a7a; --bad-soft:#3a1d18;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); color-scheme:dark}}
+  --bg:#1B1B19; --surface:#232321; --raised:#2A2A27; --sunk:#323230; --fg:#F2EFE9; --muted:#9F9B92; --faint:#6E6A62; --line:#353532; --line2:#2E2E2B;
+  --accent:#32DAC4; --accent-2:#6EE5D5; --accent-soft:#243531; --accent-wash:#1D2825; --accent-strong:#5DE2D0; --accent-fg:#1B1B19;
+  --gold:#F0B94A; --gold-soft:#3A3020; --ok:#6BDE4A; --ok-soft:#2C3926; --on-ok:#14270C; --na:#6E6A62;
+  --lock:#FB9B24; --lock-soft:#3D3121; --q:#4B9FF3; --q-soft:#28323A; --bad:#F87171; --bad-soft:#332321;
+  --shadow:0 1px 2px rgba(0,0,0,.3); --pop:0 16px 40px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0e1519; --surface:#151f24; --raised:#18232a; --sunk:#1d2930; --fg:#e4ebee; --muted:#9aa9b1; --faint:#71818a; --line:#28363d; --line2:#213038;
-  --accent:#4db3bb; --accent-2:#6cc7ce; --accent-soft:#133337; --accent-fg:#0a181a;
-  --gold:#e9b443; --gold-soft:#372c12; --ok:#62c07f; --ok-soft:#153020; --na:#6f7e86;
-  --lock:#d6b27a; --lock-soft:#30281a; --q:#a8a1f0; --q-soft:#232048; --bad:#f08a7a; --bad-soft:#3a1d18;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); color-scheme:dark}
+  --bg:#1B1B19; --surface:#232321; --raised:#2A2A27; --sunk:#323230; --fg:#F2EFE9; --muted:#9F9B92; --faint:#6E6A62; --line:#353532; --line2:#2E2E2B;
+  --accent:#32DAC4; --accent-2:#6EE5D5; --accent-soft:#243531; --accent-wash:#1D2825; --accent-strong:#5DE2D0; --accent-fg:#1B1B19;
+  --gold:#F0B94A; --gold-soft:#3A3020; --ok:#6BDE4A; --ok-soft:#2C3926; --on-ok:#14270C; --na:#6E6A62;
+  --lock:#FB9B24; --lock-soft:#3D3121; --q:#4B9FF3; --q-soft:#28323A; --bad:#F87171; --bad-soft:#332321;
+  --shadow:0 1px 2px rgba(0,0,0,.3); --pop:0 16px 40px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4); color-scheme:dark}
+/* The CDT brand (chosen in the account menu): blue accent, so questions take the teal. */
+:root[data-cdt-brand="cdt"]{--accent:#1C63BC; --accent-2:#3D86E2; --accent-soft:#E4ECF7; --accent-wash:#F4F7FC; --accent-strong:#154C90; --q:#147165; --q-soft:#E3EEED}
+@media (prefers-color-scheme: dark){:root[data-cdt-brand="cdt"]:not([data-theme="light"]){--accent:#4B9FF3; --accent-2:#84BEF7; --accent-soft:#28323A; --accent-wash:#1F262A; --accent-strong:#7BB8F6; --q:#32DAC4; --q-soft:#243531}}
+:root[data-cdt-brand="cdt"][data-theme="dark"]{--accent:#4B9FF3; --accent-2:#84BEF7; --accent-soft:#28323A; --accent-wash:#1F262A; --accent-strong:#7BB8F6; --q:#32DAC4; --q-soft:#243531}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
@@ -175,7 +181,7 @@ button.kpi{cursor:pointer} button.kpi:hover{border-color:var(--accent)}
 .answers button .k{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center;font:600 11.5px var(--mono);color:var(--muted);background:var(--surface)}
 .answers button:hover{border-color:var(--q);background:var(--q-soft)}
 .acts{display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px}
-.acts .done{background:var(--ok);border-color:var(--ok);color:#fff}
+.acts .done{background:var(--ok);border-color:var(--ok);color:var(--on-ok)}
 .acts .done:hover{filter:brightness(1.07)}
 .subacts{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
 .keys{font-size:12px;color:var(--faint)}
@@ -211,6 +217,7 @@ button.kpi{cursor:pointer} button.kpi:hover{border-color:var(--accent)}
 .li .sm{font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:2px}
 .li .more{grid-column:2/4}
 .lq{background:var(--q-soft);border:1px solid var(--q);border-radius:12px;padding:12px;display:grid;gap:8px;margin-bottom:8px}
+.lq.ans{background:var(--surface);border-color:var(--line)}
 .lq .answers{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 .lq .answers button{padding:8px 10px;font-size:14px;grid-template-columns:1fr}
 .lq .answers button .k{display:none}
@@ -239,6 +246,123 @@ dialog::backdrop{background:rgba(8,16,20,.5)}
 .toast.on{opacity:1;transform:translateX(-50%);pointer-events:auto}
 .toast button{background:none;border:1px solid currentColor;color:inherit;border-radius:6px;padding:2px 10px;font-weight:700;cursor:pointer;opacity:.9}
 .toast:not(:has(button)){padding-right:16px}
+/* view tabs in the top bar: Journey | By frequency */
+.vtabs{display:inline-flex;gap:2px;background:var(--sunk);border-radius:9px;padding:3px}
+.vtabs button{border:0;background:none;border-radius:7px;padding:5px 12px;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;display:flex;gap:6px;align-items:center;white-space:nowrap}
+.vtabs button:hover{color:var(--fg)}
+.vtabs button[aria-pressed="true"]{background:var(--surface);color:var(--accent-strong);box-shadow:var(--shadow)}
+@media (max-width:640px){.vtabs button span.l{display:none}}
+
+/* map + the station's cards side by side */
+.mapgrid2{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+.mapgrid2 .deckcol{display:grid;gap:14px;order:-1}
+@media (min-width:920px){.mapgrid2{grid-template-columns:minmax(330px,.85fr) minmax(0,1.15fr)}.mapgrid2 .deckcol{order:0;position:sticky;top:64px;max-height:calc(100vh - 76px);overflow:auto;padding:2px 4px 8px 2px;scrollbar-width:thin}}
+.deck{padding:0;overflow:hidden}
+.deck .dh{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:14px 16px 12px;border-bottom:1px solid var(--line2);background:linear-gradient(180deg,var(--accent-wash),var(--surface))}
+.deck .dn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--accent-fg);font:700 15px var(--display)}
+.deck .dn.cleared{background:var(--gold);color:#fff}
+.deck .dt{min-width:0}
+.deck .dt b{display:block;font:600 16px/1.25 var(--display)}
+.deck .dt span{font-size:12.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.deck .dbar{grid-column:1/4;display:flex;gap:10px;align-items:center}
+.deck .dbar .bar{flex:1;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;display:flex}
+.deck .dbar .bar i{display:block;height:100%;background:var(--ok);transition:width .35s}
+.deck .dbar .bar i.n{background:var(--na)}
+.deck .dbar .num{font:600 12px var(--mono);color:var(--muted);white-space:nowrap}
+.deck .dbody{padding:14px}
+.deck .card{box-shadow:none;border-radius:12px;padding:18px 18px 14px}
+.deck .card .title{font-size:1.15rem}
+.deck .acts .btn.big{padding:9px 12px;font-size:14px}
+.side2{display:grid;gap:14px}
+.side2 .panel{padding:14px 16px}
+.side2 h3{margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.node.sel{outline:3px solid var(--q);outline-offset:4px}
+.nlabel.sel .t{color:var(--q)}
+
+/* a question's two confirmations: the answer, then the actions it requires */
+.qsteps{display:flex;align-items:center;gap:0;margin:0;padding:0;list-style:none}
+.qsteps li{display:flex;gap:7px;align-items:center;font-size:12.5px;font-weight:600;color:var(--faint);white-space:nowrap}
+.qsteps li + li::before{content:"";width:26px;height:2px;border-radius:1px;background:var(--line);margin:0 8px}
+.qsteps li.done + li::before{background:var(--accent)}
+.qsteps .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--line);background:var(--surface);font:700 11px var(--body)}
+.qsteps .n svg{width:12px;height:12px}
+.qsteps li.at{color:var(--fg)} .qsteps li.at .n{border-color:var(--q);color:var(--q);box-shadow:0 0 0 3px var(--q-soft)}
+.qsteps li.done{color:var(--muted)} .qsteps li.done .n{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.answers button[aria-pressed="true"]{border-color:var(--q);background:var(--q-soft);color:var(--fg)}
+.answers button[aria-pressed="true"] .k{background:var(--q);border-color:var(--q);color:#fff}
+.decides{font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.confirm{border:1px solid var(--line);border-radius:12px;background:var(--raised);padding:12px;display:grid;gap:8px;animation:cardIn .25s ease-out}
+.confirm .ch{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.confirm .ch b{font:600 13.5px var(--display)}
+.confirm .ch .pill{font-size:10.5px}
+.confirm p{margin:0;font-size:13px;color:var(--muted)}
+.crow{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line2);border-radius:9px;padding:9px 10px}
+.crow .ci{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center}
+.crow.done .ci{background:var(--ok);border-color:var(--ok);color:var(--on-ok)} .crow.na .ci{background:var(--sunk);border-color:var(--na);color:var(--na)}
+.crow .ci svg{width:12px;height:12px}
+.crow .t{font-weight:600;font-size:14px;line-height:1.3;cursor:pointer}
+.crow.done .t,.crow.na .t{color:var(--muted)}
+.crow .sm{font-size:12px;color:var(--muted)}
+.crow .cb{display:flex;gap:6px;align-items:center}
+.crow .btn.done{background:var(--ok);border-color:var(--ok);color:var(--on-ok)}
+.crow .more{grid-column:2/4}
+.still .card,.still .confirm,.still .medal{animation:none}
+.confirm.none{color:var(--muted);font-size:13.5px}
+.cfoot{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;align-items:center}
+.cfoot .hint{font-size:12.5px;color:var(--lock);margin-right:auto}
+
+/* card navigation: previous / next and a dot per card in the station */
+.cnav{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;margin-top:12px}
+.cnav .btn[disabled]{opacity:.45;cursor:default;border-color:var(--line)}
+.dots{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center;min-width:0}
+.dot{width:12px;height:12px;border-radius:4px;border:0;padding:0;cursor:pointer;background:var(--sunk);box-shadow:inset 0 0 0 1px var(--line)}
+.dot.ask,.dot.skipped{background:var(--q-soft);box-shadow:inset 0 0 0 1.5px var(--q)}
+.dot.confirm{background:linear-gradient(90deg,var(--q) 50%,var(--q-soft) 50%);box-shadow:none}
+.dot.open{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--faint)}
+.dot.done{background:var(--ok);box-shadow:none} .dot.na{background:var(--na);box-shadow:none}
+.dot.end{border-radius:50%;background:none;box-shadow:inset 0 0 0 1.5px var(--gold)}
+.dot.at{transform:scale(1.35);outline:2px solid var(--fg);outline-offset:1px}
+.dot:hover{transform:scale(1.25)}
+.cpos{font:600 11px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+
+/* by frequency */
+.fhead{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-end;margin-bottom:16px}
+.ftiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(124px,1fr));gap:10px;margin-bottom:16px}
+.ftile{display:grid;gap:4px;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line);border-radius:12px;padding:11px 13px;cursor:pointer;box-shadow:var(--shadow)}
+.ftile:hover{border-color:var(--accent)}
+.ftile[aria-pressed="true"]{border-color:var(--accent);border-top-color:var(--accent);background:var(--accent-wash);box-shadow:0 0 0 2px var(--accent-soft)}
+.ftile .k{font:600 11px var(--body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.ftile .v{font:700 20px var(--display);font-variant-numeric:tabular-nums}
+.ftile .v small{font-size:13px;font-weight:500;color:var(--muted)}
+.ftile .s{font-size:12px;color:var(--muted)}
+.ftile .bar{height:5px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.ftile .bar i{display:block;height:100%;background:var(--accent)}
+.ftile.rep{border-top-color:var(--q)}
+.ftools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.ftools input[type=search]{flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.fgroup{margin-bottom:16px;padding:6px 16px 8px}
+.fgroup .gh{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;justify-content:space-between;padding:10px 0 8px;border-bottom:1px solid var(--line)}
+.fgroup .gh h2{font-size:1.05rem}
+.fgroup .gh span{font-size:12.5px;color:var(--muted)}
+.frow{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--line2)}
+.frow:last-child{border-bottom:0}
+.frow .ck{width:18px;height:18px;margin:0;accent-color:var(--ok);cursor:pointer}
+.frow .t{font-weight:600;cursor:pointer;line-height:1.3}
+.frow .t:hover{color:var(--accent)}
+.frow.ticked .t,.frow.done .t{color:var(--muted)}
+.frow.na{opacity:.6}
+.frow.lk .t{color:var(--muted)}
+.frow .sm{font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:2px}
+.frow .judg{color:var(--lock);border-bottom:1px dotted var(--lock);cursor:help}
+.frow .right{display:flex;gap:8px;align-items:center}
+.hist{display:flex;gap:3px;align-items:center}
+.hd{width:14px;height:14px;border-radius:4px;border:0;padding:0;cursor:pointer;background:var(--sunk);box-shadow:inset 0 0 0 1px var(--line)}
+.hd.on{background:var(--ok);box-shadow:none}
+.hd.now{outline:2px solid var(--q);outline-offset:1px}
+.hlab{font-size:11px;color:var(--faint);white-space:nowrap}
+@media (max-width:640px){.dash{padding:12px}.dash .ring{display:none}.dash .kpis{grid-template-columns:repeat(3,1fr);gap:6px}.kpi{padding:7px 8px}.kpi .v{font-size:16px}.kpi .k{font-size:11px;line-height:1.25}
+  .deck .dh .btn span{display:none}.deck .dh{padding:12px}.deck .dbody{padding:10px}.deck .card{padding:14px 12px 12px}.cnav .btn{padding:4px 8px}}
+@media (max-width:640px){.frow{grid-template-columns:24px 1fr}.frow .right{grid-column:2/3}}
 #report{display:none}
 @media (max-width:640px){h1{font-size:1.35rem}.card{padding:18px 16px 14px}.card .title{font-size:1.15rem}.sthead{grid-template-columns:auto 1fr}.sthead .seg{grid-column:1/3;justify-self:start}.dash{grid-template-columns:1fr;justify-items:center}.kpis{width:100%;grid-template-columns:repeat(2,1fr)}.crumb b,.crumb .t,.crumb .sep{display:none}.how > div{border-right:0;border-bottom:1px solid var(--line2)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -271,6 +395,7 @@ dialog::backdrop{background:rgba(8,16,20,.5)}
 <header class="top"><div class="in">
   <button class="brand" id="homeBtn" type="button" title="All projects"><span class="mk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="5" r="2.2"/><path d="M7 18c6 0 4-7 10-11"/></svg></span>Project Journey</button>
   <div class="crumb" id="crumb"></div>
+  <nav class="vtabs" id="vtabs" aria-label="View" hidden><button type="button" data-view="map"></button><button type="button" data-view="freq"></button></nav>
   <span class="savedtag" id="savedTag" aria-live="polite"></span>
   <button class="bagbtn" id="bagBtn" type="button" hidden></button>
   <details class="menu" id="menu" hidden><summary>Menu <span aria-hidden="true">▾</span></summary><div class="pop">
@@ -327,9 +452,13 @@ const P={
  book:'<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h10"/>',
  home:'<path d="M4 11l8-7 8 7v9H4z"/><path d="M10 20v-6h4v6"/>',
  plus:'<path d="M12 5v14M5 12h14"/>', upload:'<path d="M12 20V9M7 14l5-5 5 5"/><path d="M5 4h14"/>',
- clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ route:'<circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8"/>',
+ repeat:'<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>',
+ expand:'<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'
 };
 const I=(n,cls="i")=>`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+document.querySelectorAll("#vtabs [data-view]").forEach(b=>{ b.innerHTML=b.dataset.view==="freq"?`${I("repeat")}<span class="l">By frequency</span>`:`${I("route")}<span class="l">Journey</span>`; });
 document.querySelectorAll("#menu [data-m]").forEach(b=>{ const m={report:["doc","Status report (print / PDF)"],csv:["sheet","Export to Excel (CSV)"],export:["save","Back up this project"],answers:["edit","Edit answers"],sources:["book","Procedure sources"],home:["home","All projects"]}[b.dataset.m]; b.innerHTML=I(m[0])+esc(m[1]); });
 
 /* Each question is asked at the first station that has an action depending on it (never before its parent question). */
@@ -349,7 +478,7 @@ else { try{ const raw=localStorage.getItem(KEY); if(raw){ const d=JSON.parse(raw
 Object.values(DB.projects).forEach(fix);
 /* In Project Control every change goes to the project on the server, as only the
    keys it touched, so two people clearing different cards both keep their work. */
-const MAPS=["answers","status","notes","due","skipped","doneAt","visited"];
+const MAPS=["answers","status","notes","due","skipped","doneAt","visited","ticks"];
 const snap=p=>JSON.parse(JSON.stringify(Object.fromEntries(MAPS.map(k=>[k,p[k]||{}]))));
 let synced=SRV?snap(cur0()):null, syncT=null, syncing=false, viewOnlyTold=false;
 function cur0(){ return DB.projects[DB.current]; }
@@ -384,9 +513,10 @@ if(SRV){
   window.addEventListener("focus",refresh); setInterval(()=>{ if(!document.hidden) refresh(); },30000);
   /* The site's own light / dark choice. */
   const theme=()=>{ let v=null; try{ v=localStorage.getItem("pm-theme"); }catch(e){} if(v&&v!=="system") document.documentElement.setAttribute("data-theme",v); else document.documentElement.removeAttribute("data-theme"); };
-  theme(); window.addEventListener("storage",e=>{ if(e.key==="pm-theme") theme(); });
+  const brand=()=>{ let v=null; try{ v=localStorage.getItem("cdt-brand"); }catch(e){} if(v==="cdt") document.documentElement.setAttribute("data-cdt-brand","cdt"); else document.documentElement.removeAttribute("data-cdt-brand"); };
+  theme(); brand(); window.addEventListener("storage",e=>{ if(e.key==="pm-theme") theme(); if(e.key==="cdt-brand") brand(); });
 }
-function fix(p){ p.answers=p.answers||{}; p.status=p.status||{}; p.notes=p.notes||{}; p.due=p.due||{}; p.skipped=p.skipped||{}; p.doneAt=p.doneAt||{};
+function fix(p){ p.answers=p.answers||{}; p.status=p.status||{}; p.notes=p.notes||{}; p.due=p.due||{}; p.skipped=p.skipped||{}; p.doneAt=p.doneAt||{}; p.ticks=p.ticks||{};
   if(!p.visited){ p.visited={}; if(p.built||p.maxVisited!==undefined) ST.forEach((x,i)=>{ if(p.built||i<=p.maxVisited) p.visited[i]=true; }); }
   delete p.maxVisited; }
 function save(){ if(SRV){ clearTimeout(syncT); syncT=setTimeout(sync,350); return; } try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){ toast("Couldn't save in this browser. Back up the project."); } }
@@ -427,7 +557,9 @@ function info(p,i){
   const qs=stationQs(p,i), total=its.length;
   return {i,its,qs,...c,total,visible:total>0||qs.length>0,cleared:(total>0||qs.length>0)&&c.open===0&&c.locked===0&&qs.length===0};
 }
-function bag(p){ return CHOICE.filter(q=>shown(p,q)&&unanswered(p,q)&&((p.visited[QST[q.id]]&&!(VIEW.name==="station"&&VIEW.arg===QST[q.id]))||p.skipped[q.id])); }
+/* The station on screen asks its own questions, so they are not "waiting". */
+const onScreen=i=>(VIEW.name==="station"&&VIEW.arg===i)||(VIEW.name==="map"&&UI.deckSt===i);
+function bag(p){ return CHOICE.filter(q=>shown(p,q)&&unanswered(p,q)&&((p.visited[QST[q.id]]&&!onScreen(QST[q.id]))||p.skipped[q.id])); }
 function label(q,v){ const o=q.opts.find(x=>x[0]===v); return o?o[1]:v; }
 function whyText(cond,ans){
   const parts=[]; const go=c=>Object.entries(c||{}).forEach(([k,v])=>{ if(k==="any"){ v.filter(x=>ev(x,ans)===true).forEach(go); return; } if(k==="aide") return; const q=QS[k]; const a=val(k,ans); if(q&&a!==undefined) parts.push(`${q.short||q.label}: ${label(q,a)}`); });
@@ -443,9 +575,11 @@ function summary(p){
 }
 
 /* ---------- UI state ---------- */
-const UI={mode:"cards",tips:true,later:new Set(),open:new Set()};
-try{ const u=JSON.parse(localStorage.getItem(KEY+".ui")||"{}"); if(u.mode) UI.mode=u.mode; if(u.tips===false) UI.tips=false; }catch(e){}
-const saveUI=()=>{ try{ localStorage.setItem(KEY+".ui",JSON.stringify({mode:UI.mode,tips:UI.tips})); }catch(e){} };
+/* at: the card each station is showing, by key, when it is not simply the next one
+   to do (after Previous, or while a question's actions are being confirmed). */
+const UI={mode:"cards",tips:true,later:new Set(),open:new Set(),at:{},deckSt:null,fcad:"all",fshow:"todo",fq:""};
+try{ const u=JSON.parse(localStorage.getItem(KEY+".ui")||"{}"); if(u.mode) UI.mode=u.mode; if(u.tips===false) UI.tips=false; if(u.fcad) UI.fcad=u.fcad; if(u.fshow) UI.fshow=u.fshow; }catch(e){}
+const saveUI=()=>{ try{ localStorage.setItem(KEY+".ui",JSON.stringify({mode:UI.mode,tips:UI.tips,fcad:UI.fcad,fshow:UI.fshow})); }catch(e){} };
 let VIEW={name:"home"};
 
 function toast(m,undo){
@@ -460,13 +594,16 @@ function chrome(){
   const p=cur(); const inProj=!!p && VIEW.name!=="home" && VIEW.name!=="start";
   $("#menu").hidden=!inProj;
   $("#crumb").innerHTML = inProj ? `<span class="sep">/</span><b>${esc(p.answers.num||"")}</b><span class="t">${esc(p.answers.title||"")}</span>` : "";
+  const vt=$("#vtabs"); vt.hidden=!inProj;
+  vt.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view==="freq"?VIEW.name==="freq":VIEW.name!=="freq")));
   const n=inProj?bag(p).length:0; const b=$("#bagBtn"); b.hidden=n===0;
   b.innerHTML=`${I("q")}${n} waiting`; b.setAttribute("aria-label",`${n} questions waiting`);
 }
 function go(name,arg){ VIEW={name,arg}; $("#menu").open=false; render(); window.scrollTo({top:0}); }
 function render(){
   if(VIEW.name!=="home" && !cur()) VIEW={name:"home"};
-  ({home:viewHome,start:viewStart,map:viewMap,station:viewStation})[VIEW.name](cur(),VIEW.arg);
+  if(cur()) fix(cur());
+  ({home:viewHome,start:viewStart,map:viewMap,station:viewStation,freq:viewFreq})[VIEW.name](cur(),VIEW.arg);
   chrome();
 }
 const ringSVG=(pct,r=40)=>{ const c=2*Math.PI*r; return `<svg viewBox="0 0 ${2*r+12} ${2*r+12}"><circle class="bgc" cx="${r+6}" cy="${r+6}" r="${r}"/><circle class="fgc" cx="${r+6}" cy="${r+6}" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct/100)}"/></svg>`; };
@@ -506,37 +643,189 @@ function viewStart(p){
   $("#t-num").focus();
 }
 
-/* ---------- map ---------- */
+/* ---------- a station's cards ----------
+   The actions keep the procedure's own order. A question is not a step of the
+   procedure: it sits just before the first action it decides. Once answered, the
+   question asks a second confirmation: that the actions it requires were actually
+   carried out. Those actions are cleared inside the question's card (up to
+   GROUP_MAX of them; a longer list follows as cards of its own), so answering
+   "Yes" never reads as the work being done. */
+const GROUP_MAX=6;
+function condKeys(c,out=[]){ Object.entries(c||{}).forEach(([k,v])=>{ if(k==="any") v.forEach(x=>condKeys(x,out)); else if(!out.includes(k)) out.push(k); }); return out; }
+function stationSeq(p,i){
+  const x=info(p,i);
+  const qs=CHOICE.filter(q=>QST[q.id]===i&&shown(p,q));
+  const qset=new Set(qs.map(q=>q.id));
+  const seq=[], placed=new Set(), grp={};
+  x.its.forEach(o=>{
+    const ks=condKeys(o.it.when).filter(k=>qset.has(k));
+    ks.forEach(k=>{ if(!placed.has(k)){ placed.add(k); seq.push({key:"q:"+k,q:QS[k]}); } });
+    if(o.s==="locked") return;
+    if(ks.length) (grp[ks[0]]=grp[ks[0]]||[]).push(o);
+    seq.push({key:"i:"+o.it.id,it:o.it,o});
+  });
+  qs.forEach(q=>{ if(!placed.has(q.id)) seq.push({key:"q:"+q.id,q}); });
+  const inCard=new Set();
+  seq.forEach(c=>{ if(!c.q) return; c.group=grp[c.q.id]||[]; c.big=c.group.length>GROUP_MAX; if(!c.big) c.group.forEach(o=>inCard.add(o.it.id)); });
+  const out=seq.filter(c=>!(c.it&&inCard.has(c.it.id)));
+  out.forEach(c=>{ c.st=cardState(p,c); c.i=i; });
+  return {x,seq:out};
+}
+function cardState(p,c){
+  if(c.q){ if(p.answers[c.q.id]===undefined) return p.skipped[c.q.id]?"skipped":"ask";
+    return !c.big&&c.group.some(o=>o.s==="open")?"confirm":"done"; }
+  return c.o.s;
+}
+function pending(c){
+  if(c.st==="ask") return true;
+  if(c.st==="confirm") return c.group.some(o=>o.s==="open"&&!UI.later.has(o.it.id));
+  if(c.st==="open") return !UI.later.has(c.it.id);
+  return false;
+}
+function curIdx(seq,i){
+  const k=UI.at[i]; if(k==="end") return seq.length;
+  if(k){ const n=seq.findIndex(c=>c.key===k); if(n>=0) return n; }
+  const n=seq.findIndex(pending); return n<0?seq.length:n;
+}
+/* Questions answered whose actions are not all confirmed yet, at stations reached. */
+function toConfirm(p){ let n=0; ST.forEach((s,i)=>{ if(!p.visited[i]) return; stationSeq(p,i).seq.forEach(c=>{ if(c.st==="confirm") n++; }); }); return n; }
+const stLabel={ask:"Question to answer",skipped:"Question skipped",confirm:"Answered, actions to confirm",done:"Done",open:"To do",na:"Not applicable"};
+function cardTitle(c){ return c.q?(c.q.short||c.q.label):c.it.t; }
+
+function drawDeck(p,i,host,compact){
+  const {x,seq}=stationSeq(p,i); const n=curIdx(seq,i), c=seq[n];
+  const body = c ? (c.q?qCard(p,c,n,seq.length):tCard(p,c,n,seq.length)) : endCard(p,i,x,compact);
+  const dots=seq.map((d,k)=>`<button type="button" class="dot ${d.st} ${k===n?"at":""}" data-goto="${d.key}" data-sti="${i}" title="${k+1}. ${esc(cardTitle(d))} · ${stLabel[d.st]||""}" aria-label="Card ${k+1}: ${esc(cardTitle(d))}"></button>`).join("")
+    +`<button type="button" class="dot end ${n>=seq.length?"at":""}" data-goto="end" data-sti="${i}" title="Station summary" aria-label="Station summary"></button>`;
+  /* Re-drawing the same card (a confirmation ticked, a note opened) shouldn't replay its entrance. */
+  const ck=`${i}:${c?c.key:"end"}`, still=lastCard[host.id]===ck; lastCard[host.id]=ck;
+  host.classList.toggle("still",still);
+  host.innerHTML=body+`<div class="cnav"><button class="btn sm" type="button" data-nav="prev" data-sti="${i}" ${n===0?"disabled":""} title="Previous card (←)">${I("back")}Previous</button>
+    <div class="dots" role="group" aria-label="Cards in this station">${dots}</div>
+    <button class="btn sm" type="button" data-nav="next" data-sti="${i}" ${n>=seq.length?"disabled":""} title="Next card (→)">Next${I("chev")}</button></div>`;
+}
+const lastCard={};
+function navTo(i,dir){
+  const {seq}=stationSeq(cur(),i); const n=curIdx(seq,i);
+  const m=Math.max(0,Math.min(seq.length,n+dir));
+  UI.at[i]= m>=seq.length?"end":seq[m].key;
+}
+function decideCount(p,q){ let n=0; LIB.items.forEach(it=>{ if(SI[it.ph]===QST[q.id]&&condKeys(it.when).includes(q.id)&&itemState(p,it)!=="hidden") n++; }); return n; }
+function qCard(p,c,n,total){
+  const q=c.q, a=p.answers[q.id], k=`q:${q.id}`, op=UI.open.has(k), i=c.i, answered=a!==undefined;
+  const g=c.big?[]:c.group, left=g.filter(o=>o.s==="open").length, dec=answered?0:decideCount(p,q);
+  const s2=answered?(left?"at":"done"):"";
+  let step2="";
+  if(answered){
+    if(g.length) step2=`<div class="confirm"><div class="ch"><b>Confirm the actions this answer requires</b><span class="pill ${left?"q":"t"}">${g.length-left} of ${g.length} confirmed</span></div>
+      <p>Your answer makes ${g.length===1?"this action":"these actions"} part of the project. Answering doesn't complete ${g.length===1?"it":"them"}: confirm each one once it has actually been done.</p>
+      ${g.map(o=>cRow(p,o,i,k)).join("")}</div>`;
+    else if(c.big) step2=`<div class="confirm"><div class="ch"><b>This answer brings ${c.group.length} actions</b></div><p>They follow as cards of their own, each to be confirmed when it is done.</p></div>`;
+    else step2=`<div class="confirm none">No actions are needed for this answer.</div>`;
+    step2+=`<div class="cfoot">${left?`<span class="hint">${I("alert")} ${left} action${left>1?"s":""} not confirmed yet</span><button class="btn" type="button" data-cont="${i}">Not done yet, continue</button>`:`<button class="btn pri" type="button" data-cont="${i}">Continue ${I("chev")}</button>`}</div>`;
+  }
+  return `<div class="card q">
+    <div class="top2"><span class="row" style="gap:10px"><span class="pill q">${I("q")}Question</span><ol class="qsteps" aria-label="Two confirmations"><li class="${answered?"done":"at"}"><span class="n">${answered?I("check"):1}</span>Answer</li><li class="${s2}"><span class="n">${s2==="done"?I("check"):2}</span>Confirm actions</li></ol></span><span class="cpos">Card ${n+1} of ${total}</span></div>
+    <p class="title">${esc(q.label)}</p>
+    ${answered?"":dec?`<div class="decides">${I("lock")}Your answer decides ${dec} action${dec>1?"s":""} at this station.</div>`:""}
+    <div class="answers">${q.opts.map((o,m)=>`<button type="button" data-ans="${q.id}" data-v="${o[0]}" data-sti="${i}" aria-pressed="${a===o[0]}"><span class="k">${a===o[0]?I("check"):m+1}</span>${esc(o[1])}</button>`).join("")}</div>
+    ${step2}
+    <div class="subacts"><button class="lnk" type="button" data-more="${k}">${op?"Hide explanation":"Why does this matter?"}</button><span class="row"><span class="keys"><kbd>1</kbd>–<kbd>${q.opts.length}</kbd> answer · <kbd>←</kbd><kbd>→</kbd> cards</span>${answered?"":`<button class="btn sm" type="button" data-skip="${q.id}">Skip for now</button>`}</span></div>
+    ${op?`<div class="more"><div>${esc(q.help||"It decides which actions apply to this project.")}</div>${q.ref?`<div><span class="tag ref">${esc(q.ref)}</span></div>`:""}</div>`:""}
+  </div>`;
+}
+function cRow(p,o,i,cardKey){
+  const it=o.it, s=o.s, k=`i:${it.id}`, op=UI.open.has(k);
+  return `<div class="crow ${s}"><span class="ci">${s==="done"?I("check"):s==="na"?"–":""}</span>
+    <div><div class="t" data-more="${k}" data-sti="${i}">${esc(it.t)}</div><div class="sm">${[it.ref,it.who,it.cad&&it.cad!=="once"&&cadName(it)].filter(Boolean).map(esc).join(" · ")}${s==="done"&&p.doneAt[it.id]?` · done ${fmtD(p.doneAt[it.id])}`:""}</div></div>
+    <div class="cb">${s==="open"?`<button class="btn sm done" type="button" data-do="done" data-id="${it.id}" data-stay="${cardKey}" data-sti="${i}">${I("check")}Done</button><button class="btn sm" type="button" data-do="na" data-id="${it.id}" data-stay="${cardKey}" data-sti="${i}">N/A</button>`
+      :`<button class="lnk" type="button" data-do="undo" data-id="${it.id}" data-stay="${cardKey}" data-sti="${i}">Undo</button>`}</div>
+    ${op?moreBox(p,it):""}</div>`;
+}
+function dueTag(p,id){ const di=dueInfo(p.due[id]); if(!di) return ""; return `<span class="tag ${di.over?"bad":""}">${I("cal")}${di.over?`Overdue ${fmtD(di.d)}`:`Due ${fmtD(di.d)}`}</span>`; }
+function tCard(p,c,n,total){
+  const it=c.it, s=c.o.s, i=c.i, k=`i:${it.id}`, op=UI.open.has(k);
+  return `<div class="card t">
+    <div class="top2"><span class="row" style="gap:6px"><span class="pill t">${I("check")}Action</span>${it.cad&&it.cad!=="once"?`<span class="pill f">${I("repeat")}${esc(cadName(it))}</span>`:""}${it.topic?`<span class="pill">${esc(it.topic)}</span>`:""}${s!=="open"?`<span class="pill ${s==="done"?"t":""}">${s==="done"?"Done":"N/A"}</span>`:""}</span><span class="cpos">Card ${n+1} of ${total}</span></div>
+    <p class="title">${esc(it.t)}</p>
+    <div class="meta">${it.ref?`<span class="tag ref">${esc(it.ref)}</span>`:""}${it.rec?`<span class="tag">${esc(it.rec)}</span>`:""}${it.who?`<span class="tag">${esc(it.who)}</span>`:""}${dueTag(p,it.id)}</div>
+    ${s==="open"?`<div class="acts"><button class="btn big done" type="button" data-do="done" data-id="${it.id}" data-sti="${i}">${I("check")}Done</button><button class="btn big" type="button" data-do="na" data-id="${it.id}" data-sti="${i}">N/A</button><button class="btn big" type="button" data-do="later" data-id="${it.id}" data-sti="${i}">Later</button></div>`
+      :`<div class="row" style="justify-content:space-between"><span class="muted" style="font-size:13.5px">${s==="done"?`Confirmed done${p.doneAt[it.id]?` on ${fmtD(p.doneAt[it.id])}`:""}.`:"Marked not applicable."}</span><button class="btn sm" type="button" data-do="undo" data-id="${it.id}" data-stay="${c.key}" data-sti="${i}">Reopen</button></div>`}
+    ${REP[it.cad]?`<div class="decides">${I("repeat")}Repeats ${esc(cadName(it).toLowerCase())}: tick it off each time under By frequency.</div>`:""}
+    <div class="subacts"><button class="lnk" type="button" data-more="${k}">${op?"Hide details":"Details, note, target date"}${it.tip&&UI.tips&&!op?` <span class="pill q" style="margin-left:4px">tip</span>`:""}</button><span class="keys"><kbd>D</kbd> done · <kbd>N</kbd> N/A · <kbd>L</kbd> later · <kbd>←</kbd><kbd>→</kbd> cards</span></div>
+    ${op?moreBox(p,it):""}
+  </div>`;
+}
+function moreBox(p,it){
+  const why=whyText(it.when,p.answers);
+  return `<div class="more">${it.d?`<div>${esc(it.d)}</div>`:""}
+    ${why?`<div class="why"><b>Applies because</b> ${esc(why)}</div>`:""}
+    ${p.doneAt[it.id]?`<div class="why"><b>Completed</b> ${fmtD(p.doneAt[it.id])}</div>`:""}
+    ${it.tip&&UI.tips?`<div class="tip"><b>Good practice · ${esc(it.tip.src)}</b>${esc(it.tip.text)}</div>`:""}
+    <textarea class="note" data-note="${it.id}" placeholder="Note: owner, document reference, follow-up…" aria-label="Note">${esc(p.notes[it.id]||"")}</textarea>
+    <label class="why" style="display:flex;gap:8px;align-items:center">Target date <input type="date" data-due="${it.id}" value="${esc(p.due[it.id]||"")}"></label></div>`;
+}
+function endCard(p,i,x,compact){
+  const later=x.its.filter(o=>o.s==="open"&&UI.later.has(o.it.id));
+  const skipped=x.qs.filter(q=>p.skipped[q.id]);
+  const locked=x.its.filter(o=>o.s==="locked");
+  const need=[...new Set([...skipped.map(q=>q.id),...locked.flatMap(o=>unknownKeys(o.it.when,p.answers))])];
+  const vl=visList(p), nxt=vl[vl.indexOf(i)+1];
+  const go=compact?"data-pick":"data-st";
+  return `<div class="card win">
+    <div class="medal ${x.cleared?"":"dim"}">${I(x.cleared?"star":"clock")}</div>
+    <h2>${x.cleared?`${esc(ST[i].s)} cleared`:"Paused here for now"}</h2>
+    <p class="muted" style="margin:0">${x.done} done · ${x.na} N/A${x.cleared?"":` · ${x.open+locked.length} still open`}</p>
+    ${x.cleared?"":`<div class="left">
+      ${later.length?`<div class="leftrow"><span><b>${later.length}</b> action${later.length>1?"s":""} not confirmed yet</span><button class="btn sm" type="button" data-a="replay" data-sti="${i}">Review now</button></div>`:""}
+      ${need.length?`<div class="leftrow q"><span><b>${locked.length}</b> locked action${locked.length===1?"":"s"}${skipped.length?` · ${skipped.length} skipped question${skipped.length>1?"s":""}`:""}<br><span class="muted" style="font-size:12.5px">Waiting on: ${esc(need.map(qname).join(", "))}</span></span><button class="btn sm" type="button" data-a="bag">Answer</button></div>`:""}
+    </div>`}
+    <div class="row" style="justify-content:center">${nxt!==undefined?`<button class="btn pri ${compact?"":"big"}" type="button" ${go}="${nxt}">Next station: ${esc(ST[nxt].s)} ${I("chev")}</button>`:""}${compact?"":`<button class="btn big" type="button" data-a="map">Back to map</button>`}</div>
+  </div>`;
+}
+
+/* ---------- map, with the station's cards beside it ---------- */
 function viewMap(p){
   const S=summary(p); const next=S.vis.find(x=>!x.cleared);
-  const up=[]; S.vis.forEach(x=>x.its.forEach(o=>{ if(o.s==="open"&&up.length<6) up.push({i:x.i,it:o.it}); }));
+  if(UI.deckSt===null||!S.vis.some(x=>x.i===UI.deckSt)) UI.deckSt=next?next.i:(S.vis.length?S.vis[S.vis.length-1].i:0);
+  const ds=UI.deckSt, dx=info(p,ds), dpos=S.vis.findIndex(x=>x.i===ds);
+  if(!p.visited[ds]){ p.visited[ds]=true; touch(p); }
   const dated=S.rows.filter(r=>r.s==="open"&&p.due[r.it.id]).map(r=>({...r,di:dueInfo(p.due[r.it.id])})).filter(r=>r.di.days<=21).sort((a,b)=>a.di.d-b.di.d).slice(0,6);
-  const bq=bag(p);
-  /* Actions further on wait for questions asked when the project gets there; only
-     the ones at stations already reached count as locked now. */
+  const bq=bag(p), conf=toConfirm(p);
   const lockedNow=S.vis.filter(x=>p.visited[x.i]).reduce((n,x)=>n+x.locked,0);
+  const base=dx.total||1;
   app.innerHTML=`
   <div class="row" style="justify-content:space-between;align-items:flex-end"><div><span class="eyebrow">${esc(p.answers.num||"")}${p.answers.pm?` · PM ${esc(p.answers.pm)}`:""}${p.answers.pd?` · PD ${esc(p.answers.pd)}`:""}</span><h1>${esc(p.answers.title||"Project journey")}</h1></div>
-    ${next?`<button class="btn pri" type="button" data-st="${next.i}">Continue: ${esc(ST[next.i].s)} ${I("chev")}</button>`:""}</div>
+    ${next&&next.i!==ds?`<button class="btn pri" type="button" data-pick="${next.i}">Continue: ${esc(ST[next.i].s)} ${I("chev")}</button>`:""}</div>
   <section class="panel dash" aria-label="Progress summary">
     <div class="ring">${ringSVG(S.pct)}<div class="lbl"><div><b>${S.pct}%</b><br><span>cleared</span></div></div></div>
     <div class="kpis">
       <div class="kpi g"><span class="v">${I("star")}${S.stars}<span class="muted" style="font-size:13px;font-weight:500">/ ${S.vis.length}</span></span><span class="k">Stations cleared</span></div>
       <div class="kpi"><span class="v">${S.n.open}</span><span class="k">Actions to do</span></div>
       <div class="kpi"><span class="v" style="color:var(--ok)">${S.n.done}</span><span class="k">Done${S.n.na?` · ${S.n.na} N/A`:""}</span></div>
+      <div class="kpi q" title="Questions answered whose required actions are not all confirmed as done yet."><span class="v">${I("check")}${conf}</span><span class="k">Answered, actions to confirm</span></div>
       <div class="kpi l" title="Actions that apply only to some projects. Each one opens or drops away when you answer the question it depends on, which is asked when you reach its station."><span class="v">${I("lock")}${S.n.locked}</span><span class="k">Depend on answers to come${lockedNow?` · ${lockedNow} here now`:""}</span></div>
       <button class="kpi q" type="button" data-a="bag"><span class="v">${I("q")}${S.bagN}</span><span class="k">Questions waiting</span></button>
       <div class="kpi ${S.overdue.length?"b":""}"><span class="v">${I("clock")}${S.overdue.length}</span><span class="k">Overdue</span></div>
     </div>
   </section>
-  <div class="mapgrid">
+  <div class="mapgrid2">
     <div class="panel mapbox"><div class="map" id="map"></div></div>
-    <aside class="side">
-      <div class="panel"><h3>Up next</h3><div class="ulist">${up.length?up.map(u=>`<button type="button" data-st="${u.i}"><span><span class="t">${esc(u.it.t)}</span><br><span class="s">${esc(ST[u.i].s)} · ${esc(u.it.ref||"")}</span></span><span class="chev">${I("chev")}</span></button>`).join(""):`<p class="empty">Nothing open. Answer the waiting questions to unlock more cards.</p>`}</div></div>
-      <div class="panel"><h3>Target dates <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">next 3 weeks</span></h3><div class="ulist">${dated.length?dated.map(r=>`<button type="button" data-st="${SI[r.it.ph]}"><span><span class="t">${esc(r.it.t)}</span><br><span class="s" style="${r.di.over?"color:var(--bad);font-weight:600":""}">${r.di.over?`Overdue by ${-r.di.days} day${r.di.days===-1?"":"s"}`:r.di.days===0?"Due today":`Due ${fmtD(r.di.d)}`}</span></span><span class="chev">${I("chev")}</span></button>`).join(""):`<p class="empty">No target dates set. Add one from a card's details.</p>`}</div></div>
-      ${bq.length?`<div class="panel"><h3>Questions waiting <button class="lnk" type="button" data-a="bag">Answer</button></h3><div class="ulist">${bq.slice(0,4).map(q=>`<button type="button" data-a="bag"><span><span class="t">${esc(q.short||q.label)}</span><br><span class="s">${esc(ST[QST[q.id]].s)}</span></span><span class="chev">${I("chev")}</span></button>`).join("")}</div></div>`:""}
-    </aside>
+    <div class="deckcol">
+      <section class="panel deck" aria-label="${esc(ST[ds].s)} cards">
+        <div class="dh"><span class="dn ${dx.cleared?"cleared":""}">${dx.cleared?I("star"):dpos+1}</span>
+          <div class="dt"><b>${esc(ST[ds].s)}</b><span>Station ${dpos+1} of ${S.vis.length} · ${esc(ST[ds].d)}</span></div>
+          <span class="row" style="gap:6px;flex-wrap:nowrap">${dpos>0?`<button class="btn sm" type="button" data-pick="${S.vis[dpos-1].i}" title="Previous station" aria-label="Previous station">${I("back")}</button>`:""}${dpos<S.vis.length-1?`<button class="btn sm" type="button" data-pick="${S.vis[dpos+1].i}" title="Next station" aria-label="Next station">${I("chev")}</button>`:""}<button class="btn sm" type="button" data-st="${ds}" title="Open this station full size">${I("expand")}<span>Full view</span></button></span>
+          <div class="dbar"><div class="bar" aria-hidden="true"><i style="width:${dx.done/base*100}%"></i><i class="n" style="width:${dx.na/base*100}%"></i></div><span class="num">${dx.done+dx.na} / ${dx.total} cleared</span></div></div>
+        <div class="dbody" id="deck"></div>
+      </section>
+      <div class="side2">
+        ${bq.length?`<div class="panel"><h3>Questions waiting <button class="lnk" type="button" data-a="bag">Answer</button></h3><div class="ulist">${bq.slice(0,4).map(q=>`<button type="button" data-a="bag"><span><span class="t">${esc(q.short||q.label)}</span><br><span class="s">${esc(ST[QST[q.id]].s)}</span></span><span class="chev">${I("chev")}</span></button>`).join("")}</div></div>`:""}
+        <div class="panel"><h3>Target dates <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">next 3 weeks</span></h3><div class="ulist">${dated.length?dated.map(r=>`<button type="button" data-pick="${SI[r.it.ph]}"><span><span class="t">${esc(r.it.t)}</span><br><span class="s" style="${r.di.over?"color:var(--bad);font-weight:600":""}">${r.di.over?`Overdue by ${-r.di.days} day${r.di.days===-1?"":"s"}`:r.di.days===0?"Due today":`Due ${fmtD(r.di.d)}`}</span></span><span class="chev">${I("chev")}</span></button>`).join(""):`<p class="empty">No target dates set. Add one from a card's details.</p>`}</div></div>
+      </div>
+    </div>
   </div>`;
+  drawDeck(p,ds,$("#deck"),true);
   drawMap(p,S.vis,next);
   if(mapRO) mapRO.disconnect();
   if(window.ResizeObserver){ let lastW=$("#map").clientWidth; mapRO=new ResizeObserver(()=>{ const m=$("#map"); if(m&&m.clientWidth!==lastW){ lastW=m.clientWidth; drawMap(p,S.vis,next); } }); mapRO.observe($("#map")); }
@@ -544,8 +833,8 @@ function viewMap(p){
 let mapRO=null;
 function drawMap(p,vis,next){
   const m=$("#map"); if(!m) return;
-  const W=m.clientWidth, gap=94, n=vis.length;
-  const A=Math.max(26,Math.min(W/2-120,210));
+  const W=m.clientWidth, gap=88, n=vis.length;
+  const A=Math.max(20,Math.min(W/2-130,190));
   const pts=vis.map((x,k)=>({x:W/2+A*Math.sin(k*1.05),y:52+k*gap}));
   const H=52+(n-1)*gap+60; m.style.height=H+"px";
   let seg="",done="";
@@ -554,19 +843,19 @@ function drawMap(p,vis,next){
   vis.forEach((x,k)=>{
     const {x:cx,y:cy}=pts[k]; const s=ST[x.i];
     const pct=x.total?Math.round((x.done+x.na)/x.total*100):0;
-    const isCur=next&&next.i===x.i;
+    const isCur=next&&next.i===x.i, sel=UI.deckSt===x.i;
     const qn=p.visited[x.i]?x.qs.length:0;
     const sub= x.cleared?"Cleared":(x.total?`${x.done+x.na} of ${x.total} cleared`:"Questions only")+(x.locked?` · ${x.locked} locked`:"");
-    html+=`<button class="node ${x.cleared?"cleared":""} ${isCur?"cur":""}" style="left:${cx-28}px;top:${cy-28}px;--p:${pct}" data-st="${x.i}" type="button" aria-label="${esc(s.s)}: ${esc(sub)}"><span class="in">${x.cleared?I("star"):k+1}</span>${qn?`<span class="qdot">?${qn}</span>`:""}${x.locked&&!x.cleared&&p.visited[x.i]?`<span class="ldot">${I("lock")}</span>`:""}</button>`;
+    html+=`<button class="node ${x.cleared?"cleared":""} ${isCur?"cur":""} ${sel?"sel":""}" style="left:${cx-28}px;top:${cy-28}px;--p:${pct}" data-pick="${x.i}" type="button" aria-label="${esc(s.s)}: ${esc(sub)}" aria-pressed="${sel}"><span class="in">${x.cleared?I("star"):k+1}</span>${qn?`<span class="qdot">?${qn}</span>`:""}${x.locked&&!x.cleared&&p.visited[x.i]?`<span class="ldot">${I("lock")}</span>`:""}</button>`;
     const right=cx<W/2; const room=right?W-cx-46:cx-46;
-    html+=`<button class="nlabel ${right?"":"l"}" style="${right?`left:${cx+36}px`:`right:${W-cx+36}px`};top:${cy-21}px;max-width:${Math.max(104,room)}px" data-st="${x.i}" type="button" tabindex="-1"><span class="t">${esc(s.s)}</span><span class="s">${esc(sub)}</span></button>`;
+    html+=`<button class="nlabel ${right?"":"l"} ${sel?"sel":""}" style="${right?`left:${cx+36}px`:`right:${W-cx+36}px`};top:${cy-21}px;max-width:${Math.max(104,room)}px" data-pick="${x.i}" type="button" tabindex="-1"><span class="t">${esc(s.s)}</span><span class="s">${esc(sub)}</span></button>`;
     if(isCur) html+=`<span class="here" style="left:${cx-38}px;top:${cy-52}px">YOU ARE HERE</span>`;
   });
   m.innerHTML=html;
 }
 let rz; window.addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(VIEW.name==="map") render(); },120); });
 
-/* ---------- station ---------- */
+/* ---------- station, full size ---------- */
 function visList(p){ return ST.map((s,i)=>info(p,i)).filter(x=>x.visible).map(x=>x.i); }
 function viewStation(p,i){
   if(!p.visited[i]){ p.visited[i]=true; touch(p); }
@@ -585,105 +874,138 @@ function drawStage(p,i){
   $("#pD").style.width=(x.done/base*100)+"%"; $("#pN").style.width=(x.na/base*100)+"%";
   $("#pT").textContent=`${x.done+x.na} / ${x.total} cleared`;
   if(UI.mode==="list") return drawList(p,i,x);
-  const qs=x.qs.filter(q=>!p.skipped[q.id]);
-  /* The actions keep the procedure's own order. A question is not a step of the
-     procedure: it sits just before the first action it decides, so the station
-     reads in the order the procedure does things. */
-  const queue=[], placed=new Set(), qset=new Set(qs.map(q=>q.id));
-  x.its.forEach(o=>{
-    if(o.s==="locked") unknownKeys(o.it.when,p.answers).forEach(k=>{ if(qset.has(k)&&!placed.has(k)){ placed.add(k); queue.push({q:QS[k]}); } });
-    else if(o.s==="open"&&!UI.later.has(o.it.id)) queue.push({it:o.it});
-  });
-  qs.forEach(q=>{ if(!placed.has(q.id)) queue.push({q}); });
-  if(!queue.length) return drawEnd(p,i,x);
-  const c=queue[0];
-  $("#stage").innerHTML=c.q?qCard(p,c.q,queue.length):tCard(p,c.it,queue.length);
-}
-function qCard(p,q,left){
-  const k=`q:${q.id}`, op=UI.open.has(k);
-  return `<div class="card q">
-    <div class="top2"><span class="pill q">${I("q")}Question</span><span class="pill">${left} card${left>1?"s":""} left</span></div>
-    <p class="title">${esc(q.label)}</p>
-    <div class="answers">${q.opts.map((o,n)=>`<button type="button" data-ans="${q.id}" data-v="${o[0]}"><span class="k">${n+1}</span>${esc(o[1])}</button>`).join("")}</div>
-    <div class="subacts"><button class="lnk" type="button" data-more="${k}">${op?"Hide explanation":"Why does this matter?"}</button><span class="row"><span class="keys"><kbd>1</kbd>–<kbd>${q.opts.length}</kbd> answer · <kbd>S</kbd> skip</span><button class="btn sm" type="button" data-skip="${q.id}">Skip for now</button></span></div>
-    ${op?`<div class="more"><div>${esc(q.help||"It decides which cards appear for this project.")}</div>${q.ref?`<div><span class="tag ref">${esc(q.ref)}</span></div>`:""}</div>`:""}
-  </div>`;
-}
-function dueTag(p,id){ const di=dueInfo(p.due[id]); if(!di) return ""; return `<span class="tag ${di.over?"bad":""}">${I("cal")}${di.over?`Overdue ${fmtD(di.d)}`:`Due ${fmtD(di.d)}`}</span>`; }
-function tCard(p,it,left){
-  const k=`i:${it.id}`, op=UI.open.has(k);
-  return `<div class="card t">
-    <div class="top2"><span class="row" style="gap:6px"><span class="pill t">${I("check")}Action</span>${it.freq?`<span class="pill f">${esc(it.freq)}</span>`:""}${it.topic?`<span class="pill">${esc(it.topic)}</span>`:""}</span><span class="pill">${left} left</span></div>
-    <p class="title">${esc(it.t)}</p>
-    <div class="meta">${it.ref?`<span class="tag ref">${esc(it.ref)}</span>`:""}${it.rec?`<span class="tag">${esc(it.rec)}</span>`:""}${it.who?`<span class="tag">${esc(it.who)}</span>`:""}${dueTag(p,it.id)}</div>
-    <div class="acts"><button class="btn big done" type="button" data-do="done" data-id="${it.id}">${I("check")}Done</button><button class="btn big" type="button" data-do="na" data-id="${it.id}">N/A</button><button class="btn big" type="button" data-do="later" data-id="${it.id}">Later</button></div>
-    <div class="subacts"><button class="lnk" type="button" data-more="${k}">${op?"Hide details":"Details, note, target date"}${it.tip&&UI.tips&&!op?` <span class="pill q" style="margin-left:4px">tip</span>`:""}</button><span class="keys"><kbd>D</kbd> done · <kbd>N</kbd> N/A · <kbd>L</kbd> later · <kbd>I</kbd> details</span></div>
-    ${op?moreBox(p,it):""}
-  </div>`;
-}
-function moreBox(p,it){
-  const why=whyText(it.when,p.answers);
-  return `<div class="more">${it.d?`<div>${esc(it.d)}</div>`:""}
-    ${why?`<div class="why"><b>Applies because</b> ${esc(why)}</div>`:""}
-    ${p.doneAt[it.id]?`<div class="why"><b>Completed</b> ${fmtD(p.doneAt[it.id])}</div>`:""}
-    ${it.tip&&UI.tips?`<div class="tip"><b>Good practice · ${esc(it.tip.src)}</b>${esc(it.tip.text)}</div>`:""}
-    <textarea class="note" data-note="${it.id}" placeholder="Note: owner, document reference, follow-up…" aria-label="Note">${esc(p.notes[it.id]||"")}</textarea>
-    <label class="why" style="display:flex;gap:8px;align-items:center">Target date <input type="date" data-due="${it.id}" value="${esc(p.due[it.id]||"")}"></label></div>`;
-}
-function drawEnd(p,i,x){
-  const later=x.its.filter(o=>o.s==="open"&&UI.later.has(o.it.id));
-  const skipped=x.qs.filter(q=>p.skipped[q.id]);
-  const locked=x.its.filter(o=>o.s==="locked");
-  const need=[...new Set([...skipped.map(q=>q.id),...locked.flatMap(o=>unknownKeys(o.it.when,p.answers))])];
-  const vl=visList(p), nxt=vl[vl.indexOf(i)+1];
-  $("#stage").innerHTML=`<div class="card win">
-    <div class="medal ${x.cleared?"":"dim"}">${I(x.cleared?"star":"clock")}</div>
-    <h2>${x.cleared?`${esc(ST[i].s)} cleared`:"Paused here for now"}</h2>
-    <p class="muted" style="margin:0">${x.done} done · ${x.na} N/A${x.cleared?"":` · ${later.length+locked.length} still open`}</p>
-    ${x.cleared?"":`<div class="left">
-      ${later.length?`<div class="leftrow"><span><b>${later.length}</b> set aside for later</span><button class="btn sm" type="button" data-a="replay">Review now</button></div>`:""}
-      ${need.length?`<div class="leftrow q"><span><b>${locked.length}</b> locked card${locked.length===1?"":"s"}${skipped.length?` · ${skipped.length} skipped question${skipped.length>1?"s":""}`:""}<br><span class="muted" style="font-size:12.5px">Waiting on: ${esc(need.map(qname).join(", "))}</span></span><button class="btn sm" type="button" data-a="bag">Answer</button></div>`:""}
-    </div>`}
-    <div class="row" style="justify-content:center">${nxt!==undefined?`<button class="btn pri big" type="button" data-st="${nxt}">Next: ${esc(ST[nxt].s)} ${I("chev")}</button>`:""}<button class="btn big" type="button" data-a="map">Back to map</button></div>
-  </div>`;
+  drawDeck(p,i,$("#stage"),false);
 }
 function drawList(p,i,x){
   const rows=arr=>arr.map(o=>{ const it=o.it,s=o.s,k=`i:${it.id}`,op=UI.open.has(k); const need=s==="locked"?unknownKeys(it.when,p.answers).map(qname).join(", "):"";
     return `<div class="li ${s==="locked"?"lk":s}">
       ${s==="locked"?`<span class="lkic">${I("lock")}</span>`:`<input type="checkbox" class="ck" data-ck="${it.id}" ${s==="done"?"checked":""} ${s==="na"?"disabled":""} aria-label="Done: ${esc(it.t)}">`}
-      <div><div class="t" data-more="${k}">${esc(it.t)}</div><div class="sm"><span>${esc(it.ref||"")}</span>${it.freq?`<span>${esc(it.freq)}</span>`:""}${s==="done"&&p.doneAt[it.id]?`<span>Done ${fmtD(p.doneAt[it.id])}</span>`:""}${p.due[it.id]&&s==="open"?dueTag(p,it.id):""}${need?`<span style="color:var(--lock)">Waiting on: ${esc(need)}</span>`:""}</div></div>
+      <div><div class="t" data-more="${k}">${esc(it.t)}</div><div class="sm"><span>${esc(it.ref||"")}</span>${it.cad&&it.cad!=="once"?`<span>${esc(cadName(it))}</span>`:""}${s==="done"&&p.doneAt[it.id]?`<span>Done ${fmtD(p.doneAt[it.id])}</span>`:""}${p.due[it.id]&&s==="open"?dueTag(p,it.id):""}${need?`<span style="color:var(--lock)">Waiting on: ${esc(need)}</span>`:""}</div></div>
       ${s==="locked"?`<button class="btn sm" type="button" data-a="bag">Answer</button>`:`<button class="btn sm" type="button" data-do="${s==="na"?"undo":"na"}" data-id="${it.id}">${s==="na"?"Undo N/A":"N/A"}</button>`}
       ${op?moreBox(p,it):""}</div>`; }).join("");
   const g=s=>x.its.filter(o=>o.s===s);
+  /* Every question at this station, answered ones too, so an earlier answer can be changed here. */
+  const qs=stationSeq(p,i).seq.filter(c=>c.q).map(c=>c.q);
   $("#stage").innerHTML=`
-    ${x.qs.map(q=>`<div class="lq"><div class="row" style="justify-content:space-between"><span class="pill q">${I("q")}Question</span>${p.skipped[q.id]?`<span class="pill">Skipped</span>`:""}</div><b>${esc(q.label)}</b><div class="answers">${q.opts.map(o=>`<button type="button" data-ans="${q.id}" data-v="${o[0]}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
+    ${qs.map(q=>{ const a=p.answers[q.id]; return `<div class="lq ${a!==undefined?"ans":""}"><div class="row" style="justify-content:space-between"><span class="pill q">${I("q")}Question</span>${a!==undefined?`<span class="pill t">${I("check")}Answered</span>`:p.skipped[q.id]?`<span class="pill">Skipped</span>`:""}</div><b>${esc(q.label)}</b><div class="answers">${q.opts.map(o=>`<button type="button" data-ans="${q.id}" data-v="${o[0]}" data-sti="${i}" aria-pressed="${a===o[0]}">${esc(o[1])}</button>`).join("")}</div></div>`; }).join("")}
     ${g("open").length?`<div class="lsec"><h3>To do · ${g("open").length}</h3>${rows(g("open"))}</div>`:""}
     ${g("locked").length?`<div class="lsec"><h3>Locked · ${g("locked").length}</h3>${rows(g("locked"))}</div>`:""}
     ${(g("done").length+g("na").length)?`<div class="lsec"><h3>Cleared · ${g("done").length+g("na").length}</h3>${rows([...g("done"),...g("na")])}</div>`:""}
-    ${!x.total&&!x.qs.length?`<p class="muted">Nothing applies here for this project.</p>`:""}`;
+    ${!x.total&&!qs.length?`<p class="muted">Nothing applies here for this project.</p>`:""}`;
 }
 
 /* ---------- actions with undo ---------- */
-function answer(p,qid,v){
+function answer(p,qid,v,sti){
   const before=LIB.items.map(it=>itemState(p,it));
-  const prev={a:p.answers[qid],sk:p.skipped[qid]};
+  const prev={a:p.answers[qid],sk:p.skipped[qid],at:sti!==undefined?UI.at[sti]:undefined};
   p.answers[qid]=v; delete p.skipped[qid]; touch(p);
   const after=LIB.items.map(it=>itemState(p,it));
   let unl=0,gone=0; before.forEach((b,k)=>{ if(b==="locked"&&after[k]!=="locked"&&after[k]!=="hidden") unl++; if(b!=="hidden"&&after[k]==="hidden") gone++; });
-  const msg=unl&&gone?`${unl} card${unl>1?"s":""} unlocked · ${gone} not needed`:unl?`${unl} card${unl>1?"s":""} unlocked`:gone?`${gone} card${gone>1?"s":""} not needed`:"Answer saved";
-  toast(msg,()=>{ if(prev.a===undefined) delete p.answers[qid]; else p.answers[qid]=prev.a; if(prev.sk) p.skipped[qid]=true; touch(p); if($("#dlg").open) drawDlg(); render(); });
+  /* Stay on the question so its actions can be confirmed; move on when it needs none. */
+  if(sti!==undefined){ const c=stationSeq(p,sti).seq.find(c=>c.key==="q:"+qid); if(c&&c.st==="confirm") UI.at[sti]=c.key; else if(UI.at[sti]==="q:"+qid) delete UI.at[sti]; }
+  const msg=unl?`Answer saved · ${unl} action${unl>1?"s":""} now required${gone?` · ${gone} not needed`:""}`:gone?`Answer saved · ${gone} action${gone>1?"s":""} not needed`:"Answer saved";
+  toast(msg,()=>{ if(prev.a===undefined) delete p.answers[qid]; else p.answers[qid]=prev.a; if(prev.sk) p.skipped[qid]=true; if(sti!==undefined){ if(prev.at) UI.at[sti]=prev.at; else delete UI.at[sti]; } touch(p); if($("#dlg").open) drawDlg(); render(); });
 }
-function act(p,id,what){
+function stationNow(){ return VIEW.name==="station"?VIEW.arg:VIEW.name==="map"?UI.deckSt:null; }
+function act(p,id,what,sti,stay){
   const prev={s:p.status[id],t:p.doneAt[id]};
-  const wasCleared=VIEW.name==="station"&&info(p,VIEW.arg).cleared;
+  const si=stationNow();
+  const wasCleared=si!==null&&info(p,si).cleared;
   if(what==="done"){ p.status[id]="done"; p.doneAt[id]=Date.now(); }
   else if(what==="na"){ p.status[id]="na"; delete p.doneAt[id]; }
   else if(what==="undo"){ delete p.status[id]; delete p.doneAt[id]; }
-  else if(what==="later"){ UI.later.add(id); toast("Set aside for later",()=>{ UI.later.delete(id); render(); }); return render(); }
+  else if(what==="later"){ UI.later.add(id); if(sti!==undefined) delete UI.at[sti]; toast("Set aside for later",()=>{ UI.later.delete(id); render(); }); return render(); }
+  if(sti!==undefined){ if(stay) UI.at[sti]=stay; else delete UI.at[sti]; }
   touch(p);
-  const nowCleared=VIEW.name==="station"&&info(p,VIEW.arg).cleared;
+  const nowCleared=si!==null&&info(p,si).cleared;
   const undo=()=>{ if(prev.s) p.status[id]=prev.s; else delete p.status[id]; if(prev.t) p.doneAt[id]=prev.t; else delete p.doneAt[id]; touch(p); render(); };
-  toast(nowCleared&&!wasCleared?`${ST[VIEW.arg].s} cleared`:what==="done"?"Marked done":what==="na"?"Marked not applicable":"Reopened",undo);
+  toast(nowCleared&&!wasCleared?`${ST[si].s} cleared`:what==="done"?"Confirmed done":what==="na"?"Marked not applicable":"Reopened",undo);
+  render();
+}
+
+/* ---------- by frequency: what comes round daily, weekly, monthly, and what is done once ----------
+   Every action carries how often it comes round ("cad" in the library; "cadBy":
+   "judgement" where the procedure does not say and it was set by judgement). The
+   repeating ones are ticked off once per day, week (two weeks where the procedure
+   says bi-weekly) or month, in "ticks"; the rest are cleared once, as on the journey. */
+const CAD=LIB.cadences||[["once","One time",""]], CADN=Object.fromEntries(CAD.map(c=>[c[0],c]));
+const REP={daily:1,weekly:1,monthly:1};
+const PERIOD={daily:"Today",weekly:"This week",monthly:"This month"};
+function cadName(it){ return it.freq==="Bi-weekly"?"Every two weeks":(CADN[it.cad]||["","One time"])[1]; }
+const pad2=n=>String(n).padStart(2,"0");
+function isoWeek(d){ const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const wd=t.getUTCDay()||7; t.setUTCDate(t.getUTCDate()+4-wd); const y=t.getUTCFullYear(); return [y,Math.ceil(((t-Date.UTC(y,0,1))/864e5+1)/7)]; }
+function periodKey(it,d){
+  if(it.cad==="daily") return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  if(it.cad==="monthly") return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+  const [y,w]=isoWeek(d); return it.freq==="Bi-weekly"?`${y}-F${pad2(Math.ceil(w/2))}`:`${y}-W${pad2(w)}`;
+}
+function periodsBack(it,n){
+  const t=today(), out=[];
+  for(let k=n-1;k>=0;k--){ const d=new Date(t);
+    if(it.cad==="daily") d.setDate(t.getDate()-k);
+    else if(it.cad==="monthly"){ d.setDate(1); d.setMonth(t.getMonth()-k); }
+    else d.setDate(t.getDate()-7*k*(it.freq==="Bi-weekly"?2:1));
+    out.push({key:periodKey(it,d),d,now:k===0}); }
+  return out;
+}
+const tickKey=(it,d)=>`${it.id}|${periodKey(it,d||today())}`;
+const periodName=(it,pp)=>it.cad==="daily"?pp.d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"}):it.cad==="monthly"?pp.d.toLocaleDateString(undefined,{month:"long",year:"numeric"}):`Week of ${fmtD(pp.d)}`;
+function freqRows(p){ return LIB.items.map(it=>({it,s:itemState(p,it)})).filter(r=>r.s!=="hidden"); }
+/* For a repeating action "done" means ticked this period; N/A ones and locked ones don't count. */
+function freqCount(p,cad,rows){
+  const live=rows.filter(r=>r.s!=="locked"&&!(REP[cad]&&r.s==="na"));
+  const done=REP[cad]?live.filter(r=>p.ticks[tickKey(r.it)]).length:live.filter(r=>r.s==="done"||r.s==="na").length;
+  return {done,total:live.length,locked:rows.filter(r=>r.s==="locked").length};
+}
+function viewFreq(p){
+  const rows=freqRows(p); const by={}; CAD.forEach(c=>by[c[0]]=[]); rows.forEach(r=>(by[r.it.cad]||(by[r.it.cad]=[])).push(r));
+  const q=UI.fq.trim().toLowerCase();
+  const match=r=>!q||[r.it.t,r.it.ref,r.it.who,ST[SI[r.it.ph]].s].join(" ").toLowerCase().includes(q);
+  const show=(cad,r)=>{ if(!match(r)) return false; if(UI.fshow==="all") return true;
+    if(r.s==="locked") return true;
+    return REP[cad]?(r.s!=="na"&&!p.ticks[tickKey(r.it)]):r.s==="open"; };
+  const cads=UI.fcad==="all"?CAD.map(c=>c[0]):[UI.fcad];
+  const tile=(key,name,sub,c,rep)=>`<button type="button" class="ftile ${rep?"rep":""}" data-fcad="${key}" aria-pressed="${UI.fcad===key}"><span class="k">${esc(name)}</span><span class="v">${c.done}<small> / ${c.total}</small></span><span class="bar"><i style="width:${c.total?c.done/c.total*100:0}%"></i></span><span class="s">${esc(sub)}</span></button>`;
+  const allC=CAD.reduce((a,c)=>{ const k=freqCount(p,c[0],by[c[0]]); return {done:a.done+k.done,total:a.total+k.total}; },{done:0,total:0});
+  const judged=rows.filter(r=>r.it.cadBy).length;
+  const groups=cads.map(cad=>{
+    const list=by[cad].filter(r=>show(cad,r)); const c=freqCount(p,cad,by[cad]); const meta=CADN[cad]||[cad,cad,""];
+    if(!by[cad].length) return "";
+    return `<section class="panel fgroup"><div class="gh"><h2>${esc(meta[1])}</h2><span>${esc(meta[2])} · ${REP[cad]?`${c.done} of ${c.total} ticked ${esc(PERIOD[cad].toLowerCase())}`:`${c.done} of ${c.total} cleared`}${c.locked?` · ${c.locked} waiting on answers`:""}</span></div>
+      ${list.length?list.map(r=>fRow(p,r)).join(""):`<p class="empty" style="padding:12px 0">${UI.fshow==="todo"?(REP[cad]?`All ticked ${esc(PERIOD[cad].toLowerCase())}.`:"Nothing left to do."):"Nothing here."}</p>`}</section>`;
+  }).join("");
+  app.innerHTML=`
+  <div class="fhead"><div><span class="eyebrow">${esc(p.answers.num||"")}</span><h1>Procedures by frequency</h1>
+    <p class="muted" style="margin:4px 0 0;max-width:80ch;font-size:14px">Every action that applies to this project, by how often it comes round. Tick the daily ones each day and the weekly ones each week; one-time actions are cleared once, the same as on the journey.</p></div></div>
+  <div class="ftiles" role="group" aria-label="Filter by frequency">
+    ${tile("all","All","Every frequency",allC,false)}
+    ${CAD.map(c=>tile(c[0],c[1],REP[c[0]]?`ticked ${PERIOD[c[0]].toLowerCase()}`:"cleared",freqCount(p,c[0],by[c[0]]),!!REP[c[0]])).join("")}
+  </div>
+  <div class="ftools"><input type="search" id="fq" placeholder="Search actions, procedures, who…" value="${esc(UI.fq)}" aria-label="Search">
+    <div class="seg" role="group" aria-label="Show"><button type="button" data-fshow="todo" aria-pressed="${UI.fshow==="todo"}">Still to do</button><button type="button" data-fshow="all" aria-pressed="${UI.fshow==="all"}">Everything</button></div></div>
+  ${groups}
+  ${judged?`<p class="muted" style="font-size:12.5px;max-width:80ch">${judged} actions don't say in the procedure how often they come round; their frequency was set by judgement and is marked <span class="judg" style="color:var(--lock)">≈ by judgement</span>.</p>`:""}`;
+  const f=$("#fq"); f.oninput=()=>{ UI.fq=f.value; const pos=f.selectionStart; render(); const g=$("#fq"); g.focus(); try{ g.setSelectionRange(pos,pos); }catch(e){} };
+}
+function fRow(p,r){
+  const it=r.it, s=r.s, rep=REP[it.cad];
+  const meta=[ST[SI[it.ph]].s,it.ref,it.who].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join("")
+    +(it.freq&&it.freq!==cadName(it)?`<span>${esc(it.freq)}</span>`:it.freq==="Bi-weekly"?`<span>Every two weeks</span>`:"")
+    +(it.cadBy?`<span class="judg" title="The procedure doesn't say how often; this frequency was set by judgement.">≈ by judgement</span>`:"");
+  const title=`<div class="t" data-st="${SI[it.ph]}" title="Open its station">${esc(it.t)}</div>`;
+  if(s==="locked"){ const need=unknownKeys(it.when,p.answers).map(qname).join(", ");
+    return `<div class="frow lk"><span class="lkic" style="color:var(--lock)">${I("lock")}</span><div>${title}<div class="sm">${meta}<span style="color:var(--lock)">Waiting on: ${esc(need)}</span></div></div><div class="right"><button class="btn sm" type="button" data-a="bag">Answer</button></div></div>`; }
+  if(rep&&s!=="na"){ const on=!!p.ticks[tickKey(it)]; const hist=periodsBack(it,it.cad==="daily"?7:6);
+    return `<div class="frow ${on?"ticked":""}"><input type="checkbox" class="ck" data-tick="${it.id}" ${on?"checked":""} aria-label="${esc(PERIOD[it.cad])}: ${esc(it.t)}" title="Done ${esc(PERIOD[it.cad].toLowerCase())}">
+      <div>${title}<div class="sm">${meta}</div></div>
+      <div class="right"><span class="hlab">${esc(PERIOD[it.cad])}${on?" ✓":""}</span><span class="hist">${hist.map(pp=>`<button type="button" class="hd ${p.ticks[it.id+"|"+pp.key]?"on":""} ${pp.now?"now":""}" data-tickp="${it.id}|${pp.key}" title="${esc(periodName(it,pp))}${p.ticks[it.id+"|"+pp.key]?": done":""}" aria-label="${esc(periodName(it,pp))}"></button>`).join("")}</span></div></div>`; }
+  return `<div class="frow ${s}"><input type="checkbox" class="ck" data-ck="${it.id}" ${s==="done"?"checked":""} ${s==="na"?"disabled":""} aria-label="Done: ${esc(it.t)}">
+    <div>${title}<div class="sm">${meta}${s==="done"&&p.doneAt[it.id]?`<span>Done ${fmtD(p.doneAt[it.id])}</span>`:""}${p.due[it.id]&&s==="open"?dueTag(p,it.id):""}</div></div>
+    <div class="right"><button class="btn sm" type="button" data-do="${s==="na"?"undo":"na"}" data-id="${it.id}">${s==="na"?"Undo N/A":"N/A"}</button></div></div>`;
+}
+function tick(p,key){
+  const on=!!p.ticks[key]; if(on) delete p.ticks[key]; else p.ticks[key]=Date.now(); touch(p);
+  toast(on?"Tick removed":"Ticked off",()=>{ if(on) p.ticks[key]=Date.now(); else delete p.ticks[key]; touch(p); render(); });
   render();
 }
 
@@ -725,38 +1047,53 @@ function confirmBox(msg,yes){ return new Promise(res=>{ const d=$("#dlg"); d.inn
 
 /* ---------- events ---------- */
 app.addEventListener("click",async e=>{
-  const t=e.target.closest("button,[data-more]"); if(!t) return; const p=cur(); const d=t.dataset;
-  if(d.a==="new"){ const id=uid(); DB.projects[id]={id,created:Date.now(),updated:Date.now(),answers:{},status:{},notes:{},due:{},skipped:{},doneAt:{},visited:{}}; DB.current=id; save(); return go("start"); }
+  const t=e.target.closest("button,[data-more],[data-st]"); if(!t) return; const p=cur(); const d=t.dataset;
+  if(d.a==="new"){ const id=uid(); DB.projects[id]={id,created:Date.now(),updated:Date.now(),answers:{},status:{},notes:{},due:{},skipped:{},doneAt:{},visited:{},ticks:{}}; DB.current=id; save(); return go("start"); }
   if(d.a==="import") return $("#importFile").click();
   if(d.a==="expall") return download(`pm-journeys-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({app:"pm-procedure-checklist",exported:new Date().toISOString(),projects:DB.projects},null,2),"application/json");
   if(d.open){ DB.current=d.open; save(); UI.later.clear(); return go(DB.projects[d.open].answers.num?"map":"start"); }
-  if(d.dup){ const s=DB.projects[d.dup]; const id=uid(); const a={...s.answers}; delete a.num; a.title=(a.title||"")+" (copy)"; DB.projects[id]={id,created:Date.now(),updated:Date.now(),answers:a,status:{},notes:{},due:{},skipped:{},doneAt:{},visited:{}}; DB.current=id; save(); return go("start"); }
+  if(d.dup){ const s=DB.projects[d.dup]; const id=uid(); const a={...s.answers}; delete a.num; a.title=(a.title||"")+" (copy)"; DB.projects[id]={id,created:Date.now(),updated:Date.now(),answers:a,status:{},notes:{},due:{},skipped:{},doneAt:{},visited:{},ticks:{}}; DB.current=id; save(); return go("start"); }
   if(d.del){ const s=DB.projects[d.del]; if(await confirmBox(`Delete ${s.answers.num||"this project"} with all its progress and notes? This can't be undone unless you have a backup.`,"Delete project")){ delete DB.projects[d.del]; if(DB.current===d.del) DB.current=null; save(); go("home"); } return; }
+  const sti=d.sti!==undefined?+d.sti:undefined;
   if(d.a==="map") return go("map");
   if(d.a==="bag") return openDlg("wait");
-  if(d.a==="replay"){ UI.later.clear(); return drawStage(p,VIEW.arg); }
+  if(d.a==="replay"){ UI.later.clear(); if(sti!==undefined) delete UI.at[sti]; return render(); }
+  if(d.pick!==undefined){ UI.deckSt=+d.pick; UI.later.clear(); if(VIEW.name!=="map") return go("map"); render(); const dk=$(".deckcol"); if(dk&&window.innerWidth<920) dk.scrollIntoView({block:"start",behavior:"smooth"}); return; }
   if(d.st!==undefined){ UI.later.clear(); return go("station",+d.st); }
   if(d.mode){ UI.mode=d.mode; saveUI(); return render(); }
-  if(d.more){ UI.open.has(d.more)?UI.open.delete(d.more):UI.open.add(d.more); return drawStage(p,VIEW.arg); }
-  if(d.ans){ answer(p,d.ans,d.v); return render(); }
-  if(d.skip){ p.skipped[d.skip]=true; touch(p); toast("Moved to questions waiting",()=>{ delete p.skipped[d.skip]; touch(p); render(); }); return render(); }
-  if(d.do) return act(p,d.id,d.do);
+  if(d.nav&&!t.disabled){ navTo(sti,d.nav==="prev"?-1:1); return render(); }
+  if(d.goto){ UI.at[sti]=d.goto; return render(); }
+  if(d.cont!==undefined){ const i=+d.cont; const c=stationSeq(p,i).seq[curIdx(stationSeq(p,i).seq,i)];
+    if(c&&c.q&&c.group) c.group.forEach(o=>{ if(o.s==="open") UI.later.add(o.it.id); });
+    delete UI.at[i]; return render(); }
+  if(d.more){ UI.open.has(d.more)?UI.open.delete(d.more):UI.open.add(d.more); return render(); }
+  if(d.ans){ answer(p,d.ans,d.v,sti); return render(); }
+  if(d.skip){ const i=QST[d.skip]; p.skipped[d.skip]=true; delete UI.at[i]; touch(p); toast("Moved to questions waiting",()=>{ delete p.skipped[d.skip]; touch(p); render(); }); return render(); }
+  if(d.do) return act(p,d.id,d.do,sti,d.stay);
+  if(d.fcad){ UI.fcad=d.fcad; saveUI(); return render(); }
+  if(d.fshow){ UI.fshow=d.fshow; saveUI(); return render(); }
+  if(d.tickp) return tick(p,d.tickp);
 });
 app.addEventListener("change",e=>{ const p=cur(); const d=e.target.dataset;
   if(d.ck) return act(p,d.ck,e.target.checked?"done":"undo");
+  if(d.tick) return tick(p,tickKey(LIB.items.find(it=>it.id===d.tick)));
   if(d.due){ if(e.target.value) p.due[d.due]=e.target.value; else delete p.due[d.due]; touch(p); }
 });
 app.addEventListener("input",e=>{ const id=e.target.dataset.note; if(!id) return; const p=cur(); const v=e.target.value; if(v.trim()) p.notes[id]=v; else delete p.notes[id]; touch(p); });
 document.addEventListener("keydown",e=>{
-  if(VIEW.name!=="station"||UI.mode!=="cards"||$("#dlg").open) return;
+  const host=VIEW.name==="station"&&UI.mode==="cards"?$("#stage"):VIEW.name==="map"?$("#deck"):null;
+  if(!host||$("#dlg").open) return;
   if(e.target.closest&&e.target.closest("input,textarea,select")||e.ctrlKey||e.metaKey||e.altKey) return;
-  const card=$("#stage .card"); if(!card) return; const k=e.key.toLowerCase();
-  if(card.classList.contains("q")){ if(/^[1-9]$/.test(k)){ const b=card.querySelectorAll("[data-ans]")[+k-1]; if(b){ e.preventDefault(); b.click(); } } else if(k==="s"){ e.preventDefault(); card.querySelector("[data-skip]")?.click(); } }
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){ const b=host.querySelector(`[data-nav="${e.key==="ArrowLeft"?"prev":"next"}"]`); if(b&&!b.disabled){ e.preventDefault(); b.click(); } return; }
+  const card=host.querySelector(".card"); if(!card) return; const k=e.key.toLowerCase();
+  if(card.classList.contains("q")){ if(/^[1-9]$/.test(k)){ const b=card.querySelectorAll("[data-ans]")[+k-1]; if(b){ e.preventDefault(); b.click(); } } else if(k==="s"){ e.preventDefault(); card.querySelector("[data-skip]")?.click(); } else if(k==="enter"&&!e.target.closest("button")){ const b=card.querySelector("[data-cont]"); if(b){ e.preventDefault(); b.click(); } } }
   else { const m={d:"done",n:"na",l:"later"}[k]; if(m){ e.preventDefault(); card.querySelector(`[data-do="${m}"]`)?.click(); } else if(k==="i"){ e.preventDefault(); card.querySelector("[data-more]")?.click(); } }
 });
 $("#homeBtn").onclick=()=>go(SRV?"map":"home");
 if(SRV){ $("#homeBtn").title="Back to the map"; $("#homeBtn").lastChild.textContent="Journey map"; document.querySelectorAll('#menu [data-m="home"]').forEach(b=>{ b.hidden=true; const hr=b.previousElementSibling; if(hr&&hr.tagName==="HR") hr.hidden=true; }); }
 $("#bagBtn").onclick=()=>openDlg("wait");
+$("#vtabs").addEventListener("click",e=>{ const b=e.target.closest("[data-view]"); if(!b) return; UI.later.clear(); go(b.dataset.view); try{ history.replaceState(null,"",b.dataset.view==="freq"?"#freq":location.pathname+location.search); }catch(err){} });
+window.addEventListener("hashchange",()=>{ if(cur()&&VIEW.name!=="home"&&VIEW.name!=="start") go(location.hash==="#freq"?"freq":"map"); });
 document.addEventListener("click",e=>{ const m=$("#menu"); if(m.open&&!m.contains(e.target)) m.open=false; });
 $("#menu").addEventListener("click",e=>{ const b=e.target.closest("[data-m]"); if(!b) return; const m=b.dataset.m; const p=cur(); $("#menu").open=false;
   if(m==="answers") openDlg("all");
@@ -768,7 +1105,7 @@ $("#menu").addEventListener("click",e=>{ const b=e.target.closest("[data-m]"); i
 });
 function exportCsv(p){
   const R=[["Station","Action","Detail","Who","Record / form","Procedure","Frequency","Topic","Applies because / waiting on","Status","Completed","Target date","Note"]];
-  summary(p).rows.forEach(({it,s})=>R.push([ST[SI[it.ph]].s,it.t,it.d||"",it.who||"",it.rec||"",it.ref||"",it.freq||"",it.topic||"",s==="locked"?"Waiting on: "+unknownKeys(it.when,p.answers).map(qname).join(", "):whyText(it.when,p.answers),({done:"Done",na:"N/A",locked:"Locked",open:"Open"})[s],p.doneAt[it.id]?new Date(p.doneAt[it.id]).toISOString().slice(0,10):"",p.due[it.id]||"",p.notes[it.id]||""]));
+  summary(p).rows.forEach(({it,s})=>R.push([ST[SI[it.ph]].s,it.t,it.d||"",it.who||"",it.rec||"",it.ref||"",cadName(it)+(it.cadBy?" (by judgement)":""),it.topic||"",s==="locked"?"Waiting on: "+unknownKeys(it.when,p.answers).map(qname).join(", "):whyText(it.when,p.answers),({done:"Done",na:"N/A",locked:"Locked",open:"Open"})[s],p.doneAt[it.id]?new Date(p.doneAt[it.id]).toISOString().slice(0,10):"",p.due[it.id]||"",p.notes[it.id]||""]));
   download(`${fname(p)}-checklist.csv`,"﻿"+R.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n"),"text/csv;charset=utf-8");
 }
 function report(p){
@@ -793,6 +1130,7 @@ $("#importFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f
   r.readAsText(f); });
 
 VIEW = SRV ? {name:"map"} : DB.current&&DB.projects[DB.current]&&DB.projects[DB.current].answers.num ? {name:"map"} : {name:"home"};
+if(VIEW.name==="map"&&location.hash==="#freq") VIEW={name:"freq"};
 render();
 })();
 </script>

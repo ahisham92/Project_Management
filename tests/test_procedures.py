@@ -103,3 +103,33 @@ def test_the_journey_shows_the_project_number_and_name_as_they_are_now(signed_in
     state = signed_in.get("/projects/1/procedures/state").get_json()
     assert state["answers"]["num"] == "L26100-B" and state["answers"]["title"] == "Renamed"
     assert state["status"][lib["items"][0]["id"]] == "done"
+
+
+def test_every_action_has_a_frequency():
+    lib = procedures.library()
+    names = {c[0] for c in lib["cadences"]}
+    assert {"daily", "weekly", "once"} <= names
+    assert all(it["cad"] in names for it in lib["items"])
+    # Where the procedure states a frequency, it is kept, not guessed.
+    weekly = next(it for it in lib["items"] if it.get("freq") == "Weekly")
+    assert weekly["cad"] == "weekly" and "cadBy" not in weekly
+
+
+def test_repeating_actions_are_ticked_per_period(signed_in):
+    lib = procedures.library()
+    daily = next(it for it in lib["items"] if it["cad"] == "daily")
+    once = next(it for it in lib["items"] if it["cad"] == "once")
+    r = signed_in.post("/projects/1/procedures/save",
+                       json={"patch": {"ticks": {f"{daily['id']}|2026-11-25": 1}}})
+    assert r.status_code == 200
+    state = signed_in.get("/projects/1/procedures/state").get_json()
+    assert state["ticks"] == {f"{daily['id']}|2026-11-25": 1}
+    # A one-time action has nothing to tick, and a period must look like one.
+    for key in (f"{once['id']}|2026-11-25", f"{daily['id']}|yesterday", "nope|2026-11-25"):
+        r = signed_in.post("/projects/1/procedures/save", json={"patch": {"ticks": {key: 1}}})
+        assert r.status_code == 400, key
+
+
+def test_frequency_view_link(signed_in):
+    page = signed_in.get("/projects/1/procedures?view=freq")
+    assert page.status_code == 200 and b"/procedures/app#freq" in page.data

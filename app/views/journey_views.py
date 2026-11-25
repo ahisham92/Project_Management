@@ -22,8 +22,9 @@ def _can_report(role: str) -> bool:
 @login_required
 def procedures_page(project_id: int):
     project, role = load_project(project_id)
+    view = "freq" if request.args.get("view") == "freq" else "journey"
     return render_template("procedures.html", project=project, role=role,
-                           library=procedures.library())
+                           library=procedures.library(), view=view)
 
 
 @bp.get("/procedures/app")

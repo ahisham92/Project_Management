@@ -16,13 +16,15 @@ import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import numpy as np
+
 from flask import (
     Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, session,
     url_for,
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_piles, marine_plan, marine_risk, marine_sim,
+    marine, marine_facility, marine_feed, marine_ifc, marine_inputs, marine_life, marine_ops, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
     marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
@@ -55,6 +57,9 @@ CHANGES = {
     "delete_sensor": "Removed a sensor", "calibrate_sensor": "Calibrated a sensor",
     "import_piles": "Imported the as-built piles", "pile_tolerance": "Set the pile position tolerance",
     "demo_piles": "Filled in a made-up pile record", "clear_piles": "Cleared the as-built piles",
+    "import_survey": "Brought in a seabed survey", "delete_survey": "Removed a seabed survey",
+    "survey_design": "Set the pocket's design level", "demo_surveys": "Made up two seabed surveys",
+    "use_silt_rate": "Ran the Lifecycle on the measured siltation",
     "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
 
@@ -1778,3 +1783,214 @@ def piles_csv(asset_id: int):
                     b["level"] or "", b["toe"] or "", b["installed"] or "", b["note"]])
     return Response(out.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="piles-as-built-{asset_id}.csv"'})
+
+
+# --- seabed surveys ---------------------------------------------------------------------------
+
+SURVEY_LIMIT = 120 * 1024 * 1024
+
+
+def surveys_dir() -> Path:
+    return data_dir() / "marinetwin" / "surveys"
+
+
+def _surveys(asset_id: int) -> list:
+    return query("SELECT * FROM marine_surveys WHERE asset_id = ? ORDER BY surveyed, id", (asset_id,))
+
+
+def _survey_or_404(asset_id: int, survey_id: int):
+    row = query_one("SELECT * FROM marine_surveys WHERE id = ? AND asset_id = ?", (survey_id, asset_id))
+    if row is None:
+        abort(404)
+    return row
+
+
+def _pocket_level(asset) -> float:
+    return marine_surveys.design_level(asset, marine_berths.berths(get_db(), asset))
+
+
+def _survey_years(a, b) -> float:
+    return max((date.fromisoformat(b["surveyed"]) - date.fromisoformat(a["surveyed"])).days / 365.25, 0.0)
+
+
+@bp.get("/assets/<int:asset_id>/seabed")
+@login_required
+def seabed(asset_id: int):
+    """The seabed in front of the quay, survey by survey: shoals above the design level, and what changed."""
+    asset = _asset_or_404(asset_id)
+    rows = _surveys(asset_id)
+    design = _pocket_level(asset)
+    folder = surveys_dir()
+    kept = []
+    for r in rows:
+        g = marine_surveys.load(folder, r)
+        kept.append({"row": r, "s": marine_surveys.summary(g, design) if g else None})
+    latest = kept[-1] if kept else None
+    change = None
+    if len(rows) > 1:
+        a_id = request.args.get("a", type=int)
+        b_id = request.args.get("b", type=int)
+        b = next((r for r in rows if r["id"] == b_id), rows[-1])
+        a = next((r for r in rows if r["id"] == a_id and r["id"] != b["id"]), None) or next(r for r in reversed(rows) if r["id"] != b["id"])
+        ga, gb = marine_surveys.load(folder, a), marine_surveys.load(folder, b)
+        if ga and gb:
+            older, newer = (a, b) if a["surveyed"] <= b["surveyed"] else (b, a)
+            years = _survey_years(older, newer)
+            c = marine_surveys.compare(*(((ga, gb) if older is a else (gb, ga))), years)
+            c.pop("change", None)
+            change = {"a": older, "b": newer, **c}
+    given = marine_inputs.active(get_db(), asset_id)
+    typical = marine_life.DREDGE["silt_rate"][0]
+    return render_template("marine/seabed.html", asset=asset, kept=kept, latest=latest, design=design, change=change,
+                           frames=marine_surveys.FRAMES, zs=marine_surveys.ZS, datums=marine_surveys.DATUMS,
+                           silt_now=given.get("silt_rate"), typical_silt=typical, today=date.today().isoformat(), **_context())
+
+
+@bp.post("/assets/<int:asset_id>/seabed")
+@login_required
+def import_survey(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    upload = request.files.get("file")
+    back = redirect(url_for("marine.seabed", asset_id=asset_id, _anchor="bring"))
+    if upload is None or not upload.filename:
+        flash("Pick the survey's XYZ file.", "error")
+        return back
+    data = upload.read(SURVEY_LIMIT + 1)
+    if len(data) > SURVEY_LIMIT:
+        flash("That file is over 120 MB. Export the survey gridded at 1 m or coarser and try again.", "error")
+        return back
+    cell = min(max(_number("cell", marine_surveys.CELL_M), 0.5), 25.0)
+    try:
+        pts = marine_surveys.read_xyz(data)
+        if len(pts) < 10:
+            raise ValueError("Fewer than 10 soundings could be read: is it x, y, z, a point per line?")
+        model_pts, frame = marine_surveys.to_model(pts, _choice("frame", marine_surveys.FRAMES, "auto"), asset,
+                                                   (_model_found(asset_id) or {}).get("site"), cell)
+        model_pts[:, 2] = marine_surveys.to_levels(model_pts[:, 2], _choice("z", marine_surveys.ZS, "auto"),
+                                                   _choice("datum", marine_surveys.DATUMS, "cd"), asset["msl_cd"])
+        g = marine_surveys.grid(model_pts, cell)
+    except ValueError as err:
+        flash(str(err), "error")
+        return back
+    name = (request.form.get("name") or "").strip()[:80] or Path(upload.filename).stem[:80]
+    surveyed = _day_field("surveyed", date.today().isoformat())
+    marine_surveys.save(get_db(), surveys_dir(), asset_id, name, surveyed, g, len(pts), upload.filename[:120], frame, g_user_id())
+    get_db().commit()
+    s = marine_surveys.summary(g, _pocket_level(asset))
+    flash(f"{name}: {len(pts):,} soundings over {s['area']:,.0f} m², shallowest {s['shallowest']:+.2f} mCD; "
+          f"{s['shoal_m3']:,.0f} m³ stands above the design level.", "success")
+    return redirect(url_for("marine.seabed", asset_id=asset_id))
+
+
+def g_user_id():
+    return g.user["id"] if g.get("user") else None
+
+
+@bp.post("/assets/<int:asset_id>/seabed/<int:survey_id>/delete")
+@login_required
+def delete_survey(asset_id: int, survey_id: int):
+    _asset_or_404(asset_id)
+    row = _survey_or_404(asset_id, survey_id)
+    (surveys_dir() / row["file"]).unlink(missing_ok=True)
+    get_db().execute("DELETE FROM marine_surveys WHERE id = ?", (survey_id,))
+    get_db().commit()
+    flash(f"{row['name']} removed.", "success")
+    return redirect(url_for("marine.seabed", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/seabed/design")
+@login_required
+def survey_design(asset_id: int):
+    _asset_or_404(asset_id)
+    level = _number("level")
+    if level is not None and level > 0:
+        level = -level                                # a depth typed for a level
+    if level is not None and not -40 <= level <= 0:
+        flash("Give the design level in metres above chart datum, -40 to 0 (a depth of 16 m is -16).", "error")
+        return redirect(url_for("marine.seabed", asset_id=asset_id))
+    get_db().execute("UPDATE marine_assets SET dredge_level = ? WHERE id = ?", (level, asset_id))
+    get_db().commit()
+    flash(f"The pocket is checked against {level:+.2f} mCD." if level is not None else "The pocket is checked against the berths' depths.", "success")
+    return redirect(url_for("marine.seabed", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/seabed/demo")
+@login_required
+def demo_surveys(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    elements = [dict(e) for e in query("SELECT * FROM marine_elements WHERE asset_id = ?", (asset_id,))]
+    for when, pts in marine_surveys.demo_pair(elements, _pocket_level(asset)):
+        pts[:, 2] = marine_surveys.to_levels(pts[:, 2], "auto", "cd", asset["msl_cd"])
+        g_ = marine_surveys.grid(pts, marine_surveys.CELL_M)
+        marine_surveys.save(get_db(), surveys_dir(), asset_id, f"Made-up survey {when[:4]}", when, g_, len(pts), "made up", "model", g_user_id())
+    get_db().commit()
+    flash("Two made-up surveys a year apart, to see how the page reads. Bring in your own to replace them.", "success")
+    return redirect(url_for("marine.seabed", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/seabed/rate")
+@login_required
+def use_silt_rate(asset_id: int):
+    _asset_or_404(asset_id)
+    rate = _number("rate")
+    if rate is None or not 0 < rate <= 5:
+        flash("No siltation rate to use: it needs two surveys with silt between them.", "error")
+        return redirect(url_for("marine.seabed", asset_id=asset_id))
+    values = dict(marine_inputs.active(get_db(), asset_id))
+    values["silt_rate"] = f"{rate:.3f}"
+    existing = query_one("SELECT id FROM marine_inputs WHERE asset_id = ? AND name = 'Measured siltation'", (asset_id,))
+    marine_inputs.save(get_db(), asset_id, "Measured siltation", values, existing["id"] if existing else None, g_user_id(), use=True)
+    get_db().commit()
+    flash(f"The pages now run on the measured siltation, {rate:.2f} m a year (the input set 'Measured siltation').", "success")
+    return redirect(url_for("marine.lifecycle", asset_id=asset_id))
+
+
+@bp.get("/assets/<int:asset_id>/seabed/<int:survey_id>.png")
+@login_required
+def survey_png(asset_id: int, survey_id: int):
+    asset = _asset_or_404(asset_id)
+    row = _survey_or_404(asset_id, survey_id)
+    g_ = marine_surveys.load(surveys_dir(), row)
+    if g_ is None:
+        abort(404)
+    points = [(e["x"], e["y"]) for e in query("SELECT x, y FROM marine_elements WHERE asset_id = ?", (asset_id,))]
+    g_ = marine_surveys.framed(g_, points)
+    marks = marine_surveys.marks_for(points, g_)
+    return Response(marine_surveys.picture(g_["levels"], "levels", _pocket_level(asset), marks), mimetype="image/png",
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@bp.get("/assets/<int:asset_id>/seabed/change.png")
+@login_required
+def survey_change_png(asset_id: int):
+    _asset_or_404(asset_id)
+    a = _survey_or_404(asset_id, request.args.get("a", type=int) or 0)
+    b = _survey_or_404(asset_id, request.args.get("b", type=int) or 0)
+    if a["surveyed"] > b["surveyed"]:
+        a, b = b, a
+    ga, gb = marine_surveys.load(surveys_dir(), a), marine_surveys.load(surveys_dir(), b)
+    if not ga or not gb:
+        abort(404)
+    c = marine_surveys.compare(ga, gb, _survey_years(a, b))
+    if "change" not in c:
+        abort(404)
+    return Response(marine_surveys.picture(c["change"], "change"), mimetype="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+
+@bp.get("/assets/<int:asset_id>/seabed/<int:survey_id>.csv")
+@login_required
+def survey_csv(asset_id: int, survey_id: int):
+    asset = _asset_or_404(asset_id)
+    row = _survey_or_404(asset_id, survey_id)
+    g_ = marine_surveys.load(surveys_dir(), row)
+    if g_ is None:
+        abort(404)
+    design = _pocket_level(asset)
+    out = io.StringIO()
+    out.write("x,y,level_mcd,above_design_m\n")
+    lv = g_["levels"]
+    for j, i in zip(*np.nonzero(np.isfinite(lv))):
+        v = float(lv[j, i])
+        out.write(f"{g_['x0'] + (i + 0.5) * g_['cell']:.2f},{g_['y0'] + (j + 0.5) * g_['cell']:.2f},{v:.3f},{max(0.0, v - design):.3f}\n")
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="seabed-{asset_id}-{row["surveyed"]}.csv"'})

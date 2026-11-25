@@ -12,6 +12,7 @@ import io
 import math
 from datetime import date
 
+import numpy as np
 import pytest
 
 from app import marine, marine_life, marine_triton
@@ -1560,3 +1561,58 @@ def test_the_pile_tracker_turns_grid_positions_into_the_model_frame():
     north = 700000 + x * math.sin(theta) + y * math.cos(theta)
     back = marine_piles.to_model(asset, site, {"e": east, "n": north})
     assert abs(back[0] - x) < 1e-6 and abs(back[1] - y) < 1e-6
+
+
+# --- the site record: seabed surveys -------------------------------------------------------
+
+def test_seabed_surveys_show_shoals_the_change_and_the_siltation_rate(app, signed_in, demo):
+    from app import marine_inputs, marine_surveys
+    page = text(signed_in.get(demo + "/seabed"))
+    assert "Seabed surveys" in page and "No surveys yet" in page
+    signed_in.post(demo + "/seabed/demo")
+    page = text(signed_in.get(demo + "/seabed"))
+    assert "What changed" in page and "Run the Lifecycle on" in page and "Silt in" in page
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        rows = conn.execute("SELECT * FROM marine_surveys WHERE asset_id = 1 ORDER BY surveyed").fetchall()
+        from app.views.marine_views import surveys_dir
+        a, b = (marine_surveys.load(surveys_dir(), r) for r in rows)
+    c = marine_surveys.compare(a, b, 1.0)
+    # Made up: 0.12 m a year everywhere, more near the wall, and a shoal off one stretch.
+    assert 0.15 < c["rate"] < 0.5 and c["in_m3"] > 1000 and c["common"] > 500
+    level = float(np.nanmax(a["levels"])) - 0.1          # just under the year-old survey's shallowest
+    assert marine_surveys.summary(b, level)["shoal_m3"] > marine_surveys.summary(a, level)["shoal_m3"]
+    png = signed_in.get(demo + f"/seabed/{rows[1]['id']}.png")
+    assert png.status_code == 200 and png.data[:4] == b"\x89PNG"
+    assert signed_in.get(demo + f"/seabed/change.png?a={rows[0]['id']}&b={rows[1]['id']}").data[:4] == b"\x89PNG"
+    assert "level_mcd" in signed_in.get(demo + f"/seabed/{rows[1]['id']}.csv").get_data(as_text=True)
+    # The measured rate becomes the input set the pages run on.
+    signed_in.post(demo + "/seabed/rate", data={"rate": "0.42"})
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        assert marine_inputs.active(conn, 1)["silt_rate"] == "0.420"
+        assert marine_inputs.active_name(conn, 1) == "Measured siltation"
+
+
+def test_a_survey_file_is_read_in_any_frame_and_as_depths_or_levels(app, signed_in, demo):
+    from app import marine_surveys
+    # Depths, positive down, in the model's frame, space separated with a header.
+    lines = ["X Y DEPTH"] + [f"{x} {y} 15.5" for x in range(0, 40) for y in range(5, 30)]
+    answer = signed_in.post(demo + "/seabed", data={"file": (io.BytesIO("\n".join(lines).encode()), "pocket.xyz"),
+                                                     "surveyed": "2026-03-01", "frame": "model", "z": "auto", "datum": "cd", "cell": "2.5"},
+                            content_type="multipart/form-data")
+    assert answer.status_code == 302
+    page = text(signed_in.get(demo + "/seabed"))
+    assert "pocket" in page and "-15.50" in page
+    # Latitude and longitude land where the model's x and y would.
+    with app.app_context():
+        asset = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_assets WHERE id = 1").fetchone()
+    lat, lon = marine.geolocate(asset, 30.0, 12.0)
+    pts = marine_surveys.read_xyz(f"lat,lon,z\n{lat},{lon},-14\n".encode() * 12)
+    model, frame = marine_surveys.to_model(pts, "auto", asset, None, 2.5)
+    assert frame == "latlon" and abs(model[0, 0] - 30) < 0.01 and abs(model[0, 1] - 12) < 0.01
+    # On a map grid the model does not name: a clear refusal, not a survey in the wrong place.
+    with pytest.raises(ValueError, match="map grid"):
+        marine_surveys.to_model(np.array([[500000.0, 700000.0, 10.0]] * 12), "auto", asset, None, 2.5)
+    # Levels on mean sea level move onto chart datum.
+    assert marine_surveys.to_levels(np.array([-15.0]), "level", "msl", 0.9)[0] == pytest.approx(-14.1)

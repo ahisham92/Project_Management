@@ -24,7 +24,7 @@ from flask import (
 )
 
 from .. import (
-    marine, marine_facility, marine_feed, marine_ifc, marine_images, marine_inputs, marine_life, marine_ops, marine_photos, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
+    marine, marine_baseline, marine_facility, marine_feed, marine_ifc, marine_images, marine_inputs, marine_life, marine_ops, marine_photos, marine_piles, marine_plan, marine_surveys, marine_risk, marine_sim,
     marine_triton, marine_value, marine_versions, marine_berths,
 )
 from ..auth import login_required
@@ -61,6 +61,7 @@ CHANGES = {
     "survey_design": "Set the pocket's design level", "demo_surveys": "Made up two seabed surveys",
     "use_silt_rate": "Ran the Lifecycle on the measured siltation",
     "add_photos": "Added photos", "delete_photo": "Removed a photo",
+    "keep_snapshot": "Kept a snapshot", "delete_snapshot": "Removed a snapshot", "handover_snapshot": "Set the handover baseline",
     "add_site_image": "Added a site image", "delete_site_image": "Removed a site image", "demo_site_images": "Made up two drone flights",
     "acknowledge_alarm": "Acknowledged an alarm", "renew_feed_key": "Renewed the logger key", "reset_fake_feed": "Reset the fake logger",
 }
@@ -2238,3 +2239,90 @@ def delete_site_image(asset_id: int, image_id: int):
     get_db().commit()
     flash("Site image removed.", "success")
     return redirect(url_for("marine.site_images", asset_id=asset_id))
+
+
+# --- the baseline: the asset on a date, and what changed since ------------------------------------
+
+def _seabed_of(asset):
+    design = _pocket_level(asset)
+    folder = surveys_dir()
+
+    def found(row):
+        g_ = marine_surveys.load(folder, row)
+        return marine_surveys.summary(g_, design) if g_ else None
+    return found
+
+
+def _then_and_now(asset):
+    """The two sides the page compares, from ?a= and ?b=: the handover baseline (else commissioning) against today."""
+    db = get_db()
+    handover = query_one("SELECT * FROM marine_snapshots WHERE asset_id = ? AND handover = 1", (asset["id"],))
+    seabed = _seabed_of(asset)
+    default_a = request.args.get("a") or request.args.get("ad") or (f"s{handover['id']}" if handover else asset["commissioned"])
+    a_token, a, a_name = marine_baseline.picked(db, asset, default_a, date.fromisoformat(asset["commissioned"][:10]), seabed)
+    b_token, b, b_name = marine_baseline.picked(db, asset, request.args.get("b") or request.args.get("bd"), date.today(), seabed)
+    return handover, (a_token, a, a_name), (b_token, b, b_name)
+
+
+@bp.get("/assets/<int:asset_id>/baseline")
+@login_required
+def baseline(asset_id: int):
+    """The asset on any date, the handover baseline, and what changed between two of them."""
+    asset = _asset_or_404(asset_id)
+    handover, (a_token, a, a_name), (b_token, b, b_name) = _then_and_now(asset)
+    change = marine_baseline.compare(a, b)
+    snaps = query("SELECT s.id, s.name, s.day, s.handover, s.created_at, u.name AS who FROM marine_snapshots s"
+                  " LEFT JOIN users u ON u.id = s.created_by WHERE s.asset_id = ? ORDER BY s.day DESC, s.id DESC", (asset_id,))
+    return render_template("marine/baseline.html", asset=asset, handover=handover, a=a, b=b, a_token=a_token, b_token=b_token,
+                           a_name=a_name, b_name=b_name, change=change, snaps=snaps, word=marine_baseline.WORD,
+                           today=date.today().isoformat(), **_context())
+
+
+@bp.get("/assets/<int:asset_id>/baseline.csv")
+@login_required
+def baseline_csv(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    _, (_, a, _), (_, b, _) = _then_and_now(asset)
+    return Response(marine_baseline.export_csv(marine_baseline.compare(a, b)), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="changes-{asset_id}-{a["day"]}-to-{b["day"]}.csv"'})
+
+
+@bp.post("/assets/<int:asset_id>/baseline")
+@login_required
+def keep_snapshot(asset_id: int):
+    asset = _asset_or_404(asset_id)
+    day = date.fromisoformat(_day_field("day", date.today().isoformat()))
+    if day > date.today():
+        flash("A snapshot is of today or a day gone: the record cannot say what is to come.", "error")
+        return redirect(url_for("marine.baseline", asset_id=asset_id, _anchor="snapshots"))
+    handover = bool(request.form.get("handover"))
+    name = (request.form.get("name") or "").strip() or ("Handover baseline" if handover else f"Snapshot {day.strftime('%d/%m/%Y')}")
+    state = marine_baseline.state_on(get_db(), asset, day, _seabed_of(asset))
+    marine_baseline.keep(get_db(), asset_id, name, state, handover, g_user_id())
+    get_db().commit()
+    flash(f"Kept '{name}': the asset as the record has it on {day.strftime('%d/%m/%Y')}, "
+          f"{len(state['elements'])} elements" + (", now the handover baseline everything is measured against." if handover else "."), "success")
+    return redirect(url_for("marine.baseline", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/baseline/<int:snapshot_id>/handover")
+@login_required
+def handover_snapshot(asset_id: int, snapshot_id: int):
+    _asset_or_404(asset_id)
+    row = query_one("SELECT id FROM marine_snapshots WHERE id = ? AND asset_id = ?", (snapshot_id, asset_id))
+    if row is None:
+        abort(404)
+    get_db().execute("UPDATE marine_snapshots SET handover = (id = ?) WHERE asset_id = ?", (snapshot_id, asset_id))
+    get_db().commit()
+    flash("That snapshot is now the handover baseline.", "success")
+    return redirect(url_for("marine.baseline", asset_id=asset_id))
+
+
+@bp.post("/assets/<int:asset_id>/baseline/<int:snapshot_id>/delete")
+@login_required
+def delete_snapshot(asset_id: int, snapshot_id: int):
+    _asset_or_404(asset_id)
+    get_db().execute("DELETE FROM marine_snapshots WHERE id = ? AND asset_id = ?", (snapshot_id, asset_id))
+    get_db().commit()
+    flash("Snapshot removed.", "success")
+    return redirect(url_for("marine.baseline", asset_id=asset_id, _anchor="snapshots"))

@@ -8,6 +8,7 @@ corrosion is running past its allowance, and the utilisation that follows.
 from __future__ import annotations
 
 import gzip
+import json
 import io
 import math
 from datetime import date
@@ -828,7 +829,7 @@ def test_a_terminal_type_can_be_set_and_reshapes_the_pages(app, signed_in, demo)
 
 
 def test_every_page_shows_the_steps_from_the_asset_list(signed_in, demo):
-    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles", "/seabed", "/photos", "/images"):
+    for path in ("", "/setup", "/inputs", "/live", "/berthplan", "/ships", "/lifecycle", "/risks", "/plan", "/operations", "/simulation", "/equipment", "/environment", "/carbon", "/safety", "/piles", "/seabed", "/photos", "/images", "/baseline"):
         page = text(signed_in.get(demo + path))
         assert page.count('class="mt-step ') == 11 and 'aria-current="page"' in page and "marinetwin-ui.js" in page
     front = text(signed_in.get("/marinetwin/"))
@@ -1740,3 +1741,50 @@ def test_site_images_have_two_made_up_flights_to_compare(app, signed_in, demo):
     assert "Compare with" in page and "Drone flight, a year on" in page
     for r in rows:
         signed_in.post(demo + f"/images/{r['id']}/delete")
+
+
+# --- the site record: the baseline ---------------------------------------------------------------
+
+def test_the_baseline_shows_the_asset_on_a_date_and_what_changed_since_handover(app, signed_in, demo):
+    from datetime import date, timedelta
+    from app import marine_baseline
+    page = text(signed_in.get(demo + "/baseline"))
+    assert "Baseline" in page and "Handover baseline" in page and "not set" in page
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        asset = conn.execute("SELECT * FROM marine_assets WHERE id = 1").fetchone()
+        then = marine_baseline.state_on(conn, asset, date.today() - timedelta(days=400))
+        now = marine_baseline.state_on(conn, asset, date.today())
+        first = conn.execute("SELECT MIN(at) FROM marine_readings").fetchone()[0]
+    # A year and more ago fewer readings counted; the demo's corrosion has grown since.
+    assert set(then["elements"]) == set(now["elements"])
+    assert all(s["at"] <= (date.today() - timedelta(days=400)).isoformat() + "~" for e in then["elements"].values() for s in e["sensors"].values() if s["at"])
+    change = marine_baseline.compare(then, now)
+    assert change["worse"] or change["moved"]
+    assert any(x["change"] for r in change["worse"] + change["moved"] for x in r["readings"] if x["change"] is not None)
+    # Keep the state of a year and more ago as the handover baseline: the page measures from it.
+    long_ago = (date.today() - timedelta(days=400)).isoformat()
+    signed_in.post(demo + "/baseline", data={"name": "Handover", "day": long_ago, "handover": "1"})
+    signed_in.post(demo + "/baseline", data={"name": "Mid-life", "day": date.today().isoformat()})
+    with app.app_context():
+        rows = connect(app.config["DATABASE"]).execute("SELECT * FROM marine_snapshots WHERE asset_id = 1 ORDER BY id").fetchall()
+    assert [r["handover"] for r in rows] == [1, 0] and rows[0]["day"] == long_ago
+    page = text(signed_in.get(demo + "/baseline"))
+    assert "From Handover (handover) to the record on" in page and ("Got worse" in page or "Readings moved" in page)
+    # Corrected readings later do not change a kept snapshot.
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        conn.execute("DELETE FROM marine_readings WHERE at <= ?", (long_ago + "~",))
+        conn.commit()
+        kept = marine_baseline.kept(conn.execute("SELECT * FROM marine_snapshots WHERE id = ?", (rows[0]["id"],)).fetchone())
+    assert kept == json.loads(rows[0]["data"]) and any(e["sensors"] for e in kept["elements"].values())
+    csv_text = signed_in.get(demo + f"/baseline.csv?a=s{rows[0]['id']}").get_data(as_text=True)
+    assert csv_text.startswith("element,kind,was,now")
+    # A snapshot of a day to come is refused; the second can become the baseline.
+    signed_in.post(demo + "/baseline", data={"day": (date.today() + timedelta(days=3)).isoformat()})
+    signed_in.post(demo + f"/baseline/{rows[1]['id']}/handover")
+    with app.app_context():
+        conn = connect(app.config["DATABASE"])
+        assert [r["handover"] for r in conn.execute("SELECT handover FROM marine_snapshots WHERE asset_id = 1 ORDER BY id")] == [0, 1]
+    for r in rows:
+        signed_in.post(demo + f"/baseline/{r['id']}/delete")
